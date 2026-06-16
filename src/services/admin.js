@@ -10,6 +10,7 @@ const player = require('./player');
 const social = require('./social');
 const ach = require('./achievements');
 const discounts = require('./discounts');
+const auditLog = require('./auditLog');
 
 function brief(p) {
   return {
@@ -96,4 +97,14 @@ function setDiscount(adminUser, body, notices) {
   return discountCategories();
 }
 
-module.exports = { listPlayers, grant, discountCategories, setDiscount };
+// ---------- Журнал действий ----------
+// query: { userId?, limit? }. Без userId — последние действия всех игроков.
+function listLogs(query) {
+  const limit = Math.min(500, Math.max(1, u.toInt(query.limit, 200)));
+  const entries = query.userId
+    ? auditLog.listForUser(String(query.userId), limit)
+    : auditLog.listAll(limit);
+  return { logs: entries };
+}
+
+module.exports = { listPlayers, grant, discountCategories, setDiscount, listLogs };

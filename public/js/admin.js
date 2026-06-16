@@ -60,12 +60,68 @@ const Admin = {
       <hr class="hr">
       <div class="title">Скидки и бонусы</div>
       <div id="ad-discounts"><div class="loading">Загрузка скидок…</div></div>
+      <hr class="hr">
+      <div class="title">Журнал действий игроков</div>
+      <div class="card">
+        <div class="field-row">
+          <input type="text" id="log-uid" placeholder="ID игрока (пусто — все)">
+          <input type="number" id="log-limit" value="100" style="width:80px">
+          <button class="btn btn-inline" id="log-load">📋 Загрузить</button>
+        </div>
+      </div>
+      <div id="ad-logs"><p class="muted center">Нажмите «Загрузить» для просмотра логов.</p></div>
       <p class="center"><a href="/">← Вернуться в игру</a></p>`;
 
     document.getElementById('ad-search').onclick = () => Admin.loadPlayers();
     document.getElementById('ad-q').onkeydown = (e) => { if (e.key === 'Enter') Admin.loadPlayers(); };
+    document.getElementById('log-load').onclick = () => Admin.loadLogs();
     await Admin.loadPlayers();
     await Admin.loadDiscounts();
+  },
+
+  async loadLogs() {
+    const box = document.getElementById('ad-logs');
+    const uid = document.getElementById('log-uid').value.trim();
+    const limit = document.getElementById('log-limit').value || 100;
+    box.innerHTML = '<div class="loading">Загрузка журнала…</div>';
+    try {
+      const { logs } = await API.get(`/api/admin/logs?limit=${limit}${uid ? '&userId=' + encodeURIComponent(uid) : ''}`);
+      if (!logs.length) { box.innerHTML = '<p class="muted center">Журнал пуст.</p>'; return; }
+      const fmtDate = (ts) => new Date(ts).toLocaleString('ru');
+      // Красим маршруты: покупки — зелёный, бои — красный, прочее — серый
+      const routeColor = (path) => {
+        if (/\/(buy|build|workshop|deposit|heal|trophy|modern)/.test(path)) return 'var(--money)';
+        if (/\/(attack|fatality|war)/.test(path)) return 'var(--red)';
+        return 'var(--dim)';
+      };
+      box.innerHTML = `
+        <div class="card" style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:4px 6px;color:var(--dim)">Время</th>
+                <th style="text-align:left;padding:4px 6px;color:var(--dim)">Игрок</th>
+                <th style="text-align:left;padding:4px 6px;color:var(--dim)">Действие</th>
+                <th style="text-align:left;padding:4px 6px;color:var(--dim)">Данные</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logs.map((e) => `
+              <tr style="border-bottom:1px solid var(--border-dim)">
+                <td style="padding:4px 6px;white-space:nowrap;color:var(--dim)">${fmtDate(e.at)}</td>
+                <td style="padding:4px 6px;white-space:nowrap">
+                  <span class="name" style="cursor:pointer" onclick="document.getElementById('log-uid').value='${e.userId || ''}';Admin.loadLogs();">${UI.esc(e.userName || '—')}</span>
+                  <br><span class="muted" style="font-size:10px">${e.userId || ''}</span>
+                </td>
+                <td style="padding:4px 6px;white-space:nowrap;color:${routeColor(e.path)}">${UI.esc(e.path)}</td>
+                <td style="padding:4px 6px;color:var(--dim);font-size:11px">${e.body ? UI.esc(JSON.stringify(e.body)) : ''}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (e) {
+      box.innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>`;
+    }
   },
 
   // Загрузить и отрисовать категории скидок + активные значения

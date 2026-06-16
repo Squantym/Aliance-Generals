@@ -25,12 +25,15 @@ App.screens.auth = async (c) => {
       <label>Пароль</label>
       <input type="password" id="li-pass" autocomplete="current-password">
       <button class="btn btn-orange mt" id="li-go">Войти в строй</button>
+      <button class="btn mt" id="li-resend">Не пришло письмо с подтверждением? Отправить повторно</button>
     </div>
 
     <div class="card" id="form-reg" style="display:none">
       <p class="muted small">2034 год. Мир охвачен войной, и каждой армии нужны решительные командиры. Заполни личное дело, боец.</p>
       <label>Позывной (3–16 символов)</label>
       <input type="text" id="rg-name" maxlength="16" autocomplete="username">
+      <label>Email (для подтверждения регистрации)</label>
+      <input type="email" id="rg-email" autocomplete="email">
       <label>Пароль (минимум 4 символа)</label>
       <input type="password" id="rg-pass" autocomplete="new-password">
       <label>Страна (даёт постоянный бонус)</label>
@@ -65,15 +68,43 @@ App.screens.auth = async (c) => {
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
 
+  // Повторная отправка письма подтверждения
+  document.getElementById('li-resend').onclick = async () => {
+    const login = document.getElementById('li-name').value.trim();
+    if (!login) { UI.toast('Введите позывной'); return; }
+    try {
+      const r = await API.post('/api/resend-verification', { login });
+      if (r.autoVerified) {
+        UI.toast('✅ Почта подтверждена автоматически — можете войти');
+      } else {
+        UI.toast('📧 Письмо отправлено на вашу почту');
+      }
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+
   document.getElementById('rg-go').onclick = async () => {
     try {
       const r = await API.post('/api/register', {
         login: document.getElementById('rg-name').value,
+        email: document.getElementById('rg-email').value,
         password: document.getElementById('rg-pass').value,
         country: document.getElementById('rg-country').value,
       });
       if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора (/admin)');
-      await finish(r.token);
+      if (r.token) {
+        // Dev-режим: почта подтверждена автоматически (RESEND_API_KEY не задан)
+        await finish(r.token);
+      } else {
+        // Боевой режим: ждём подтверждения почты
+        c.innerHTML = `
+          <div class="title">📧 Подтвердите почту</div>
+          <div class="card center">
+            <p style="font-size:40px">✉️</p>
+            <p class="mt">Письмо со ссылкой подтверждения отправлено на <b>${UI.esc(r.email)}</b>.</p>
+            <p class="muted small mt">Перейдите по ссылке в письме и вернитесь сюда — сможете войти.</p>
+            <button class="btn btn-orange mt" onclick="App.go('auth')">Уже подтвердил — войти</button>
+          </div>`;
+      }
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
 };

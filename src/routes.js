@@ -41,10 +41,12 @@ module.exports = function registerRoutes(app) {
   // ---------- Авторизация (открытые маршруты) ----------
   app.add('GET', '/api/countries', () => ({ countries: config.COUNTRIES }), { open: true });
   app.add('POST', '/api/register', (req) =>
-    auth.register(req.body.login, req.body.password, req.body.country), { open: true });
+    auth.register(req.body.login, req.body.password, req.body.email, req.body.country), { open: true });
   app.add('POST', '/api/login', (req) =>
     auth.login(req.body.login, req.body.password), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
+  app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
+  app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login), { open: true });
 
   // ---------- Игрок ----------
   app.add('GET', '/api/me', (req) => ({
@@ -161,4 +163,5 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/admin/grant', act((req, n) => admin.grant(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/discounts', () => admin.discountCategories(), { admin: true });
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
+  app.add('GET',  '/api/admin/logs',      (req) => admin.listLogs(req.query), { admin: true });
 };

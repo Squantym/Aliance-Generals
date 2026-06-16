@@ -8,6 +8,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
+const auditLog = require('../services/auditLog');
 const { ApiError } = require('./utils');
 
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
@@ -125,6 +126,19 @@ function createApp() {
 
           const result = await found.handler(reqCtx);
           db.saveAll(); // отложенная запись всех изменённых коллекций
+
+          // Журнал действий: фиксируем только POST-запросы авторизованных
+          // игроков (это и есть «действия» — покупки, атаки, прокачки...)
+          if (reqCtx.user && req.method === 'POST') {
+            auditLog.record({
+              userId: reqCtx.user.id,
+              userName: reqCtx.user.name,
+              path: pathname,
+              params,
+              body: reqCtx.body,
+            });
+          }
+
           sendJson(res, 200, result === undefined ? { ok: true } : result);
         } catch (e) {
           if (e instanceof ApiError) return sendJson(res, e.status, { error: e.message });

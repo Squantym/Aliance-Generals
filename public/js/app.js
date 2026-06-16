@@ -60,6 +60,11 @@ const App = {
     const hash = (location.hash || '').slice(1) || 'home';
     const [name, param] = hash.split('/');
 
+    // Специальный маршрут: #verify/<token> — ссылка из письма подтверждения
+    if (name === 'verify' && param) {
+      App._handleVerify(param); return;
+    }
+
     if (!API.token() && name !== 'auth') { location.hash = '#auth'; return; }
     if (API.token() && name === 'auth') { location.hash = '#home'; return; }
 
@@ -138,5 +143,32 @@ const App = {
       if (tEl) tEl.textContent = r.cur < r.max ? UI.fmtTimer(r.toNextSec) : '';
     }
     if (!noDecrement && m.nextPayoutSec > 0) m.nextPayoutSec--;
+  },
+
+  // Обработка ссылки из письма подтверждения: #verify/<token>
+  async _handleVerify(token) {
+    const c = document.getElementById('content');
+    c.innerHTML = '<div class="loading">Подтверждаем вашу почту…</div>';
+    App.renderHeader();
+    try {
+      const r = await API.post('/api/verify-email', { token });
+      API.setToken(r.token);
+      App.me = await API.get('/api/me');
+      c.innerHTML = `
+        <div class="title">✅ Почта подтверждена</div>
+        <div class="card center">
+          <p style="font-size:40px">🎖</p>
+          <p class="mt">Добро пожаловать, <b>${UI.esc(r.name)}</b>!</p>
+          <p class="muted small mt">Регистрация завершена. Вступайте в строй, боец.</p>
+          <button class="btn btn-orange mt" onclick="App.go('home')">В игру!</button>
+        </div>`;
+    } catch (e) {
+      c.innerHTML = `
+        <div class="title">❌ Ошибка</div>
+        <div class="card center">
+          <p style="color:var(--red)">${UI.esc(e.message)}</p>
+          <p class="muted small mt">Ссылка уже использована или истекла. Попробуйте <a href="#auth">войти</a> — возможно, почта уже подтверждена.</p>
+        </div>`;
+    }
   },
 };

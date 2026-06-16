@@ -332,6 +332,10 @@ function refresh(user) {
   // Страховка для существующих игроков: новые поля при обновлении версии
   if (user.legionId === undefined) user.legionId = null;
   if (!user.modernQueue) user.modernQueue = [];
+  // Аккаунты, созданные до введения подтверждения почты — считаем
+  // подтверждёнными, чтобы старые игроки не потеряли доступ
+  if (user.emailVerified === undefined) user.emailVerified = true;
+  if (user.email === undefined) user.email = '';
 
   // Миграция формата техники: со старого `units: { id: 30 }` + `modernization: { id: 1 }`
   // на новый `units: { id: { 0:0, 1:30, 2:0 } }`. Делается один раз.

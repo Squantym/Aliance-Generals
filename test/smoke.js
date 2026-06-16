@@ -33,14 +33,17 @@ async function main() {
   const nameB = 'Boets' + stamp;
 
   console.log('1. Регистрация и вход');
-  const regA = await post('/api/register', null, { login: nameA, password: 'pass123', country: 'ru' });
-  check('первый игрок зарегистрирован', regA.status === 200 && !!regA.data.token);
-  const A = regA.data.token;
-  const regB = await post('/api/register', null, { login: nameB, password: 'pass123', country: 'ua' });
+  // В dev-режиме (без RESEND_API_KEY) сервер сразу выдаёт токен
+  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'pass123', country: 'ru' });
+  check('первый игрок зарегистрирован', regA.status === 200 && (!!regA.data.token || regA.data.pending));
+  const A = regA.data.token; // в dev-режиме есть сразу
+  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'pass123', country: 'ua' });
   check('второй игрок зарегистрирован', regB.status === 200);
   const B = regB.data.token;
-  const dupe = await post('/api/register', null, { login: nameA, password: 'x1234', country: 'ru' });
+  const dupe = await post('/api/register', null, { login: nameA, email: `dupe${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат позывного отклонён', dupe.status === 400);
+  const dupeEmail = await post('/api/register', null, { login: 'ZZZ' + stamp, email: `admina${stamp}@test.ru`, password: 'x1234', country: 'ru' });
+  check('дубликат email отклонён', dupeEmail.status === 400);
   const login = await post('/api/login', null, { login: nameA, password: 'pass123' });
   check('вход работает', login.status === 200 && !!login.data.token);
 
