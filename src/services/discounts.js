@@ -1,0 +1,90 @@
+// ===================================================================
+// src/services/discounts.js — глобальные скидки и бонусы от админа
+// Хранятся в коллекции 'discounts' одним объектом:
+//   { unit: {pct:20, expires:1234}, building: {...}, ... }
+// Категории (ключи) — см. CATEGORIES ниже.
+// Скидки уменьшают цену; бонус «gold» увеличивает количество золота
+// при покупке (когда вкладка покупки золота будет добавлена).
+// ===================================================================
+
+const db = require('../core/db');
+const u = require('../core/utils');
+
+// Категории скидок: id → человекочитаемое название
+const CATEGORIES = {
+  unit:        'Покупка техники',
+  building:    'Постройки (доходные и оборонительные)',
+  modernize:   'Производство (модернизация Mk1/Mk2)',
+  workshop:    'Покупка цехов производства',
+  market:      'Чёрный рынок: допинг и падлянки',
+  container:   'Контейнеры контрабанды',
+  trophy:      'Прокачка трофеев',
+  alliance:    'Создание альянса',
+  legion:      'Создание легиона',
+  gold:        'Бонус к покупаемому золоту',
+};
+
+function store() { return db.load('discounts', {}); }
+
+// Активные скидки на сейчас (просроченные отфильтрованы)
+function getActive() {
+  const now = Date.now();
+  const all = store();
+  const out = {};
+  for (const cat of Object.keys(CATEGORIES)) {
+    const d = all[cat];
+    if (d && d.expires > now && d.pct > 0) out[cat] = { pct: d.pct, expires: d.expires };
+  }
+  return out;
+}
+
+// Текущая скидка по категории — число в процентах (0..99) либо 0
+function pctOf(category) {
+  const a = getActive();
+  return a[category] ? a[category].pct : 0;
+}
+
+// Применить скидку к цене. price * (1 - pct/100), округление вниз до целого
+function applyTo(category, price) {
+  const pct = pctOf(category);
+  if (pct <= 0) return Math.round(price);
+  return Math.max(0, Math.floor(price * (1 - pct / 100)));
+}
+
+// Множитель бонуса (для категории gold — увеличивает покупаемое золото)
+function bonusMul(category) {
+  return 1 + pctOf(category) / 100;
+}
+
+// Установить скидку: pct% на durationHours часов. pct=0 или duration<=0 — снять.
+function set(category, pct, durationHours) {
+  if (!CATEGORIES[category]) throw new u.ApiError('Неизвестная категория скидки');
+  pct = Math.max(0, Math.min(99, u.toInt(pct, 0)));
+  const hours = Math.max(0, Number(durationHours) || 0);
+  const all = store();
+  if (pct === 0 || hours === 0) {
+    delete all[category];
+  } else {
+    all[category] = { pct, expires: Date.now() + Math.round(hours * 3600 * 1000) };
+  }
+  db.save('discounts');
+  return all[category] || null;
+}
+
+// Получить список всех категорий для админки (для формы выбора)
+function categories() {
+  return Object.entries(CATEGORIES).map(([id, name]) => ({ id, name }));
+}
+
+// Информация об активной скидке для отображения в UI (или null)
+function info(category) {
+  const a = getActive();
+  if (!a[category]) return null;
+  return {
+    pct: a[category].pct,
+    expiresAt: a[category].expires,
+    label: CATEGORIES[category] || category,
+  };
+}
+
+module.exports = { getActive, info, pctOf, applyTo, bonusMul, set, categories, CATEGORIES };

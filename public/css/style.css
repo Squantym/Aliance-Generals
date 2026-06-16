@@ -1,0 +1,973 @@
+/* ===================================================================
+   public/css/style.css — оформление игры «ГЕНЕРАЛЫ»
+   Тёмная военная тема: хаки и тёмная зелень на почти чёрном фоне,
+   золото для валюты, оранжевые кнопки действий. Мобильная вёрстка,
+   колонка до 520px по образцу оригинальной игры.
+   =================================================================== */
+
+:root {
+  --bg: #0a0d08;            /* фон страницы */
+  --panel: #141a0f;         /* фон карточек */
+  --panel-2: #1b2314;       /* фон кнопок меню и полей */
+  --border: #2c3a1d;        /* основная рамка */
+  --border-dim: #222d16;
+  --text: #cdd9b4;          /* основной текст, светлый хаки */
+  --dim: #7e8b64;           /* приглушённый текст */
+  --green: #9ec25b;         /* акцентный зелёный (заголовки, имена) */
+  --money: #86d34f;         /* доллары */
+  --gold: #e9c75c;          /* золото */
+  --hp: #d9544a;            /* здоровье */
+  --en: #5fa8dc;            /* энергия */
+  --am: #d9a546;            /* боеприпасы */
+  --red: #e06c5a;           /* ошибки, урон */
+  --orange-1: #c07a16;      /* кнопка действия, верх градиента */
+  --orange-2: #8e5a0d;      /* кнопка действия, низ градиента */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  /* лёгкая «камуфляжная» текстура из градиентов, без картинок */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(70, 90, 40, .18), transparent),
+    repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 6px);
+  color: var(--text);
+  font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Центральная колонка как у мобильной игры */
+#wrap { max-width: 520px; margin: 0 auto; min-height: 100vh; background: rgba(8, 11, 6, .6); border-left: 1px solid var(--border-dim); border-right: 1px solid var(--border-dim); }
+
+/* ---------- ПК-РАЗМЕТКА ----------
+   На широких экранах расширяем контейнер, увеличиваем шапку и
+   ставим меню в 4 колонки — пространство по бокам используется. */
+@media (min-width: 900px) {
+  #wrap {
+    max-width: 1200px;
+    border-left: 1px solid var(--border-dim);
+    border-right: 1px solid var(--border-dim);
+    box-shadow: 0 0 40px rgba(0,0,0,.5);
+  }
+  #header { padding: 16px 28px; }
+  .logo { font-size: 24px; letter-spacing: .7em; }
+  #content { padding: 24px 28px; }
+  /* Главное меню: 4 кнопки в ряд, более «дышащие» */
+  .menu-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .menu-btn { font-size: 14px; min-height: 64px; padding: 10px 14px; }
+  /* Карточки: чуть больше отступа и крупнее заголовки */
+  .card { padding: 16px 18px; }
+  .name { font-size: 15px; }
+  /* Кнопки крупнее */
+  .btn { padding: 11px 20px; font-size: 14px; }
+  .btn-orange { padding: 12px 24px; font-size: 15px; }
+  /* Шапка ресурсов более просторная */
+  .res-row { padding: 8px 0; font-size: 14px; }
+  .stat-row { padding: 6px 0; }
+}
+@media (min-width: 1300px) {
+  #wrap { max-width: 1340px; }
+  .menu-grid { grid-template-columns: repeat(5, 1fr); }
+  #content { padding: 28px 36px; }
+}
+
+a { color: var(--green); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- ШАПКА ---------- */
+#header { border-bottom: 2px solid var(--border); background: linear-gradient(#121810, #0c100a); position: sticky; top: 0; z-index: 20; }
+
+.logo {
+  text-align: center; padding: 10px 6px 6px;
+  font-weight: 800; font-size: 22px; letter-spacing: .35em; text-transform: uppercase;
+  color: #b9cb78; cursor: pointer; user-select: none;
+  text-shadow: 0 2px 0 #000, 0 0 14px rgba(150, 180, 70, .25);
+}
+.logo .star { color: var(--gold); font-size: 16px; letter-spacing: 0; }
+
+.res-row, .stat-row {
+  display: flex; border-top: 1px solid var(--border-dim);
+}
+.res-row > div, .stat-row > div {
+  flex: 1; padding: 6px 4px; text-align: center; font-size: 13px;
+  border-right: 1px solid var(--border-dim); white-space: nowrap; overflow: hidden;
+}
+.res-row > div:last-child, .stat-row > div:last-child { border-right: none; }
+.res-row .clickable, .stat-row .clickable { cursor: pointer; }
+.money { color: var(--money); font-weight: 700; }
+.gold { color: var(--gold); font-weight: 700; }
+.lvl { color: #f3e36a; font-weight: 700; }
+.timer { color: var(--dim); font-size: 11px; }
+
+.stat-hp { color: var(--hp); font-weight: 700; }
+.stat-en { color: var(--en); font-weight: 700; }
+.stat-am { color: var(--am); font-weight: 700; }
+
+/* ---------- ОСНОВНОЕ СОДЕРЖИМОЕ ---------- */
+#content { padding: 10px 10px 40px; }
+
+.title {
+  text-align: center; text-transform: uppercase; letter-spacing: .25em;
+  color: #d7e2b8; font-weight: 700; font-size: 15px; margin: 12px 0 10px;
+}
+
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 2px 6px rgba(0,0,0,.35);
+}
+.card.err { border-color: #5a2c22; color: var(--red); }
+
+.muted { color: var(--dim); font-size: 13px; }
+.small { font-size: 12px; }
+.center { text-align: center; }
+.mt { margin-top: 8px; }
+.hr { border: none; border-top: 1px solid var(--border-dim); margin: 8px 0; }
+
+/* Блок Майора (сюжет/обучение) */
+.major { display: flex; gap: 10px; align-items: flex-start; }
+.major .face {
+  flex: 0 0 54px; height: 54px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel-2); font-size: 34px; display: flex; align-items: center; justify-content: center;
+}
+.major b { color: var(--green); }
+.major .story { font-style: italic; color: #b9c69b; }
+
+/* ---------- МЕНЮ ГЛАВНОЙ ---------- */
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.menu-btn {
+  display: flex; align-items: center; gap: 9px; min-height: 52px; padding: 8px 10px;
+  background: linear-gradient(#1d2614, #161e0f);
+  border: 1px solid var(--border); border-radius: 6px;
+  color: #c4d49a; font-weight: 700; font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; user-select: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+.menu-btn:hover { background: linear-gradient(#232e18, #1a2312); text-decoration: none; }
+.menu-btn .ic { font-size: 20px; }
+.menu-btn.small-row { min-height: 42px; text-transform: none; font-weight: 600; color: var(--text); }
+.menu-btn .badge { margin-left: auto; }
+
+.badge {
+  background: var(--orange-1); color: #1a1206; font-size: 11px; font-weight: 800;
+  border-radius: 9px; padding: 1px 7px;
+}
+.badge.green { background: var(--green); }
+
+/* ---------- КНОПКИ ---------- */
+.btn {
+  display: inline-block; width: 100%; text-align: center; padding: 9px 12px;
+  background: linear-gradient(#222c16, #18200f);
+  border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text); font-size: 14px; font-weight: 700; cursor: pointer; user-select: none;
+}
+.btn:hover { filter: brightness(1.12); }
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: .45; cursor: default; }
+
+.btn-orange {
+  background: linear-gradient(var(--orange-1), var(--orange-2));
+  border-color: #5e3c08; color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,.45);
+}
+.btn-green { background: linear-gradient(#4f7d27, #3a5e1b); border-color: #2d4a13; color: #f1f7e2; }
+.btn-red { background: linear-gradient(#8e3326, #6b251b); border-color: #511c14; color: #ffe3dc; }
+.btn-inline { width: auto; padding: 7px 14px; }
+
+.btn-row { display: flex; gap: 8px; }
+.btn-row .btn { flex: 1; }
+
+/* ---------- ВКЛАДКИ ---------- */
+.tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.tab {
+  flex: 1; min-width: 90px; text-align: center; padding: 8px 6px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--dim); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  cursor: pointer; user-select: none;
+}
+.tab.active { background: linear-gradient(var(--orange-1), var(--orange-2)); color: #fff; border-color: #5e3c08; }
+
+/* ---------- СПИСКИ И СТРОКИ ---------- */
+.list-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 4px;
+  border-bottom: 1px solid var(--border-dim);
+}
+.list-row:last-child { border-bottom: none; }
+.list-row .grow { flex: 1; min-width: 0; }
+.name { color: var(--green); font-weight: 700; }
+
+/* Пары «ключ — значение» */
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 14px; }
+.kv .k { color: var(--dim); }
+.kv .v { font-weight: 700; }
+
+/* ---------- ПРОГРЕСС-БАРЫ ---------- */
+.bar {
+  position: relative; height: 16px; background: #0e130a; border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden;
+}
+.bar .fill { position: absolute; inset: 0; width: 0; transition: width .3s; }
+.bar .txt {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #e9f0d8; text-shadow: 0 1px 1px #000;
+}
+.fill.hp { background: linear-gradient(#c4544a, #8e352d); }
+.fill.en { background: linear-gradient(#4f93c4, #2d618e); }
+.fill.xp { background: linear-gradient(#8db04f, #5d7a2e); }
+.fill.gold { background: linear-gradient(#d9b14a, #9c7c27); }
+
+/* ---------- ФОРМЫ ---------- */
+input[type=text], input[type=password], input[type=number], select, textarea {
+  width: 100%; padding: 9px 10px; background: #10150b; color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px; font-size: 14px; outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: #4a6128; }
+textarea { resize: vertical; min-height: 70px; }
+label { display: block; margin: 8px 0 4px; color: var(--dim); font-size: 13px; }
+.qty { width: 74px !important; text-align: center; }
+
+.field-row { display: flex; gap: 8px; align-items: center; }
+
+/* ---------- БОЙ ---------- */
+.result-title { text-align: center; font-size: 19px; font-weight: 800; letter-spacing: .15em; margin: 4px 0 8px; }
+.result-title.win { color: #8fdc55; text-shadow: 0 0 12px rgba(120, 220, 70, .35); }
+.result-title.lose { color: var(--red); }
+.dmg-deal { color: #8fdc55; font-weight: 700; }
+.dmg-take { color: var(--red); font-weight: 700; }
+
+.fatality-card { border-color: #6b251b; background: linear-gradient(#1d120c, #150d09); }
+
+/* ---------- ЧАТ ---------- */
+.chat-box { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.chat-msg { font-size: 14px; word-wrap: break-word; }
+.chat-msg .who { color: var(--green); font-weight: 700; cursor: pointer; }
+.chat-msg .at { color: var(--dim); font-size: 11px; margin-left: 4px; }
+
+/* ---------- ДОСТИЖЕНИЯ ---------- */
+.stars { letter-spacing: 2px; font-size: 15px; }
+.stars .on { color: var(--gold); }
+.stars .off { color: #3a4427; }
+
+/* ---------- ВСПЛЫВАЮЩИЕ УВЕДОМЛЕНИЯ ---------- */
+#toasts {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  top: 70px; z-index: 100; width: min(480px, calc(100vw - 20px));
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+.toast {
+  background: rgba(20, 27, 13, .96); border: 1px solid #46592a; border-left: 4px solid var(--green);
+  color: #dce7c2; padding: 9px 12px; border-radius: 6px; font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.5); pointer-events: auto; cursor: pointer;
+  animation: toast-in .25s ease;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+.loading { text-align: center; color: var(--dim); padding: 30px 0; }
+
+/* Узкие экраны */
+@media (max-width: 360px) {
+  .menu-btn { font-size: 12px; min-height: 48px; }
+  body { font-size: 14px; }
+}
+
+/* ===================================================================
+   ИКОНКА ЗОЛОТА: золотая монета (эмодзи 🪙). Единый значок для шапки
+   и всех мест, где упоминается цена в золоте (контейнеры, рынок,
+   аукцион, клуб, трофеи).
+   =================================================================== */
+.ic-gold {
+  display: inline-block;
+  font-size: 16px;
+  vertical-align: -1px;
+  line-height: 1;
+}
+.ic-gold::before { content: '🪙'; }
+
+/* ===================================================================
+   АКЦИОННЫЙ БАННЕР И СТАРАЯ/НОВАЯ ЦЕНА
+   =================================================================== */
+.sale-banner {
+  background: linear-gradient(180deg, rgba(217,165,70,0.18), rgba(217,165,70,0.08));
+  border: 1px solid var(--orange-1);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  text-align: center;
+  color: #ffeac1;
+  font-size: 13px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 2px 6px rgba(0,0,0,.4);
+}
+.sale-banner b { color: #ffd66e; }
+
+.price-old {
+  text-decoration: line-through;
+  color: var(--dim);
+  font-size: 0.9em;
+  margin-right: 4px;
+}
+.price-new { color: var(--money); font-weight: 700; }
+
+/* ===================================================================
+   ТЕМА 2: ВОЕННАЯ СТАЛЬ
+   Тёмный металл с зернистостью, царапинами и сетчатой подложкой.
+   Активируется классом body.theme-steel
+   =================================================================== */
+body.theme-steel {
+  --bg: #15171a;
+  --panel: #1c2025;
+  --panel-2: #232830;
+  --border: #3a4250;
+  --border-dim: #2a313c;
+  --text: #c9d3df;
+  --dim: #7e8896;
+  --green: #b6c780;          /* приглушённый хаки на стали */
+  --money: #8ed26d;
+  --gold: #f1d56a;
+  --hp: #d9544a;
+  --en: #6cb3df;
+  --am: #d9a546;
+  --red: #e06c5a;
+  --orange-1: #b06b1a;
+  --orange-2: #7e4b0c;
+}
+
+body.theme-steel {
+  background-color: #0e1013;
+  background-image:
+    /* пересечённые царапины (диагональные лёгкие полосы) */
+    repeating-linear-gradient(45deg,
+      rgba(255,255,255,.018) 0 1px,
+      transparent 1px 4px),
+    repeating-linear-gradient(-45deg,
+      rgba(255,255,255,.012) 0 1px,
+      transparent 1px 7px),
+    /* зернистость — мелкая клетка из светлых точек */
+    radial-gradient(rgba(255,255,255,.025) 1px, transparent 1.5px),
+    /* верхний холодный отблеск */
+    radial-gradient(ellipse 100% 60% at 50% -20%,
+      rgba(120, 150, 180, .12), transparent 70%),
+    /* стальная подложка с градиентом */
+    linear-gradient(180deg, #1a1d22 0%, #0e1013 100%);
+  background-size: auto, auto, 8px 8px, auto, auto;
+  background-attachment: fixed;
+}
+
+body.theme-steel #wrap {
+  background: rgba(20, 23, 27, .72);
+  border-left: 1px solid #2c333d;
+  border-right: 1px solid #2c333d;
+  box-shadow: 0 0 30px rgba(0,0,0,.5);
+}
+
+body.theme-steel #header {
+  background: linear-gradient(180deg, #232831 0%, #181c22 100%);
+  border-bottom: 2px solid #444c5b;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 2px 0 rgba(0,0,0,.4);
+}
+
+body.theme-steel .logo {
+  color: #d6dfe8;
+  text-shadow:
+    0 1px 0 rgba(0,0,0,.7),
+    0 0 12px rgba(180, 200, 220, .15);
+  letter-spacing: .4em;
+}
+
+/* Карточки на стальной теме — словно металлические пластины с заклёпками */
+body.theme-steel .card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025) 0%, transparent 30%),
+    linear-gradient(180deg, #1f242c, #181c23);
+  border: 1px solid #3a4250;
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.05),
+    inset 0 -1px 0 rgba(0,0,0,.3),
+    0 2px 6px rgba(0,0,0,.55);
+  position: relative;
+}
+body.theme-steel .card::before,
+body.theme-steel .card::after {
+  /* «Заклёпки» по углам — два псевдоэлемента в левом верхнем и правом нижнем */
+  content: '';
+  position: absolute;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: radial-gradient(#5a6473 30%, #20252d 80%);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+}
+body.theme-steel .card::before { top: 5px; left: 5px; }
+body.theme-steel .card::after  { bottom: 5px; right: 5px; }
+
+/* Кнопки меню: матовый металл с фаской */
+body.theme-steel .menu-btn {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06) 0%, transparent 50%),
+    linear-gradient(180deg, #2a313c, #1d222a);
+  border: 1px solid #424b59;
+  color: #d4dde8;
+  text-shadow: 0 1px 0 rgba(0,0,0,.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 1px 3px rgba(0,0,0,.5);
+}
+body.theme-steel .menu-btn:hover {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.08) 0%, transparent 50%),
+    linear-gradient(180deg, #303843, #232932);
+}
+
+body.theme-steel .btn {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06) 0%, transparent 60%),
+    linear-gradient(180deg, #2d343f, #1d222a);
+  border: 1px solid #424b59;
+  text-shadow: 0 1px 0 rgba(0,0,0,.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.5);
+}
+body.theme-steel .btn-orange {
+  background: linear-gradient(180deg, #c47619, #7a4708);
+  border-color: #4a2c05;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0,0,0,.5);
+}
+
+body.theme-steel .res-row > div,
+body.theme-steel .stat-row > div {
+  border-right: 1px solid #2a313c;
+}
+
+body.theme-steel input,
+body.theme-steel select,
+body.theme-steel textarea {
+  background: #14181d;
+  border: 1px solid #353c48;
+  color: #d4dde8;
+}
+
+body.theme-steel .tab {
+  background: #1c2027;
+  border-color: #353c48;
+  text-shadow: 0 1px 0 rgba(0,0,0,.5);
+}
+body.theme-steel .tab.active {
+  background: linear-gradient(180deg, #b06b1a, #7e4b0c);
+}
+
+body.theme-steel .bar {
+  background: #0f1216;
+  border-color: #353c48;
+}
+
+body.theme-steel .toast {
+  background: rgba(28, 32, 38, .96);
+  border-color: #4c5462;
+  border-left-color: #b6c780;
+}
+
+/* ===================================================================
+   ТЕМА 3: КИБЕР-ВОЙНА (футуристическая военная HUD-стилистика)
+   Глубокая синева, неоновый бирюзовый, glassmorphism, угловые рамки.
+   Активируется через body.theme-cyber
+   =================================================================== */
+body.theme-cyber {
+  --bg: #040810;
+  --panel: #0a1424;
+  --panel-2: #0e1d33;
+  --border: #1e3a5f;
+  --border-dim: #14253d;
+  --text: #cbe4ff;
+  --dim: #6789a8;
+  --green: #00ffd1;          /* неон-зелёный */
+  --money: #00ffaa;
+  --gold: #ffcd00;
+  --hp: #ff3a4d;
+  --en: #00d4ff;
+  --am: #ffb800;
+  --red: #ff4060;
+  --orange-1: #00d4ff;       /* акцент на холодных тонах */
+  --orange-2: #0288d1;
+}
+
+body.theme-cyber {
+  background-color: #02050a;
+  background-image:
+    /* HUD-сетка: тонкие линии */
+    linear-gradient(rgba(0, 212, 255, .04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, .04) 1px, transparent 1px),
+    /* свечение по углам */
+    radial-gradient(ellipse 60% 40% at 10% 0%, rgba(0, 212, 255, .12), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(0, 255, 209, .08), transparent 60%),
+    /* основа */
+    linear-gradient(180deg, #061425 0%, #02050a 100%);
+  background-size: 32px 32px, 32px 32px, auto, auto, auto;
+  background-attachment: fixed;
+  font-family: 'Rajdhani', 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+body.theme-cyber #wrap {
+  background: rgba(6, 16, 32, .65);
+  backdrop-filter: blur(8px);
+  border-left: 1px solid #1e3a5f;
+  border-right: 1px solid #1e3a5f;
+  box-shadow: 0 0 40px rgba(0, 212, 255, .15);
+}
+
+body.theme-cyber #header {
+  background: linear-gradient(135deg, #0e1d33 0%, #061425 100%);
+  border-bottom: 1px solid #00d4ff;
+  box-shadow: 0 0 20px rgba(0, 212, 255, .25), inset 0 1px 0 rgba(0, 212, 255, .15);
+  position: relative;
+}
+/* Угловые декоративные элементы шапки */
+body.theme-cyber #header::before,
+body.theme-cyber #header::after {
+  content: ''; position: absolute; top: 6px; width: 14px; height: 14px;
+  border: 2px solid #00d4ff; opacity: .8;
+}
+body.theme-cyber #header::before { left: 6px;  border-right: none; border-bottom: none; }
+body.theme-cyber #header::after  { right: 6px; border-left: none;  border-bottom: none; }
+
+body.theme-cyber .logo {
+  color: #00d4ff;
+  text-shadow: 0 0 8px rgba(0, 212, 255, .8), 0 0 18px rgba(0, 212, 255, .35);
+  letter-spacing: .5em;
+}
+body.theme-cyber .logo .star { color: #00ffd1; text-shadow: 0 0 6px #00ffd1; }
+
+/* Карточки: матовое стекло с углами и неоновой полосой сверху */
+body.theme-cyber .card {
+  background: linear-gradient(180deg, rgba(14, 29, 51, .8), rgba(10, 20, 36, .6));
+  border: 1px solid #1e3a5f;
+  border-top: 1px solid #00d4ff;
+  border-radius: 0;
+  position: relative;
+  backdrop-filter: blur(4px);
+  box-shadow: inset 0 0 30px rgba(0, 212, 255, .04), 0 2px 8px rgba(0, 0, 0, .4);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+/* Кнопки меню: HUD-стиль с угловыми зарубками */
+body.theme-cyber .menu-btn {
+  background: linear-gradient(180deg, rgba(0, 212, 255, .08), rgba(14, 29, 51, .6));
+  border: 1px solid #1e5380;
+  color: #cbe4ff;
+  border-radius: 0;
+  position: relative;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: all .15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+body.theme-cyber .menu-btn:hover {
+  background: linear-gradient(180deg, rgba(0, 212, 255, .18), rgba(14, 29, 51, .8));
+  border-color: #00d4ff;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(0, 212, 255, .35), inset 0 0 12px rgba(0, 212, 255, .15);
+}
+
+body.theme-cyber .btn {
+  background: linear-gradient(180deg, rgba(0, 212, 255, .12), rgba(14, 29, 51, .6));
+  border: 1px solid #1e5380;
+  color: #cbe4ff;
+  border-radius: 0;
+  letter-spacing: 0.06em;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+body.theme-cyber .btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(0, 212, 255, .25), rgba(14, 29, 51, .8));
+  border-color: #00d4ff;
+  box-shadow: 0 0 12px rgba(0, 212, 255, .4);
+}
+body.theme-cyber .btn-orange {
+  background: linear-gradient(180deg, #00d4ff, #0288d1);
+  color: #001220;
+  border-color: #00ffd1;
+  text-shadow: none;
+  font-weight: 700;
+  box-shadow: 0 0 16px rgba(0, 212, 255, .5);
+}
+body.theme-cyber .btn-orange:hover {
+  background: linear-gradient(180deg, #00ffd1, #00d4ff);
+  box-shadow: 0 0 24px rgba(0, 255, 209, .7);
+}
+body.theme-cyber .btn-green {
+  background: linear-gradient(180deg, #00ffd1, #00a880);
+  color: #001a14;
+  border-color: #00ffd1;
+}
+body.theme-cyber .btn-red {
+  background: linear-gradient(180deg, #ff4060, #c01a3a);
+  color: #fff;
+  border-color: #ff6080;
+}
+
+body.theme-cyber .res-row > div,
+body.theme-cyber .stat-row > div {
+  border-right: 1px solid #1e3a5f;
+}
+body.theme-cyber .badge {
+  background: rgba(0, 212, 255, .2);
+  border: 1px solid #00d4ff;
+  color: #00d4ff;
+  border-radius: 0;
+  text-shadow: 0 0 4px rgba(0, 212, 255, .6);
+}
+body.theme-cyber .badge.green {
+  background: rgba(0, 255, 209, .2);
+  border-color: #00ffd1;
+  color: #00ffd1;
+}
+
+body.theme-cyber input,
+body.theme-cyber select,
+body.theme-cyber textarea {
+  background: #061425;
+  border: 1px solid #1e5380;
+  color: #cbe4ff;
+  border-radius: 0;
+}
+body.theme-cyber input:focus,
+body.theme-cyber select:focus,
+body.theme-cyber textarea:focus {
+  border-color: #00d4ff;
+  box-shadow: 0 0 0 1px #00d4ff, 0 0 8px rgba(0, 212, 255, .3);
+}
+
+body.theme-cyber .tab {
+  background: rgba(14, 29, 51, .6);
+  border: 1px solid #1e3a5f;
+  color: #cbe4ff;
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+body.theme-cyber .tab.active {
+  background: linear-gradient(180deg, #00d4ff, #0288d1);
+  color: #001220;
+  border-color: #00ffd1;
+  box-shadow: 0 0 12px rgba(0, 212, 255, .4);
+}
+
+body.theme-cyber .bar {
+  background: #02091a;
+  border: 1px solid #1e3a5f;
+  border-radius: 0;
+}
+body.theme-cyber .bar-fill.xp, body.theme-cyber .bar-fill.gold {
+  background: linear-gradient(90deg, #00d4ff, #00ffd1);
+  box-shadow: 0 0 8px rgba(0, 212, 255, .5);
+}
+body.theme-cyber .bar-fill.hp { background: linear-gradient(90deg, #ff4060, #ff8090); }
+body.theme-cyber .bar-fill.en { background: linear-gradient(90deg, #00d4ff, #0288d1); }
+body.theme-cyber .bar-fill.am { background: linear-gradient(90deg, #ffcd00, #ffb800); }
+
+body.theme-cyber .toast {
+  background: rgba(6, 16, 32, .96);
+  border: 1px solid #00d4ff;
+  border-left: 4px solid #00ffd1;
+  color: #cbe4ff;
+  box-shadow: 0 0 16px rgba(0, 212, 255, .3);
+  border-radius: 0;
+}
+
+body.theme-cyber .title {
+  color: #00d4ff;
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 6px rgba(0, 212, 255, .4);
+  border-bottom: 1px solid rgba(0, 212, 255, .25);
+  padding-bottom: 6px;
+}
+
+body.theme-cyber .gold { color: #00d4ff; }
+body.theme-cyber .name { color: #ffffff; }
+body.theme-cyber .money { color: #00ffd1; }
+
+body.theme-cyber .ic-gold::before { content: '◆'; color: #00d4ff; text-shadow: 0 0 6px #00d4ff; }
+
+/* ===================================================================
+   ТЕМА 3: КИБЕР-ВОЙНА (футуристический военный HUD)
+   Голографический интерфейс: тёмно-синяя глубина, неоновое свечение,
+   угловые скосы (clip-path) на карточках, тонкий геометрический шрифт.
+   Активируется body.theme-cyber
+   =================================================================== */
+body.theme-cyber {
+  --bg: #050810;
+  --panel: #0a1320;
+  --panel-2: #0f1c2e;
+  --border: #1e3a5f;
+  --border-dim: #142844;
+  --text: #cfe6ff;
+  --dim: #5c7da3;
+  --green: #00d4ff;        /* основной неоновый бирюзовый */
+  --money: #00ffd1;        /* зелёный неон */
+  --gold: #ffce47;         /* золото немного приглушённое */
+  --hp: #ff3b6b;
+  --en: #00b8ff;
+  --am: #ffaa00;
+  --red: #ff4d6d;
+  --orange-1: #00a8d4;     /* у кнопок будет бирюзовый акцент */
+  --orange-2: #006b8c;
+}
+
+body.theme-cyber {
+  background-color: #03060e;
+  background-image:
+    /* лёгкие сканлайны для эффекта монитора */
+    repeating-linear-gradient(0deg,
+      rgba(0, 212, 255, .025) 0 1px,
+      transparent 1px 3px),
+    /* тонкая сетка HUD 32x32 */
+    linear-gradient(rgba(0, 200, 255, .04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 200, 255, .04) 1px, transparent 1px),
+    /* радиальные пятна свечения по углам */
+    radial-gradient(ellipse 60% 40% at 10% 5%, rgba(0, 212, 255, .12), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 95%, rgba(0, 255, 209, .08), transparent 60%),
+    /* основной градиент глубины */
+    linear-gradient(180deg, #050a14 0%, #020408 100%);
+  background-size: auto, 32px 32px, 32px 32px, auto, auto, auto;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace, sans-serif;
+  letter-spacing: 0.01em;
+}
+
+body.theme-cyber #wrap {
+  background: rgba(8, 16, 28, .55);
+  border-left: 1px solid #1e3a5f;
+  border-right: 1px solid #1e3a5f;
+  box-shadow: 0 0 60px rgba(0, 100, 180, .25), inset 0 0 100px rgba(0, 30, 60, .3);
+  backdrop-filter: blur(2px);
+}
+
+body.theme-cyber #header {
+  background: linear-gradient(180deg, #0a1828 0%, #050a14 100%);
+  border-bottom: 1px solid #1e3a5f;
+  box-shadow: 0 0 20px rgba(0, 212, 255, .15);
+  position: relative;
+}
+/* Угловые HUD-скобки на шапке */
+body.theme-cyber #header::before,
+body.theme-cyber #header::after {
+  content: '';
+  position: absolute;
+  width: 18px; height: 18px;
+  border: 2px solid #00d4ff;
+  box-shadow: 0 0 8px rgba(0, 212, 255, .6);
+}
+body.theme-cyber #header::before { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+body.theme-cyber #header::after  { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+
+body.theme-cyber .logo {
+  color: #00d4ff;
+  text-shadow: 0 0 12px rgba(0, 212, 255, .8), 0 0 30px rgba(0, 212, 255, .4);
+  letter-spacing: .5em;
+  font-family: 'Orbitron', 'JetBrains Mono', monospace;
+  font-weight: 700;
+}
+
+/* Карточки — угловые «дисплеи» с обрезкой углов */
+body.theme-cyber .card {
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, .04) 0%, transparent 30%),
+    linear-gradient(180deg, rgba(20, 40, 65, .85), rgba(10, 20, 35, .9));
+  border: 1px solid #1e3a5f;
+  border-radius: 0;
+  /* Срезы по двум углам — визитная карточка кибер-HUD */
+  clip-path: polygon(
+    14px 0, 100% 0,
+    100% calc(100% - 14px), calc(100% - 14px) 100%,
+    0 100%, 0 14px
+  );
+  position: relative;
+  box-shadow: 0 0 12px rgba(0, 180, 255, .1), inset 0 0 30px rgba(0, 60, 100, .15);
+}
+body.theme-cyber .card::before {
+  /* Светящаяся линия слева как индикатор активности */
+  content: '';
+  position: absolute;
+  left: 0; top: 18px; bottom: 18px; width: 2px;
+  background: linear-gradient(180deg, transparent, #00d4ff, transparent);
+  box-shadow: 0 0 8px rgba(0, 212, 255, .8);
+}
+
+/* Кнопки меню — стилизованы под HUD-интерфейс */
+body.theme-cyber .menu-btn {
+  background:
+    linear-gradient(180deg, rgba(0, 212, 255, .08) 0%, transparent 50%),
+    linear-gradient(180deg, #0f1c2e, #0a1320);
+  border: 1px solid #1e3a5f;
+  color: #cfe6ff;
+  border-radius: 0;
+  clip-path: polygon(
+    10px 0, 100% 0,
+    100% calc(100% - 10px), calc(100% - 10px) 100%,
+    0 100%, 0 10px
+  );
+  text-shadow: 0 0 6px rgba(0, 212, 255, .3);
+  transition: all .15s ease;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+}
+body.theme-cyber .menu-btn:hover {
+  background:
+    linear-gradient(180deg, rgba(0, 212, 255, .18) 0%, transparent 50%),
+    linear-gradient(180deg, #14283f, #0d1828);
+  box-shadow: 0 0 16px rgba(0, 212, 255, .25), inset 0 0 12px rgba(0, 212, 255, .12);
+  border-color: #00d4ff;
+}
+
+/* Стандартные кнопки */
+body.theme-cyber .btn {
+  background: linear-gradient(180deg, #14283f, #0a1320);
+  border: 1px solid #1e3a5f;
+  color: #cfe6ff;
+  border-radius: 0;
+  clip-path: polygon(
+    8px 0, 100% 0,
+    100% calc(100% - 8px), calc(100% - 8px) 100%,
+    0 100%, 0 8px
+  );
+  text-shadow: 0 0 4px rgba(0, 212, 255, .3);
+  letter-spacing: 0.04em;
+  transition: all .15s ease;
+}
+body.theme-cyber .btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #1a3552, #0f1c2e);
+  box-shadow: 0 0 12px rgba(0, 212, 255, .35);
+  border-color: #00d4ff;
+}
+body.theme-cyber .btn-orange {
+  background: linear-gradient(180deg, #00a8d4, #006b8c);
+  border-color: #00d4ff;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(0, 212, 255, .9), 0 1px 0 rgba(0,0,0,.5);
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(0, 212, 255, .4);
+}
+body.theme-cyber .btn-orange:hover:not(:disabled) {
+  background: linear-gradient(180deg, #00c8f7, #00829b);
+  box-shadow: 0 0 20px rgba(0, 212, 255, .6);
+}
+body.theme-cyber .btn-green {
+  background: linear-gradient(180deg, #00b8a0, #006b5a);
+  border-color: #00ffd1;
+  color: #fff;
+  text-shadow: 0 0 6px rgba(0, 255, 209, .8);
+}
+body.theme-cyber .btn-red {
+  background: linear-gradient(180deg, #cc3355, #8b1b35);
+  border-color: #ff4d6d;
+  color: #fff;
+  text-shadow: 0 0 6px rgba(255, 77, 109, .6);
+}
+
+body.theme-cyber input,
+body.theme-cyber select,
+body.theme-cyber textarea {
+  background: rgba(5, 12, 22, .85);
+  border: 1px solid #1e3a5f;
+  border-radius: 0;
+  color: #cfe6ff;
+  font-family: inherit;
+}
+body.theme-cyber input:focus,
+body.theme-cyber select:focus,
+body.theme-cyber textarea:focus {
+  border-color: #00d4ff;
+  box-shadow: 0 0 10px rgba(0, 212, 255, .35);
+  outline: none;
+}
+
+/* Прогресс-бары: неоновое свечение */
+body.theme-cyber .bar {
+  background: #050a14;
+  border: 1px solid #1e3a5f;
+  border-radius: 0;
+}
+body.theme-cyber .bar-fill {
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* Вкладки */
+body.theme-cyber .tab {
+  background: rgba(15, 28, 46, .7);
+  border: 1px solid #1e3a5f;
+  border-radius: 0;
+  clip-path: polygon(
+    8px 0, calc(100% - 8px) 0,
+    100% 100%, 0 100%
+  );
+  text-shadow: 0 0 4px rgba(0, 212, 255, .3);
+}
+body.theme-cyber .tab.active {
+  background: linear-gradient(180deg, #00a8d4, #006b8c);
+  color: #fff;
+  text-shadow: 0 0 8px rgba(0, 212, 255, .9);
+  box-shadow: 0 0 14px rgba(0, 212, 255, .4);
+}
+
+/* Бейджи */
+body.theme-cyber .badge {
+  background: linear-gradient(180deg, #ffce47, #c89a0e);
+  color: #1a1a1a;
+  text-shadow: none;
+  border-radius: 0;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(255, 206, 71, .4);
+}
+body.theme-cyber .badge.green {
+  background: linear-gradient(180deg, #00ffd1, #008c70);
+  color: #001a14;
+  box-shadow: 0 0 8px rgba(0, 255, 209, .4);
+}
+
+/* Иконки шапки переопределяем под кибер-стиль */
+body.theme-cyber .ic-gold::before { content: '◆'; color: #ffce47; text-shadow: 0 0 8px rgba(255, 206, 71, .8); }
+
+/* Тосты */
+body.theme-cyber .toast {
+  background: rgba(8, 16, 28, .96);
+  border: 1px solid #1e3a5f;
+  border-left: 3px solid #00d4ff;
+  color: #cfe6ff;
+  border-radius: 0;
+  text-shadow: 0 0 4px rgba(0, 212, 255, .2);
+  box-shadow: 0 0 18px rgba(0, 212, 255, .25), 0 4px 14px rgba(0,0,0,.6);
+  clip-path: polygon(
+    10px 0, 100% 0,
+    100% 100%, 0 100%, 0 10px
+  );
+}
+
+/* Линии и сепараторы */
+body.theme-cyber .hr {
+  border-top: 1px solid #1e3a5f;
+  background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+  height: 1px;
+  border: 0;
+}
+
+/* Шапка ресурсов — цифровые акценты */
+body.theme-cyber .res-row > div,
+body.theme-cyber .stat-row > div {
+  border-right: 1px solid #142844;
+}
+body.theme-cyber .money { color: var(--money); text-shadow: 0 0 6px rgba(0, 255, 209, .4); }
+body.theme-cyber .gold  { color: var(--gold);  text-shadow: 0 0 6px rgba(255, 206, 71, .4); }
+
+/* Акционный баннер */
+body.theme-cyber .sale-banner {
+  background: linear-gradient(180deg, rgba(0, 212, 255, .15), rgba(0, 212, 255, .04));
+  border: 1px solid #00d4ff;
+  color: #cfe6ff;
+  border-radius: 0;
+  text-shadow: 0 0 6px rgba(0, 212, 255, .4);
+  box-shadow: 0 0 18px rgba(0, 212, 255, .25);
+}
+body.theme-cyber .sale-banner b { color: #00ffd1; }

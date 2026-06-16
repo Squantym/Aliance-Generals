@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>ГЕНЕРАЛЫ — браузерная военная игра</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Колонка игры: шапка с ресурсами + сменное содержимое экрана -->
+  <div id="wrap">
+    <header id="header"></header>
+    <main id="content"></main>
+  </div>
+
+  <!-- Контейнер всплывающих уведомлений (награды, ошибки, события) -->
+  <div id="toasts"></div>
+
+  <!-- Порядок подключения важен: сначала ядро, потом экраны -->
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/screens/core.js"></script>
+  <script src="/js/screens/war.js"></script>
+  <script src="/js/screens/economy.js"></script>
+  <script src="/js/screens/market.js"></script>
+  <script src="/js/screens/social.js"></script>
+  <script>App.init();</script>
+</body>
+</html>

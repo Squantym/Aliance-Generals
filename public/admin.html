@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ГЕНЕРАЛЫ — админ-панель</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="wrap">
+    <header id="header">
+      <div class="logo"><span class="star">★</span> ШТАБ <span class="star">★</span></div>
+    </header>
+    <main id="content"><div class="loading">Загрузка…</div></main>
+  </div>
+  <div id="toasts"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <!-- Заглушка App: api.js при 401 дёргает App.me и location.hash -->
+  <script>
+    const App = { me: null, go() {} };
+    // Применяем сохранённую тему оформления
+    document.body.className = 'theme-' + (localStorage.getItem('gtheme') || 'classic');
+  </script>
+  <script src="/js/admin.js"></script>
+  <script>Admin.init();</script>
+</body>
+</html>

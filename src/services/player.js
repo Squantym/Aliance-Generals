@@ -1,0 +1,553 @@
+// ===================================================================
+// src/services/player.js — «сердце» игрока
+// Здесь всё, что описывает состояние бойца: ресурсы и их регенерация,
+// опыт/уровни, навыки, расчёт армии и боевой мощи, доход построек,
+// банк, профиль. Другие сервисы опираются на этот модуль.
+// ===================================================================
+
+const config = require('../../config/gameConfig');
+const db = require('../core/db');
+const u = require('../core/utils');
+
+const HOUR = config.INCOME_PERIOD_MS;
+
+function users() { return db.load('users', {}); }
+function alliances() { return db.load('alliances', {}); }
+
+// Скидка/бонус от трофеев по ключу apply (hospital, upkeep, bank_fee и т.д.)
+function trophyDiscountPct(user, applyKey) {
+  try { return require('./trophies').discountPct(user, applyKey); }
+  catch (e) { return 0; }
+}
+
+// ---------- Максимумы ресурсов с учётом навыков ----------
+function maxima(user) {
+  return {
+    hp: config.PLAYER.BASE_HP + user.skills.health * config.PLAYER.HP_PER_SKILL,
+    en: config.PLAYER.BASE_ENERGY + user.skills.energy * config.PLAYER.EN_PER_SKILL,
+    am: config.PLAYER.BASE_AMMO + user.skills.ammo * config.PLAYER.AMMO_PER_SKILL,
+  };
+}
+
+// Регенерация одного ресурса: r = {cur, t}, t — время последнего тика
+function applyRegen(r, max, intervalSec, now) {
+  const interval = intervalSec * 1000;
+  if (r.cur >= max) { r.t = now; return; }
+  const ticks = Math.floor((now - r.t) / interval);
+  if (ticks > 0) {
+    r.cur = Math.min(max, r.cur + ticks);
+    r.t += ticks * interval;
+    if (r.cur >= max) r.t = now;
+  }
+}
+
+// ---------- Деньги, золото, опыт ----------
+function addMoney(user, amount, earned = true) {
+  user.dollars = Math.max(0, Math.round(user.dollars + amount));
+  // Счётчик «всего заработано» нужен достижению «Олигарх»
+  if (amount > 0 && earned) user.counters.moneyEarned += Math.round(amount);
+}
+
+function addGold(user, amount) {
+  user.gold = Math.max(0, Math.round(user.gold + amount));
+}
+
+// Множитель опыта от страны (Украина +7%)
+function xpMul(user) {
+  const c = config.COUNTRY_BY_ID[user.country];
+  return (c && c.mod.xp) || 1;
+}
+
+// Начислить опыт; при достижении порога — повышение уровня,
+// +3 очка навыков и полное восстановление ресурсов
+function addXp(user, amount, notices) {
+  // К опыту применяется множитель страны и клановый бонус академии
+  const legionXp = legionBonus(user, 'xp');
+  user.xp += Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp)));
+  let ups = 0;
+  while (user.level < config.PLAYER.MAX_LEVEL && user.xp >= config.xpToNext(user.level)) {
+    user.xp -= config.xpToNext(user.level);
+    user.level++;
+    user.skillPoints += config.PLAYER.SKILLPOINTS_PER_LEVEL;
+    ups++;
+  }
+  if (ups > 0) {
+    const mx = maxima(user);
+    user.res.hp.cur = mx.hp; user.res.en.cur = mx.en; user.res.am.cur = mx.am;
+    const now = Date.now();
+    user.res.hp.t = now; user.res.en.t = now; user.res.am.t = now;
+    if (notices) notices.push(`⭐ Новый уровень: ${user.level}! +${ups * config.PLAYER.SKILLPOINTS_PER_LEVEL} очка(ов) навыков, ресурсы восстановлены.`);
+  }
+  user.counters.level = user.level;
+  return ups;
+}
+
+// ---------- Навыки ----------
+function spendSkill(user, stat) {
+  const cost = config.SKILL_COSTS[stat];
+  if (!cost) throw new u.ApiError('Неизвестный навык');
+  if (user.skillPoints < cost) throw new u.ApiError(`Не хватает очков навыков (нужно ${cost})`);
+  user.skillPoints -= cost;
+  user.skills[stat]++;
+  // Прирост максимума сразу отдаём и в текущее значение — приятнее играть
+  const mx = maxima(user);
+  if (stat === 'energy') user.res.en.cur = Math.min(mx.en, user.res.en.cur + config.PLAYER.EN_PER_SKILL);
+  if (stat === 'health') user.res.hp.cur = Math.min(mx.hp, user.res.hp.cur + config.PLAYER.HP_PER_SKILL);
+  if (stat === 'ammo') user.res.am.cur = Math.min(mx.am, user.res.am.cur + 1);
+}
+
+// ---------- Группы (альянс и легион) и вместимость армии ----------
+function legions() { return db.load('legions', {}); }
+
+function allianceOf(user) {
+  return user.allianceId ? alliances()[user.allianceId] || null : null;
+}
+function legionOf(user) {
+  return user.legionId ? legions()[user.legionId] || null : null;
+}
+
+function allianceInfo(user) {
+  const a = allianceOf(user);
+  return a ? { id: a.id, name: a.name, members: a.members.length, leaderId: a.leaderId } : null;
+}
+function legionInfo(user) {
+  const l = legionOf(user);
+  return l ? { id: l.id, name: l.name, members: l.members.length, leaderId: l.leaderId } : null;
+}
+
+// Вместимость армии в бой:
+//   30 базы + 10 за каждого участника альянса
+// Легион capacity НЕ даёт — он работает через клановые постройки и битвы клан-vs-клан
+function capacity(user) {
+  const a = allianceOf(user);
+  const aBonus = a ? config.ALLIANCE.PER_MEMBER * a.members.length : 0;
+  return config.ALLIANCE.BASE_CAPACITY + aBonus;
+}
+
+// Бонусы от клановых построек легиона (множители 1.05, 1.10, ...)
+// type: 'atk' | 'def' | 'income' | 'xp' | 'loot' | 'war_def' | 'def_loss'
+function legionBonus(user, type) {
+  const l = legionOf(user);
+  if (!l || !l.buildings) return 0;
+  let pct = 0;
+  for (const b of config.LEGION_BUILDINGS) {
+    if (b.apply === type) {
+      const lvl = l.buildings[b.id] || 0;
+      pct += lvl * b.perLvl;
+    }
+  }
+  return pct / 100; // в долях единицы (0.05 = +5%)
+}
+
+// ---------- Эффекты (допинг, падлянки, командиры) ----------
+function effMul(user, type) {
+  const now = Date.now();
+  return user.effects
+    .filter((e) => e.type === type && e.expiresAt > now)
+    .reduce((m, e) => m * (1 + e.value / 100), 1);
+}
+
+function effectsView(user) {
+  const now = Date.now();
+  return user.effects.map((e) => ({
+    name: e.name,
+    desc: `${e.value > 0 ? '+' : ''}${e.value}% (${e.type.includes('atk') ? 'атака' : e.type.includes('def') ? 'защита' : e.type.includes('loot') ? 'грабёж' : e.type.includes('income') ? 'доход' : 'содержание'})`,
+    secLeft: Math.max(0, Math.ceil((e.expiresAt - now) / 1000)),
+  }));
+}
+
+// ---------- Армия и боевая мощь ----------
+// Собирает войско для боя: сперва секретные разработки (они сильнейшие),
+// затем обычная техника, отсортированная по нужному параметру,
+// пока не упрёмся в вместимость. mode: 'atk' или 'def'.
+function buildArmy(user, mode) {
+  const cap = capacity(user);
+  const country = config.COUNTRY_BY_ID[user.country] || { mod: {} };
+  const entries = [];
+
+  // Секретные разработки: у каждой свои индивидуальные atk/def.
+  // С 51 уровня — +1% за каждый уровень выше 50,
+  // +0.5% за каждую сверхсекретную в коллекции (только для секретных!).
+  for (const dev of config.SECRET_DEVS) {
+    const n = user.secretDevs[dev.id] || 0;
+    if (n > 0) {
+      entries.push({
+        name: dev.name, count: n, secret: true,
+        atk: config.secretAtk(user, dev),
+        def: config.secretDef(user, dev),
+      });
+    }
+  }
+  if (user.superSecret > 0) {
+    entries.push({
+      name: config.SUPER_DEV.name, count: user.superSecret, secret: true,
+      atk: config.secretAtk(user, config.SUPER_DEV),
+      def: config.secretDef(user, config.SUPER_DEV),
+    });
+  }
+
+  // Обычная техника: по каждому юниту проходим все этапы модернизации
+  // (mk0, mk1, mk2). Каждый этап даёт отдельную «единицу строя» с разными
+  // характеристиками — Mk2 в первую очередь идёт в бой, потом Mk1, потом Mk0.
+  for (const [unitId, mkMap] of Object.entries(user.units)) {
+    const cu = config.UNIT_BY_ID[unitId];
+    if (!cu) continue;
+    for (let mk = 0; mk <= 2; mk++) {
+      const count = (mkMap && mkMap[mk]) || 0;
+      if (count <= 0) continue;
+      let atk = cu.attack * config.MK_MULT[mk];
+      let def = cu.defense * config.MK_MULT[mk];
+      if (country.mod.atkType === cu.type) atk *= 1.05; // Германия/Россия/США
+      if (country.mod.defAll) def *= 1.05;              // Казахстан
+      entries.push({
+        name: cu.name + (mk ? ` Mk${mk}` : ''),
+        unitId, count, secret: false, mk,
+        atk: Math.round(atk), def: Math.round(def),
+      });
+    }
+  }
+
+  // Берём сильнейших, пока есть место
+  entries.sort((a, b) => (mode === 'atk' ? b.atk - a.atk : b.def - a.def));
+  let left = cap, taken = 0, power = 0;
+  for (const e of entries) {
+    const t = Math.min(e.count, left);
+    e.taken = t;
+    left -= t; taken += t;
+    power += t * (mode === 'atk' ? e.atk : e.def);
+    if (left <= 0) break;
+  }
+  entries.forEach((e) => { if (e.taken === undefined) e.taken = 0; });
+  // Клановые бонусы от построек легиона: умножаем итоговую мощь
+  const legionAtk = legionBonus(user, 'atk');
+  const legionDef = legionBonus(user, 'def');
+  power = Math.round(power * (1 + (mode === 'atk' ? legionAtk : legionDef)));
+  return { power, taken, cap, entries };
+}
+
+// Суммарные очки защиты оборонительных построек
+function buildingDef(user) {
+  let total = 0;
+  for (const [id, count] of Object.entries(user.buildings)) {
+    const b = config.BUILDING_BY_ID[id];
+    if (b && b.kind === 'defense') total += b.def * count;
+  }
+  return total;
+}
+
+// Доход построек в час (с бонусом страны и эффектом командира)
+function totalIncome(user) {
+  let total = 0;
+  for (const [id, count] of Object.entries(user.buildings)) {
+    const b = config.BUILDING_BY_ID[id];
+    if (b && b.kind === 'income') total += b.income * count;
+  }
+  const country = config.COUNTRY_BY_ID[user.country];
+  if (country && country.mod.income) total *= country.mod.income;
+  total *= (1 + legionBonus(user, 'income'));
+  total *= (1 + trophyDiscountPct(user, 'income') / 100); // трофей «Квартмейстер»
+  return Math.round(total * effMul(user, 'income_pct'));
+}
+
+// Содержание всей техники в час (секретные разработки бесплатны)
+function totalUpkeep(user) {
+  let total = 0;
+  for (const [unitId, mkMap] of Object.entries(user.units)) {
+    const cu = config.UNIT_BY_ID[unitId];
+    if (!cu) continue;
+    const count = (mkMap[0] || 0) + (mkMap[1] || 0) + (mkMap[2] || 0);
+    total += cu.upkeep * count;
+  }
+  // Трофей «Снабженческие линии» снижает содержание
+  total *= (1 - trophyDiscountPct(user, 'upkeep') / 100);
+  return Math.round(total * effMul(user, 'upkeep_pct'));
+}
+
+// Общее количество техники одного типа (по всем mk)
+function unitTotalCount(user, unitId) {
+  const m = user.units[unitId];
+  if (!m) return 0;
+  return (m[0] || 0) + (m[1] || 0) + (m[2] || 0);
+}
+
+// Гарантирует наличие структуры { 0, 1, 2 } для юнита
+function ensureUnit(user, unitId) {
+  if (!user.units[unitId]) user.units[unitId] = { 0: 0, 1: 0, 2: 0 };
+  const m = user.units[unitId];
+  if (m[0] === undefined) m[0] = 0;
+  if (m[1] === undefined) m[1] = 0;
+  if (m[2] === undefined) m[2] = 0;
+  return m;
+}
+
+// ---------- Сверхсекретная разработка ----------
+// «Абсолют» выдаётся за каждый ПОЛНЫЙ комплект из 9 разных разработок.
+// Комплекты не сгорают: 10 штук каждого вида = 10 «Абсолютов».
+function syncSuper(user, notices) {
+  let minCount = Infinity;
+  for (const dev of config.SECRET_DEVS) {
+    minCount = Math.min(minCount, user.secretDevs[dev.id] || 0);
+  }
+  if (!Number.isFinite(minCount)) minCount = 0;
+  if (minCount > user.superSecret) {
+    const gained = minCount - user.superSecret;
+    user.superSecret = minCount;
+    if (notices) notices.push(`🛸 Собран полный комплект разработок! Получено: ${config.SUPER_DEV.name} ×${gained}`);
+    return gained;
+  }
+  return 0;
+}
+
+// ---------- «Освежение» игрока перед каждым запросом ----------
+// Лениво досчитываем всё, что должно было произойти со временем:
+// регенерацию, почасовой доход, истечение эффектов и окна фаталити.
+function refresh(user) {
+  const now = Date.now();
+  const mx = maxima(user);
+  applyRegen(user.res.hp, mx.hp, config.REGEN.hp, now);
+  // Трофей «Логистика» снижает интервал регенерации энергии (до −30%)
+  const enInterval = Math.max(5, Math.round(config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100)));
+  applyRegen(user.res.en, mx.en, enInterval, now);
+  applyRegen(user.res.am, mx.am, config.REGEN.am, now);
+
+  // Истёкшие эффекты удаляем
+  user.effects = user.effects.filter((e) => e.expiresAt > now);
+
+  // Почасовая выплата: доход минус содержание (может уйти в минус,
+  // но баланс не опускается ниже нуля)
+  if (!user.lastIncomeAt) user.lastIncomeAt = now;
+  const hours = Math.floor((now - user.lastIncomeAt) / HOUR);
+  if (hours > 0) {
+    const net = (totalIncome(user) - totalUpkeep(user)) * hours;
+    if (net >= 0) addMoney(user, net, true);
+    else user.dollars = Math.max(0, user.dollars + net);
+    user.lastIncomeAt += hours * HOUR;
+  }
+
+  syncSuper(user, null);
+
+  // Просроченное окно фаталити закрывается
+  if (user.pendingFatality && user.pendingFatality.exp < now) user.pendingFatality = null;
+
+  // Страховка для существующих игроков: новые поля при обновлении версии
+  if (user.legionId === undefined) user.legionId = null;
+  if (!user.modernQueue) user.modernQueue = [];
+
+  // Миграция формата техники: со старого `units: { id: 30 }` + `modernization: { id: 1 }`
+  // на новый `units: { id: { 0:0, 1:30, 2:0 } }`. Делается один раз.
+  for (const [unitId, val] of Object.entries(user.units || {})) {
+    if (typeof val === 'number') {
+      const mkLevel = (user.modernization || {})[unitId] || 0;
+      const m = { 0: 0, 1: 0, 2: 0 };
+      m[mkLevel] = val;
+      user.units[unitId] = m;
+    } else if (val && typeof val === 'object') {
+      if (val[0] === undefined) val[0] = 0;
+      if (val[1] === undefined) val[1] = 0;
+      if (val[2] === undefined) val[2] = 0;
+    }
+  }
+  // Старое поле modernization больше не нужно
+  if (user.modernization) delete user.modernization;
+
+  // Завершение готовых процессов модернизации
+  if (user.modernQueue.length > 0) {
+    const now = Date.now();
+    const remaining = [];
+    for (const proc of user.modernQueue) {
+      if (proc.finishesAt <= now) {
+        const m = ensureUnit(user, proc.unitId);
+        m[proc.toMk] = (m[proc.toMk] || 0) + proc.qty;
+      } else {
+        remaining.push(proc);
+      }
+    }
+    user.modernQueue = remaining;
+  }
+
+  // Завершение готовых процессов прокачки трофеев
+  try { require('./trophies').checkCompleted(user); } catch (e) {}
+  // Завершение готовых шагов миссий
+  try { require('./missions').checkCompleted(user, []); } catch (e) {}
+
+  // Страховка: если в конфиг добавили новые трофеи — инициализируем их
+  for (const t of config.TROPHIES) {
+    if (user.trophies[t.id] === undefined) user.trophies[t.id] = 0;
+  }
+  if (!user.club) user.club = {};
+  user.counters.level = user.level;
+}
+
+// ---------- Рейтинг и звание ----------
+function rating(user) {
+  return Math.round(
+    user.level * 150 +
+    user.battle.wins * 5 +
+    user.battle.defWins * 2 +
+    user.battle.fatalities * 30 +
+    user.counters.missionStages * 10 +
+    user.counters.buildingsBuilt
+  );
+}
+
+function rank(level) {
+  let name = 'Рядовой';
+  for (const [lvl, title] of config.RANKS) {
+    if (level >= lvl) name = title;
+  }
+  return name;
+}
+
+function flag(user) {
+  const c = config.COUNTRY_BY_ID[user.country];
+  return c ? c.flag : '🏳';
+}
+
+// Поиск игрока по имени (без учёта регистра) — нужен почте и падлянкам
+function findByName(name) {
+  const low = String(name || '').trim().toLowerCase();
+  if (!low) return null;
+  return Object.values(users()).find((p) => p.name.toLowerCase() === low) || null;
+}
+
+// ---------- Банк ----------
+function bankDeposit(user, amount) {
+  amount = u.toInt(amount);
+  if (amount <= 0) throw new u.ApiError('Укажите сумму вклада');
+  if (amount > user.dollars) throw new u.ApiError('Недостаточно наличных');
+  user.dollars -= amount;
+  // Базовая комиссия 10% — снижается ОТНОСИТЕЛЬНО трофеем «Налоговая льгота».
+  // На 10 уровне трофея даёт −50% от комиссии → итог 5%.
+  const taxPct = trophyDiscountPct(user, 'bank_fee');
+  const fee = Math.max(0, config.BANK.DEPOSIT_FEE * (1 - taxPct / 100));
+  user.bank += Math.floor(amount * (1 - fee));
+}
+
+function bankWithdraw(user, amount) {
+  amount = u.toInt(amount);
+  if (amount <= 0) throw new u.ApiError('Укажите сумму снятия');
+  if (amount > user.bank) throw new u.ApiError('В хранилище нет такой суммы');
+  user.bank -= amount;
+  addMoney(user, amount, false); // снятие — не «заработок»
+}
+
+// ---------- Сводка для шапки и главного экрана (/api/me) ----------
+function resView(user) {
+  const now = Date.now();
+  const mx = maxima(user);
+  const one = (r, max, sec) => ({
+    cur: r.cur, max,
+    regenSec: sec,
+    toNextSec: r.cur >= max ? 0 : Math.max(0, Math.ceil((r.t + sec * 1000 - now) / 1000)),
+  });
+  return {
+    hp: one(user.res.hp, mx.hp, config.REGEN.hp),
+    en: one(user.res.en, mx.en, config.REGEN.en),
+    am: one(user.res.am, mx.am, config.REGEN.am),
+  };
+}
+
+function tutorialView(user) {
+  if (user.tutorial.done) return { done: true, total: config.TUTORIAL.length };
+  const q = config.TUTORIAL[user.tutorial.step];
+  return {
+    done: false,
+    step: user.tutorial.step,
+    total: config.TUTORIAL.length,
+    prologue: config.STORY_PROLOGUE,
+    quest: q ? {
+      title: q.title, story: q.story, goal: q.goal, screen: q.screen,
+      reward: `$${u.fmt(q.dollars)} и ${q.xp} опыта` +
+        (user.tutorial.step === config.TUTORIAL.length - 1 ? `, затем 🪙 ${config.TUTORIAL_FINAL_GOLD} золота за весь курс` : ''),
+    } : null,
+  };
+}
+
+function mePayload(user) {
+  const atk = buildArmy(user, 'atk');
+  const def = buildArmy(user, 'def');
+  const now = Date.now();
+  return {
+    id: user.id, name: user.name, isAdmin: !!user.isAdmin,
+    country: user.country, flag: flag(user), status: user.status,
+    level: user.level, xp: user.xp, xpNext: config.xpToNext(user.level),
+    rank: rank(user.level), rating: rating(user),
+    dollars: user.dollars, gold: user.gold, bank: user.bank,
+    skillPoints: user.skillPoints, skills: { ...user.skills },
+    res: resView(user),
+    battle: { ...user.battle },
+    ears: user.ears, tokens: user.tokens, earsLost: user.earsLost,
+    capacity: capacity(user),
+    power: { atk: atk.power, def: def.power, taken: atk.taken },
+    incomePerHour: totalIncome(user), upkeepPerHour: totalUpkeep(user),
+    nextPayoutSec: Math.max(0, Math.ceil((user.lastIncomeAt + HOUR - now) / 1000)),
+    alliance: allianceInfo(user),
+    legion: legionInfo(user),
+    tutorial: tutorialView(user),
+    pendingFatality: user.pendingFatality ? { name: user.pendingFatality.name } : null,
+    effects: effectsView(user),
+    unlocked: { production: user.level >= config.PRODUCTION_UNLOCK_LEVEL },
+    productionUnlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
+  };
+}
+
+// ---------- Публичный профиль (его видят другие игроки) ----------
+function publicProfile(target, viewer) {
+  const atk = buildArmy(target, 'atk');
+  const def = buildArmy(target, 'def');
+  const unitsList = [];
+  for (const [unitId, mkMap] of Object.entries(target.units)) {
+    const cu = config.UNIT_BY_ID[unitId];
+    if (!cu) continue;
+    for (let mk = 0; mk <= 2; mk++) {
+      const count = (mkMap && mkMap[mk]) || 0;
+      if (count > 0) {
+        unitsList.push({
+          name: cu.name + (mk ? ` Mk${mk}` : ''),
+          type: config.UNIT_TYPE_NAMES[cu.type],
+          count,
+        });
+      }
+    }
+  }
+  const buildingsList = Object.entries(target.buildings)
+    .map(([id, count]) => {
+      const b = config.BUILDING_BY_ID[id];
+      return b && count ? { name: b.name, count, kind: b.kind } : null;
+    })
+    .filter(Boolean);
+  const devsList = config.SECRET_DEVS
+    .map((d) => ({ name: d.name, count: target.secretDevs[d.id] || 0 }))
+    .filter((d) => d.count > 0);
+
+  return {
+    id: target.id, name: target.name, flag: flag(target), status: target.status,
+    level: target.level, rank: rank(target.level), rating: rating(target),
+    alliance: allianceInfo(target),
+    legion: legionInfo(target),
+    battle: { ...target.battle },
+    ears: target.ears, tokens: target.tokens, earsLost: target.earsLost,
+    power: { atk: atk.power, def: def.power },
+    capacity: capacity(target),
+    units: unitsList, buildings: buildingsList,
+    secretDevs: devsList, superSecret: target.superSecret,
+    createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
+    online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,
+    canAttack: !!viewer && viewer.id !== target.id &&
+      Math.abs(viewer.level - target.level) <= config.PLAYER.LEVEL_RANGE,
+  };
+}
+
+function setStatus(user, text) {
+  user.status = String(text || '').slice(0, 120);
+}
+
+module.exports = {
+  users, maxima, refresh, addMoney, addGold, addXp, xpMul, spendSkill,
+  allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
+  ensureUnit, unitTotalCount, trophyDiscountPct,
+  buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
+  rating, rank, flag, findByName,
+  bankDeposit, bankWithdraw,
+  mePayload, publicProfile, setStatus,
+};
