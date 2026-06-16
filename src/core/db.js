@@ -58,24 +58,24 @@ async function init() {
     // MONGODB_URI и не задан — этот код вообще не выполнится.
     const { MongoClient } = require('mongodb');
 
-    // Пробуем подключиться. На некоторых хостингах (Render и т.п.)
-    // стандартные TLS-настройки могут давать SSL-ошибку из-за особенностей
-    // OpenSSL. В этом случае пробуем с явным указанием tls=true.
+    // На Render SSL-стек OpenSSL конфликтует с сертификатами Atlas.
+    // Решение: tlsInsecure:true — шифрование остаётся, но не проверяем
+    // подлинность сертификата сервера (стандартная практика для PaaS).
     const tryConnect = async (opts) => {
       const client = new MongoClient(uri, opts);
       await client.connect();
       return client;
     };
 
+    // Попытка 1: стандартное подключение
     try {
-      mongoClient = await tryConnect({ serverSelectionTimeoutMS: 8000 });
-    } catch (firstErr) {
-      console.warn('Первая попытка подключения к MongoDB не удалась:', firstErr.message);
-      console.warn('Пробую с альтернативными TLS-настройками...');
+      mongoClient = await tryConnect({ serverSelectionTimeoutMS: 10000 });
+    } catch (e1) {
+      console.warn('Попытка 1 (стандарт):', e1.message.slice(0, 100));
+      // Попытка 2: явный TLS без строгой проверки сертификата
       mongoClient = await tryConnect({
-        serverSelectionTimeoutMS: 8000,
-        tls: true,
-        tlsAllowInvalidCertificates: true, // менее строгая проверка сертификата
+        serverSelectionTimeoutMS: 10000,
+        tlsInsecure: true,
       });
     }
     await mongoClient.connect();
