@@ -435,6 +435,39 @@ function bankWithdraw(user, amount) {
   addMoney(user, amount, false); // снятие — не «заработок»
 }
 
+// ---------- Покупка золота (донат) ----------
+// Заготовка: возвращает список пакетов для отображения в банке.
+function goldPackages() {
+  return config.GOLD_PACKAGES.map((p) => ({
+    id: p.id,
+    gold: p.gold,
+    bonus: p.bonus,
+    total: p.gold + p.bonus,
+    priceRub: p.priceRub,
+    bonusPct: p.bonus > 0 ? Math.round((p.bonus / p.gold) * 100) : 0,
+  }));
+}
+
+// Покупка золота. Реальная оплата пока НЕ подключена — это заготовка.
+// Возвращает данные для будущей платёжной системы. Золото НЕ зачисляется
+// (зачисление произойдёт после подтверждения оплаты платёжным провайдером).
+function buyGold(user, packId) {
+  const pack = config.GOLD_PACKAGE_BY_ID[packId];
+  if (!pack) throw new u.ApiError('Пакет не найден');
+  // TODO: здесь будет создание платежа через платёжную систему.
+  // Пока возвращаем «заглушку»: фронт покажет сообщение, что оплата
+  // скоро будет доступна.
+  return {
+    pending: true,
+    packId: pack.id,
+    gold: pack.gold,
+    bonus: pack.bonus,
+    total: pack.gold + pack.bonus,
+    priceRub: pack.priceRub,
+    message: 'Оплата скоро будет доступна. Пакет зарезервирован.',
+  };
+}
+
 // ---------- Сводка для шапки и главного экрана (/api/me) ----------
 function resView(user) {
   const now = Date.now();
@@ -552,6 +585,6 @@ module.exports = {
   ensureUnit, unitTotalCount, trophyDiscountPct,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, rank, flag, findByName,
-  bankDeposit, bankWithdraw,
+  bankDeposit, bankWithdraw, goldPackages, buyGold,
   mePayload, publicProfile, setStatus,
 };

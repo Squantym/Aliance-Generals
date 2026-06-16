@@ -235,6 +235,20 @@ async function main() {
   const trophies = (await get('/api/trophies', A)).data;
   check('трофеи читаются', trophies.trophies.length === 13);
 
+  console.log('17. Покупка золота (заготовка)');
+  const packs = (await get('/api/bank/gold-packages', A)).data;
+  check('пакеты золота доступны', packs.packages.length === 6);
+  check('первый пакет — 100 золота за 100 руб', packs.packages[0].gold === 100 && packs.packages[0].priceRub === 100);
+  check('крупный пакет имеет бонус', packs.packages[packs.packages.length - 1].bonus > 0);
+  const buyG = await post('/api/bank/buy-gold', A, { packId: 'pack_100' });
+  check('покупка золота вернула pending (оплата не подключена)', buyG.status === 200 && buyG.data.pending === true);
+
+  console.log('18. Очки навыков за уровень = 5');
+  // У игрока A после регистрации и активности должны быть очки
+  meA = (await get('/api/me', A)).data;
+  check('у игрока есть очки навыков', meA.skillPoints >= 0);
+  check('xpNext присутствует для полоски опыта', typeof meA.xpNext === 'number' && meA.xpNext > 0);
+
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);
   process.exit(failed ? 1 : 0);

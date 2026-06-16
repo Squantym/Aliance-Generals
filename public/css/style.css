@@ -49,31 +49,28 @@ body {
    ставим меню в 4 колонки — пространство по бокам используется. */
 @media (min-width: 900px) {
   #wrap {
-    max-width: 1200px;
+    max-width: 920px;
     border-left: 1px solid var(--border-dim);
     border-right: 1px solid var(--border-dim);
     box-shadow: 0 0 40px rgba(0,0,0,.5);
   }
-  #header { padding: 16px 28px; }
-  .logo { font-size: 24px; letter-spacing: .7em; }
-  #content { padding: 24px 28px; }
-  /* Главное меню: 4 кнопки в ряд, более «дышащие» */
-  .menu-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .menu-btn { font-size: 14px; min-height: 64px; padding: 10px 14px; }
-  /* Карточки: чуть больше отступа и крупнее заголовки */
-  .card { padding: 16px 18px; }
+  #header { padding: 16px 26px; }
+  .logo { font-size: 23px; letter-spacing: .6em; }
+  #content { padding: 22px 26px; }
+  /* Главное меню: 3 кнопки в ряд */
+  .menu-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .menu-btn { font-size: 14px; min-height: 60px; padding: 10px 14px; }
+  .card { padding: 15px 17px; }
   .name { font-size: 15px; }
-  /* Кнопки крупнее */
   .btn { padding: 11px 20px; font-size: 14px; }
   .btn-orange { padding: 12px 24px; font-size: 15px; }
-  /* Шапка ресурсов более просторная */
   .res-row { padding: 8px 0; font-size: 14px; }
   .stat-row { padding: 6px 0; }
 }
 @media (min-width: 1300px) {
-  #wrap { max-width: 1340px; }
-  .menu-grid { grid-template-columns: repeat(5, 1fr); }
-  #content { padding: 28px 36px; }
+  #wrap { max-width: 1040px; }
+  .menu-grid { grid-template-columns: repeat(4, 1fr); }
+  #content { padding: 26px 32px; }
 }
 
 a { color: var(--green); text-decoration: none; }
@@ -971,3 +968,41 @@ body.theme-cyber .sale-banner {
   box-shadow: 0 0 18px rgba(0, 212, 255, .25);
 }
 body.theme-cyber .sale-banner b { color: #00ffd1; }
+
+/* ===================================================================
+   ПОЛОСКА ОПЫТА В ШАПКЕ
+   =================================================================== */
+.xp-strip {
+  position: relative;
+  height: 18px;
+  margin: 2px 0 4px;
+  background: rgba(0,0,0,.35);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.xp-strip-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, #3a6b1f, #5b9c2f);
+  transition: width .4s ease;
+}
+.xp-strip-label {
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  color: #e8f0e0;
+  text-shadow: 0 1px 2px rgba(0,0,0,.8);
+  z-index: 1;
+}
+body.theme-steel .xp-strip-fill { background: linear-gradient(90deg, #5a6473, #8a96a8); }
+body.theme-cyber .xp-strip {
+  border-color: #1e3a5f;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+body.theme-cyber .xp-strip-fill {
+  background: linear-gradient(90deg, #006b8c, #00d4ff);
+  box-shadow: 0 0 8px rgba(0,212,255,.5);
+}

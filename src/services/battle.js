@@ -256,14 +256,16 @@ function attack(user, targetId, notices) {
   player.addXp(user, xp, notices);
 
   // ----- Окно фаталити -----
-  // Только для боёв против реальных игроков. На террористах/ботах
-  // никаких ушей и жетонов — это была бы атака на абстракцию.
+  // Доступно против реальных игроков И ботов-игроков (псевдоигроков с
+  // позывными и флагами). На обычных террористах (💀) — нельзя, это
+  // безликая массовка.
+  const fatalityAllowed = !isBot || (isBot && target.isPlayerLike);
   let fatality = false;
-  if (!isBot && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
+  if (fatalityAllowed && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
     fatality = true;
     user.pendingFatality = {
       targetId: target.id,
-      name: target.name, isBot: false,
+      name: target.name, isBot,
       exp: Date.now() + B.FATALITY_WINDOW_MS,
     };
   }

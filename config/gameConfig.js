@@ -15,7 +15,7 @@ const PLAYER = {
   HP_PER_SKILL: 10,
   EN_PER_SKILL: 10,
   AMMO_PER_SKILL: 1,
-  SKILLPOINTS_PER_LEVEL: 3,
+  SKILLPOINTS_PER_LEVEL: 5,
   MIN_HP_TO_FIGHT: 25,
   LEVEL_RANGE: 10,
   MAX_LEVEL: 300,                 // потолок — 300 уровней
@@ -28,17 +28,17 @@ const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 2, agility: 2 };
 const REGEN = { hp: 45, en: 45, am: 600 };
 
 // ---------- Опыт и уровни ----------
-// Кусочная кривая, подобранная под требования:
-//   - первые 5 уровней: 40, 80, 160, 240, 320 (быстрый, насыщенный старт)
-//   - уровни 6..99: ровный рост до ~1940 (сумма ≈ 100К)
-//   - уровни 100..199: рост до ~6000 (сумма ≈ 400К)
-//   - уровни 200..299: рост до ~14000 (сумма ≈ 1М)
-// Монотонная: каждый следующий уровень требует больше, чем предыдущий.
+// Кусочная кривая, суммарно ~1 000 000 опыта за 300 уровней:
+//   - уровни 1..5: 25, 45, 75, 115, 165 (быстрый старт)
+//   - уровни 6..99: рост до ~1019 (сумма сегмента ≈ 60 000)
+//   - уровни 100..199: рост до ~3733 (сумма ≈ 240 000)
+//   - уровни 200..299: рост до ~9542 (сумма ≈ 700 000)
+// Монотонная: каждый следующий уровень дороже предыдущего.
 function xpToNext(level) {
-  if (level <= 5) return [0, 40, 80, 160, 240, 320][level];
-  if (level < 100) return Math.floor(400 + (level - 6) * 16.6);
-  if (level < 200) return Math.floor(2000 + (level - 100) * 40.4);
-  return Math.floor(6000 + (level - 200) * 80.8);
+  if (level <= 5) return [0, 25, 45, 75, 115, 165][level];
+  if (level < 100) return Math.floor(210 + (level - 6) * 8.7);
+  if (level < 200) return Math.floor(1100 + (level - 100) * 26.6);
+  return Math.floor(3800 + (level - 200) * 58.0);
 }
 
 // ---------- Страны ----------
@@ -834,6 +834,20 @@ function hospitalPrice(level) {
   return Math.max(5000, Math.round(HOSPITAL.basePrice * Math.pow(level, HOSPITAL.growthPow) / 100) * 100);
 }
 
+// ---------- ПОКУПКА ЗОЛОТА (донат) ----------
+// Курс: 1 золото = 1 рубль. На крупных пакетах — бонусное золото.
+// Это пока ЗАГОТОВКА: реальная оплата не подключена, покупка отмечается
+// в журнале и (в dev-режиме) может зачисляться сразу для теста.
+const GOLD_PACKAGES = [
+  { id: 'pack_100',   gold: 100,   bonus: 0,    priceRub: 100 },
+  { id: 'pack_550',   gold: 500,   bonus: 50,   priceRub: 500 },   // +10%
+  { id: 'pack_1200',  gold: 1000,  bonus: 200,  priceRub: 1000 },  // +20%
+  { id: 'pack_3250',  gold: 2500,  bonus: 750,  priceRub: 2500 },  // +30%
+  { id: 'pack_7000',  gold: 5000,  bonus: 2000, priceRub: 5000 },  // +40%
+  { id: 'pack_15000', gold: 10000, bonus: 5000, priceRub: 10000 }, // +50%
+];
+const GOLD_PACKAGE_BY_ID = Object.fromEntries(GOLD_PACKAGES.map(p => [p.id, p]));
+
 // ---------- БАНК ----------
 // Комиссия 10% при вкладе (как в оригинале «Генералы»).
 // Снижается трофеем «Налоговая льгота» (макс. −50% от этой суммы → 5%).
@@ -858,5 +872,5 @@ module.exports = {
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID, BATTLE, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
-  BANK, HOSPITAL, hospitalPrice, CHAT, MAIL,
+  BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
 };

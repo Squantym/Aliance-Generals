@@ -241,6 +241,10 @@ App.screens.profile = async (c, param) => {
     </div>
 
     <div class="card">
+      ${own ? `
+      <div class="kv"><span class="k">📊 Опыт</span><span class="v">${UI.fmtNum(App.me.xp)} / ${UI.fmtNum(App.me.xpNext)}</span></div>
+      <div class="mt">${UI.bar(App.me.xp, App.me.xpNext, 'xp', `До ${App.me.level + 1} уровня: ${UI.fmtNum(Math.max(0, App.me.xpNext - App.me.xp))} XP`)}</div>
+      <hr class="hr">` : ''}
       <div class="kv"><span class="k">⚔ Атака</span><span class="v">${UI.fmtNum(p.power.atk)}</span></div>
       <div class="kv"><span class="k">🛡 Защита</span><span class="v">${UI.fmtNum(p.power.def)}</span></div>
       <div class="kv"><span class="k">🚚 Вместимость армии</span><span class="v">${UI.fmtNum(p.capacity)}</span></div>
@@ -311,7 +315,7 @@ App.screens.skills = async (c) => {
   c.innerHTML = `
     <div class="title">Навыки</div>
     <div class="card center">Неиспользовано: <b class="gold">${m.skillPoints}</b> очков навыков
-      <p class="muted small mt">+3 очка за каждый уровень и 5–10 за первое прохождение миссий</p></div>
+      <p class="muted small mt">+5 очков за каждый уровень и за прохождение конфликтов</p></div>
     ${defs.map(([id, name, desc, cost, plus]) => `
       <div class="card">
         <div class="list-row" style="border:none;padding:0">
@@ -335,11 +339,50 @@ App.screens.skills = async (c) => {
 };
 
 // ---------- БАНК ----------
-App.screens.bank = async (c) => {
+App.screens.bank = async (c, param) => {
   await App.refreshMe();
   const m = App.me;
+  const tab = param || 'storage';
+
+  const tabs = `
+    <div class="tabs">
+      <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">🏦 Хранилище</div>
+      <div class="tab ${tab === 'gold' ? 'active' : ''}" onclick="location.hash='#bank/gold'">🪙 Купить золото</div>
+    </div>`;
+
+  if (tab === 'gold') {
+    const { packages } = await API.get('/api/bank/gold-packages');
+    c.innerHTML = `
+      <div class="title">Банк · Покупка золота</div>
+      ${tabs}
+      <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. Курс: <b>1 золото = 1 рубль</b>. На крупных пакетах — бонусное золото.</p></div>
+      ${packages.map((p) => `
+        <div class="card">
+          <div class="list-row" style="border:none;padding:0">
+            <div class="grow">
+              <div class="name"><span class="ic-gold"></span> ${UI.fmtNum(p.total)} золота${p.bonus > 0 ? ` <span class="badge green">+${p.bonusPct}%</span>` : ''}</div>
+              <div class="muted small">${UI.fmtNum(p.gold)}${p.bonus > 0 ? ` + ${UI.fmtNum(p.bonus)} бонус` : ''}</div>
+            </div>
+            <button class="btn btn-orange btn-inline" data-pack="${p.id}">${UI.fmtNum(p.priceRub)} ₽</button>
+          </div>
+        </div>`).join('')}
+      <div class="card"><p class="muted small center">💳 Приём оплаты скоро будет подключён.</p></div>`;
+
+    c.querySelectorAll('[data-pack]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          const r = await API.post('/api/bank/buy-gold', { packId: btn.dataset.pack });
+          UI.toast('💳 ' + (r.message || 'Пакет зарезервирован'));
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+    return;
+  }
+
+  // Вкладка «Хранилище»
   c.innerHTML = `
     <div class="title">Банк · Хранилище</div>
+    ${tabs}
     <div class="card">
       <div class="kv"><span class="k">Наличные</span><span class="v money">$ ${UI.fmtNum(m.dollars)}</span></div>
       <div class="kv"><span class="k">В хранилище</span><span class="v money">$ ${UI.fmtNum(m.bank)}</span></div>

@@ -102,7 +102,6 @@ const Admin = {
                 <th style="text-align:left;padding:4px 6px;color:var(--dim)">Время</th>
                 <th style="text-align:left;padding:4px 6px;color:var(--dim)">Игрок</th>
                 <th style="text-align:left;padding:4px 6px;color:var(--dim)">Действие</th>
-                <th style="text-align:left;padding:4px 6px;color:var(--dim)">Данные</th>
               </tr>
             </thead>
             <tbody>
@@ -111,10 +110,8 @@ const Admin = {
                 <td style="padding:4px 6px;white-space:nowrap;color:var(--dim)">${fmtDate(e.at)}</td>
                 <td style="padding:4px 6px;white-space:nowrap">
                   <span class="name" style="cursor:pointer" onclick="document.getElementById('log-uid').value='${e.userId || ''}';Admin.loadLogs();">${UI.esc(e.userName || '—')}</span>
-                  <br><span class="muted" style="font-size:10px">${e.userId || ''}</span>
                 </td>
-                <td style="padding:4px 6px;white-space:nowrap;color:${routeColor(e.path)}">${UI.esc(e.path)}</td>
-                <td style="padding:4px 6px;color:var(--dim);font-size:11px">${e.body ? UI.esc(JSON.stringify(e.body)) : ''}</td>
+                <td style="padding:4px 6px;color:${routeColor(e.path)}">${UI.esc(e.desc || e.path)}</td>
               </tr>`).join('')}
             </tbody>
           </table>

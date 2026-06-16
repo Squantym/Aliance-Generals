@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 const auditLog = require('../services/auditLog');
+const logTranslate = require('../services/logTranslate');
 const { ApiError } = require('./utils');
 
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
@@ -134,6 +135,7 @@ function createApp() {
               userId: reqCtx.user.id,
               userName: reqCtx.user.name,
               path: pathname,
+              desc: logTranslate.describe(pathname, reqCtx.body, result),
               params,
               body: reqCtx.body,
             });

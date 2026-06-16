@@ -125,6 +125,8 @@ module.exports = function registerRoutes(app) {
     else throw new u.ApiError('Неизвестная операция');
     return { dollars: req.user.dollars, bank: req.user.bank };
   }));
+  app.add('GET',  '/api/bank/gold-packages', (req) => ({ packages: player.goldPackages() }));
+  app.add('POST', '/api/bank/buy-gold',      act((req) => player.buyGold(req.user, req.body.packId)));
 
   // ---------- Альянс ----------
   // ---------- Группы (альянс и легион работают через один API) ----------
