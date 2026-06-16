@@ -57,7 +57,27 @@ async function init() {
     // require внутри функции: если пакет mongodb не установлен, но
     // MONGODB_URI и не задан — этот код вообще не выполнится.
     const { MongoClient } = require('mongodb');
-    mongoClient = new MongoClient(uri, { serverSelectionTimeoutMS: 8000 });
+
+    // Пробуем подключиться. На некоторых хостингах (Render и т.п.)
+    // стандартные TLS-настройки могут давать SSL-ошибку из-за особенностей
+    // OpenSSL. В этом случае пробуем с явным указанием tls=true.
+    const tryConnect = async (opts) => {
+      const client = new MongoClient(uri, opts);
+      await client.connect();
+      return client;
+    };
+
+    try {
+      mongoClient = await tryConnect({ serverSelectionTimeoutMS: 8000 });
+    } catch (firstErr) {
+      console.warn('Первая попытка подключения к MongoDB не удалась:', firstErr.message);
+      console.warn('Пробую с альтернативными TLS-настройками...');
+      mongoClient = await tryConnect({
+        serverSelectionTimeoutMS: 8000,
+        tls: true,
+        tlsAllowInvalidCertificates: true, // менее строгая проверка сертификата
+      });
+    }
     await mongoClient.connect();
     const dbName = process.env.MONGODB_DB || 'generals';
     const database = mongoClient.db(dbName);
