@@ -40,6 +40,26 @@ function randomPlayerName() {
   return p + c + s;
 }
 
+// Псевдоармия бота для отображения в окне боя (учёта потерь не ведём —
+// бот эфемерен и при следующей атаке его уже нет)
+function makeBotArmy(bot) {
+  const level = bot.level || 1;
+  const entries = [];
+  // Подбираем по 3 юнита разных типов, доступных на уровне бота
+  for (const type of ['air', 'sea', 'ground']) {
+    const candidates = config.UNITS.filter((cu) => cu.type === type && cu.unlock <= level);
+    if (candidates.length === 0) continue;
+    const cu = candidates[Math.min(candidates.length - 1, Math.floor(level / 5))];
+    const count = Math.max(1, Math.round(5 + level / 3));
+    entries.push({
+      name: cu.name,
+      unitId: cu.id, count, taken: count, secret: false, mk: 0,
+      atk: cu.attack, def: cu.defense,
+    });
+  }
+  return { entries, power: bot.power, taken: entries.reduce((s, e) => s + e.taken, 0), cap: 30 };
+}
+
 function makeBot(user) {
   const level = u.clamp(user.level + u.rnd(-7, 7), 1, config.PLAYER.MAX_LEVEL);
   const base = Math.max(30, player.buildArmy(user, 'atk').power);
@@ -51,6 +71,23 @@ function makeBot(user) {
     : (0.50 + Math.random() * 0.45);
   const power = Math.max(25, Math.round(base * powerRange * (1 + (level - user.level) * 0.03)));
   const maxHp = 100 + level * 8;
+  // Случайные характеристики профиля бота
+  const botStatuses = [
+    'За Родину!', 'Иду в бой', 'Война — моя работа',
+    'Всех к ногтю', 'Не трогай — целее будешь', 'Без жалости',
+    'Слава героям', 'Победа любой ценой', '',
+  ];
+  const allianceNames = [
+    'Чёрная сотня', 'Северный волк', 'Багровый легион', 'Стальной фронт',
+    'Орден ветеранов', 'Восточный союз', 'Дозор', 'Гарнизон', 'Бригада',
+    'Свободные стрелки', 'Кавалькада',
+  ];
+  // У 60% ботов есть альянс
+  const hasAlliance = Math.random() < 0.6;
+  const allianceMembers = hasAlliance ? u.rnd(2, 20) : 0;
+  const allianceName = hasAlliance ? u.pick(allianceNames) : null;
+  const allianceId = hasAlliance ? 'bot_alliance_' + u.uid(8) : null;
+
   const bot = {
     id: 'bot_' + u.uid(10),
     isBot: true,
@@ -59,9 +96,50 @@ function makeBot(user) {
     flag: isPlayerLike ? u.pick(config.BOT_PLAYER_FLAGS) : '💀',
     level, power, maxHp, hp: maxHp,
     loot: Math.round(300 * Math.pow(level, 1.2)),
+    // Профильные данные
+    status: u.pick(botStatuses),
+    rating: Math.round(power * (0.5 + Math.random() * 1.5)),
+    wins: u.rnd(50, 500) * level,
+    losses: u.rnd(10, 100) * level,
+    fatalities: u.rnd(0, 50) * Math.max(1, Math.floor(level / 10)),
+    createdDaysAgo: u.rnd(7, 800),
+    allianceId, allianceName, allianceMembers,
   };
   botCache.set(bot.id, { bot, exp: Date.now() + B.BOTS_TTL_MS });
   return bot;
+}
+
+// Публичный профиль бота (для маршрута /api/profile/bot_xxx)
+function botProfile(botId, viewer) {
+  pruneBots();
+  const rec = botCache.get(botId);
+  if (!rec) throw new u.ApiError('Профиль не найден или устарел. Обновите список целей.');
+  const b = rec.bot;
+  // Можно ли пригласить в альянс: только псевдоигроков без своего альянса
+  const canInviteAlliance = b.isPlayerLike && !b.allianceId && !!viewer.allianceId;
+  // Можно ли атаковать
+  const canAttack = Math.abs(b.level - viewer.level) <= config.PLAYER.LEVEL_RANGE;
+  return {
+    id: b.id, isBot: true, isPlayerLike: b.isPlayerLike,
+    name: b.name, flag: b.flag, status: b.status,
+    level: b.level, rank: '—', rating: b.rating,
+    country: 'bot',
+    canAttack,
+    alliance: b.allianceId ? { id: b.allianceId, name: b.allianceName, members: b.allianceMembers } : null,
+    legion: null,
+    canInviteAlliance,
+    battle: {
+      wins: b.wins, losses: b.losses,
+      defWins: Math.floor(b.wins * 0.4), defLosses: Math.floor(b.losses * 0.6),
+      fatalities: b.fatalities,
+    },
+    power: { atk: b.power, def: Math.round(b.power * 0.85), taken: 30 },
+    capacity: 30,
+    units: [],
+    createdDaysAgo: b.createdDaysAgo,
+    ears: Math.floor(b.fatalities * 0.6),
+    tokens: Math.floor(b.fatalities * 0.4),
+  };
 }
 
 // Список целей: до 7–8 реальных игроков подходящего уровня + 2–3 бота.
@@ -75,14 +153,21 @@ function opponents(user) {
   const botsCount = 2 + (Math.random() < 0.5 ? 1 : 0); // 2 или 3 бота
   const picked = real.slice(0, Math.max(0, 10 - botsCount));
 
-  const list = picked.map((t) => ({
-    id: t.id, name: t.name, level: t.level,
-    flag: player.flag(t), isBot: false,
-    online: Date.now() - (t.lastSeen || 0) < 5 * 60 * 1000,
-  }));
+  const list = picked.map((t) => {
+    const a = player.allianceOf(t);
+    return {
+      id: t.id, name: t.name, level: t.level,
+      flag: player.flag(t), isBot: false,
+      online: Date.now() - (t.lastSeen || 0) < 5 * 60 * 1000,
+      allianceMembers: a ? a.members.length : 0,
+    };
+  });
   while (list.length < 10) {
     const b = makeBot(user);
-    list.push({ id: b.id, name: b.name, level: b.level, flag: b.flag, isBot: true, online: true });
+    list.push({
+      id: b.id, name: b.name, level: b.level, flag: b.flag, isBot: true, online: true,
+      allianceMembers: b.allianceMembers || 0,
+    });
   }
   u.shuffle(list);
   return { opponents: list };
@@ -91,22 +176,29 @@ function opponents(user) {
 // Снять у проигравшего часть техники, взятой в бой.
 // Секретные разработки неуязвимы (по ТЗ). Возвращает список потерь.
 function removeUnits(victim, armyEntries, pct) {
-  const pool = armyEntries.filter((e) => !e.secret && e.unitId && e.taken > 0);
-  let toLose = Math.floor(pool.reduce((s, e) => s + e.taken, 0) * pct);
+  // Сортируем «жертв» от слабой к сильной: сначала Mk0, потом Mk1, Mk2;
+  // внутри одного Mk — по возрастанию unlock (уровень открытия = «слабее»).
+  const pool = armyEntries
+    .filter((e) => !e.secret && e.unitId && e.taken > 0)
+    .slice()
+    .sort((a, b) => {
+      if (a.mk !== b.mk) return a.mk - b.mk;
+      const cuA = config.UNIT_BY_ID[a.unitId];
+      const cuB = config.UNIT_BY_ID[b.unitId];
+      return (cuA ? cuA.unlock : 0) - (cuB ? cuB.unlock : 0);
+    });
+  let toLose = Math.max(1, Math.floor(pool.reduce((s, e) => s + e.taken, 0) * pct));
   const lost = {};
-  while (toLose > 0 && pool.length > 0) {
-    const i = u.rnd(0, pool.length - 1);
-    const e = pool[i];
+  for (const e of pool) {
+    if (toLose <= 0) break;
     const m = victim.units[e.unitId];
     const have = m ? (m[e.mk] || 0) : 0;
-    if (have <= 0 || e.taken <= 0) { pool.splice(i, 1); continue; }
-    const n = Math.min(have, e.taken, toLose, Math.max(1, u.rnd(1, Math.ceil(toLose / 2))));
+    if (have <= 0 || e.taken <= 0) continue;
+    const n = Math.min(have, e.taken, toLose);
     m[e.mk] = have - n;
     e.taken -= n;
     toLose -= n;
     lost[e.name] = (lost[e.name] || 0) + n;
-    if (e.taken <= 0) pool.splice(i, 1);
-    // Если у юнита суммарно ничего не осталось — удалим запись из коллекции
     if ((m[0] || 0) + (m[1] || 0) + (m[2] || 0) <= 0) delete victim.units[e.unitId];
   }
   return Object.entries(lost).map(([name, count]) => `${name} ×${count}`);
@@ -157,6 +249,9 @@ function attack(user, targetId, notices) {
     dPow = target.power;
     targetMaxHp = target.maxHp;
     targetLevel = target.level;
+    // У бота нет реальной техники, но для красивого отображения сводки
+    // боя генерируем «псевдоармию» — 2-3 вида в зависимости от уровня.
+    dArmy = makeBotArmy(target);
   } else {
     dArmy = player.buildArmy(target, 'def');
     defPoints = player.buildingDef(target);
@@ -230,22 +325,25 @@ function attack(user, targetId, notices) {
       loot = Math.max(0, Math.min(loot, target.dollars));
       target.dollars -= loot;
       target.battle.defLosses++;
+      // Потери защитника (только если он реальный игрок)
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce)));
       social.mailTo(target, user.name, 'Сводка боя: поражение',
         `На вашу базу напал ${user.name} (ур. ${user.level}). Награблено: $${u.fmt(loot)}.` +
         (enemyLosses.length ? ` Потеряна техника: ${enemyLosses.join(', ')}.` : ' Техника уцелела.'));
     }
-    // Победитель тоже несёт небольшие потери в технике (война есть война)
+    // Победитель тоже несёт небольшие потери (война есть война)
     myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT));
     player.addMoney(user, loot, true);
   } else {
     user.battle.losses++;
     if (!isBot) {
       target.battle.defWins++;
+      // Защитник, отразив атаку, тоже несёт минимальные потери
+      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT));
       social.mailTo(target, user.name, 'Сводка боя: атака отбита',
         `${user.name} (ур. ${user.level}) атаковал вашу базу, но оборона выстояла. Так держать!`);
     }
-    // Проигравший несёт большие потери
+    // Проигравший атакующий теряет существенно больше
     myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_PCT));
   }
 
@@ -272,11 +370,18 @@ function attack(user, targetId, notices) {
 
   tutorial.notify(user, 'attack', notices); // задание «Боевое крещение»
 
+  // Сводка участвовавшей техники для окна боя (только реально взятые в бой)
+  const armyBrief = (entries) => entries
+    .filter((e) => e.taken > 0)
+    .map((e) => ({ name: e.name, count: e.taken, secret: !!e.secret }));
+
   return {
     win, crit, dodge,
     dealt, received, loot, xp,
     targetId, targetName: target.name, targetLevel, isBot,
     targetHpPct: Math.round((targetHpAfter / targetMaxHp) * 100),
+    myArmy: armyBrief(aArmy.entries),
+    enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
     myLosses, enemyLosses,
     fatality,
   };
@@ -322,4 +427,4 @@ function fatality(user, choice, notices) {
   return { choice, ears: user.ears, tokens: user.tokens };
 }
 
-module.exports = { opponents, attack, fatality };
+module.exports = { opponents, attack, fatality, botProfile };

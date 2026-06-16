@@ -1006,3 +1006,223 @@ body.theme-cyber .xp-strip-fill {
   background: linear-gradient(90deg, #006b8c, #00d4ff);
   box-shadow: 0 0 8px rgba(0,212,255,.5);
 }
+
+/* Баннер «низкое здоровье» — над контентом */
+.low-hp-banner {
+  background: linear-gradient(180deg, #c0392b 0%, #922a1f 100%);
+  color: #fff;
+  padding: 10px 14px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 13px;
+  border-top: 1px solid rgba(255,255,255,.15);
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  box-shadow: 0 2px 8px rgba(192, 57, 43, .4);
+  animation: lowhp-pulse 1.6s ease-in-out infinite;
+}
+.low-hp-banner b { color: #ffd700; }
+@keyframes lowhp-pulse {
+  0%,100% { box-shadow: 0 2px 8px rgba(192, 57, 43, .4); }
+  50%     { box-shadow: 0 2px 18px rgba(255, 64, 50, .8); }
+}
+body.theme-cyber .low-hp-banner {
+  background: linear-gradient(180deg, #ff3b6b 0%, #8b1c3c 100%);
+  text-shadow: 0 0 6px rgba(255, 59, 107, .8);
+  border-top: 1px solid #ff3b6b;
+}
+
+/* ===================================================================
+   ТЕМА 4: ПУСТЫННЫЙ ФРОНТ
+   Тёплые песочные тона, выгоревший камуфляж, солнечный свет.
+   =================================================================== */
+body.theme-desert {
+  --bg: #1a1308;
+  --panel: #2b1e0d;
+  --panel-2: #3a2912;
+  --border: #6e4f1f;
+  --border-dim: #4a3415;
+  --text: #f5e9c8;
+  --dim: #a89060;
+  --green: #c9a44a;        /* выгоревший песочный «зелёный» */
+  --money: #d4b454;        /* медно-золотой для денег */
+  --gold: #ffd24a;         /* солнечное золото */
+  --hp: #d75a3a;
+  --en: #ffc658;
+  --am: #c98a2c;
+  --red: #c25030;
+  --orange-1: #d99a3a;
+  --orange-2: #9a6418;
+}
+
+body.theme-desert {
+  background-color: #14100a;
+  background-image:
+    /* мелкая «песочная» зернистость */
+    radial-gradient(ellipse 80% 60% at 30% 20%, rgba(255, 200, 100, .12), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 80% 90%, rgba(255, 160, 60, .08), transparent 60%),
+    /* световые лучи сверху — эффект палящего солнца */
+    linear-gradient(180deg, rgba(255, 210, 140, .07) 0%, transparent 35%),
+    /* основной градиент глубины (тёплый песочный) */
+    linear-gradient(180deg, #261b0c 0%, #14100a 100%);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+body.theme-desert #wrap {
+  background: rgba(35, 25, 12, .65);
+  border-left: 1px solid #6e4f1f;
+  border-right: 1px solid #6e4f1f;
+  box-shadow: 0 0 50px rgba(180, 120, 40, .25);
+}
+
+body.theme-desert #header {
+  background:
+    linear-gradient(180deg, rgba(255, 200, 100, .08), transparent 50%),
+    linear-gradient(180deg, #3a2912, #251a0a);
+  border-bottom: 2px solid #6e4f1f;
+  box-shadow: 0 2px 12px rgba(180, 120, 40, .2);
+}
+
+body.theme-desert .logo {
+  color: #ffd24a;
+  text-shadow: 0 0 14px rgba(255, 210, 74, .6), 0 2px 4px rgba(0,0,0,.7);
+  letter-spacing: .55em;
+}
+body.theme-desert .logo .star { color: #ffd24a; }
+
+body.theme-desert .card {
+  background:
+    linear-gradient(180deg, rgba(110, 79, 31, .12), transparent 60%),
+    linear-gradient(180deg, #2e2110, #20170a);
+  border: 1px solid #6e4f1f;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255, 200, 100, .08);
+}
+
+body.theme-desert .menu-btn {
+  background: linear-gradient(180deg, #3a2912, #251a0a);
+  border: 1px solid #6e4f1f;
+  border-radius: 4px;
+  color: #f5e9c8;
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  font-family: inherit;
+  letter-spacing: .03em;
+}
+body.theme-desert .menu-btn:hover {
+  background: linear-gradient(180deg, #4a3415, #2e2110);
+  border-color: #9a6418;
+  box-shadow: 0 0 10px rgba(217, 154, 58, .35);
+}
+
+body.theme-desert .btn {
+  background: linear-gradient(180deg, #4a3415, #2e2110);
+  border: 1px solid #6e4f1f;
+  border-radius: 3px;
+  color: #f5e9c8;
+}
+body.theme-desert .btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #5a3f1b, #3a2912);
+  border-color: #d99a3a;
+}
+body.theme-desert .btn-orange {
+  background: linear-gradient(180deg, #d99a3a, #9a6418);
+  border-color: #ffd24a;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(255, 210, 74, .3);
+}
+body.theme-desert .btn-orange:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f0b04a, #b87a20);
+  box-shadow: 0 0 18px rgba(255, 210, 74, .55);
+}
+body.theme-desert .btn-green {
+  background: linear-gradient(180deg, #8b7a30, #5a4818);
+  color: #fff;
+}
+
+body.theme-desert input,
+body.theme-desert select,
+body.theme-desert textarea {
+  background: rgba(20, 15, 8, .85);
+  border: 1px solid #6e4f1f;
+  border-radius: 3px;
+  color: #f5e9c8;
+  font-family: inherit;
+}
+body.theme-desert input:focus,
+body.theme-desert select:focus {
+  border-color: #ffd24a;
+  box-shadow: 0 0 8px rgba(255, 210, 74, .35);
+  outline: none;
+}
+
+body.theme-desert .bar {
+  background: #14100a;
+  border: 1px solid #4a3415;
+  border-radius: 4px;
+}
+
+body.theme-desert .tab {
+  background: rgba(35, 25, 12, .7);
+  border: 1px solid #6e4f1f;
+  border-radius: 4px 4px 0 0;
+  color: #d4b454;
+}
+body.theme-desert .tab.active {
+  background: linear-gradient(180deg, #d99a3a, #9a6418);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+}
+
+body.theme-desert .badge {
+  background: linear-gradient(180deg, #ffd24a, #b87a20);
+  color: #1a1308;
+  border-radius: 3px;
+  font-weight: 700;
+}
+body.theme-desert .badge.green {
+  background: linear-gradient(180deg, #c9a44a, #8b6e20);
+  color: #1a1308;
+}
+
+body.theme-desert .toast {
+  background: rgba(40, 28, 14, .96);
+  border: 1px solid #6e4f1f;
+  border-left: 3px solid #ffd24a;
+  color: #f5e9c8;
+  border-radius: 3px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.6), 0 0 12px rgba(255, 210, 74, .2);
+}
+
+body.theme-desert .hr {
+  border-top: 1px solid #4a3415;
+  background: linear-gradient(90deg, transparent, #6e4f1f, transparent);
+  height: 1px; border: 0;
+}
+
+body.theme-desert .money { color: var(--money); }
+body.theme-desert .gold  { color: var(--gold); text-shadow: 0 0 6px rgba(255, 210, 74, .4); }
+
+body.theme-desert .xp-strip {
+  border-color: #4a3415;
+}
+body.theme-desert .xp-strip-fill {
+  background: linear-gradient(90deg, #8b6e20, #ffd24a);
+  box-shadow: 0 0 6px rgba(255, 210, 74, .4);
+}
+
+body.theme-desert .sale-banner {
+  background: linear-gradient(180deg, rgba(255, 210, 74, .15), rgba(217, 154, 58, .05));
+  border: 1px solid #ffd24a;
+  color: #f5e9c8;
+  border-radius: 4px;
+}
+body.theme-desert .sale-banner b { color: #ffd24a; }
+
+body.theme-desert .ic-gold::before {
+  content: '☀';
+  color: #ffd24a;
+  text-shadow: 0 0 8px rgba(255, 210, 74, .7);
+}

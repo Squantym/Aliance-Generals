@@ -174,6 +174,23 @@ function invite(user, kind, targetId, notices) {
   const g = groupId ? coll(kind)[groupId] : null;
   if (!g || g.leaderId !== user.id) throw new u.ApiError('Приглашать может только лидер');
   if (targetId === user.id) throw new u.ApiError('Нельзя пригласить самого себя');
+
+  // Автоприём для ботов: добавляем фейкового члена в альянс
+  // (бот эфемерный — его реального профиля в базе нет, только в кэше battle.js)
+  if (String(targetId).startsWith('bot_')) {
+    if (kind !== 'alliance') throw new u.ApiError('В легион можно приглашать только живых игроков');
+    // Бот «соглашается»: добавляем фиктивный членский запис
+    const botMembers = g.botMembers || (g.botMembers = []);
+    if (botMembers.includes(targetId)) throw new u.ApiError('Этот боец уже у вас в альянсе');
+    botMembers.push(targetId);
+    // В members добавляем как обычного участника — для подсчёта вместимости
+    g.members = g.members || [g.leaderId];
+    g.members.push(targetId);
+    db.save(def.coll);
+    notices.push(`✅ Боец «${targetId}» автоматически принял приглашение в альянс`);
+    return;
+  }
+
   const target = player.users()[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
   if (target[def.userField]) throw new u.ApiError('Игрок уже состоит в группе');

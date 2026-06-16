@@ -213,7 +213,7 @@ async function main() {
   const alB = (await get('/api/group/alliance', B)).data;
   check('состав альянса виден', alB.mine && alB.mine.members.length === 1);
   const meB = (await get('/api/me', B)).data;
-  check('вместимость = 30 + 10*1 = 40 (1 человек в альянсе)', meB.capacity === 40);
+  check('вместимость = 100 + 10*1 = 110 (1 человек в альянсе)', meB.capacity === 110);
   // Приглашение игроком A через инвайт + ответ
   const inv = await post('/api/group/alliance/invite', B, { userId: idA });
   check('приглашение отправлено', inv.status === 200);
@@ -222,7 +222,7 @@ async function main() {
   const accept = await post('/api/group/alliance/respond', A, { groupId: alC.data.id, accept: true });
   check('инвайт принят', accept.status === 200);
   const meB2 = (await get('/api/me', B)).data;
-  check('вместимость = 30 + 10*2 = 50 (2 человека)', meB2.capacity === 50);
+  check('вместимость = 100 + 10*2 = 120 (2 человека)', meB2.capacity === 120);
 
   console.log('16. Профиль, зал славы, достижения');
   const prof = (await get('/api/profile/' + idA, B)).data;
@@ -248,6 +248,25 @@ async function main() {
   meA = (await get('/api/me', A)).data;
   check('у игрока есть очки навыков', meA.skillPoints >= 0);
   check('xpNext присутствует для полоски опыта', typeof meA.xpNext === 'number' && meA.xpNext > 0);
+
+  console.log('19. Паспорт (смена имени и страны на чёрном рынке)');
+  await post('/api/admin/grant', A, { userId: idA, gold: 5000 });
+  const ppView = (await get('/api/passport', A)).data;
+  check('паспорт: первая смена имени стоит 100', ppView.namePrice === 100);
+  check('паспорт: первая смена страны стоит 100', ppView.countryPrice === 100);
+  const ppName = await post('/api/passport/name', A, { newName: nameA + 'X' });
+  check('паспорт: имя сменено', ppName.status === 200 && ppName.data.newName === nameA + 'X');
+  const ppView2 = (await get('/api/passport', A)).data;
+  check('паспорт: следующая смена имени дороже в 2 раза', ppView2.namePrice === 200);
+  const ppCountry = await post('/api/passport/country', A, { country: 'ua' });
+  check('паспорт: страна сменена на UA', ppCountry.status === 200);
+
+  console.log('20. Бои: новые поля результата боя');
+  const opps = (await get('/api/war/opponents', A)).data;
+  check('у оппонентов есть поле allianceMembers', typeof opps.opponents[0].allianceMembers === 'number');
+  const botId = opps.opponents.find((o) => o.isBot).id;
+  const botProf = await get('/api/profile/' + botId, A);
+  check('профиль бота открывается', botProf.status === 200 && botProf.data.profile.isBot === true);
 
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);

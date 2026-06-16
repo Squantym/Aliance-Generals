@@ -25,7 +25,7 @@ const PLAYER = {
 const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 2, agility: 2 };
 
 // Регенерация: секунд на +1 единицу
-const REGEN = { hp: 45, en: 45, am: 600 };
+const REGEN = { hp: 45, en: 45, am: 300 };
 
 // ---------- Опыт и уровни ----------
 // Кусочная кривая, суммарно ~1 000 000 опыта за 300 уровней:
@@ -43,13 +43,20 @@ function xpToNext(level) {
 
 // ---------- Страны ----------
 const COUNTRIES = [
-  { id: 'by', name: 'Белоруссия', flag: '🇧🇾', desc: 'Доход построек +5%.', mod: { income: 1.05 } },
-  { id: 'de', name: 'Германия',   flag: '🇩🇪', desc: '+5% атака наземных.', mod: { atkType: 'ground' } },
-  { id: 'kz', name: 'Казахстан',  flag: '🇰🇿', desc: '+5% защита всех.', mod: { defAll: true } },
-  { id: 'cn', name: 'Китай',      flag: '🇨🇳', desc: 'Техника −5% дешевле.', mod: { unitCost: 0.95 } },
-  { id: 'ru', name: 'Россия',     flag: '🇷🇺', desc: '+5% атака флота.', mod: { atkType: 'sea' } },
-  { id: 'us', name: 'США',        flag: '🇺🇸', desc: '+5% атака авиации.', mod: { atkType: 'air' } },
-  { id: 'ua', name: 'Украина',    flag: '🇺🇦', desc: '+7% опыт.', mod: { xp: 1.07 } },
+  // Расширенные модификаторы:
+  //   atkType / defType / типы — раздельно для атаки и защиты
+  //   atkAll / defAll — модификаторы по всем типам техники
+  //   xp — множитель получаемого опыта
+  //   unitCost — множитель к цене техники
+  //   buildingCost — множитель к цене построек
+  //   income — множитель к доходу построек
+  { id: 'by', name: 'Белоруссия', flag: '🇧🇾', desc: '−20% к стоимости построек, +20% к их доходу.', mod: { buildingCost: 0.80, income: 1.20 } },
+  { id: 'de', name: 'Германия',   flag: '🇩🇪', desc: '+20% к атаке и защите наземной техники.',     mod: { atkType: 'ground', defType: 'ground', typeMul: 1.20 } },
+  { id: 'kz', name: 'Казахстан',  flag: '🇰🇿', desc: '+10% к атаке и защите всей техники.',         mod: { atkAll: 1.10, defAll: 1.10 } },
+  { id: 'cn', name: 'Китай',      flag: '🇨🇳', desc: '−20% к стоимости техники.',                   mod: { unitCost: 0.80 } },
+  { id: 'ru', name: 'Россия',     flag: '🇷🇺', desc: '+20% к атаке и защите морской техники.',      mod: { atkType: 'sea', defType: 'sea', typeMul: 1.20 } },
+  { id: 'us', name: 'США',        flag: '🇺🇸', desc: '+20% к атаке и защите воздушной техники.',    mod: { atkType: 'air', defType: 'air', typeMul: 1.20 } },
+  { id: 'ua', name: 'Украина',    flag: '🇺🇦', desc: '+50% к получаемому опыту.',                   mod: { xp: 1.50 } },
 ];
 const COUNTRY_BY_ID = Object.fromEntries(COUNTRIES.map(c => [c.id, c]));
 
@@ -473,46 +480,52 @@ const MODERN = {
 // Оборонительные: первая на 30 ур., каждая следующая +10 уровней.
 // ===================================================================
 const INCOME_BUILDINGS = [
-  { id: 'sklad',     name: 'Военные склады',                 income: 500,       price: 8000,         unlock: 1   },
-  { id: 'oruzh',     name: 'Оружейный завод',                income: 2200,      price: 85000,        unlock: 11  },
-  { id: 'raket',     name: 'Ракетный завод',                 income: 6500,      price: 340000,       unlock: 21  },
-  { id: 'energo',    name: 'Электростанция',                 income: 18000,     price: 1200000,      unlock: 31  },
-  { id: 'neft',      name: 'Нефтяные вышки',                 income: 45000,     price: 3800000,      unlock: 41  },
-  { id: 'lab',       name: 'Исследовательская лаборатория',  income: 110000,    price: 12000000,     unlock: 51  },
-  { id: 'poligon',   name: 'Испытательный полигон',          income: 260000,    price: 38000000,     unlock: 61  },
-  { id: 'sputnik',   name: 'Спутниковая сеть',               income: 600000,    price: 110000000,    unlock: 71  },
-  { id: 'reaktor',   name: 'Термоядерный реактор',           income: 1300000,   price: 320000000,    unlock: 81  },
-  { id: 'kvantzavod', name: 'Квантовый завод',               income: 2800000,   price: 900000000,    unlock: 91  },
-  { id: 'orbital',   name: 'Орбитальная станция',            income: 5500000,   price: 2400000000,   unlock: 101 },
-  { id: 'darkmatter', name: 'Завод тёмной материи',          income: 11000000,  price: 6500000000,   unlock: 111 },
-  { id: 'dyson',     name: 'Сфера Дайсона (фрагмент)',       income: 22000000,  price: 17000000000,  unlock: 121 },
-  { id: 'antimatter', name: 'Антиматериальный генератор',    income: 44000000,  price: 45000000000,  unlock: 131 },
-  { id: 'singularity', name: 'Сингулярный реактор',          income: 85000000,  price: 120000000000, unlock: 141 },
+  // Цены снижены в 3 раза, рост каждой следующей копии — +2.5% (плавно).
+  { id: 'sklad',     name: 'Военные склады',                 income: 500,       price: 3000,         unlock: 1   },
+  { id: 'oruzh',     name: 'Оружейный завод',                income: 2200,      price: 28000,        unlock: 11  },
+  { id: 'raket',     name: 'Ракетный завод',                 income: 6500,      price: 110000,       unlock: 21  },
+  { id: 'energo',    name: 'Электростанция',                 income: 18000,     price: 400000,       unlock: 31  },
+  { id: 'neft',      name: 'Нефтяные вышки',                 income: 45000,     price: 1300000,      unlock: 41  },
+  { id: 'lab',       name: 'Исследовательская лаборатория',  income: 110000,    price: 4000000,      unlock: 51  },
+  { id: 'poligon',   name: 'Испытательный полигон',          income: 260000,    price: 12000000,     unlock: 61  },
+  { id: 'sputnik',   name: 'Спутниковая сеть',               income: 600000,    price: 36000000,     unlock: 71  },
+  { id: 'reaktor',   name: 'Термоядерный реактор',           income: 1300000,   price: 105000000,    unlock: 81  },
+  { id: 'kvantzavod', name: 'Квантовый завод',               income: 2800000,   price: 300000000,    unlock: 91  },
+  { id: 'orbital',   name: 'Орбитальная станция',            income: 5500000,   price: 800000000,    unlock: 101 },
+  { id: 'darkmatter', name: 'Завод тёмной материи',          income: 11000000,  price: 2100000000,   unlock: 111 },
+  { id: 'dyson',     name: 'Сфера Дайсона (фрагмент)',       income: 22000000,  price: 5600000000,   unlock: 121 },
+  { id: 'antimatter', name: 'Антиматериальный генератор',    income: 44000000,  price: 15000000000,  unlock: 131 },
+  { id: 'singularity', name: 'Сингулярный реактор',          income: 85000000,  price: 40000000000,  unlock: 141 },
 ];
 
 const DEFENSE_BUILDINGS = [
-  { id: 'bunker',    name: 'Бункер',                         def: 5,     price: 60000,        unlock: 30  },
-  { id: 'bashnya',   name: 'Дозорная башня',                 def: 12,    price: 180000,       unlock: 40  },
-  { id: 'pvo',       name: 'Система ПВО',                    def: 22,    price: 550000,       unlock: 50  },
-  { id: 'batareya',  name: 'Защитная батарея',               def: 38,    price: 1600000,      unlock: 60  },
-  { id: 'mine',      name: 'Минное поле',                    def: 60,    price: 4500000,      unlock: 70  },
-  { id: 'strazh',    name: 'Система «Страж»',                def: 90,    price: 13000000,     unlock: 80  },
-  { id: 'bereg',     name: 'Береговая оборона',              def: 130,   price: 36000000,     unlock: 90  },
-  { id: 'lazer_pvo', name: 'Лазерная ПРО',                   def: 190,   price: 100000000,    unlock: 100 },
-  { id: 'shtorm',    name: 'Комплекс «Буревестник»',         def: 270,   price: 280000000,    unlock: 110 },
-  { id: 'railgun_d', name: 'Рельсовая оборона',              def: 380,   price: 750000000,    unlock: 120 },
-  { id: 'kupol',     name: 'Энергетический купол',            def: 530,   price: 2000000000,   unlock: 130 },
-  { id: 'orbital_d', name: 'Орбитальный щит',                def: 750,   price: 5500000000,   unlock: 140 },
-  { id: 'nanoroj',   name: 'Нанозавеса',                     def: 1050,  price: 14000000000,  unlock: 150 },
-  { id: 'grav_wall', name: 'Гравитационная стена',            def: 1450,  price: 38000000000,  unlock: 160 },
-  { id: 'absolut_d', name: 'Абсолютный барьер',              def: 2000,  price: 100000000000, unlock: 170 },
+  // Бункер базовый, дальше — кратно больше защиты. Цены снижены и
+  // растут плавно (BUILDING_PRICE_GROWTH.defense = 1.025 — каждая
+  // следующая копия одного типа +2.5%, а не +5% как раньше).
+  { id: 'bunker',    name: 'Бункер',                          def: 50,    price: 25000,        unlock: 30  },
+  { id: 'bashnya',   name: 'Дозорная башня',                  def: 120,   price: 70000,        unlock: 40  },
+  { id: 'pvo',       name: 'Система ПВО',                     def: 220,   price: 200000,       unlock: 50  },
+  { id: 'batareya',  name: 'Защитная батарея',                def: 380,   price: 550000,       unlock: 60  },
+  { id: 'mine',      name: 'Минное поле',                     def: 600,   price: 1500000,      unlock: 70  },
+  { id: 'strazh',    name: 'Система «Страж»',                 def: 900,   price: 4000000,      unlock: 80  },
+  { id: 'bereg',     name: 'Береговая оборона',               def: 1300,  price: 10000000,     unlock: 90  },
+  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 1900,  price: 28000000,     unlock: 100 },
+  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 2700,  price: 75000000,     unlock: 110 },
+  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 3800,  price: 200000000,    unlock: 120 },
+  { id: 'kupol',     name: 'Энергетический купол',            def: 5300,  price: 540000000,    unlock: 130 },
+  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 7500,  price: 1400000000,   unlock: 140 },
+  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 10500, price: 3800000000,   unlock: 150 },
+  { id: 'grav_wall', name: 'Гравитационная стена',            def: 14500, price: 10000000000,  unlock: 160 },
+  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 20000, price: 28000000000,  unlock: 170 },
 ];
 
 const BUILDING_BY_ID = Object.fromEntries(
   [...INCOME_BUILDINGS.map(b => [b.id, { ...b, kind: 'income' }]),
    ...DEFENSE_BUILDINGS.map(b => [b.id, { ...b, kind: 'defense' }])]
 );
-const BUILDING_PRICE_GROWTH = { income: 1.04, defense: 1.05 };
+// Рост цены при покупке КАЖДОЙ копии того же типа постройки
+// (доход растёт быстрее, защита — очень плавно)
+const BUILDING_PRICE_GROWTH = { income: 1.025, defense: 1.025 };
 const BUILDING_DEF_POWER = 12;
 const INCOME_PERIOD_MS = 3600 * 1000;
 
@@ -768,7 +781,7 @@ const ACH_GOLD =    [0,    0,     5,      15,      40];
 const ALLIANCE = {
   CREATE_COST: 1000000,  // создание $1 млн
   MIN_LEVEL: 8,          // минимальный уровень
-  BASE_CAPACITY: 30,     // базово 30 единиц техники в бой
+  BASE_CAPACITY: 100,    // базово 100 единиц техники в бой
   PER_MEMBER: 10,        // +10 за каждого человека в альянсе
 };
 // ---------- ЛЕГИОН (клан: казна, общие постройки, войны клан-на-клан) ----------
@@ -808,6 +821,7 @@ const BATTLE = {
   DEF_LOOT_SOFT: 1200,
   DEF_LOSS_SOFT: 1500,
   LOSS_DEF_PCT: 0.02,        // потери защитника при поражении
+  LOSS_DEF_WIN_PCT: 0.005,   // потери защитника даже при успешной обороне
   LOSS_ATK_PCT: 0.012,       // потери атакующего при поражении
   LOSS_ATK_WIN_PCT: 0.006,   // даже победитель теряет немного техники (война)
   FATALITY_HP_PCT: 0.15,

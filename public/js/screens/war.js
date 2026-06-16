@@ -28,8 +28,15 @@ App.screens.war = async (c) => {
         <div class="kv"><span class="k">Получено</span><span class="v dmg-take">${b.received} урона</span></div>
         <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(b.loot)}</span></div>
         <div class="kv"><span class="k">Заработано</span><span class="v">${b.xp} опыта</span></div>
-        ${b.enemyLosses.length ? `<p class="small mt">Потери врага: <span class="dmg-deal">${UI.esc(b.enemyLosses.join(', '))}</span></p>` : ''}
-        ${b.myLosses.length ? `<p class="small mt">Ваши потери: <span class="dmg-take">${UI.esc(b.myLosses.join(', '))}</span></p>` : ''}
+        ${(b.myArmy && b.myArmy.length) ? `
+          <hr class="hr">
+          <p class="small mt"><b>Ваша техника в бою:</b></p>
+          <p class="muted small">${b.myArmy.map((x) => `${UI.esc(x.name)} ×${UI.fmtNum(x.count)}`).join(' · ')}</p>` : ''}
+        ${(b.enemyArmy && b.enemyArmy.length) ? `
+          <p class="small mt"><b>Техника врага:</b></p>
+          <p class="muted small">${b.enemyArmy.map((x) => `${UI.esc(x.name)} ×${UI.fmtNum(x.count)}`).join(' · ')}</p>` : ''}
+        ${b.myLosses.length ? `<p class="small mt">⚠️ Ваши потери: <span class="dmg-take">${UI.esc(b.myLosses.join(', '))}</span></p>` : '<p class="small mt muted">Без потерь техники с вашей стороны</p>'}
+        ${b.enemyLosses.length ? `<p class="small mt">💥 Потери врага: <span class="dmg-deal">${UI.esc(b.enemyLosses.join(', '))}</span></p>` : ''}
         ${!m.pendingFatality ? `<button class="btn btn-orange mt" id="atk-again">Атаковать снова</button>` : ''}
       </div>`;
   }
@@ -91,8 +98,9 @@ App.screens.war = async (c) => {
   list.innerHTML = opponents.map((o) => `
     <div class="list-row">
       <div class="grow">
-        <span class="name" ${o.isBot ? '' : `style="cursor:pointer" onclick="App.go('profile/${o.id}')"`}>${o.flag} ${UI.esc(o.name)}</span>
+        <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${o.flag} ${UI.esc(o.name)}</span>
         <span class="muted small"> Ур. ${o.level}</span>
+        ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
         ${o.online ? '<span class="small" style="color:var(--green)"> ●</span>' : ''}
       </div>
       <button class="btn btn-orange btn-inline" data-target="${o.id}">Атака</button>

@@ -155,7 +155,7 @@ App.screens.home = async (c) => {
   const big = [
     ['war', '🎯', 'Война'],
     ['legion', '🛡', 'Легион'],
-    ['missions', '📋', 'Миссии'],
+    ['missions', '📋', 'Спецоперации'],
     ['production', '🏭', 'Производство' + (prodLocked ? ` 🔒` : '')],
     ['units', '🚜', 'Техника'],
     ['buildings', '🏗', 'Постройки'],
@@ -204,18 +204,19 @@ App.screens.profile = async (c, param) => {
   const { profile: p } = await API.get('/api/profile/' + encodeURIComponent(id));
   const own = p.id === App.me.id;
 
-  const unitsHtml = p.units.length
+  const isBot = !!p.isBot;
+  const unitsHtml = (!isBot && p.units && p.units.length)
     ? p.units.map((x) => `<div class="kv"><span class="k">${UI.esc(x.name)} <span class="muted small">(${UI.esc(x.type)})</span></span><span class="v">×${UI.fmtNum(x.count)}</span></div>`).join('')
-    : '<p class="muted">Ангар пуст.</p>';
+    : '<p class="muted">Ангар не разглашается.</p>';
 
-  const devsHtml = p.secretDevs.length || p.superSecret
+  const devsHtml = (!isBot && (p.secretDevs && p.secretDevs.length || p.superSecret))
     ? p.secretDevs.map((x) => `<div class="kv"><span class="k">${UI.esc(x.name)}</span><span class="v">×${x.count}</span></div>`).join('') +
       (p.superSecret ? `<div class="kv"><span class="k gold">🛸 Сверхсекретная «Абсолют»</span><span class="v gold">×${p.superSecret}</span></div>` : '')
     : '<p class="muted">Секретных разработок нет.</p>';
 
-  const buildingsHtml = p.buildings.length
+  const buildingsHtml = (!isBot && p.buildings && p.buildings.length)
     ? p.buildings.map((x) => `<div class="kv"><span class="k">${x.kind === 'income' ? '💵' : '🛡'} ${UI.esc(x.name)}</span><span class="v">×${UI.fmtNum(x.count)}</span></div>`).join('')
-    : '<p class="muted">Построек нет.</p>';
+    : '<p class="muted">Постройки не разглашаются.</p>';
 
   c.innerHTML = `
     <div class="title">Личное дело</div>
@@ -233,6 +234,7 @@ App.screens.profile = async (c, param) => {
         ${own ? '<a href="javascript:void 0" class="small" id="edit-status">редактировать статус</a>' : ''}
       </div>
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
+      ${!own ? `<button class="btn mt" id="pf-msg">✉ Написать сообщение</button>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
         ? `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс «${UI.esc(App.me.alliance.name)}»</button>` : ''}
@@ -284,6 +286,19 @@ App.screens.profile = async (c, param) => {
         await App.refreshMe();
         App.go('war');
       } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
+  // Личное сообщение игроку
+  if (!own) {
+    const btnMsg = document.getElementById('pf-msg');
+    if (btnMsg) btnMsg.onclick = () => {
+      const subject = prompt('Тема письма:', 'Привет, ' + p.name);
+      if (subject === null) return;
+      const text = prompt('Текст сообщения:');
+      if (!text) return;
+      API.post('/api/mail', { toName: p.name, subject, text })
+        .then(() => UI.toast('✉ Сообщение отправлено игроку ' + p.name))
+        .catch((e) => UI.toast('⛔ ' + e.message));
     };
   }
 
@@ -436,6 +451,7 @@ App.screens.settings = async (c) => {
     ${themeBtn('classic', '🎨 Классическая хаки', 'Тёмная зелень и хаки — стиль оригинальной игры.')}
     ${themeBtn('steel',   '⚙ Военная сталь',    'Тёмный металл с зернистостью и царапинами.')}
     ${themeBtn('cyber',   '⚡ Кибер-война',      'Футуристический HUD: неоновая бирюза, геометрия, glassmorphism.')}
+    ${themeBtn('desert',  '☀ Пустынный фронт',   'Жёлтые пески, выгоревший камуфляж и солнечный жар.')}
     <hr class="hr">
     <button class="btn btn-red" id="set-logout">🚪 Выйти из аккаунта</button>`;
 

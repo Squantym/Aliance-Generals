@@ -20,6 +20,25 @@ function trophyDiscountPct(user, applyKey) {
   catch (e) { return 0; }
 }
 
+// Итоговая мощь атаки/защиты с учётом ВСЕХ модификаторов:
+//   - страна (typeMul, atkAll, defAll, defType)  — уже в buildArmy
+//   - модернизация Mk1/Mk2                       — уже в buildArmy
+//   - клановые постройки легиона                 — уже в buildArmy
+//   - трофеи «Медаль за отвагу» и «Стальной щит» — добавляются здесь
+//   - временные эффекты (допинг и т.п.)          — через effMul
+// Эта функция используется и в бою, и в отображении профиля/me —
+// чтобы игрок видел те же числа, с которыми реально пойдёт в бой.
+function totalPower(user, mode) {
+  const army = buildArmy(user, mode);
+  let trophies;
+  try { trophies = require('./trophies'); } catch (e) { trophies = null; }
+  const trophyAtk = trophies ? trophies.atkBonus(user) : 0;
+  const trophyDef = trophies ? trophies.defBonus(user) : 0;
+  const tempMul = effMul(user, mode === 'atk' ? 'atk_pct' : 'def_pct');
+  const finalPower = Math.round(army.power * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
+  return { ...army, power: finalPower, basePower: army.power };
+}
+
 // ---------- Максимумы ресурсов с учётом навыков ----------
 function maxima(user) {
   return {
@@ -197,8 +216,15 @@ function buildArmy(user, mode) {
       if (count <= 0) continue;
       let atk = cu.attack * config.MK_MULT[mk];
       let def = cu.defense * config.MK_MULT[mk];
-      if (country.mod.atkType === cu.type) atk *= 1.05; // Германия/Россия/США
-      if (country.mod.defAll) def *= 1.05;              // Казахстан
+      const mm = country.mod;
+      // Бонус по конкретному типу (Германия — ground, Россия — sea, США — air)
+      const typeMul = mm.typeMul || 1.05; // обратная совместимость
+      if (mm.atkType === cu.type) atk *= typeMul;
+      if (mm.defType === cu.type) def *= typeMul;
+      // Бонусы по всем типам (Казахстан)
+      if (mm.atkAll) atk *= mm.atkAll;
+      if (mm.defAll === true) def *= 1.05;          // старый формат
+      else if (typeof mm.defAll === 'number') def *= mm.defAll;
       entries.push({
         name: cu.name + (mk ? ` Mk${mk}` : ''),
         unitId, count, secret: false, mk,
@@ -207,8 +233,25 @@ function buildArmy(user, mode) {
     }
   }
 
-  // Берём сильнейших, пока есть место
-  entries.sort((a, b) => (mode === 'atk' ? b.atk - a.atk : b.def - a.def));
+  // Берём сильнейших, пока есть место.
+  // Приоритет:
+  //   - в АТАКЕ:  сначала ВОЗДУШНАЯ (упор на атаку), затем по числу атаки
+  //   - в ЗАЩИТЕ: сначала МОРСКАЯ (упор на защиту), затем по числу защиты
+  //   - секретные разработки всегда в строю (атакующие/защитные по статам)
+  const priorityType = mode === 'atk' ? 'air' : 'sea';
+  entries.sort((a, b) => {
+    // Секретные разработки всегда наверху (у них нет cu.type)
+    if (a.secret && !b.secret) return -1;
+    if (b.secret && !a.secret) return 1;
+    // Юнит приоритетного типа идёт первым
+    const cuA = a.unitId ? config.UNIT_BY_ID[a.unitId] : null;
+    const cuB = b.unitId ? config.UNIT_BY_ID[b.unitId] : null;
+    const aPrio = cuA && cuA.type === priorityType ? 1 : 0;
+    const bPrio = cuB && cuB.type === priorityType ? 1 : 0;
+    if (aPrio !== bPrio) return bPrio - aPrio;
+    // Дальше по убыванию характеристики
+    return mode === 'atk' ? b.atk - a.atk : b.def - a.def;
+  });
   let left = cap, taken = 0, power = 0;
   for (const e of entries) {
     const t = Math.min(e.count, left);
@@ -501,8 +544,8 @@ function tutorialView(user) {
 }
 
 function mePayload(user) {
-  const atk = buildArmy(user, 'atk');
-  const def = buildArmy(user, 'def');
+  const atk = totalPower(user, "atk");
+  const def = totalPower(user, "def");
   const now = Date.now();
   return {
     id: user.id, name: user.name, isAdmin: !!user.isAdmin,
@@ -512,6 +555,7 @@ function mePayload(user) {
     dollars: user.dollars, gold: user.gold, bank: user.bank,
     skillPoints: user.skillPoints, skills: { ...user.skills },
     res: resView(user),
+    healCost: config.hospitalPrice(user.level),  // для баннера «вылечиться» при HP < 25
     battle: { ...user.battle },
     ears: user.ears, tokens: user.tokens, earsLost: user.earsLost,
     capacity: capacity(user),
@@ -530,8 +574,8 @@ function mePayload(user) {
 
 // ---------- Публичный профиль (его видят другие игроки) ----------
 function publicProfile(target, viewer) {
-  const atk = buildArmy(target, 'atk');
-  const def = buildArmy(target, 'def');
+  const atk = totalPower(target, "atk");
+  const def = totalPower(target, "def");
   const unitsList = [];
   for (const [unitId, mkMap] of Object.entries(target.units)) {
     const cu = config.UNIT_BY_ID[unitId];
@@ -582,7 +626,7 @@ function setStatus(user, text) {
 module.exports = {
   users, maxima, refresh, addMoney, addGold, addXp, xpMul, spendSkill,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
-  ensureUnit, unitTotalCount, trophyDiscountPct,
+  ensureUnit, unitTotalCount, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, rank, flag, findByName,
   bankDeposit, bankWithdraw, goldPackages, buyGold,

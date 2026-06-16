@@ -21,9 +21,12 @@ function baseCostFor(b, owned, qty) {
   }
   return Math.round(total);
 }
-// Итоговая цена с учётом скидки администратора
-function costFor(b, owned, qty) {
-  return discounts.applyTo('building', baseCostFor(b, owned, qty));
+// Итоговая цена с учётом скидки администратора и страны игрока
+function costFor(user, b, owned, qty) {
+  let base = baseCostFor(b, owned, qty);
+  const country = config.COUNTRY_BY_ID[user.country];
+  if (country && country.mod.buildingCost) base = Math.round(base * country.mod.buildingCost);
+  return discounts.applyTo('building', base);
 }
 
 function viewOne(user, b) {
@@ -34,7 +37,7 @@ function viewOne(user, b) {
     unlock: b.unlock, locked: b.unlock > user.level,
     owned,
     baseNextPrice: baseCostFor(b, owned, 1),
-    nextPrice: costFor(b, owned, 1),
+    nextPrice: costFor(user, b, owned, 1),
   };
 }
 
@@ -59,7 +62,7 @@ function build(user, buildingId, qty, notices) {
   if (user.level < b.unlock) throw new u.ApiError(`Откроется на ${b.unlock} уровне`);
   qty = u.clamp(u.toInt(qty, 1), 1, 100000);
   const owned = user.buildings[buildingId] || 0;
-  const cost = costFor(b, owned, qty);
+  const cost = costFor(user, b, owned, qty);
   if (user.dollars < cost) throw new u.ApiError(`Не хватает денег (нужно $${u.fmt(cost)})`);
   user.dollars -= cost;
   user.buildings[buildingId] = owned + qty;

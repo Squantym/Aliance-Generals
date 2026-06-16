@@ -12,7 +12,7 @@ const App = {
   _tear: null,     // функция «уборки» текущего экрана (остановить поллинг чата и т.п.)
 
   // Темы оформления: 'classic' (по умолчанию), 'steel', 'cyber'
-  THEMES: ['classic', 'steel', 'cyber'],
+  THEMES: ['classic', 'steel', 'cyber', 'desert'],
   theme() { return localStorage.getItem('gtheme') || 'classic'; },
   setTheme(t) {
     if (!App.THEMES.includes(t)) t = 'classic';
@@ -107,6 +107,8 @@ const App = {
     const mail = m.mailUnread > 0 ? `✉ <span class="badge">${m.mailUnread}</span>` : '✉';
     // Полоска опыта: текущий xp / необходимый для следующего уровня
     const xpPct = m.xpNext > 0 ? Math.min(100, Math.round((m.xp / m.xpNext) * 100)) : 100;
+    // Уровень кликабелен: ведёт в навыки если есть очки, иначе в профиль
+    const lvlTarget = m.skillPoints > 0 ? 'skills' : 'profile';
     h.innerHTML = `
       <div class="logo" onclick="App.go('home')"><span class="star">★</span> ГЕНЕРАЛЫ <span class="star">★</span></div>
       <div class="xp-strip" onclick="App.go('profile')" title="Опыт: ${UI.fmtNum(m.xp)} / ${UI.fmtNum(m.xpNext)}">
@@ -116,14 +118,18 @@ const App = {
       <div class="res-row">
         <div class="clickable" onclick="App.go('bank')">$ <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
         <div class="clickable" onclick="App.go('market')"><span class="ic-gold" aria-hidden="true"></span> <span class="gold" id="hd-gold">${UI.fmtNum(m.gold)}</span></div>
-        <div class="clickable" onclick="App.go('skills')">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? ' <span class="badge">+' + m.skillPoints + '</span>' : ''}</div>
+        <div class="clickable" onclick="App.go('${lvlTarget}')">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? ' <span class="badge">+' + m.skillPoints + '</span>' : ''}</div>
         <div class="clickable" onclick="App.go('mail')">${mail}</div>
       </div>
       <div class="stat-row">
-        <div>❤ <span class="stat-hp" id="st-hp">${m.res.hp.cur}/${m.res.hp.max}</span> <span class="timer" id="st-hp-t"></span></div>
-        <div>⚡ <span class="stat-en" id="st-en">${m.res.en.cur}/${m.res.en.max}</span> <span class="timer" id="st-en-t"></span></div>
-        <div>🎯 <span class="stat-am" id="st-am">${m.res.am.cur}/${m.res.am.max}</span> <span class="timer" id="st-am-t"></span></div>
-      </div>`;
+        <div class="clickable" onclick="App.go('hospital')" title="В госпиталь">❤ <span class="stat-hp" id="st-hp">${m.res.hp.cur}/${m.res.hp.max}</span> <span class="timer" id="st-hp-t"></span></div>
+        <div class="clickable" onclick="App.go('missions')" title="В спецоперации">⚡ <span class="stat-en" id="st-en">${m.res.en.cur}/${m.res.en.max}</span> <span class="timer" id="st-en-t"></span></div>
+        <div class="clickable" onclick="App.go('war')" title="В бой">🎯 <span class="stat-am" id="st-am">${m.res.am.cur}/${m.res.am.max}</span> <span class="timer" id="st-am-t"></span></div>
+      </div>
+      ${m.res.hp.cur < 25 ? `
+        <div class="low-hp-banner" onclick="App._quickHeal()">
+          ⚠️ Здоровье ниже 25 — атаки запрещены. <b>Восстановить полностью за $${UI.fmtMoney(m.healCost || 0)}</b>
+        </div>` : ''}`;
     App.tickHeader(true);
   },
 
@@ -149,6 +155,17 @@ const App = {
       if (tEl) tEl.textContent = r.cur < r.max ? UI.fmtTimer(r.toNextSec) : '';
     }
     if (!noDecrement && m.nextPayoutSec > 0) m.nextPayoutSec--;
+  },
+
+  // Быстрое лечение по нажатию на баннер HP<25
+  async _quickHeal() {
+    if (!confirm(`Восстановить здоровье за $${UI.fmtMoney(App.me.healCost)}?`)) return;
+    try {
+      await API.post('/api/hospital/heal');
+      await App.refreshMe();
+      App.renderHeader();
+      UI.toast('🏥 Здоровье восстановлено!');
+    } catch (e) { UI.toast('⛔ ' + e.message); }
   },
 
   // Обработка ссылки из письма подтверждения: #verify/<token>

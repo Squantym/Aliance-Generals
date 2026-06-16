@@ -15,6 +15,7 @@ App.screens.market = async (c, param) => {
     ['debuffs', '😈 Падлянки'],
     ['containers', '📦 Контейнеры'],
     ['auction', '🔨 Аукцион'],
+    ['passport', '🛂 Паспорт'],
   ];
   const tabsHtml = `<div class="tabs">${tabs.map(([id, label]) =>
     `<div class="tab ${id === tab ? 'active' : ''}" onclick="location.hash='#market/${id}'">${label}</div>`).join('')}</div>`;
@@ -107,6 +108,61 @@ App.screens.market = async (c, param) => {
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });
+    return;
+  }
+
+  // --- Вкладка: паспорт (смена имени и гражданства) ---
+  if (tab === 'passport') {
+    const p = await API.get('/api/passport');
+    const flagOf = (id) => (p.countries.find((cc) => cc.id === id) || {}).flag || '';
+    c.innerHTML = `
+      <div class="title">Чёрный рынок</div>
+      ${tabsHtml}
+      <div class="card">
+        <p class="muted small">Контакт в министерстве оформит вам новые документы — но не дёшево. Каждая следующая смена в 2 раза дороже предыдущей.</p>
+      </div>
+
+      <div class="card">
+        <div class="name">📛 Новое имя</div>
+        <p class="muted small mt">Текущий позывной: <b>${UI.esc(p.currentName)}</b></p>
+        <label>Новый позывной (3–16 символов)</label>
+        <input type="text" id="pp-newname" maxlength="16" value="${UI.esc(p.currentName)}">
+        <button class="btn btn-orange mt" id="pp-name-go">Сменить имя за <span class="ic-gold"></span> ${UI.fmtNum(p.namePrice)}</button>
+        ${p.nameChanges > 0 ? `<p class="muted small center mt">Имя менялось ${p.nameChanges} раз(а)</p>` : ''}
+      </div>
+
+      <div class="card">
+        <div class="name">🌍 Новое гражданство</div>
+        <p class="muted small mt">Текущее: ${flagOf(p.currentCountry)} <b>${UI.esc(p.currentCountry.toUpperCase())}</b>. Смена даёт бонус новой страны.</p>
+        <label>Выберите новую страну</label>
+        <select id="pp-newcountry">
+          ${p.countries.map((cc) => `
+            <option value="${cc.id}" ${cc.id === p.currentCountry ? 'selected' : ''}>
+              ${cc.flag} ${UI.esc(cc.name)} — ${UI.esc(cc.desc)}
+            </option>`).join('')}
+        </select>
+        <button class="btn btn-orange mt" id="pp-country-go">Сменить гражданство за <span class="ic-gold"></span> ${UI.fmtNum(p.countryPrice)}</button>
+        ${p.countryChanges > 0 ? `<p class="muted small center mt">Гражданство менялось ${p.countryChanges} раз(а)</p>` : ''}
+      </div>`;
+
+    document.getElementById('pp-name-go').onclick = async () => {
+      const newName = document.getElementById('pp-newname').value.trim();
+      if (!confirm(`Сменить имя на «${newName}» за ${p.namePrice} золота?`)) return;
+      try {
+        await API.post('/api/passport/name', { newName });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('pp-country-go').onclick = async () => {
+      const country = document.getElementById('pp-newcountry').value;
+      if (!confirm(`Сменить гражданство на «${country.toUpperCase()}» за ${p.countryPrice} золота?`)) return;
+      try {
+        await API.post('/api/passport/country', { country });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
     return;
   }
 

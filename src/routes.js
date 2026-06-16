@@ -22,6 +22,7 @@ const social = require('./services/social');
 const ach = require('./services/achievements');
 const trophies = require('./services/trophies');
 const hospital = require('./services/hospital');
+const passport = require('./services/passport');
 const tutorial = require('./services/tutorial');
 const admin = require('./services/admin');
 
@@ -62,6 +63,10 @@ module.exports = function registerRoutes(app) {
     return { skills: req.user.skills, skillPoints: req.user.skillPoints };
   }));
   app.add('GET', '/api/profile/:id', (req) => {
+    // Если ID начинается с "bot_" — отдаём профиль бота
+    if (String(req.params.id).startsWith('bot_')) {
+      return { profile: battle.botProfile(req.params.id, req.user) };
+    }
     const target = player.users()[req.params.id];
     if (!target) throw new u.ApiError('Игрок не найден');
     player.refresh(target);
@@ -117,6 +122,11 @@ module.exports = function registerRoutes(app) {
   // ---------- Госпиталь ----------
   app.add('GET',  '/api/hospital',         (req) => hospital.view(req.user));
   app.add('POST', '/api/hospital/heal',    act((req, n) => hospital.heal(req.user, n)));
+
+  // ---------- Паспорт (на чёрном рынке) ----------
+  app.add('GET',  '/api/passport',         (req) => passport.view(req.user));
+  app.add('POST', '/api/passport/name',    act((req, n) => passport.changeName(req.user, req.body.newName, n)));
+  app.add('POST', '/api/passport/country', act((req, n) => passport.changeCountry(req.user, req.body.country, n)));
 
   // ---------- Банк ----------
   app.add('POST', '/api/bank', act((req) => {
