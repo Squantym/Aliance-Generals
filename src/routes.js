@@ -23,6 +23,7 @@ const ach = require('./services/achievements');
 const trophies = require('./services/trophies');
 const hospital = require('./services/hospital');
 const passport = require('./services/passport');
+const dailyQuests = require('./services/dailyQuests');
 const tutorial = require('./services/tutorial');
 const admin = require('./services/admin');
 
@@ -128,6 +129,11 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/passport/name',    act((req, n) => passport.changeName(req.user, req.body.newName, n)));
   app.add('POST', '/api/passport/country', act((req, n) => passport.changeCountry(req.user, req.body.country, n)));
 
+  // ---------- Ежедневные задания ----------
+  app.add('GET',  '/api/daily',            (req) => dailyQuests.list(req.user));
+  app.add('POST', '/api/daily/claim',      act((req, n) => dailyQuests.claim(req.user, req.body.questId, n)));
+  app.add('POST', '/api/daily/bonus',      act((req, n) => dailyQuests.claimBonus(req.user, n)));
+
   // ---------- Банк ----------
   app.add('POST', '/api/bank', act((req) => {
     if (req.body.action === 'deposit') player.bankDeposit(req.user, req.body.amount);
@@ -147,6 +153,7 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/group/:kind/apply',   act((req, n) => groups.apply(req.user, req.params.kind, req.body.groupId, n)));
   app.add('POST', '/api/group/:kind/decide',  act((req, n) => groups.decide(req.user, req.params.kind, req.body.userId, !!req.body.accept, n)));
   app.add('POST', '/api/group/:kind/invite',  act((req, n) => groups.invite(req.user, req.params.kind, req.body.userId, n)));
+  app.add('POST', '/api/group/:kind/diplomat', act((req, n) => groups.hireDiplomat(req.user, req.params.kind, n)));
   app.add('POST', '/api/group/:kind/respond', act((req, n) => groups.respondInvite(req.user, req.params.kind, req.body.groupId, !!req.body.accept, n)));
   app.add('POST', '/api/group/:kind/kick',    act((req, n) => groups.kick(req.user, req.params.kind, req.body.userId, n)));
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
@@ -175,5 +182,7 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/admin/grant', act((req, n) => admin.grant(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/discounts', () => admin.discountCategories(), { admin: true });
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
+  app.add('GET',  '/api/admin/global-buffs', () => admin.listGlobalBuffs(), { admin: true });
+  app.add('POST', '/api/admin/global-buff',  act((req, n) => admin.setGlobalBuff(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/logs',      (req) => admin.listLogs(req.query), { admin: true });
 };

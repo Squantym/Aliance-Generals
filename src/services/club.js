@@ -64,6 +64,7 @@ function view(user) {
 function answerRiddle(user, answer, notices) {
   const c = clubState(user);
   if (c.riddleId === null) throw new u.ApiError('Сейчас нет активной загадки — загляните позже');
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
   const riddle = config.RIDDLES[c.riddleId];
   const norm = String(answer || '').trim().toLowerCase().replace(/ё/g, 'е');
   const correct = riddle.a.some((a) => a.replace(/ё/g, 'е') === norm);
@@ -92,6 +93,7 @@ function guessStart(user) {
 function guessTry(user, number, notices) {
   const c = clubState(user);
   if (!c.guess) throw new u.ApiError('Игра ещё не начата');
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
   const n = u.toInt(number);
   if (n < 1 || n > C.GUESS_RANGE) throw new u.ApiError(`Число должно быть от 1 до ${C.GUESS_RANGE}`);
   c.guess.left--;
@@ -119,6 +121,7 @@ function armWrestle(user, bet, notices) {
   const c = clubState(user);
   const now = Date.now();
   if (now < c.armNextAt) throw new u.ApiError('Рука ещё дрожит — отдохните минуту');
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
   bet = u.toInt(bet);
   if (bet < C.ARM_MIN_BET) throw new u.ApiError(`Минимальная ставка: $${u.fmt(C.ARM_MIN_BET)}`);
   if (bet > user.dollars) throw new u.ApiError('Не хватает наличных на ставку');

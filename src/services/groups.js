@@ -8,6 +8,7 @@
 const db = require('../core/db');
 const u = require('../core/utils');
 const player = require('./player');
+const config = require('../../config/gameConfig');
 const social = require('./social');
 const discounts = require('./discounts');
 
@@ -70,6 +71,14 @@ function view(user, kind) {
       requests: g.leaderId === user.id ? g.requests.map(memberBrief).filter(Boolean) : [],
       perMember: params.PER_MEMBER || 0,
       bonusEach: (params.PER_MEMBER || 0) * g.members.length,
+      // Лимит вместимости альянса (по уровню лидера × 10)
+      maxMembers: kind === 'alliance' ? user.level * (params.MEMBERS_PER_LEVEL || 10) : null,
+      // Дипломаты и лимит приглашений
+      diplomats: g.diplomats || 0,
+      inviteLimit: inviteLimit(g),
+      invitesUsed: pruneInviteLog(g),
+      inviteCooldownMin: inviteCooldownMin(g),
+      nextDiplomatCost: diplomatCost(g),
     } : null,
     pendingFor,
     top: Object.values(all)
@@ -168,6 +177,50 @@ function decide(user, kind, applicantId, accept, notices) {
 }
 
 // Лидер приглашает другого игрока (отправляет инвайт по userId)
+// ---------- Дипломаты и лимит приглашений ----------
+// Базовый лимит: 5 приглашений в час. Дипломаты добавляют по +1 в час.
+// Первый дипломат стоит 100 золота, каждый следующий в 2 раза дороже.
+const BASE_INVITES_PER_HOUR = 5;
+const DIPLOMAT_BASE_COST_GOLD = 100;
+const INVITE_WINDOW_MS = 60 * 60 * 1000;
+
+function inviteLimit(g) {
+  return BASE_INVITES_PER_HOUR + (g.diplomats || 0);
+}
+function diplomatCost(g) {
+  // Стоимость следующего дипломата: 100 * 2^N
+  return DIPLOMAT_BASE_COST_GOLD * Math.pow(2, g.diplomats || 0);
+}
+// Чистим устаревшие отметки и считаем, сколько приглашений уже отправлено за час
+function pruneInviteLog(g) {
+  if (!g.inviteLog) g.inviteLog = [];
+  const cutoff = Date.now() - INVITE_WINDOW_MS;
+  g.inviteLog = g.inviteLog.filter((t) => t > cutoff);
+  return g.inviteLog.length;
+}
+// Минут до восстановления одного слота приглашений
+function inviteCooldownMin(g) {
+  pruneInviteLog(g);
+  if (g.inviteLog.length === 0) return 0;
+  const oldest = g.inviteLog[0];
+  return Math.max(0, Math.ceil((INVITE_WINDOW_MS - (Date.now() - oldest)) / 60000));
+}
+
+// Нанять дипломата. Снимает золото с пользователя (лидера альянса/легиона).
+function hireDiplomat(user, kind, notices) {
+  const def = defOf(kind);
+  const groupId = user[def.userField];
+  const g = groupId ? coll(kind)[groupId] : null;
+  if (!g || g.leaderId !== user.id) throw new u.ApiError(`Нанять дипломата может только лидер ${def.label.toLowerCase()}`);
+  const cost = diplomatCost(g);
+  if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
+  user.gold -= cost;
+  g.diplomats = (g.diplomats || 0) + 1;
+  db.save(def.coll);
+  notices.push(`🎩 Нанят дипломат №${g.diplomats}. Лимит приглашений: ${inviteLimit(g)}/час. Следующий — 🪙 ${diplomatCost(g)}.`);
+  return { diplomats: g.diplomats, inviteLimit: inviteLimit(g), nextCost: diplomatCost(g) };
+}
+
 function invite(user, kind, targetId, notices) {
   const def = defOf(kind);
   const groupId = user[def.userField];
@@ -175,19 +228,34 @@ function invite(user, kind, targetId, notices) {
   if (!g || g.leaderId !== user.id) throw new u.ApiError('Приглашать может только лидер');
   if (targetId === user.id) throw new u.ApiError('Нельзя пригласить самого себя');
 
+  // Лимит участников: уровень лидера × 10
+  if (kind === 'alliance') {
+    const maxMembers = user.level * (config.ALLIANCE.MEMBERS_PER_LEVEL || 10);
+    const current = (g.members || []).length;
+    if (current >= maxMembers) {
+      throw new u.ApiError(`Альянс заполнен: ${current}/${maxMembers}. Повысьте свой уровень — каждый уровень открывает +10 мест.`);
+    }
+  }
+
+  // Проверка лимита приглашений в час
+  const limit = inviteLimit(g);
+  const used = pruneInviteLog(g);
+  if (used >= limit) {
+    const wait = inviteCooldownMin(g);
+    throw new u.ApiError(`Лимит ${limit} приглашений/час исчерпан. Слот освободится через ~${wait} мин. Наймите дипломата чтобы увеличить лимит.`);
+  }
+
   // Автоприём для ботов: добавляем фейкового члена в альянс
-  // (бот эфемерный — его реального профиля в базе нет, только в кэше battle.js)
   if (String(targetId).startsWith('bot_')) {
     if (kind !== 'alliance') throw new u.ApiError('В легион можно приглашать только живых игроков');
-    // Бот «соглашается»: добавляем фиктивный членский запис
     const botMembers = g.botMembers || (g.botMembers = []);
     if (botMembers.includes(targetId)) throw new u.ApiError('Этот боец уже у вас в альянсе');
     botMembers.push(targetId);
-    // В members добавляем как обычного участника — для подсчёта вместимости
     g.members = g.members || [g.leaderId];
     g.members.push(targetId);
+    g.inviteLog.push(Date.now());
     db.save(def.coll);
-    notices.push(`✅ Боец «${targetId}» автоматически принял приглашение в альянс`);
+    notices.push(`✅ Боец автоматически принял приглашение в альянс. Осталось приглашений: ${limit - used - 1}/час`);
     return;
   }
 
@@ -198,12 +266,30 @@ function invite(user, kind, targetId, notices) {
   g.invites = g.invites || [];
   if (g.invites.includes(targetId)) throw new u.ApiError('Приглашение уже отправлено');
   g.invites.push(targetId);
+  g.inviteLog.push(Date.now());
   db.save(def.coll);
 
   social.systemMail(target, `Приглашение в ${def.label.toLowerCase()}`,
     `Лидер «${g.name}» приглашает вас в свои ряды. ` +
     `Откройте раздел «${def.label}» — там будет кнопка «Принять приглашение».`);
-  notices.push(`Приглашение игроку ${target.name} отправлено.`);
+  notices.push(`Приглашение игроку ${target.name} отправлено. Осталось приглашений: ${limit - used - 1}/час`);
+}
+
+// Удаление всех ботов из всех альянсов (миграция: «фейковая мощь» от ботов сбрасывается)
+function cleanupBotsFromAlliances() {
+  const all = coll('alliance');
+  let removed = 0;
+  for (const g of Object.values(all)) {
+    if (!g.members) continue;
+    const before = g.members.length;
+    g.members = g.members.filter((m) => !String(m).startsWith('bot_'));
+    g.botMembers = [];
+    removed += before - g.members.length;
+  }
+  if (removed > 0) {
+    db.save('alliance');
+    console.log(`🧹 Удалено ${removed} фейковых ботов из альянсов`);
+  }
 }
 
 // Игрок принимает или отклоняет приглашение
@@ -291,4 +377,4 @@ function leave(user, kind, notices) {
   db.save(def.coll);
 }
 
-module.exports = { view, create, apply, decide, invite, respondInvite, pendingInvites, kick, leave };
+module.exports = { view, create, apply, decide, invite, respondInvite, pendingInvites, kick, leave, hireDiplomat, cleanupBotsFromAlliances };

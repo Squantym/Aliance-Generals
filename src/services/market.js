@@ -46,6 +46,7 @@ function buyItem(user, itemId, targetName, notices) {
   if (!item) throw new u.ApiError('Такого товара нет на рынке');
   const price = marketGold(item);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
+  require('./dailyQuests').bump(user, 'marketBought', 1);
 
   if (item.kind === 'debuff') {
     // Падлянка применяется к другому игроку по имени
@@ -115,6 +116,7 @@ function openContainer(user, tier, notices) {
   if (!c) throw new u.ApiError('Такого контейнера не существует');
   const price = containerGold(c);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
+  require('./dailyQuests').bump(user, 'marketBought', 1);
   user.gold -= price;
 
   // Шанс 150% = 1 гарантированная разработка + 50% на вторую

@@ -115,8 +115,8 @@ function botProfile(botId, viewer) {
   const rec = botCache.get(botId);
   if (!rec) throw new u.ApiError('Профиль не найден или устарел. Обновите список целей.');
   const b = rec.bot;
-  // Можно ли пригласить в альянс: только псевдоигроков без своего альянса
-  const canInviteAlliance = b.isPlayerLike && !b.allianceId && !!viewer.allianceId;
+  // Можно ли пригласить в альянс: любой бот без своего альянса (включая террористов)
+  const canInviteAlliance = !b.allianceId && !!viewer.allianceId;
   // Можно ли атаковать
   const canAttack = Math.abs(b.level - viewer.level) <= config.PLAYER.LEVEL_RANGE;
   return {
@@ -236,6 +236,7 @@ function attack(user, targetId, notices) {
   // Тратим боеприпас и фиксируем попытку
   user.res.am.cur -= 1;
   user.battle.attacks++;
+  require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
 
   // ----- Мощь атакующего: армия × эффекты × трофеи -----
@@ -312,11 +313,23 @@ function attack(user, targetId, notices) {
 
   if (win) {
     user.battle.wins++;
+    require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
     if (isBot) {
       // Базовая выплата с бота заметно урезана: с уровнем растёт мягко
       const baseBot = target.loot;
       loot = Math.round(baseBot * (0.5 + Math.random() * 0.4) * lootMul);
+      // Симулируем потери техники бота для отображения в окне боя.
+      // У бота нет реальной техники в БД, поэтому просто берём имена из
+      // его псевдоармии и пишем туда «×N потерь».
+      if (dArmy && dArmy.entries) {
+        for (const e of dArmy.entries) {
+          if (e.taken > 0) {
+            const lost = Math.max(1, Math.floor(e.taken * B.LOSS_DEF_PCT * (1 - lossReduce) * 1.5));
+            if (lost > 0) enemyLosses.push(`${e.name} ×${lost}`);
+          }
+        }
+      }
     } else {
       // С игрока: 7% от наличных (было 10%), с учётом уменьшающего множителя
       // и трофея «Мародёр» (+2% за уровень)
@@ -397,6 +410,7 @@ function fatality(user, choice, notices) {
   user.pendingFatality = null;
   user.battle.fatalities++;
   ach.bump(user, 'fatalities', 1, notices);
+  require('./dailyQuests').bump(user, 'fatalities', 1);
 
   if (choice === 'ear') {
     // Отрезаем ухо: +1 ресурс «ухо» себе, жертве — счётчик потерянных ушей

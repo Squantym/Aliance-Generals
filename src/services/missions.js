@@ -89,6 +89,8 @@ function checkCompleted(user, notices) {
       // Засчитываем шаг
       const p = progress(user, proc.confId);
       p.ops[proc.opIdx] = (p.ops[proc.opIdx] || 0) + 1;
+      // Счётчик для ежедневного задания
+      require('./dailyQuests').bump(user, 'missionStages', 1);
       // Награда за шаг
       player.addXp(user, proc.xp, notices || []);
       player.addMoney(user, proc.money, false);

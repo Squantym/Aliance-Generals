@@ -10,6 +10,7 @@ const player = require('./player');
 const social = require('./social');
 const ach = require('./achievements');
 const discounts = require('./discounts');
+const globalBuffs = require('./globalBuffs');
 const auditLog = require('./auditLog');
 
 function brief(p) {
@@ -97,6 +98,23 @@ function setDiscount(adminUser, body, notices) {
   return discountCategories();
 }
 
+// ---------- Глобальные бонусы (на всех игроков) ----------
+function listGlobalBuffs() {
+  return { active: globalBuffs.listActive(), keys: Object.entries(globalBuffs.KEYS).map(([k, v]) => ({ key: k, label: v.label })) };
+}
+function setGlobalBuff(adminUser, body, notices) {
+  const key = String(body.key || '');
+  const pct = u.toInt(body.pct, 0);
+  const hours = Math.max(0, Number(body.hours) || 0);
+  globalBuffs.set(key, pct, hours);
+  if (pct > 0 && hours > 0) {
+    notices.push(`🎉 Активирован глобальный бонус «${(globalBuffs.KEYS[key] || {}).label || key}»: +${pct}% на ${hours} ч.`);
+  } else {
+    notices.push(`Глобальный бонус «${key}» снят.`);
+  }
+  return listGlobalBuffs();
+}
+
 // ---------- Журнал действий ----------
 // query: { userId?, limit? }. Без userId — последние действия всех игроков.
 function listLogs(query) {
@@ -107,4 +125,4 @@ function listLogs(query) {
   return { logs: entries };
 }
 
-module.exports = { listPlayers, grant, discountCategories, setDiscount, listLogs };
+module.exports = { listPlayers, grant, discountCategories, setDiscount, listLogs, listGlobalBuffs, setGlobalBuff };

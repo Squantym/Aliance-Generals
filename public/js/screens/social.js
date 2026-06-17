@@ -82,11 +82,22 @@ async function renderGroupScreen(c, kind) {
     c.innerHTML = `
       <div class="title">${label} «${UI.esc(g.name)}»</div>
       <div class="card">
-        <div class="kv"><span class="k">Бойцов в строю</span><span class="v">${g.members.length}</span></div>
+        <div class="kv"><span class="k">Бойцов в строю</span><span class="v">${g.members.length}${g.maxMembers ? ' / ' + g.maxMembers : ''}</span></div>
         ${kind === 'alliance' ? `<div class="kv"><span class="k">Бонус техники в бой</span><span class="v gold">+${UI.fmtNum(g.bonusEach)}</span></div>` : ''}
+        ${g.maxMembers ? `<p class="muted small mt">Макс. участников = ваш уровень × 10. Поднимите уровень — откроется +10 мест.</p>` : ''}
         <p class="muted small mt">${bonusHint}</p>
         <button class="btn btn-red mt" id="g-leave">${g.isLeader ? 'Покинуть (лидерство передастся)' : `Покинуть ${label.toLowerCase()}`}</button>
       </div>
+
+      ${g.isLeader && kind === 'alliance' ? `
+        <div class="card">
+          <div class="name">🎩 Дипломаты и приглашения</div>
+          <p class="muted small mt">Базовый лимит: 5 приглашений/час. Каждый дипломат добавляет +1 к лимиту.</p>
+          <div class="kv"><span class="k">Дипломатов нанято</span><span class="v">${g.diplomats}</span></div>
+          <div class="kv"><span class="k">Лимит приглашений</span><span class="v">${g.invitesUsed} / ${g.inviteLimit} в час</span></div>
+          ${g.invitesUsed >= g.inviteLimit ? `<p class="small mt" style="color:var(--red)">⚠️ Слот восстановится через ~${g.inviteCooldownMin} мин</p>` : ''}
+          <button class="btn btn-orange mt" id="g-hire-diplomat">Нанять дипломата за <span class="ic-gold"></span> ${UI.fmtNum(g.nextDiplomatCost)}</button>
+        </div>` : ''}
 
       ${g.isLeader && g.requests.length ? `
         <div class="card">
@@ -117,6 +128,12 @@ async function renderGroupScreen(c, kind) {
     document.getElementById('g-leave').onclick = async () => {
       if (!confirm(`Точно покинуть ${label.toLowerCase()}?`)) return;
       try { await API.post(`/api/group/${kind}/leave`); await App.refreshMe(); App.rerender(); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    const diplomatBtn = document.getElementById('g-hire-diplomat');
+    if (diplomatBtn) diplomatBtn.onclick = async () => {
+      if (!confirm(`Нанять дипломата за ${g.nextDiplomatCost} золота?`)) return;
+      try { await API.post(`/api/group/${kind}/diplomat`); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
     const decide = (userId, accept) => async () => {

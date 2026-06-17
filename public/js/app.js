@@ -12,7 +12,7 @@ const App = {
   _tear: null,     // функция «уборки» текущего экрана (остановить поллинг чата и т.п.)
 
   // Темы оформления: 'classic' (по умолчанию), 'steel', 'cyber'
-  THEMES: ['classic', 'steel', 'cyber', 'desert'],
+  THEMES: ['classic', 'steel', 'cyber', 'desert', 'noir'],
   theme() { return localStorage.getItem('gtheme') || 'classic'; },
   setTheme(t) {
     if (!App.THEMES.includes(t)) t = 'classic';

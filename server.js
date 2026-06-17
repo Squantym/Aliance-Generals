@@ -20,6 +20,7 @@ const db = require('./src/core/db');
 const registerRoutes = require('./src/routes');
 const market = require('./src/services/market');
 const legion = require('./src/services/legion');
+const groups = require('./src/services/groups');
 
 const PORT = process.env.PORT || 3000;
 
@@ -48,6 +49,9 @@ async function main() {
 
   // При первом старте сразу создаём аукционные лоты
   market.tick();
+
+  // Миграция: удаляем фейковых ботов из всех альянсов (старые данные)
+  groups.cleanupBotsFromAlliances();
 
   // Стартуем HTTP-сервер
   const server = app.listen(PORT, () => {

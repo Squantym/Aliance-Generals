@@ -63,6 +63,7 @@ function buy(user, unitId, qty, notices) {
   const m = player.ensureUnit(user, unitId);
   m[0] += qty;
   ach.bump(user, 'unitsBought', qty, notices);
+  require('./dailyQuests').bump(user, 'unitsBought', qty);
   tutorial.notify(user, 'buy_unit', notices);
   return { unitId, owned: player.unitTotalCount(user, unitId), spent: cost };
 }

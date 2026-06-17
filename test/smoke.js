@@ -233,7 +233,7 @@ async function main() {
   const ach = (await get('/api/achievements', A)).data;
   check('достижения читаются', ach.achievements.length >= 5);
   const trophies = (await get('/api/trophies', A)).data;
-  check('трофеи читаются', trophies.trophies.length === 13);
+  check('трофеи читаются', trophies.trophies.length === 14);
 
   console.log('17. Покупка золота (заготовка)');
   const packs = (await get('/api/bank/gold-packages', A)).data;
@@ -267,6 +267,64 @@ async function main() {
   const botId = opps.opponents.find((o) => o.isBot).id;
   const botProf = await get('/api/profile/' + botId, A);
   check('профиль бота открывается', botProf.status === 200 && botProf.data.profile.isBot === true);
+
+  console.log('21. Техника прибавляет атаку и защиту в общую мощь');
+  // Берём свежего игрока (B), у него ещё нет техники
+  const meBnoUnits = (await get('/api/me', B)).data;
+  const atkBefore = meBnoUnits.power.atk;
+  const defBefore = meBnoUnits.power.def;
+  // Покупаем 1 наземный юнит (Т-54: 50/50)
+  await post('/api/admin/grant', A, { userId: idB, dollars: 100000 });
+  const buyUnit = await post('/api/units/buy', B, { unitId: 'ground_1', qty: 1 });
+  check('купили 1× Т-54', buyUnit.status === 200);
+  const meBwithUnits = (await get('/api/me', B)).data;
+  check('атака УВЕЛИЧИЛАСЬ после покупки', meBwithUnits.power.atk > atkBefore);
+  check('защита УВЕЛИЧИЛАСЬ после покупки', meBwithUnits.power.def > defBefore);
+
+  console.log('22. Дипломаты в альянсе');
+  // Игрок B — лидер альянса (создал его в шаге 15). Проверяем найм дипломата.
+  await post('/api/admin/grant', A, { userId: idB, gold: 5000 });
+  const allianceBefore = (await get('/api/group/alliance', B)).data;
+  if (allianceBefore.mine && allianceBefore.mine.isLeader) {
+    check('базовый лимит приглашений = 5', allianceBefore.mine.inviteLimit === 5);
+    check('первый дипломат стоит 100 золота', allianceBefore.mine.nextDiplomatCost === 100);
+    const hire = await post('/api/group/alliance/diplomat', B);
+    check('первый дипломат нанят', hire.status === 200);
+    const allianceAfter = (await get('/api/group/alliance', B)).data;
+    check('лимит вырос до 6 после 1 дипломата', allianceAfter.mine.inviteLimit === 6);
+    check('второй дипломат стоит 200 (×2)', allianceAfter.mine.nextDiplomatCost === 200);
+    check('лимит альянса = уровень × 10', allianceAfter.mine.maxMembers === meB.level * 10);
+  } else {
+    console.log('  (B не лидер альянса — пропускаем)');
+  }
+
+  console.log('23. Защита построек учитывается в power.def');
+  // Берём C — нового игрока без построек
+  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'pass123', country: 'kz' });
+  const C = regC.data.token;
+  const idC = (await get('/api/me', C)).data.id;
+  await post('/api/admin/grant', A, { userId: idC, setLevel: 35, dollars: 100000 });
+  const meCbefore = (await get('/api/me', C)).data;
+  const defBefore2 = meCbefore.power.def;
+  // Покупаем 1 бункер (доступен с 30 ур.)
+  const buyBunker = await post('/api/buildings/build', C, { buildingId: 'bunker', qty: 1 });
+  check('бункер построен', buyBunker.status === 200);
+  const meCafter = (await get('/api/me', C)).data;
+  check('защита УВЕЛИЧИЛАСЬ после постройки бункера', meCafter.power.def > defBefore2);
+
+  console.log('24. Глобальный бонус опыта');
+  await post('/api/admin/global-buff', A, { key: 'xp', pct: 100, hours: 1 });
+  const buffs = (await get('/api/admin/global-buffs', A)).data;
+  check('глобальный бонус xp активен', buffs.active.some((b) => b.key === 'xp' && b.pct === 100));
+
+  console.log('25. Ежедневные задания');
+  const daily = (await get('/api/daily', A)).data;
+  check('9 ежедневных заданий', daily.quests.length === 9);
+  check('награда за задание масштабируется с уровнем', daily.reward.xp > 0 && daily.reward.dollars > 0);
+  check('бонус 100 золота за все', daily.bonusGold === 100);
+  // Попытка получить бонус до выполнения должна провалиться
+  const earlyBonus = await post('/api/daily/bonus', A);
+  check('бонус нельзя забрать пока не выполнены все', earlyBonus.status === 400);
 
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);

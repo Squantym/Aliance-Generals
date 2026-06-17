@@ -1226,3 +1226,192 @@ body.theme-desert .ic-gold::before {
   color: #ffd24a;
   text-shadow: 0 0 8px rgba(255, 210, 74, .7);
 }
+
+/* ===================================================================
+   ТЕМА 5: ПОЛУНОЧНЫЙ ШТАБ (тёмная, без контрастных цветов)
+   Мягкие графитовые серые тона, приглушённый текст, минимум насыщенности.
+   Идеально для ночной игры — не режет глаза.
+   =================================================================== */
+body.theme-noir {
+  --bg: #0e0e10;
+  --panel: #18181b;
+  --panel-2: #1f1f23;
+  --border: #2c2c30;
+  --border-dim: #232327;
+  --text: #c8c8cc;
+  --dim: #6e6e74;
+  --green: #8a9a85;        /* приглушённый зелёно-серый */
+  --money: #b5b5a0;        /* серо-бежевый для денег */
+  --gold: #c4b48a;         /* приглушённое золото */
+  --hp: #b56565;
+  --en: #b59060;
+  --am: #8a8590;
+  --red: #a85a5a;
+  --orange-1: #6a6a72;
+  --orange-2: #45454c;
+}
+
+body.theme-noir {
+  background-color: #0a0a0c;
+  background-image:
+    /* очень слабый шум для текстуры */
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(120, 120, 130, .04), transparent 70%),
+    linear-gradient(180deg, #131316 0%, #0a0a0c 100%);
+  background-attachment: fixed;
+  color: var(--text);
+}
+
+body.theme-noir #wrap {
+  background: rgba(20, 20, 23, .55);
+  border-left: 1px solid #2c2c30;
+  border-right: 1px solid #2c2c30;
+  box-shadow: 0 0 40px rgba(0,0,0,.6);
+}
+
+body.theme-noir #header {
+  background: linear-gradient(180deg, #1f1f23, #131316);
+  border-bottom: 1px solid #2c2c30;
+}
+
+body.theme-noir .logo {
+  color: #c4b48a;
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+  letter-spacing: .55em;
+}
+body.theme-noir .logo .star { color: #b5b5a0; }
+
+body.theme-noir .card {
+  background: linear-gradient(180deg, #1c1c20, #18181b);
+  border: 1px solid #2c2c30;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4);
+}
+
+body.theme-noir .menu-btn {
+  background: linear-gradient(180deg, #1f1f23, #18181b);
+  border: 1px solid #2c2c30;
+  border-radius: 6px;
+  color: #c8c8cc;
+}
+body.theme-noir .menu-btn:hover {
+  background: linear-gradient(180deg, #26262a, #1d1d21);
+  border-color: #3a3a40;
+}
+
+body.theme-noir .btn {
+  background: linear-gradient(180deg, #26262a, #1c1c20);
+  border: 1px solid #2c2c30;
+  border-radius: 4px;
+  color: #c8c8cc;
+}
+body.theme-noir .btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2e2e32, #232327);
+  border-color: #3a3a40;
+}
+body.theme-noir .btn-orange {
+  background: linear-gradient(180deg, #4a4a52, #2e2e35);
+  border-color: #5a5a62;
+  color: #e0e0e4;
+  font-weight: 600;
+}
+body.theme-noir .btn-orange:hover:not(:disabled) {
+  background: linear-gradient(180deg, #555560, #383840);
+  border-color: #6e6e74;
+}
+body.theme-noir .btn-green {
+  background: linear-gradient(180deg, #4a5a4a, #2e3a2e);
+  border-color: #5a6a5a;
+  color: #d8e0d8;
+}
+body.theme-noir .btn-red {
+  background: linear-gradient(180deg, #5a3a3a, #3a2424);
+  border-color: #6e4848;
+  color: #d8c8c8;
+}
+
+body.theme-noir input,
+body.theme-noir select,
+body.theme-noir textarea {
+  background: rgba(12, 12, 14, .85);
+  border: 1px solid #2c2c30;
+  border-radius: 4px;
+  color: #c8c8cc;
+}
+body.theme-noir input:focus,
+body.theme-noir select:focus {
+  border-color: #4a4a52;
+  box-shadow: 0 0 6px rgba(120, 120, 130, .2);
+  outline: none;
+}
+
+body.theme-noir .bar {
+  background: #0c0c0e;
+  border: 1px solid #232327;
+  border-radius: 3px;
+}
+body.theme-noir .bar-fill {
+  filter: saturate(0.5) brightness(0.85); /* приглушаем цвета прогресс-баров */
+}
+
+body.theme-noir .tab {
+  background: rgba(28, 28, 32, .7);
+  border: 1px solid #2c2c30;
+  color: #8a8a90;
+}
+body.theme-noir .tab.active {
+  background: linear-gradient(180deg, #45454c, #2e2e35);
+  color: #e0e0e4;
+}
+
+body.theme-noir .badge {
+  background: linear-gradient(180deg, #5a5a62, #38383e);
+  color: #e0e0e4;
+}
+body.theme-noir .badge.green {
+  background: linear-gradient(180deg, #4a5a4a, #2e3a2e);
+  color: #d8e0d8;
+}
+
+body.theme-noir .toast {
+  background: rgba(24, 24, 27, .96);
+  border: 1px solid #2c2c30;
+  border-left: 3px solid #5a5a62;
+  color: #c8c8cc;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.7);
+}
+
+body.theme-noir .hr {
+  border-top: 1px solid #232327;
+  background: transparent;
+}
+
+body.theme-noir .money { color: var(--money); }
+body.theme-noir .gold  { color: var(--gold); }
+
+body.theme-noir .xp-strip { border-color: #2c2c30; }
+body.theme-noir .xp-strip-fill {
+  background: linear-gradient(90deg, #45454c, #6e6e74);
+}
+
+body.theme-noir .sale-banner {
+  background: linear-gradient(180deg, rgba(196, 180, 138, .08), rgba(196, 180, 138, .02));
+  border: 1px solid #5a5a62;
+  color: #c8c8cc;
+  border-radius: 4px;
+}
+body.theme-noir .sale-banner b { color: #c4b48a; }
+
+body.theme-noir .ic-gold::before {
+  content: '◉';
+  color: #c4b48a;
+}
+
+body.theme-noir .low-hp-banner {
+  background: linear-gradient(180deg, #6a3a3a, #4a2424);
+  color: #e0d0d0;
+  border-top: 1px solid #8a4a4a;
+  box-shadow: 0 2px 6px rgba(106, 58, 58, .3);
+  animation: none; /* без пульсации — спокойная тема */
+}
+body.theme-noir .low-hp-banner b { color: #c4b48a; }

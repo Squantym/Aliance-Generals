@@ -156,6 +156,7 @@ App.screens.home = async (c) => {
     ['war', '🎯', 'Война'],
     ['legion', '🛡', 'Легион'],
     ['missions', '📋', 'Спецоперации'],
+    ['daily', '🎯', 'Ежедневка'],
     ['production', '🏭', 'Производство' + (prodLocked ? ` 🔒` : '')],
     ['units', '🚜', 'Техника'],
     ['buildings', '🏗', 'Постройки'],
@@ -226,6 +227,7 @@ App.screens.profile = async (c, param) => {
         <div class="grow">
           <div class="name" style="font-size:17px">${p.flag} ${UI.esc(p.name)}</div>
           <div class="muted small">Звание: <b>${UI.esc(p.rank)}</b> · Ур. ${p.level} · Рейтинг ${UI.fmtNum(p.rating)}</div>
+          ${p.countryName ? `<div class="muted small">${p.flag} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
           <div class="muted small">${p.alliance ? 'Альянс: <b>' + UI.esc(p.alliance.name) + '</b> (' + p.alliance.members + ' чел.)' : 'Без альянса'}</div>
         </div>
       </div>
@@ -452,6 +454,7 @@ App.screens.settings = async (c) => {
     ${themeBtn('steel',   '⚙ Военная сталь',    'Тёмный металл с зернистостью и царапинами.')}
     ${themeBtn('cyber',   '⚡ Кибер-война',      'Футуристический HUD: неоновая бирюза, геометрия, glassmorphism.')}
     ${themeBtn('desert',  '☀ Пустынный фронт',   'Жёлтые пески, выгоревший камуфляж и солнечный жар.')}
+    ${themeBtn('noir',    '🌑 Полуночный штаб',  'Мягкий чёрно-серый интерфейс без резких цветов — для глаз ночью.')}
     <hr class="hr">
     <button class="btn btn-red" id="set-logout">🚪 Выйти из аккаунта</button>`;
 
@@ -466,5 +469,58 @@ App.screens.settings = async (c) => {
     API.setToken(null);
     App.me = null;
     location.hash = '#auth';
+  };
+};
+
+// ---------- ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ----------
+App.screens.daily = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/daily');
+
+  c.innerHTML = `
+    <div class="title">🎯 Ежедневные задания</div>
+    <div class="card center">
+      <p class="muted small">Выполнено: <b>${d.doneCount} / ${d.total}</b> · Обнуление через ~${d.resetInHours} ч</p>
+      <p class="small mt">Награда за задание: +${UI.fmtNum(d.reward.xp)} XP, +$${UI.fmtNum(d.reward.dollars)}</p>
+      ${d.allDone && !d.bonusClaimed ? `
+        <button class="btn btn-orange mt" id="daily-bonus">🎉 Забрать бонус: <span class="ic-gold"></span> ${d.bonusGold}</button>
+      ` : d.bonusClaimed ? `
+        <p class="small mt" style="color:var(--money)">✅ Бонус 🪙 ${d.bonusGold} уже получен сегодня</p>
+      ` : `
+        <p class="small mt muted">Выполните все ${d.total} заданий чтобы получить бонус 🪙 ${d.bonusGold}</p>
+      `}
+    </div>
+
+    ${d.quests.map((q) => `
+      <div class="card">
+        <div class="list-row" style="border:none;padding:0">
+          <div class="grow">
+            <div class="name">${q.icon} ${UI.esc(q.name)}</div>
+            <div class="mt">${UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)}</div>
+          </div>
+          ${q.claimed
+            ? `<span class="badge green">✅</span>`
+            : q.done
+              ? `<button class="btn btn-orange btn-inline" data-quest="${q.id}">Получить</button>`
+              : `<span class="muted small">в работе</span>`}
+        </div>
+      </div>`).join('')}`;
+
+  c.querySelectorAll('[data-quest]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await API.post('/api/daily/claim', { questId: btn.dataset.quest });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  const bonusBtn = document.getElementById('daily-bonus');
+  if (bonusBtn) bonusBtn.onclick = async () => {
+    try {
+      await API.post('/api/daily/bonus');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
   };
 };

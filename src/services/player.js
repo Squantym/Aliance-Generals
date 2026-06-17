@@ -35,7 +35,13 @@ function totalPower(user, mode) {
   const trophyAtk = trophies ? trophies.atkBonus(user) : 0;
   const trophyDef = trophies ? trophies.defBonus(user) : 0;
   const tempMul = effMul(user, mode === 'atk' ? 'atk_pct' : 'def_pct');
-  const finalPower = Math.round(army.power * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
+  let finalPower = Math.round(army.power * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
+  // В защите учитываем защитные постройки: каждое очко защиты постройки
+  // даёт BUILDING_DEF_POWER единиц мощи (этот же расчёт идёт в бою)
+  if (mode === 'def') {
+    const defPoints = buildingDef(user);
+    finalPower += Math.round(defPoints * config.BUILDING_DEF_POWER);
+  }
   return { ...army, power: finalPower, basePower: army.power };
 }
 
@@ -80,9 +86,11 @@ function xpMul(user) {
 // Начислить опыт; при достижении порога — повышение уровня,
 // +3 очка навыков и полное восстановление ресурсов
 function addXp(user, amount, notices) {
-  // К опыту применяется множитель страны и клановый бонус академии
+  // К опыту применяется множитель страны, клановый бонус и глобальный бонус админа
   const legionXp = legionBonus(user, 'xp');
-  user.xp += Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp)));
+  let globalXpMul = 1;
+  try { globalXpMul = require('./globalBuffs').multiplier('xp'); } catch (e) {}
+  user.xp += Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp) * globalXpMul));
   let ups = 0;
   while (user.level < config.PLAYER.MAX_LEVEL && user.xp >= config.xpToNext(user.level)) {
     user.xp -= config.xpToNext(user.level);
@@ -348,10 +356,12 @@ function refresh(user) {
   const now = Date.now();
   const mx = maxima(user);
   applyRegen(user.res.hp, mx.hp, config.REGEN.hp, now);
-  // Трофей «Логистика» снижает интервал регенерации энергии (до −30%)
+  // Трофей «Логистика» снижает интервал регенерации энергии
   const enInterval = Math.max(5, Math.round(config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100)));
   applyRegen(user.res.en, mx.en, enInterval, now);
-  applyRegen(user.res.am, mx.am, config.REGEN.am, now);
+  // Трофей «Боевая логистика» снижает интервал восстановления боеприпасов
+  const amInterval = Math.max(15, Math.round(config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100)));
+  applyRegen(user.res.am, mx.am, amInterval, now);
 
   // Истёкшие эффекты удаляем
   user.effects = user.effects.filter((e) => e.expiresAt > now);
@@ -381,17 +391,31 @@ function refresh(user) {
   if (user.email === undefined) user.email = '';
 
   // Миграция формата техники: со старого `units: { id: 30 }` + `modernization: { id: 1 }`
-  // на новый `units: { id: { 0:0, 1:30, 2:0 } }`. Делается один раз.
-  for (const [unitId, val] of Object.entries(user.units || {})) {
+  // на новый `units: { id: { 0:0, 1:30, 2:0 } }`. После MongoDB ключи могут быть
+  // строковыми ('0','1','2') — конвертируем в числовые тоже, чтобы избежать
+  // путаницы. Делается каждый раз — операция дешёвая, но гарантирует целостность.
+  if (!user.units || typeof user.units !== 'object') user.units = {};
+  for (const [unitId, val] of Object.entries(user.units)) {
     if (typeof val === 'number') {
+      // Старый формат: одна цифра вместо объекта
       const mkLevel = (user.modernization || {})[unitId] || 0;
       const m = { 0: 0, 1: 0, 2: 0 };
       m[mkLevel] = val;
       user.units[unitId] = m;
     } else if (val && typeof val === 'object') {
-      if (val[0] === undefined) val[0] = 0;
-      if (val[1] === undefined) val[1] = 0;
-      if (val[2] === undefined) val[2] = 0;
+      // Новый формат: убеждаемся что все ключи (0,1,2) присутствуют
+      // как числа, а не как строки (после MongoDB)
+      const m = { 0: 0, 1: 0, 2: 0 };
+      for (const k of Object.keys(val)) {
+        const numK = Number(k);
+        if (numK >= 0 && numK <= 2 && Number.isInteger(numK)) {
+          m[numK] = Number(val[k]) || 0;
+        }
+      }
+      user.units[unitId] = m;
+    } else {
+      // Невалидное значение — удаляем
+      delete user.units[unitId];
     }
   }
   // Старое поле modernization больше не нужно
@@ -468,6 +492,8 @@ function bankDeposit(user, amount) {
   const taxPct = trophyDiscountPct(user, 'bank_fee');
   const fee = Math.max(0, config.BANK.DEPOSIT_FEE * (1 - taxPct / 100));
   user.bank += Math.floor(amount * (1 - fee));
+  // Счётчик ежедневного задания: общая сумма вкладов за день
+  require('./dailyQuests').bump(user, 'bankDeposited', amount);
 }
 
 function bankWithdraw(user, amount) {
@@ -601,9 +627,13 @@ function publicProfile(target, viewer) {
     .map((d) => ({ name: d.name, count: target.secretDevs[d.id] || 0 }))
     .filter((d) => d.count > 0);
 
+  const country = config.COUNTRY_BY_ID[target.country];
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,
     level: target.level, rank: rank(target.level), rating: rating(target),
+    country: target.country,
+    countryName: country ? country.name : '',
+    countryBonus: country ? country.desc : '',
     alliance: allianceInfo(target),
     legion: legionInfo(target),
     battle: { ...target.battle },

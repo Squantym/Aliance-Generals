@@ -61,6 +61,9 @@ const Admin = {
       <div class="title">Скидки и бонусы</div>
       <div id="ad-discounts"><div class="loading">Загрузка скидок…</div></div>
       <hr class="hr">
+      <div class="title">🎉 Глобальные бонусы (для всех игроков)</div>
+      <div id="ad-global-buffs"><div class="loading">Загрузка…</div></div>
+      <hr class="hr">
       <div class="title">Журнал действий игроков</div>
       <div class="card">
         <div class="field-row">
@@ -77,6 +80,49 @@ const Admin = {
     document.getElementById('log-load').onclick = () => Admin.loadLogs();
     await Admin.loadPlayers();
     await Admin.loadDiscounts();
+    await Admin.loadGlobalBuffs();
+  },
+
+  async loadGlobalBuffs() {
+    const box = document.getElementById('ad-global-buffs');
+    try {
+      const { active, keys } = await API.get('/api/admin/global-buffs');
+      box.innerHTML = `
+        <div class="card">
+          <p class="muted small">Бонус действует на ВСЕХ игроков сразу. Например +50% к опыту на 24 часа.</p>
+          ${active.length ? `<div class="mt"><b>Активные бонусы:</b></div>${active.map((a) => `
+            <div class="kv">
+              <span class="k">${UI.esc(a.label)}: +${a.pct}%</span>
+              <span class="v">${a.hoursLeft} ч. осталось <button class="btn btn-inline" data-clear-buff="${a.key}">Снять</button></span>
+            </div>`).join('')}` : '<p class="muted small mt">Активных бонусов нет.</p>'}
+          <hr class="hr">
+          ${keys.map((k) => `
+            <div class="field-row mt">
+              <span>${UI.esc(k.label)}</span>
+              <input type="number" placeholder="%"   id="gb-pct-${k.key}"   style="width:70px">
+              <input type="number" placeholder="час" id="gb-hours-${k.key}" style="width:70px">
+              <button class="btn btn-orange btn-inline" data-set-buff="${k.key}">Активировать</button>
+            </div>`).join('')}
+        </div>`;
+      box.querySelectorAll('[data-set-buff]').forEach((btn) => {
+        btn.onclick = async () => {
+          const key = btn.dataset.setBuff;
+          const pct = document.getElementById('gb-pct-' + key).value;
+          const hours = document.getElementById('gb-hours-' + key).value;
+          if (!pct || !hours) { UI.toast('Укажите % и часы'); return; }
+          try { await API.post('/api/admin/global-buff', { key, pct, hours }); await Admin.loadGlobalBuffs(); }
+          catch (e) { UI.toast('⛔ ' + e.message); }
+        };
+      });
+      box.querySelectorAll('[data-clear-buff]').forEach((btn) => {
+        btn.onclick = async () => {
+          try { await API.post('/api/admin/global-buff', { key: btn.dataset.clearBuff, pct: 0, hours: 0 }); await Admin.loadGlobalBuffs(); }
+          catch (e) { UI.toast('⛔ ' + e.message); }
+        };
+      });
+    } catch (e) {
+      box.innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>`;
+    }
   },
 
   async loadLogs() {

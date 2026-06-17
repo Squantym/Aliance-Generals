@@ -499,24 +499,23 @@ const INCOME_BUILDINGS = [
 ];
 
 const DEFENSE_BUILDINGS = [
-  // Бункер базовый, дальше — кратно больше защиты. Цены снижены и
-  // растут плавно (BUILDING_PRICE_GROWTH.defense = 1.025 — каждая
-  // следующая копия одного типа +2.5%, а не +5% как раньше).
-  { id: 'bunker',    name: 'Бункер',                          def: 50,    price: 25000,        unlock: 30  },
-  { id: 'bashnya',   name: 'Дозорная башня',                  def: 120,   price: 70000,        unlock: 40  },
-  { id: 'pvo',       name: 'Система ПВО',                     def: 220,   price: 200000,       unlock: 50  },
-  { id: 'batareya',  name: 'Защитная батарея',                def: 380,   price: 550000,       unlock: 60  },
-  { id: 'mine',      name: 'Минное поле',                     def: 600,   price: 1500000,      unlock: 70  },
-  { id: 'strazh',    name: 'Система «Страж»',                 def: 900,   price: 4000000,      unlock: 80  },
-  { id: 'bereg',     name: 'Береговая оборона',               def: 1300,  price: 10000000,     unlock: 90  },
-  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 1900,  price: 28000000,     unlock: 100 },
-  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 2700,  price: 75000000,     unlock: 110 },
-  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 3800,  price: 200000000,    unlock: 120 },
-  { id: 'kupol',     name: 'Энергетический купол',            def: 5300,  price: 540000000,    unlock: 130 },
-  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 7500,  price: 1400000000,   unlock: 140 },
-  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 10500, price: 3800000000,   unlock: 150 },
-  { id: 'grav_wall', name: 'Гравитационная стена',            def: 14500, price: 10000000000,  unlock: 160 },
-  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 20000, price: 28000000000,  unlock: 170 },
+  // Цены снижены в 20 раз от предыдущей версии, рост каждой следующей
+  // копии замедлен до +1.5% (было +2.5%).
+  { id: 'bunker',    name: 'Бункер',                          def: 50,    price: 1250,         unlock: 30  },
+  { id: 'bashnya',   name: 'Дозорная башня',                  def: 120,   price: 3500,         unlock: 40  },
+  { id: 'pvo',       name: 'Система ПВО',                     def: 220,   price: 10000,        unlock: 50  },
+  { id: 'batareya',  name: 'Защитная батарея',                def: 380,   price: 27500,        unlock: 60  },
+  { id: 'mine',      name: 'Минное поле',                     def: 600,   price: 75000,        unlock: 70  },
+  { id: 'strazh',    name: 'Система «Страж»',                 def: 900,   price: 200000,       unlock: 80  },
+  { id: 'bereg',     name: 'Береговая оборона',               def: 1300,  price: 500000,       unlock: 90  },
+  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 1900,  price: 1400000,      unlock: 100 },
+  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 2700,  price: 3750000,      unlock: 110 },
+  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 3800,  price: 10000000,     unlock: 120 },
+  { id: 'kupol',     name: 'Энергетический купол',            def: 5300,  price: 27000000,     unlock: 130 },
+  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 7500,  price: 70000000,     unlock: 140 },
+  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 10500, price: 190000000,    unlock: 150 },
+  { id: 'grav_wall', name: 'Гравитационная стена',            def: 14500, price: 500000000,    unlock: 160 },
+  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 20000, price: 1400000000,   unlock: 170 },
 ];
 
 const BUILDING_BY_ID = Object.fromEntries(
@@ -524,8 +523,7 @@ const BUILDING_BY_ID = Object.fromEntries(
    ...DEFENSE_BUILDINGS.map(b => [b.id, { ...b, kind: 'defense' }])]
 );
 // Рост цены при покупке КАЖДОЙ копии того же типа постройки
-// (доход растёт быстрее, защита — очень плавно)
-const BUILDING_PRICE_GROWTH = { income: 1.025, defense: 1.025 };
+const BUILDING_PRICE_GROWTH = { income: 1.025, defense: 1.015 };
 const BUILDING_DEF_POWER = 12;
 const INCOME_PERIOD_MS = 3600 * 1000;
 
@@ -728,7 +726,31 @@ const CLUB = {
   ARM_MIN_BET: 1000, ARM_CD_SEC: 60, ARM_BASE_CHANCE: 0.47,
 };
 
-// ---------- ТРОФЕИ ----------
+// ---------- ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ----------
+// 9 заданий, обнуляются каждые сутки в 00:00 UTC.
+// За каждое: опыт + деньги (масштабируются с уровнем игрока).
+// За выполнение ВСЕХ 9 — бонус 100 золота.
+const DAILY_QUESTS = [
+  { id: 'attack',     name: 'Совершить 10 атак',                 counter: 'attacks',       target: 10, icon: '⚔' },
+  { id: 'win',        name: 'Победить в 5 боях',                 counter: 'wins',          target: 5,  icon: '🏆' },
+  { id: 'mission',    name: 'Выполнить 3 шага спецоперации',     counter: 'missionStages', target: 3,  icon: '📋' },
+  { id: 'buy_unit',   name: 'Купить 5 единиц техники',           counter: 'unitsBought',   target: 5,  icon: '🚜' },
+  { id: 'build',      name: 'Построить 2 здания',                counter: 'buildingsBuilt', target: 2, icon: '🏗' },
+  { id: 'deposit',    name: 'Положить $50 000 в банк',           counter: 'bankDeposited', target: 50000, icon: '🏦' },
+  { id: 'club',       name: 'Сыграть 1 раз в Клубе офицеров',    counter: 'clubPlayed',    target: 1,  icon: '🎲' },
+  { id: 'market',     name: 'Купить что-нибудь на чёрном рынке', counter: 'marketBought',  target: 1,  icon: '💣' },
+  { id: 'fatality',   name: 'Совершить 1 фаталити',              counter: 'fatalities',    target: 1,  icon: '💀' },
+];
+
+// Награда за одно задание (масштабируется с уровнем игрока)
+function dailyQuestReward(level) {
+  return {
+    xp: 50 + level * 5,
+    dollars: 5000 * level,
+  };
+}
+
+const DAILY_ALL_BONUS_GOLD = 100;
 // На 10 уровне каждый трофей даёт указанный максимум:
 //   medal/shield = 20%, license = 100%, radar = 50%, sewing = 40%,
 //   hospital/supply/logistics/tax/quarterm/looter = 50%, engineer = 40%.
@@ -738,13 +760,14 @@ const CLUB = {
 const TROPHIES = [
   { id: 'medal',     name: 'Медаль «За отвагу»',          desc: '+2% к атаке за уровень (макс. 20%).',                  perLvl: 2,   apply: 'atk',     expensive: true },
   { id: 'shield',    name: 'Орден «Стальной щит»',        desc: '+2% к защите за уровень (макс. 20%).',                 perLvl: 2,   apply: 'def',     expensive: true },
-  { id: 'license',   name: 'Лицензия на убийство',        desc: '+10% к силе крита за уровень (макс. 100%).',           perLvl: 10,  apply: 'crit',    expensive: true },
+  { id: 'license',   name: 'Лицензия на убийство',        desc: '+20% к силе крита за уровень (макс. 200%).',           perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
   { id: 'sewing',    name: 'Набор швеи',                  desc: 'Шанс пришить ухо +4% за уровень (макс. 40%). (заглушка)', perLvl: 4, flavor: true },
   { id: 'hospital',  name: 'Полевой госпиталь',           desc: '−5% к цене лечения в госпитале за уровень (макс. 50%).', perLvl: 5, apply: 'hospital' },
   { id: 'supply',    name: 'Снабженческие линии',         desc: '−5% к содержанию техники за уровень (макс. 50%).',     perLvl: 5,   apply: 'upkeep' },
   { id: 'logistics', name: 'Логистика',                   desc: '−5% к времени регенерации энергии за уровень (макс. 50%).', perLvl: 5, apply: 'regen_en' },
+  { id: 'ammo_logi', name: 'Боевая логистика',            desc: '−5% к времени восстановления боеприпасов за уровень (макс. 50%).', perLvl: 5, apply: 'regen_am' },
   { id: 'engineer',  name: 'Военинженер',                 desc: '−4% к времени модернизации в цехах за уровень (макс. 40%).', perLvl: 4, apply: 'modern_time' },
   { id: 'tax',       name: 'Налоговая льгота',            desc: '−5% к комиссии банка за уровень (макс. 50%).',         perLvl: 5,   apply: 'bank_fee' },
   { id: 'quarterm',  name: 'Армейский квартирмейстер',    desc: '+5% к доходу построек за уровень (макс. 50%).',        perLvl: 5,   apply: 'income',  expensive: true },
@@ -780,9 +803,10 @@ const ACH_GOLD =    [0,    0,     5,      15,      40];
 // ---------- АЛЬЯНС (мини-команда друзей: +10 техники за человека) ----------
 const ALLIANCE = {
   CREATE_COST: 1000000,  // создание $1 млн
-  MIN_LEVEL: 8,          // минимальный уровень
+  MIN_LEVEL: 8,          // минимальный уровень для создания
   BASE_CAPACITY: 100,    // базово 100 единиц техники в бой
   PER_MEMBER: 10,        // +10 за каждого человека в альянсе
+  MEMBERS_PER_LEVEL: 10, // максимум членов альянса = уровень лидера × 10
 };
 // ---------- ЛЕГИОН (клан: казна, общие постройки, войны клан-на-клан) ----------
 // Легион НЕ даёт capacity-бонус в личных боях — это делает только альянс.
@@ -883,6 +907,7 @@ module.exports = {
   COMMANDERS, AUCTION,
   RIDDLES, CLUB,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
+  DAILY_QUESTS, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID, BATTLE, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
