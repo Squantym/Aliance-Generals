@@ -36,27 +36,23 @@ function totalPower(user, mode) {
   const trophyDef = trophies ? trophies.defBonus(user) : 0;
   const tempMul = effMul(user, mode === 'atk' ? 'atk_pct' : 'def_pct');
 
-  // Базовая мощь армии (уже с бонусом страны по типу техники и легионом)
-  let basePow = army.power;
+  // Мощь техники (с бонусом страны по типу + легионом) × трофей × эффекты
+  const armyPow = Math.round(army.power * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
 
-  // В защите добавляем очки защитных построек (1 очко = 1 мощь).
-  // Бонус страны к защите (atkAll/defAll/defType) применяется и к постройкам.
+  // В защите добавляем постройки ОТДЕЛЬНО: трофей на них НЕ действует.
+  // Бонус страны (defAll) — действует, т.к. это «государственная» скидка.
+  let buildPow = 0;
   if (mode === 'def') {
-    let defFromBuildings = buildingDef(user) * config.BUILDING_DEF_POWER;
-    // Бонус страны к защите: Казахстан +10% defAll, Германия +20% для ground и т.д.
-    // Для построек применяем только общие бонусы (defAll), не типовые.
+    buildPow = buildingDef(user) * config.BUILDING_DEF_POWER;
     const country = config.COUNTRY_BY_ID[user.country];
     if (country && country.mod) {
       const mm = country.mod;
-      if (typeof mm.defAll === 'number') defFromBuildings = Math.round(defFromBuildings * mm.defAll);
-      else if (mm.defAll === true) defFromBuildings = Math.round(defFromBuildings * 1.05);
+      if (typeof mm.defAll === 'number') buildPow = Math.round(buildPow * mm.defAll);
+      else if (mm.defAll === true) buildPow = Math.round(buildPow * 1.05);
     }
-    basePow += defFromBuildings;
   }
 
-  // Трофей (медаль/щит) и временные эффекты — на ОБЩУЮ сумму (техника + постройки)
-  const finalPower = Math.round(basePow * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
-  return { ...army, power: finalPower, basePower: army.power };
+  return { ...army, power: armyPow + buildPow, basePower: army.power };
 }
 
 // ---------- Максимумы ресурсов с учётом навыков ----------
