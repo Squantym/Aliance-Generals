@@ -35,13 +35,27 @@ function totalPower(user, mode) {
   const trophyAtk = trophies ? trophies.atkBonus(user) : 0;
   const trophyDef = trophies ? trophies.defBonus(user) : 0;
   const tempMul = effMul(user, mode === 'atk' ? 'atk_pct' : 'def_pct');
-  let finalPower = Math.round(army.power * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
-  // В защите учитываем защитные постройки: каждое очко защиты постройки
-  // даёт BUILDING_DEF_POWER единиц мощи (этот же расчёт идёт в бою)
+
+  // Базовая мощь армии (уже с бонусом страны по типу техники и легионом)
+  let basePow = army.power;
+
+  // В защите добавляем очки защитных построек (1 очко = 1 мощь).
+  // Бонус страны к защите (atkAll/defAll/defType) применяется и к постройкам.
   if (mode === 'def') {
-    const defPoints = buildingDef(user);
-    finalPower += Math.round(defPoints * config.BUILDING_DEF_POWER);
+    let defFromBuildings = buildingDef(user) * config.BUILDING_DEF_POWER;
+    // Бонус страны к защите: Казахстан +10% defAll, Германия +20% для ground и т.д.
+    // Для построек применяем только общие бонусы (defAll), не типовые.
+    const country = config.COUNTRY_BY_ID[user.country];
+    if (country && country.mod) {
+      const mm = country.mod;
+      if (typeof mm.defAll === 'number') defFromBuildings = Math.round(defFromBuildings * mm.defAll);
+      else if (mm.defAll === true) defFromBuildings = Math.round(defFromBuildings * 1.05);
+    }
+    basePow += defFromBuildings;
   }
+
+  // Трофей (медаль/щит) и временные эффекты — на ОБЩУЮ сумму (техника + постройки)
+  const finalPower = Math.round(basePow * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
   return { ...army, power: finalPower, basePower: army.power };
 }
 
@@ -90,7 +104,8 @@ function addXp(user, amount, notices) {
   const legionXp = legionBonus(user, 'xp');
   let globalXpMul = 1;
   try { globalXpMul = require('./globalBuffs').multiplier('xp'); } catch (e) {}
-  user.xp += Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp) * globalXpMul));
+  const realXp = Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp) * globalXpMul));
+  user.xp += realXp;
   let ups = 0;
   while (user.level < config.PLAYER.MAX_LEVEL && user.xp >= config.xpToNext(user.level)) {
     user.xp -= config.xpToNext(user.level);
@@ -106,7 +121,7 @@ function addXp(user, amount, notices) {
     if (notices) notices.push(`⭐ Новый уровень: ${user.level}! +${ups * config.PLAYER.SKILLPOINTS_PER_LEVEL} очка(ов) навыков, ресурсы восстановлены.`);
   }
   user.counters.level = user.level;
-  return ups;
+  return realXp; // реальный XP с учётом всех бонусов
 }
 
 // ---------- Навыки ----------
@@ -214,13 +229,21 @@ function buildArmy(user, mode) {
   }
 
   // Обычная техника: по каждому юниту проходим все этапы модернизации
-  // (mk0, mk1, mk2). Каждый этап даёт отдельную «единицу строя» с разными
-  // характеристиками — Mk2 в первую очередь идёт в бой, потом Mk1, потом Mk0.
-  for (const [unitId, mkMap] of Object.entries(user.units)) {
+  for (const [unitId, rawMk] of Object.entries(user.units)) {
     const cu = config.UNIT_BY_ID[unitId];
     if (!cu) continue;
+    // Принудительно приводим к числовым ключам (MongoDB хранит ключи как строки)
+    const mkMap = { 0: 0, 1: 0, 2: 0 };
+    if (rawMk && typeof rawMk === 'object') {
+      for (const k of Object.keys(rawMk)) {
+        const nk = Number(k);
+        if (nk >= 0 && nk <= 2) mkMap[nk] = Number(rawMk[k]) || 0;
+      }
+    } else if (typeof rawMk === 'number') {
+      mkMap[0] = rawMk; // старый формат
+    }
     for (let mk = 0; mk <= 2; mk++) {
-      const count = (mkMap && mkMap[mk]) || 0;
+      const count = mkMap[mk];
       if (count <= 0) continue;
       let atk = cu.attack * config.MK_MULT[mk];
       let def = cu.defense * config.MK_MULT[mk];
@@ -390,11 +413,15 @@ function refresh(user) {
   if (user.emailVerified === undefined) user.emailVerified = true;
   if (user.email === undefined) user.email = '';
 
-  // Миграция формата техники: со старого `units: { id: 30 }` + `modernization: { id: 1 }`
-  // на новый `units: { id: { 0:0, 1:30, 2:0 } }`. После MongoDB ключи могут быть
-  // строковыми ('0','1','2') — конвертируем в числовые тоже, чтобы избежать
-  // путаницы. Делается каждый раз — операция дешёвая, но гарантирует целостность.
+  // Миграция формата техники: принудительно нормализуем. MongoDB может
+  // вернуть объект с внутренними прототипами BSON, из-за чего Object.entries
+  // и обращение по числовому ключу работают непредсказуемо. Чистим JSON-ом.
   if (!user.units || typeof user.units !== 'object') user.units = {};
+  try {
+    user.units = JSON.parse(JSON.stringify(user.units));
+  } catch (e) {
+    user.units = {};
+  }
   for (const [unitId, val] of Object.entries(user.units)) {
     if (typeof val === 'number') {
       // Старый формат: одна цифра вместо объекта

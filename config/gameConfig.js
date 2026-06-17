@@ -524,7 +524,7 @@ const BUILDING_BY_ID = Object.fromEntries(
 );
 // Рост цены при покупке КАЖДОЙ копии того же типа постройки
 const BUILDING_PRICE_GROWTH = { income: 1.025, defense: 1.015 };
-const BUILDING_DEF_POWER = 12;
+const BUILDING_DEF_POWER = 1;
 const INCOME_PERIOD_MS = 3600 * 1000;
 
 // ---------- ВОЕННЫЕ КОНФЛИКТЫ (бывшие миссии) ----------

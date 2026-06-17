@@ -241,8 +241,8 @@ function attack(user, targetId, notices) {
 
   // ----- Мощь атакующего: армия × эффекты × трофеи -----
   const aArmy = player.buildArmy(user, 'atk');
-  let aPow = aArmy.power * player.effMul(user, 'atk_pct') * (1 + trophies.atkBonus(user));
-  aPow = Math.max(10, aPow); // даже без техники солдат стреляет из автомата
+  const aTotal = player.totalPower(user, 'atk');
+  let aPow = Math.max(10, aTotal.power);
 
   // ----- Мощь защитника -----
   let dPow, dArmy = null, defPoints = 0, targetMaxHp, targetLevel;
@@ -256,9 +256,9 @@ function attack(user, targetId, notices) {
   } else {
     dArmy = player.buildArmy(target, 'def');
     defPoints = player.buildingDef(target);
-    dPow = (dArmy.power + defPoints * config.BUILDING_DEF_POWER) *
-      player.effMul(target, 'def_pct') * (1 + trophies.defBonus(target));
-    dPow = Math.max(10, dPow);
+    // Используем ту же формулу что и в totalPower: техника + постройки (с бонусом страны), потом трофей и эффекты
+    const dTotal = player.totalPower(target, 'def');
+    dPow = Math.max(10, dTotal.power);
     targetMaxHp = player.maxima(target).hp;
     targetLevel = target.level;
   }
@@ -361,10 +361,10 @@ function attack(user, targetId, notices) {
   }
 
   // Опыт: фиксированный диапазон из конфига (4–7 за победу, 1–2 за поражение)
-  const xp = win
+  const xpBase = win
     ? u.rnd(B.XP_WIN_MIN,  B.XP_WIN_MAX)
     : u.rnd(B.XP_LOSS_MIN, B.XP_LOSS_MAX);
-  player.addXp(user, xp, notices);
+  const xp = player.addXp(user, xpBase, notices); // реальный XP с бонусами страны/легиона/админа
 
   // ----- Окно фаталити -----
   // Доступно против реальных игроков И ботов-игроков (псевдоигроков с
