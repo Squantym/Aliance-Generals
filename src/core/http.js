@@ -5,23 +5,11 @@
 // ===================================================================
 
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 const db = require('./db');
+const staticCache = require('./staticCache');
 const auditLog = require('../services/auditLog');
 const logTranslate = require('../services/logTranslate');
 const { ApiError } = require('./utils');
-
-const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
-
-// Типы содержимого для статических файлов
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
-};
 
 // Сопоставление пути запроса с шаблоном маршрута ('/api/profile/:id')
 function matchRoute(pattern, pathname) {
@@ -51,23 +39,97 @@ function readBody(req) {
   });
 }
 
-function sendJson(res, status, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+// Отправить JSON. Если ответ крупный и клиент поддерживает gzip/brotli —
+// сжимаем на лету (экономия ~70% трафика для API).
+function sendJson(req, res, status, obj) {
+  const raw = JSON.stringify(obj);
+  const ae = req && req.headers ? req.headers['accept-encoding'] : '';
+  const { body, encoding } = staticCache.compressBody(raw, ae);
+  const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+  if (encoding) {
+    headers['Content-Encoding'] = encoding;
+    headers['Vary'] = 'Accept-Encoding';
+  }
+  res.writeHead(status, headers);
   res.end(body);
 }
 
-// Безопасная раздача файла из public (защита от выхода за каталог через ..)
-function serveStatic(res, urlPath) {
+// Раздача статики из кеша в памяти.
+//   - /         → index.html (no-cache, всегда проверять)
+//   - /admin    → admin.html (no-cache)
+//   - /css/style.<hash>.css, /js/app.<hash>.js → отдаются с
+//     Cache-Control: public, max-age=31536000, immutable
+//     (браузер не пойдёт за ними повторно вообще)
+//   - всё остальное — Cache-Control: public, max-age=3600 + ETag
+//   - При совпадении ETag (If-None-Match) возвращаем 304 без тела.
+//   - Сжатие brotli/gzip — по Accept-Encoding (предварительно прогретое).
+function serveStatic(req, res, urlPath) {
   let rel = urlPath === '/' ? '/index.html' : urlPath;
   if (rel === '/admin') rel = '/admin.html';
-  const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
-  if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Не найдено'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-    res.end(data);
-  });
+
+  // Защита от подсовывания "../" и прочих трюков:
+  // в кеше есть только то, что лежит в /public, поэтому достаточно
+  // не дать обращений с .. и null-byte
+  if (rel.indexOf('\0') >= 0 || /(^|\/)\.\.(\/|$)/.test(rel)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Forbidden');
+  }
+
+  const hit = staticCache.lookup(rel);
+  if (!hit) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Не найдено');
+  }
+  const { entry, hashed } = hit;
+
+  // Условный запрос: если клиент уже знает этот ETag — 304 без тела.
+  // Совершенно бесплатная экономия для повторных заходов.
+  const ifNone = req.headers['if-none-match'];
+  if (ifNone && ifNone === entry.etag) {
+    res.writeHead(304, {
+      'ETag': entry.etag,
+      'Cache-Control': cacheControlFor(rel, hashed),
+    });
+    return res.end();
+  }
+
+  // Выбор сжатой версии под Accept-Encoding
+  const ae = req.headers['accept-encoding'];
+  const enc = staticCache.pickEncoding(ae);
+  let body = entry.buffer;
+  let contentEncoding = null;
+  if (enc === 'br' && entry.br) { body = entry.br; contentEncoding = 'br'; }
+  else if (enc === 'gzip' && entry.gzip) { body = entry.gzip; contentEncoding = 'gzip'; }
+
+  const headers = {
+    'Content-Type': entry.contentType,
+    'Content-Length': body.length,
+    'ETag': entry.etag,
+    'Cache-Control': cacheControlFor(rel, hashed),
+    'Vary': 'Accept-Encoding',
+  };
+  if (contentEncoding) headers['Content-Encoding'] = contentEncoding;
+
+  // HEAD-запросы — только заголовки, без тела (некоторые CDN это любят)
+  if (req.method === 'HEAD') {
+    res.writeHead(200, headers);
+    return res.end();
+  }
+  res.writeHead(200, headers);
+  res.end(body);
+}
+
+// Стратегия кеша:
+//   - HTML (всегда!): no-cache — браузер обязан проверить ETag перед использованием.
+//     Это значит, что когда мы выкатим новую версию, игроки получат
+//     обновление при следующем обращении (без необходимости hard-refresh).
+//   - Фингерпринтованные CSS/JS (/x.<hash>.ext): immutable на год.
+//     URL гарантированно меняется при изменении файла.
+//   - Остальное (картинки, шрифты): max-age=1 час + ETag.
+function cacheControlFor(rel, hashed) {
+  if (rel.endsWith('.html')) return 'no-cache';
+  if (hashed) return 'public, max-age=31536000, immutable';
+  return 'public, max-age=3600, must-revalidate';
 }
 
 function createApp() {
@@ -90,8 +152,8 @@ function createApp() {
           const [pathname, qs] = req.url.split('?');
           // Всё, что не /api — статика фронтенда
           if (!pathname.startsWith('/api')) {
-            if (req.method !== 'GET') { res.writeHead(405); return res.end(); }
-            return serveStatic(res, pathname);
+            if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
+            return serveStatic(req, res, pathname);
           }
 
           // Ищем подходящий маршрут
@@ -101,7 +163,7 @@ function createApp() {
             const p = matchRoute(r.pattern, pathname);
             if (p) { found = r; params = p; break; }
           }
-          if (!found) return sendJson(res, 404, { error: 'Маршрут не найден' });
+          if (!found) return sendJson(req, res, 404, { error: 'Маршрут не найден' });
 
           const reqCtx = {
             method: req.method,
@@ -118,8 +180,8 @@ function createApp() {
             const users = db.load('users', {});
             const userId = sessions[token];
             const user = userId && users[userId];
-            if (!user) return sendJson(res, 401, { error: 'Требуется вход в игру' });
-            if (found.opts.admin && !user.isAdmin) return sendJson(res, 403, { error: 'Только для администратора' });
+            if (!user) return sendJson(req, res, 401, { error: 'Требуется вход в игру' });
+            if (found.opts.admin && !user.isAdmin) return sendJson(req, res, 403, { error: 'Только для администратора' });
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов
             reqCtx.user = user;
@@ -141,11 +203,37 @@ function createApp() {
             });
           }
 
-          sendJson(res, 200, result === undefined ? { ok: true } : result);
+          // ETag-кеш для GET-маршрутов, помеченных opts.etag:true.
+          // Статичные ответы (например, /api/countries) запрашиваются
+          // на каждом заходе — давать на них 304 экономит трафик и CPU.
+          if (found.opts.etag && req.method === 'GET') {
+            const raw = JSON.stringify(result === undefined ? { ok: true } : result);
+            const etag = '"' + require('crypto').createHash('sha256').update(raw).digest('hex').slice(0, 16) + '"';
+            if (req.headers['if-none-match'] === etag) {
+              res.writeHead(304, {
+                'ETag': etag,
+                'Cache-Control': 'public, max-age=300, must-revalidate',
+              });
+              return res.end();
+            }
+            const ae = req.headers['accept-encoding'];
+            const { body, encoding } = staticCache.compressBody(raw, ae);
+            const headers = {
+              'Content-Type': 'application/json; charset=utf-8',
+              'ETag': etag,
+              'Cache-Control': 'public, max-age=300, must-revalidate',
+              'Vary': 'Accept-Encoding',
+            };
+            if (encoding) headers['Content-Encoding'] = encoding;
+            res.writeHead(200, headers);
+            return res.end(body);
+          }
+
+          sendJson(req, res, 200, result === undefined ? { ok: true } : result);
         } catch (e) {
-          if (e instanceof ApiError) return sendJson(res, e.status, { error: e.message });
+          if (e instanceof ApiError) return sendJson(req, res, e.status, { error: e.message });
           console.error('Внутренняя ошибка:', e);
-          sendJson(res, 500, { error: 'Внутренняя ошибка сервера' });
+          sendJson(req, res, 500, { error: 'Внутренняя ошибка сервера' });
         }
       });
       server.listen(port, '0.0.0.0', cb);

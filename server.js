@@ -17,6 +17,7 @@
 
 const http = require('./src/core/http');
 const db = require('./src/core/db');
+const staticCache = require('./src/core/staticCache');
 const registerRoutes = require('./src/routes');
 const market = require('./src/services/market');
 const legion = require('./src/services/legion');
@@ -24,10 +25,24 @@ const groups = require('./src/services/groups');
 
 const PORT = process.env.PORT || 3000;
 
+// Округление байтов для красивого лога
+function kb(bytes) { return (bytes / 1024).toFixed(1) + ' KB'; }
+
 async function main() {
   // Сначала подключаемся к базе данных (или к локальным файлам) —
   // и только потом начинаем принимать запросы.
   await db.init();
+
+  // Предзагружаем всю статику /public в память: считаем хеши, сжимаем
+  // gzip+brotli, переписываем ссылки на CSS/JS в HTML на «фингерпринт»-
+  // версии с Cache-Control: immutable. Делается один раз при старте.
+  const stat = staticCache.init();
+  if (stat && stat.files) {
+    const ratio = stat.brBytes > 0
+      ? `, brotli: ${kb(stat.brBytes)} (-${Math.round(100 - stat.brBytes / stat.rawBytes * 100)}%)`
+      : '';
+    console.log(`📦 Статика: ${stat.files} файлов (${stat.hashed} с хешем в URL), ${kb(stat.rawBytes)}${ratio}`);
+  }
 
   // Создаём приложение (мини-аналог Express, написанный руками)
   const app = http.createApp();
