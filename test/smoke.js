@@ -229,7 +229,7 @@ async function main() {
   check('чужой профиль читается', prof.profile.name === nameA);
   check('атака вне ±10 уровней запрещена', prof.profile.canAttack === false);
   const fame = (await get('/api/fame', A)).data;
-  check('зал славы: 7 категорий', fame.categories.length === 7);
+  check('зал славы: 12 категорий', fame.categories.length === 12);
   const ach = (await get('/api/achievements', A)).data;
   check('достижения читаются', ach.achievements.length >= 5);
   const trophies = (await get('/api/trophies', A)).data;
@@ -325,6 +325,42 @@ async function main() {
   // Попытка получить бонус до выполнения должна провалиться
   const earlyBonus = await post('/api/daily/bonus', A);
   check('бонус нельзя забрать пока не выполнены все', earlyBonus.status === 400);
+
+  console.log('26. Гарантированная награда за бой с ботом');
+  const oppsForLoot = (await get('/api/war/opponents', A)).data;
+  const botTargetId = oppsForLoot.opponents.find((o) => o.isBot).id;
+  const fightBot = await post('/api/war/attack', A, { targetId: botTargetId });
+  if (fightBot.data.win) {
+    const expectMin = require('../config/gameConfig').minUnitPriceAtLevel(meA.level) * 10;
+    check('награда >= цены 10 ед. техники текущего уровня', fightBot.data.loot >= expectMin);
+  } else {
+    console.log('  (бой проигран — гарантия не применяется к поражению, пропускаем)');
+  }
+
+  console.log('27. Подробная статистика в профиле');
+  const profStats = (await get('/api/profile/' + idA, A)).data.profile;
+  check('powerStats присутствует в профиле', !!profStats.powerStats);
+  check('есть категории ground/air/sea/secret', !!profStats.powerStats.byCategory.ground && !!profStats.powerStats.byCategory.secret);
+
+  console.log('28. Защита построек снижена в 2 раза (бункер = 25)');
+  const cfg = require('../config/gameConfig');
+  const bunker = cfg.DEFENSE_BUILDINGS.find((b) => b.id === 'bunker');
+  check('бункер даёт 25 защиты (было 50)', bunker.def === 25);
+
+  console.log('29. Зал славы: богатство = всего заработано');
+  const richCat = fame.categories.find((c) => c.id === 'rich');
+  check('категория "Богатство (всего заработано)" есть', !!richCat);
+  const armyCat = fame.categories.find((c) => c.id === 'army');
+  check('категория "Размер армии" есть', !!armyCat);
+  const allianceCat = fame.categories.find((c) => c.id === 'alliance_size');
+  check('категория "Самый крупный альянс" есть', !!allianceCat);
+  const mercyCat = fame.categories.find((c) => c.id === 'mercy');
+  check('категория "Милосердие" есть', !!mercyCat);
+
+  console.log('30. Крит-формула: базовый 1.3, макс. трофей даёт итог ×3.0');
+  check('CRIT_MULT базовый = 1.3', cfg.BATTLE.CRIT_MULT === 1.3);
+  const licenseDef = cfg.TROPHIES.find((t) => t.id === 'license');
+  check('лицензия perLvl=17 (10 ур = +170%, итог с базой 1.3+1.7=3.0х)', licenseDef.perLvl === 17);
 
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);

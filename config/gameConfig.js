@@ -28,17 +28,21 @@ const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 2, agility: 2 };
 const REGEN = { hp: 45, en: 45, am: 300 };
 
 // ---------- Опыт и уровни ----------
-// Кусочная кривая, суммарно ~1 000 000 опыта за 300 уровней:
-//   - уровни 1..5: 25, 45, 75, 115, 165 (быстрый старт)
-//   - уровни 6..99: рост до ~1019 (сумма сегмента ≈ 60 000)
-//   - уровни 100..199: рост до ~3733 (сумма ≈ 240 000)
-//   - уровни 200..299: рост до ~9542 (сумма ≈ 700 000)
+// Кусочная кривая. Базовые суммы УВЕЛИЧЕНЫ НА 50% относительно прежней
+// версии (было ~1 000 000 суммарно, стало ~1 500 000):
+//   - уровни 1..5: множитель ×1.5 от прежних 25,45,75,115,165
+//   - уровни 6..99: рост до ~1529 (сумма сегмента ≈ 90 000)
+//   - уровни 100..199: рост до ~5600 (сумма ≈ 360 000)
+//   - уровни 200..299: рост до ~14313 (сумма ≈ 1 050 000)
 // Монотонная: каждый следующий уровень дороже предыдущего.
 function xpToNext(level) {
-  if (level <= 5) return [0, 25, 45, 75, 115, 165][level];
-  if (level < 100) return Math.floor(210 + (level - 6) * 8.7);
-  if (level < 200) return Math.floor(1100 + (level - 100) * 26.6);
-  return Math.floor(3800 + (level - 200) * 58.0);
+  const LEVEL_MUL = 1.5; // требование: лимиты на уровень выше на 50%
+  let base;
+  if (level <= 5) base = [0, 25, 45, 75, 115, 165][level];
+  else if (level < 100) base = Math.floor(210 + (level - 6) * 8.7);
+  else if (level < 200) base = Math.floor(1100 + (level - 100) * 26.6);
+  else base = Math.floor(3800 + (level - 200) * 58.0);
+  return Math.round(base * LEVEL_MUL);
 }
 
 // ---------- Страны ----------
@@ -454,6 +458,16 @@ const UNITS = buildUnitCatalog();
 const UNIT_BY_ID = Object.fromEntries(UNITS.map(u => [u.id, u]));
 const UNIT_TYPE_NAMES = { ground: 'Наземная', air: 'Воздушная', sea: 'Морская' };
 
+// Цена самой свежей открытой техники (наземной, как ориентир баланса)
+// на заданном уровне игрока. Используется для расчёта минимальной
+// гарантированной награды за бой — игрок должен суметь купить хотя бы
+// 10 единиц актуальной техники после одной атаки.
+function minUnitPriceAtLevel(level) {
+  const candidates = UNITS.filter((x) => x.type === 'ground' && x.unlock <= level);
+  if (!candidates.length) return UNITS[0].price;
+  return candidates[candidates.length - 1].price;
+}
+
 // Модернизация (Производство): Mk1 +30%, Mk2 +60%
 const MK_MULT = [1, 1.3, 1.6];
 const PRODUCTION_UNLOCK_LEVEL = 70;
@@ -500,22 +514,23 @@ const INCOME_BUILDINGS = [
 
 const DEFENSE_BUILDINGS = [
   // Цены снижены в 20 раз от предыдущей версии, рост каждой следующей
-  // копии замедлен до +1.5% (было +2.5%).
-  { id: 'bunker',    name: 'Бункер',                          def: 50,    price: 1250,         unlock: 30  },
-  { id: 'bashnya',   name: 'Дозорная башня',                  def: 120,   price: 3500,         unlock: 40  },
-  { id: 'pvo',       name: 'Система ПВО',                     def: 220,   price: 10000,        unlock: 50  },
-  { id: 'batareya',  name: 'Защитная батарея',                def: 380,   price: 27500,        unlock: 60  },
-  { id: 'mine',      name: 'Минное поле',                     def: 600,   price: 75000,        unlock: 70  },
-  { id: 'strazh',    name: 'Система «Страж»',                 def: 900,   price: 200000,       unlock: 80  },
-  { id: 'bereg',     name: 'Береговая оборона',               def: 1300,  price: 500000,       unlock: 90  },
-  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 1900,  price: 1400000,      unlock: 100 },
-  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 2700,  price: 3750000,      unlock: 110 },
-  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 3800,  price: 10000000,     unlock: 120 },
-  { id: 'kupol',     name: 'Энергетический купол',            def: 5300,  price: 27000000,     unlock: 130 },
-  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 7500,  price: 70000000,     unlock: 140 },
-  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 10500, price: 190000000,    unlock: 150 },
-  { id: 'grav_wall', name: 'Гравитационная стена',            def: 14500, price: 500000000,    unlock: 160 },
-  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 20000, price: 1400000000,   unlock: 170 },
+  // копии замедлен до +1.5% (было +2.5%). Защита всех построек снижена
+  // ровно в 2 раза относительно прежней версии.
+  { id: 'bunker',    name: 'Бункер',                          def: 25,    price: 1250,         unlock: 30  },
+  { id: 'bashnya',   name: 'Дозорная башня',                  def: 60,    price: 3500,         unlock: 40  },
+  { id: 'pvo',       name: 'Система ПВО',                     def: 110,   price: 10000,        unlock: 50  },
+  { id: 'batareya',  name: 'Защитная батарея',                def: 190,   price: 27500,        unlock: 60  },
+  { id: 'mine',      name: 'Минное поле',                     def: 300,   price: 75000,        unlock: 70  },
+  { id: 'strazh',    name: 'Система «Страж»',                 def: 450,   price: 200000,       unlock: 80  },
+  { id: 'bereg',     name: 'Береговая оборона',               def: 650,   price: 500000,       unlock: 90  },
+  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 950,   price: 1400000,      unlock: 100 },
+  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 1350,  price: 3750000,      unlock: 110 },
+  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 1900,  price: 10000000,     unlock: 120 },
+  { id: 'kupol',     name: 'Энергетический купол',            def: 2650,  price: 27000000,     unlock: 130 },
+  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 3750,  price: 70000000,     unlock: 140 },
+  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 5250,  price: 190000000,    unlock: 150 },
+  { id: 'grav_wall', name: 'Гравитационная стена',            def: 7250,  price: 500000000,    unlock: 160 },
+  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 10000, price: 1400000000,   unlock: 170 },
 ];
 
 const BUILDING_BY_ID = Object.fromEntries(
@@ -568,11 +583,15 @@ function buildConflictOperations(conflict, conflictIdx) {
     for (let stepIdx = 0; stepIdx < 3; stepIdx++) {
       const energy = 4 + conflictIdx * 2 + opIdx * 1 + stepIdx;
       const timeMin = 5 + opIdx * 3 + stepIdx * 4 + conflictIdx * 2;
-      // Опыт: для 1-го конфликта 3..10, для 10-го — до 340
+      // Опыт снижен в 3 раза относительно прежней версии — спецоперации
+      // больше не основной источник опыта, упор смещён на бои.
       const baseXp = 3 + conflictIdx * 32;
-      const xp = Math.round(baseXp + opIdx * 3 + stepIdx * 5);
-      // Деньги: небольшая сумма (миссии — не основной источник дохода)
-      const money = Math.round((100 + opIdx * 80 + stepIdx * 40) * Math.pow(1.3, conflictIdx));
+      const xp = Math.round((baseXp + opIdx * 3 + stepIdx * 5) / 3);
+      // Уровень, на котором примерно доступен этот шаг (для расчёта денег)
+      const stepLevel = conflict.minLevel + opIdx + stepIdx;
+      // Деньги масштабируются под уровень игрока: примерно стоимость
+      // 1-3 единиц актуальной техники за шаг (больше чем раньше).
+      const money = Math.round(minUnitPriceAtLevel(stepLevel) * (0.5 + opIdx * 0.15 + stepIdx * 0.1));
       // Требования: сила армии, иногда уровень, иногда наличие техники
       const powerReq = Math.round(50 * Math.pow(1.6, conflictIdx) + opIdx * 30 + stepIdx * 20);
       steps.push({
@@ -582,7 +601,7 @@ function buildConflictOperations(conflict, conflictIdx) {
         xp, money,
         require: {
           power: powerReq,
-          level: conflict.minLevel + opIdx + stepIdx,
+          level: stepLevel,
         },
       });
     }
@@ -760,7 +779,7 @@ const DAILY_ALL_BONUS_GOLD = 100;
 const TROPHIES = [
   { id: 'medal',     name: 'Медаль «За отвагу»',          desc: '+2% к атаке за уровень (макс. 20%).',                  perLvl: 2,   apply: 'atk',     expensive: true },
   { id: 'shield',    name: 'Орден «Стальной щит»',        desc: '+2% к защите за уровень (макс. 20%).',                 perLvl: 2,   apply: 'def',     expensive: true },
-  { id: 'license',   name: 'Лицензия на убийство',        desc: '+20% к силе крита за уровень (макс. 200%).',           perLvl: 20,  apply: 'crit',    expensive: true },
+  { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает крит: на макс. уровне общий множитель урона при крите ×3.0 (т.е. +200% к обычному урону).', perLvl: 17,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
   { id: 'sewing',    name: 'Набор швеи',                  desc: 'Шанс пришить ухо +4% за уровень (макс. 40%). (заглушка)', perLvl: 4, flavor: true },
@@ -839,7 +858,7 @@ const LEGION_BUILDING_BY_ID = Object.fromEntries(LEGION_BUILDINGS.map(b => [b.id
 const BATTLE = {
   XP_WIN_MIN: 4,  XP_WIN_MAX: 7,
   XP_LOSS_MIN: 1, XP_LOSS_MAX: 2,
-  CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.01, CRIT_MAX: 0.55, CRIT_MULT: 1.5,
+  CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.01, CRIT_MAX: 0.55, CRIT_MULT: 1.3,
   DODGE_PER_AGILITY: 0.0075, DODGE_MAX: 0.4, DODGE_REDUCE: 0.55,
   LOOT_PCT: 0.07,            // снижено с 10% до 7% — фарм невыгоден
   DEF_LOOT_SOFT: 1200,
@@ -898,7 +917,7 @@ const MAIL = { KEEP: 100, MAX_LEN: 2000 };
 module.exports = {
   PLAYER, SKILL_COSTS, REGEN, xpToNext,
   COUNTRIES, COUNTRY_BY_ID, RANKS,
-  UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN,
+  UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, minUnitPriceAtLevel, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN,
   INCOME_BUILDINGS, DEFENSE_BUILDINGS, BUILDING_BY_ID, BUILDING_PRICE_GROWTH, BUILDING_DEF_POWER, INCOME_PERIOD_MS,
   CONFLICTS, CONFLICT_BY_ID, MISSION_STEP,
   STORY_PROLOGUE, TUTORIAL, TUTORIAL_FINAL_GOLD, STORY_EPILOGUE,

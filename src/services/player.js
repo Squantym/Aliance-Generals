@@ -340,6 +340,16 @@ function unitTotalCount(user, unitId) {
   return (m[0] || 0) + (m[1] || 0) + (m[2] || 0);
 }
 
+// Суммарное количество единиц техники во всей армии (все виды, все Mk)
+function unitCountTotal(user) {
+  let total = 0;
+  for (const m of Object.values(user.units || {})) {
+    if (!m) continue;
+    total += (m[0] || 0) + (m[1] || 0) + (m[2] || 0);
+  }
+  return total;
+}
+
 // Гарантирует наличие структуры { 0, 1, 2 } для юнита
 function ensureUnit(user, unitId) {
   if (!user.units[unitId]) user.units[unitId] = { 0: 0, 1: 0, 2: 0 };
@@ -622,6 +632,78 @@ function mePayload(user) {
 }
 
 // ---------- Публичный профиль (его видят другие игроки) ----------
+function powerStats(user) {
+  // Детальная раскладка: каждая единица техники (с учётом Mk и бонуса страны)
+  // даёт свою атаку/защиту, плюс суммы по категориям (наземная/воздушная/
+  // морская/секретные). Используется для экрана «Подробная статистика».
+  const country = config.COUNTRY_BY_ID[user.country];
+  const mm = (country && country.mod) || {};
+  const typeMul = mm.typeMul || 1.05;
+
+  const calcUnitPower = (cu, mk) => {
+    let atk = cu.attack * config.MK_MULT[mk];
+    let def = cu.defense * config.MK_MULT[mk];
+    if (mm.atkType === cu.type) atk *= typeMul;
+    if (mm.defType === cu.type) def *= typeMul;
+    if (mm.atkAll) atk *= mm.atkAll;
+    if (mm.defAll === true) def *= 1.05;
+    else if (typeof mm.defAll === 'number') def *= mm.defAll;
+    return { atk: Math.round(atk), def: Math.round(def) };
+  };
+
+  const byType = { ground: { atk: 0, def: 0, count: 0 }, air: { atk: 0, def: 0, count: 0 }, sea: { atk: 0, def: 0, count: 0 } };
+  const lines = [];
+  for (const [unitId, mkMapRaw] of Object.entries(user.units)) {
+    const cu = config.UNIT_BY_ID[unitId];
+    if (!cu) continue;
+    for (let mk = 0; mk <= 2; mk++) {
+      const count = (mkMapRaw && mkMapRaw[mk]) || 0;
+      if (count <= 0) continue;
+      const { atk, def } = calcUnitPower(cu, mk);
+      byType[cu.type].atk += atk * count;
+      byType[cu.type].def += def * count;
+      byType[cu.type].count += count;
+      lines.push({
+        name: cu.name + (mk ? ` Mk${mk}` : ''),
+        type: cu.type, typeName: config.UNIT_TYPE_NAMES[cu.type],
+        count, atkEach: atk, defEach: def,
+        atkTotal: atk * count, defTotal: def * count,
+      });
+    }
+  }
+  // Секретные разработки — отдельная категория
+  const secretLines = [];
+  let secretAtkSum = 0, secretDefSum = 0, secretCount = 0;
+  for (const d of config.SECRET_DEVS) {
+    const count = user.secretDevs[d.id] || 0;
+    if (count <= 0) continue;
+    const a = config.secretAtk(user, d);
+    const dd = config.secretDef(user, d);
+    secretLines.push({ name: d.name, count, atkEach: a, defEach: dd, atkTotal: a * count, defTotal: dd * count });
+    secretAtkSum += a * count;
+    secretDefSum += dd * count;
+    secretCount += count;
+  }
+  if (user.superSecret > 0) {
+    const abs = config.SUPER_DEV;
+    const a = config.secretAtk(user, abs);
+    const dd = config.secretDef(user, abs);
+    secretLines.push({ name: abs.name, count: user.superSecret, atkEach: a, defEach: dd, atkTotal: a * user.superSecret, defTotal: dd * user.superSecret });
+    secretAtkSum += a * user.superSecret;
+    secretDefSum += dd * user.superSecret;
+    secretCount += user.superSecret;
+  }
+
+  return {
+    lines: lines.sort((a, b) => b.atkTotal - a.atkTotal),
+    secretLines: secretLines.sort((a, b) => b.atkTotal - a.atkTotal),
+    byCategory: {
+      ground: byType.ground, air: byType.air, sea: byType.sea,
+      secret: { atk: secretAtkSum, def: secretDefSum, count: secretCount },
+    },
+  };
+}
+
 function publicProfile(target, viewer) {
   const atk = totalPower(target, "atk");
   const def = totalPower(target, "def");
@@ -665,6 +747,7 @@ function publicProfile(target, viewer) {
     capacity: capacity(target),
     units: unitsList, buildings: buildingsList,
     secretDevs: devsList, superSecret: target.superSecret,
+    powerStats: powerStats(target),
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,
     canAttack: !!viewer && viewer.id !== target.id &&
@@ -679,7 +762,7 @@ function setStatus(user, text) {
 module.exports = {
   users, maxima, refresh, addMoney, addGold, addXp, xpMul, spendSkill,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
-  ensureUnit, unitTotalCount, trophyDiscountPct, totalPower,
+  ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, rank, flag, findByName,
   bankDeposit, bankWithdraw, goldPackages, buyGold,

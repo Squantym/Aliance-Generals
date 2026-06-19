@@ -63,12 +63,15 @@ function makeBotArmy(bot) {
 function makeBot(user) {
   const level = u.clamp(user.level + u.rnd(-7, 7), 1, config.PLAYER.MAX_LEVEL);
   const base = Math.max(30, player.buildArmy(user, 'atk').power);
-  // 50% — обычный бот-террорист, 50% — псевдоигрок (примерно равный по силе)
+  // 50% — обычный бот-террорист, 50% — псевдоигрок
   const isPlayerLike = Math.random() < 0.5;
-  // Псевдоигроки почти равны игроку (90-115%), террористы слабее (50-95%)
+  // Псевдоигроки слабее реального игрока на ~10% (было «почти равны»),
+  // террористы слабее ещё сильнее — на 30% от прежнего диапазона.
+  // Было: playerLike 0.90-1.15, террористы 0.50-0.95.
+  // Стало: playerLike 0.80-1.04 (−10%), террористы 0.35-0.665 (−30%).
   const powerRange = isPlayerLike
-    ? (0.90 + Math.random() * 0.25)
-    : (0.50 + Math.random() * 0.45);
+    ? (0.80 + Math.random() * 0.24)
+    : (0.35 + Math.random() * 0.315);
   const power = Math.max(25, Math.round(base * powerRange * (1 + (level - user.level) * 0.03)));
   const maxHp = 100 + level * 8;
   // Случайные характеристики профиля бота
@@ -319,6 +322,11 @@ function attack(user, targetId, notices) {
       // Базовая выплата с бота заметно урезана: с уровнем растёт мягко
       const baseBot = target.loot;
       loot = Math.round(baseBot * (0.5 + Math.random() * 0.4) * lootMul);
+      // Гарантированный минимум: за одну победную атаку на бота/террориста
+      // игрок должен суметь купить хотя бы 10 единиц актуальной техники
+      // своего уровня (но не уровня бота — ориентируемся на игрока).
+      const guaranteedMin = config.minUnitPriceAtLevel(user.level) * 10;
+      if (loot < guaranteedMin) loot = guaranteedMin;
       // Симулируем потери техники бота для отображения в окне боя.
       // У бота нет реальной техники в БД, поэтому просто берём имена из
       // его псевдоармии и пишем туда «×N потерь».

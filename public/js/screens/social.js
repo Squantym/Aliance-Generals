@@ -361,6 +361,10 @@ App.screens.fame = async (c, param) => {
   const active = param || categories[0].id;
   const cat = categories.find((x) => x.id === active) || categories[0];
 
+  // Категории, где значение — деньги (показываем с $), остальное — обычное число
+  const moneyCats = new Set(['rich']);
+  const fmtVal = (catId, v) => moneyCats.has(catId) ? `$ ${UI.fmtMoney(v)}` : UI.fmtNum(v);
+
   c.innerHTML = `
     <div class="title">Зал славы</div>
     <div class="tabs">${categories.map((x) =>
@@ -371,7 +375,7 @@ App.screens.fame = async (c, param) => {
         <div class="list-row">
           <div style="width:26px;text-align:center" class="${i < 3 ? 'gold' : 'muted'}">${i + 1}</div>
           <div class="grow"><span class="name" style="cursor:pointer" onclick="App.go('profile/${p.id}')">${p.flag} ${UI.esc(p.name)}</span> <span class="muted small">Ур. ${p.level}</span></div>
-          <div class="v gold">${UI.fmtMoney(p.value)}</div>
+          <div class="v gold">${fmtVal(cat.id, p.value)}</div>
         </div>`).join('') : '<p class="muted center">Список пока пуст.</p>'}
     </div>`;
 };

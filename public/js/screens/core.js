@@ -252,6 +252,7 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">⚔ Атака</span><span class="v">${UI.fmtNum(p.power.atk)}</span></div>
       <div class="kv"><span class="k">🛡 Защита</span><span class="v">${UI.fmtNum(p.power.def)}</span></div>
       <div class="kv"><span class="k">🚚 Вместимость армии</span><span class="v">${UI.fmtNum(p.capacity)}</span></div>
+      ${p.powerStats ? `<button class="btn mt" id="pf-stats-toggle" style="width:100%">📊 Подробная статистика</button>` : ''}
       <hr class="hr">
       <div class="kv"><span class="k">Нападения</span><span class="v">${UI.fmtNum(p.battle.attacks)}</span></div>
       <div class="kv"><span class="k">Победы</span><span class="v">${UI.fmtNum(p.battle.wins)}</span></div>
@@ -263,6 +264,34 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">🏷 Жетоны милосердия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
       <div class="kv"><span class="k">Потеряно своих ушей</span><span class="v">${UI.fmtNum(p.earsLost)}</span></div>
     </div>
+
+    ${p.powerStats ? `
+    <div class="card" id="pf-stats-block" style="display:none">
+      <div class="title" style="margin-top:0">📊 Подробная статистика мощи</div>
+
+      <div class="kv"><span class="k">🚜 Наземная техника</span><span class="v">⚔ ${UI.fmtNum(p.powerStats.byCategory.ground.atk)} · 🛡 ${UI.fmtNum(p.powerStats.byCategory.ground.def)} (${UI.fmtNum(p.powerStats.byCategory.ground.count)} ед.)</span></div>
+      <div class="kv"><span class="k">✈ Воздушная техника</span><span class="v">⚔ ${UI.fmtNum(p.powerStats.byCategory.air.atk)} · 🛡 ${UI.fmtNum(p.powerStats.byCategory.air.def)} (${UI.fmtNum(p.powerStats.byCategory.air.count)} ед.)</span></div>
+      <div class="kv"><span class="k">🚢 Морская техника</span><span class="v">⚔ ${UI.fmtNum(p.powerStats.byCategory.sea.atk)} · 🛡 ${UI.fmtNum(p.powerStats.byCategory.sea.def)} (${UI.fmtNum(p.powerStats.byCategory.sea.count)} ед.)</span></div>
+      <div class="kv"><span class="k">🛸 Секретные разработки</span><span class="v">⚔ ${UI.fmtNum(p.powerStats.byCategory.secret.atk)} · 🛡 ${UI.fmtNum(p.powerStats.byCategory.secret.def)} (${UI.fmtNum(p.powerStats.byCategory.secret.count)} ед.)</span></div>
+
+      ${p.powerStats.lines.length ? `
+      <hr class="hr">
+      <p class="small mt"><b>По каждой единице техники:</b></p>
+      ${p.powerStats.lines.map((l) => `
+        <div class="kv">
+          <span class="k">${UI.esc(l.name)} <span class="muted small">×${UI.fmtNum(l.count)}</span></span>
+          <span class="v small">⚔ ${UI.fmtNum(l.atkTotal)} · 🛡 ${UI.fmtNum(l.defTotal)}</span>
+        </div>`).join('')}` : '<p class="muted small mt center">Техники нет.</p>'}
+
+      ${p.powerStats.secretLines.length ? `
+      <hr class="hr">
+      <p class="small mt"><b>Секретные разработки:</b></p>
+      ${p.powerStats.secretLines.map((l) => `
+        <div class="kv">
+          <span class="k">${UI.esc(l.name)} <span class="muted small">×${UI.fmtNum(l.count)}</span></span>
+          <span class="v small gold">⚔ ${UI.fmtNum(l.atkTotal)} · 🛡 ${UI.fmtNum(l.defTotal)}</span>
+        </div>`).join('')}` : ''}
+    </div>` : ''}
 
     <div class="card"><div class="title" style="margin-top:0">Техника</div>${unitsHtml}</div>
     <div class="card"><div class="title" style="margin-top:0">Секретные разработки</div>${devsHtml}</div>
@@ -277,6 +306,18 @@ App.screens.profile = async (c, param) => {
         await API.post('/api/status', { text });
         App.rerender(); // перерисовать профиль
       } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
+
+  // Разворачивание/сворачивание подробной статистики мощи
+  const statsToggle = document.getElementById('pf-stats-toggle');
+  if (statsToggle) {
+    statsToggle.onclick = () => {
+      const block = document.getElementById('pf-stats-block');
+      const opening = block.style.display === 'none';
+      block.style.display = opening ? '' : 'none';
+      statsToggle.textContent = opening ? '📊 Скрыть подробную статистику' : '📊 Подробная статистика';
+      if (opening) block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
   }
 

@@ -96,11 +96,23 @@ function fame() {
   const categories = [
     { id: 'rating', name: 'Рейтинг', val: (p) => player.rating(p) },
     { id: 'level', name: 'Уровень', val: (p) => p.level },
-    { id: 'attack', name: 'Самый сильный', val: (p) => player.buildArmy(p, 'atk').power },
+    { id: 'attack', name: 'Самый сильный', val: (p) => player.totalPower(p, 'atk').power },
     { id: 'wins', name: 'Победы', val: (p) => p.battle.wins },
     { id: 'attacks', name: 'Нападения', val: (p) => p.battle.attacks },
     { id: 'fatal', name: 'Фаталити', val: (p) => p.battle.fatalities },
-    { id: 'rich', name: 'Богатство', val: (p) => p.dollars + p.bank },
+    // Богатство = сколько ВСЕГО заработано (включая грабёж в боях), а не
+    // текущий баланс — баланс легко спустить, а слава за награбленное остаётся
+    { id: 'rich', name: 'Богатство (всего заработано)', val: (p) => p.counters.moneyEarned || 0 },
+    // Размер армии: суммарное количество единиц техники в строю
+    { id: 'army', name: 'Размер армии', val: (p) => player.unitCountTotal(p) },
+    // Размер альянса (0, если не состоит)
+    { id: 'alliance_size', name: 'Самый крупный альянс', val: (p) => { const a = player.allianceOf(p); return a ? a.members.length : 0; } },
+    // Помилования: сколько раз игрок выбрал «жетон» вместо уха при фаталити
+    { id: 'mercy', name: 'Милосердие (жетоны)', val: (p) => p.tokens || 0 },
+    // Жестокость: сколько ушей отрезано
+    { id: 'cruel', name: 'Жестокость (отрезано ушей)', val: (p) => p.ears || 0 },
+    // Прокачка трофеев: сумма уровней всех трофеев
+    { id: 'trophies', name: 'Коллекционер трофеев', val: (p) => Object.values(p.trophies || {}).reduce((s, v) => s + v, 0) },
   ];
   return {
     categories: categories.map((c) => ({
