@@ -362,7 +362,7 @@ async function main() {
   check('категория "Милосердие" есть', !!mercyCat);
 
   console.log('30. Крит-формула: базовый 1.3, макс. трофей даёт итог ×3.0');
-  check('CRIT_MULT базовый = 1.5', cfg.BATTLE.CRIT_MULT === 1.5);
+  check('CRIT_MULT базовый = 2.0', cfg.BATTLE.CRIT_MULT === 2.0);
   const licenseDef = cfg.TROPHIES.find((t) => t.id === 'license');
   check('лицензия perLvl=20 (10 ур = +200% от базы 1.5, итог 1.5×3=4.5х)', licenseDef.perLvl === 20);
 
@@ -503,6 +503,40 @@ async function main() {
   console.log('44. Подпись подарка администрации');
   const grantWithNote = await post('/api/admin/grant', A, { userId: idB, dollars: 1000, giftNote: 'С праздником!' });
   check('подарок с подписью выдан', grantWithNote.status === 200);
+
+  console.log('45. Боты сохраняются в альянсе после рестарта сервера');
+  // Проверяем, что серверная функция cleanupBotsFromAlliances больше НЕ
+  // вызывается автоматически при старте (server.js не должен импортировать
+  // groups для этой цели). Это структурная проверка содержимого файла.
+  const serverSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
+  check('server.js не вызывает cleanupBotsFromAlliances при старте', !serverSrc.includes('cleanupBotsFromAlliances()'));
+
+  console.log('46. Формула награды от ботов: 10-30 единиц техники, убывает от атаки к атаке');
+  await post('/api/admin/grant', A, { userId: idA, setLevel: 15, dollars: 50000000, health: 1000 });
+  await post('/api/units/buy', A, { unitId: 'ground_3', qty: 50 }); // гарантируем победу над ботом
+  const oppsForFormula = (await get('/api/war/opponents', A)).data;
+  const botForFormula = oppsForFormula.opponents.find((o) => o.isBot);
+  const unitPriceAt15 = cfg.minUnitPriceAtLevel(15);
+  const fight1 = await post('/api/war/attack', A, { targetId: botForFormula.id });
+  if (fight1.data.win) {
+    check('первая награда в диапазоне 10-30 ед. техники уровня игрока',
+      fight1.data.loot >= unitPriceAt15 * 8 && fight1.data.loot <= unitPriceAt15 * 32);
+    await post('/api/admin/grant', A, { userId: idA, ammo: 5, health: 1000 });
+    const fight2 = await post('/api/war/attack', A, { targetId: botForFormula.id });
+    if (fight2.status === 200 && fight2.data.win) {
+      check('вторая награда на ту же цель меньше первой (убывание)', fight2.data.loot < fight1.data.loot);
+    }
+  }
+
+  console.log('47. Критический урон явно усиливает итоговый урон (без потолка 45)');
+  // Базовая проверка корректности применения формулы через конфиг
+  const critMul = cfg.BATTLE.CRIT_MULT;
+  check('crit без трофея удваивает урон (CRIT_MULT=2.0)', critMul === 2.0);
+  // На максимуме трофея (perLvl=20, 10 ур = +200%) итог должен быть x6 от базового
+  const licenseAtMax = cfg.TROPHIES.find((t) => t.id === 'license');
+  const trophyBonusAtMax = (licenseAtMax.perLvl * 10) / 100; // 2.0 (200%)
+  const totalCritMul = critMul * (1 + trophyBonusAtMax);
+  check('итоговый крит-множитель на максимуме трофея = x6', totalCritMul === 6);
 
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);

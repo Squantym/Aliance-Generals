@@ -36,7 +36,13 @@ function paramsOf(kind) {
 }
 function coll(kind) { return db.load(defOf(kind).coll, {}); }
 
-function memberBrief(id) {
+function memberBrief(id, g) {
+  if (String(id).startsWith('bot_')) {
+    // Боты эфемерны — используем сохранённый снимок данных, иначе
+    // показываем заглушку (на случай совсем старых данных без снимка)
+    const snap = g && g.botSnapshots && g.botSnapshots[id];
+    return snap || { id, name: 'Боец альянса', flag: '🏳', level: 1, rating: 0 };
+  }
   const p = player.users()[id];
   return p ? { id: p.id, name: p.name, flag: player.flag(p), level: p.level, rating: player.rating(p) } : null;
 }
@@ -67,8 +73,8 @@ function view(user, kind) {
     mine: g ? {
       id: g.id, name: g.name,
       leaderId: g.leaderId, isLeader: g.leaderId === user.id,
-      members: g.members.map(memberBrief).filter(Boolean).sort((x, y) => y.rating - x.rating),
-      requests: g.leaderId === user.id ? g.requests.map(memberBrief).filter(Boolean) : [],
+      members: g.members.map((id) => memberBrief(id, g)).filter(Boolean).sort((x, y) => y.rating - x.rating),
+      requests: g.leaderId === user.id ? g.requests.map((id) => memberBrief(id, g)).filter(Boolean) : [],
       perMember: params.PER_MEMBER || 0,
       bonusEach: (params.PER_MEMBER || 0) * g.members.length,
       // Лимит вместимости альянса (по уровню лидера × 10)
@@ -245,7 +251,10 @@ function invite(user, kind, targetId, notices) {
     throw new u.ApiError(`Лимит ${limit} приглашений/час исчерпан. Слот освободится через ~${wait} мин. Наймите дипломата чтобы увеличить лимит.`);
   }
 
-  // Автоприём для ботов: добавляем фейкового члена в альянс
+  // Автоприём для ботов: добавляем фейкового члена в альянс.
+  // ВАЖНО: боты эфемерны (живут 15 минут в кэше battle.js), поэтому
+  // сохраняем СНИМОК их данных (имя/уровень/флаг) на момент вступления —
+  // иначе отображение списка участников будет терять их после истечения TTL.
   if (String(targetId).startsWith('bot_')) {
     if (kind !== 'alliance') throw new u.ApiError('В легион можно приглашать только живых игроков');
     const botMembers = g.botMembers || (g.botMembers = []);
@@ -253,6 +262,13 @@ function invite(user, kind, targetId, notices) {
     botMembers.push(targetId);
     g.members = g.members || [g.leaderId];
     g.members.push(targetId);
+    // Снимок данных бота — берём из battle.js (если ещё жив в кэше)
+    if (!g.botSnapshots) g.botSnapshots = {};
+    const battle = require('./battle');
+    const botData = battle.peekBot(targetId);
+    g.botSnapshots[targetId] = botData
+      ? { id: targetId, name: botData.name, flag: botData.flag, level: botData.level, rating: botData.rating || botData.power }
+      : { id: targetId, name: 'Боец альянса', flag: '🏳', level: 1, rating: 0 };
     g.inviteLog.push(Date.now());
     db.save(def.coll);
     notices.push(`✅ Боец автоматически принял приглашение в альянс. Осталось приглашений: ${limit - used - 1}/час`);

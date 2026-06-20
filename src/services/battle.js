@@ -75,6 +75,25 @@ function makeBot(user) {
     : (0.35 + Math.random() * 0.315);
   const power = Math.max(25, Math.round(base * powerRange * (1 + (level - user.level) * 0.03)));
   const maxHp = 100 + level * 8;
+  // ----- Казна бота (loot pool) -----
+  // По требованиям: за ОДНУ атаку игрок должен получить сумму, на которую
+  // можно купить 10-30 единиц актуальной техники СВОЕГО уровня. Если в
+  // среднем на полное уничтожение бота уходит ~20 атак (урон ~5% HP за
+  // удар), общая «казна» бота — это сумма геометрически убывающей серии
+  // из ~20 потенциальных выплат, где первая выплата самая крупная.
+  const unitPrice = config.minUnitPriceAtLevel(user.level);
+  const firstHitMin = unitPrice * 10;
+  const firstHitMax = unitPrice * 30;
+  const firstHit = u.rnd(Math.round(firstHitMin), Math.round(firstHitMax));
+  // Геометрическая прогрессия с коэффициентом ~0.95 (близко к темпу
+  // убывания HP за удар) и ~20 членами: казна ≈ firstHit / (1 - 0.95)
+  // ограничено разумным числом членов, чтобы не уйти в бесконечность.
+  const DECAY = 0.95;
+  const ESTIMATED_HITS = 20;
+  let lootPool = 0;
+  for (let i = 0; i < ESTIMATED_HITS; i++) lootPool += firstHit * Math.pow(DECAY, i);
+  lootPool = Math.round(lootPool);
+
   // Случайные характеристики профиля бота
   const botStatuses = [
     'За Родину!', 'Иду в бой', 'Война — моя работа',
@@ -99,7 +118,9 @@ function makeBot(user) {
     name: isPlayerLike ? randomPlayerName() : u.pick(config.BOT_NAMES),
     flag: isPlayerLike ? u.pick(config.BOT_PLAYER_FLAGS) : '💀',
     level, power, maxHp, hp: maxHp,
-    loot: Math.round(300 * Math.pow(level, 1.2)),
+    loot: lootPool,        // общая «казна» бота — расходуется при атаках
+    firstHit,               // размер первой выплаты (база для прогрессии)
+    hitsLanded: 0,           // сколько раз по этому боту уже ударили
     // Профильные данные
     status: u.pick(botStatuses),
     rating: Math.round(power * (0.5 + Math.random() * 1.5)),
@@ -114,6 +135,14 @@ function makeBot(user) {
 }
 
 // Публичный профиль бота (для маршрута /api/profile/bot_xxx)
+// Безопасный просмотр данных бота из кэша (для снимка при вступлении
+// в альянс). Возвращает null, если бот уже истёк/не найден — вызывающий
+// код тогда использует заглушку.
+function peekBot(botId) {
+  const rec = botCache.get(botId);
+  return rec ? rec.bot : null;
+}
+
 function botProfile(botId, viewer) {
   pruneBots();
   const rec = botCache.get(botId);
@@ -210,7 +239,12 @@ function resolveDamage(atk, def) {
   return { dealt };
 }
 
-function removeUnits(victim, armyEntries, pct) {
+// Потери техники зависят от полученного урона и крита: чем больше урон,
+// тем выше шанс и размер потерь, но всегда есть шанс не потерять ничего.
+// pctBase — базовая доля «эталонных» потерь (как раньше), но теперь
+// масштабируется случайным образом от 0 до ~2× базы, и явно зависит
+// от того, был ли нанесён критический удар (crit => потери крупнее).
+function removeUnits(victim, armyEntries, pctBase, crit) {
   // Сортируем «жертв» от слабой к сильной: сначала Mk0, потом Mk1, Mk2;
   // внутри одного Mk — по возрастанию unlock (уровень открытия = «слабее»).
   const pool = armyEntries
@@ -222,7 +256,18 @@ function removeUnits(victim, armyEntries, pct) {
       const cuB = config.UNIT_BY_ID[b.unitId];
       return (cuA ? cuA.unlock : 0) - (cuB ? cuB.unlock : 0);
     });
-  let toLose = Math.max(1, Math.floor(pool.reduce((s, e) => s + e.taken, 0) * pct));
+  const totalTaken = pool.reduce((s, e) => s + e.taken, 0);
+  if (totalTaken <= 0) return [];
+
+  // Случайный множитель потерь: 0% (без потерь) .. 200% от базовой доли.
+  // Критический удар сдвигает диапазон вверх (потери крупнее и стабильнее).
+  const randMul = crit ? (0.6 + Math.random() * 1.4) : (0 + Math.random() * 1.6);
+  let toLose = Math.floor(totalTaken * pctBase * randMul);
+  // Не более трети взятой в бой техники за один обмен ударами — чтобы
+  // потери оставались правдоподобными даже при крите
+  toLose = Math.min(toLose, Math.ceil(totalTaken / 3));
+  if (toLose <= 0) return [];
+
   const lost = {};
   for (const e of pool) {
     if (toLose <= 0) break;
@@ -308,30 +353,38 @@ function attack(user, targetId, notices) {
   const dodgeChance = isBot ? 0 : Math.min(B.DODGE_MAX, target.skills.agility * B.DODGE_PER_AGILITY);
   const dodge = Math.random() < dodgeChance;
 
-  // Эффективная атака с учётом крита (база ×1.5, трофей до ×4.5 на максимуме)
+  // Базовый урон (БЕЗ крита) по пороговой формуле — соотносим обычную
+  // атаку (без множителя крита) с защитой противника
+  const { dealt: dealtBase } = resolveDamage(aPow, dPow);
+
+  // Крит явно умножает ИТОГОВЫЙ урон (не подмешивается в пороговую
+  // формулу до клампа): база ×2.0, трофей «Лицензия на убийство» на
+  // максимуме добавляет ещё ×2.0 сверху (итог ×6.0 на максимуме —
+  // см. config.BATTLE.CRIT_MULT и trophies.critPower).
+  //   Пример без трофея: 30 урона -> крит 30×2 = 60
+  //   Пример с трофеем макс.: 60 + (60×2) = 180
+  const critTrophyBonus = trophies.critPower(user); // 0..2.0 (0%-200%)
+  const dealtCrit = crit
+    ? Math.round(dealtBase * B.CRIT_MULT * (1 + critTrophyBonus))
+    : dealtBase;
+
+  // Для определения победителя сравниваем эффективную атаку (с учётом
+  // крита) против защиты — честно, без отдельного случайного броска
   let effectiveAtk = aPow;
-  if (crit) effectiveAtk *= B.CRIT_MULT * (1 + trophies.critPower(user));
-
-  // Пороговая формула: соотносим эффективную атаку с защитой противника
-  const { dealt: dealtRaw } = resolveDamage(effectiveAtk, dPow);
-
-  // ПОБЕДА определяется ЧЕСТНО по факту того, чья сила выше в этой
-  // схватке (эффективная атака против защиты), с небольшим разбросом
-  // ±15% для непредсказуемости — НЕ отдельным случайным броском,
-  // оторванным от реального соотношения сил (это и было причиной
-  // багa «наношу больше урона, но проигрываю»).
+  if (crit) effectiveAtk *= B.CRIT_MULT * (1 + critTrophyBonus);
   const aRollFinal = effectiveAtk * (0.85 + Math.random() * 0.3);
   const dRollFinal = dPow * (0.85 + Math.random() * 0.3);
   const win = aRollFinal >= dRollFinal;
 
   // Полный уворот — обнуляем урон, но не исход боя
-  const dealt = dodge ? 0 : dealtRaw;
+  const dealt = dodge ? 0 : dealtCrit;
 
-  // Урон, получаемый АТАКУЮЩИМ от защитника, считается по той же формуле
-  // в обратную сторону (защитник «отвечает» своей мощью защиты против
-  // атаки противника — упрощённая симметрия для второй стороны обмена).
-  const { dealt: receivedRaw } = resolveDamage(dPow, aPow);
-  const received = receivedRaw;
+  // Урон, получаемый АТАКУЮЩИМ от защитника (та же формула в обратную
+  // сторону — у бота тоже есть шанс крита, см. ниже)
+  const { dealt: receivedBase } = resolveDamage(dPow, aPow);
+  const botCritChance = isBot ? Math.min(0.30, 0.05 + (target.level || 1) * 0.002) : 0;
+  const botCrit = isBot && Math.random() < botCritChance;
+  const received = botCrit ? Math.round(receivedBase * B.CRIT_MULT) : receivedBase;
   user.res.hp.cur = Math.max(1, user.res.hp.cur - received);
 
   let targetHpAfter;
@@ -370,27 +423,27 @@ function attack(user, targetId, notices) {
     require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
     if (isBot) {
-      // Базовая выплата с бота — широкий случайный разброс (40%-120% от
-      // базы), убывает экспоненциально при повторных атаках на ботов за
-      // последний час: 1-я атака = 100%, 2-я = 50%, 3-я = 25%, ... и так
-      // далее вплоть до практического нуля при частом фарме.
-      const baseBot = target.loot;
-      loot = Math.round(baseBot * (0.4 + Math.random() * 0.8) * lootMul);
-      // Гарантированный минимум действует ТОЛЬКО на первую атаку за час
-      // (recentCount === 0). Дальше награда убывает свободно до нуля —
-      // повторный фарм одной и той же активности не должен давать
-      // стабильный фиксированный доход.
-      if (recentCount === 0) {
-        const guaranteedMin = Math.round(config.minUnitPriceAtLevel(user.level) * 10);
-        if (loot < guaranteedMin) loot = guaranteedMin;
-      }
+      // Выплата = очередной член геометрически убывающей серии из казны
+      // бота. Первая атака на этого бота — самая крупная (10-30 единиц
+      // техники уровня игрока), каждая следующая — меньше (×0.95 за шаг),
+      // вплоть до почти нуля. Привязано к hitsLanded конкретного бота, а
+      // не к общему пулу 'bots_pool' — так результат честно совпадает с
+      // тем, сколько раз именно ПО ЭТОМУ боту уже ударили.
+      const DECAY = 0.95;
+      loot = Math.round(target.firstHit * Math.pow(DECAY, target.hitsLanded || 0));
+      loot = Math.min(loot, target.loot); // не больше, чем осталось в казне
+      loot = Math.max(0, loot);
+      target.hitsLanded = (target.hitsLanded || 0) + 1;
+      target.loot = Math.max(0, target.loot - loot);
       // Симулируем потери техники бота для отображения в окне боя.
-      // У бота нет реальной техники в БД, поэтому просто берём имена из
-      // его псевдоармии и пишем туда «×N потерь».
+      // У бота нет реальной техники в БД (это заглушка для красивого
+      // отображения), но потери теперь РАНДОМНЫ и учитывают крит —
+      // как и у реальных игроков, без статичного фиксированного числа.
       if (dArmy && dArmy.entries) {
+        const botRandMul = crit ? (0.6 + Math.random() * 1.4) : (0 + Math.random() * 1.6);
         for (const e of dArmy.entries) {
           if (e.taken > 0) {
-            const lost = Math.max(1, Math.floor(e.taken * B.LOSS_DEF_PCT * (1 - lossReduce) * 1.5));
+            const lost = Math.floor(e.taken * B.LOSS_DEF_PCT * (1 - lossReduce) * 1.5 * botRandMul);
             if (lost > 0) enemyLosses.push(`${e.name} ×${lost}`);
           }
         }
@@ -403,8 +456,8 @@ function attack(user, targetId, notices) {
       loot = Math.max(0, Math.min(loot, target.dollars));
       target.dollars -= loot;
       target.battle.defLosses++;
-      // Потери защитника (только если он реальный игрок)
-      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce)));
+      // Потери защитника (только если он реальный игрок), с учётом крита
+      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce), crit));
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         loot, lossesText: enemyLosses.join(', ') || null,
@@ -412,22 +465,23 @@ function attack(user, targetId, notices) {
       });
     }
     // Победитель тоже несёт небольшие потери (война есть война)
-    myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT));
+    myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT, false));
     player.addMoney(user, loot, true);
   } else {
     user.battle.losses++;
     if (!isBot) {
       target.battle.defWins++;
       // Защитник, отразив атаку, тоже несёт минимальные потери
-      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT));
+      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT, false));
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         lossesText: enemyLosses.join(', ') || null,
         received, at: Date.now(),
       });
     }
-    // Проигравший атакующий теряет существенно больше
-    myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_PCT));
+    // Проигравший атакующий теряет существенно больше (крупнее, если
+    // защитник нанёс критический ответный удар)
+    myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_PCT, botCrit));
   }
 
   // Опыт: фиксированный диапазон из конфига (4–7 за победу, 1–2 за поражение)
@@ -552,4 +606,4 @@ function fatality(user, choice, notices) {
   return { choice, ears: user.ears, tokens: user.tokens };
 }
 
-module.exports = { opponents, attack, fatality, botProfile };
+module.exports = { opponents, attack, fatality, botProfile, peekBot };

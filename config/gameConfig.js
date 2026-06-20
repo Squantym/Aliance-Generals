@@ -868,7 +868,7 @@ const DAILY_ALL_BONUS_GOLD = 100;
 const TROPHIES = [
   { id: 'medal',     name: 'Медаль «За отвагу»',          desc: '+2% к атаке за уровень (макс. 20%).',                  perLvl: 2,   apply: 'atk',     expensive: true },
   { id: 'shield',    name: 'Орден «Стальной щит»',        desc: '+2% к защите за уровень (макс. 20%).',                 perLvl: 2,   apply: 'def',     expensive: true },
-  { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает крит: на макс. уровне крит-множитель ×4.5 (база ×1.5 +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
+  { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает критический урон: на макс. уровне крит наносит ×6 от базового урона (база крита ×2, трофей добавляет ещё +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
   { id: 'sewing',    name: 'Набор швеи',                  desc: 'Шанс пришить ухо +4% за уровень (макс. 40%). (заглушка)', perLvl: 4, flavor: true },
@@ -947,7 +947,7 @@ const LEGION_BUILDING_BY_ID = Object.fromEntries(LEGION_BUILDINGS.map(b => [b.id
 const BATTLE = {
   XP_WIN_MIN: 4,  XP_WIN_MAX: 7,
   XP_LOSS_MIN: 1, XP_LOSS_MAX: 2,
-  CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.005, CRIT_MAX_CHANCE: 0.50, CRIT_MULT: 1.5,
+  CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.005, CRIT_MAX_CHANCE: 0.50, CRIT_MULT: 2.0,
   DODGE_PER_AGILITY: 0.005, DODGE_MAX: 0.50,
   LOOT_PCT: 0.07,            // снижено с 10% до 7% — фарм невыгоден
   DEF_LOOT_SOFT: 1200,
