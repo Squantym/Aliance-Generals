@@ -22,6 +22,7 @@
 const config = require('../../config/gameConfig');
 const u = require('../core/utils');
 const db = require('../core/db');
+const discounts = require('./discounts');
 
 const M = config.MINE;
 
@@ -35,12 +36,14 @@ function nextMineCost(user) {
   // Цена считается по числу шахт, когда-либо построенных (включая
   // обрушившиеся) — чтобы нельзя было обойти удвоение постройкой/сносом
   const built = user.minesBuiltTotal || 0;
-  return Math.round(M.FIRST_PRICE_GOLD * Math.pow(M.PRICE_MULT, built));
+  const base = Math.round(M.FIRST_PRICE_GOLD * Math.pow(M.PRICE_MULT, built));
+  return discounts.applyTo('mine', base);
 }
 
 function nextMineDollars(user) {
   // Цена в долларах растёт мягко с уровнем игрока
-  return Math.round(M.BUILD_DOLLARS_BASE * Math.pow(1.08, Math.max(0, user.level - 1)));
+  const base = Math.round(M.BUILD_DOLLARS_BASE * Math.pow(1.08, Math.max(0, user.level - 1)));
+  return discounts.applyTo('mine', base);
 }
 
 // Случайный изначальный запас золота по диапазонам с шансами

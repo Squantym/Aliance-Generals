@@ -72,8 +72,13 @@ function grant(adminUser, body, notices) {
   if (!granted.length) throw new u.ApiError('Не указано, что выдавать');
 
   ach.check(target, []);
-  social.systemMail(target, 'Подарок администрации',
-    `Администратор ${adminUser.name} выдал вам: ${granted.join(', ')}.`);
+  // Подпись подарка: если админ указал свой текст — используем его,
+  // иначе стандартное сообщение со списком выданного.
+  const customNote = String(body.giftNote || '').trim().slice(0, 300);
+  const giftText = customNote
+    ? customNote
+    : `Администратор ${adminUser.name} выдал вам: ${granted.join(', ')}.`;
+  social.systemMail(target, customNote ? '🎁 Подарок от администрации' : 'Подарок администрации', giftText);
   notices.push(`Выдано игроку ${target.name}: ${granted.join(', ')}`);
   return { player: brief(target) };
 }
@@ -81,17 +86,22 @@ function grant(adminUser, body, notices) {
 // ---------- Скидки ----------
 // Перечень категорий для UI админки
 function discountCategories() {
-  return { categories: discounts.categories(), active: discounts.getActive() };
+  return { categories: discounts.categories(), active: discounts.getActive(), scheduled: discounts.allScheduled() };
 }
 
-// Установить скидку (или снять, если pct=0). body: { category, pct, hours }
+// Установить скидку (или снять, если pct=0). body: { category, pct, hours, delayHours }
 function setDiscount(adminUser, body, notices) {
   const cat = String(body.category || '');
   const pct = u.toInt(body.pct, 0);
   const hours = Math.max(0, Number(body.hours) || 0);
-  discounts.set(cat, pct, hours);
+  const delayHours = Math.max(0, Number(body.delayHours) || 0);
+  discounts.set(cat, pct, hours, delayHours);
   if (pct > 0 && hours > 0) {
-    notices.push(`🏷 Скидка «${discounts.CATEGORIES[cat] || cat}»: ${pct}% на ${hours} ч.`);
+    if (delayHours > 0) {
+      notices.push(`🏷 Скидка «${discounts.CATEGORIES[cat] || cat}»: ${pct}% запланирована — старт через ${delayHours} ч., действует ${hours} ч.`);
+    } else {
+      notices.push(`🏷 Скидка «${discounts.CATEGORIES[cat] || cat}»: ${pct}% на ${hours} ч.`);
+    }
   } else {
     notices.push(`Скидка «${discounts.CATEGORIES[cat] || cat}» снята.`);
   }

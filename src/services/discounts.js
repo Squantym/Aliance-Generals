@@ -22,18 +22,24 @@ const CATEGORIES = {
   alliance:    'Создание альянса',
   legion:      'Создание легиона',
   gold:        'Бонус к покупаемому золоту',
+  mine:        'Шахты (золотодобыча)',
+  silo:        'Ракетные шахты',
 };
 
 function store() { return db.load('discounts', {}); }
 
-// Активные скидки на сейчас (просроченные отфильтрованы)
+// Активные скидки на сейчас: ТОЛЬКО те, что уже наступили (startAt <= now)
+// и ещё не истекли (expires > now). Запланированные на будущее скидки
+// сюда не попадают — applyTo() их не учитывает, пока не наступит время.
 function getActive() {
   const now = Date.now();
   const all = store();
   const out = {};
   for (const cat of Object.keys(CATEGORIES)) {
     const d = all[cat];
-    if (d && d.expires > now && d.pct > 0) out[cat] = { pct: d.pct, expires: d.expires };
+    if (d && d.expires > now && d.pct > 0 && (d.startAt || 0) <= now) {
+      out[cat] = { pct: d.pct, expires: d.expires };
+    }
   }
   return out;
 }
@@ -56,16 +62,20 @@ function bonusMul(category) {
   return 1 + pctOf(category) / 100;
 }
 
-// Установить скидку: pct% на durationHours часов. pct=0 или duration<=0 — снять.
-function set(category, pct, durationHours) {
+// Установить скидку: pct% на durationHours часов, с возможностью отложенного
+// старта через delayHours (по умолчанию 0 — начинается сразу).
+// pct=0 или duration<=0 — снять скидку немедленно.
+function set(category, pct, durationHours, delayHours) {
   if (!CATEGORIES[category]) throw new u.ApiError('Неизвестная категория скидки');
   pct = Math.max(0, Math.min(99, u.toInt(pct, 0)));
   const hours = Math.max(0, Number(durationHours) || 0);
+  const delay = Math.max(0, Number(delayHours) || 0);
   const all = store();
   if (pct === 0 || hours === 0) {
     delete all[category];
   } else {
-    all[category] = { pct, expires: Date.now() + Math.round(hours * 3600 * 1000) };
+    const startAt = Date.now() + Math.round(delay * 3600 * 1000);
+    all[category] = { pct, startAt, expires: startAt + Math.round(hours * 3600 * 1000) };
   }
   db.save('discounts');
   return all[category] || null;
@@ -74,6 +84,20 @@ function set(category, pct, durationHours) {
 // Получить список всех категорий для админки (для формы выбора)
 function categories() {
   return Object.entries(CATEGORIES).map(([id, name]) => ({ id, name }));
+}
+
+// Все запланированные/активные скидки (включая ещё не наступившие) — для
+// отображения в админке полного расписания
+function allScheduled() {
+  const now = Date.now();
+  const all = store();
+  return Object.entries(all)
+    .filter(([cat, d]) => d && d.expires > now)
+    .map(([cat, d]) => ({
+      category: cat, label: CATEGORIES[cat] || cat,
+      pct: d.pct, startAt: d.startAt || 0, expires: d.expires,
+      pending: (d.startAt || 0) > now,
+    }));
 }
 
 // Информация об активной скидке для отображения в UI (или null)
@@ -87,4 +111,4 @@ function info(category) {
   };
 }
 
-module.exports = { getActive, info, pctOf, applyTo, bonusMul, set, categories, CATEGORIES };
+module.exports = { getActive, info, pctOf, applyTo, bonusMul, set, categories, allScheduled, CATEGORIES };

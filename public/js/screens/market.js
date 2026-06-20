@@ -58,6 +58,7 @@ App.screens.market = async (c, param) => {
   // --- Вкладка: контейнеры с секретными разработками ---
   if (tab === 'containers') {
     const data = await API.get('/api/market/containers');
+    const { history } = await API.get('/api/market/container-history');
     c.innerHTML = `
       <div class="title">Чёрный рынок</div>
       ${UI.saleBanner(data.discount)}
@@ -71,12 +72,12 @@ App.screens.market = async (c, param) => {
       </div>
       ${data.containers.map((x) => `
         <div class="card">
-          <div class="list-row" style="border:none;padding:0">
-            <div class="grow">
-              <div class="name">📦 ${UI.esc(x.name)}</div>
-              <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b></div>
-            </div>
-            <button class="btn btn-orange btn-inline" data-open="${x.tier}">Открыть ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
+          <div class="name">📦 ${UI.esc(x.name)}</div>
+          <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b> · цена за 1 шт: ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</div>
+          <div class="btn-row mt">
+            <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="1">×1</button>
+            <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="3">×3</button>
+            <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="5">×5</button>
           </div>
         </div>`).join('')}
       <div class="card">
@@ -97,14 +98,25 @@ App.screens.market = async (c, param) => {
           </div>
           <span class="gold">×${data.superSecret.count}</span>
         </div>
+      </div>
+      <div class="card">
+        <div class="title" style="margin-top:0">📜 История последних открытий</div>
+        ${history.length === 0 ? '<p class="muted small center">Вы ещё не открывали контейнеры.</p>' : history.map((h) => `
+          <div class="list-row" style="padding:6px 0">
+            <div class="grow">
+              <span class="small">${UI.esc(h.tierName)} ×${h.qty}</span>
+              <div class="muted small">${UI.fmtDate(h.at)} · потрачено 🪙 ${UI.fmtNum(h.spent)}</div>
+            </div>
+            <span class="small">${Object.keys(h.dropped).length ? Object.entries(h.dropped).map(([n, c]) => `${UI.esc(n)}×${c}`).join(', ') : 'пусто'}</span>
+          </div>`).join('')}
       </div>`;
 
     c.querySelectorAll('[data-open]').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          await API.post('/api/market/open', { tier: btn.dataset.open });
+          const r = await API.post('/api/market/open', { tier: btn.dataset.open, qty: btn.dataset.qty });
           await App.refreshMe();
-          App.rerender(); // обновить коллекцию
+          App._showContainerResult(r);
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });

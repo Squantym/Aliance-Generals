@@ -24,7 +24,8 @@
 const config = require('../../config/gameConfig');
 const u = require('../core/utils');
 const player = require('./player');
-const social = require('./social');
+const notifications = require('./notifications');
+const discounts = require('./discounts');
 
 const S = config.SILO;
 
@@ -35,7 +36,8 @@ function silos(user) {
 
 function nextSiloCost(user) {
   const built = user.silosBuiltTotal || 0;
-  return Math.round(S.FIRST_PRICE_GOLD * Math.pow(S.PRICE_MULT, built));
+  const base = Math.round(S.FIRST_PRICE_GOLD * Math.pow(S.PRICE_MULT, built));
+  return discounts.applyTo('silo', base);
 }
 
 // Новая «пустая» ракета (после постройки шахты или после запуска)
@@ -247,10 +249,13 @@ function launch(user, siloId, targetId, notices) {
     (destroyedList ? ` Разрушено построек: ${destroyedList}.` : ' Постройки уцелели.') +
     (techLostList ? ` Уничтожено техники: ${techLostList}.` : '')
   );
-  social.mailTo(target, user.name, '🚀 Ракетный удар!',
-    `Ваша база подверглась ракетному удару от «${user.name}» (ур. ${user.level}). Урон: ${damage}.` +
-    (destroyedList ? ` Разрушены постройки: ${destroyedList}.` : '') +
-    (techLostList ? ` Уничтожена техника: ${techLostList}.` : ''));
+  notifications.push(target.id, 'rocket_hit', `🚀 ${user.name} нанёс по вам ракетный удар`, {
+    attackerName: user.name, attackerId: user.id, attackerLevel: user.level,
+    damage, powerPct: Math.round(powerFrac * 100),
+    destroyedBuildingsText: destroyedList || null,
+    techLostText: techLostList || null,
+    at: Date.now(),
+  });
 
   return {
     damage, powerPct: Math.round(powerFrac * 100),

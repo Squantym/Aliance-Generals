@@ -41,9 +41,98 @@ const App = {
   async pollMe() {
     if (!API.token()) return;
     try {
+      const prevNotifUnread = App.me ? App.me.notifUnread : 0;
       App.me = await API.get('/api/me');
       App.renderHeader();
+      // Если появились новые уведомления — показываем окно/баннер атаки
+      if (App.me.notifUnread > prevNotifUnread) {
+        App._checkNewAttackNotification();
+      }
     } catch (e) { /* сеть моргнула — попробуем в следующий раз */ }
+  },
+
+  // Проверяет последнее уведомление и, если это атака/ракетный удар,
+  // показывает либо подробное окно (на главном экране), либо
+  // минималистичный баннер сверху (на всех остальных экранах).
+  async _checkNewAttackNotification() {
+    try {
+      const { notifications } = await API.get('/api/notifications');
+      const latest = notifications.find((n) => !n.read &&
+        ['attack_lost', 'attack_defended', 'rocket_hit'].includes(n.kind));
+      if (!latest) return;
+      if (App._shownNotifIds && App._shownNotifIds.has(latest.id)) return;
+      if (!App._shownNotifIds) App._shownNotifIds = new Set();
+      App._shownNotifIds.add(latest.id);
+
+      const onHome = (location.hash || '').slice(1).split('/')[0] === 'home' || !location.hash;
+      if (onHome) {
+        App._showAttackModal(latest);
+      } else {
+        App._showAttackBanner(latest);
+      }
+    } catch (e) { /* не критично, пропускаем */ }
+  },
+
+  // Подробное окно атаки — показывается, если игрок на главном экране.
+  // Содержит общую статистику потерь/атак на текущий момент.
+  _showAttackModal(n) {
+    const p = n.payload || {};
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'max-width:380px;width:100%;max-height:80vh;overflow-y:auto;';
+    const m = App.me;
+    let body = '';
+    if (n.kind === 'attack_lost') {
+      body = `
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt} ед.</span></div>
+        <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(p.loot)}</span></div>
+        <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>`;
+    } else if (n.kind === 'attack_defended') {
+      body = `
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.received} ед.</span></div>
+        <div class="kv"><span class="k">Потери</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>
+        <p class="small mt" style="color:var(--money)">✅ Атака отбита!</p>`;
+    } else if (n.kind === 'rocket_hit') {
+      body = `
+        <div class="kv"><span class="k">Урон ракеты</span><span class="v dmg-take">${UI.fmtNum(p.damage)} (мощность ${p.powerPct}%)</span></div>
+        <div class="kv"><span class="k">Разрушено построек</span><span class="v">${p.destroyedBuildingsText ? UI.esc(p.destroyedBuildingsText) : 'постройки уцелели'}</span></div>
+        <div class="kv"><span class="k">Уничтожено техники</span><span class="v">${p.techLostText ? UI.esc(p.techLostText) : 'техника уцелела'}</span></div>`;
+    }
+    box.innerHTML = `
+      <div class="title" style="margin-top:0;color:var(--red)">⚠️ На вас напали!</div>
+      <div class="kv"><span class="k">Противник</span><span class="v name">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel || '?'})</span></div>
+      ${body}
+      <hr class="hr">
+      <p class="small mt"><b>Ваша общая статистика на сейчас:</b></p>
+      <div class="kv"><span class="k">Всего атак на вас</span><span class="v">${UI.fmtNum(m.battle.defWins + m.battle.defLosses)}</span></div>
+      <div class="kv"><span class="k">Отбито</span><span class="v">${UI.fmtNum(m.battle.defWins)}</span></div>
+      <div class="kv"><span class="k">Проиграно</span><span class="v">${UI.fmtNum(m.battle.defLosses)}</span></div>
+      <button class="btn btn-orange mt" id="attack-modal-close" style="width:100%">Закрыть</button>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    document.getElementById('attack-modal-close').onclick = () => {
+      document.body.removeChild(overlay);
+      API.post(`/api/notifications/${n.id}/read`).catch(() => {});
+    };
+  },
+
+  // Минималистичный баннер сверху — показывается на любом экране кроме
+  // главного. Не блокирует интерфейс, исчезает через несколько секунд
+  // или по клику (переходит к подробностям в уведомлениях).
+  _showAttackBanner(n) {
+    const p = n.payload || {};
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#8e3326,#6b251b);color:#fff;padding:10px 16px;text-align:center;cursor:pointer;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+    banner.innerHTML = `⚠️ На вас напал «${UI.esc(p.attackerName || '???')}» — нажмите для подробностей`;
+    banner.onclick = () => {
+      document.body.removeChild(banner);
+      API.post(`/api/notifications/${n.id}/read`).catch(() => {});
+      App.go('notifications');
+    };
+    document.body.appendChild(banner);
+    setTimeout(() => { if (banner.parentNode) document.body.removeChild(banner); }, 8000);
   },
 
   // То же самое, но по требованию (после действий)
@@ -105,6 +194,7 @@ const App = {
     }
     const m = App.me;
     const mail = m.mailUnread > 0 ? `✉ <span class="badge">${m.mailUnread}</span>` : '✉';
+    const bell = m.notifUnread > 0 ? `🔔 <span class="badge">${m.notifUnread}</span>` : '🔔';
     // Полоска опыта: текущий xp / необходимый для следующего уровня
     const xpPct = m.xpNext > 0 ? Math.min(100, Math.round((m.xp / m.xpNext) * 100)) : 100;
     // Уровень кликабелен: ведёт в навыки если есть очки, иначе в профиль
@@ -119,6 +209,7 @@ const App = {
         <div class="clickable" onclick="App.go('bank')">$ <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
         <div class="clickable" onclick="App.go('market')"><span class="ic-gold" aria-hidden="true"></span> <span class="gold" id="hd-gold">${UI.fmtNum(m.gold)}</span></div>
         <div class="clickable" onclick="App.go('${lvlTarget}')">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? ' <span class="badge">+' + m.skillPoints + '</span>' : ''}</div>
+        <div class="clickable" onclick="App.go('notifications')">${bell}</div>
         <div class="clickable" onclick="App.go('mail')">${mail}</div>
       </div>
       <div class="stat-row">
@@ -166,6 +257,32 @@ const App = {
       App.renderHeader();
       UI.toast('🏥 Здоровье восстановлено!');
     } catch (e) { UI.toast('⛔ ' + e.message); }
+  },
+
+  // Модальное окно результата открытия контейнеров. Не закрывается само —
+  // только по нажатию игроком кнопки «Закрыть».
+  _showContainerResult(r) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const dropsList = Object.keys(r.droppedCount || {}).length
+      ? Object.entries(r.droppedCount).map(([n, c]) => `<div class="kv"><span class="k">${UI.esc(n)}</span><span class="v gold">×${c}</span></div>`).join('')
+      : '<p class="muted center">Ничего не выпало.</p>';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'max-width:380px;width:100%;max-height:80vh;overflow-y:auto;';
+    box.innerHTML = `
+      <div class="title" style="margin-top:0">📦 Открыто контейнеров: ${r.qty}</div>
+      <p class="muted small center">Потрачено: <span class="gold">🪙 ${UI.fmtNum(r.spent)}</span></p>
+      <hr class="hr">
+      <p class="small mt"><b>Итоговая добыча:</b></p>
+      ${dropsList}
+      <button class="btn btn-orange mt" id="container-result-close" style="width:100%">Закрыть</button>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    document.getElementById('container-result-close').onclick = () => {
+      document.body.removeChild(overlay);
+      App.rerender();
+    };
   },
 
   // Обработка ссылки из письма подтверждения: #verify/<token>

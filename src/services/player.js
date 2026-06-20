@@ -52,7 +52,15 @@ function totalPower(user, mode) {
     }
   }
 
-  return { ...army, power: armyPow + buildPow, basePower: army.power };
+  let totalPow = armyPow + buildPow;
+
+  // Штраф «без ушей»: -10% к атаке и защите на 6 часов после потери
+  // второго уха (применяется к итоговой мощи, включая постройки)
+  if (user.earPenaltyUntil && user.earPenaltyUntil > Date.now()) {
+    totalPow = Math.round(totalPow * (1 - config.EARS.PENALTY_PCT));
+  }
+
+  return { ...army, power: totalPow, basePower: army.power };
 }
 
 // ---------- Максимумы ресурсов с учётом навыков ----------
@@ -65,12 +73,12 @@ function maxima(user) {
 }
 
 // Регенерация одного ресурса: r = {cur, t}, t — время последнего тика
-function applyRegen(r, max, intervalSec, now) {
+function applyRegen(r, max, intervalSec, now, perTick = 1) {
   const interval = intervalSec * 1000;
   if (r.cur >= max) { r.t = now; return; }
   const ticks = Math.floor((now - r.t) / interval);
   if (ticks > 0) {
-    r.cur = Math.min(max, r.cur + ticks);
+    r.cur = Math.min(max, r.cur + ticks * perTick);
     r.t += ticks * interval;
     if (r.cur >= max) r.t = now;
   }
@@ -282,10 +290,11 @@ function buildArmy(user, mode) {
   });
 
   // Секретные разработки идут в бой ВСЕ ЦЕЛИКОМ (без ограничения cap)
-  let power = 0, taken = 0;
+  let power = 0, taken = 0, secretTaken = 0, unitTaken = 0;
   for (const e of secretEntries) {
     e.taken = e.count;
     taken += e.count;
+    secretTaken += e.count;
     power += e.count * (mode === 'atk' ? e.atk : e.def);
   }
 
@@ -294,7 +303,7 @@ function buildArmy(user, mode) {
   for (const e of unitEntries) {
     const t = Math.min(e.count, left);
     e.taken = t;
-    left -= t; taken += t;
+    left -= t; taken += t; unitTaken += t;
     power += t * (mode === 'atk' ? e.atk : e.def);
     if (left <= 0) break;
   }
@@ -306,7 +315,10 @@ function buildArmy(user, mode) {
   const legionAtk = legionBonus(user, 'atk');
   const legionDef = legionBonus(user, 'def');
   power = Math.round(power * (1 + (mode === 'atk' ? legionAtk : legionDef)));
-  return { power, taken, cap, entries };
+  // taken — общее число (для обратной совместимости), unitTaken/secretTaken —
+  // раздельно для корректного отображения «Техники в бою: X / cap»
+  // (секретные разработки НЕ входят в cap и не должны путать это число).
+  return { power, taken, unitTaken, secretTaken, cap, entries };
 }
 
 // Суммарные очки защиты оборонительных построек
@@ -401,7 +413,7 @@ function refresh(user) {
   applyRegen(user.res.hp, mx.hp, config.REGEN.hp, now);
   // Трофей «Логистика» снижает интервал регенерации энергии
   const enInterval = Math.max(5, Math.round(config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100)));
-  applyRegen(user.res.en, mx.en, enInterval, now);
+  applyRegen(user.res.en, mx.en, enInterval, now, config.REGEN.EN_PER_TICK);
   // Трофей «Боевая логистика» снижает интервал восстановления боеприпасов
   const amInterval = Math.max(15, Math.round(config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100)));
   applyRegen(user.res.am, mx.am, amInterval, now);
@@ -432,6 +444,23 @@ function refresh(user) {
   // подтверждёнными, чтобы старые игроки не потеряли доступ
   if (user.emailVerified === undefined) user.emailVerified = true;
   if (user.email === undefined) user.email = '';
+
+  // Миграция полей собственных ушей игрока (новая механика)
+  if (user.earsCurrent === undefined) user.earsCurrent = config.EARS.MAX;
+  if (!user.earsLostAt) user.earsLostAt = [];
+  if (user.earPenaltyUntil === undefined) user.earPenaltyUntil = 0;
+  // Естественная регенерация: каждое ухо восстанавливается через
+  // EARS.REGROW_MS после своей потери (не общий таймер на оба сразу)
+  const earsNow = Date.now();
+  while (user.earsLostAt.length > 0 && user.earsCurrent < config.EARS.MAX
+         && earsNow - user.earsLostAt[0] >= config.EARS.REGROW_MS) {
+    user.earsLostAt.shift();
+    user.earsCurrent = Math.min(config.EARS.MAX, user.earsCurrent + 1);
+  }
+  // Штраф снимается автоматически по истечении срока
+  if (user.earPenaltyUntil > 0 && earsNow >= user.earPenaltyUntil) {
+    user.earPenaltyUntil = 0;
+  }
 
   // Миграция формата техники: принудительно нормализуем. MongoDB может
   // вернуть объект с внутренними прототипами BSON, из-за чего Object.entries
@@ -626,13 +655,20 @@ function mePayload(user) {
     level: user.level, xp: user.xp, xpNext: config.xpToNext(user.level),
     rank: rank(user.level), rating: rating(user),
     dollars: user.dollars, gold: user.gold, bank: user.bank,
-    skillPoints: user.skillPoints, skills: { ...user.skills },
+    skillPoints: user.skillPoints, skills: { ...user.skills }, skillCosts: config.SKILL_COSTS,
     res: resView(user),
     healCost: config.hospitalPrice(user.level),  // для баннера «вылечиться» при HP < 25
     battle: { ...user.battle },
     ears: user.ears, tokens: user.tokens, earsLost: user.earsLost,
+    // Собственные уши игрока (лимит 2): сколько есть сейчас, штраф,
+    // время до следующего восстановления и цена мгновенного восстановления
+    earsCurrent: user.earsCurrent, earsMax: config.EARS.MAX,
+    earPenaltyActive: !!(user.earPenaltyUntil && user.earPenaltyUntil > Date.now()),
+    earPenaltyUntil: user.earPenaltyUntil || 0,
+    earRegrowAt: user.earsLostAt && user.earsLostAt.length > 0 ? user.earsLostAt[0] + config.EARS.REGROW_MS : null,
+    earRestoreCostGold: config.EARS.RESTORE_GOLD,
     capacity: capacity(user),
-    power: { atk: atk.power, def: def.power, taken: atk.taken },
+    power: { atk: atk.power, def: def.power, taken: atk.taken, unitTaken: atk.unitTaken, secretTaken: atk.secretTaken },
     incomePerHour: totalIncome(user), upkeepPerHour: totalUpkeep(user),
     nextPayoutSec: Math.max(0, Math.ceil((user.lastIncomeAt + HOUR - now) / 1000)),
     alliance: allianceInfo(user),
@@ -757,7 +793,13 @@ function publicProfile(target, viewer) {
     legion: legionInfo(target),
     battle: { ...target.battle },
     ears: target.ears, tokens: target.tokens, earsLost: target.earsLost,
+    earsCurrent: target.earsCurrent, earsMax: config.EARS.MAX,
+    earPenaltyActive: !!(target.earPenaltyUntil && target.earPenaltyUntil > Date.now()),
     power: { atk: atk.power, def: def.power },
+    // Боевые шансы (те же формулы что в battle.js): крит зависит от
+    // жестокости, уворот — от ловкости. Оба ограничены 50%.
+    critChancePct: Math.round(Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) * 1000) / 10,
+    dodgeChancePct: Math.round(Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) * 1000) / 10,
     capacity: capacity(target),
     units: unitsList, buildings: buildingsList,
     secretDevs: devsList, superSecret: target.superSecret,
@@ -773,6 +815,24 @@ function setStatus(user, text) {
   user.status = String(text || '').slice(0, 120);
 }
 
+// Восстановить одно ухо мгновенно за золото (если потеряно хотя бы одно)
+function restoreEar(user, notices) {
+  if (user.earsCurrent >= config.EARS.MAX) {
+    throw new u.ApiError('У вас уже оба уха целы');
+  }
+  if (user.gold < config.EARS.RESTORE_GOLD) {
+    throw new u.ApiError(`Не хватает золота (нужно 🪙 ${config.EARS.RESTORE_GOLD})`);
+  }
+  user.gold -= config.EARS.RESTORE_GOLD;
+  user.earsCurrent = Math.min(config.EARS.MAX, user.earsCurrent + 1);
+  // Убираем самую старую запись о потере (это ухо уже восстановлено)
+  if (user.earsLostAt.length > 0) user.earsLostAt.shift();
+  // Если теперь снова есть хотя бы одно ухо — штраф снимается
+  if (user.earsCurrent > 0) user.earPenaltyUntil = 0;
+  notices.push(`👂 Ухо восстановлено за 🪙 ${config.EARS.RESTORE_GOLD}. Сейчас ушей: ${user.earsCurrent}/${config.EARS.MAX}.`);
+  return { earsCurrent: user.earsCurrent };
+}
+
 module.exports = {
   users, maxima, refresh, addMoney, addGold, addXp, xpMul, spendSkill,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
@@ -780,5 +840,5 @@ module.exports = {
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, rank, flag, findByName,
   bankDeposit, bankWithdraw, goldPackages, buyGold,
-  mePayload, publicProfile, setStatus,
+  mePayload, publicProfile, setStatus, restoreEar,
 };

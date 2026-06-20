@@ -12,6 +12,7 @@ const db = require('../core/db');
 const u = require('../core/utils');
 const player = require('./player');
 const social = require('./social');
+const notifications = require('./notifications');
 const ach = require('./achievements');
 const tutorial = require('./tutorial');
 const trophies = require('./trophies');
@@ -182,36 +183,31 @@ function opponents(user) {
 // Пороговая формула урона по соотношению ЗАЩИТА vs АТАКА противника:
 //   def >= atk*1.5            -> урон 1-5   (атакующий почти бессилен)
 //   def >= atk*1.2 (1.2-1.49) -> урон 5-15  (атакующий слаб)
-//   |def - atk| <= 10%         -> «примерное равенство»: рандомный исход,
-//                                  но с перевесом по факту чисел (кто
-//                                  сильнее — тот чаще выигрывает и наносит
-//                                  урон ближе к верхней границе диапазона)
+//   |def - atk| <= 10%         -> «примерное равенство»: урон средний,
+//                                  ближе к верхней границе у сильнейшего
 //   atk > def (выше equal-зоны) -> атакующий доминирует, урон растёт к 45
-// Возвращает { dealt, win } — урон по защитнику и исход (атакующий победил?)
+// Возвращает { dealt, strength } — урон по защитнику и «боевую силу»
+// атакующего в этой схватке (для последующего честного сравнения сторон
+// и определения победителя — НЕ случайным броском, а по факту того, кто
+// нанёс больше реального урона относительно сил противника).
 // ---------------------------------------------------------------------
 function resolveDamage(atk, def) {
   const ratio = def / Math.max(1, atk); // >1 защитник сильнее, <1 — атакующий сильнее
-  let dealt, winChance;
+  let dealt;
 
   if (ratio >= 1.5) {
     dealt = u.rnd(1, 5);
-    winChance = 0.05;
   } else if (ratio >= 1.2) {
     dealt = u.rnd(5, 15);
-    winChance = 0.20;
   } else if (ratio >= 0.9 && ratio <= 1.1) {
-    const advantage = atk / Math.max(1, def);
-    winChance = u.clamp(0.5 * advantage, 0.30, 0.70);
     dealt = u.rnd(10, 25);
   } else {
     const dominance = Math.min(1, (0.9 - ratio) / 0.9);
     dealt = Math.round(25 + dominance * 20 + Math.random() * 5);
-    winChance = u.clamp(0.70 + dominance * 0.25, 0.70, 0.95);
   }
 
   dealt = u.clamp(Math.round(dealt), 1, 45);
-  const win = Math.random() < winChance;
-  return { dealt, win };
+  return { dealt };
 }
 
 function removeUnits(victim, armyEntries, pct) {
@@ -317,13 +313,22 @@ function attack(user, targetId, notices) {
   if (crit) effectiveAtk *= B.CRIT_MULT * (1 + trophies.critPower(user));
 
   // Пороговая формула: соотносим эффективную атаку с защитой противника
-  const { dealt: dealtRaw, win } = resolveDamage(effectiveAtk, dPow);
+  const { dealt: dealtRaw } = resolveDamage(effectiveAtk, dPow);
+
+  // ПОБЕДА определяется ЧЕСТНО по факту того, чья сила выше в этой
+  // схватке (эффективная атака против защиты), с небольшим разбросом
+  // ±15% для непредсказуемости — НЕ отдельным случайным броском,
+  // оторванным от реального соотношения сил (это и было причиной
+  // багa «наношу больше урона, но проигрываю»).
+  const aRollFinal = effectiveAtk * (0.85 + Math.random() * 0.3);
+  const dRollFinal = dPow * (0.85 + Math.random() * 0.3);
+  const win = aRollFinal >= dRollFinal;
 
   // Полный уворот — обнуляем урон, но не исход боя
   const dealt = dodge ? 0 : dealtRaw;
 
   // Урон, получаемый АТАКУЮЩИМ от защитника, считается по той же формуле
-  // в обратную сторону (защитник «атакует» своей мощью защиты против
+  // в обратную сторону (защитник «отвечает» своей мощью защиты против
   // атаки противника — упрощённая симметрия для второй стороны обмена).
   const { dealt: receivedRaw } = resolveDamage(dPow, aPow);
   const received = receivedRaw;
@@ -366,18 +371,19 @@ function attack(user, targetId, notices) {
     ach.bump(user, 'wins', 1, notices);
     if (isBot) {
       // Базовая выплата с бота — широкий случайный разброс (40%-120% от
-      // базы), плюс убывание при повторных атаках на ботов за последний час.
+      // базы), убывает экспоненциально при повторных атаках на ботов за
+      // последний час: 1-я атака = 100%, 2-я = 50%, 3-я = 25%, ... и так
+      // далее вплоть до практического нуля при частом фарме.
       const baseBot = target.loot;
       loot = Math.round(baseBot * (0.4 + Math.random() * 0.8) * lootMul);
-      // Гарантированный минимум: за одну победную атаку на бота/террориста
-      // игрок должен суметь купить хотя бы 10 единиц актуальной техники
-      // своего уровня (но не уровня бота — ориентируемся на игрока).
-      // Гарантия тоже немного «дышит» от повторных атак, но не уходит в 0.
-      const guaranteedMin = Math.max(
-        Math.round(config.minUnitPriceAtLevel(user.level) * 10 * Math.max(0.3, lootMul)),
-        1
-      );
-      if (loot < guaranteedMin) loot = guaranteedMin;
+      // Гарантированный минимум действует ТОЛЬКО на первую атаку за час
+      // (recentCount === 0). Дальше награда убывает свободно до нуля —
+      // повторный фарм одной и той же активности не должен давать
+      // стабильный фиксированный доход.
+      if (recentCount === 0) {
+        const guaranteedMin = Math.round(config.minUnitPriceAtLevel(user.level) * 10);
+        if (loot < guaranteedMin) loot = guaranteedMin;
+      }
       // Симулируем потери техники бота для отображения в окне боя.
       // У бота нет реальной техники в БД, поэтому просто берём имена из
       // его псевдоармии и пишем туда «×N потерь».
@@ -399,9 +405,11 @@ function attack(user, targetId, notices) {
       target.battle.defLosses++;
       // Потери защитника (только если он реальный игрок)
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce)));
-      social.mailTo(target, user.name, 'Сводка боя: поражение',
-        `На вашу базу напал ${user.name} (ур. ${user.level}). Награблено: $${u.fmt(loot)}.` +
-        (enemyLosses.length ? ` Потеряна техника: ${enemyLosses.join(', ')}.` : ' Техника уцелела.'));
+      notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
+        attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
+        loot, lossesText: enemyLosses.join(', ') || null,
+        dealt, at: Date.now(),
+      });
     }
     // Победитель тоже несёт небольшие потери (война есть война)
     myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT));
@@ -412,8 +420,11 @@ function attack(user, targetId, notices) {
       target.battle.defWins++;
       // Защитник, отразив атаку, тоже несёт минимальные потери
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT));
-      social.mailTo(target, user.name, 'Сводка боя: атака отбита',
-        `${user.name} (ур. ${user.level}) атаковал вашу базу, но оборона выстояла. Так держать!`);
+      notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
+        attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
+        lossesText: enemyLosses.join(', ') || null,
+        received, at: Date.now(),
+      });
     }
     // Проигравший атакующий теряет существенно больше
     myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_PCT));
@@ -455,10 +466,12 @@ function attack(user, targetId, notices) {
 
   tutorial.notify(user, 'attack', notices); // задание «Боевое крещение»
 
-  // Сводка участвовавшей техники для окна боя (только реально взятые в бой)
+  // Сводка участвовавшей техники для окна боя: ТОЛЬКО обычная военная
+  // техника (секретные разработки в бою участвуют всегда полностью, но
+  // в окне атаки не показываются — по требованию игрового дизайна).
   const armyBrief = (entries) => entries
-    .filter((e) => e.taken > 0)
-    .map((e) => ({ name: e.name, count: e.taken, secret: !!e.secret }));
+    .filter((e) => e.taken > 0 && !e.secret)
+    .map((e) => ({ name: e.name, count: e.taken }));
 
   return {
     win, crit, dodge,
@@ -479,6 +492,17 @@ function fatality(user, choice, notices) {
     user.pendingFatality = null;
     throw new u.ApiError('Момент упущен — враг уполз с поля боя.');
   }
+  // Если цель — реальный игрок без ушей, фаталити совершить нельзя вообще
+  if (!pf.isBot) {
+    const victimCheck = player.users()[pf.targetId];
+    if (victimCheck) {
+      player.refresh(victimCheck); // актуализируем earsCurrent (регенерация)
+      if (victimCheck.earsCurrent <= 0) {
+        user.pendingFatality = null;
+        throw new u.ApiError(`У «${victimCheck.name}» уже нет ушей — фаталити невозможно совершить.`);
+      }
+    }
+  }
   user.pendingFatality = null;
   user.battle.fatalities++;
   ach.bump(user, 'fatalities', 1, notices);
@@ -486,17 +510,31 @@ function fatality(user, choice, notices) {
 
   if (choice === 'ear') {
     // Отрезаем ухо: +1 ресурс «ухо» себе, жертве — счётчик потерянных ушей
+    // и реальное снижение earsCurrent (лимит 2 уха на игрока)
     user.ears++;
     ach.bump(user, 'earsCut', 1, notices);
     if (!pf.isBot) {
       const victim = player.users()[pf.targetId];
       if (victim) {
         victim.earsLost++;
-        social.mailTo(victim, user.name, '✂️ Фаталити!',
-          `${user.name} совершил фаталити и отрезал вам ухо. Война — дело жестокое.`);
+        victim.earsCurrent = Math.max(0, victim.earsCurrent - 1);
+        victim.earsLostAt.push(Date.now());
+        let penaltyNote = '';
+        if (victim.earsCurrent <= 0) {
+          victim.earPenaltyUntil = Date.now() + config.EARS.PENALTY_MS;
+          penaltyNote = ' Оба уха отрезаны — действует штраф −10% к атаке и защите на 6 часов.';
+        }
+        notifications.push(victim.id, 'fatality_ear', `${user.name} совершил фаталити и отрезал вам ухо`, {
+          attackerName: user.name, attackerId: user.id, at: Date.now(),
+          earsLeft: victim.earsCurrent, penaltyApplied: victim.earsCurrent <= 0,
+        });
+        notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).${penaltyNote ? ' (Жертва получила штраф)' : ''}`);
+      } else {
+        notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
       }
+    } else {
+      notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
     }
-    notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
     return { choice, ears: user.ears, tokens: user.tokens };
   }
 
@@ -505,8 +543,9 @@ function fatality(user, choice, notices) {
   if (!pf.isBot) {
     const victim = player.users()[pf.targetId];
     if (victim) {
-      social.mailTo(victim, user.name, '🎖 Помилование',
-        `${user.name} мог совершить фаталити, но отпустил вас. Вы обязаны ему жизнью.`);
+      notifications.push(victim.id, 'fatality_mercy', `${user.name} мог совершить фаталити, но помиловал вас`, {
+        attackerName: user.name, attackerId: user.id, at: Date.now(),
+      });
     }
   }
   notices.push(`🎖 Враг отпущен. Получен жетон милосердия (всего: ${user.tokens}).`);

@@ -25,7 +25,7 @@ const PLAYER = {
 const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 3, agility: 3 };
 
 // Регенерация: секунд на +1 единицу
-const REGEN = { hp: 45, en: 45, am: 300 };
+const REGEN = { hp: 180, en: 180, am: 180, EN_PER_TICK: 5 };
 
 // ---------- Опыт и уровни ----------
 // Кусочная кривая. Базовые суммы УВЕЛИЧЕНЫ НА 50% относительно прежней
@@ -580,23 +580,23 @@ const INCOME_BUILDINGS = [
 
 const DEFENSE_BUILDINGS = [
   // Цены снижены в 20 раз от предыдущей версии, рост каждой следующей
-  // копии замедлен до +1.5% (было +2.5%). Защита всех построек снижена
-  // ровно в 2 раза относительно прежней версии.
-  { id: 'bunker',    name: 'Бункер',                          def: 25,    price: 1250,         unlock: 30  },
-  { id: 'bashnya',   name: 'Дозорная башня',                  def: 60,    price: 3500,         unlock: 40  },
-  { id: 'pvo',       name: 'Система ПВО',                     def: 110,   price: 10000,        unlock: 50  },
-  { id: 'batareya',  name: 'Защитная батарея',                def: 190,   price: 27500,        unlock: 60  },
-  { id: 'mine',      name: 'Минное поле',                     def: 300,   price: 75000,        unlock: 70  },
-  { id: 'strazh',    name: 'Система «Страж»',                 def: 450,   price: 200000,       unlock: 80  },
-  { id: 'bereg',     name: 'Береговая оборона',               def: 650,   price: 500000,       unlock: 90  },
-  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 950,   price: 1400000,      unlock: 100 },
-  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 1350,  price: 3750000,      unlock: 110 },
-  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 1900,  price: 10000000,     unlock: 120 },
-  { id: 'kupol',     name: 'Энергетический купол',            def: 2650,  price: 27000000,     unlock: 130 },
-  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 3750,  price: 70000000,     unlock: 140 },
-  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 5250,  price: 190000000,    unlock: 150 },
-  { id: 'grav_wall', name: 'Гравитационная стена',            def: 7250,  price: 500000000,    unlock: 160 },
-  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 10000, price: 1400000000,   unlock: 170 },
+  // копии замедлен до +1.5% (было +2.5%). Защита: -50% от оригинала,
+  // затем дополнительно ещё -30% (итог: ×0.7×0.5 = ×0.35 от оригинала).
+  { id: 'bunker',    name: 'Бункер',                          def: 18,    price: 1250,         unlock: 30  },
+  { id: 'bashnya',   name: 'Дозорная башня',                  def: 42,    price: 3500,         unlock: 40  },
+  { id: 'pvo',       name: 'Система ПВО',                     def: 77,    price: 10000,        unlock: 50  },
+  { id: 'batareya',  name: 'Защитная батарея',                def: 133,   price: 27500,        unlock: 60  },
+  { id: 'mine',      name: 'Минное поле',                     def: 210,   price: 75000,        unlock: 70  },
+  { id: 'strazh',    name: 'Система «Страж»',                 def: 315,   price: 200000,       unlock: 80  },
+  { id: 'bereg',     name: 'Береговая оборона',               def: 455,   price: 500000,       unlock: 90  },
+  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 665,   price: 1400000,      unlock: 100 },
+  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 945,   price: 3750000,      unlock: 110 },
+  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 1330,  price: 10000000,     unlock: 120 },
+  { id: 'kupol',     name: 'Энергетический купол',            def: 1855,  price: 27000000,     unlock: 130 },
+  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 2625,  price: 70000000,     unlock: 140 },
+  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 3675,  price: 190000000,    unlock: 150 },
+  { id: 'grav_wall', name: 'Гравитационная стена',            def: 5075,  price: 500000000,    unlock: 160 },
+  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 7000,  price: 1400000000,   unlock: 170 },
 ];
 
 const BUILDING_BY_ID = Object.fromEntries(
@@ -960,6 +960,19 @@ const BATTLE = {
   FATALITY_WINDOW_MS: 3 * 60 * 1000,
   BOTS_TTL_MS: 15 * 60 * 1000,
 };
+
+// ---------- УШИ ----------
+// У игрока максимум 2 уха. Когда оба отрезаны — нельзя совершать
+// фаталити, и на 6 часов действует штраф -10% к атаке и защите.
+// Одно ухо восстанавливается естественным путём за 6 часов, либо можно
+// восстановить мгновенно за 20 золота.
+const EARS = {
+  MAX: 2,
+  REGROW_MS: 6 * 60 * 60 * 1000,   // 6 часов на естественное восстановление одного уха
+  PENALTY_PCT: 0.10,               // -10% к атаке и защите при 0 ушей
+  PENALTY_MS: 6 * 60 * 60 * 1000,  // штраф длится 6 часов после потери второго уха
+  RESTORE_GOLD: 20,                // мгновенное восстановление одного уха за золото
+};
 const BOT_NAMES = ['Террорист «Шакал»','Боевик «Кобра»','Полевой командир «Гюрза»','Наёмник «Гиена»','Террорист «Скорпион»','Боевик «Варан»','Главарь «Койот»','Диверсант «Аспид»'];
 
 // Боты-игроки (имитируют живых игроков). Имя собирается из частей.
@@ -1017,7 +1030,7 @@ module.exports = {
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
   DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
-  ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID, BATTLE, BOT_NAMES,
+  ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID, BATTLE, EARS, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
 };

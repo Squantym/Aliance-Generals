@@ -111,32 +111,52 @@ function containersView(user) {
   };
 }
 
-function openContainer(user, tier, notices) {
+function openContainer(user, tier, notices, qty) {
   const c = config.CONTAINERS.find((x) => x.tier === u.toInt(tier));
   if (!c) throw new u.ApiError('Такого контейнера не существует');
-  const price = containerGold(c);
-  if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
+  qty = u.clamp(u.toInt(qty, 1), 1, 5);
+  if (![1, 3, 5].includes(qty)) throw new u.ApiError('Можно открыть только 1, 3 или 5 контейнеров за раз');
+
+  const unitPrice = containerGold(c);
+  const totalPrice = unitPrice * qty;
+  if (user.gold < totalPrice) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${totalPrice} за ${qty} шт.)`);
   require('./dailyQuests').bump(user, 'marketBought', 1);
-  user.gold -= price;
+  user.gold -= totalPrice;
 
-  // Шанс 150% = 1 гарантированная разработка + 50% на вторую
-  let drops = Math.floor(c.chance / 100);
-  if (Math.random() * 100 < c.chance % 100) drops++;
-
-  const dropped = [];
-  for (let i = 0; i < drops; i++) {
-    const dev = u.pick(config.SECRET_DEVS);
-    user.secretDevs[dev.id] = (user.secretDevs[dev.id] || 0) + 1;
-    dropped.push(dev.name);
+  // Открываем qty контейнеров подряд, суммируя выпавшее
+  const droppedAll = [];
+  const droppedCount = {};
+  for (let n = 0; n < qty; n++) {
+    // Шанс 150% = 1 гарантированная разработка + 50% на вторую
+    let drops = Math.floor(c.chance / 100);
+    if (Math.random() * 100 < c.chance % 100) drops++;
+    for (let i = 0; i < drops; i++) {
+      const dev = u.pick(config.SECRET_DEVS);
+      user.secretDevs[dev.id] = (user.secretDevs[dev.id] || 0) + 1;
+      droppedAll.push(dev.name);
+      droppedCount[dev.name] = (droppedCount[dev.name] || 0) + 1;
+    }
   }
-  if (dropped.length === 0) {
-    notices.push('📦 Контейнер оказался пуст. На войне бывает и так.');
+
+  if (droppedAll.length === 0) {
+    notices.push(`📦 Открыто ${qty} контейнер(ов) — пусто. На войне бывает и так.`);
   } else {
-    notices.push(`📦 Из контейнера выпало: ${dropped.join(', ')}!`);
+    notices.push(`📦 Открыто ${qty} контейнер(ов). Выпало: ${droppedAll.join(', ')}!`);
   }
+
   // Проверяем, не собрался ли полный комплект из 9 разработок
   player.syncSuper(user, notices);
-  return { drops: dropped };
+
+  // Сохраняем в историю открытий (последние 10)
+  const historyEntry = {
+    id: u.uid(8), tier: c.tier, tierName: c.name, qty,
+    spent: totalPrice, dropped: droppedCount, at: Date.now(),
+  };
+  if (!user.containerHistory) user.containerHistory = [];
+  user.containerHistory.unshift(historyEntry);
+  if (user.containerHistory.length > 10) user.containerHistory.length = 10;
+
+  return { drops: droppedAll, droppedCount, qty, spent: totalPrice, history: historyEntry };
 }
 
 // ---------- Аукцион командиров ----------
@@ -227,4 +247,8 @@ function bid(user, lotId, amount, notices) {
   return { lotId, amount };
 }
 
-module.exports = { itemsList, buyItem, containersView, openContainer, auctionView, bid, tick };
+function containerHistory(user) {
+  return { history: user.containerHistory || [] };
+}
+
+module.exports = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick };

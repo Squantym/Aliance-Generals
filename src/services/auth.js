@@ -50,6 +50,10 @@ function newUser(id, name, email_, passHash, salt, country, isAdmin, emailVerifi
     buildings: {},
     secretDevs: {}, superSecret: 0,
     ears: 0, tokens: 0, earsLost: 0,
+    // Собственные уши игрока: 0-2. earsLostAt — массив времён потери
+    // каждого уха (для расчёта регенерации). penaltyUntil — до какого
+    // момента действует штраф -10% атаки/защиты (когда оба уха отрезаны).
+    earsCurrent: config.EARS.MAX, earsLostAt: [], earPenaltyUntil: 0,
     battle: { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 },
     counters: { wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, earsCut: 0, moneyEarned: 0, level: 1 },
     achStages: {},

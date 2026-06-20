@@ -177,10 +177,16 @@ const Admin = {
         const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
         return h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
       };
+      const pending = data.scheduled.filter((s) => s.pending);
       box.innerHTML = `
         <div class="card">
-          <p class="muted small">Скидки применяются ко всем игрокам сразу. Бонус «к покупаемому золоту» — это надбавка к получаемому количеству при покупке (когда вкладка покупки золота будет добавлена в банк).</p>
+          <p class="muted small">Скидки применяются ко всем игрокам сразу. Можно задать отложенный старт — акция начнётся автоматически в указанное время.</p>
         </div>
+        ${pending.length ? `
+        <div class="card">
+          <div class="name">⏳ Запланированные акции</div>
+          ${pending.map((s) => `<p class="small mt">${UI.esc(s.label)}: ${s.pct}% — старт через ${fmtExp(s.startAt)}</p>`).join('')}
+        </div>` : ''}
         ${data.categories.map((cat) => {
           const active = data.active[cat.id];
           return `
@@ -190,8 +196,9 @@ const Admin = {
               ? `<p class="gold small mt">Активно: ${active.pct}% · истекает через ${fmtExp(active.expires)}</p>`
               : '<p class="muted small mt">Сейчас скидки нет</p>'}
             <div class="field-row mt">
-              <input type="number" min="0" max="99" placeholder="%" id="dc-pct-${cat.id}" style="width:80px">
-              <input type="number" min="0" step="0.5" placeholder="часов" id="dc-hr-${cat.id}" style="width:90px">
+              <input type="number" min="0" max="99" placeholder="%" id="dc-pct-${cat.id}" style="width:70px">
+              <input type="number" min="0" step="0.5" placeholder="часов" id="dc-hr-${cat.id}" style="width:80px">
+              <input type="number" min="0" step="0.5" placeholder="старт через ч." id="dc-delay-${cat.id}" style="width:100px">
               <button class="btn btn-orange btn-inline" data-cat="${cat.id}">Применить</button>
               ${active ? `<button class="btn btn-red btn-inline" data-clear="${cat.id}">Снять</button>` : ''}
             </div>
@@ -203,8 +210,9 @@ const Admin = {
           const cat = btn.dataset.cat;
           const pct = document.getElementById('dc-pct-' + cat).value;
           const hours = document.getElementById('dc-hr-' + cat).value;
+          const delayHours = document.getElementById('dc-delay-' + cat).value || 0;
           if (!pct || !hours) { UI.toast('Заполните процент и часы'); return; }
-          try { await API.post('/api/admin/discount', { category: cat, pct, hours }); await Admin.loadDiscounts(); }
+          try { await API.post('/api/admin/discount', { category: cat, pct, hours, delayHours }); await Admin.loadDiscounts(); }
           catch (e) { UI.toast('⛔ ' + e.message); }
         };
       });
@@ -264,6 +272,9 @@ const Admin = {
         <label>⚡ Энергия (текущая)</label><input type="number" id="g-energy" placeholder="как есть">
         <label>❤ Здоровье (текущее)</label><input type="number" id="g-health" placeholder="как есть">
         <label>🎯 Боеприпасы (текущие)</label><input type="number" id="g-ammo" placeholder="как есть">
+        <hr class="hr">
+        <label>✉ Подпись подарка (необязательно — текст письма игроку)</label>
+        <textarea id="g-note" placeholder="Например: С Новым годом! Вот тебе подарок от администрации 🎄" maxlength="300"></textarea>
         <button class="btn btn-orange mt" id="g-go">Выдать</button>
       </div>`;
 
@@ -275,6 +286,7 @@ const Admin = {
           dollars: v('g-dollars'), gold: v('g-gold'), xp: v('g-xp'),
           skillPoints: v('g-skill'), ears: v('g-ears'), tokens: v('g-tokens'),
           setLevel: v('g-level'), energy: v('g-energy'), health: v('g-health'), ammo: v('g-ammo'),
+          giftNote: v('g-note'),
         });
         await Admin.loadPlayers();
       } catch (e) { UI.toast('⛔ ' + e.message); }

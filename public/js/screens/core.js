@@ -172,6 +172,7 @@ App.screens.home = async (c) => {
     ['bank', '🏦', 'Банк', ''],
     ['hospital', '🏥', 'Госпиталь', ''],
     ['mail', '✉', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
+    ['notifications', '🔔', 'Уведомления', m.notifUnread > 0 ? `<span class="badge">${m.notifUnread}</span>` : ''],
     ['ach', '🎖', 'Достижения', ''],
     ['trophies', '🎁', 'Трофеи', ''],
     ['settings', '⚙', 'Настройки', ''],
@@ -191,7 +192,8 @@ App.screens.home = async (c) => {
     <div class="card">
       <div class="kv"><span class="k">⚔ Мощь атаки</span><span class="v">${UI.fmtNum(m.power.atk)}</span></div>
       <div class="kv"><span class="k">🛡 Мощь обороны</span><span class="v">${UI.fmtNum(m.power.def)}</span></div>
-      <div class="kv"><span class="k">🚚 Техники в бою</span><span class="v">${UI.fmtNum(m.power.taken)} / ${UI.fmtNum(m.capacity)}</span></div>
+      <div class="kv"><span class="k">🚚 Техники в бою</span><span class="v">${UI.fmtNum(m.power.unitTaken || 0)} / ${UI.fmtNum(m.capacity)}</span></div>
+      ${m.power.secretTaken > 0 ? `<div class="kv"><span class="k">🛸 Секретные разработки в бою</span><span class="v gold">${UI.fmtNum(m.power.secretTaken)} (вне лимита)</span></div>` : ''}
       <div class="kv"><span class="k">💵 Доход в час</span><span class="v money">$ ${UI.fmtMoney(m.incomePerHour)}</span></div>
       <div class="kv"><span class="k">🔧 Содержание в час</span><span class="v" style="color:var(--red)">$ ${UI.fmtMoney(m.upkeepPerHour)}</span></div>
       <div class="kv"><span class="k">⏱ Выплата через</span><span class="v">${UI.fmtTimer(m.nextPayoutSec)}</span></div>
@@ -252,6 +254,8 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">⚔ Атака</span><span class="v">${UI.fmtNum(p.power.atk)}</span></div>
       <div class="kv"><span class="k">🛡 Защита</span><span class="v">${UI.fmtNum(p.power.def)}</span></div>
       <div class="kv"><span class="k">🚚 Вместимость армии</span><span class="v">${UI.fmtNum(p.capacity)}</span></div>
+      <div class="kv"><span class="k">💥 Шанс крита</span><span class="v">${p.critChancePct}%</span></div>
+      <div class="kv"><span class="k">🏃 Шанс уворота</span><span class="v">${p.dodgeChancePct}%</span></div>
       ${p.powerStats ? `<button class="btn mt" id="pf-stats-toggle" style="width:100%">📊 Подробная статистика</button>` : ''}
       <hr class="hr">
       <div class="kv"><span class="k">Нападения</span><span class="v">${UI.fmtNum(p.battle.attacks)}</span></div>
@@ -260,9 +264,11 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">Оборона: отбито / сдано</span><span class="v">${UI.fmtNum(p.battle.defWins)} / ${UI.fmtNum(p.battle.defLosses)}</span></div>
       <hr class="hr">
       <div class="kv"><span class="k">💀 Фаталити</span><span class="v">${UI.fmtNum(p.battle.fatalities)}</span></div>
-      <div class="kv"><span class="k">👂 Отрезанные уши</span><span class="v">${UI.fmtNum(p.ears)}</span></div>
+      <div class="kv"><span class="k">👂 Отрезанные уши (трофеи)</span><span class="v">${UI.fmtNum(p.ears)}</span></div>
       <div class="kv"><span class="k">🏷 Жетоны милосердия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
       <div class="kv"><span class="k">Потеряно своих ушей</span><span class="v">${UI.fmtNum(p.earsLost)}</span></div>
+      <div class="kv"><span class="k">Свои уши сейчас</span><span class="v">${p.earsCurrent} / ${p.earsMax}${p.earPenaltyActive ? ' <span style="color:var(--red)">⚠ штраф −10%</span>' : ''}</span></div>
+      ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%">👂 Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
     </div>
 
     ${p.powerStats ? `
@@ -321,6 +327,17 @@ App.screens.profile = async (c, param) => {
     };
   }
 
+  const restoreEarBtn = document.getElementById('pf-restore-ear');
+  if (restoreEarBtn) {
+    restoreEarBtn.onclick = async () => {
+      try {
+        await API.post('/api/ears/restore');
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
+
   // Атака из чужого профиля: бьём и уходим на экран войны с результатом
   if (!own && p.canAttack) {
     document.getElementById('pf-attack').onclick = async () => {
@@ -361,20 +378,23 @@ App.screens.profile = async (c, param) => {
 App.screens.skills = async (c) => {
   await App.refreshMe();
   const m = App.me;
-  // [id, лейбл, описание, цена в очках, сколько единиц даёт прокачка]
+  // [id, лейбл, описание, сколько единиц даёт прокачка] — цена берётся
+  // из m.skillCosts (приходит с сервера, всегда актуальна)
   const defs = [
-    ['energy',  '⚡ Энергия',     'Расходуется в миссиях. +10 к максимуму за прокачку.', 1, 10],
-    ['health',  '❤ Здоровье',    'Ниже 25 — в бой нельзя. +10 к максимуму за прокачку.', 1, 10],
-    ['ammo',    '🎯 Боеприпасы', 'Сколько атак в запасе. +1 к максимуму.', 2, 1],
-    ['cruelty', '💀 Жестокость', '+1% к шансу крита и фаталити.', 2, 1],
-    ['agility', '🏃 Ловкость',    'Шанс увернуться от удара и фаталити.', 2, 1],
+    ['energy',  '⚡ Энергия',     'Расходуется в миссиях. +10 к максимуму за прокачку.', 10],
+    ['health',  '❤ Здоровье',    'Ниже 25 — в бой нельзя. +10 к максимуму за прокачку.', 10],
+    ['ammo',    '🎯 Боеприпасы', 'Сколько атак в запасе. +1 к максимуму.', 1],
+    ['cruelty', '💀 Жестокость', '+0.5% к шансу крита и +0.5% к шансу фаталити (макс. 50% каждое).', 1],
+    ['agility', '🏃 Ловкость',    '+0.5% к шансу увернуться от атаки и +0.5% ускользнуть от фаталити (макс. 50% каждое).', 1],
   ];
 
   c.innerHTML = `
     <div class="title">Навыки</div>
     <div class="card center">Неиспользовано: <b class="gold">${m.skillPoints}</b> очков навыков
       <p class="muted small mt">+5 очков за каждый уровень и за прохождение конфликтов</p></div>
-    ${defs.map(([id, name, desc, cost, plus]) => `
+    ${defs.map(([id, name, desc, plus]) => {
+      const cost = m.skillCosts[id];
+      return `
       <div class="card">
         <div class="list-row" style="border:none;padding:0">
           <div class="grow">
@@ -383,7 +403,8 @@ App.screens.skills = async (c) => {
           </div>
           <button class="btn btn-orange btn-inline" data-skill="${id}" ${m.skillPoints < cost ? 'disabled' : ''}>+${plus} за ${cost} оч.</button>
         </div>
-      </div>`).join('')}`;
+      </div>`;
+    }).join('')}`;
 
   c.querySelectorAll('[data-skill]').forEach((btn) => {
     btn.onclick = async () => {

@@ -400,3 +400,80 @@ App.screens.ach = async (c) => {
           : UI.bar(1, 1, 'gold', 'Все этапы пройдены ✔')}</div>
       </div>`).join('')}`;
 };
+
+// ---------- УВЕДОМЛЕНИЯ (колокольчик) ----------
+// Подробное отображение системных событий: кто атаковал, когда, сколько
+// потеряно. Отдельно от личной почты — туда падают только письма.
+App.screens.notifications = async (c) => {
+  const { notifications } = await API.get('/api/notifications');
+  await App.refreshMe();
+
+  // Рендер одного уведомления в зависимости от типа (kind)
+  const renderOne = (n) => {
+    const p = n.payload || {};
+    const when = UI.fmtDate(n.at);
+    let body = '';
+
+    if (n.kind === 'attack_lost') {
+      body = `
+        <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt} ед.</span></div>
+        <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(p.loot)}</span></div>
+        <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>`;
+    } else if (n.kind === 'attack_defended') {
+      body = `
+        <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.received} ед.</span></div>
+        <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>
+        <p class="small mt" style="color:var(--money)">✅ Атака отбита — деньги и большая часть техники в безопасности.</p>`;
+    } else if (n.kind === 'rocket_hit') {
+      body = `
+        <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <div class="kv"><span class="k">Урон ракеты</span><span class="v dmg-take">${UI.fmtNum(p.damage)} (мощность ${p.powerPct}%)</span></div>
+        <div class="kv"><span class="k">Разрушено построек</span><span class="v">${p.destroyedBuildingsText ? UI.esc(p.destroyedBuildingsText) : 'постройки уцелели'}</span></div>
+        <div class="kv"><span class="k">Уничтожено техники</span><span class="v">${p.techLostText ? UI.esc(p.techLostText) : 'техника уцелела'}</span></div>`;
+    } else if (n.kind === 'fatality_ear') {
+      body = `
+        <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <p class="small mt">✂️ Совершил фаталити и отрезал вам ухо.</p>`;
+    } else if (n.kind === 'fatality_mercy') {
+      body = `
+        <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <p class="small mt" style="color:var(--money)">🎖 Мог совершить фаталити, но помиловал вас.</p>`;
+    } else {
+      body = `<p class="muted small mt">${when}</p>`;
+    }
+
+    return `
+      <div class="card" data-notif="${n.id}" style="${n.read ? 'opacity:.65' : ''}">
+        <div class="name">${n.kind.includes('lost') || n.kind === 'rocket_hit' ? '⚠️' : n.kind.includes('defended') || n.kind === 'fatality_mercy' ? '✅' : '🔔'} ${UI.esc(n.title)}</div>
+        ${body}
+      </div>`;
+  };
+
+  c.innerHTML = `
+    <div class="title">🔔 Уведомления</div>
+    ${notifications.length > 0 ? `<button class="btn mt" id="notif-read-all" style="width:100%">Отметить все как прочитанные</button>` : ''}
+    ${notifications.length === 0 ? '<div class="card center muted">Уведомлений пока нет.</div>' : ''}
+    ${notifications.map(renderOne).join('')}`;
+
+  const readAllBtn = document.getElementById('notif-read-all');
+  if (readAllBtn) readAllBtn.onclick = async () => {
+    await API.post('/api/notifications/read-all');
+    await App.refreshMe();
+    App.rerender();
+  };
+
+  // Отмечаем как прочитанные при открытии экрана (тихо, без перерисовки)
+  notifications.filter((n) => !n.read).forEach((n) => {
+    API.post(`/api/notifications/${n.id}/read`).catch(() => {});
+  });
+  if (notifications.some((n) => !n.read)) {
+    setTimeout(() => App.refreshMe(), 500);
+  }
+};

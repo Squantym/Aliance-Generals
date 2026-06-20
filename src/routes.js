@@ -21,6 +21,7 @@ const club = require('./services/club');
 const groups = require('./services/groups');
 const legion = require('./services/legion');
 const social = require('./services/social');
+const notifications = require('./services/notifications');
 const ach = require('./services/achievements');
 const trophies = require('./services/trophies');
 const hospital = require('./services/hospital');
@@ -56,8 +57,10 @@ module.exports = function registerRoutes(app) {
   app.add('GET', '/api/me', (req) => ({
     ...player.mePayload(req.user),
     mailUnread: social.unread(req.user),
+    notifUnread: notifications.unreadCount(req.user),
   }));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
+  app.add('POST', '/api/ears/restore', act((req, n) => player.restoreEar(req.user, n)));
   app.add('POST', '/api/skill', act((req, notices) => {
     player.spendSkill(req.user, req.body.stat);
     // Сюжетное задание «Школа бойца» — единственный хук, который
@@ -127,7 +130,8 @@ module.exports = function registerRoutes(app) {
   app.add('GET', '/api/market/items', () => market.itemsList());
   app.add('POST', '/api/market/buy', act((req, n) => market.buyItem(req.user, req.body.itemId, req.body.targetName, n)));
   app.add('GET', '/api/market/containers', (req) => market.containersView(req.user));
-  app.add('POST', '/api/market/open', act((req, n) => market.openContainer(req.user, req.body.tier, n)));
+  app.add('POST', '/api/market/open', act((req, n) => market.openContainer(req.user, req.body.tier, n, req.body.qty)));
+  app.add('GET', '/api/market/container-history', (req) => market.containerHistory(req.user));
   app.add('GET', '/api/market/auction', () => market.auctionView());
   app.add('POST', '/api/market/bid', act((req, n) => market.bid(req.user, req.body.lotId, req.body.amount, n)));
 
@@ -198,6 +202,11 @@ module.exports = function registerRoutes(app) {
     return { ok: true };
   }));
   app.add('GET', '/api/fame', () => social.fame());
+
+  // ---------- Уведомления (колокольчик) ----------
+  app.add('GET',  '/api/notifications',           (req) => notifications.list(req.user));
+  app.add('POST', '/api/notifications/:id/read',  act((req) => { notifications.markRead(req.user, req.params.id); return { ok: true }; }));
+  app.add('POST', '/api/notifications/read-all',  act((req) => { notifications.markAllRead(req.user); return { ok: true }; }));
   app.add('GET', '/api/achievements', (req) => ach.list(req.user));
 
   // ---------- Администратор ----------
