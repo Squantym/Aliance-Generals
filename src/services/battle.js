@@ -178,6 +178,42 @@ function opponents(user) {
 
 // Снять у проигравшего часть техники, взятой в бой.
 // Секретные разработки неуязвимы (по ТЗ). Возвращает список потерь.
+// ---------------------------------------------------------------------
+// Пороговая формула урона по соотношению ЗАЩИТА vs АТАКА противника:
+//   def >= atk*1.5            -> урон 1-5   (атакующий почти бессилен)
+//   def >= atk*1.2 (1.2-1.49) -> урон 5-15  (атакующий слаб)
+//   |def - atk| <= 10%         -> «примерное равенство»: рандомный исход,
+//                                  но с перевесом по факту чисел (кто
+//                                  сильнее — тот чаще выигрывает и наносит
+//                                  урон ближе к верхней границе диапазона)
+//   atk > def (выше equal-зоны) -> атакующий доминирует, урон растёт к 45
+// Возвращает { dealt, win } — урон по защитнику и исход (атакующий победил?)
+// ---------------------------------------------------------------------
+function resolveDamage(atk, def) {
+  const ratio = def / Math.max(1, atk); // >1 защитник сильнее, <1 — атакующий сильнее
+  let dealt, winChance;
+
+  if (ratio >= 1.5) {
+    dealt = u.rnd(1, 5);
+    winChance = 0.05;
+  } else if (ratio >= 1.2) {
+    dealt = u.rnd(5, 15);
+    winChance = 0.20;
+  } else if (ratio >= 0.9 && ratio <= 1.1) {
+    const advantage = atk / Math.max(1, def);
+    winChance = u.clamp(0.5 * advantage, 0.30, 0.70);
+    dealt = u.rnd(10, 25);
+  } else {
+    const dominance = Math.min(1, (0.9 - ratio) / 0.9);
+    dealt = Math.round(25 + dominance * 20 + Math.random() * 5);
+    winChance = u.clamp(0.70 + dominance * 0.25, 0.70, 0.95);
+  }
+
+  dealt = u.clamp(Math.round(dealt), 1, 45);
+  const win = Math.random() < winChance;
+  return { dealt, win };
+}
+
 function removeUnits(victim, armyEntries, pct) {
   // Сортируем «жертв» от слабой к сильной: сначала Mk0, потом Mk1, Mk2;
   // внутри одного Mk — по возрастанию unlock (уровень открытия = «слабее»).
@@ -266,21 +302,31 @@ function attack(user, targetId, notices) {
     targetLevel = target.level;
   }
 
-  // ----- Броски: ±15% случайности, крит атакующего, уворот защитника -----
-  const critChance = Math.min(B.CRIT_MAX, B.CRIT_BASE + user.skills.cruelty * B.CRIT_PER_CRUELTY);
+  // ----- Броски: крит атакующего, полный уворот защитника -----
+  const critChance = Math.min(B.CRIT_MAX_CHANCE, B.CRIT_BASE + user.skills.cruelty * B.CRIT_PER_CRUELTY);
   const crit = Math.random() < critChance;
+  // Ловкость даёт ШАНС НА ПОЛНЫЙ УВОРОТ (не просто снижение урона):
+  // 0.5% за уровень, максимум 50%. При уворачивании защитник получает
+  // 0 урона, но победа всё равно засчитывается атакующему (он «попал
+  // мимо», но инициативу не потерял).
   const dodgeChance = isBot ? 0 : Math.min(B.DODGE_MAX, target.skills.agility * B.DODGE_PER_AGILITY);
   const dodge = Math.random() < dodgeChance;
 
-  let aRoll = aPow * (0.85 + Math.random() * 0.3);
-  if (crit) aRoll *= B.CRIT_MULT + trophies.critPower(user); // «Лицензия на убийство» усиливает крит
-  if (dodge) aRoll *= B.DODGE_REDUCE;                        // ловкость защитника гасит удар
-  const dRoll = dPow * (0.85 + Math.random() * 0.3);
-  const win = aRoll > dRoll;
+  // Эффективная атака с учётом крита (база ×1.5, трофей до ×4.5 на максимуме)
+  let effectiveAtk = aPow;
+  if (crit) effectiveAtk *= B.CRIT_MULT * (1 + trophies.critPower(user));
 
-  // ----- Урон по здоровью обеих сторон -----
-  const dealt = u.clamp(Math.round(6 + 26 * (aRoll / (aRoll + dRoll)) + Math.random() * 6), 5, 45);
-  const received = u.clamp(Math.round(4 + 20 * (dRoll / (aRoll + dRoll)) + Math.random() * 5), 2, 40);
+  // Пороговая формула: соотносим эффективную атаку с защитой противника
+  const { dealt: dealtRaw, win } = resolveDamage(effectiveAtk, dPow);
+
+  // Полный уворот — обнуляем урон, но не исход боя
+  const dealt = dodge ? 0 : dealtRaw;
+
+  // Урон, получаемый АТАКУЮЩИМ от защитника, считается по той же формуле
+  // в обратную сторону (защитник «атакует» своей мощью защиты против
+  // атаки противника — упрощённая симметрия для второй стороны обмена).
+  const { dealt: receivedRaw } = resolveDamage(dPow, aPow);
+  const received = receivedRaw;
   user.res.hp.cur = Math.max(1, user.res.hp.cur - received);
 
   let targetHpAfter;
@@ -319,13 +365,18 @@ function attack(user, targetId, notices) {
     require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
     if (isBot) {
-      // Базовая выплата с бота заметно урезана: с уровнем растёт мягко
+      // Базовая выплата с бота — широкий случайный разброс (40%-120% от
+      // базы), плюс убывание при повторных атаках на ботов за последний час.
       const baseBot = target.loot;
-      loot = Math.round(baseBot * (0.5 + Math.random() * 0.4) * lootMul);
+      loot = Math.round(baseBot * (0.4 + Math.random() * 0.8) * lootMul);
       // Гарантированный минимум: за одну победную атаку на бота/террориста
       // игрок должен суметь купить хотя бы 10 единиц актуальной техники
       // своего уровня (но не уровня бота — ориентируемся на игрока).
-      const guaranteedMin = config.minUnitPriceAtLevel(user.level) * 10;
+      // Гарантия тоже немного «дышит» от повторных атак, но не уходит в 0.
+      const guaranteedMin = Math.max(
+        Math.round(config.minUnitPriceAtLevel(user.level) * 10 * Math.max(0.3, lootMul)),
+        1
+      );
       if (loot < guaranteedMin) loot = guaranteedMin;
       // Симулируем потери техники бота для отображения в окне боя.
       // У бота нет реальной техники в БД, поэтому просто берём имена из
@@ -380,13 +431,26 @@ function attack(user, targetId, notices) {
   // безликая массовка.
   const fatalityAllowed = !isBot || (isBot && target.isPlayerLike);
   let fatality = false;
+  let fatalityDodged = false;
   if (fatalityAllowed && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
-    fatality = true;
-    user.pendingFatality = {
-      targetId: target.id,
-      name: target.name, isBot,
-      exp: Date.now() + B.FATALITY_WINDOW_MS,
-    };
+    // Жестокость даёт ШАНС совершить фаталити (не гарантию): 0.5% за
+    // уровень навыка, максимум 50%.
+    const fatalityChance = Math.min(0.50, user.skills.cruelty * 0.005);
+    if (Math.random() < fatalityChance) {
+      // Ловкость защитника даёт шанс «ускользнуть» от занесённого клинка:
+      // 0.5% за уровень, максимум 50%. Применяется только к реальным игрокам.
+      const escapeChance = isBot ? 0 : Math.min(0.50, target.skills.agility * 0.005);
+      if (Math.random() < escapeChance) {
+        fatalityDodged = true;
+      } else {
+        fatality = true;
+        user.pendingFatality = {
+          targetId: target.id,
+          name: target.name, isBot,
+          exp: Date.now() + B.FATALITY_WINDOW_MS,
+        };
+      }
+    }
   }
 
   tutorial.notify(user, 'attack', notices); // задание «Боевое крещение»
@@ -404,7 +468,7 @@ function attack(user, targetId, notices) {
     myArmy: armyBrief(aArmy.entries),
     enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
     myLosses, enemyLosses,
-    fatality,
+    fatality, fatalityDodged,
   };
 }
 

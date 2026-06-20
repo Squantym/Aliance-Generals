@@ -47,12 +47,13 @@ function list(user) {
   const d = ensureDaily(user);
   const reward = config.dailyQuestReward(user.level);
   const quests = config.DAILY_QUESTS.map((q) => {
+    const target = config.dailyQuestTarget(q.target, user.level);
     const progress = d.counters[q.counter] || 0;
-    const done = progress >= q.target;
+    const done = progress >= target;
     const claimed = !!d.claimed[q.id];
     return {
       id: q.id, name: q.name, icon: q.icon,
-      target: q.target, progress: Math.min(progress, q.target),
+      target, progress: Math.min(progress, target),
       done, claimed,
     };
   });
@@ -82,8 +83,9 @@ function claim(user, questId, notices) {
   const quest = config.DAILY_QUESTS.find((q) => q.id === questId);
   if (!quest) throw new u.ApiError('Задание не найдено');
   if (d.claimed[questId]) throw new u.ApiError('Награда за это задание уже получена');
+  const target = config.dailyQuestTarget(quest.target, user.level);
   const progress = d.counters[quest.counter] || 0;
-  if (progress < quest.target) throw new u.ApiError('Задание ещё не выполнено');
+  if (progress < target) throw new u.ApiError('Задание ещё не выполнено');
   d.claimed[questId] = true;
   const reward = config.dailyQuestReward(user.level);
   player.addMoney(user, reward.dollars, true);
@@ -96,7 +98,7 @@ function claim(user, questId, notices) {
 function claimBonus(user, notices) {
   const d = ensureDaily(user);
   if (d.bonusClaimed) throw new u.ApiError('Бонус уже получен сегодня');
-  const allDone = config.DAILY_QUESTS.every((q) => (d.counters[q.counter] || 0) >= q.target);
+  const allDone = config.DAILY_QUESTS.every((q) => (d.counters[q.counter] || 0) >= config.dailyQuestTarget(q.target, user.level));
   if (!allDone) throw new u.ApiError('Выполните все задания чтобы получить бонус');
   d.bonusClaimed = true;
   player.addGold(user, config.DAILY_ALL_BONUS_GOLD);

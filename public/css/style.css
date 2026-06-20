@@ -1415,3 +1415,234 @@ body.theme-noir .low-hp-banner {
   animation: none; /* без пульсации — спокойная тема */
 }
 body.theme-noir .low-hp-banner b { color: #c4b48a; }
+
+/* ===================================================================
+   ТЕМА 6: АВРОРА (светлая, яркая, футуристичная)
+   Белый/светло-голубой фон, неоновые градиентные акценты (бирюза →
+   фиолет → розовый), glassmorphism, мягкие тени, чистая современная
+   геометрия. Полная противоположность тёмным военным темам.
+   =================================================================== */
+body.theme-aurora {
+  --bg: #eef3fb;
+  --panel: #ffffff;
+  --panel-2: #f5f8ff;
+  --border: #dbe4f5;
+  --border-dim: #e8eef9;
+  --text: #1c2440;
+  --dim: #6b7494;
+  --green: #18b88a;        /* мятный неон вместо хаки */
+  --money: #0ea968;        /* свежий зелёный для денег */
+  --gold: #e8970a;         /* тёплое золото на светлом фоне */
+  --hp: #ef4d6c;
+  --en: #2f8fe0;
+  --am: #f0a830;
+  --red: #ef4d6c;
+  --orange-1: #7c5cff;     /* фиолетово-неоновый акцент вместо оранжевого */
+  --orange-2: #5a3ce0;
+}
+
+body.theme-aurora {
+  background-color: #eef3fb;
+  background-image:
+    /* мягкие цветные пятна по углам — «аврора» */
+    radial-gradient(ellipse 60% 50% at 8% 0%, rgba(124, 92, 255, .14), transparent 60%),
+    radial-gradient(ellipse 55% 45% at 95% 15%, rgba(24, 184, 138, .12), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(239, 77, 108, .08), transparent 60%),
+    linear-gradient(180deg, #f3f6fd 0%, #e8eef9 100%);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+}
+
+body.theme-aurora #wrap {
+  background: rgba(255, 255, 255, .72);
+  backdrop-filter: blur(14px);
+  border-left: 1px solid #dbe4f5;
+  border-right: 1px solid #dbe4f5;
+  box-shadow: 0 0 50px rgba(124, 92, 255, .10), 0 0 4px rgba(28, 36, 64, .04);
+}
+
+body.theme-aurora #header {
+  background: rgba(255, 255, 255, .85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #dbe4f5;
+  box-shadow: 0 2px 16px rgba(124, 92, 255, .08);
+}
+
+body.theme-aurora .logo {
+  background: linear-gradient(90deg, #7c5cff, #18b88a, #ef4d6c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: .5em;
+  font-weight: 800;
+  filter: drop-shadow(0 1px 1px rgba(124, 92, 255, .2));
+}
+body.theme-aurora .logo .star {
+  background: none;
+  -webkit-text-fill-color: #e8970a;
+  color: #e8970a;
+}
+
+body.theme-aurora .card {
+  background: linear-gradient(180deg, #ffffff, #f7f9ff);
+  border: 1px solid #e2e9f8;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(28, 36, 64, .06), 0 1px 2px rgba(28, 36, 64, .04);
+}
+body.theme-aurora .card.err { border-color: #f3c0cb; }
+
+body.theme-aurora .menu-btn {
+  background: linear-gradient(180deg, #ffffff, #f3f6ff);
+  border: 1px solid #e2e9f8;
+  border-radius: 12px;
+  color: #1c2440;
+  box-shadow: 0 2px 8px rgba(28, 36, 64, .05);
+  font-weight: 600;
+}
+body.theme-aurora .menu-btn:hover {
+  background: linear-gradient(180deg, #f7f4ff, #eee8ff);
+  border-color: #c8b8ff;
+  box-shadow: 0 4px 16px rgba(124, 92, 255, .18);
+  transform: translateY(-1px);
+}
+
+body.theme-aurora .btn {
+  background: linear-gradient(180deg, #ffffff, #f3f6ff);
+  border: 1px solid #dbe4f5;
+  border-radius: 10px;
+  color: #1c2440;
+  box-shadow: 0 1px 4px rgba(28, 36, 64, .05);
+}
+body.theme-aurora .btn:hover:not(:disabled) {
+  border-color: #c8b8ff;
+  box-shadow: 0 4px 12px rgba(124, 92, 255, .15);
+}
+body.theme-aurora .btn-orange {
+  background: linear-gradient(90deg, #7c5cff, #a35cff);
+  border-color: #6a47e8;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(124, 92, 255, .35);
+}
+body.theme-aurora .btn-orange:hover:not(:disabled) {
+  background: linear-gradient(90deg, #8a6cff, #b56cff);
+  box-shadow: 0 6px 20px rgba(124, 92, 255, .5);
+  transform: translateY(-1px);
+}
+body.theme-aurora .btn-green {
+  background: linear-gradient(90deg, #18b88a, #0ea968);
+  border-color: #0c8a55;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(24, 184, 138, .3);
+}
+body.theme-aurora .btn-red {
+  background: linear-gradient(90deg, #ef4d6c, #d93a58);
+  border-color: #c22e4a;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(239, 77, 108, .3);
+}
+
+body.theme-aurora input,
+body.theme-aurora select,
+body.theme-aurora textarea {
+  background: #ffffff;
+  border: 1px solid #dbe4f5;
+  border-radius: 10px;
+  color: #1c2440;
+}
+body.theme-aurora input:focus,
+body.theme-aurora select:focus {
+  border-color: #7c5cff;
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, .15);
+  outline: none;
+}
+
+body.theme-aurora .bar {
+  background: #eef1fb;
+  border: 1px solid #dbe4f5;
+  border-radius: 8px;
+}
+body.theme-aurora .bar-fill {
+  border-radius: 7px;
+}
+
+body.theme-aurora .tab {
+  background: #ffffff;
+  border: 1px solid #e2e9f8;
+  border-radius: 10px 10px 0 0;
+  color: #6b7494;
+  font-weight: 600;
+}
+body.theme-aurora .tab.active {
+  background: linear-gradient(90deg, #7c5cff, #a35cff);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(124, 92, 255, .3);
+}
+
+body.theme-aurora .badge {
+  background: linear-gradient(90deg, #e8970a, #f0b13a);
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(232, 151, 10, .3);
+}
+body.theme-aurora .badge.green {
+  background: linear-gradient(90deg, #18b88a, #0ea968);
+  box-shadow: 0 2px 6px rgba(24, 184, 138, .3);
+}
+
+body.theme-aurora .toast {
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(10px);
+  border: 1px solid #e2e9f8;
+  border-left: 3px solid #7c5cff;
+  color: #1c2440;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(28, 36, 64, .12);
+}
+
+body.theme-aurora .hr {
+  border-top: 1px solid #e2e9f8;
+  background: linear-gradient(90deg, transparent, #c8b8ff, transparent);
+  height: 1px; border: 0;
+}
+
+body.theme-aurora .money { color: var(--money); font-weight: 700; }
+body.theme-aurora .gold  { color: var(--gold); font-weight: 700; }
+
+body.theme-aurora .xp-strip {
+  background: #eef1fb;
+  border: 1px solid #e2e9f8;
+  border-radius: 8px;
+}
+body.theme-aurora .xp-strip-fill {
+  background: linear-gradient(90deg, #7c5cff, #18b88a);
+  box-shadow: 0 0 8px rgba(124, 92, 255, .4);
+}
+body.theme-aurora .xp-strip-label {
+  color: #1c2440;
+  text-shadow: none;
+}
+
+body.theme-aurora .sale-banner {
+  background: linear-gradient(90deg, rgba(124, 92, 255, .12), rgba(24, 184, 138, .08));
+  border: 1px solid #c8b8ff;
+  color: #1c2440;
+  border-radius: 10px;
+}
+body.theme-aurora .sale-banner b { color: #7c5cff; }
+
+body.theme-aurora .ic-gold::before {
+  content: '✦';
+  color: #e8970a;
+  filter: drop-shadow(0 0 4px rgba(232, 151, 10, .4));
+}
+
+body.theme-aurora .low-hp-banner {
+  background: linear-gradient(90deg, #ef4d6c, #d93a58);
+  color: #fff;
+  border-top: 1px solid #c22e4a;
+  box-shadow: 0 2px 10px rgba(239, 77, 108, .3);
+}
+body.theme-aurora .low-hp-banner b { color: #fff7d6; }

@@ -199,17 +199,21 @@ function effectsView(user) {
 // затем обычная техника, отсортированная по нужному параметру,
 // пока не упрёмся в вместимость. mode: 'atk' или 'def'.
 function buildArmy(user, mode) {
-  const cap = capacity(user);
+  const cap = capacity(user); // лимит ТОЛЬКО для обычной техники (зависит от альянса)
   const country = config.COUNTRY_BY_ID[user.country] || { mod: {} };
-  const entries = [];
+  const secretEntries = [];
+  const unitEntries = [];
 
   // Секретные разработки: у каждой свои индивидуальные atk/def.
   // С 51 уровня — +1% за каждый уровень выше 50,
   // +0.5% за каждую сверхсекретную в коллекции (только для секретных!).
+  // ВАЖНО: секретные разработки — ОТДЕЛЬНЫЙ пул техники, на них НЕ
+  // распространяется лимит альянса (capacity). Они участвуют в бою
+  // ВСЕГДА полностью, независимо от размера альянса игрока.
   for (const dev of config.SECRET_DEVS) {
     const n = user.secretDevs[dev.id] || 0;
     if (n > 0) {
-      entries.push({
+      secretEntries.push({
         name: dev.name, count: n, secret: true,
         atk: config.secretAtk(user, dev),
         def: config.secretDef(user, dev),
@@ -217,14 +221,16 @@ function buildArmy(user, mode) {
     }
   }
   if (user.superSecret > 0) {
-    entries.push({
+    secretEntries.push({
       name: config.SUPER_DEV.name, count: user.superSecret, secret: true,
       atk: config.secretAtk(user, config.SUPER_DEV),
       def: config.secretDef(user, config.SUPER_DEV),
     });
   }
 
-  // Обычная техника: по каждому юниту проходим все этапы модернизации
+  // Обычная техника: по каждому юниту проходим все этапы модернизации.
+  // ЭТОТ пул ограничен capacity(user) — растёт от размера альянса
+  // (10 единиц техники за каждого человека в альянсе).
   for (const [unitId, rawMk] of Object.entries(user.units)) {
     const cu = config.UNIT_BY_ID[unitId];
     if (!cu) continue;
@@ -252,7 +258,7 @@ function buildArmy(user, mode) {
       if (mm.atkAll) atk *= mm.atkAll;
       if (mm.defAll === true) def *= 1.05;          // старый формат
       else if (typeof mm.defAll === 'number') def *= mm.defAll;
-      entries.push({
+      unitEntries.push({
         name: cu.name + (mk ? ` Mk${mk}` : ''),
         unitId, count, secret: false, mk,
         atk: Math.round(atk), def: Math.round(def),
@@ -260,34 +266,42 @@ function buildArmy(user, mode) {
     }
   }
 
-  // Берём сильнейших, пока есть место.
+  // Сортировка ТОЛЬКО внутри обычной техники (секретки не участвуют
+  // в конкуренции за место — у них отдельный безлимитный пул).
   // Приоритет:
   //   - в АТАКЕ:  сначала ВОЗДУШНАЯ (упор на атаку), затем по числу атаки
   //   - в ЗАЩИТЕ: сначала МОРСКАЯ (упор на защиту), затем по числу защиты
-  //   - секретные разработки всегда в строю (атакующие/защитные по статам)
   const priorityType = mode === 'atk' ? 'air' : 'sea';
-  entries.sort((a, b) => {
-    // Секретные разработки всегда наверху (у них нет cu.type)
-    if (a.secret && !b.secret) return -1;
-    if (b.secret && !a.secret) return 1;
-    // Юнит приоритетного типа идёт первым
-    const cuA = a.unitId ? config.UNIT_BY_ID[a.unitId] : null;
-    const cuB = b.unitId ? config.UNIT_BY_ID[b.unitId] : null;
+  unitEntries.sort((a, b) => {
+    const cuA = config.UNIT_BY_ID[a.unitId];
+    const cuB = config.UNIT_BY_ID[b.unitId];
     const aPrio = cuA && cuA.type === priorityType ? 1 : 0;
     const bPrio = cuB && cuB.type === priorityType ? 1 : 0;
     if (aPrio !== bPrio) return bPrio - aPrio;
-    // Дальше по убыванию характеристики
     return mode === 'atk' ? b.atk - a.atk : b.def - a.def;
   });
-  let left = cap, taken = 0, power = 0;
-  for (const e of entries) {
+
+  // Секретные разработки идут в бой ВСЕ ЦЕЛИКОМ (без ограничения cap)
+  let power = 0, taken = 0;
+  for (const e of secretEntries) {
+    e.taken = e.count;
+    taken += e.count;
+    power += e.count * (mode === 'atk' ? e.atk : e.def);
+  }
+
+  // Обычная техника ограничена лимитом альянса (cap)
+  let left = cap;
+  for (const e of unitEntries) {
     const t = Math.min(e.count, left);
     e.taken = t;
     left -= t; taken += t;
     power += t * (mode === 'atk' ? e.atk : e.def);
     if (left <= 0) break;
   }
-  entries.forEach((e) => { if (e.taken === undefined) e.taken = 0; });
+  unitEntries.forEach((e) => { if (e.taken === undefined) e.taken = 0; });
+
+  const entries = [...secretEntries, ...unitEntries];
+
   // Клановые бонусы от построек легиона: умножаем итоговую мощь
   const legionAtk = legionBonus(user, 'atk');
   const legionDef = legionBonus(user, 'def');

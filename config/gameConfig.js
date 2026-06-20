@@ -22,7 +22,7 @@ const PLAYER = {
 };
 
 // Стоимость одного уровня навыка в очках
-const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 2, agility: 2 };
+const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 3, agility: 3 };
 
 // Регенерация: секунд на +1 единицу
 const REGEN = { hp: 45, en: 45, am: 300 };
@@ -60,7 +60,7 @@ const COUNTRIES = [
   { id: 'cn', name: 'Китай',      flag: '🇨🇳', desc: '−20% к стоимости техники.',                   mod: { unitCost: 0.80 } },
   { id: 'ru', name: 'Россия',     flag: '🇷🇺', desc: '+20% к атаке и защите морской техники.',      mod: { atkType: 'sea', defType: 'sea', typeMul: 1.20 } },
   { id: 'us', name: 'США',        flag: '🇺🇸', desc: '+20% к атаке и защите воздушной техники.',    mod: { atkType: 'air', defType: 'air', typeMul: 1.20 } },
-  { id: 'ua', name: 'Украина',    flag: '🇺🇦', desc: '+50% к получаемому опыту.',                   mod: { xp: 1.50 } },
+  { id: 'ua', name: 'Украина',    flag: '🇺🇦', desc: '+25% к получаемому опыту.',                   mod: { xp: 1.25 } },
 ];
 const COUNTRY_BY_ID = Object.fromEntries(COUNTRIES.map(c => [c.id, c]));
 
@@ -472,6 +472,72 @@ function minUnitPriceAtLevel(level) {
 const MK_MULT = [1, 1.3, 1.6];
 const PRODUCTION_UNLOCK_LEVEL = 70;
 const WORKSHOP_BASE_GOLD = 200;
+
+// ---------- ШАХТЫ ----------
+// Раздел «Шахты» в Производстве. Каждая шахта при постройке получает
+// случайный запас золота (20-50 по диапазонам ниже). Спуск шахтёров на
+// 10-90 минут даёт шанс найти золото; если нашли — можно добыть 20% от
+// ПЕРВОНАЧАЛЬНОГО запаса шахты (фиксированная доля, не от остатка).
+// Когда золото заканчивается — шахта обрушивается, нужен 1 день на
+// восстановление участка перед постройкой новой.
+const MINE = {
+  FIRST_PRICE_GOLD: 100,          // первая шахта стоит 100 золота
+  PRICE_MULT: 2.0,                // каждая следующая в 2 раза дороже (+100%)
+  BUILD_DOLLARS_BASE: 50000,      // базовая цена в долларах (масштабируется с уровнем)
+  BUILD_TIME_MS: 24 * 3600 * 1000, // постройка занимает 1 сутки
+  COLLAPSE_REBUILD_MS: 24 * 3600 * 1000, // после обвала — сутки до новой стройки
+
+  // Диапазоны изначального запаса золота при постройке шахты
+  GOLD_RANGES: [
+    { min: 20, max: 30, chance: 0.50 },
+    { min: 30, max: 40, chance: 0.30 },
+    { min: 40, max: 50, chance: 0.20 },
+  ],
+
+  EXTRACT_PCT: 0.20,              // за удачный спуск добывается 20% от начального запаса
+
+  DESCENT_MIN_MINUTES: 10,        // минимальное время спуска
+  DESCENT_MAX_MINUTES: 90,        // максимальное время спуска
+  DESCENT_STEP_MINUTES: 10,       // шаг выбора времени
+  DAILY_LIMIT_MINUTES: 90,        // суммарно не больше 90 минут спуска в сутки (UTC)
+
+  NOT_FOUND_CHANCE_MIN: 0.30,     // шанс не найти золото: 30-40%
+  NOT_FOUND_CHANCE_MAX: 0.40,
+
+  TERRORIST_ATTACK_CHANCE: 0.20,  // 20% шанс нападения террористов на шахтёров
+  TERRORIST_REACT_MS: 10 * 60 * 1000, // 10 минут на реакцию (устранить или потерять смену)
+
+  GOLD_READY_DELAY_MS: 5 * 60 * 1000, // золото добывается в течение 5 минут после удачного спуска
+};
+
+// ---------- РАКЕТНЫЕ ШАХТЫ ----------
+// Раздел «Ракетные шахты» в Производстве. Покупка шахты — отдельно от
+// ракеты внутри. Ракета имеет 2 шкалы: ГОТОВНОСТЬ (заполняется энергией,
+// нужна для запуска) и МОЩНОСТЬ (заполняется боеприпасами, определяет урон).
+// После запуска шахта остаётся, но ракета внутри пересобирается 24ч.
+const SILO = {
+  FIRST_PRICE_GOLD: 300,          // первая шахта стоит 300 золота
+  PRICE_MULT: 2.0,                // каждая следующая в 2 раза дороже
+
+  BUILD_TIME_MS: 24 * 3600 * 1000, // постройка шахты/пересборка ракеты — 24 часа
+  BOOST_GOLD: 1000,               // полное ускорение постройки стоит 1000 золота
+  // Цена ускорения линейно падает по мере приближения готовности:
+  // если осталось 100% времени — полная цена 1000, если осталось 0% — 0.
+
+  READY_ENERGY_NEEDED: 3000,      // энергии нужно для полного заполнения готовности
+  POWER_AMMO_NEEDED: 1000,        // боеприпасов нужно для полной мощности
+
+  MAX_DAMAGE: 3000,               // урон ракеты при 100% мощности
+
+  // Потери техники цели при ПОЛНОЙ мощности: 100-300 единиц,
+  // 60-70% слабой техники, 20-30% мощной/новой (остаток — средняя)
+  TECH_LOSS_MIN: 100,
+  TECH_LOSS_MAX: 300,
+  TECH_LOSS_WEAK_PCT_MIN: 0.60,
+  TECH_LOSS_WEAK_PCT_MAX: 0.70,
+  TECH_LOSS_STRONG_PCT_MIN: 0.20,
+  TECH_LOSS_STRONG_PCT_MAX: 0.30,
+};
 const MK_COST_MULT = [0, 3, 6];
 
 // Новая система цехов:
@@ -537,6 +603,16 @@ const BUILDING_BY_ID = Object.fromEntries(
   [...INCOME_BUILDINGS.map(b => [b.id, { ...b, kind: 'income' }]),
    ...DEFENSE_BUILDINGS.map(b => [b.id, { ...b, kind: 'defense' }])]
 );
+// Прочность построек для расчёта урона ракет (отдельно от боевой защиты def).
+// Бункер = 30 прочности, дальше растёт по списку — более «продвинутые»
+// постройки прочнее. Один объект постройки = одна единица прочности
+// в расчёте «сколько построек уничтожит ракета».
+(function assignBuildingHp() {
+  // Прочность считается раздельно для каждой категории — бункер (первая
+  // защитная постройка) = 30 прочности, как и просил пользователь.
+  INCOME_BUILDINGS.forEach((b, i) => { BUILDING_BY_ID[b.id].hp = 30 + i * 2; });
+  DEFENSE_BUILDINGS.forEach((b, i) => { BUILDING_BY_ID[b.id].hp = 30 + i * 2; });
+})();
 // Рост цены при покупке КАЖДОЙ копии того же типа постройки
 const BUILDING_PRICE_GROWTH = { income: 1.025, defense: 1.015 };
 const BUILDING_DEF_POWER = 1;
@@ -747,24 +823,37 @@ const CLUB = {
 
 // ---------- ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ----------
 // 9 заданий, обнуляются каждые сутки в 00:00 UTC.
+// Базовые требования (target) увеличены в 10 раз относительно прежней
+// версии, и дополнительно растут с уровнем игрока через questTarget().
 // За каждое: опыт + деньги (масштабируются с уровнем игрока).
 // За выполнение ВСЕХ 9 — бонус 100 золота.
 const DAILY_QUESTS = [
-  { id: 'attack',     name: 'Совершить 10 атак',                 counter: 'attacks',       target: 10, icon: '⚔' },
-  { id: 'win',        name: 'Победить в 5 боях',                 counter: 'wins',          target: 5,  icon: '🏆' },
-  { id: 'mission',    name: 'Выполнить 3 шага спецоперации',     counter: 'missionStages', target: 3,  icon: '📋' },
-  { id: 'buy_unit',   name: 'Купить 5 единиц техники',           counter: 'unitsBought',   target: 5,  icon: '🚜' },
-  { id: 'build',      name: 'Построить 2 здания',                counter: 'buildingsBuilt', target: 2, icon: '🏗' },
-  { id: 'deposit',    name: 'Положить $50 000 в банк',           counter: 'bankDeposited', target: 50000, icon: '🏦' },
-  { id: 'club',       name: 'Сыграть 1 раз в Клубе офицеров',    counter: 'clubPlayed',    target: 1,  icon: '🎲' },
-  { id: 'market',     name: 'Купить что-нибудь на чёрном рынке', counter: 'marketBought',  target: 1,  icon: '💣' },
-  { id: 'fatality',   name: 'Совершить 1 фаталити',              counter: 'fatalities',    target: 1,  icon: '💀' },
+  { id: 'attack',     name: 'Совершить атаки',                   counter: 'attacks',       target: 100, icon: '⚔' },
+  { id: 'win',        name: 'Победить в боях',                   counter: 'wins',          target: 50,  icon: '🏆' },
+  { id: 'mission',    name: 'Выполнить шаги спецоперации',       counter: 'missionStages', target: 30,  icon: '📋' },
+  { id: 'buy_unit',   name: 'Купить единиц техники',             counter: 'unitsBought',   target: 50,  icon: '🚜' },
+  { id: 'build',      name: 'Построить зданий',                  counter: 'buildingsBuilt', target: 20, icon: '🏗' },
+  { id: 'deposit',    name: 'Положить в банк',                   counter: 'bankDeposited', target: 500000, icon: '🏦' },
+  { id: 'club',       name: 'Сыграть в Клубе офицеров',          counter: 'clubPlayed',    target: 10, icon: '🎲' },
+  { id: 'market',     name: 'Купить на чёрном рынке',            counter: 'marketBought',  target: 10, icon: '💣' },
+  { id: 'fatality',   name: 'Совершить фаталити',                counter: 'fatalities',    target: 10, icon: '💀' },
 ];
 
-// Награда за одно задание (масштабируется с уровнем игрока)
+// Требование задания растёт с уровнем игрока: на 1 уровне — базовое
+// значение, на 300 уровне — примерно в 4 раза больше базового
+// (плавный рост, чтобы не становилось невозможным на старте и не было
+// слишком лёгким на поздних уровнях).
+function dailyQuestTarget(baseTarget, level) {
+  const growth = 1 + Math.min(3, (level - 1) / 100); // 1x на ур.1 → 4x на ур.300
+  return Math.max(baseTarget, Math.round(baseTarget * growth));
+}
+
+// Награда за одно задание (масштабируется с уровнем игрока).
+// Опыт снижен в 15 раз относительно прежней версии — ежедневные задания
+// больше не основной источник опыта, упор на бои и спецоперации.
 function dailyQuestReward(level) {
   return {
-    xp: 50 + level * 5,
+    xp: Math.max(1, Math.round((50 + level * 5) / 15)),
     dollars: 5000 * level,
   };
 }
@@ -779,7 +868,7 @@ const DAILY_ALL_BONUS_GOLD = 100;
 const TROPHIES = [
   { id: 'medal',     name: 'Медаль «За отвагу»',          desc: '+2% к атаке за уровень (макс. 20%).',                  perLvl: 2,   apply: 'atk',     expensive: true },
   { id: 'shield',    name: 'Орден «Стальной щит»',        desc: '+2% к защите за уровень (макс. 20%).',                 perLvl: 2,   apply: 'def',     expensive: true },
-  { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает крит: на макс. уровне общий множитель урона при крите ×3.0 (т.е. +200% к обычному урону).', perLvl: 17,  apply: 'crit',    expensive: true },
+  { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает крит: на макс. уровне крит-множитель ×4.5 (база ×1.5 +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
   { id: 'sewing',    name: 'Набор швеи',                  desc: 'Шанс пришить ухо +4% за уровень (макс. 40%). (заглушка)', perLvl: 4, flavor: true },
@@ -823,8 +912,8 @@ const ACH_GOLD =    [0,    0,     5,      15,      40];
 const ALLIANCE = {
   CREATE_COST: 1000000,  // создание $1 млн
   MIN_LEVEL: 8,          // минимальный уровень для создания
-  BASE_CAPACITY: 100,    // базово 100 единиц техники в бой
-  PER_MEMBER: 10,        // +10 за каждого человека в альянсе
+  BASE_CAPACITY: 10,     // минимум 10 ед. обычной техники даже без альянса
+  PER_MEMBER: 10,        // +10 единиц обычной техники за каждого человека в альянсе
   MEMBERS_PER_LEVEL: 10, // максимум членов альянса = уровень лидера × 10
 };
 // ---------- ЛЕГИОН (клан: казна, общие постройки, войны клан-на-клан) ----------
@@ -858,8 +947,8 @@ const LEGION_BUILDING_BY_ID = Object.fromEntries(LEGION_BUILDINGS.map(b => [b.id
 const BATTLE = {
   XP_WIN_MIN: 4,  XP_WIN_MAX: 7,
   XP_LOSS_MIN: 1, XP_LOSS_MAX: 2,
-  CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.01, CRIT_MAX: 0.55, CRIT_MULT: 1.3,
-  DODGE_PER_AGILITY: 0.0075, DODGE_MAX: 0.4, DODGE_REDUCE: 0.55,
+  CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.005, CRIT_MAX_CHANCE: 0.50, CRIT_MULT: 1.5,
+  DODGE_PER_AGILITY: 0.005, DODGE_MAX: 0.50,
   LOOT_PCT: 0.07,            // снижено с 10% до 7% — фарм невыгоден
   DEF_LOOT_SOFT: 1200,
   DEF_LOSS_SOFT: 1500,
@@ -917,7 +1006,7 @@ const MAIL = { KEEP: 100, MAX_LEN: 2000 };
 module.exports = {
   PLAYER, SKILL_COSTS, REGEN, xpToNext,
   COUNTRIES, COUNTRY_BY_ID, RANKS,
-  UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, minUnitPriceAtLevel, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN,
+  UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, minUnitPriceAtLevel, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN, MINE, SILO,
   INCOME_BUILDINGS, DEFENSE_BUILDINGS, BUILDING_BY_ID, BUILDING_PRICE_GROWTH, BUILDING_DEF_POWER, INCOME_PERIOD_MS,
   CONFLICTS, CONFLICT_BY_ID, MISSION_STEP,
   STORY_PROLOGUE, TUTORIAL, TUTORIAL_FINAL_GOLD, STORY_EPILOGUE,
@@ -926,7 +1015,7 @@ module.exports = {
   COMMANDERS, AUCTION,
   RIDDLES, CLUB,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
-  DAILY_QUESTS, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
+  DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID, BATTLE, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,

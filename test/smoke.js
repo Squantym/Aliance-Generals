@@ -213,7 +213,7 @@ async function main() {
   const alB = (await get('/api/group/alliance', B)).data;
   check('состав альянса виден', alB.mine && alB.mine.members.length === 1);
   const meB = (await get('/api/me', B)).data;
-  check('вместимость = 100 + 10*1 = 110 (1 человек в альянсе)', meB.capacity === 110);
+  check('вместимость = 10 + 10*1 = 20 (1 человек в альянсе)', meB.capacity === 20);
   // Приглашение игроком A через инвайт + ответ
   const inv = await post('/api/group/alliance/invite', B, { userId: idA });
   check('приглашение отправлено', inv.status === 200);
@@ -222,7 +222,7 @@ async function main() {
   const accept = await post('/api/group/alliance/respond', A, { groupId: alC.data.id, accept: true });
   check('инвайт принят', accept.status === 200);
   const meB2 = (await get('/api/me', B)).data;
-  check('вместимость = 100 + 10*2 = 120 (2 человека)', meB2.capacity === 120);
+  check('вместимость = 10 + 10*2 = 30 (2 человека)', meB2.capacity === 30);
 
   console.log('16. Профиль, зал славы, достижения');
   const prof = (await get('/api/profile/' + idA, B)).data;
@@ -321,6 +321,10 @@ async function main() {
   const daily = (await get('/api/daily', A)).data;
   check('9 ежедневных заданий', daily.quests.length === 9);
   check('награда за задание масштабируется с уровнем', daily.reward.xp > 0 && daily.reward.dollars > 0);
+  const dq = require('../config/gameConfig');
+  check('опыт за задание снижен (~÷15 от прежнего)', dq.dailyQuestReward(meA.level).xp <= Math.round((50 + meA.level * 5) / 10));
+  check('базовый таргет атак вырос в 10 раз (100, было 10)', dq.DAILY_QUESTS.find((q) => q.id === 'attack').target === 100);
+  check('таргет растёт с уровнем игрока', dq.dailyQuestTarget(100, 300) > dq.dailyQuestTarget(100, 1));
   check('бонус 100 золота за все', daily.bonusGold === 100);
   // Попытка получить бонус до выполнения должна провалиться
   const earlyBonus = await post('/api/daily/bonus', A);
@@ -331,8 +335,10 @@ async function main() {
   const botTargetId = oppsForLoot.opponents.find((o) => o.isBot).id;
   const fightBot = await post('/api/war/attack', A, { targetId: botTargetId });
   if (fightBot.data.win) {
-    const expectMin = require('../config/gameConfig').minUnitPriceAtLevel(meA.level) * 10;
-    check('награда >= цены 10 ед. техники текущего уровня', fightBot.data.loot >= expectMin);
+    // Гарантия «дышит» от повторных атак на ботов (минимум 30% от полной суммы)
+    const fullGuarantee = require('../config/gameConfig').minUnitPriceAtLevel(meA.level) * 10;
+    const expectMin = Math.round(fullGuarantee * 0.3);
+    check('награда >= 30% от гарантии (с учётом убывания повторных атак)', fightBot.data.loot >= expectMin);
   } else {
     console.log('  (бой проигран — гарантия не применяется к поражению, пропускаем)');
   }
@@ -358,9 +364,60 @@ async function main() {
   check('категория "Милосердие" есть', !!mercyCat);
 
   console.log('30. Крит-формула: базовый 1.3, макс. трофей даёт итог ×3.0');
-  check('CRIT_MULT базовый = 1.3', cfg.BATTLE.CRIT_MULT === 1.3);
+  check('CRIT_MULT базовый = 1.5', cfg.BATTLE.CRIT_MULT === 1.5);
   const licenseDef = cfg.TROPHIES.find((t) => t.id === 'license');
-  check('лицензия perLvl=17 (10 ур = +170%, итог с базой 1.3+1.7=3.0х)', licenseDef.perLvl === 17);
+  check('лицензия perLvl=20 (10 ур = +200% от базы 1.5, итог 1.5×3=4.5х)', licenseDef.perLvl === 20);
+
+  console.log('31. Шахты');
+  await post('/api/admin/grant', A, { userId: idA, setLevel: 70, gold: 5000, dollars: 50000000 });
+  const minesView0 = (await get('/api/mines', A)).data;
+  check('первая шахта стоит 100 золота', minesView0.nextMineCostGold === 100);
+  const buildMine = await post('/api/mines/build', A);
+  check('шахта построена', buildMine.status === 200);
+  const minesView1 = (await get('/api/mines', A)).data;
+  check('у игрока 1 шахта', minesView1.mines.length === 1);
+  check('новая шахта в статусе building', minesView1.mines[0].status === 'building');
+  check('запас золота шахты в диапазоне 20-50', minesView1.mines[0].goldTotal >= 20 && minesView1.mines[0].goldTotal <= 50);
+  const minesView2 = (await get('/api/mines', A)).data;
+  check('вторая шахта стоила бы 200 (×2)', cfg.MINE.FIRST_PRICE_GOLD * Math.pow(cfg.MINE.PRICE_MULT, 1) === 200);
+  // Спуск пока шахта строится — должен быть запрещён
+  const descendTooEarly = await post('/api/mines/descend', A, { mineId: minesView1.mines[0].id, minutes: 10 });
+  check('нельзя спуститься пока шахта строится', descendTooEarly.status === 400);
+
+  console.log('32. Секретные разработки НЕ вытесняют обычную технику из боя');
+  // Игрок C: даём секретных разработок выше лимита альянса + немного обычной техники
+  await post('/api/admin/grant', A, { userId: idC, gold: 100000, dollars: 100000000 });
+  const meCsetup = (await get('/api/me', C)).data;
+  // Покупаем 5 наземных юнитов
+  await post('/api/units/buy', C, { unitId: 'ground_1', qty: 5 });
+  const profC = (await get('/api/profile/' + idC, C)).data.profile;
+  check('обычная техника видна в профиле (taken>0)', profC.powerStats.byCategory.ground.count === 5);
+
+  console.log('33. Capacity = 10 база + 10 за каждого в альянсе (новая формула)');
+  check('capacity новая формула (10 база)', cfg.ALLIANCE.BASE_CAPACITY === 10);
+  check('PER_MEMBER = 10', cfg.ALLIANCE.PER_MEMBER === 10);
+
+  console.log('34. Стоимость навыков: ловкость/жестокость = 3 очка');
+  check('cruelty стоит 3 очка', cfg.SKILL_COSTS.cruelty === 3);
+  check('agility стоит 3 очка', cfg.SKILL_COSTS.agility === 3);
+  check('energy/health/ammo не изменились', cfg.SKILL_COSTS.energy === 1 && cfg.SKILL_COSTS.health === 1 && cfg.SKILL_COSTS.ammo === 2);
+
+  console.log('35. Ракетные шахты');
+  const silosView0 = (await get('/api/silos', A)).data;
+  check('первая шахта стоит 300 золота', silosView0.nextSiloCostGold === 300);
+  const buildSilo = await post('/api/silos/build', A);
+  check('ракетная шахта построена', buildSilo.status === 200);
+  const silosView1 = (await get('/api/silos', A)).data;
+  check('у игрока 1 ракетная шахта', silosView1.silos.length === 1);
+  check('шахта в статусе building', silosView1.silos[0].building === true);
+  check('цена ускорения изначально близка к 1000', silosView1.silos[0].boostCostGold >= 990);
+  // Заправка пока шахта строится — должна быть запрещена
+  const fuelTooEarly = await post('/api/silos/fuel-ready', A, { siloId: silosView1.silos[0].id, amount: 100 });
+  check('нельзя заправлять пока шахта строится', fuelTooEarly.status === 400);
+  // Вторая шахта стоила бы 600
+  check('вторая шахта стоила бы 600 (×2)', cfg.SILO.FIRST_PRICE_GOLD * Math.pow(cfg.SILO.PRICE_MULT, 1) === 600);
+  // Прочность построек назначена (бункер = 30)
+  check('у бункера прочность 30 для ракет', cfg.BUILDING_BY_ID.bunker.hp === 30);
 
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);

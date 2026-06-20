@@ -15,6 +15,8 @@ const units = require('./services/units');
 const buildings = require('./services/buildings');
 const market = require('./services/market');
 const production = require('./services/production');
+const mines = require('./services/mines');
+const silos = require('./services/silos');
 const club = require('./services/club');
 const groups = require('./services/groups');
 const legion = require('./services/legion');
@@ -73,6 +75,12 @@ module.exports = function registerRoutes(app) {
     player.refresh(target);
     return { profile: player.publicProfile(target, req.user) };
   });
+  // Найти игрока по позывному (для выбора цели — например, ракетный удар)
+  app.add('GET', '/api/find-player', (req) => {
+    const found = player.findByName(req.query.name || '');
+    if (!found) return { userId: null };
+    return { userId: found.id, name: found.name };
+  });
 
   // ---------- Война ----------
   app.add('GET', '/api/war/opponents', (req) => battle.opponents(req.user));
@@ -99,6 +107,21 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/production/workshop', act((req, n) => production.buyWorkshop(req.user, n)));
   app.add('POST', '/api/production/start',    act((req, n) => production.startModernization(req.user, req.body, n)));
   app.add('POST', '/api/production/boost',    act((req, n) => production.boostProcess(req.user, req.body.processId, n)));
+
+  // ---------- Шахты ----------
+  app.add('GET',  '/api/mines',              (req) => mines.view(req.user));
+  app.add('POST', '/api/mines/build',        act((req, n) => mines.build(req.user, n)));
+  app.add('POST', '/api/mines/descend',      act((req, n) => mines.descend(req.user, req.body.mineId, req.body.minutes, n)));
+  app.add('POST', '/api/mines/fight',        act((req, n) => mines.fightTerrorists(req.user, req.body.mineId, n)));
+  app.add('POST', '/api/mines/collect',      act((req, n) => mines.collectGold(req.user, req.body.mineId, n)));
+
+  // ---------- Ракетные шахты ----------
+  app.add('GET',  '/api/silos',              (req) => silos.view(req.user));
+  app.add('POST', '/api/silos/build',        act((req, n) => silos.build(req.user, n)));
+  app.add('POST', '/api/silos/boost',        act((req, n) => silos.boost(req.user, req.body.siloId, n)));
+  app.add('POST', '/api/silos/fuel-ready',   act((req, n) => silos.fuelReady(req.user, req.body.siloId, req.body.amount, n)));
+  app.add('POST', '/api/silos/fuel-power',   act((req, n) => silos.fuelPower(req.user, req.body.siloId, req.body.amount, n)));
+  app.add('POST', '/api/silos/launch',       act((req, n) => silos.launch(req.user, req.body.siloId, req.body.targetId, n)));
 
   // ---------- Чёрный рынок ----------
   app.add('GET', '/api/market/items', () => market.itemsList());

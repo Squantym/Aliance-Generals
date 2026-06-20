@@ -150,13 +150,26 @@ App.screens.buildings = async (c, param) => {
 };
 
 // ---------- ПРОИЗВОДСТВО ----------
-App.screens.production = async (c) => {
+App.screens.production = async (c, param) => {
   await App.refreshMe();
+  const tab = param || 'workshops';
+
+  const tabsHtml = `
+    <div class="tabs">
+      <div class="tab ${tab === 'workshops' ? 'active' : ''}" onclick="location.hash='#production/workshops'">🏭 Цехи</div>
+      <div class="tab ${tab === 'mines' ? 'active' : ''}" onclick="location.hash='#production/mines'">⛏ Шахты</div>
+      <div class="tab ${tab === 'silos' ? 'active' : ''}" onclick="location.hash='#production/silos'">🚀 Ракетные шахты</div>
+    </div>`;
+
+  if (tab === 'mines') return App._renderMines(c, tabsHtml);
+  if (tab === 'silos') return App._renderSilos(c, tabsHtml);
+
   const p = await API.get('/api/production');
 
   if (!p.unlocked) {
     c.innerHTML = `
       <div class="title">Производство</div>
+      ${tabsHtml}
       <div class="card center">
         <p style="font-size:40px">🏭🔒</p>
         <p class="mt">Военные заводы доверяют только опытным командирам.</p>
@@ -253,6 +266,7 @@ App.screens.production = async (c) => {
 
   c.innerHTML = `
     <div class="title">Производство</div>
+    ${tabsHtml}
     ${banner}
     ${workshopsBlock}
     ${slotsBlock}
@@ -292,6 +306,254 @@ App.screens.production = async (c) => {
 
   // Автообновление экрана каждые 10 секунд, пока есть активные процессы
   if (p.queue.length > 0) {
+    const timer = setInterval(() => App.rerender(), 10000);
+    App._tear = () => clearInterval(timer);
+  }
+};
+
+// ---------- ШАХТЫ (вкладка внутри Производства) ----------
+App._renderMines = async (c, tabsHtml) => {
+  const m = await API.get('/api/mines');
+
+  if (App.me.level < m.unlockLevel) {
+    c.innerHTML = `
+      <div class="title">Производство</div>
+      ${tabsHtml}
+      <div class="card center">
+        <p style="font-size:40px">⛏🔒</p>
+        <p class="mt">Шахты доверяют только опытным командирам.</p>
+        <p class="gold mt">Раздел откроется на ${m.unlockLevel} уровне (сейчас: ${App.me.level}).</p>
+      </div>`;
+    return;
+  }
+
+  const statusLabel = (s) => ({
+    building: '🏗 Строится', idle: '⛏ Готова к спуску', descending: '⬇ Шахтёры внизу',
+    extracting: '🪙 Золото добывается', collapsed: '💥 Обрушена',
+  }[s] || s);
+
+  const mineCard = (mine) => {
+    let body = '';
+    if (mine.status === 'building') {
+      body = `<p class="muted small mt">Строительство завершится через ${UI.fmtTimer(mine.buildRemainingSec)}</p>`;
+    } else if (mine.status === 'collapsed') {
+      const ready = mine.rebuildReadyAt <= Date.now();
+      body = ready
+        ? `<p class="small mt" style="color:var(--money)">Участок расчищен — можно строить новую шахту.</p>`
+        : `<p class="muted small mt">Восстановление участка: ${UI.fmtTimer(Math.max(0, Math.ceil((mine.rebuildReadyAt - Date.now()) / 1000)))}</p>`;
+    } else if (mine.status === 'descending') {
+      body = `
+        <p class="muted small mt">Шахтёры вернутся через ${UI.fmtTimer(mine.descent.remainingSec)} (спуск на ${mine.descent.minutes} мин.)</p>
+        ${mine.descent.terroristAttack && !mine.descent.terroristResolved ? `
+          <div class="low-hp-banner" style="margin-top:8px;border-radius:4px" data-fight="${mine.id}">
+            ⚠️ Нападение террористов на шахтёров! Реагируйте за ${UI.fmtTimer(mine.descent.terroristRemainingSec)} — нажмите чтобы устранить угрозу.
+          </div>` : ''}`;
+    } else if (mine.status === 'extracting') {
+      const ready = mine.goldReady.remainingSec <= 0;
+      body = ready
+        ? `<button class="btn btn-orange mt" data-collect="${mine.id}">🪙 Забрать золото: +${mine.goldReady.amount}</button>`
+        : `<p class="muted small mt">Золото будет готово через ${UI.fmtTimer(mine.goldReady.remainingSec)} (+${mine.goldReady.amount} 🪙)</p>`;
+    } else if (mine.status === 'idle') {
+      const opts = m.minutesOptions
+        .filter((min) => min <= mine.minutesLeftToday)
+        .map((min) => `<option value="${min}">${min} мин.</option>`).join('');
+      body = mine.minutesLeftToday > 0 ? `
+        <div class="field-row mt">
+          <select id="desc-min-${mine.id}">${opts}</select>
+          <button class="btn btn-orange btn-inline" data-descend="${mine.id}">Спуститься</button>
+        </div>
+        <p class="muted small mt">Доступно сегодня: ${mine.minutesLeftToday} мин. из ${90}</p>` :
+        `<p class="muted small mt" style="color:var(--red)">Дневной лимит спуска исчерпан (90 мин). Возвращайтесь завтра.</p>`;
+    }
+
+    return `
+      <div class="card">
+        <div class="list-row" style="border:none;padding:0">
+          <div class="grow">
+            <div class="name">⛏ Шахта <span class="muted small">№${mine.id.slice(0, 4)}</span></div>
+            <div class="muted small">${statusLabel(mine.status)} · Золото: ${mine.goldLeft} / ${mine.goldTotal}</div>
+          </div>
+        </div>
+        ${body}
+      </div>`;
+  };
+
+  c.innerHTML = `
+    <div class="title">Производство</div>
+    ${tabsHtml}
+    <div class="card">
+      <p class="muted small">Шахта при постройке получает случайный запас золота (20-50). Спуск шахтёров — от 10 до 90 минут, не более 90 мин. в сутки на шахту. Есть шанс не найти золото, а есть риск нападения террористов — нужно успеть среагировать за 10 минут.</p>
+    </div>
+    ${m.mines.length === 0 ? '<div class="card center muted">У вас пока нет шахт.</div>' : ''}
+    ${m.mines.map(mineCard).join('')}
+    <div class="card center">
+      <button class="btn btn-orange" id="mine-build">⛏ Построить шахту: <span class="ic-gold"></span> ${UI.fmtNum(m.nextMineCostGold)} + $${UI.fmtNum(m.nextMineDollars)}</button>
+    </div>`;
+
+  document.getElementById('mine-build').onclick = async () => {
+    try {
+      await API.post('/api/mines/build');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  c.querySelectorAll('[data-descend]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.descend;
+      const minutes = document.getElementById('desc-min-' + id).value;
+      try {
+        await API.post('/api/mines/descend', { mineId: id, minutes });
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  c.querySelectorAll('[data-fight]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await API.post('/api/mines/fight', { mineId: btn.dataset.fight });
+        UI.toast('⚔ Угроза устранена!');
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  c.querySelectorAll('[data-collect]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        const r = await API.post('/api/mines/collect', { mineId: btn.dataset.collect });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+
+  // Автообновление, пока есть активные процессы (спуск, добыча, постройка)
+  const hasActive = m.mines.some((x) => ['building', 'descending', 'extracting'].includes(x.status));
+  if (hasActive) {
+    const timer = setInterval(() => App.rerender(), 10000);
+    App._tear = () => clearInterval(timer);
+  }
+};
+
+// ---------- РАКЕТНЫЕ ШАХТЫ (вкладка внутри Производства) ----------
+App._renderSilos = async (c, tabsHtml) => {
+  const s = await API.get('/api/silos');
+
+  if (App.me.level < s.unlockLevel) {
+    c.innerHTML = `
+      <div class="title">Производство</div>
+      ${tabsHtml}
+      <div class="card center">
+        <p style="font-size:40px">🚀🔒</p>
+        <p class="mt">Ракетные шахты доверяют только опытным командирам.</p>
+        <p class="gold mt">Раздел откроется на ${s.unlockLevel} уровне (сейчас: ${App.me.level}).</p>
+      </div>`;
+    return;
+  }
+
+  const siloCard = (silo) => {
+    let body = '';
+    if (silo.building) {
+      body = `
+        <p class="muted small mt">Готовность ракеты через ${UI.fmtTimer(silo.buildRemainingSec)}</p>
+        <button class="btn btn-orange btn-inline mt" data-boost="${silo.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(silo.boostCostGold)}</button>`;
+    } else {
+      body = `
+        <div class="mt">
+          <p class="small">🔋 Готовность: ${silo.readyEnergy} / ${silo.readyNeeded} энергии</p>
+          ${UI.bar(silo.readyEnergy, silo.readyNeeded, 'en')}
+        </div>
+        <div class="mt">
+          <p class="small">💪 Мощность: ${silo.powerAmmo} / ${silo.powerNeeded} боеприпасов (урон: ${UI.fmtNum(silo.estimatedDamage)})</p>
+          ${UI.bar(silo.powerAmmo, silo.powerNeeded, 'am')}
+        </div>
+        <div class="field-row mt">
+          <input type="number" id="fuel-en-${silo.id}" placeholder="Энергия" min="1" style="width:90px">
+          <button class="btn btn-inline" data-fuel-ready="${silo.id}">Залить энергию</button>
+        </div>
+        <div class="field-row mt">
+          <input type="number" id="fuel-am-${silo.id}" placeholder="Боеприпасы" min="1" style="width:90px">
+          <button class="btn btn-inline" data-fuel-power="${silo.id}">Залить боеприпасы</button>
+        </div>
+        ${silo.canLaunch
+          ? `<button class="btn btn-red mt" data-launch="${silo.id}" style="width:100%">🚀 Запустить ракету по цели</button>`
+          : `<p class="muted small mt center">Заполните шкалу готовности до 100% для запуска</p>`}`;
+    }
+    return `
+      <div class="card">
+        <div class="name">🚀 Ракетная шахта <span class="muted small">№${silo.id.slice(0, 4)}</span></div>
+        ${body}
+      </div>`;
+  };
+
+  c.innerHTML = `
+    <div class="title">Производство</div>
+    ${tabsHtml}
+    <div class="card">
+      <p class="muted small">Ракета заправляется энергией (готовность, нужно 3000) и боеприпасами (мощность, нужно 1000). Запуск возможен только при полной готовности — урон зависит от текущей мощности (макс. 3000 урона). Ракета разрушает постройки и технику цели.</p>
+    </div>
+    ${s.silos.length === 0 ? '<div class="card center muted">У вас пока нет ракетных шахт.</div>' : ''}
+    ${s.silos.map(siloCard).join('')}
+    <div class="card center">
+      <button class="btn btn-orange" id="silo-build">🚀 Построить ракетную шахту: <span class="ic-gold"></span> ${UI.fmtNum(s.nextSiloCostGold)}</button>
+    </div>`;
+
+  document.getElementById('silo-build').onclick = async () => {
+    try {
+      await API.post('/api/silos/build');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  c.querySelectorAll('[data-boost]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await API.post('/api/silos/boost', { siloId: btn.dataset.boost });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  c.querySelectorAll('[data-fuel-ready]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.fuelReady;
+      const amount = document.getElementById('fuel-en-' + id).value;
+      try {
+        await API.post('/api/silos/fuel-ready', { siloId: id, amount });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  c.querySelectorAll('[data-fuel-power]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.fuelPower;
+      const amount = document.getElementById('fuel-am-' + id).value;
+      try {
+        await API.post('/api/silos/fuel-power', { siloId: id, amount });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  c.querySelectorAll('[data-launch]').forEach((btn) => {
+    btn.onclick = async () => {
+      const targetName = prompt('Введите позывной цели для ракетного удара:');
+      if (!targetName) return;
+      try {
+        // Находим ID цели по имени через поиск в админке-подобный публичный поиск
+        const found = await API.get('/api/find-player?name=' + encodeURIComponent(targetName));
+        if (!found.userId) { UI.toast('⛔ Игрок не найден'); return; }
+        if (!confirm(`Запустить ракету по «${targetName}»? Это нанесёт урон постройкам и технике цели.`)) return;
+        const r = await API.post('/api/silos/launch', { siloId: btn.dataset.launch, targetId: found.userId });
+        UI.toast(`🚀 Удар нанесён! Урон: ${r.damage}`);
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+
+  const hasActive = s.silos.some((x) => x.building);
+  if (hasActive) {
     const timer = setInterval(() => App.rerender(), 10000);
     App._tear = () => clearInterval(timer);
   }
