@@ -10,6 +10,7 @@ const path = require('path');
 const db = require('./db');
 const auditLog = require('../services/auditLog');
 const logTranslate = require('../services/logTranslate');
+const assetHash = require('./assetHash');
 const { ApiError } = require('./utils');
 
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
@@ -20,8 +21,23 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
+
+// Срок кеширования в браузере игрока по типу файла (в секундах).
+// Картинки и сторонние шрифты не меняются часто — кешируем надолго.
+// HTML — главная точка входа SPA, должен обновляться сразу после деплоя,
+// поэтому кешируем его на минимальный срок (или вообще не кешируем).
+function cacheControlFor(ext) {
+  if (['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico'].includes(ext)) {
+    return 'public, max-age=2592000, immutable'; // 30 дней — картинки статичны
+  }
+  if (['.css', '.js'].includes(ext)) {
+    return 'public, max-age=86400'; // 1 день — на случай если поправим стиль/код
+  }
+  return 'no-cache'; // .html и всё остальное — всегда проверять у сервера
+}
 
 // Сопоставление пути запроса с шаблоном маршрута ('/api/profile/:id')
 function matchRoute(pattern, pathname) {
@@ -65,8 +81,26 @@ function serveStatic(res, urlPath) {
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Не найдено'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-    res.end(data);
+    const ext = path.extname(filePath);
+
+    // Для HTML — подставляем хэш-версию в каждую ссылку на /css/*.css
+    // и /js/*.js, чтобы браузер сразу подхватывал изменённые файлы,
+    // не дожидаясь истечения их собственного кеша (см. assetHash.js).
+    let body = data;
+    if (ext === '.html') {
+      const html = data.toString('utf8');
+      const replaced = html.replace(
+        /(["'])(\/(?:css|js)\/[^"'?]+\.(?:css|js))\1/g,
+        (full, quote, relPath) => `${quote}${assetHash.versioned(relPath)}${quote}`
+      );
+      body = Buffer.from(replaced, 'utf8');
+    }
+
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': cacheControlFor(ext),
+    });
+    res.end(body);
   });
 }
 
