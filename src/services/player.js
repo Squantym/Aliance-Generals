@@ -529,6 +529,19 @@ function refresh(user) {
   if (!user.secretDevs || typeof user.secretDevs !== 'object') user.secretDevs = {};
   if (user.superSecret === undefined || user.superSecret === null) user.superSecret = 0;
 
+  // Миграция: если у игрока есть сверхсекретные, но нет обычных разработок —
+  // восстанавливаем минимальный набор (superSecret штук каждой), чтобы коллекция
+  // отображалась корректно. Сверхсекретная выдаётся за полный комплект из 9 разных.
+  if (user.superSecret > 0) {
+    const allDevIds = config.SECRET_DEVS.map(d => d.id);
+    const hasAny = allDevIds.some(id => (user.secretDevs[id] || 0) > 0);
+    if (!hasAny) {
+      for (const id of allDevIds) {
+        user.secretDevs[id] = user.superSecret;
+      }
+    }
+  }
+
   user.counters.level = user.level;
 }
 

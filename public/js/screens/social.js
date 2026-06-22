@@ -512,7 +512,6 @@ async function renderGroupScreen(c, kind) {
         })();
 
         // ── Казначейство ──────────────────────────────────────────────
-        const lb_glory = require('./legionBattle'); // только в Node — во фронте используем данные из L
         const gloryNext = L.gloryNextLevel;
         const treasuryTab = `
           <div class="card">
