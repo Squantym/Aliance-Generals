@@ -219,7 +219,7 @@ function buildArmy(user, mode) {
   // распространяется лимит альянса (capacity). Они участвуют в бою
   // ВСЕГДА полностью, независимо от размера альянса игрока.
   for (const dev of config.SECRET_DEVS) {
-    const n = user.secretDevs[dev.id] || 0;
+    const n = (user.secretDevs || {})[dev.id] || 0;
     if (n > 0) {
       secretEntries.push({
         name: dev.name, count: n, secret: true,
@@ -390,6 +390,8 @@ function ensureUnit(user, unitId) {
 // «Абсолют» выдаётся за каждый ПОЛНЫЙ комплект из 9 разных разработок.
 // Комплекты не сгорают: 10 штук каждого вида = 10 «Абсолютов».
 function syncSuper(user, notices) {
+  if (!user.secretDevs || typeof user.secretDevs !== 'object') user.secretDevs = {};
+  if (!user.superSecret) user.superSecret = 0;
   let minCount = Infinity;
   for (const dev of config.SECRET_DEVS) {
     minCount = Math.min(minCount, user.secretDevs[dev.id] || 0);
@@ -522,6 +524,11 @@ function refresh(user) {
     if (user.trophies[t.id] === undefined) user.trophies[t.id] = 0;
   }
   if (!user.club) user.club = {};
+
+  // Миграция: поля секретных разработок (могут отсутствовать у старых аккаунтов)
+  if (!user.secretDevs || typeof user.secretDevs !== 'object') user.secretDevs = {};
+  if (user.superSecret === undefined || user.superSecret === null) user.superSecret = 0;
+
   user.counters.level = user.level;
 }
 
@@ -779,7 +786,7 @@ function publicProfile(target, viewer) {
     })
     .filter(Boolean);
   const devsList = config.SECRET_DEVS
-    .map((d) => ({ name: d.name, count: target.secretDevs[d.id] || 0 }))
+    .map((d) => ({ name: d.name, count: (target.secretDevs || {})[d.id] || 0 }))
     .filter((d) => d.count > 0);
 
   const country = config.COUNTRY_BY_ID[target.country];

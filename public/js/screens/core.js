@@ -178,7 +178,26 @@ App.screens.home = async (c) => {
     ['settings', '⚙', 'Настройки', ''],
   ];
 
+  // Вызов легиона — баннер для лидера клана (висит до истечения 5 минут)
+  let legionChallengeBanner = '';
+  try {
+    if (m.legionId) {
+      const lgd = await API.get('/api/legion');
+      const LC = lgd.mine && lgd.mine.challenge;
+      if (LC && LC.role === 'challenged' && LC.secondsLeft > 0) {
+        legionChallengeBanner = `
+          <div class="card" style="border:2px solid var(--red);background:rgba(220,50,50,.08)">
+            <div class="name" style="color:var(--red)">⚔️ ВЫЗОВ НА БОЙ!</div>
+            <p class="small mt">Легион <b>${UI.esc(LC.enemyName)}</b> вызывает ваш клан на бой!</p>
+            <div class="kv mt"><span class="k">Осталось</span><span class="v" id="lcg-timer">${UI.fmtTimer(LC.secondsLeft)}</span></div>
+            <button class="btn btn-green mt" onclick="App.go('legion')">Принять / отклонить →</button>
+          </div>`;
+      }
+    }
+  } catch(e) {}
+
   c.innerHTML = `
+    ${legionChallengeBanner}
     ${fatalityHtml}
     ${majorHtml}
     <div class="menu-grid">
@@ -199,6 +218,17 @@ App.screens.home = async (c) => {
       <div class="kv"><span class="k">⏱ Выплата через</span><span class="v">${UI.fmtTimer(m.nextPayoutSec)}</span></div>
     </div>
     <p class="center muted small">© generals-game · сделано в учебных целях</p>`;
+
+  // Обратный отсчёт таймера вызова на главном экране
+  const lcgTimer = document.getElementById('lcg-timer');
+  if (lcgTimer) {
+    let secs = parseInt(lcgTimer.textContent) || 0;
+    const lcgT = setInterval(() => {
+      secs--;
+      if (secs <= 0) { clearInterval(lcgT); App.rerender(); return; }
+      lcgTimer.textContent = UI.fmtTimer(secs);
+    }, 1000);
+  }
 };
 
 // ---------- ПРОФИЛЬ (свой или чужой: #profile/ид) ----------
@@ -213,8 +243,8 @@ App.screens.profile = async (c, param) => {
     : '<p class="muted">Ангар не разглашается.</p>';
 
   const devsHtml = (!isBot && (p.secretDevs && p.secretDevs.length || p.superSecret))
-    ? p.secretDevs.map((x) => `<div class="kv"><span class="k">${UI.esc(x.name)}</span><span class="v">×${x.count}</span></div>`).join('') +
-      (p.superSecret ? `<div class="kv"><span class="k gold">🛸 Сверхсекретная «Абсолют»</span><span class="v gold">×${p.superSecret}</span></div>` : '')
+    ? (p.secretDevs || []).map((x) => `<div class="kv"><span class="k">${UI.esc(x.name)}</span><span class="v">×${x.count}</span></div>`).join('') +
+      (p.superSecret ? `<div class="kv"><span class="k gold">🛸 Межконтинентальный ядерный комплекс «Диктатор»</span><span class="v gold">×${p.superSecret}</span></div>` : '')
     : '<p class="muted">Секретных разработок нет.</p>';
 
   const buildingsHtml = (!isBot && p.buildings && p.buildings.length)

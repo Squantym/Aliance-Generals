@@ -776,8 +776,8 @@ const SECRET_DEVS = [
 ];
 const SECRET_DEV_BY_ID = Object.fromEntries(SECRET_DEVS.map(d => [d.id, d]));
 
-// Сверхсекретная «Проект Zero «Судный день»»
-const SUPER_DEV = { id: 'zero_judgement', name: 'Проект Zero «Судный день»', atk: 23000, def: 21000 };
+// Сверхсекретная «Межконтинентальный ядерный комплекс «Диктатор»»
+const SUPER_DEV = { id: 'zero_judgement', name: 'Межконтинентальный ядерный комплекс «Диктатор»', atk: 23000, def: 21000 };
 
 // Расчёт текущей атаки/защиты секретной разработки для конкретного игрока:
 //   до 50 уровня — базовое значение,
@@ -923,16 +923,361 @@ const ALLIANCE = {
 const LEGION = {
   CREATE_COST: 100000000000000, // $100 трлн (100 Tr)
   MIN_LEVEL: 50,                // минимальный уровень для создания
-  MAX_BUILDING_LEVEL: 5,        // потолок уровня каждой клановой постройки
+  MAX_BUILDING_LEVEL: 5,        // потолок уровня обычных построек
   WAR_PREPARE_HOURS: 1,         // через час после объявления — автоматическая битва
   WAR_LOOT_PCT: 0.25,           // победитель забирает 25% казны проигравшего
   WAR_XP_WIN: 50,               // опыт каждому победителю
   WAR_XP_LOSS: 15,              // опыт каждому проигравшему
   WAR_COOLDOWN_HOURS: 12,       // нельзя нападать на тот же легион чаще
   BUILDING_PRICE_GROWTH: 1.4,   // следующий уровень в 1.4 раза дороже
+
+  // ---------- Боевые вызовы (новая система) ----------
+  // Слоты времени по МСК (UTC+3): [startHour, endHour] — включительно
+  CHALLENGE_ACCEPT_MS: 5 * 60 * 1000,   // 5 минут на принятие вызова
+  BATTLE_LOOT_KMARKS: 500,              // кланмарки победителю
+  BATTLE_XP_WIN: 200,                   // личный опыт участникам победителя
+  BATTLE_XP_LOSS: 80,
+
+  // ---------- Клановая валюта ----------
+  KMARK_EXCHANGE_RATE: 1000,            // 1 000 $ = 1 кланмарка
+  // «Кланмарки» (сокр. КМ) — клановая валюта «Стальная марка»
+
+  // ---------- Боевые постройки (новые) — цены в кланмарках ----------
+  // Рост цены: x2 для большинства, x3 для 'gear_slots'
+  BATTLE_BUILDING_PRICE_GROWTH_DEFAULT: 2,
+  BATTLE_BUILDING_PRICE_GROWTH_GEAR: 3,
+
+  // ---------- Технологии ----------
+  TECH_BASE_KMARKS: 10000000,           // 10 000 000 КМ — базовая цена изучения
+  TECH_BASE_DAYS: 3,                    // базовое время изучения (дни)
+  TECH_DAYS_GROWTH: 1.5,               // следующий уровень дольше в 1.5 раза
+
+  // ---------- Арсенал / предметы ----------
+  GEAR_SLOTS_DEFAULT: 2,                // по умолчанию 2 предмета в пояс
 };
 
-// Клановые постройки: тип бонуса и сколько процентов за уровень
+// ===================================================================
+// БОЕВЫЕ ПОСТРОЙКИ ЛЕГИОНА
+// Стоимость указана в кланмарках (КМ = Стальная марка).
+// Ресурс: 'ear' = уши, 'token' = жетоны, 'both' = уши + жетоны.
+// earBase / tokenBase — стоимость первого улучшения в ушах/жетонах.
+// Рост: x2 (большинство) или x3 (gear_slots) за каждый следующий уровень.
+// ===================================================================
+const LEGION_BATTLE_BUILDINGS = [
+  {
+    id: 'warcmd',
+    name: '⚔️ Штаб наступления',
+    desc: 'Атака в боях легиона +5% за уровень (макс. +25%).',
+    maxLevel: 5,
+    priceBase: 10000000,   // КМ за ур.1
+    priceGrowth: 2,
+    resource: 'ear',
+    earBase: 60,           // ушей на ур.1
+    earGrowth: 1.5,        // ×1.5 за каждый следующий уровень
+    apply: 'war_atk',
+    perLvl: 5,
+  },
+  {
+    id: 'fortress',
+    name: '🛡️ Бастион',
+    desc: 'Защита в боях легиона +5% за уровень (макс. +25%).',
+    maxLevel: 5,
+    priceBase: 10000000,
+    priceGrowth: 2,
+    resource: 'ear',
+    earBase: 60,
+    earGrowth: 1.5,
+    apply: 'war_def_battle',
+    perLvl: 5,
+  },
+  {
+    id: 'speedlab',
+    name: '⚡ Лаборатория быстродействия',
+    desc: 'Сокращает время действий в боях легиона на 10% за уровень (макс. −50%).',
+    maxLevel: 5,
+    priceBase: 15000000,
+    priceGrowth: 2,
+    resource: 'token',
+    tokenBase: 80,
+    tokenGrowth: 1.5,
+    apply: 'war_speed',
+    perLvl: 10,            // % сокращения
+  },
+  {
+    id: 'gear_slots',
+    name: '🎒 Расширенный боевой пояс',
+    desc: '+1 слот для вспомогательного предмета в бою (макс. +3 слота, итого 5).',
+    maxLevel: 3,
+    priceBase: 10000000,
+    priceGrowth: 3,        // растёт строго в 3 раза
+    resource: 'token',
+    tokenBase: 50,
+    tokenGrowth: 2,        // удваивается
+    apply: 'gear_slots',
+    perLvl: 1,
+  },
+  {
+    id: 'medcorps',
+    name: '🏥 Военно-медицинский корпус',
+    desc: 'Восстановление HP участника в ходе боя легиона ускоряется на 8% за уровень.',
+    maxLevel: 5,
+    priceBase: 12000000,
+    priceGrowth: 2,
+    resource: 'token',
+    tokenBase: 70,
+    tokenGrowth: 1.5,
+    apply: 'war_heal_speed',
+    perLvl: 8,
+  },
+  {
+    id: 'intel',
+    name: '🔭 Разведывательный центр',
+    desc: 'Перед боем легиона открывает состав армии и снаряжение противников.',
+    maxLevel: 3,
+    priceBase: 20000000,
+    priceGrowth: 2,
+    resource: 'both',
+    earBase: 50,
+    earGrowth: 2,
+    tokenBase: 50,
+    tokenGrowth: 2,
+    apply: 'war_intel',
+    perLvl: 1,             // уровень = глубина разведки
+  },
+  {
+    id: 'supply',
+    name: '🚛 Узел снабжения',
+    desc: 'Пополняет арсенал клана: +5% к запасу каждого предмета за уровень.',
+    maxLevel: 5,
+    priceBase: 8000000,
+    priceGrowth: 2,
+    resource: 'token',
+    tokenBase: 60,
+    tokenGrowth: 1.5,
+    apply: 'arsenal_cap',
+    perLvl: 5,
+  },
+];
+const LEGION_BATTLE_BUILDING_BY_ID = Object.fromEntries(LEGION_BATTLE_BUILDINGS.map(b => [b.id, b]));
+
+// ===================================================================
+// ТЕХНОЛОГИИ ЛЕГИОНА
+// Дерево разделено на две ветки: ECONOMIC и COMBAT.
+// ratingReq — очков рейтинга клана для разблокировки изучения.
+// priceKmarks — кланмарки для изучения.
+// earReq — уши из казначейства для изучения.
+// daysBase — базовое время изучения (дни); умножается на TECH_DAYS_GROWTH^level.
+// ===================================================================
+const LEGION_TECHS = [
+  // ---------- Экономические технологии ----------
+  {
+    id: 'eco_income',
+    branch: 'economic',
+    name: '💰 Военная экономика',
+    desc: 'Доход от построек всех участников клана.',
+    maxLevel: 5,
+    bonusPerLvl: 3,        // +3% к доходу за уровень
+    bonusUnit: '%',
+    apply: 'income_pct',
+    levels: [
+      { level: 1, ratingReq: 0,     priceKmarks: 10000000,  earReq: 100,  daysBase: 3 },
+      { level: 2, ratingReq: 500,   priceKmarks: 20000000,  earReq: 180,  daysBase: 4.5 },
+      { level: 3, ratingReq: 1500,  priceKmarks: 40000000,  earReq: 320,  daysBase: 6.75 },
+      { level: 4, ratingReq: 4000,  priceKmarks: 80000000,  earReq: 570,  daysBase: 10 },
+      { level: 5, ratingReq: 10000, priceKmarks: 160000000, earReq: 1000, daysBase: 15 },
+    ],
+  },
+  {
+    id: 'eco_bank',
+    branch: 'economic',
+    name: '🏦 Клановый банк',
+    desc: 'Снижает комиссию банка для участников клана.',
+    maxLevel: 3,
+    bonusPerLvl: 1,        // −1% комиссии за уровень
+    bonusUnit: '%',
+    apply: 'bank_fee_reduction',
+    levels: [
+      { level: 1, ratingReq: 1000,  priceKmarks: 15000000,  earReq: 150,  daysBase: 3 },
+      { level: 2, ratingReq: 3000,  priceKmarks: 35000000,  earReq: 300,  daysBase: 5 },
+      { level: 3, ratingReq: 8000,  priceKmarks: 80000000,  earReq: 600,  daysBase: 8 },
+    ],
+  },
+  {
+    id: 'eco_loot',
+    branch: 'economic',
+    name: '⚙️ Трофейное дело',
+    desc: 'Грабёж в обычных боях для участников клана.',
+    maxLevel: 4,
+    bonusPerLvl: 2,        // +2% к лoot за уровень
+    bonusUnit: '%',
+    apply: 'loot_pct',
+    levels: [
+      { level: 1, ratingReq: 200,   priceKmarks: 12000000,  earReq: 120,  daysBase: 3 },
+      { level: 2, ratingReq: 1000,  priceKmarks: 25000000,  earReq: 220,  daysBase: 5 },
+      { level: 3, ratingReq: 3000,  priceKmarks: 55000000,  earReq: 400,  daysBase: 8 },
+      { level: 4, ratingReq: 7000,  priceKmarks: 110000000, earReq: 750,  daysBase: 12 },
+    ],
+  },
+  // ---------- Боевые технологии ----------
+  {
+    id: 'com_atk',
+    branch: 'combat',
+    name: '🎯 Тактика прорыва',
+    desc: 'Атака участников клана во всех боях.',
+    maxLevel: 5,
+    bonusPerLvl: 2,        // +2% к атаке за уровень
+    bonusUnit: '%',
+    apply: 'atk_pct',
+    levels: [
+      { level: 1, ratingReq: 0,     priceKmarks: 10000000,  earReq: 100,  daysBase: 3 },
+      { level: 2, ratingReq: 600,   priceKmarks: 22000000,  earReq: 190,  daysBase: 5 },
+      { level: 3, ratingReq: 2000,  priceKmarks: 50000000,  earReq: 350,  daysBase: 7.5 },
+      { level: 4, ratingReq: 5000,  priceKmarks: 110000000, earReq: 630,  daysBase: 11 },
+      { level: 5, ratingReq: 12000, priceKmarks: 240000000, earReq: 1100, daysBase: 16 },
+    ],
+  },
+  {
+    id: 'com_def',
+    branch: 'combat',
+    name: '🏰 Щит братства',
+    desc: 'Защита участников клана во всех боях.',
+    maxLevel: 5,
+    bonusPerLvl: 2,
+    bonusUnit: '%',
+    apply: 'def_pct',
+    levels: [
+      { level: 1, ratingReq: 0,     priceKmarks: 10000000,  earReq: 100,  daysBase: 3 },
+      { level: 2, ratingReq: 600,   priceKmarks: 22000000,  earReq: 190,  daysBase: 5 },
+      { level: 3, ratingReq: 2000,  priceKmarks: 50000000,  earReq: 350,  daysBase: 7.5 },
+      { level: 4, ratingReq: 5000,  priceKmarks: 110000000, earReq: 630,  daysBase: 11 },
+      { level: 5, ratingReq: 12000, priceKmarks: 240000000, earReq: 1100, daysBase: 16 },
+    ],
+  },
+  {
+    id: 'com_crit',
+    branch: 'combat',
+    name: '💥 Доктрина сокрушения',
+    desc: 'Шанс критического удара для участников клана.',
+    maxLevel: 3,
+    bonusPerLvl: 2,        // +2% к крит.шансу за уровень
+    bonusUnit: '%',
+    apply: 'crit_pct',
+    levels: [
+      { level: 1, ratingReq: 800,   priceKmarks: 18000000,  earReq: 160,  daysBase: 4 },
+      { level: 2, ratingReq: 3500,  priceKmarks: 45000000,  earReq: 320,  daysBase: 7 },
+      { level: 3, ratingReq: 9000,  priceKmarks: 120000000, earReq: 700,  daysBase: 12 },
+    ],
+  },
+  {
+    id: 'com_hp',
+    branch: 'combat',
+    name: '❤️ Боевая закалка',
+    desc: 'Максимальное HP участников клана.',
+    maxLevel: 4,
+    bonusPerLvl: 3,        // +3% HP за уровень
+    bonusUnit: '%',
+    apply: 'hp_pct',
+    levels: [
+      { level: 1, ratingReq: 400,   priceKmarks: 14000000,  earReq: 130,  daysBase: 3.5 },
+      { level: 2, ratingReq: 2000,  priceKmarks: 32000000,  earReq: 260,  daysBase: 6 },
+      { level: 3, ratingReq: 6000,  priceKmarks: 75000000,  earReq: 500,  daysBase: 10 },
+      { level: 4, ratingReq: 15000, priceKmarks: 180000000, earReq: 950,  daysBase: 16 },
+    ],
+  },
+];
+const LEGION_TECH_BY_ID = Object.fromEntries(LEGION_TECHS.map(t => [t.id, t]));
+
+// ===================================================================
+// МАГАЗИН КЛАНА — боевые предметы
+// Цена указана в ушах (earCost) или жетонах (tokenCost).
+// ===================================================================
+const LEGION_SHOP_ITEMS = [
+  // ---------- Боевые предметы ----------
+  {
+    id: 'gas_grenade',
+    category: 'combat',
+    name: '💨 Газовая шашка',
+    desc: 'Бросить на противника: запрещает его лечение на 30 секунд.',
+    earCost: 1,
+    effect: { type: 'no_heal', duration: 30 },
+  },
+  {
+    id: 'flashbang',
+    category: 'combat',
+    name: '💥 Светошумовая граната',
+    desc: 'Бросить на противника: обездвиживает его на 20 секунд (никаких действий).',
+    earCost: 1,
+    effect: { type: 'stun', duration: 20 },
+  },
+  {
+    id: 'assault_grenade',
+    category: 'combat',
+    name: '🔴 Наступательная граната',
+    desc: 'Наносит 1000% урона от обычной атаки игрока (с учётом брони).',
+    earCost: 1,
+    effect: { type: 'damage_pct', pct: 1000 },
+  },
+  {
+    id: 'napalm',
+    category: 'combat',
+    name: '🔥 Напалм',
+    desc: 'Действует на всех в направлении: каждые 3 сек снимает 5% HP в течение 15 сек.',
+    earCost: 2,
+    effect: { type: 'dot_aoe', tickPct: 5, tickInterval: 3, duration: 15 },
+  },
+  {
+    id: 'uranium_ammo',
+    category: 'combat',
+    name: '☢️ Боеприпасы с ураном',
+    desc: 'На 30 секунд наносите на 100% больше урона (с учётом брони).',
+    earCost: 2,
+    effect: { type: 'dmg_boost', bonus: 100, duration: 30 },
+  },
+  {
+    id: 'hydrogen_bomb',
+    category: 'combat',
+    name: '💣 Водородная бомба',
+    desc: 'Всем противникам в направлении: мгновенно −20%…−50% HP, игнорируя броню.',
+    earCost: 5,
+    effect: { type: 'aoe_true_dmg', minPct: 20, maxPct: 50 },
+  },
+  // ---------- Вспомогательные предметы ----------
+  {
+    id: 'medkit',
+    category: 'support',
+    name: '🩹 Аптечка',
+    desc: 'Лечит от 20% до 50% максимального HP. Применять на себя или союзника.',
+    tokenCost: 3,
+    effect: { type: 'heal_pct', minPct: 20, maxPct: 50 },
+  },
+  {
+    id: 'dome',
+    category: 'support',
+    name: '🔵 Мобильный защитный купол',
+    desc: 'Игрок получает полный иммунитет к урону на 30 секунд.',
+    tokenCost: 2,
+    effect: { type: 'immunity', duration: 30 },
+  },
+  {
+    id: 'kevlar',
+    category: 'support',
+    name: '🦺 Кевларовые бронеплиты',
+    desc: 'Восстанавливает 50–100% щита защитника. Только для роли «Защитник».',
+    tokenCost: 2,
+    effect: { type: 'restore_shield', minPct: 50, maxPct: 100 },
+  },
+  {
+    id: 'reflect_shield',
+    category: 'support',
+    name: '🪞 Отражающий щит',
+    desc: 'Весь входящий урон перенаправляется на случайного противника на вашем направлении. Длится до первого удара.',
+    tokenCost: 3,
+    effect: { type: 'reflect', duration: 0 },  // duration=0 — до первого удара
+  },
+];
+const LEGION_SHOP_ITEM_BY_ID = Object.fromEntries(LEGION_SHOP_ITEMS.map(i => [i.id, i]));
+
+// Старые клановые постройки (остаются для совместимости)
 const LEGION_BUILDINGS = [
   { id: 'cmd',     name: 'Командный пункт',    desc: 'Атака всех участников +5% за уровень.',          price: 100000000, apply: 'atk',      perLvl: 5 },
   { id: 'shield',  name: 'Щитовая база',        desc: 'Защита всех участников +5% за уровень.',         price: 100000000, apply: 'def',      perLvl: 5 },
@@ -1030,7 +1375,11 @@ module.exports = {
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
   DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
-  ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID, BATTLE, EARS, BOT_NAMES,
+  ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID,
+  LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID,
+  LEGION_TECHS, LEGION_TECH_BY_ID,
+  LEGION_SHOP_ITEMS, LEGION_SHOP_ITEM_BY_ID,
+  BATTLE, EARS, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
 };

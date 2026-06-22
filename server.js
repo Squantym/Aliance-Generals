@@ -39,7 +39,7 @@ async function main() {
   setInterval(() => {
     try {
       market.tick();
-      legion.resolveWars();
+      legion.resolveWars();   // включает resolveTechQueue и очистку вызовов
       db.saveAll();
     } catch (e) {
       console.error('Ошибка фонового тика:', e);

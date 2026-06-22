@@ -186,10 +186,26 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
 
   // ---------- Легион: казна, постройки, кланвойны ----------
-  app.add('GET',  '/api/legion',          (req) => legion.view(req.user));
-  app.add('POST', '/api/legion/deposit',  act((req, n) => legion.deposit(req.user, req.body.amount, n)));
-  app.add('POST', '/api/legion/build',    act((req, n) => legion.build(req.user, req.body.buildingId, n)));
-  app.add('POST', '/api/legion/war',      act((req, n) => legion.declareWar(req.user, req.body.enemyId, n)));
+  app.add('GET',  '/api/legion',                   (req) => legion.view(req.user));
+  app.add('GET',  '/api/legion/battle',             (req) => legion.battleState(req.user));
+  app.add('POST', '/api/legion/deposit',           act((req, n) => legion.deposit(req.user, req.body.amount, n)));
+  app.add('POST', '/api/legion/deposit-resources', act((req, n) => legion.depositResources(req.user, req.body.ears, req.body.tokens, n)));
+  app.add('POST', '/api/legion/exchange',          act((req, n) => legion.exchangeToKmarks(req.user, req.body.dollars, n)));
+  app.add('POST', '/api/legion/build',             act((req, n) => legion.build(req.user, req.body.buildingId, n)));
+  app.add('POST', '/api/legion/build-battle',      act((req, n) => legion.buildBattle(req.user, req.body.buildingId, n)));
+  app.add('POST', '/api/legion/tech/start',        act((req, n) => legion.startTech(req.user, req.body.techId, n)));
+  app.add('POST', '/api/legion/shop/buy',          act((req, n) => legion.shopBuy(req.user, req.body.itemId, req.body.qty, n)));
+  app.add('POST', '/api/legion/gear/pick',         act((req, n) => legion.gearPick(req.user, req.body.itemId, n)));
+  app.add('POST', '/api/legion/challenge',         act((req, n) => legion.challengeLegion(req.user, req.body.enemyId, n)));
+  app.add('POST', '/api/legion/challenge/accept',  act((req, n) => legion.acceptChallenge(req.user, n)));
+  app.add('POST', '/api/legion/challenge/decline', act((req, n) => legion.declineChallenge(req.user, n)));
+  app.add('POST', '/api/legion/war',               act((req, n) => legion.declareWar(req.user, req.body.enemyId, n)));
+  app.add('POST', '/api/legion/battle/join',       act((req, n) => legion.joinBattle(req.user, req.body.role, n)));
+  app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));
+  app.add('POST', '/api/legion/battle/attack',     act((req, n) => legion.attack(req.user, req.body.targetId, n)));
+  app.add('POST', '/api/legion/battle/heal',       act((req, n) => legion.heal(req.user, req.body.targetId, n)));
+  app.add('POST', '/api/legion/battle/guard',      act((req, n) => legion.guard(req.user, req.body.targetId, n)));
+  app.add('POST', '/api/legion/battle/item',       act((req, n) => legion.useItem(req.user, req.body.itemId, req.body.targetId, n)));
 
   // ---------- Чат, почта, зал славы, достижения ----------
   app.add('GET', '/api/chat', (req) => social.chatGet(req.query.after));
