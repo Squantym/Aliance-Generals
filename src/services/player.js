@@ -729,7 +729,7 @@ function powerStats(user) {
     if (count <= 0) continue;
     const a = config.secretAtk(user, d);
     const dd = config.secretDef(user, d);
-    secretLines.push({ name: d.name, count, atkEach: a, defEach: dd, atkTotal: a * count, defTotal: dd * count });
+    secretLines.push({ id: d.id, name: d.name, count, atkEach: a, defEach: dd, atkTotal: a * count, defTotal: dd * count });
     secretAtkSum += a * count;
     secretDefSum += dd * count;
     secretCount += count;
@@ -738,7 +738,7 @@ function powerStats(user) {
     const abs = config.SUPER_DEV;
     const a = config.secretAtk(user, abs);
     const dd = config.secretDef(user, abs);
-    secretLines.push({ name: abs.name, count: user.superSecret, atkEach: a, defEach: dd, atkTotal: a * user.superSecret, defTotal: dd * user.superSecret });
+    secretLines.push({ id: abs.id, name: abs.name, count: user.superSecret, atkEach: a, defEach: dd, atkTotal: a * user.superSecret, defTotal: dd * user.superSecret });
     secretAtkSum += a * user.superSecret;
     secretDefSum += dd * user.superSecret;
     secretCount += user.superSecret;

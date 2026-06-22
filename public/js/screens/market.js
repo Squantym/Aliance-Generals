@@ -71,43 +71,55 @@ App.screens.market = async (c, param) => {
         Шанс 150% = одна гарантированная + 50% на вторую. Полный комплект из 9 разных = бесплатный «Абсолют».</p>
       </div>
       ${data.containers.map((x) => `
-        <div class="card">
-          <div class="name">📦 ${UI.esc(x.name)}</div>
-          <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b> · цена за 1 шт: ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</div>
-          <div class="btn-row mt">
-            <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="1">×1</button>
-            <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="3">×3</button>
-            <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="5">×5</button>
+        <div class="card container-card">
+          <div class="img-frame img-frame-lg">
+            <img src="/img/containers/${x.id}.webp" alt="${UI.esc(x.name)}">
+          </div>
+          <div class="container-card-body">
+            <div class="name">📦 ${UI.esc(x.name)}</div>
+            <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b></div>
+            <div class="muted small">Цена за 1 шт: ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</div>
+            <div class="btn-row mt">
+              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="1">×1</button>
+              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="3">×3</button>
+              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="5">×5</button>
+            </div>
           </div>
         </div>`).join('')}
       <div class="card">
         <div class="title" style="margin-top:0">Ваша коллекция</div>
         ${data.collection.map((d) => `
-          <div class="list-row" style="padding:6px 0">
-            <div class="grow">
-              <span class="${d.count ? 'name' : 'muted'}">${UI.esc(d.name)}</span>
-              <div class="muted small">⚔ ${UI.fmtNum(d.atkNow)} · 🛡 ${UI.fmtNum(d.defNow)}</div>
+          <div class="secret-row ${d.count ? '' : 'secret-row-empty'}">
+            <div class="img-frame img-frame-row">
+              <img src="/img/secret/${d.id}.webp" alt="${UI.esc(d.name)}">
             </div>
-            <span class="${d.count ? 'gold' : 'muted'}">×${d.count}</span>
+            <div class="secret-row-info">
+              <div class="secret-row-name">${UI.esc(d.name)}</div>
+              <div class="muted secret-row-stats">⚔ ${UI.fmtNum(d.atkNow)} · 🛡 ${UI.fmtNum(d.defNow)}</div>
+            </div>
+            <div class="${d.count ? 'gold' : 'muted'} secret-row-count">×${d.count}</div>
           </div>`).join('')}
-        <hr class="hr">
-        <div class="list-row" style="padding:6px 0">
-          <div class="grow">
-            <span class="gold">🛸 ${UI.esc(data.superSecret.name)}</span>
-            <div class="muted small">⚔ ${UI.fmtNum(data.superSecret.atkNow)} · 🛡 ${UI.fmtNum(data.superSecret.defNow)}</div>
+        <div class="secret-row secret-row-super ${data.superSecret.count ? '' : 'secret-row-empty'}">
+          <div class="img-frame img-frame-row img-frame-super">
+            <img src="/img/secret/${data.superSecret.id}.webp" alt="${UI.esc(data.superSecret.name)}">
           </div>
-          <span class="gold">×${data.superSecret.count}</span>
+          <div class="secret-row-info">
+            <div class="secret-row-name gold">🛸 ${UI.esc(data.superSecret.name)}</div>
+            <div class="muted secret-row-stats">⚔ ${UI.fmtNum(data.superSecret.atkNow)} · 🛡 ${UI.fmtNum(data.superSecret.defNow)}</div>
+          </div>
+          <div class="gold secret-row-count">×${data.superSecret.count}</div>
         </div>
       </div>
       <div class="card">
         <div class="title" style="margin-top:0">📜 История последних открытий</div>
         ${history.length === 0 ? '<p class="muted small center">Вы ещё не открывали контейнеры.</p>' : history.map((h) => `
-          <div class="list-row" style="padding:6px 0">
-            <div class="grow">
-              <span class="small">${UI.esc(h.tierName)} ×${h.qty}</span>
-              <div class="muted small">${UI.fmtDate(h.at)} · потрачено 🪙 ${UI.fmtNum(h.spent)}</div>
+          <div class="history-row">
+            <div class="history-row-head">
+              <span class="name small">${UI.esc(h.tierName)} ×${h.qty}</span>
+              <span class="muted small">${UI.fmtDate(h.at)}</span>
             </div>
-            <span class="small">${Object.keys(h.dropped).length ? Object.entries(h.dropped).map(([n, c]) => `${UI.esc(n)}×${c}`).join(', ') : 'пусто'}</span>
+            <div class="muted small">Потрачено: 🪙 ${UI.fmtNum(h.spent)}</div>
+            <div class="small mt">${Object.keys(h.dropped).length ? Object.entries(h.dropped).map(([n, c]) => `${UI.esc(n)} ×${c}`).join(', ') : 'Пусто — ничего не выпало'}</div>
           </div>`).join('')}
       </div>`;
 

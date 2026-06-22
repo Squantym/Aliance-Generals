@@ -293,9 +293,15 @@ App.screens.profile = async (c, param) => {
       <hr class="hr">
       <p class="small mt"><b>Секретные разработки:</b></p>
       ${p.powerStats.secretLines.map((l) => `
-        <div class="kv">
-          <span class="k">${UI.esc(l.name)} <span class="muted small">×${UI.fmtNum(l.count)}</span></span>
-          <span class="v small gold">⚔ ${UI.fmtNum(l.atkTotal)} · 🛡 ${UI.fmtNum(l.defTotal)}</span>
+        <div class="secret-row">
+          <div class="img-frame img-frame-row ${l.id === 'zero_judgement' ? 'img-frame-super' : ''}">
+            <img src="/img/secret/${l.id}.webp" alt="${UI.esc(l.name)}">
+          </div>
+          <div class="secret-row-info">
+            <div class="secret-row-name">${UI.esc(l.name)}</div>
+            <div class="muted secret-row-stats">⚔ ${UI.fmtNum(l.atkTotal)} · 🛡 ${UI.fmtNum(l.defTotal)}</div>
+          </div>
+          <div class="gold secret-row-count">×${UI.fmtNum(l.count)}</div>
         </div>`).join('')}` : ''}
     </div>` : ''}
 

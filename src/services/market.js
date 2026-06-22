@@ -98,6 +98,7 @@ function containersView(user) {
     containers: config.CONTAINERS.map((c) => ({ ...c, gold: containerGold(c), baseGold: c.gold })),
     collection,
     superSecret: {
+      id: config.SUPER_DEV.id,
       name: config.SUPER_DEV.name,
       count: user.superSecret,
       atkBase: config.SUPER_DEV.atk, defBase: config.SUPER_DEV.def,

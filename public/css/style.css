@@ -1636,3 +1636,117 @@ body.theme-aurora .low-hp-banner {
 }
 body.theme-aurora .low-hp-banner b { color: #fdecd6; }
 /* test change */
+
+/* ===================================================================
+   РАМКИ ДЛЯ КАРТИНОК (контейнеры, секретные разработки)
+   Универсальный стиль, не зависящий от темы: лёгкий полупрозрачный фон
+   + тонкая обводка с акцентным цветом темы, чтобы изображение с
+   прозрачным WebP-фоном не сливалось ни со светлым, ни с тёмным фоном.
+   Работает одинаково на всех 6 темах.
+   =================================================================== */
+.img-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(127, 127, 127, .14), rgba(127, 127, 127, .05));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, .12), 0 1px 3px rgba(0, 0, 0, .08);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.img-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.img-frame-xs { width: 32px; height: 32px; border-radius: 6px; }
+.img-frame-sm { width: 64px; height: 64px; }
+.img-frame-row {
+  width: clamp(96px, 26vw, 192px);
+  height: clamp(96px, 26vw, 192px);
+  padding: 10px;
+} /* секретка в строке (слева от текста) — увеличено x2 на широких экранах, адаптивно на мобильных */
+.img-frame-lg  { width: 100%; height: 192px; padding: 14px; }  /* контейнер — крупная картинка сверху — увеличено на 20% */
+
+/* Сверхсекретная разработка — рамка с золотым свечением, чтобы выделялась */
+.img-frame-super {
+  border-color: var(--gold);
+  box-shadow: inset 0 0 14px rgba(232, 184, 90, .18), 0 0 10px rgba(232, 184, 90, .25);
+}
+
+/* ---------- Карточка контейнера чёрного рынка (крупная, заметная) ---------- */
+.container-card {
+  padding: 0;
+  overflow: hidden;
+}
+.container-card .img-frame-lg {
+  border-radius: 12px 12px 0 0;
+  border-left: none; border-right: none; border-top: none;
+}
+.container-card-body { padding: 14px 16px; text-align: left; }
+.container-card-body .name { font-size: 16px; }
+
+/* ---------- Секретные разработки: каждая занимает ОДНУ полную строку,
+   слева крупная картинка, справа название + характеристики + кол-во ---------- */
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, .05);
+  border: 1px solid var(--border-dim);
+  margin-bottom: 10px;
+}
+.secret-row:last-child { margin-bottom: 0; }
+.secret-row-empty { opacity: .55; }
+.secret-row-empty .img-frame { filter: grayscale(1); opacity: .5; }
+.secret-row-info { flex: 1; min-width: 0; }
+.secret-row-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.secret-row-stats { font-size: 13px; }
+.secret-row-count {
+  font-size: 18px; font-weight: 800;
+  min-width: 44px; text-align: right; flex-shrink: 0;
+}
+.secret-row-super {
+  border-color: var(--gold);
+  background: rgba(232, 184, 90, .06);
+}
+
+/* Темнее/контрастнее рамка на очень светлых темах (Аврора), чтобы
+   изображение не «терялось» на бежевом/белом фоне */
+body.theme-aurora .img-frame {
+  background: radial-gradient(ellipse at center, rgba(61, 50, 37, .08), rgba(61, 50, 37, .02));
+  border: 1.5px solid #c9b896;
+  box-shadow: inset 0 0 10px rgba(61, 50, 37, .08), 0 1px 4px rgba(61, 50, 37, .1);
+}
+body.theme-aurora .secret-row {
+  background: rgba(61, 50, 37, .03);
+  border: 1px solid #ddd0b8;
+}
+
+/* На кибер-теме — рамка со свечением в духе HUD */
+body.theme-cyber .img-frame {
+  background: radial-gradient(ellipse at center, rgba(0, 212, 255, .08), rgba(0, 212, 255, .02));
+  border: 1px solid #1e3a5f;
+  box-shadow: inset 0 0 14px rgba(0, 212, 255, .1), 0 0 6px rgba(0, 212, 255, .15);
+}
+
+/* ---------- История открытий контейнеров: чисто вертикальная карточка,
+   чтобы длинный список добычи не наезжал на дату/название ---------- */
+.history-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-dim);
+}
+.history-row:last-child { border-bottom: none; }
+.history-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
