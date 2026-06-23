@@ -489,9 +489,9 @@ const MINE = {
 
   // Диапазоны изначального запаса золота при постройке шахты
   GOLD_RANGES: [
-    { min: 20, max: 30, chance: 0.50 },
-    { min: 30, max: 40, chance: 0.30 },
-    { min: 40, max: 50, chance: 0.20 },
+    { min: 20, max: 28, chance: 0.50 },
+    { min: 28, max: 37, chance: 0.30 },
+    { min: 37, max: 45, chance: 0.20 },
   ],
 
   EXTRACT_PCT: 0.20,              // за удачный спуск добывается 20% от начального запаса

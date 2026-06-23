@@ -32,6 +32,11 @@ const App = {
     if (!App.me) location.hash = '#auth';
     App.route();
 
+    // Показываем подарки от администратора при входе
+    if (App.me && App.me.pendingGifts && App.me.pendingGifts.length) {
+      setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 800);
+    }
+
     // Периодическая синхронизация с сервером и посекундный тик шапки
     setInterval(() => App.pollMe(), 20000);
     setInterval(() => App.tickHeader(), 1000);
@@ -48,12 +53,68 @@ const App = {
       if (App.me.notifUnread > prevNotifUnread) {
         App._checkNewAttackNotification();
       }
+      // Проверяем подарки от администратора
+      if (App.me.pendingGifts && App.me.pendingGifts.length) {
+        App._showGiftPopup(App.me.pendingGifts[0]);
+      }
     } catch (e) { /* сеть моргнула — попробуем в следующий раз */ }
   },
 
   // Проверяет последнее уведомление и, если это атака/ракетный удар,
   // показывает либо подробное окно (на главном экране), либо
   // минималистичный баннер сверху (на всех остальных экранах).
+  // ── Попап подарка от администратора ─────────────────────────────
+  _shownGiftIds: new Set(),
+
+  _showGiftPopup(gift) {
+    if (!gift || App._shownGiftIds.has(gift.id)) return;
+    App._shownGiftIds.add(gift.id);
+
+    // Удаляем предыдущий попап если есть
+    const existing = document.getElementById('admin-gift-popup');
+    if (existing) existing.remove();
+
+    const items = (gift.items || []).join(' · ');
+    const note  = gift.note ? `<p style="margin:12px 0 0;font-size:14px;color:var(--text)">${UI.esc(gift.note)}</p>` : '';
+
+    const popup = document.createElement('div');
+    popup.id = 'admin-gift-popup';
+    popup.style.cssText = `
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,.75);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:20px;`;
+    popup.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--gold);border-radius:12px;
+                  max-width:400px;width:100%;padding:24px;text-align:center;position:relative">
+        <div style="font-size:40px;margin-bottom:8px">🎁</div>
+        <div style="font-size:18px;font-weight:bold;color:var(--gold)">Подарок от администрации</div>
+        <div style="margin:12px 0;padding:12px;background:rgba(255,200,0,.08);border-radius:8px;
+                    font-size:16px;font-weight:bold;color:var(--text)">${UI.esc(items)}</div>
+        ${note}
+        <button id="gift-claim-btn" style="
+          margin-top:20px;width:100%;padding:14px;
+          background:var(--orange);color:#fff;border:none;border-radius:8px;
+          font-size:16px;font-weight:bold;cursor:pointer">
+          ✅ Забрать
+        </button>
+      </div>`;
+
+    document.body.appendChild(popup);
+
+    document.getElementById('gift-claim-btn').onclick = async () => {
+      try {
+        await API.post('/api/admin/claim-gift', { giftId: gift.id });
+        popup.remove();
+        App._shownGiftIds.delete(gift.id);
+        await App.pollMe();
+        // Если ещё есть подарки — покажем следующий
+        if (App.me && App.me.pendingGifts && App.me.pendingGifts.length) {
+          setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 300);
+        }
+      } catch(e) { UI.toast('⛔ ' + e.message); }
+    };
+  },
+
   async _checkNewAttackNotification() {
     try {
       const { notifications } = await API.get('/api/notifications');

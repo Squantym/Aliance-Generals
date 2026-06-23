@@ -529,19 +529,6 @@ function refresh(user) {
   if (!user.secretDevs || typeof user.secretDevs !== 'object') user.secretDevs = {};
   if (user.superSecret === undefined || user.superSecret === null) user.superSecret = 0;
 
-  // Миграция: если у игрока есть сверхсекретные, но нет обычных разработок —
-  // восстанавливаем минимальный набор (superSecret штук каждой), чтобы коллекция
-  // отображалась корректно. Сверхсекретная выдаётся за полный комплект из 9 разных.
-  if (user.superSecret > 0) {
-    const allDevIds = config.SECRET_DEVS.map(d => d.id);
-    const hasAny = allDevIds.some(id => (user.secretDevs[id] || 0) > 0);
-    if (!hasAny) {
-      for (const id of allDevIds) {
-        user.secretDevs[id] = user.superSecret;
-      }
-    }
-  }
-
   user.counters.level = user.level;
 }
 
@@ -695,6 +682,7 @@ function mePayload(user) {
     legion: legionInfo(user),
     tutorial: tutorialView(user),
     pendingFatality: user.pendingFatality ? { name: user.pendingFatality.name } : null,
+    pendingGifts: user.pendingGifts && user.pendingGifts.length ? user.pendingGifts : [],
     effects: effectsView(user),
     unlocked: { production: user.level >= config.PRODUCTION_UNLOCK_LEVEL },
     productionUnlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
@@ -803,6 +791,7 @@ function publicProfile(target, viewer) {
     .filter((d) => d.count > 0);
 
   const country = config.COUNTRY_BY_ID[target.country];
+  const isOwn = viewer && viewer.id === target.id;
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,
     level: target.level, rank: rank(target.level), rating: rating(target),
@@ -815,15 +804,14 @@ function publicProfile(target, viewer) {
     ears: target.ears, tokens: target.tokens, earsLost: target.earsLost,
     earsCurrent: target.earsCurrent, earsMax: config.EARS.MAX,
     earPenaltyActive: !!(target.earPenaltyUntil && target.earPenaltyUntil > Date.now()),
-    power: { atk: atk.power, def: def.power },
-    // Боевые шансы (те же формулы что в battle.js): крит зависит от
-    // жестокости, уворот — от ловкости. Оба ограничены 50%.
-    critChancePct: Math.round(Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) * 1000) / 10,
-    dodgeChancePct: Math.round(Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) * 1000) / 10,
+    power:          isOwn ? { atk: atk.power, def: def.power } : null,
+    critChancePct:  isOwn ? Math.round(Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) * 1000) / 10 : null,
+    dodgeChancePct: isOwn ? Math.round(Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) * 1000) / 10 : null,
+    powerStats:     isOwn ? powerStats(target) : null,
     capacity: capacity(target),
     units: unitsList, buildings: buildingsList,
     secretDevs: devsList, superSecret: target.superSecret,
-    powerStats: powerStats(target),
+    isOwn,
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,
     canAttack: !!viewer && viewer.id !== target.id &&

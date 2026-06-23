@@ -285,9 +285,9 @@ function invite(user, kind, targetId, notices) {
   g.inviteLog.push(Date.now());
   db.save(def.coll);
 
-  social.systemMail(target, `Приглашение в ${def.label.toLowerCase()}`,
-    `Лидер «${g.name}» приглашает вас в свои ряды. ` +
-    `Откройте раздел «${def.label}» — там будет кнопка «Принять приглашение».`);
+  social.systemMail(target, `Приглашение в альянс`,
+    `Лидер «${g.name}» (${user.name}) приглашает вас присоединиться к его альянсу. ` +
+    `Откройте раздел «Альянс» и примите или отклоните приглашение.`);
   notices.push(`Приглашение игроку ${target.name} отправлено. Осталось приглашений: ${limit - used - 1}/час`);
 }
 
@@ -319,12 +319,39 @@ function respondInvite(user, kind, groupId, accept, notices) {
   g.invites.splice(i, 1);
 
   if (accept) {
-    if (user[def.userField]) throw new u.ApiError('Сначала покиньте текущую группу');
-    user[def.userField] = g.id;
-    g.members.push(user.id);
-    const leader = player.users()[g.leaderId];
-    if (leader) social.systemMail(leader, 'Пополнение!', `${user.name} принял приглашение в «${g.name}».`);
-    notices.push(`Вы приняли приглашение и вступили в «${g.name}»!`);
+    if (kind === 'alliance') {
+      // Альянс — взаимное добавление. Каждый остаётся в своём альянсе.
+      // Лидер-инициатор (g.leaderId) добавляет user в свой альянс,
+      // а user добавляет лидера в свой альянс (если у user есть свой альянс).
+      const leader = player.users()[g.leaderId];
+
+      // 1. Добавляем user в альянс лидера (если его там ещё нет)
+      if (!g.members.includes(user.id)) {
+        g.members.push(user.id);
+      }
+
+      // 2. Если у принявшего игрока есть свой альянс — добавляем лидера туда
+      if (user.allianceId) {
+        const userAlliances = coll('alliance');
+        const userAlliance = userAlliances[user.allianceId];
+        if (userAlliance && !userAlliance.members.includes(g.leaderId)) {
+          userAlliance.members.push(g.leaderId);
+          db.save('alliances');
+        }
+      }
+
+      if (leader) social.systemMail(leader, 'Приглашение принято!',
+        `${user.name} принял ваше приглашение. Ваш альянс пополнился.`);
+      notices.push(`Вы приняли приглашение от «${g.name}». Союзник добавлен в ваш альянс.`);
+    } else {
+      // Легион — классическое вступление (один легион на игрока)
+      if (user[def.userField]) throw new u.ApiError('Сначала покиньте текущую группу');
+      user[def.userField] = g.id;
+      g.members.push(user.id);
+      const leader = player.users()[g.leaderId];
+      if (leader) social.systemMail(leader, 'Пополнение!', `${user.name} принял приглашение в «${g.name}».`);
+      notices.push(`Вы приняли приглашение и вступили в «${g.name}»!`);
+    }
   } else {
     notices.push('Приглашение отклонено.');
   }

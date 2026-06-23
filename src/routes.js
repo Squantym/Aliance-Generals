@@ -227,7 +227,9 @@ module.exports = function registerRoutes(app) {
 
   // ---------- Администратор ----------
   app.add('GET', '/api/admin/players', (req) => admin.listPlayers(req.query.q), { admin: true });
-  app.add('POST', '/api/admin/grant', act((req, n) => admin.grant(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/grant',      act((req, n) => admin.grant(req.user, req.body, n)),    { admin: true });
+  app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));
   app.add('GET',  '/api/admin/discounts', () => admin.discountCategories(), { admin: true });
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/global-buffs', () => admin.listGlobalBuffs(), { admin: true });
