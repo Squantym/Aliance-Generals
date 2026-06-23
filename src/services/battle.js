@@ -466,7 +466,7 @@ function attack(user, targetId, notices) {
     }
     // Победитель тоже несёт небольшие потери (война есть война)
     myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT, false));
-    player.addMoney(user, loot, true);
+    player.addBattleLoot(user, loot);
   } else {
     user.battle.losses++;
     if (!isBot) {

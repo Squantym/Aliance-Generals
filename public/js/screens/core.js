@@ -165,7 +165,7 @@ App.screens.home = async (c) => {
   ];
   const small = [
     ['profile', '👤', 'Профиль', ''],
-    ['fame', '🏆', 'Зал славы', ''],
+    ['fame/alltime/level', '🏆', 'Зал славы', ''],
     ['skills', '📈', 'Навыки', m.skillPoints > 0 ? `<span class="badge">+${m.skillPoints}</span>` : ''],
     ['chat', '💬', 'Общение', ''],
     ['alliance', '🤝', 'Альянс', ''],
@@ -261,6 +261,7 @@ App.screens.profile = async (c, param) => {
           <div class="muted small">Звание: <b>${UI.esc(p.rank)}</b> · Ур. ${p.level} · Рейтинг ${UI.fmtNum(p.rating)}</div>
           ${p.countryName ? `<div class="muted small">${p.flag} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
           <div class="muted small">${p.alliance ? 'Альянс: <b>' + UI.esc(p.alliance.name) + '</b> (' + p.alliance.members + ' чел.)' : 'Без альянса'}</div>
+          ${p.legion ? `<div class="muted small">Легион: <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${p.legion.id}')">🏰 ${UI.esc(p.legion.name)}</b> <span style="font-size:10px">(${p.legion.rankName || 'Боец'})</span></div>` : '<div class="muted small">Без легиона</div>'}
         </div>
       </div>
       <div id="status-box">
@@ -455,81 +456,8 @@ App.screens.skills = async (c) => {
   });
 };
 
-// ---------- БАНК ----------
-App.screens.bank = async (c, param) => {
-  await App.refreshMe();
-  const m = App.me;
-  const tab = param || 'storage';
+// ---------- БАНК (тело определено в начале файла) ----------
 
-  const tabs = `
-    <div class="tabs">
-      <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">🏦 Хранилище</div>
-      <div class="tab ${tab === 'gold' ? 'active' : ''}" onclick="location.hash='#bank/gold'">🪙 Купить золото</div>
-    </div>`;
-
-  if (tab === 'gold') {
-    const { packages } = await API.get('/api/bank/gold-packages');
-    c.innerHTML = `
-      <div class="title">Банк · Покупка золота</div>
-      ${tabs}
-      <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. Курс: <b>1 золото = 1 рубль</b>. На крупных пакетах — бонусное золото.</p></div>
-      ${packages.map((p) => `
-        <div class="card">
-          <div class="list-row" style="border:none;padding:0">
-            <div class="grow">
-              <div class="name"><span class="ic-gold"></span> ${UI.fmtNum(p.total)} золота${p.bonus > 0 ? ` <span class="badge green">+${p.bonusPct}%</span>` : ''}</div>
-              <div class="muted small">${UI.fmtNum(p.gold)}${p.bonus > 0 ? ` + ${UI.fmtNum(p.bonus)} бонус` : ''}</div>
-            </div>
-            <button class="btn btn-orange btn-inline" data-pack="${p.id}">${UI.fmtNum(p.priceRub)} ₽</button>
-          </div>
-        </div>`).join('')}
-      <div class="card"><p class="muted small center">💳 Приём оплаты скоро будет подключён.</p></div>`;
-
-    c.querySelectorAll('[data-pack]').forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          const r = await API.post('/api/bank/buy-gold', { packId: btn.dataset.pack });
-          UI.toast('💳 ' + (r.message || 'Пакет зарезервирован'));
-        } catch (e) { UI.toast('⛔ ' + e.message); }
-      };
-    });
-    return;
-  }
-
-  // Вкладка «Хранилище»
-  c.innerHTML = `
-    <div class="title">Банк · Хранилище</div>
-    ${tabs}
-    <div class="card">
-      <div class="kv"><span class="k">Наличные</span><span class="v money">$ ${UI.fmtNum(m.dollars)}</span></div>
-      <div class="kv"><span class="k">В хранилище</span><span class="v money">$ ${UI.fmtNum(m.bank)}</span></div>
-      <p class="muted small mt">Помни: при вложении денег снимается комиссия 10%. Зато здесь ты можешь хранить честно отобранные у врага деньги без опасения, что их отберут у тебя. Трофей «Налоговая льгота» снижает комиссию вплоть до 5%.</p>
-    </div>
-    <div class="card">
-      <label>Положить в хранилище</label>
-      <div class="field-row">
-        <input type="number" id="bk-dep" min="1" placeholder="Сумма">
-        <button class="btn btn-orange btn-inline" id="bk-dep-go">Положить</button>
-      </div>
-      <label>Снять из хранилища</label>
-      <div class="field-row">
-        <input type="number" id="bk-wd" min="1" placeholder="Сумма">
-        <button class="btn btn-inline" id="bk-wd-go">Снять</button>
-      </div>
-    </div>`;
-
-  const op = (action, inputId) => async () => {
-    try {
-      await API.post('/api/bank', { action, amount: document.getElementById(inputId).value });
-      await App.refreshMe();
-      App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
-  };
-  document.getElementById('bk-dep-go').onclick = op('deposit', 'bk-dep');
-  document.getElementById('bk-wd-go').onclick = op('withdraw', 'bk-wd');
-};
-
-// ---------- НАСТРОЙКИ (тема оформления, выход) ----------
 App.screens.settings = async (c) => {
   await App.refreshMe();
   const current = App.theme();

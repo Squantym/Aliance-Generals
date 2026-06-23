@@ -927,41 +927,47 @@ const LEGION = {
   WAR_PREPARE_HOURS: 1,         // через час после объявления — автоматическая битва
   WAR_LOOT_PCT: 0.25,           // победитель забирает 25% казны проигравшего
   WAR_XP_WIN: 50,               // опыт каждому победителю
-  WAR_XP_LOSS: 15,              // опыт каждому проигравшему
-  WAR_COOLDOWN_HOURS: 12,       // нельзя нападать на тот же легион чаще
-  BUILDING_PRICE_GROWTH: 1.4,   // следующий уровень в 1.4 раза дороже
+  WAR_XP_LOSS: 15,
+  WAR_COOLDOWN_HOURS: 12,
+  BUILDING_PRICE_GROWTH: 1.4,
 
-  // ---------- Боевые вызовы (новая система) ----------
-  // Слоты времени по МСК (UTC+3): [startHour, endHour] — включительно
-  CHALLENGE_ACCEPT_MS: 5 * 60 * 1000,   // 5 минут на принятие вызова
-  BATTLE_LOOT_KMARKS: 500,              // кланмарки победителю
-  BATTLE_XP_WIN: 200,                   // личный опыт участникам победителя
+  // ---------- Боевые вызовы ----------
+  CHALLENGE_ACCEPT_MS: 10 * 60 * 1000,  // 10 минут на принятие вызова
+  BATTLE_LOOT_RESERVES: 500,             // Резервы победителю
+  BATTLE_XP_WIN: 200,
   BATTLE_XP_LOSS: 80,
 
-  // ---------- Клановая валюта ----------
-  KMARK_EXCHANGE_RATE: 1000,            // 1 000 $ = 1 кланмарка
-  // «Кланмарки» (сокр. КМ) — клановая валюта «Стальная марка»
+  // ---------- Клановая валюта: «Резервы» (сокр. РЕЗ) ----------
+  RESERVE_EXCHANGE_RATE: 1000,           // 1 000 $ = 1 Резерв
 
-  // ---------- Боевые постройки (новые) — цены в кланмарках ----------
-  // Рост цены: x2 для большинства, x3 для 'gear_slots'
+  // ---------- Боевые постройки — цены в Резервах ----------
   BATTLE_BUILDING_PRICE_GROWTH_DEFAULT: 2,
   BATTLE_BUILDING_PRICE_GROWTH_GEAR: 3,
 
   // ---------- Технологии ----------
-  TECH_BASE_KMARKS: 10000000,           // 10 000 000 КМ — базовая цена изучения
-  TECH_BASE_DAYS: 3,                    // базовое время изучения (дни)
-  TECH_DAYS_GROWTH: 1.5,               // следующий уровень дольше в 1.5 раза
+  TECH_BASE_RESERVES: 10000000,          // 10 000 000 РЕЗ базовая цена
+  TECH_BASE_DAYS: 3,
+  TECH_DAYS_GROWTH: 1.5,
 
-  // ---------- Арсенал / предметы ----------
-  GEAR_SLOTS_DEFAULT: 2,                // по умолчанию 2 предмета в пояс
+  // ---------- Арсенал ----------
+  GEAR_SLOTS_DEFAULT: 2,
+
+  // ---------- Состав легиона ----------
+  BASE_MEMBER_LIMIT: 10,                 // базовый лимит участников
+  MEMBER_PER_BARRACKS_LEVEL: 5,         // +5 участников за уровень Казармы
+  BARRACKS_MAX_LEVEL: 8,                // максимум 8 уровней → 10 + 8×5 = 50
+
+  // ---------- Звания ----------
+  RANKS: ['Новобранец', 'Боец', 'Лидер отряда', 'Зам. Генерала', 'Генерал'],
+  RANK_GENERAL: 4,
+  RANK_VICE: 3,
 };
 
 // ===================================================================
-// БОЕВЫЕ ПОСТРОЙКИ ЛЕГИОНА
-// Стоимость указана в кланмарках (КМ = Стальная марка).
-// Ресурс: 'ear' = уши, 'token' = жетоны, 'both' = уши + жетоны.
-// earBase / tokenBase — стоимость первого улучшения в ушах/жетонах.
-// Рост: x2 (большинство) или x3 (gear_slots) за каждый следующий уровень.
+// БОЕВЫЕ ПОСТРОЙКИ ЛЕГИОНА (Эндгейм)
+// Постройка оплачивается ТОЛЬКО долларами (из казны) — одноразово, сразу 1-й уровень.
+// Улучшения требуют уши (ear) или жетоны (token) из казначейства.
+// dollarCost — цена первой постройки; каждый следующий уровень: ×priceGrowth долларов.
 // ===================================================================
 const LEGION_BATTLE_BUILDINGS = [
   {
@@ -969,11 +975,11 @@ const LEGION_BATTLE_BUILDINGS = [
     name: '⚔️ Штаб наступления',
     desc: 'Атака в боях легиона +5% за уровень (макс. +25%).',
     maxLevel: 5,
-    priceBase: 10000000,   // КМ за ур.1
-    priceGrowth: 2,
+    dollarCost: 500_000_000_000,   // $500 млрд за постройку (ур.1)
+    priceGrowth: 2.5,
     resource: 'ear',
-    earBase: 60,           // ушей на ур.1
-    earGrowth: 1.5,        // ×1.5 за каждый следующий уровень
+    earBase: 60,
+    earGrowth: 1.5,
     apply: 'war_atk',
     perLvl: 5,
   },
@@ -982,8 +988,8 @@ const LEGION_BATTLE_BUILDINGS = [
     name: '🛡️ Бастион',
     desc: 'Защита в боях легиона +5% за уровень (макс. +25%).',
     maxLevel: 5,
-    priceBase: 10000000,
-    priceGrowth: 2,
+    dollarCost: 500_000_000_000,
+    priceGrowth: 2.5,
     resource: 'ear',
     earBase: 60,
     earGrowth: 1.5,
@@ -995,24 +1001,24 @@ const LEGION_BATTLE_BUILDINGS = [
     name: '⚡ Лаборатория быстродействия',
     desc: 'Сокращает время действий в боях легиона на 10% за уровень (макс. −50%).',
     maxLevel: 5,
-    priceBase: 15000000,
-    priceGrowth: 2,
+    dollarCost: 750_000_000_000,
+    priceGrowth: 2.5,
     resource: 'token',
     tokenBase: 80,
     tokenGrowth: 1.5,
     apply: 'war_speed',
-    perLvl: 10,            // % сокращения
+    perLvl: 10,
   },
   {
     id: 'gear_slots',
     name: '🎒 Расширенный боевой пояс',
     desc: '+1 слот для вспомогательного предмета в бою (макс. +3 слота, итого 5).',
     maxLevel: 3,
-    priceBase: 10000000,
-    priceGrowth: 3,        // растёт строго в 3 раза
+    dollarCost: 600_000_000_000,
+    priceGrowth: 3,
     resource: 'token',
     tokenBase: 50,
-    tokenGrowth: 2,        // удваивается
+    tokenGrowth: 2,
     apply: 'gear_slots',
     perLvl: 1,
   },
@@ -1021,8 +1027,8 @@ const LEGION_BATTLE_BUILDINGS = [
     name: '🏥 Военно-медицинский корпус',
     desc: 'Восстановление HP участника в ходе боя легиона ускоряется на 8% за уровень.',
     maxLevel: 5,
-    priceBase: 12000000,
-    priceGrowth: 2,
+    dollarCost: 450_000_000_000,
+    priceGrowth: 2.5,
     resource: 'token',
     tokenBase: 70,
     tokenGrowth: 1.5,
@@ -1034,27 +1040,38 @@ const LEGION_BATTLE_BUILDINGS = [
     name: '🔭 Разведывательный центр',
     desc: 'Перед боем легиона открывает состав армии и снаряжение противников.',
     maxLevel: 3,
-    priceBase: 20000000,
-    priceGrowth: 2,
+    dollarCost: 1_000_000_000_000,
+    priceGrowth: 3,
     resource: 'both',
-    earBase: 50,
-    earGrowth: 2,
-    tokenBase: 50,
-    tokenGrowth: 2,
+    earBase: 50,  earGrowth: 2,
+    tokenBase: 50, tokenGrowth: 2,
     apply: 'war_intel',
-    perLvl: 1,             // уровень = глубина разведки
+    perLvl: 1,
   },
   {
     id: 'supply',
     name: '🚛 Узел снабжения',
     desc: 'Пополняет арсенал клана: +5% к запасу каждого предмета за уровень.',
     maxLevel: 5,
-    priceBase: 8000000,
+    dollarCost: 350_000_000_000,
     priceGrowth: 2,
     resource: 'token',
     tokenBase: 60,
     tokenGrowth: 1.5,
     apply: 'arsenal_cap',
+    perLvl: 5,
+  },
+  {
+    id: 'barracks',
+    name: '🏟️ Казармы',
+    desc: '+5 участников в легионе за уровень (макс. +40, итого 50 бойцов).',
+    maxLevel: 8,
+    dollarCost: 200_000_000_000,
+    priceGrowth: 2,
+    resource: 'token',
+    tokenBase: 40,
+    tokenGrowth: 1.5,
+    apply: 'member_limit',
     perLvl: 5,
   },
 ];
@@ -1080,11 +1097,11 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'income_pct',
     levels: [
-      { level: 1, ratingReq: 0,     priceKmarks: 10000000,  earReq: 100,  daysBase: 3 },
-      { level: 2, ratingReq: 500,   priceKmarks: 20000000,  earReq: 180,  daysBase: 4.5 },
-      { level: 3, ratingReq: 1500,  priceKmarks: 40000000,  earReq: 320,  daysBase: 6.75 },
-      { level: 4, ratingReq: 4000,  priceKmarks: 80000000,  earReq: 570,  daysBase: 10 },
-      { level: 5, ratingReq: 10000, priceKmarks: 160000000, earReq: 1000, daysBase: 15 },
+      { level: 1, gloryReq: 10,   priceReserves: 10000000,  earReq: 100,  daysBase: 3 },
+      { level: 2, gloryReq: 25,   priceReserves: 20000000,  earReq: 180,  daysBase: 4.5 },
+      { level: 3, gloryReq: 50,   priceReserves: 40000000,  earReq: 320,  daysBase: 6.75 },
+      { level: 4, gloryReq: 90,   priceReserves: 80000000,  earReq: 570,  daysBase: 10 },
+      { level: 5, gloryReq: 150,  priceReserves: 160000000, earReq: 1000, daysBase: 15 },
     ],
   },
   {
@@ -1097,9 +1114,9 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'bank_fee_reduction',
     levels: [
-      { level: 1, ratingReq: 1000,  priceKmarks: 15000000,  earReq: 150,  daysBase: 3 },
-      { level: 2, ratingReq: 3000,  priceKmarks: 35000000,  earReq: 300,  daysBase: 5 },
-      { level: 3, ratingReq: 8000,  priceKmarks: 80000000,  earReq: 600,  daysBase: 8 },
+      { level: 1, gloryReq: 15,   priceReserves: 15000000,  earReq: 150,  daysBase: 3 },
+      { level: 2, gloryReq: 40,   priceReserves: 35000000,  earReq: 300,  daysBase: 5 },
+      { level: 3, gloryReq: 80,   priceReserves: 80000000,  earReq: 600,  daysBase: 8 },
     ],
   },
   {
@@ -1112,10 +1129,10 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'loot_pct',
     levels: [
-      { level: 1, ratingReq: 200,   priceKmarks: 12000000,  earReq: 120,  daysBase: 3 },
-      { level: 2, ratingReq: 1000,  priceKmarks: 25000000,  earReq: 220,  daysBase: 5 },
-      { level: 3, ratingReq: 3000,  priceKmarks: 55000000,  earReq: 400,  daysBase: 8 },
-      { level: 4, ratingReq: 7000,  priceKmarks: 110000000, earReq: 750,  daysBase: 12 },
+      { level: 1, gloryReq: 10,   priceReserves: 12000000,  earReq: 120,  daysBase: 3 },
+      { level: 2, gloryReq: 30,   priceReserves: 25000000,  earReq: 220,  daysBase: 5 },
+      { level: 3, gloryReq: 60,   priceReserves: 55000000,  earReq: 400,  daysBase: 8 },
+      { level: 4, gloryReq: 110,  priceReserves: 110000000, earReq: 750,  daysBase: 12 },
     ],
   },
   // ---------- Боевые технологии ----------
@@ -1129,11 +1146,11 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'atk_pct',
     levels: [
-      { level: 1, ratingReq: 0,     priceKmarks: 10000000,  earReq: 100,  daysBase: 3 },
-      { level: 2, ratingReq: 600,   priceKmarks: 22000000,  earReq: 190,  daysBase: 5 },
-      { level: 3, ratingReq: 2000,  priceKmarks: 50000000,  earReq: 350,  daysBase: 7.5 },
-      { level: 4, ratingReq: 5000,  priceKmarks: 110000000, earReq: 630,  daysBase: 11 },
-      { level: 5, ratingReq: 12000, priceKmarks: 240000000, earReq: 1100, daysBase: 16 },
+      { level: 1, gloryReq: 10,   priceReserves: 10000000,  earReq: 100,  daysBase: 3 },
+      { level: 2, gloryReq: 25,   priceReserves: 22000000,  earReq: 190,  daysBase: 5 },
+      { level: 3, gloryReq: 55,   priceReserves: 50000000,  earReq: 350,  daysBase: 7.5 },
+      { level: 4, gloryReq: 95,   priceReserves: 110000000, earReq: 630,  daysBase: 11 },
+      { level: 5, gloryReq: 150,  priceReserves: 240000000, earReq: 1100, daysBase: 16 },
     ],
   },
   {
@@ -1146,11 +1163,11 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'def_pct',
     levels: [
-      { level: 1, ratingReq: 0,     priceKmarks: 10000000,  earReq: 100,  daysBase: 3 },
-      { level: 2, ratingReq: 600,   priceKmarks: 22000000,  earReq: 190,  daysBase: 5 },
-      { level: 3, ratingReq: 2000,  priceKmarks: 50000000,  earReq: 350,  daysBase: 7.5 },
-      { level: 4, ratingReq: 5000,  priceKmarks: 110000000, earReq: 630,  daysBase: 11 },
-      { level: 5, ratingReq: 12000, priceKmarks: 240000000, earReq: 1100, daysBase: 16 },
+      { level: 1, gloryReq: 10,   priceReserves: 10000000,  earReq: 100,  daysBase: 3 },
+      { level: 2, gloryReq: 25,   priceReserves: 22000000,  earReq: 190,  daysBase: 5 },
+      { level: 3, gloryReq: 55,   priceReserves: 50000000,  earReq: 350,  daysBase: 7.5 },
+      { level: 4, gloryReq: 95,   priceReserves: 110000000, earReq: 630,  daysBase: 11 },
+      { level: 5, gloryReq: 150,  priceReserves: 240000000, earReq: 1100, daysBase: 16 },
     ],
   },
   {
@@ -1163,9 +1180,9 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'crit_pct',
     levels: [
-      { level: 1, ratingReq: 800,   priceKmarks: 18000000,  earReq: 160,  daysBase: 4 },
-      { level: 2, ratingReq: 3500,  priceKmarks: 45000000,  earReq: 320,  daysBase: 7 },
-      { level: 3, ratingReq: 9000,  priceKmarks: 120000000, earReq: 700,  daysBase: 12 },
+      { level: 1, gloryReq: 20,   priceReserves: 18000000,  earReq: 160,  daysBase: 4 },
+      { level: 2, gloryReq: 65,   priceReserves: 45000000,  earReq: 320,  daysBase: 7 },
+      { level: 3, gloryReq: 120,  priceReserves: 120000000, earReq: 700,  daysBase: 12 },
     ],
   },
   {
@@ -1178,10 +1195,10 @@ const LEGION_TECHS = [
     bonusUnit: '%',
     apply: 'hp_pct',
     levels: [
-      { level: 1, ratingReq: 400,   priceKmarks: 14000000,  earReq: 130,  daysBase: 3.5 },
-      { level: 2, ratingReq: 2000,  priceKmarks: 32000000,  earReq: 260,  daysBase: 6 },
-      { level: 3, ratingReq: 6000,  priceKmarks: 75000000,  earReq: 500,  daysBase: 10 },
-      { level: 4, ratingReq: 15000, priceKmarks: 180000000, earReq: 950,  daysBase: 16 },
+      { level: 1, gloryReq: 12,   priceReserves: 14000000,  earReq: 130,  daysBase: 3.5 },
+      { level: 2, gloryReq: 35,   priceReserves: 32000000,  earReq: 260,  daysBase: 6 },
+      { level: 3, gloryReq: 75,   priceReserves: 75000000,  earReq: 500,  daysBase: 10 },
+      { level: 4, gloryReq: 130,  priceReserves: 180000000, earReq: 950,  daysBase: 16 },
     ],
   },
 ];

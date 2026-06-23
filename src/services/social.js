@@ -91,38 +91,7 @@ function sendMail(user, toName, subject, text) {
 
 // ---------- ЗАЛ СЛАВЫ ----------
 // Топ-10 игроков в нескольких категориях
-function fame() {
-  const all = Object.values(player.users());
-  const categories = [
-    { id: 'rating', name: 'Рейтинг', val: (p) => player.rating(p) },
-    { id: 'level', name: 'Уровень', val: (p) => p.level },
-    { id: 'attack', name: 'Самый сильный', val: (p) => player.totalPower(p, 'atk').power },
-    { id: 'wins', name: 'Победы', val: (p) => p.battle.wins },
-    { id: 'attacks', name: 'Нападения', val: (p) => p.battle.attacks },
-    { id: 'fatal', name: 'Фаталити', val: (p) => p.battle.fatalities },
-    // Богатство = сколько ВСЕГО заработано (включая грабёж в боях), а не
-    // текущий баланс — баланс легко спустить, а слава за награбленное остаётся
-    { id: 'rich', name: 'Богатство (всего заработано)', val: (p) => p.counters.moneyEarned || 0 },
-    // Размер армии: суммарное количество единиц техники в строю
-    { id: 'army', name: 'Размер армии', val: (p) => player.unitCountTotal(p) },
-    // Размер альянса (0, если не состоит)
-    { id: 'alliance_size', name: 'Самый крупный альянс', val: (p) => { const a = player.allianceOf(p); return a ? a.members.length : 0; } },
-    // Помилования: сколько раз игрок выбрал «жетон» вместо уха при фаталити
-    { id: 'mercy', name: 'Милосердие (жетоны)', val: (p) => p.tokens || 0 },
-    // Жестокость: сколько ушей отрезано
-    { id: 'cruel', name: 'Жестокость (отрезано ушей)', val: (p) => p.ears || 0 },
-    // Прокачка трофеев: сумма уровней всех трофеев
-    { id: 'trophies', name: 'Коллекционер трофеев', val: (p) => Object.values(p.trophies || {}).reduce((s, v) => s + v, 0) },
-  ];
-  return {
-    categories: categories.map((c) => ({
-      id: c.id, name: c.name,
-      top: all
-        .map((p) => ({ id: p.id, name: p.name, flag: player.flag(p), level: p.level, value: c.val(p) }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 10),
-    })),
-  };
-}
+// Зал славы — вынесен в отдельный модуль
+const { fame } = require('./fame');
 
 module.exports = { chatGet, chatPost, mailTo, systemMail, unread, inbox, readMail, sendMail, fame };

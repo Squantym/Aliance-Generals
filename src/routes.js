@@ -168,6 +168,7 @@ module.exports = function registerRoutes(app) {
     else throw new u.ApiError('Неизвестная операция');
     return { dollars: req.user.dollars, bank: req.user.bank };
   }));
+  app.add('POST', '/api/bank/reserve',         act((req, n) => player.reserveForLegion(req.user, req.body.dollars, n)));
   app.add('GET',  '/api/bank/gold-packages', (req) => ({ packages: player.goldPackages() }));
   app.add('POST', '/api/bank/buy-gold',      act((req) => player.buyGold(req.user, req.body.packId)));
 
@@ -200,6 +201,10 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/legion/challenge/accept',  act((req, n) => legion.acceptChallenge(req.user, n)));
   app.add('POST', '/api/legion/challenge/decline', act((req, n) => legion.declineChallenge(req.user, n)));
   app.add('POST', '/api/legion/war',               act((req, n) => legion.declareWar(req.user, req.body.enemyId, n)));
+  app.add('POST', '/api/legion/rank',              act((req, n) => legion.setRank(req.user, req.body.targetId, req.body.rank, n)));
+  app.add('GET',  '/api/legion/chat',              (req) => legion.chatGet(req.user));
+  app.add('POST', '/api/legion/chat',              act((req, n) => legion.chatPost(req.user, req.body.text, n)));
+  app.add('GET',  '/api/legion/public/:id',        (req) => legion.publicView(req.params.id));
   app.add('POST', '/api/legion/battle/join',       act((req, n) => legion.joinBattle(req.user, req.body.role, n)));
   app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));
   app.add('POST', '/api/legion/battle/attack',     act((req, n) => legion.attack(req.user, req.body.targetId, n)));
@@ -217,7 +222,7 @@ module.exports = function registerRoutes(app) {
     n.push('✉ Письмо отправлено.');
     return { ok: true };
   }));
-  app.add('GET', '/api/fame', () => social.fame());
+  app.add('GET', '/api/fame', () => require('./services/fame').fame());
 
   // ---------- Уведомления (колокольчик) ----------
   app.add('GET',  '/api/notifications',           (req) => notifications.list(req.user));

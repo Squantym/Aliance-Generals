@@ -91,6 +91,14 @@ function addMoney(user, amount, earned = true) {
   if (amount > 0 && earned) user.counters.moneyEarned += Math.round(amount);
 }
 
+// Добавить именно боевой заработок (трофеи с боёв) — отдельный счётчик для зала славы
+function addBattleLoot(user, amount) {
+  if (amount > 0) {
+    user.counters.battleLoot = (user.counters.battleLoot || 0) + Math.round(amount);
+    addMoney(user, amount, true);
+  }
+}
+
 function addGold(user, amount) {
   user.gold = Math.max(0, Math.round(user.gold + amount));
 }
@@ -158,7 +166,14 @@ function allianceInfo(user) {
 }
 function legionInfo(user) {
   const l = legionOf(user);
-  return l ? { id: l.id, name: l.name, members: l.members.length, leaderId: l.leaderId } : null;
+  if (!l) return null;
+  const rank = (l.memberRanks || {})[user.id];
+  const rankIndex = l.leaderId === user.id ? 4 : (rank || 0);
+  const RANKS = ['Новобранец', 'Боец', 'Лидер отряда', 'Зам. Генерала', 'Генерал'];
+  return {
+    id: l.id, name: l.name, members: l.members.length, leaderId: l.leaderId,
+    rankIndex, rankName: RANKS[rankIndex],
+  };
 }
 
 // Вместимость армии в бой:
@@ -529,6 +544,9 @@ function refresh(user) {
   if (!user.secretDevs || typeof user.secretDevs !== 'object') user.secretDevs = {};
   if (user.superSecret === undefined || user.superSecret === null) user.superSecret = 0;
 
+  // Миграция счётчика боевого заработка
+  if (user.counters.battleLoot === undefined) user.counters.battleLoot = 0;
+
   user.counters.level = user.level;
 }
 
@@ -584,10 +602,29 @@ function bankWithdraw(user, amount) {
   if (amount <= 0) throw new u.ApiError('Укажите сумму снятия');
   if (amount > user.bank) throw new u.ApiError('В хранилище нет такой суммы');
   user.bank -= amount;
-  addMoney(user, amount, false); // снятие — не «заработок»
+  addMoney(user, amount, false);
 }
 
-// ---------- Покупка золота (донат) ----------
+// Зарезервировать доллары → Резервы для легиона
+// 1 000 $ = 1 Резерв. Деньги списываются из наличных, Резервы идут в казну легиона.
+function reserveForLegion(user, dollars, notices) {
+  const legion = require('./legion');
+  const l = user.legionId ? require('../core/db').load('legions', {})[user.legionId] : null;
+  if (!l) throw new u.ApiError('Вы не состоите в легионе');
+  const RATE = require('../../config/gameConfig').LEGION.RESERVE_EXCHANGE_RATE;
+  dollars = u.toInt(dollars, 0);
+  if (dollars <= 0) throw new u.ApiError('Укажите сумму');
+  if (dollars % RATE !== 0) throw new u.ApiError(`Сумма должна быть кратна ${u.fmt(RATE)} (1 Резерв)`);
+  if (user.dollars < dollars) throw new u.ApiError('Не хватает долларов');
+  const reserves = dollars / RATE;
+  user.dollars -= dollars;
+  l.reserves = (l.reserves || 0) + reserves;
+  require('../core/db').save('legions');
+  if (notices) notices.push(`💱 Зарезервировано: $${u.fmt(dollars)} → ${u.fmt(reserves)} РЕЗ для легиона «${l.name}».`);
+  return { reserves: l.reserves };
+}
+
+
 // Заготовка: возвращает список пакетов для отображения в банке.
 function goldPackages() {
   return config.GOLD_PACKAGES.map((p) => ({
@@ -842,11 +879,11 @@ function restoreEar(user, notices) {
 }
 
 module.exports = {
-  users, maxima, refresh, addMoney, addGold, addXp, xpMul, spendSkill,
+  users, maxima, refresh, addMoney, addBattleLoot, addGold, addXp, xpMul, spendSkill,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, rank, flag, findByName,
-  bankDeposit, bankWithdraw, goldPackages, buyGold,
+  bankDeposit, bankWithdraw, reserveForLegion, goldPackages, buyGold,
   mePayload, publicProfile, setStatus, restoreEar,
 };

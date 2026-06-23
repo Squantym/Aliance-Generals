@@ -78,17 +78,19 @@ async function renderGroupScreen(c, kind) {
           const c = b.nextCost;
           let resStr = '';
           if (c) {
-            resStr = `${UI.fmtNum(c.kmarks)} КМ`;
+            resStr = `$${UI.fmtMoney(c.dollars)} из казны`;
             if (c.ears)   resStr += ` + ${c.ears} 👂`;
             if (c.tokens) resStr += ` + ${c.tokens} 🎖`;
           }
+          const isBuilt = b.level > 0;
+          const btnLabel = !isBuilt ? '🏗 Построить' : `⬆️ Улучшить до ур.${b.level + 1}`;
           return `
             <div class="card">
               <div class="name">${UI.esc(b.name)} <span class="muted">ур. ${b.level}/${b.maxLevel}</span></div>
               <div class="muted small">${UI.esc(b.desc)}</div>
-              <div class="kv mt"><span class="k">Бонус</span><span class="v">${b.bonusNow}${b.apply === 'gear_slots' ? ' слот.' : '%'}</span></div>
+              <div class="kv mt"><span class="k">Бонус</span><span class="v">${b.bonusNow}${b.apply === 'gear_slots' || b.apply === 'member_limit' ? (b.apply === 'member_limit' ? ' чел.' : ' слот.') : '%'}</span></div>
               ${c ? `<div class="kv"><span class="k">Цена</span><span class="v">${resStr}</span></div>
-                     ${L.isLeader ? `<button class="btn btn-orange mt" data-btbld="${b.id}">Улучшить</button>`
+                     ${L.isLeader ? `<button class="btn btn-orange mt" data-btbld="${b.id}">${btnLabel}</button>`
                                   : '<p class="muted small mt center">Только лидер</p>'}`
                 : '<p class="gold center mt small">Макс. уровень ✔</p>'}
             </div>`;
@@ -96,24 +98,9 @@ async function renderGroupScreen(c, kind) {
 
         const buildingsTab = `
           <div class="card">
-            <div class="title" style="margin-top:0">Казна легиона</div>
-            <div class="kv"><span class="k">Доллары</span><span class="v money">$${UI.fmtMoney(L.treasury)}</span></div>
-            <div class="kv"><span class="k">Стальные марки</span><span class="v gold">${UI.fmtNum(L.kmarks)} КМ</span></div>
-            <div class="kv"><span class="k">Рейтинг клана</span><span class="v">${UI.fmtNum(L.ratingPoints)} очк.</span></div>
-            <div class="field-row mt">
-              <input type="number" id="lg-dep" min="1" placeholder="Внести $">
-              <button class="btn btn-orange btn-inline" id="lg-dep-go">Внести</button>
-            </div>
-            <hr class="hr">
-            <p class="muted small">Обмен $ → Стальные марки (1 000 $ = 1 КМ)</p>
-            <div class="field-row mt">
-              <input type="number" id="lg-exch" min="1000" step="1000" placeholder="Сумма $">
-              <button class="btn btn-orange btn-inline" id="lg-exch-go">Обменять</button>
-            </div>
+            <p class="muted small">Постройки — эндгейм контент. Цена высокая: $500 млрд и выше из казны легиона. Для улучшений потребуются уши 👂 и жетоны 🎖 из казначейства.</p>
           </div>
-          <div class="name mt" style="padding:0 16px">🏛 Общие постройки</div>
-          ${bnHtml}
-          <div class="name mt" style="padding:0 16px">⚔️ Боевые постройки</div>
+          <div class="name mt" style="padding:0 16px">⚔️ Боевые постройки и казармы</div>
           ${btBldHtml}`;
 
         // ── Вкладка: Технологии ────────────────────────────────────────
@@ -137,15 +124,15 @@ async function renderGroupScreen(c, kind) {
               } else if (t.level >= t.maxLevel) {
                 statusHtml = '<p class="gold small mt center">Макс. уровень ✔</p>';
               } else if (nd) {
-                let reqStr = `${UI.fmtNum(nd.priceKmarks)} КМ + ${nd.earReq} 👂`;
-                if (nd.ratingReq > 0) reqStr += ` · Рейтинг: ${UI.fmtNum(nd.ratingReq)}`;
+                let reqStr = `${UI.fmtNum(nd.priceReserves)} РЕЗ + ${nd.earReq} 👂`;
+                if (nd.gloryReq > 0) reqStr += ` · Слава: ${nd.gloryReq} ⭐`;
                 statusHtml = `
                   <div class="kv mt"><span class="k">Цена ур.${t.level+1}</span><span class="v">${reqStr}</span></div>
                   <div class="kv"><span class="k">Время</span><span class="v">${nd.daysBase} дн.</span></div>
                   ${t.canLearn
                     ? `<button class="btn btn-orange mt" data-tech="${t.id}">🔬 Изучить</button>`
-                    : `<p class="muted small mt">${nd.ratingReq > L.ratingPoints
-                        ? `Нужно рейтинга: ${UI.fmtNum(nd.ratingReq)}`
+                    : `<p class="muted small mt">${nd.gloryReq > (L.gloryEarned || 0)
+                        ? `Нужно славы: ${nd.gloryReq} ⭐ (есть ${L.gloryEarned || 0})`
                         : 'Только лидер / идёт другое изучение'}</p>`}`;
               }
               return `
@@ -523,22 +510,24 @@ async function renderGroupScreen(c, kind) {
             <p class="muted small mt">Победа: +1–2 ⭐ · Поражение: −1–2 ⭐ · Уровень зависит только от заработанной славы</p>
           </div>
           <div class="card">
-            <div class="name">💰 Финансы</div>
+            <div class="name">💰 Казна легиона</div>
             <div class="kv mt"><span class="k">Доллары в казне</span><span class="v money">$${UI.fmtMoney(L.treasury)}</span></div>
-            <div class="kv"><span class="k">Стальные марки</span><span class="v gold">${UI.fmtNum(L.kmarks)} КМ</span></div>
+            <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L.reserves || 0)} РЕЗ</span></div>
             <div class="kv"><span class="k">Рейтинг клана</span><span class="v">${UI.fmtNum(L.ratingPoints)} очк.</span></div>
-            <p class="muted small mt">Курс: 1 000 $ = 1 КМ</p>
+            <p class="muted small mt">Обмен $ → Резервы находится в разделе <b>Банк → Резерв</b>.</p>
+            <hr class="hr">
+            <label class="small">Внести деньги в казну ($):</label>
             <div class="field-row mt">
-              <input type="number" id="lg-exch2" min="1000" step="1000" placeholder="$ → КМ">
-              <button class="btn btn-orange btn-inline" id="lg-exch2-go">Обменять</button>
+              <input type="number" id="lg-dep" min="1" placeholder="Сумма $">
+              <button class="btn btn-orange btn-inline" id="lg-dep-go">Внести</button>
             </div>
           </div>
           <div class="card">
             <div class="name">🗄 Казначейство ресурсов</div>
-            <p class="muted small">Уши и жетоны клана. Из казначейства лидер закупает предметы в магазине.</p>
+            <p class="muted small">Уши и жетоны используются для улучшения построек легиона.</p>
             <div class="kv mt"><span class="k">Уши 👂</span><span class="v">${UI.fmtNum(L.treasuryEars || 0)}</span></div>
             <div class="kv"><span class="k">Жетоны 🎖</span><span class="v">${UI.fmtNum(L.treasuryTokens || 0)}</span></div>
-            <p class="muted small mt">Внести в казначейство (из вашего инвентаря):</p>
+            <p class="muted small mt">Внести из инвентаря:</p>
             <div class="field-row mt">
               <input type="number" min="1" placeholder="Ушей 👂" id="dep-ears">
               <input type="number" min="1" placeholder="Жетонов 🎖" id="dep-tokens">
@@ -548,21 +537,83 @@ async function renderGroupScreen(c, kind) {
 
         // ── Навигация по вкладкам ─────────────────────────────────────
         const tabs = [
+          { id: 'base',        label: '🏰 База' },
           { id: 'buildings',   label: '🏗 Постройки' },
           { id: 'techs',       label: '🔬 Технологии' },
           { id: 'arsenal',     label: '🎒 Арсенал' },
           { id: 'shop',        label: '🛒 Магазин' },
           { id: 'war',         label: '⚔️ Война' },
           { id: 'treasury',    label: '💰 Казначейство' },
+          { id: 'chat',        label: '💬 Общение' },
+          ...(isLeaderOrVice ? [{ id: 'manage', label: '⚙️ Управление' }] : []),
         ];
         const tabNav = `<div class="tab-nav" style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0">
           ${tabs.map(t => `<button class="btn btn-inline ${tab === t.id ? 'btn-orange' : ''}" data-legtab="${t.id}">${t.label}</button>`).join('')}
         </div>`;
 
+        // ── Вкладка: База ──────────────────────────────────────────────
+        const RANKS = ['Новобранец', 'Боец', 'Лидер отряда', 'Зам. Генерала', 'Генерал'];
+        function buildBaseTab(L2) {
+          const membersSorted = (L2.membersWithRanks || []).slice().sort((a, b) => b.rank - a.rank || b.level - a.level);
+          return `
+            <div class="card">
+              <div class="name" style="font-size:18px;text-align:center">${UI.esc(L2.name)}</div>
+              <div class="kv mt"><span class="k">Уровень легиона</span><span class="v gold">${L2.legionLevel || 1} ⭐</span></div>
+              <div class="kv"><span class="k">Слава</span><span class="v">${UI.fmtNum(L2.gloryPoints || 0)} ⭐</span></div>
+              <div class="kv"><span class="k">Бойцов</span><span class="v">${L2.members} / ${L2.memberLimit || '?'}</span></div>
+              <div class="kv"><span class="k">Победы</span><span class="v" style="color:var(--green)">${(L2.battleStats || {}).wins || 0}</span></div>
+              <div class="kv"><span class="k">Поражения</span><span class="v" style="color:var(--red)">${(L2.battleStats || {}).losses || 0}</span></div>
+              <div class="kv"><span class="k">Казна</span><span class="v money">$${UI.fmtMoney(L2.treasury)}</span></div>
+              <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L2.reserves || 0)} РЕЗ</span></div>
+              <div class="kv"><span class="k">Уши 👂</span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
+              <div class="kv"><span class="k">Жетоны 🎖</span><span class="v">${UI.fmtNum(L2.treasuryTokens || 0)}</span></div>
+              <div class="kv mt"><span class="k">Ваше звание</span><span class="v gold">${L2.myRankName || 'Новобранец'}</span></div>
+            </div>
+            <div class="card">
+              <div class="name">👥 Состав легиона</div>
+              ${membersSorted.map(m => `
+                <div class="list-row" style="cursor:pointer" onclick="App.go('profile/${m.id}')">
+                  <div class="grow">
+                    <span class="name">${m.flag || ''} ${UI.esc(m.name)}</span>
+                    <span class="muted small"> Ур. ${m.level}</span>
+                  </div>
+                  <span class="badge ${m.rank >= 4 ? 'green' : m.rank >= 3 ? 'orange' : ''}">${RANKS[m.rank] || 'Новобранец'}</span>
+                </div>`).join('')}
+            </div>`;
+        }
+
+        // ── Вкладка: Управление (только Генерал и Зам.) ─────────────────
+        const manageTab = (() => {
+          if (!isLeaderOrVice) return '<div class="card"><p class="muted center">Нет доступа</p></div>';
+          const membersSorted2 = (L.membersWithRanks || []).slice().sort((a, b) => b.rank - a.rank);
+          return `<div class="card">
+            <div class="name">⚙️ Управление составом</div>
+            <p class="muted small mt">${L.myRank === 4 ? 'Генерал: можно назначать любые звания, включая передачу лидерства.' : 'Зам. Генерала: можно назначать до «Лидер отряда».'}</p>
+            ${membersSorted2.map(m => {
+              if (m.id === L.leaderId) return `<div class="list-row"><div class="grow"><b>${UI.esc(m.name)}</b></div><span class="badge green">Генерал</span></div>`;
+              const availableRanks = L.myRank === 4
+                ? RANKS.map((r, i) => `<option value="${i}" ${m.rank === i ? 'selected' : ''}>${r}</option>`).join('')
+                : RANKS.slice(0, 3).map((r, i) => `<option value="${i}" ${m.rank === i ? 'selected' : ''}>${r}</option>`).join('');
+              return `<div class="list-row">
+                <div class="grow"><span class="name">${UI.esc(m.name)}</span> <span class="muted small">Ур. ${m.level}</span></div>
+                <select data-rank-user="${m.id}" class="btn-inline" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px">${availableRanks}</select>
+                <button class="btn btn-orange btn-inline" data-set-rank="${m.id}">✅</button>
+              </div>`;
+            }).join('')}
+          </div>`;
+        })();
+
         const tabContent = {
+          base: buildBaseTab(L),
           buildings: buildingsTab, techs: techsTab, arsenal: arsenalTab,
           shop: shopTab, war: warTab, treasury: treasuryTab,
-        }[tab] || buildingsTab;
+          chat: `<div class="card" id="legion-chat-box"><div class="loading">Загрузка чата…</div></div>
+            <div class="card"><div class="field-row">
+              <input type="text" id="lg-chat-input" placeholder="Сообщение…" maxlength="300" style="flex:1">
+              <button class="btn btn-orange btn-inline" id="lg-chat-send">Отправить</button>
+            </div></div>`,
+          manage: manageTab,
+        }[tab] || buildBaseTab(L);
 
         legionPanel = challengeBanner + activeBattleHtml + tabNav + tabContent;
       }
@@ -736,9 +787,48 @@ async function renderGroupScreen(c, kind) {
         }, 1000);
       }
 
-      // Вкладки, вызов, постройки, магазин — уже обработаны ниже
+      // Вкладки
       c.querySelectorAll('[data-legtab]').forEach(btn => {
-        btn.onclick = () => { App._legionTab = btn.dataset.legtab; App.rerender(); };
+        btn.onclick = () => {
+          App._legionTab = btn.dataset.legtab;
+          App.rerender();
+          // Загружаем чат после рендера
+          if (btn.dataset.legtab === 'chat') setTimeout(() => App._loadLegionChat(), 50);
+        };
+      });
+
+      // Загрузка чата при открытии вкладки chat
+      if ((App._legionTab || 'base') === 'chat') {
+        setTimeout(() => App._loadLegionChat(), 50);
+      }
+
+      // Чат: отправка сообщения
+      const chatSend = document.getElementById('lg-chat-send');
+      if (chatSend) {
+        chatSend.onclick = async () => {
+          const input = document.getElementById('lg-chat-input');
+          if (!input || !input.value.trim()) return;
+          try {
+            await API.post('/api/legion/chat', { text: input.value });
+            input.value = '';
+            App._loadLegionChat();
+          } catch(e) { UI.toast('⛔ ' + e.message); }
+        };
+        const chatInput = document.getElementById('lg-chat-input');
+        if (chatInput) chatInput.onkeydown = e => { if (e.key === 'Enter') chatSend.click(); };
+      }
+
+      // Управление: назначение звания
+      c.querySelectorAll('[data-set-rank]').forEach(btn => {
+        btn.onclick = async () => {
+          const userId = btn.dataset.setRank;
+          const sel = c.querySelector(`[data-rank-user="${userId}"]`);
+          if (!sel) return;
+          try {
+            await API.post('/api/legion/rank', { targetId: userId, rank: sel.value });
+            App.rerender();
+          } catch(e) { UI.toast('⛔ ' + e.message); }
+        };
       });
 
       // Внести в казну
@@ -1046,26 +1136,72 @@ App.screens.mail = async (c, param) => {
 
 // ---------- ЗАЛ СЛАВЫ ----------
 App.screens.fame = async (c, param) => {
-  const { categories } = await API.get('/api/fame');
-  const active = param || categories[0].id;
-  const cat = categories.find((x) => x.id === active) || categories[0];
+  const data = await API.get('/api/fame');
 
-  // Категории, где значение — деньги (показываем с $), остальное — обычное число
-  const moneyCats = new Set(['rich']);
-  const fmtVal = (catId, v) => moneyCats.has(catId) ? `$ ${UI.fmtMoney(v)}` : UI.fmtNum(v);
+  // param: 'daily/level', 'alltime/ears' etc.
+  const parts = (param || 'alltime/level').split('/');
+  const section  = parts[0] === 'daily' ? 'daily' : 'alltime';
+  const catId    = parts[1] || 'level';
+
+  const cats = section === 'daily' ? data.daily : data.allTime;
+  const cat  = cats.find(x => x.id === catId) || cats[0];
+
+  const medals = ['🥇', '🥈', '🥉'];
+  const fmtVal = (fmt, v) => {
+    if (fmt === 'money') return `$${UI.fmtMoney(v)}`;
+    return UI.fmtNum(v);
+  };
+
+  // Section tabs
+  const sectionTabs = `
+    <div style="display:flex;gap:8px;padding:0 0 12px">
+      <button class="btn ${section==='alltime'?'btn-orange':'btn-inline'}" onclick="location.hash='#fame/alltime/${cat.id}'">
+        🏆 За всё время
+      </button>
+      <button class="btn ${section==='daily'?'btn-orange':'btn-inline'}" onclick="location.hash='#fame/daily/${cat.id}'">
+        📅 Сегодня
+      </button>
+    </div>`;
+
+  // Category tabs
+  const catTabs = `<div class="tabs" style="flex-wrap:wrap">
+    ${cats.map(x => `<div class="tab ${x.id === cat.id ? 'active' : ''}" onclick="location.hash='#fame/${section}/${x.id}'">${x.name}</div>`).join('')}
+  </div>`;
+
+  // Daily reset info
+  const dailyInfo = section === 'daily' ? `
+    <div class="card">
+      <p class="muted small">📅 Статистика за сегодня (МСК). Сбрасывается каждый день в <b>23:59 по МСК</b>.</p>
+      ${data.snapshotDate ? `<p class="muted small mt">Дата снимка: ${data.snapshotDate}</p>` : ''}
+    </div>` : `
+    <div class="card">
+      <p class="muted small">🏆 Статистика за всё время — учитываются только действия самих игроков.</p>
+    </div>`;
+
+  // Top list
+  const topHtml = cat.top.length
+    ? cat.top.map((p, i) => `
+        <div class="list-row" style="${i < 3 ? 'background:rgba(255,215,0,.04)' : ''}">
+          <div style="width:32px;text-align:center;font-size:${i < 3 ? '20px' : '14px'}">${i < 3 ? medals[i] : `<span class="muted">${i+1}</span>`}</div>
+          <div class="grow">
+            <span class="name" style="cursor:pointer" onclick="App.go('profile/${p.id}')">${p.flag} ${UI.esc(p.name)}</span>
+            <span class="muted small"> Ур. ${p.level}</span>
+          </div>
+          <div class="v ${cat.fmt === 'money' ? 'money' : 'gold'}">${fmtVal(cat.fmt, p.value)}</div>
+        </div>`).join('')
+    : '<p class="muted center" style="padding:20px">Пока никто не попал в топ</p>';
 
   c.innerHTML = `
-    <div class="title">Зал славы</div>
-    <div class="tabs">${categories.map((x) =>
-      `<div class="tab ${x.id === cat.id ? 'active' : ''}" onclick="location.hash='#fame/${x.id}'">${UI.esc(x.name)}</div>`).join('')}
-    </div>
-    <div class="card">
-      ${cat.top.length ? cat.top.map((p, i) => `
-        <div class="list-row">
-          <div style="width:26px;text-align:center" class="${i < 3 ? 'gold' : 'muted'}">${i + 1}</div>
-          <div class="grow"><span class="name" style="cursor:pointer" onclick="App.go('profile/${p.id}')">${p.flag} ${UI.esc(p.name)}</span> <span class="muted small">Ур. ${p.level}</span></div>
-          <div class="v gold">${fmtVal(cat.id, p.value)}</div>
-        </div>`).join('') : '<p class="muted center">Список пока пуст.</p>'}
+    <div class="title">🎖️ Зал славы</div>
+    ${sectionTabs}
+    ${catTabs}
+    ${dailyInfo}
+    <div class="card" style="padding:0">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div class="name">${cat.name}</div>
+        <div class="muted small mt">${cat.desc}</div>
+      </div>
+      ${topHtml}
     </div>`;
 };
 

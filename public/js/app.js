@@ -115,6 +115,55 @@ const App = {
     };
   },
 
+  // Загрузка и отображение чата легиона
+  // Публичная карточка легиона (модальное окно)
+  async _showPublicLegion(legionId) {
+    try {
+      const data = await API.get('/api/legion/public/' + encodeURIComponent(legionId));
+      const RANKS = ['Новобранец', 'Боец', 'Лидер отряда', 'Зам. Генерала', 'Генерал'];
+      const popup = document.createElement('div');
+      popup.id = 'legion-public-popup';
+      popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px';
+      popup.innerHTML = `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;max-width:420px;width:100%;max-height:80vh;overflow-y:auto;padding:20px">
+          <div style="text-align:right"><button onclick="document.getElementById('legion-public-popup').remove()" class="btn btn-inline">✕</button></div>
+          <div style="font-size:18px;font-weight:bold;text-align:center;margin-bottom:12px">🏰 ${UI.esc(data.name)}</div>
+          <div class="kv"><span class="k">Уровень</span><span class="v gold">${data.legionLevel} ⭐</span></div>
+          <div class="kv"><span class="k">Слава</span><span class="v">${UI.fmtNum(data.gloryPoints)} ⭐</span></div>
+          <div class="kv"><span class="k">Победы</span><span class="v" style="color:var(--green)">${(data.battleStats || {}).wins || 0}</span></div>
+          <div class="kv"><span class="k">Поражения</span><span class="v" style="color:var(--red)">${(data.battleStats || {}).losses || 0}</span></div>
+          <div class="kv"><span class="k">Бойцов</span><span class="v">${data.memberCount}</span></div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+          <div style="font-weight:bold;margin-bottom:8px">👥 Состав</div>
+          ${data.members.map(m => `<div class="kv"><span class="k">${m.flag || ''} ${UI.esc(m.name)} <span class="muted small">Ур.${m.level}</span></span><span class="v"><span class="badge ${m.rank >= 4 ? 'green' : m.rank >= 3 ? 'orange' : ''}">${RANKS[m.rank] || 'Новобранец'}</span></span></div>`).join('')}
+        </div>`;
+      document.getElementById('legion-public-popup')?.remove();
+      document.body.appendChild(popup);
+      popup.onclick = e => { if (e.target === popup) popup.remove(); };
+    } catch(e) { UI.toast('⛔ ' + e.message); }
+  },
+
+  async _loadLegionChat() {
+    const box = document.getElementById('legion-chat-box');
+    if (!box) return;
+    try {
+      const { messages } = await API.get('/api/legion/chat');
+      if (!messages.length) { box.innerHTML = '<p class="muted center small">Пока нет сообщений. Напишите первым!</p>'; return; }
+      const RANKS = ['Новобранец', 'Боец', 'Лидер отряда', 'Зам. Генерала', 'Генерал'];
+      box.innerHTML = messages.slice().reverse().map(m => {
+        const time = new Date(m.at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+        const date = new Date(m.at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
+        const rankBadge = m.rank >= 3 ? `<span class="badge ${m.rank >= 4 ? 'green' : 'orange'}" style="font-size:10px">${RANKS[m.rank]}</span> ` : '';
+        const isMe = App.me && m.userId === App.me.id;
+        return `<div style="padding:6px 0;border-bottom:1px solid var(--border-dim)${isMe ? ';opacity:.85' : ''}">
+          <span style="color:var(--dim);font-size:11px">${date} ${time}</span>
+          ${rankBadge}<span style="font-weight:bold;color:${isMe ? 'var(--gold)' : 'var(--text)'}">${UI.esc(m.name)}</span>:
+          <span style="margin-left:4px">${UI.esc(m.text)}</span>
+        </div>`;
+      }).join('');
+    } catch(e) { if (box) box.innerHTML = '<p class="muted center small">Ошибка загрузки чата</p>'; }
+  },
+
   async _checkNewAttackNotification() {
     try {
       const { notifications } = await API.get('/api/notifications');
