@@ -222,260 +222,22 @@ async function renderGroupScreen(c, kind) {
         const warTab = (() => {
           let html = '';
 
-          // ── РЕЖИМ БОЯ ─────────────────────────────────────────────
+          // ── БОЙ АКТИВЕН — открываем отдельное окно ─────────────
           if (battleData) {
             const b = battleData;
-            const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
-
-            // В фазе подготовки — скрываем все вкладки кроме "Война"
-            // (tab уже === 'war' так как мы здесь)
-
-            // ── ФАЗА ПОДГОТОВКИ ────────────────────────────────────
-            if (b.phase === 'prep') {
-              html += `
-                <div style="background:rgba(255,150,0,.1);border:2px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:12px">
-                  <div style="font-size:16px;font-weight:bold">⏳ Подготовка к бою — осталось <span id="prep-timer">${UI.fmtTimer(b.prepSecsLeft)}</span></div>
-                  <p class="muted small mt">Нажмите «Готов», выберите роль и направление. Те кто не успеет — не попадут в бой.</p>
-                </div>`;
-
-              if (!b.me) {
-                html += `
-                  <div class="card">
-                    <div class="name">Выберите роль и нажмите «Готов»</div>
-                    <p class="muted small mt">Все роли могут атаковать. Дополнительные возможности — ниже.</p>
-                    <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-                      <button class="btn btn-orange" style="width:100%;padding:14px" data-join="assault">
-                        🎯 <b>Штурмовик</b> — +20% атаки
-                      </button>
-                      <button class="btn btn-orange" style="width:100%;padding:14px" data-join="guardian">
-                        🛡️ <b>Защитник</b> — +20% защиты, −20% входящего урона, щит, прикрытие союзников
-                      </button>
-                      <button class="btn btn-orange" style="width:100%;padding:14px" data-join="medic">
-                        ➕ <b>Медик</b> — лечение союзников, может атаковать со штрафом
-                      </button>
-                    </div>
-                  </div>`;
-              } else {
-                html += `
-                  <div class="card" style="border:2px solid var(--green)">
-                    <div class="name" style="color:var(--green)">✅ Вы готовы — ${ROLE_ICON[b.me.role] || ''} ${b.me.roleName}</div>
-                    <p class="muted small mt">Выберите направление:</p>
-                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                      ${b.directions.map(d => {
-                        const sel = b.me.direction === d.dir;
-                        const allyCount = d.allies ? d.allies.length : 0;
-                        return `<button class="btn ${sel ? 'btn-green' : 'btn-inline'}" style="width:100%;padding:12px;text-align:left" data-dir="${d.dir}">
-                          ${sel ? '📍' : '○'} <b>${d.name}</b>
-                          <span class="muted small" style="float:right">${allyCount}/5 союзников</span>
-                        </button>`;
-                      }).join('')}
-                    </div>
-                  </div>`;
-              }
-
-              // Список готовых участников
-              const sides = { A: [], B: [] };
-              for (const c of b.allCombatants) sides[c.side].push(c);
-              const mySideList  = sides[b.mySide]  || [];
-              const enSideList  = sides[b.mySide === 'A' ? 'B' : 'A'] || [];
-
-              html += `<div class="card">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-                  <div style="border-right:1px solid var(--border);padding-right:8px">
-                    <div class="name" style="color:var(--green);margin-bottom:8px">🟢 Ваш легион (${mySideList.length})</div>
-                    ${mySideList.map(c => `
-                      <div style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
-                        ${ROLE_ICON[c.role] || '?'} <b>${UI.esc(c.name)}</b>
-                        ${c.direction ? `<span class="muted small"> → ${c.dirName || 'Нап.'+c.direction}</span>` : '<span class="muted small"> ожидает...</span>'}
-                      </div>`).join('')}
-                    ${mySideList.length === 0 ? '<p class="muted small">Никого ещё</p>' : ''}
-                  </div>
-                  <div style="padding-left:8px">
-                    <div class="name" style="color:var(--red);margin-bottom:8px">🔴 Противник (${enSideList.length})</div>
-                    ${enSideList.map(c => `
-                      <div style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
-                        ${ROLE_ICON[c.role] || '?'} <b>${UI.esc(c.name)}</b>
-                      </div>`).join('')}
-                    ${enSideList.length === 0 ? '<p class="muted small">Никого ещё</p>' : ''}
-                  </div>
+            const phaseLabel = b.phase === 'prep' ? '⏳ Подготовка к бою' : '⚔️ БОЙ ИДЁТ';
+            const phaseColor = b.phase === 'prep' ? 'orange' : 'green';
+            html += `
+              <div style="background:rgba(0,200,0,.08);border:2px solid var(--${phaseColor});border-radius:10px;padding:16px;text-align:center">
+                <div style="font-size:20px;font-weight:bold;color:var(--${phaseColor});margin-bottom:8px">
+                  ${phaseLabel}
                 </div>
+                ${b.phase === 'prep' ? `<p class="muted small">Идёт подготовка. Осталось: <b id="prep-timer">${UI.fmtTimer(b.prepSecsLeft||0)}</b></p>` : ''}
+                ${b.me ? `<p class="small mt">Вы участвуете как <b>${b.me.roleName}</b></p>` : '<p class="muted small mt">Нажмите «Готов» чтобы войти в бой</p>'}
+                <button class="btn btn-green" style="width:100%;padding:14px;margin-top:12px;font-size:16px" onclick="App._openBattleWindow()">
+                  ⚔️ Открыть боевое окно
+                </button>
               </div>`;
-            }
-
-            // ── АКТИВНЫЙ БОЙ ───────────────────────────────────────
-            if (b.phase === 'active' && b.me) {
-              const myCDs = b.cooldowns || {};
-
-              // Полноэкранный режим — шапка с таймером и счётом
-              html += `
-                <div style="background:rgba(0,200,0,.08);border:2px solid var(--green);border-radius:8px;padding:10px;margin-bottom:10px">
-                  <div style="display:flex;justify-content:space-between;align-items:center">
-                    <span style="color:var(--green);font-weight:bold">⚔️ БОЙ ИДЁТ</span>
-                    <span>⏱ <b id="battle-timer">${UI.fmtTimer(b.timeLeft || 0)}</b></span>
-                  </div>
-                  ${b.liveScores ? `
-                  <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px">
-                    <span style="color:var(--green)">🟢 Ваши: ${UI.fmtNum(b.liveScores[b.mySide] || 0)} очк.</span>
-                    <span style="color:var(--red)">🔴 Врagi: ${UI.fmtNum(b.liveScores[b.mySide==='A'?'B':'A'] || 0)} очк.</span>
-                  </div>` : ''}
-                </div>`;
-
-              // Мой статус — полная строка
-              const hpPct = Math.round(b.me.hp / b.me.maxHp * 100);
-              html += `
-                <div class="card" style="margin-bottom:8px">
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                    <span style="font-size:20px">${ROLE_ICON[b.me.role] || '?'}</span>
-                    <b>Вы — ${b.me.roleName}</b>
-                    ${b.me.stunned ? `<span style="color:var(--red);font-size:12px">💫 Оглушён ${b.me.stunned}с</span>` : ''}
-                    ${b.me.noHeal  ? `<span style="color:var(--orange);font-size:12px">🚫 Лечение заблок. ${b.me.noHeal}с</span>` : ''}
-                    ${b.me.immune  ? `<span style="color:var(--green);font-size:12px">🔵 Купол ${b.me.immune}с</span>` : ''}
-                    ${b.me.reflecting ? `<span style="color:var(--green);font-size:12px">🪞 Отражение</span>` : ''}
-                    ${b.me.onFire  ? `<span style="color:var(--orange);font-size:12px">🔥 Горит</span>` : ''}
-                  </div>
-                  <div style="background:rgba(255,80,80,.15);border-radius:4px;height:8px;margin-bottom:4px;overflow:hidden">
-                    <div style="background:var(--red);height:100%;width:${hpPct}%;transition:width .3s"></div>
-                  </div>
-                  <div style="font-size:12px;color:var(--dim)">HP ${b.me.hp} / ${b.me.maxHp} (${hpPct}%)
-                  ${b.me.shield > 0 ? ` · 🛡 Щит: ${b.me.shield}` : ''}
-                  </div>
-                  <div style="font-size:12px;margin-top:4px">
-                    Кд действия: <span id="cd-action">${myCDs.action || 0}</span>с &nbsp;|&nbsp;
-                    Кд перемещения: <span id="cd-move">${myCDs.move || 0}</span>с
-                  </div>
-                </div>`;
-
-              // Направления — каждое на всю ширину
-              html += `<div class="name" style="padding:0;margin-bottom:6px">📍 Направление: ${b.me.direction !== null ? (b.directions.find(x=>x.dir===b.me.direction)||{}).name || 'Нап.'+b.me.direction : 'не выбрано'}</div>`;
-
-              html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
-                ${b.directions.map(d => {
-                  const sel = b.me.direction === d.dir;
-                  const cdMove = myCDs.move || 0;
-                  return `<button class="btn btn-inline ${sel?'btn-green':''}" style="width:100%;padding:10px;text-align:left;${sel?'border:2px solid var(--green)':''}"
-                    data-dir="${d.dir}">
-                    ${sel ? '📍' : '○'} <b>${d.name}</b>
-                    <span style="float:right;font-size:12px">
-                      🟢 ${d.allies.filter(a=>a.alive).length} союзн. &nbsp; 🔴 ${d.enemies.filter(e=>e.alive).length} врагов
-                    </span>
-                  </button>`;
-                }).join('')}
-              </div>`;
-
-              // Текущее направление — союзники и враги
-              if (b.me.direction !== null) {
-                const dirData = b.directions.find(x => x.dir === b.me.direction);
-                if (dirData) {
-                  // Союзники
-                  const aliveAllies = dirData.allies.filter(a => a.userId !== (b.me && b.me.userId) && a.alive);
-                  if (aliveAllies.length > 0) {
-                    html += `<div class="card" style="margin-bottom:8px">
-                      <div style="color:var(--green);font-weight:bold;margin-bottom:8px">🟢 Союзники на «${dirData.name}»</div>
-                      ${aliveAllies.map(a => {
-                        const ahp = Math.round(a.hp / a.maxHp * 100);
-                        return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
-                          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-                            <span style="font-size:16px">${ROLE_ICON[a.role] || '?'}</span>
-                            <b>${UI.esc(a.name)}</b>
-                            <span class="muted small">${a.roleName}</span>
-                            ${a.shield > 0 ? `<span style="font-size:11px">🛡${a.shield}</span>` : ''}
-                          </div>
-                          <div style="background:rgba(0,200,0,.15);border-radius:4px;height:6px;margin-bottom:2px;overflow:hidden">
-                            <div style="background:var(--green);height:100%;width:${ahp}%"></div>
-                          </div>
-                          <div style="font-size:11px;color:var(--dim)">HP ${a.hp}/${a.maxHp}</div>
-                          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-                            ${b.me.role === 'guardian' ? `<button class="btn btn-orange btn-inline" style="flex:1" data-guard="${a.userId}">🛡️ Прикрыть (15с)</button>` : ''}
-                            ${b.me.role === 'medic'    ? `<button class="btn btn-green btn-inline" style="flex:1" data-heal="${a.userId}">➕ Лечить</button>` : ''}
-                          </div>
-                        </div>`;
-                      }).join('')}
-                    </div>`;
-                  }
-
-                  // Враги
-                  const aliveEnemies = dirData.enemies.filter(e => e.alive);
-                  if (aliveEnemies.length > 0) {
-                    html += `<div class="card" style="margin-bottom:8px">
-                      <div style="color:var(--red);font-weight:bold;margin-bottom:8px">🔴 Враги на «${dirData.name}»</div>
-                      ${aliveEnemies.map(en => {
-                        const ehp = Math.round(en.hp / en.maxHp * 100);
-                        return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
-                          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-                            <span style="font-size:16px">${ROLE_ICON[en.role] || '?'}</span>
-                            <b>${UI.esc(en.name)}</b>
-                            <span class="muted small">${en.roleName}</span>
-                            ${en.stunned ? `<span style="color:var(--orange);font-size:11px">💫${en.stunned}с</span>` : ''}
-                            ${en.onFire  ? `<span style="color:var(--orange);font-size:11px">🔥</span>` : ''}
-                            ${en.shield > 0 ? `<span style="font-size:11px">🛡${en.shield}</span>` : ''}
-                          </div>
-                          <div style="background:rgba(255,50,50,.2);border-radius:4px;height:6px;margin-bottom:2px;overflow:hidden">
-                            <div style="background:var(--red);height:100%;width:${ehp}%"></div>
-                          </div>
-                          <div style="font-size:11px;color:var(--dim)">HP ${en.hp}/${en.maxHp} (${ehp}%)</div>
-                          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-                            <button class="btn btn-red btn-inline" style="flex:1" data-attack="${en.userId}">🎯 Атаковать</button>
-                            ${b.me.gear && b.me.gear.length ? `<button class="btn btn-orange btn-inline" style="flex:1" onclick="App._itemTarget='${en.userId}';App._itemTargetName='${en.name.replace(/'/g,'').slice(0,20)}'">🎒 Предмет</button>` : ''}
-                          </div>
-                        </div>`;
-                      }).join('')}
-                    </div>`;
-                  }
-
-                  if (aliveAllies.length === 0 && aliveEnemies.length === 0) {
-                    html += `<div class="card"><p class="muted center small">На «${dirData.name}» пусто — перейдите на другое направление</p></div>`;
-                  }
-                }
-              }
-
-              // Боевой пояс
-              if (b.me.gear && b.me.gear.length > 0) {
-                const itemNames = {
-                  gas_grenade:'💨 Газовая шашка', flashbang:'💥 Светошумовая',
-                  assault_grenade:'🔴 Граната', napalm:'🔥 Напалм',
-                  uranium_ammo:'☢️ Урановые боеприпасы', hydrogen_bomb:'💣 Водородная бомба',
-                  medkit:'🩹 Аптечка', dome:'🔵 Купол',
-                  kevlar:'🦺 Бронеплиты', reflect_shield:'🪞 Отраж. щит',
-                };
-                const usedItems = new Set();
-                html += `<div class="card" style="margin-bottom:8px"><div class="name">🎒 Боевой пояс</div>`;
-                for (const itemId of b.me.gear) {
-                  if (usedItems.has(itemId)) continue;
-                  usedItems.add(itemId);
-                  const cnt = b.me.gear.filter(x=>x===itemId).length;
-                  html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-dim)">
-                    <span>${itemNames[itemId]||itemId} ×${cnt}</span>
-                    <button class="btn btn-orange btn-inline" data-use-item="${itemId}">Применить${App._itemTarget ? ' → ' + (App._itemTargetName||'цель') : ''}</button>
-                  </div>`;
-                }
-                html += `</div>`;
-              }
-
-              // Лог боя
-              if (b.log && b.log.length) {
-                html += `<div class="card" style="margin-bottom:8px">
-                  <div class="name">📋 Лог боя</div>
-                  <div style="max-height:160px;overflow-y:auto;font-size:11px">
-                    ${b.log.slice().reverse().map(e => {
-                      const col = e.kind==='crit'?'var(--red)':e.kind==='heal'?'var(--green)':e.kind==='item'?'var(--orange)':'var(--dim)';
-                      return `<div style="color:${col};padding:2px 0">${UI.esc(e.text)}</div>`;
-                    }).join('')}
-                  </div>
-                </div>`;
-              }
-
-              // Кнопка покинуть бой — внизу
-              html += `
-                <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-                  <button class="btn btn-red" style="width:100%;opacity:.7" id="leave-battle-btn">
-                    🚪 Покинуть бой
-                  </button>
-                  <p class="muted small mt center">При выходе ваша статистика не будет учтена</p>
-                </div>`;
-            }
-
-            // ── БОЙ ЗАВЕРШЁН ──────────────────────────────────────
-
           } // end if (battleData)
 
           // ── РЕЖИМ ОЖИДАНИЯ (нет активного боя) ───────────────────
@@ -805,7 +567,7 @@ async function renderGroupScreen(c, kind) {
         let secs = parseInt(prepTimerEl.textContent) || 0;
         const pt = setInterval(() => {
           secs--;
-          if (secs <= 0) { clearInterval(pt); App.rerender(); return; }
+          if (secs <= 0) { clearInterval(pt); prepTimerEl.textContent = '00:00'; return; }
           prepTimerEl.textContent = UI.fmtTimer(secs);
         }, 1000);
       }
@@ -816,26 +578,14 @@ async function renderGroupScreen(c, kind) {
         let secs = parseInt(battleTimerEl.textContent) || 0;
         const bt = setInterval(() => {
           secs--;
-          if (secs <= 0) { clearInterval(bt); App.rerender(); return; }
+          if (secs <= 0) { clearInterval(bt); battleTimerEl.textContent = '⏱ 00:00'; return; }
           battleTimerEl.textContent = UI.fmtTimer(secs);
         }, 1000);
       }
 
       // Кулдауны: визуальный обратный отсчёт
-      const cdAction = document.getElementById('cd-action');
-      const cdMove   = document.getElementById('cd-move');
-      if (cdAction || cdMove) {
-        const cdTick = setInterval(() => {
-          if (cdAction) {
-            let v = Math.max(0, parseInt(cdAction.textContent) - 1);
-            cdAction.textContent = v + ' сек';
-          }
-          if (cdMove) {
-            let v = Math.max(0, parseInt(cdMove.textContent) - 1);
-            cdMove.textContent = v + ' сек';
-          }
-        }, 1000);
-      }
+      // Кулдауны отображаются как статичный текст при загрузке вкладки
+      // (обновляются при следующем действии игрока)
 
       // Вкладки
       c.querySelectorAll('[data-legtab]').forEach(btn => {
@@ -1010,7 +760,7 @@ async function renderGroupScreen(c, kind) {
         let secs = parseInt(timerEl.textContent) || 0;
         const t = setInterval(() => {
           secs--;
-          if (secs <= 0) { clearInterval(t); App.rerender(); return; }
+          if (secs <= 0) { clearInterval(t); timerEl.textContent = '00:00'; return; }
           timerEl.textContent = UI.fmtTimer(secs);
         }, 1000);
       }
