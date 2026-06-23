@@ -112,21 +112,21 @@ async function init() {
 // Возвращает коллекцию из кэша. Если коллекции нет ни в кэше, ни на
 // диске/в базе — создаёт её со значением def (например, {} или []).
 function load(name, def) {
-  if (store[name] !== undefined) return store[name];
+  // null считаем «сброшенным» — позволяет переинициализировать коллекцию
+  if (store[name] !== undefined && store[name] !== null) return store[name];
 
   if (mode === 'mongo') {
-    // В режиме mongo всё уже предзагружено в init(). Если коллекции
-    // нет (новый проект/новая коллекция) — берём значение по умолчанию.
-    store[name] = def;
+    store[name] = (def !== undefined ? def : {});
     return store[name];
   }
 
   // Режим json: читаем файл с диска
   ensureDir();
   try {
-    store[name] = JSON.parse(fs.readFileSync(fileOf(name), 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(fileOf(name), 'utf8'));
+    store[name] = (parsed !== null ? parsed : (def !== undefined ? def : {}));
   } catch (e) {
-    store[name] = def;
+    store[name] = (def !== undefined ? def : {});
   }
   return store[name];
 }
