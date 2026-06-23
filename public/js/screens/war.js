@@ -157,9 +157,7 @@ App.screens.missions = async (c, param) => {
 
   // Авто-обновление пока идёт активный шаг
   if (data.active) {
-    const timer = setInterval(() => App.rerender(), 10000);
-    App._tear = () => clearInterval(timer);
-  }
+}
 };
 
 // Подробный экран одного конфликта
@@ -232,7 +230,5 @@ async function renderConflictDetail(c, confId) {
   }
 
   if (conf.activeStep) {
-    const timer = setInterval(() => App.rerender(), 10000);
-    App._tear = () => clearInterval(timer);
-  }
+}
 }

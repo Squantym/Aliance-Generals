@@ -366,9 +366,7 @@ App.screens.trophies = async (c) => {
 
   // Автообновление, если есть активные прокачки
   if (data.trophies.some((t) => t.training)) {
-    const timer = setInterval(() => App.rerender(), 10000);
-    App._tear = () => clearInterval(timer);
-  }
+}
 };
 
 // ---------- ГОСПИТАЛЬ ----------

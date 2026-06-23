@@ -306,9 +306,7 @@ App.screens.production = async (c, param) => {
 
   // Автообновление экрана каждые 10 секунд, пока есть активные процессы
   if (p.queue.length > 0) {
-    const timer = setInterval(() => App.rerender(), 10000);
-    App._tear = () => clearInterval(timer);
-  }
+}
 };
 
 // ---------- ШАХТЫ (вкладка внутри Производства) ----------
@@ -442,9 +440,7 @@ App._renderMines = async (c, tabsHtml) => {
   // Автообновление, пока есть активные процессы (спуск, добыча, постройка)
   const hasActive = m.mines.some((x) => ['building', 'descending', 'extracting'].includes(x.status));
   if (hasActive) {
-    const timer = setInterval(() => App.rerender(), 10000);
-    App._tear = () => clearInterval(timer);
-  }
+}
 };
 
 // ---------- РАКЕТНЫЕ ШАХТЫ (вкладка внутри Производства) ----------
@@ -567,7 +563,5 @@ App._renderSilos = async (c, tabsHtml) => {
 
   const hasActive = s.silos.some((x) => x.building);
   if (hasActive) {
-    const timer = setInterval(() => App.rerender(), 10000);
-    App._tear = () => clearInterval(timer);
-  }
+}
 };

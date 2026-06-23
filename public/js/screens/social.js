@@ -225,233 +225,258 @@ async function renderGroupScreen(c, kind) {
           // ── РЕЖИМ БОЯ ─────────────────────────────────────────────
           if (battleData) {
             const b = battleData;
+            const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
 
-            // Шапка боя
-            const phaseLabel = b.phase === 'prep'
-              ? `⏳ Подготовка — осталось <b id="prep-timer">${UI.fmtTimer(b.prepSecsLeft)}</b>`
-              : b.phase === 'active'
-                ? `⚔️ БОЙ ИДЁТ — осталось <b id="battle-timer">${UI.fmtTimer(b.timeLeft || 0)}</b>`
-                : '🏁 БОЙ ЗАВЕРШЁН';
+            // В фазе подготовки — скрываем все вкладки кроме "Война"
+            // (tab уже === 'war' так как мы здесь)
 
-            html += `<div class="card" style="border:2px solid var(--${b.phase==='active'?'green':b.phase==='prep'?'orange':'red'})">
-              <div class="name">${phaseLabel}</div>
-              ${b.phase === 'active' && b.liveScores ? `
-                <div class="kv mt">
-                  <span class="k" style="color:var(--green)">Ваш легион</span>
-                  <span class="v" style="color:var(--red)">Противник</span>
-                </div>
-                <div class="kv">
-                  <span class="k gold">${UI.fmtNum(b.liveScores[b.mySide] || 0)} очк.</span>
-                  <span class="v">${UI.fmtNum(b.liveScores[b.mySide === 'A' ? 'B' : 'A'] || 0)} очк.</span>
-                </div>
-                <p class="muted small mt">По очкам активности определяется победитель если время выйдет</p>` : ''}
-            </div>`;
-
-            // Фаза ПОДГОТОВКИ
+            // ── ФАЗА ПОДГОТОВКИ ────────────────────────────────────
             if (b.phase === 'prep') {
+              html += `
+                <div style="background:rgba(255,150,0,.1);border:2px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:12px">
+                  <div style="font-size:16px;font-weight:bold">⏳ Подготовка к бою — осталось <span id="prep-timer">${UI.fmtTimer(b.prepSecsLeft)}</span></div>
+                  <p class="muted small mt">Нажмите «Готов», выберите роль и направление. Те кто не успеет — не попадут в бой.</p>
+                </div>`;
+
               if (!b.me) {
-                // Не зарегистрирован — показываем форму выбора роли
-                html += `<p class="small mt">Выберите роль и нажмите «Готов»:</p>
-                  <div class="btn-row mt">
-                    <button class="btn btn-orange" data-join="assault">⚔️ Штурмовик<br><span class="muted small">+20% атаки, только атака</span></button>
-                    <button class="btn btn-orange" data-join="guardian">🛡️ Защитник<br><span class="muted small">+20% защиты, прикрытие</span></button>
-                    <button class="btn btn-orange" data-join="medic">💊 Медик<br><span class="muted small">Лечение союзников</span></button>
+                html += `
+                  <div class="card">
+                    <div class="name">Выберите роль и нажмите «Готов»</div>
+                    <p class="muted small mt">Все роли могут атаковать. Дополнительные возможности — ниже.</p>
+                    <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+                      <button class="btn btn-orange" style="width:100%;padding:14px" data-join="assault">
+                        🎯 <b>Штурмовик</b> — +20% атаки
+                      </button>
+                      <button class="btn btn-orange" style="width:100%;padding:14px" data-join="guardian">
+                        🛡️ <b>Защитник</b> — +20% защиты, −20% входящего урона, щит, прикрытие союзников
+                      </button>
+                      <button class="btn btn-orange" style="width:100%;padding:14px" data-join="medic">
+                        ➕ <b>Медик</b> — лечение союзников, может атаковать со штрафом
+                      </button>
+                    </div>
                   </div>`;
               } else {
-                html += `<p class="small mt">Вы готовы как <b>${b.me.roleName}</b>. Выберите направление:</p>
-                  <div class="btn-row mt">
-                    ${[1,2,3,4,5].map(d => {
-                      const dirData = b.directions.find(x=>x.dir===d);
-                      const allies = dirData ? dirData.allies.length : 0;
-                      const sel = b.me.direction === d;
-                      return `<button class="btn ${sel?'btn-green':'btn-inline'}" data-dir="${d}">Нап. ${d}<br><span class="muted small">${allies}/5 союзн.</span></button>`;
-                    }).join('')}
+                html += `
+                  <div class="card" style="border:2px solid var(--green)">
+                    <div class="name" style="color:var(--green)">✅ Вы готовы — ${ROLE_ICON[b.me.role] || ''} ${b.me.roleName}</div>
+                    <p class="muted small mt">Выберите направление:</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                      ${b.directions.map(d => {
+                        const sel = b.me.direction === d.dir;
+                        const allyCount = d.allies ? d.allies.length : 0;
+                        return `<button class="btn ${sel ? 'btn-green' : 'btn-inline'}" style="width:100%;padding:12px;text-align:left" data-dir="${d.dir}">
+                          ${sel ? '📍' : '○'} <b>${d.name}</b>
+                          <span class="muted small" style="float:right">${allyCount}/5 союзников</span>
+                        </button>`;
+                      }).join('')}
+                    </div>
                   </div>`;
               }
-            }
 
-            html += `</div>`;
-
-            // Список участников в подготовке
-            if (b.phase === 'prep') {
+              // Список готовых участников
               const sides = { A: [], B: [] };
               for (const c of b.allCombatants) sides[c.side].push(c);
+              const mySideList  = sides[b.mySide]  || [];
+              const enSideList  = sides[b.mySide === 'A' ? 'B' : 'A'] || [];
+
               html += `<div class="card">
-                <div class="name">👥 Участники подготовки</div>
-                <div class="kv mt"><span class="k" style="color:var(--green)">Ваш легион</span><span class="k" style="color:var(--red)">Противник</span></div>`;
-              const maxLen = Math.max(sides.A.length, sides.B.length);
-              for (let i = 0; i < maxLen; i++) {
-                const a = sides[b.mySide][i];
-                const en = sides[b.mySide==='A'?'B':'A'][i];
-                html += `<div class="kv">
-                  <span class="k">${a ? `<span style="color:${a.ready?'var(--green)':'var(--red)'}">●</span> ${UI.esc(a.name)} (${a.role?a.role[0].toUpperCase():'?'}) нап.${a.direction||'?'}` : ''}</span>
-                  <span class="v">${en ? `нап.${en.direction||'?'} (${en.role?en.role[0].toUpperCase():'?'}) ${UI.esc(en.name)} <span style="color:var(--red)">●</span>` : ''}</span>
-                </div>`;
-              }
-              html += `</div>`;
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+                  <div style="border-right:1px solid var(--border);padding-right:8px">
+                    <div class="name" style="color:var(--green);margin-bottom:8px">🟢 Ваш легион (${mySideList.length})</div>
+                    ${mySideList.map(c => `
+                      <div style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
+                        ${ROLE_ICON[c.role] || '?'} <b>${UI.esc(c.name)}</b>
+                        ${c.direction ? `<span class="muted small"> → ${c.dirName || 'Нап.'+c.direction}</span>` : '<span class="muted small"> ожидает...</span>'}
+                      </div>`).join('')}
+                    ${mySideList.length === 0 ? '<p class="muted small">Никого ещё</p>' : ''}
+                  </div>
+                  <div style="padding-left:8px">
+                    <div class="name" style="color:var(--red);margin-bottom:8px">🔴 Противник (${enSideList.length})</div>
+                    ${enSideList.map(c => `
+                      <div style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
+                        ${ROLE_ICON[c.role] || '?'} <b>${UI.esc(c.name)}</b>
+                      </div>`).join('')}
+                    ${enSideList.length === 0 ? '<p class="muted small">Никого ещё</p>' : ''}
+                  </div>
+                </div>
+              </div>`;
             }
 
-            // Карта направлений в активном бою
+            // ── АКТИВНЫЙ БОЙ ───────────────────────────────────────
             if (b.phase === 'active' && b.me) {
               const myCDs = b.cooldowns || {};
 
-              // Мой статус
-              html += `<div class="card">
-                <div class="name">👤 Вы — ${b.me.roleName}</div>
-                <div class="kv mt"><span class="k">HP</span><span class="v">${b.me.hp} / ${b.me.maxHp}</span></div>
-                ${b.me.shield > 0 ? `<div class="kv"><span class="k">Щит</span><span class="v">${b.me.shield}</span></div>` : ''}
-                ${b.me.stunned ? `<div class="kv"><span class="k" style="color:var(--red)">Оглушён</span><span class="v">${b.me.stunned} сек</span></div>` : ''}
-                ${b.me.noHeal  ? `<div class="kv"><span class="k" style="color:var(--orange)">Лечение заблок.</span><span class="v">${b.me.noHeal} сек</span></div>` : ''}
-                ${b.me.onFire  ? `<div class="kv"><span class="k" style="color:var(--orange)">🔥 Горит</span><span class="v"></span></div>` : ''}
-                ${b.me.immune  ? `<div class="kv"><span class="k" style="color:var(--green)">🔵 Купол</span><span class="v">${b.me.immune} сек</span></div>` : ''}
-                ${b.me.reflecting ? `<div class="kv"><span class="k" style="color:var(--green)">🪞 Отражение</span><span class="v">активно</span></div>` : ''}
-                <div class="kv mt"><span class="k">Кд действия</span><span class="v" id="cd-action">${myCDs.action || 0} сек</span></div>
-                <div class="kv"><span class="k">Кд перемещения</span><span class="v" id="cd-move">${myCDs.move || 0} сек</span></div>
-                ${b.me.gear && b.me.gear.length ? `<div class="kv mt"><span class="k">Пояс</span><span class="v">${b.me.gear.join(', ')}</span></div>` : ''}
+              // Полноэкранный режим — шапка с таймером и счётом
+              html += `
+                <div style="background:rgba(0,200,0,.08);border:2px solid var(--green);border-radius:8px;padding:10px;margin-bottom:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:var(--green);font-weight:bold">⚔️ БОЙ ИДЁТ</span>
+                    <span>⏱ <b id="battle-timer">${UI.fmtTimer(b.timeLeft || 0)}</b></span>
+                  </div>
+                  ${b.liveScores ? `
+                  <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:13px">
+                    <span style="color:var(--green)">🟢 Ваши: ${UI.fmtNum(b.liveScores[b.mySide] || 0)} очк.</span>
+                    <span style="color:var(--red)">🔴 Врagi: ${UI.fmtNum(b.liveScores[b.mySide==='A'?'B':'A'] || 0)} очк.</span>
+                  </div>` : ''}
+                </div>`;
+
+              // Мой статус — полная строка
+              const hpPct = Math.round(b.me.hp / b.me.maxHp * 100);
+              html += `
+                <div class="card" style="margin-bottom:8px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    <span style="font-size:20px">${ROLE_ICON[b.me.role] || '?'}</span>
+                    <b>Вы — ${b.me.roleName}</b>
+                    ${b.me.stunned ? `<span style="color:var(--red);font-size:12px">💫 Оглушён ${b.me.stunned}с</span>` : ''}
+                    ${b.me.noHeal  ? `<span style="color:var(--orange);font-size:12px">🚫 Лечение заблок. ${b.me.noHeal}с</span>` : ''}
+                    ${b.me.immune  ? `<span style="color:var(--green);font-size:12px">🔵 Купол ${b.me.immune}с</span>` : ''}
+                    ${b.me.reflecting ? `<span style="color:var(--green);font-size:12px">🪞 Отражение</span>` : ''}
+                    ${b.me.onFire  ? `<span style="color:var(--orange);font-size:12px">🔥 Горит</span>` : ''}
+                  </div>
+                  <div style="background:rgba(255,80,80,.15);border-radius:4px;height:8px;margin-bottom:4px;overflow:hidden">
+                    <div style="background:var(--red);height:100%;width:${hpPct}%;transition:width .3s"></div>
+                  </div>
+                  <div style="font-size:12px;color:var(--dim)">HP ${b.me.hp} / ${b.me.maxHp} (${hpPct}%)
+                  ${b.me.shield > 0 ? ` · 🛡 Щит: ${b.me.shield}` : ''}
+                  </div>
+                  <div style="font-size:12px;margin-top:4px">
+                    Кд действия: <span id="cd-action">${myCDs.action || 0}</span>с &nbsp;|&nbsp;
+                    Кд перемещения: <span id="cd-move">${myCDs.move || 0}</span>с
+                  </div>
+                </div>`;
+
+              // Направления — каждое на всю ширину
+              html += `<div class="name" style="padding:0;margin-bottom:6px">📍 Направление: ${b.me.direction !== null ? (b.directions.find(x=>x.dir===b.me.direction)||{}).name || 'Нап.'+b.me.direction : 'не выбрано'}</div>`;
+
+              html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+                ${b.directions.map(d => {
+                  const sel = b.me.direction === d.dir;
+                  const cdMove = myCDs.move || 0;
+                  return `<button class="btn btn-inline ${sel?'btn-green':''}" style="width:100%;padding:10px;text-align:left;${sel?'border:2px solid var(--green)':''}"
+                    data-dir="${d.dir}">
+                    ${sel ? '📍' : '○'} <b>${d.name}</b>
+                    <span style="float:right;font-size:12px">
+                      🟢 ${d.allies.filter(a=>a.alive).length} союзн. &nbsp; 🔴 ${d.enemies.filter(e=>e.alive).length} врагов
+                    </span>
+                  </button>`;
+                }).join('')}
               </div>`;
 
-              // Смена направления
-              html += `<div class="card">
-                <div class="name">📍 Направление: ${b.me.direction !== null ? b.me.direction : 'не выбрано'}</div>
-                <div class="btn-row mt">
-                  ${[1,2,3,4,5].map(d => {
-                    const dd = b.directions.find(x=>x.dir===d);
-                    const en = dd ? dd.enemies.length : 0;
-                    const al = dd ? dd.allies.length : 0;
-                    const sel = b.me.direction === d;
-                    return `<button class="btn btn-inline ${sel?'btn-green':''}" data-dir="${d}">Нап.${d} (${al}🟢${en}🔴)</button>`;
-                  }).join('')}
-                </div>
-              </div>`;
-
-              // Направление игрока: список врагов и союзников
+              // Текущее направление — союзники и враги
               if (b.me.direction !== null) {
                 const dirData = b.directions.find(x => x.dir === b.me.direction);
                 if (dirData) {
                   // Союзники
-                  if (dirData.allies.length > 0) {
-                    html += `<div class="card"><div class="name" style="color:var(--green)">🟢 Союзники нап.${b.me.direction}</div>`;
-                    for (const a of dirData.allies) {
-                      if (a.userId === App.me.id) continue;
-                      html += `<div class="list-row">
-                        <div class="grow">
-                          <b>${UI.esc(a.name)}</b> [${a.roleName}]
-                          <span class="small muted"> HP: ${a.hp}/${a.maxHp}</span>
-                          ${a.shield > 0 ? ` 🛡${a.shield}` : ''}
-                        </div>
-                        ${b.me.role === 'guardian' ? `<button class="btn btn-inline btn-orange" data-guard="${a.userId}">🛡️ Прикрыть</button>` : ''}
-                        ${b.me.role === 'medic'    ? `<button class="btn btn-inline btn-green"  data-heal="${a.userId}">💊 Лечить</button>` : ''}
-                      </div>`;
-                    }
-                    html += `</div>`;
+                  const aliveAllies = dirData.allies.filter(a => a.userId !== (b.me && b.me.userId) && a.alive);
+                  if (aliveAllies.length > 0) {
+                    html += `<div class="card" style="margin-bottom:8px">
+                      <div style="color:var(--green);font-weight:bold;margin-bottom:8px">🟢 Союзники на «${dirData.name}»</div>
+                      ${aliveAllies.map(a => {
+                        const ahp = Math.round(a.hp / a.maxHp * 100);
+                        return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
+                          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                            <span style="font-size:16px">${ROLE_ICON[a.role] || '?'}</span>
+                            <b>${UI.esc(a.name)}</b>
+                            <span class="muted small">${a.roleName}</span>
+                            ${a.shield > 0 ? `<span style="font-size:11px">🛡${a.shield}</span>` : ''}
+                          </div>
+                          <div style="background:rgba(0,200,0,.15);border-radius:4px;height:6px;margin-bottom:2px;overflow:hidden">
+                            <div style="background:var(--green);height:100%;width:${ahp}%"></div>
+                          </div>
+                          <div style="font-size:11px;color:var(--dim)">HP ${a.hp}/${a.maxHp}</div>
+                          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+                            ${b.me.role === 'guardian' ? `<button class="btn btn-orange btn-inline" style="flex:1" data-guard="${a.userId}">🛡️ Прикрыть (15с)</button>` : ''}
+                            ${b.me.role === 'medic'    ? `<button class="btn btn-green btn-inline" style="flex:1" data-heal="${a.userId}">➕ Лечить</button>` : ''}
+                          </div>
+                        </div>`;
+                      }).join('')}
+                    </div>`;
                   }
 
                   // Враги
-                  if (dirData.enemies.length > 0) {
-                    html += `<div class="card"><div class="name" style="color:var(--red)">🔴 Враги нап.${b.me.direction}</div>`;
-                    for (const en of dirData.enemies) {
-                      const hpPct = Math.round(en.hp / en.maxHp * 100);
-                      html += `<div class="list-row">
-                        <div class="grow">
-                          <b>${UI.esc(en.name)}</b> [${en.roleName}]
-                          <span class="small"> HP: ${en.hp}/${en.maxHp} (${hpPct}%)</span>
-                          ${en.stunned ? ` 💫${en.stunned}с` : ''}
-                          ${en.onFire  ? ' 🔥' : ''}
-                          ${en.shield > 0 ? ` 🛡${en.shield}` : ''}
-                        </div>
-                        ${b.me.role !== 'medic' ? `<button class="btn btn-red btn-inline" data-attack="${en.userId}">⚔️ Атаковать</button>` : ''}
-                        ${b.me.gear && b.me.gear.length ? `<button class="btn btn-orange btn-inline" data-item-target="${en.userId}" onclick="App._itemTarget='${en.userId}'">🎒 Предмет</button>` : ''}
-                      </div>`;
-                    }
-                    html += `</div>`;
+                  const aliveEnemies = dirData.enemies.filter(e => e.alive);
+                  if (aliveEnemies.length > 0) {
+                    html += `<div class="card" style="margin-bottom:8px">
+                      <div style="color:var(--red);font-weight:bold;margin-bottom:8px">🔴 Враги на «${dirData.name}»</div>
+                      ${aliveEnemies.map(en => {
+                        const ehp = Math.round(en.hp / en.maxHp * 100);
+                        return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
+                          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                            <span style="font-size:16px">${ROLE_ICON[en.role] || '?'}</span>
+                            <b>${UI.esc(en.name)}</b>
+                            <span class="muted small">${en.roleName}</span>
+                            ${en.stunned ? `<span style="color:var(--orange);font-size:11px">💫${en.stunned}с</span>` : ''}
+                            ${en.onFire  ? `<span style="color:var(--orange);font-size:11px">🔥</span>` : ''}
+                            ${en.shield > 0 ? `<span style="font-size:11px">🛡${en.shield}</span>` : ''}
+                          </div>
+                          <div style="background:rgba(255,50,50,.2);border-radius:4px;height:6px;margin-bottom:2px;overflow:hidden">
+                            <div style="background:var(--red);height:100%;width:${ehp}%"></div>
+                          </div>
+                          <div style="font-size:11px;color:var(--dim)">HP ${en.hp}/${en.maxHp} (${ehp}%)</div>
+                          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+                            <button class="btn btn-red btn-inline" style="flex:1" data-attack="${en.userId}">🎯 Атаковать</button>
+                            ${b.me.gear && b.me.gear.length ? `<button class="btn btn-orange btn-inline" style="flex:1" onclick="App._itemTarget='${en.userId}';App._itemTargetName='${en.name.replace(/'/g,'').slice(0,20)}'">🎒 Предмет</button>` : ''}
+                          </div>
+                        </div>`;
+                      }).join('')}
+                    </div>`;
                   }
 
-                  if (dirData.allies.length <= 1 && dirData.enemies.length === 0) {
-                    html += `<div class="card"><p class="muted center small">На этом направлении никого нет</p></div>`;
+                  if (aliveAllies.length === 0 && aliveEnemies.length === 0) {
+                    html += `<div class="card"><p class="muted center small">На «${dirData.name}» пусто — перейдите на другое направление</p></div>`;
                   }
                 }
               }
 
-              // Предметы в поясе
+              // Боевой пояс
               if (b.me.gear && b.me.gear.length > 0) {
-                html += `<div class="card"><div class="name">🎒 Боевой пояс</div>`;
+                const itemNames = {
+                  gas_grenade:'💨 Газовая шашка', flashbang:'💥 Светошумовая',
+                  assault_grenade:'🔴 Граната', napalm:'🔥 Напалм',
+                  uranium_ammo:'☢️ Урановые боеприпасы', hydrogen_bomb:'💣 Водородная бомба',
+                  medkit:'🩹 Аптечка', dome:'🔵 Купол',
+                  kevlar:'🦺 Бронеплиты', reflect_shield:'🪞 Отраж. щит',
+                };
                 const usedItems = new Set();
+                html += `<div class="card" style="margin-bottom:8px"><div class="name">🎒 Боевой пояс</div>`;
                 for (const itemId of b.me.gear) {
                   if (usedItems.has(itemId)) continue;
                   usedItems.add(itemId);
                   const cnt = b.me.gear.filter(x=>x===itemId).length;
-                  const itemNames = {
-                    gas_grenade:'💨 Газовая шашка', flashbang:'💥 Светошумовая',
-                    assault_grenade:'🔴 Граната', napalm:'🔥 Напалм',
-                    uranium_ammo:'☢️ Урановые боеприпасы', hydrogen_bomb:'💣 Водородная бомба',
-                    medkit:'🩹 Аптечка', dome:'🔵 Купол',
-                    kevlar:'🦺 Бронеплиты', reflect_shield:'🪞 Отраж. щит',
-                  };
-                  html += `<div class="kv mt"><span class="k">${itemNames[itemId]||itemId} ×${cnt}</span>
-                    <span class="v"><button class="btn btn-orange btn-inline" data-use-item="${itemId}">Применить</button></span></div>`;
+                  html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-dim)">
+                    <span>${itemNames[itemId]||itemId} ×${cnt}</span>
+                    <button class="btn btn-orange btn-inline" data-use-item="${itemId}">Применить${App._itemTarget ? ' → ' + (App._itemTargetName||'цель') : ''}</button>
+                  </div>`;
                 }
                 html += `</div>`;
               }
+
+              // Лог боя
+              if (b.log && b.log.length) {
+                html += `<div class="card" style="margin-bottom:8px">
+                  <div class="name">📋 Лог боя</div>
+                  <div style="max-height:160px;overflow-y:auto;font-size:11px">
+                    ${b.log.slice().reverse().map(e => {
+                      const col = e.kind==='crit'?'var(--red)':e.kind==='heal'?'var(--green)':e.kind==='item'?'var(--orange)':'var(--dim)';
+                      return `<div style="color:${col};padding:2px 0">${UI.esc(e.text)}</div>`;
+                    }).join('')}
+                  </div>
+                </div>`;
+              }
+
+              // Кнопка покинуть бой — внизу
+              html += `
+                <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+                  <button class="btn btn-red" style="width:100%;opacity:.7" id="leave-battle-btn">
+                    🚪 Покинуть бой
+                  </button>
+                  <p class="muted small mt center">При выходе ваша статистика не будет учтена</p>
+                </div>`;
             }
 
-            // Лог боя
-            if (b.log && b.log.length) {
-              html += `<div class="card"><div class="name">📋 Лог боя</div>
-                <div style="max-height:200px;overflow-y:auto;font-size:12px">
-                  ${b.log.slice().reverse().map(e => {
-                    const col = e.kind==='crit'?'var(--red)':e.kind==='heal'?'var(--green)':e.kind==='item'?'var(--orange)':'inherit';
-                    return `<div style="color:${col};padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05)">${UI.esc(e.text)}</div>`;
-                  }).join('')}
-                </div>
-              </div>`;
-            }
+            // ── БОЙ ЗАВЕРШЁН ──────────────────────────────────────
 
-            // Итог
-            if (b.phase === 'done') {
-              const won = b.winningSide === b.mySide;
-              const r = b.finalReport;
-              const reasonText = { elimination: 'Все противники уничтожены', time: 'Время истекло — победа по очкам активности', no_show: 'Противник не явился' };
-
-              html += `<div class="card" style="border:2px solid var(--${won?'green':'red'})">
-                <div class="name" style="color:var(--${won?'green':'red'})">${won ? '🏆 ПОБЕДА!' : '💀 ПОРАЖЕНИЕ'}</div>
-                <p class="muted small mt">${reasonText[b.finishReason] || ''}</p>
-                ${r ? `
-                  <hr class="hr">
-                  <div class="kv mt"><span class="k" style="color:var(--green)">Очки вашего легиона</span><span class="v gold">${UI.fmtNum(r.activityScores[b.mySide] || 0)}</span></div>
-                  <div class="kv"><span class="k" style="color:var(--red)">Очки противника</span><span class="v">${UI.fmtNum(r.activityScores[b.mySide==='A'?'B':'A'] || 0)}</span></div>
-                  <hr class="hr">
-                  <div class="name" style="font-size:13px">🏅 Лучшие бойцы боя</div>
-                  ${r.topAssault  ? `<div class="kv mt"><span class="k">⚔️ Топ штурмовик</span><span class="v">${UI.esc(r.topAssault.name)} — ${UI.fmtNum(r.topAssault.stats.dmgDealt)} урона</span></div>` : ''}
-                  ${r.topGuardian ? `<div class="kv"><span class="k">🛡️ Топ защитник</span><span class="v">${UI.esc(r.topGuardian.name)} — ${r.topGuardian.stats.guards} прикрытий</span></div>` : ''}
-                  ${r.topMedic    ? `<div class="kv"><span class="k">💊 Топ медик</span><span class="v">${UI.esc(r.topMedic.name)} — ${UI.fmtNum(r.topMedic.stats.healed)} вылечено</span></div>` : ''}
-                  <hr class="hr">
-                  <div class="name" style="font-size:13px">📊 Ваша статистика</div>
-                  ${b.me ? (() => {
-                    const myReport = r.playerDetails[b.me.userId];
-                    return myReport ? `
-                      <div class="kv mt"><span class="k">Роль</span><span class="v">${ROLES && ROLES[myReport.role] ? ROLES[myReport.role].label : myReport.role}</span></div>
-                      <div class="kv"><span class="k">Урон нанесён</span><span class="v">${UI.fmtNum(myReport.stats.dmgDealt)}</span></div>
-                      <div class="kv"><span class="k">Урон получен</span><span class="v">${UI.fmtNum(myReport.stats.dmgTaken)}</span></div>
-                      <div class="kv"><span class="k">Убийств</span><span class="v">${myReport.stats.kills}</span></div>
-                      ${myReport.role === 'medic'    ? `<div class="kv"><span class="k">Вылечено HP</span><span class="v">${UI.fmtNum(myReport.stats.healed)}</span></div>` : ''}
-                      ${myReport.role === 'guardian' ? `<div class="kv"><span class="k">Прикрытий</span><span class="v">${myReport.stats.guards}</span></div>` : ''}
-                      <div class="kv"><span class="k">Предметов исп.</span><span class="v">${myReport.stats.itemsUsed}</span></div>
-                      <div class="kv"><span class="k">Очков активности</span><span class="v gold">${myReport.score}</span></div>` : '';
-                  })() : ''}
-                  <hr class="hr">
-                  <div class="name" style="font-size:13px">📋 Все участники</div>
-                  ${Object.values(r.playerDetails).sort((a,b2)=>b2.score-a.score).map(p => `
-                    <div class="kv" style="opacity:${p.side===b.mySide?1:0.65}">
-                      <span class="k">${p.side===b.mySide?'🟢':'🔴'} ${UI.esc(p.name)}</span>
-                      <span class="v">${UI.fmtNum(p.score)} очк. · ${UI.fmtNum(p.stats.dmgDealt)} урона · ${p.stats.kills} убийств</span>
-                    </div>`).join('')}
-                ` : ''}
-                <button class="btn btn-orange mt" onclick="App._legionTab='war';App.rerender()">← К легиону</button>
-              </div>`;
-            }
-
-            return html;
-          }
+          } // end if (battleData)
 
           // ── РЕЖИМ ОЖИДАНИЯ (нет активного боя) ───────────────────
           if (L.canChallenge) {
@@ -535,6 +560,16 @@ async function renderGroupScreen(c, kind) {
               <input type="number" min="1" placeholder="Жетонов 🎖" id="dep-tokens">
               <button class="btn btn-orange btn-inline" id="dep-res-go">Внести</button>
             </div>
+            ${(App.me.adminEars || 0) > 0 || (App.me.adminTokens || 0) > 0 ? `
+            <hr class="hr">
+            <p class="muted small">Ресурсы от администратора (не учитываются в статистике, но можно внести в казну):</p>
+            <div class="kv mt"><span class="k">Адм. Уши 👂</span><span class="v">${UI.fmtNum(App.me.adminEars || 0)}</span></div>
+            <div class="kv"><span class="k">Адм. Жетоны 🎖</span><span class="v">${UI.fmtNum(App.me.adminTokens || 0)}</span></div>
+            <div class="field-row mt">
+              <input type="number" min="1" placeholder="Адм. ушей 👂" id="dep-adm-ears">
+              <input type="number" min="1" placeholder="Адм. жетонов 🎖" id="dep-adm-tokens">
+              <button class="btn btn-orange btn-inline" id="dep-adm-res-go">Внести в казну</button>
+            </div>` : ''}
           </div>`;
 
         // ── Навигация по вкладкам ─────────────────────────────────────
@@ -751,6 +786,19 @@ async function renderGroupScreen(c, kind) {
         };
       });
 
+      // Кнопка «Покинуть бой»
+      const leaveBattleBtn = document.getElementById('leave-battle-btn');
+      if (leaveBattleBtn) {
+        leaveBattleBtn.onclick = async () => {
+          if (!confirm('⚠️ Покинуть бой?\n\nВаша статистика не будет учтена. Вы вернётесь на главную.')) return;
+          try {
+            await API.post('/api/legion/battle/leave');
+            App._legionTab = 'base';
+            App.rerender();
+          } catch (e) { UI.toast('⛔ ' + e.message); }
+        };
+      }
+
       // Таймер подготовки (обратный отсчёт без перезагрузки страницы)
       const prepTimerEl = document.getElementById('prep-timer');
       if (prepTimerEl) {
@@ -854,14 +902,29 @@ async function renderGroupScreen(c, kind) {
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
 
-      // Внести уши/жетоны в казначейство
+      // Внести уши/жетоны в казначейство (обычные)
       const depResBtn = document.getElementById('dep-res-go');
       if (depResBtn) depResBtn.onclick = async () => {
         try {
           await API.post('/api/legion/deposit-resources', {
             ears:   document.getElementById('dep-ears')?.value   || 0,
             tokens: document.getElementById('dep-tokens')?.value || 0,
+            useAdmin: false,
           });
+          App.rerender();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+
+      // Внести ресурсы от администратора в казначейство
+      const depAdmBtn = document.getElementById('dep-adm-res-go');
+      if (depAdmBtn) depAdmBtn.onclick = async () => {
+        try {
+          await API.post('/api/legion/deposit-resources', {
+            ears:   document.getElementById('dep-adm-ears')?.value   || 0,
+            tokens: document.getElementById('dep-adm-tokens')?.value || 0,
+            useAdmin: true,
+          });
+          await App.refreshMe();
           App.rerender();
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
@@ -1065,8 +1128,7 @@ App.screens.chat = async (c) => {
 
   await loadChat();
   box.scrollTop = box.scrollHeight;
-  const timer = setInterval(loadChat, 5000);
-  App._tear = () => clearInterval(timer);
+  // Чат обновляется только при отправке сообщения
 };
 
 // ---------- ПОЧТА ----------

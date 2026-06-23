@@ -704,6 +704,7 @@ function mePayload(user) {
     healCost: config.hospitalPrice(user.level),  // для баннера «вылечиться» при HP < 25
     battle: { ...user.battle },
     ears: user.ears, tokens: user.tokens, earsLost: user.earsLost,
+    adminEars: user.adminEars || 0, adminTokens: user.adminTokens || 0,
     // Собственные уши игрока (лимит 2): сколько есть сейчас, штраф,
     // время до следующего восстановления и цена мгновенного восстановления
     earsCurrent: user.earsCurrent, earsMax: config.EARS.MAX,

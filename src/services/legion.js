@@ -438,17 +438,28 @@ function resolveTechQueue() {
 // ===================================================================
 // КАЗНАЧЕЙСТВО: лидер или любой участник вносит уши/жетоны в казну клана
 // ===================================================================
-function depositResources(user, ears, tokens, notices) {
+function depositResources(user, ears, tokens, useAdmin, notices) {
   const l = legionOf(user);
   if (!l) throw new u.ApiError('Вы не состоите в легионе');
   ensureLegionFields(l);
   ears   = u.toInt(ears, 0);
   tokens = u.toInt(tokens, 0);
   if (ears <= 0 && tokens <= 0) throw new u.ApiError('Укажите количество ушей или жетонов');
-  if (ears   > 0 && (user.earsCurrent || 0) < ears)   throw new u.ApiError(`Не хватает ушей (нужно ${ears}, есть ${user.earsCurrent || 0})`);
-  if (tokens > 0 && (user.tokens || 0)      < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
-  if (ears   > 0) { user.earsCurrent -= ears;   l.treasuryEars   += ears; }
-  if (tokens > 0) { user.tokens = (user.tokens||0) - tokens; l.treasuryTokens += tokens; }
+
+  if (useAdmin) {
+    // Источник — adminEars/adminTokens (начислено администратором)
+    if (ears   > 0 && (user.adminEars   || 0) < ears)   throw new u.ApiError(`Не хватает адм. ушей (нужно ${ears}, есть ${user.adminEars || 0})`);
+    if (tokens > 0 && (user.adminTokens || 0) < tokens) throw new u.ApiError(`Не хватает адм. жетонов (нужно ${tokens}, есть ${user.adminTokens || 0})`);
+    if (ears   > 0) { user.adminEars   -= ears;   l.treasuryEars   += ears; }
+    if (tokens > 0) { user.adminTokens -= tokens; l.treasuryTokens += tokens; }
+  } else {
+    // Источник — обычные earsCurrent/tokens
+    if (ears   > 0 && (user.earsCurrent || 0) < ears)   throw new u.ApiError(`Не хватает ушей (нужно ${ears}, есть ${user.earsCurrent || 0})`);
+    if (tokens > 0 && (user.tokens || 0)      < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
+    if (ears   > 0) { user.earsCurrent -= ears;   l.treasuryEars   += ears; }
+    if (tokens > 0) { user.tokens = (user.tokens||0) - tokens; l.treasuryTokens += tokens; }
+  }
+
   db.save('legions');
   const parts = [];
   if (ears   > 0) parts.push(`${ears} 👂`);
@@ -948,4 +959,5 @@ module.exports = {
   heal:             (...a) => require('./legionBattle').heal(...a),
   guard:            (...a) => require('./legionBattle').guard(...a),
   useItem:          (...a) => require('./legionBattle').useItem(...a),
+  leaveBattle:      (...a) => require('./legionBattle').leaveBattle(...a),
 };

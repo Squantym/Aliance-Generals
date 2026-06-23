@@ -174,14 +174,14 @@ function calcDamage(attacker, defender, aUser, dUser) {
 
   const ratio = dDef / Math.max(1, aAtk);
   let dmg;
-  if (ratio >= 1.5)                       dmg = u.rnd(1, 5);
-  else if (ratio >= 1.2)                  dmg = u.rnd(5, 15);
+  if (ratio >= 1.5)                       dmg = u.rnd(5, 12);   // min 5-12 для слишком сильного
+  else if (ratio >= 1.2)                  dmg = u.rnd(10, 20);
   else if (ratio >= 0.9 && ratio <= 1.1)  dmg = u.rnd(20, 40);
   else {
     const dom = Math.min(1, (0.9 - ratio) / 0.9);
     dmg = Math.round(25 + dom * 20 + Math.random() * 5);
   }
-  dmg = u.clamp(dmg, 1, 45);
+  dmg = u.clamp(dmg, 5, 45); // минимум 5 всегда
 
   // Бонус урановых боеприпасов
   const boost = (attacker.statusEffects || []).find(e => e.type === 'dmg_boost' && e.expiresAt > now());
@@ -287,7 +287,7 @@ function chooseDirection(user, dir, notices) {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// Атака
+// Атака (все роли могут атаковать, но с разными мультипликаторами)
 // ───────────────────────────────────────────────────────────────────
 function attack(user, targetUserId, notices) {
   player.refresh(user);
@@ -298,7 +298,6 @@ function attack(user, targetUserId, notices) {
 
   const c = findCombatant(battle, user.id);
   if (!c || !c.alive || c.hp <= 0) throw new u.ApiError('Вы выбыли из боя');
-  if (c.role === 'medic') throw new u.ApiError('Медики не могут атаковать');
   if (c.direction === null) throw new u.ApiError('Сначала выберите направление');
 
   const cdLeft = Math.ceil((c.lastActionAt + ACTION_CD_MS - now()) / 1000);
@@ -884,8 +883,36 @@ function serializeCombatant(c, t, isSelf) {
   };
 }
 
+// ── Выйти из боя (добровольно) ────────────────────────────────────
+function leaveBattle(user, notices) {
+  const l = legions()[user.legionId];
+  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
+  const battle = l.activeBattle;
+  const c = battle.combatants[user.id];
+  if (!c) throw new u.ApiError('Вы не участник боя');
+
+  // Убираем участника — его статистика не учитывается в итогах
+  delete battle.combatants[user.id];
+  log(battle, `🚪 ${user.name} покинул бой`, 'info');
+
+  // Проверяем не закончился ли бой
+  if (battle.phase === 'active') {
+    const aliveA = Object.values(battle.combatants).filter(c2 => c2.side === 'A' && c2.alive).length;
+    const aliveB = Object.values(battle.combatants).filter(c2 => c2.side === 'B' && c2.alive).length;
+    if (aliveA === 0 || aliveB === 0) {
+      const all = legions();
+      const users = allUsers();
+      finalizeBattle(battle, l, all, users, aliveA > 0 ? 'A' : 'B', 'elimination');
+    }
+  }
+
+  db.save('legions');
+  notices.push('🚪 Вы покинули бой. Ваша статистика не сохранена.');
+  return { ok: true };
+}
+
 module.exports = {
-  joinBattle, chooseDirection, attack, heal, guard, useItem,
+  joinBattle, chooseDirection, attack, heal, guard, useItem, leaveBattle,
   battleState, tickEffects, startActivePhaseTick,
   ROLES, DIRECTIONS, DIR_NAMES, MAX_PER_DIR, PREP_MS, BATTLE_MS,
   ensureLegionGlory, addGlory, calcLegionLevel, GLORY_THRESHOLDS,

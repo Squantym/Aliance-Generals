@@ -48,8 +48,16 @@ function applyGrant(target, body) {
   if (addInt('dollars'))    { player.addMoney(target, addInt('dollars'), false);             granted.push(`$${u.fmt(addInt('dollars'))}`); }
   if (addInt('gold'))       { player.addGold(target, addInt('gold'));                        granted.push(`🪙 ${addInt('gold')}`); }
   if (addInt('skillPoints')){ target.skillPoints = Math.max(0, target.skillPoints + addInt('skillPoints')); granted.push(`${addInt('skillPoints')} оч. навыков`); }
-  if (addInt('ears'))       { target.earsCurrent = Math.min(config.EARS.MAX, (target.earsCurrent || 0) + addInt('ears'));  granted.push(`${addInt('ears')} 👂`); }
-  if (addInt('tokens'))     { target.tokens = Math.max(0, (target.tokens || 0) + addInt('tokens'));  granted.push(`${addInt('tokens')} 🎖`); }
+  if (addInt('ears'))       {
+    // Уши от администратора — в отдельный кошелёк, не смешиваются с игровыми
+    target.adminEars   = (target.adminEars   || 0) + addInt('ears');
+    granted.push(`${addInt('ears')} 👂`);
+  }
+  if (addInt('tokens'))     {
+    // Жетоны от администратора — аналогично
+    target.adminTokens = (target.adminTokens || 0) + addInt('tokens');
+    granted.push(`${addInt('tokens')} 🎖`);
+  }
   if (addInt('xp'))         { player.addXp(target, addInt('xp'), []);                       granted.push(`${u.fmt(addInt('xp'))} XP`); }
 
   if (body.setLevel !== undefined && body.setLevel !== null && body.setLevel !== '') {
