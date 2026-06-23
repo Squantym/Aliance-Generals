@@ -223,6 +223,11 @@ module.exports = function registerRoutes(app) {
     return { ok: true };
   }));
   app.add('GET', '/api/fame', () => require('./services/fame').fame());
+  // Принудительный сброс снапшота «за сегодня» (только для администратора)
+  app.add('POST', '/api/admin/fame/reset-snapshot', (req) => {
+    require('./services/fame').forceResetSnapshot();
+    return { ok: true, message: 'Снапшот сброшен. При следующем запросе /api/fame создастся новый.' };
+  }, { admin: true });
 
   // ---------- Уведомления (колокольчик) ----------
   app.add('GET',  '/api/notifications',           (req) => notifications.list(req.user));

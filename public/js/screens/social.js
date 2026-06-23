@@ -1173,8 +1173,9 @@ App.screens.fame = async (c, param) => {
   // Daily reset info
   const dailyInfo = section === 'daily' ? `
     <div class="card">
-      <p class="muted small">📅 Статистика за сегодня (МСК). Сбрасывается каждый день в <b>23:59 по МСК</b>.</p>
-      ${data.snapshotDate ? `<p class="muted small mt">Дата снимка: ${data.snapshotDate}</p>` : ''}
+      <p class="muted small">📅 Показывает только то, что сделано <b>с начала текущего дня (МСК)</b>.</p>
+      <p class="muted small mt">Данные обнуляются каждую ночь в <b>23:59 по МСК</b>.</p>
+      ${data.snapshotDate ? `<p class="muted small mt">Отсчёт ведётся с: <b>${data.snapshotDate}</b></p>` : '<p class="muted small mt" style="color:var(--orange)">⚠️ Снапшот ещё не создан — появится при следующем запросе</p>'}
     </div>` : `
     <div class="card">
       <p class="muted small">🏆 Статистика за всё время — учитываются только действия самих игроков.</p>
