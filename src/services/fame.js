@@ -1,17 +1,15 @@
 // ===================================================================
 // src/services/fame.js — Зал славы
 //
-// Два раздела:
-//   1. «За сегодня» — ежедневная статистика, сбрасывается в 23:59 МСК
-//      Хранится в dailyFame: { snapshotDate, players: {id: {...}} }
-//   2. «За всё время» — вечная статистика по накопленным счётчикам
+// РАЗДЕЛ «ЗА ВСЁ ВРЕМЯ»: накопленные счётчики, не учитывают adminGrant
+// РАЗДЕЛ «СЕГОДНЯ»: разница между текущими значениями и снапшотом
+// на начало дня. Снапшот снимается при смене даты МСК.
 //
-// ВАЖНО: ресурсы, выданные администратором через /api/admin/grant или
-// /api/admin/grant-all, НЕ учитываются — они не проходят через
-// addBattleLoot/addMoney(earned=true)/buildingsBuilt в battle/buildings.
+// Ресурсы от администратора НЕ учитываются — они пишут напрямую в
+// user.earsCurrent/tokens/dollars, минуя battle/buildings счётчики.
 // ===================================================================
 
-const db    = require('../core/db');
+const db     = require('../core/db');
 const player = require('./player');
 
 // ── 7 категорий ───────────────────────────────────────────────────
@@ -20,49 +18,56 @@ const CATEGORIES = [
     id: 'level',
     name: '⭐ Восхождение',
     desc: 'Наивысший уровень генерала',
-    val: (p) => p.level,
+    allTimeVal: (p) => p.level,
+    dailyVal:   (p) => p.level,  // уровень — абсолютный, смысл дельты небольшой
     fmt: 'number',
   },
   {
     id: 'ears',
     name: '👂 Коллекционер ушей',
     desc: 'Больше всех отрезал ушей при фаталити',
-    val: (p) => p.ears || 0,
+    allTimeVal: (p) => p.ears || 0,
+    dailyKey:   'ears',
     fmt: 'number',
   },
   {
     id: 'mercy',
     name: '🕊️ Рыцарь милосердия',
     desc: 'Больше всего жетонов помилования',
-    val: (p) => p.tokens || 0,
+    allTimeVal: (p) => p.tokens || 0,
+    dailyKey:   'tokens',
     fmt: 'number',
   },
   {
     id: 'battles',
     name: '⚔️ Вечный воин',
-    desc: 'Суммарно боёв (победы + поражения)',
-    val: (p) => (p.battle?.wins || 0) + (p.battle?.losses || 0),
+    desc: 'Суммарно боёв (победы + поражения) за день',
+    allTimeVal: (p) => (p.battle?.wins || 0) + (p.battle?.losses || 0),
+    dailyKey:   'battles',
     fmt: 'number',
   },
   {
     id: 'loot',
     name: '💰 Военная добыча',
     desc: 'Заработано в боях',
-    val: (p) => p.counters?.battleLoot || 0,
+    allTimeVal: (p) => p.counters?.battleLoot || 0,
+    dailyKey:   'battleLoot',
     fmt: 'money',
   },
   {
     id: 'buildings',
     name: '🏗️ Великий строитель',
     desc: 'Всего построено зданий',
-    val: (p) => p.counters?.buildingsBuilt || 0,
+    allTimeVal: (p) => p.counters?.buildingsBuilt || 0,
+    dailyKey:   'buildingsBuilt',
     fmt: 'number',
   },
   {
     id: 'alliance',
     name: '🤝 Полководец армий',
     desc: 'Самый большой альянс',
-    val: (p) => { const a = player.allianceOf(p); return a ? a.members.length : 0; },
+    allTimeVal: (p) => { const a = player.allianceOf(p); return a ? a.members.length : 0; },
+    dailyVal:   (p) => { const a = player.allianceOf(p); return a ? a.members.length : 0; },
     fmt: 'number',
   },
 ];
@@ -73,62 +78,51 @@ function mskDateKey() {
   return d.toISOString().slice(0, 10);
 }
 
-// ── Получить или создать ежедневный снапшот ────────────────────────
-function dailyData() {
-  return db.load('dailyFame', { snapshotDate: null, snapshot: null, todayStart: null });
+function dailyStore() {
+  return db.load('dailyFame', { snapshotDate: null, snapshot: {} });
 }
 
-// ── Снять снапшот начала дня (вызывается при смене даты МСК) ──────
-// Сохраняем значения счётчиков каждого игрока на начало дня.
-// Дневной прирост = текущее − значение на начало дня.
-function takeSnapshot() {
-  const dd = dailyData();
+// ── Снапшот: текущие значения всех игроков на начало дня ──────────
+function ensureSnapshot() {
+  const store = dailyStore();
   const today = mskDateKey();
-  if (dd.snapshotDate === today) return; // уже снято сегодня
+  if (store.snapshotDate === today) return store; // уже свежий
 
+  // Новый день — снимаем снапшот текущих значений
   const all = player.users();
-  const snapshot = {};
+  const snap = {};
   for (const p of Object.values(all)) {
-    snapshot[p.id] = {
-      ears:      p.ears           || 0,
-      tokens:    p.tokens         || 0,
-      wins:      p.battle?.wins   || 0,
-      losses:    p.battle?.losses || 0,
-      battleLoot:p.counters?.battleLoot    || 0,
-      buildings: p.counters?.buildingsBuilt|| 0,
-      allianceSize: (() => { const a = player.allianceOf(p); return a ? a.members.length : 0; })(),
+    snap[p.id] = {
+      ears:          p.ears           || 0,
+      tokens:        p.tokens         || 0,
+      battles:       (p.battle?.wins  || 0) + (p.battle?.losses || 0),
+      battleLoot:    p.counters?.battleLoot     || 0,
+      buildingsBuilt:p.counters?.buildingsBuilt || 0,
     };
   }
-  dd.snapshotDate = today;
-  dd.snapshot     = snapshot;
-  dd.todayStart   = Date.now();
+  store.snapshotDate = today;
+  store.snapshot     = snap;
   db.save('dailyFame');
+  return store;
 }
 
-// ── Дневной прирост одного игрока ─────────────────────────────────
-function dailyVal(p, catId, snap) {
-  const s = snap && snap[p.id];
-  switch (catId) {
-    case 'level':    return p.level;  // уровень не прирастает за день как число, показываем абсолютный
-    case 'ears':     return (p.ears || 0)           - (s?.ears      || 0);
-    case 'mercy':    return (p.tokens || 0)          - (s?.tokens    || 0);
-    case 'battles':  return ((p.battle?.wins||0)+(p.battle?.losses||0)) - ((s?.wins||0)+(s?.losses||0));
-    case 'loot':     return (p.counters?.battleLoot||0) - (s?.battleLoot||0);
-    case 'buildings':return (p.counters?.buildingsBuilt||0) - (s?.buildings||0);
-    case 'alliance': {
-      const a = player.allianceOf(p);
-      return (a ? a.members.length : 0) - (s?.allianceSize||0);
-    }
-    default: return 0;
-  }
+// ── Дневное значение одного игрока ────────────────────────────────
+function getDailyVal(cat, p, snap) {
+  // Если у категории есть специальная функция для ежедневного значения
+  if (cat.dailyVal) return cat.dailyVal(p);
+  // Иначе вычисляем дельту по ключу
+  const key  = cat.dailyKey;
+  const cur  = cat.allTimeVal(p);
+  const prev = snap && snap[p.id] ? (snap[p.id][key] || 0) : 0;
+  return Math.max(0, cur - prev);
 }
 
-// ── Топ-10 по категории ────────────────────────────────────────────
-function top10(catId, valueGetter) {
+// ── Топ-10 по значению ────────────────────────────────────────────
+function buildTop(valFn) {
   return Object.values(player.users())
     .map((p) => ({
       id: p.id, name: p.name, flag: player.flag(p), level: p.level,
-      value: valueGetter(p),
+      value: valFn(p),
     }))
     .filter(x => x.value > 0)
     .sort((a, b) => b.value - a.value)
@@ -137,49 +131,43 @@ function top10(catId, valueGetter) {
 
 // ── Основная функция ───────────────────────────────────────────────
 function fame() {
-  takeSnapshot(); // проверяем нужно ли снять снапшот
-
-  const dd = dailyData();
-  const snap = dd.snapshot || {};
+  const store = ensureSnapshot();
+  const snap  = store.snapshot || {};
 
   const allTime = CATEGORIES.map(cat => ({
     id: cat.id, name: cat.name, desc: cat.desc, fmt: cat.fmt,
-    top: top10(cat.id, cat.val),
+    top: buildTop(p => cat.allTimeVal(p)),
   }));
 
   const daily = CATEGORIES.map(cat => ({
     id: cat.id, name: cat.name, desc: cat.desc, fmt: cat.fmt,
-    top: top10(cat.id, (p) => dailyVal(p, cat.id, snap)),
+    top: buildTop(p => getDailyVal(cat, p, snap)),
   }));
 
   return {
     allTime,
     daily,
-    snapshotDate: dd.snapshotDate,
+    snapshotDate: store.snapshotDate,
     nextResetMsk: '23:59',
   };
 }
 
-// ── Сброс дневной статистики (вызывается из server.js в 23:59 МСК) ─
+// ── Сброс дневного снапшота (вызывается из server.js каждые 30 сек) ─
+// При смене даты МСК ensureSnapshot() автоматически обновит снапшот
+// при следующем обращении к fame(). Здесь принудительно сбрасываем
+// дату в 23:59 МСК чтобы следующий вызов создал новый снапшот.
 function resetDailyIfNeeded() {
-  const now = new Date(Date.now() + 3 * 3600 * 1000); // UTC+3
+  const now = new Date(Date.now() + 3 * 3600 * 1000);
   const h = now.getUTCHours(), m = now.getUTCMinutes();
-  // Сброс в окне 23:59–23:59:59 МСК
   if (h === 23 && m === 59) {
-    const dd = dailyData();
+    const store = dailyStore();
     const today = mskDateKey();
-    if (dd.snapshotDate !== today) {
-      takeSnapshot(); // снять снапшот если ещё не снят
-    } else {
-      // Принудительно обнулить дату чтобы следующий тик взял новый снапшот
-      const tomorrow = new Date(Date.now() + 3 * 3600 * 1000 + 60 * 1000);
-      const nextKey = tomorrow.toISOString().slice(0, 10);
-      if (nextKey !== today) {
-        dd.snapshotDate = null; // сбрасываем — следующий вызов takeSnapshot() сделает новый
-        db.save('dailyFame');
-      }
+    if (store.snapshotDate === today) {
+      // Помечаем как устаревший — при следующем запросе создастся новый
+      store.snapshotDate = null;
+      db.save('dailyFame');
     }
   }
 }
 
-module.exports = { fame, takeSnapshot, resetDailyIfNeeded };
+module.exports = { fame, resetDailyIfNeeded };

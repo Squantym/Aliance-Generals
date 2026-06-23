@@ -257,7 +257,9 @@ const App = {
     if (App._tear) { try { App._tear(); } catch (e) {} App._tear = null; }
 
     const hash = (location.hash || '').slice(1) || 'home';
-    const [name, param] = hash.split('/');
+    const slashIdx = hash.indexOf('/');
+    const name  = slashIdx === -1 ? hash : hash.slice(0, slashIdx);
+    const param = slashIdx === -1 ? undefined : hash.slice(slashIdx + 1);
 
     // Специальный маршрут: #verify/<token> — ссылка из письма подтверждения
     if (name === 'verify' && param) {

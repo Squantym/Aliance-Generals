@@ -46,9 +46,9 @@ module.exports = function registerRoutes(app) {
   // ---------- Авторизация (открытые маршруты) ----------
   app.add('GET', '/api/countries', () => ({ countries: config.COUNTRIES }), { open: true });
   app.add('POST', '/api/register', (req) =>
-    auth.register(req.body.login, req.body.password, req.body.email, req.body.country), { open: true });
+    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip), { open: true });
   app.add('POST', '/api/login', (req) =>
-    auth.login(req.body.login, req.body.password), { open: true });
+    auth.login(req.body.login, req.body.password, req.ip), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login), { open: true });

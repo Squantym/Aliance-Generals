@@ -26,7 +26,9 @@ async function renderGroupScreen(c, kind) {
       const L = lg.mine;
       if (L) {
         // ── Вкладки легиона ──────────────────────────────────────────
-        const tab = App._legionTab || 'buildings';
+        const tab = App._legionTab || 'base';
+        const myRank = L.myRank || 0;
+        const isLeaderOrVice = myRank >= 3;
 
         // ── Баннер вызова на бой (виден лидеру при входящем вызове) ──
         let challengeBanner = '';

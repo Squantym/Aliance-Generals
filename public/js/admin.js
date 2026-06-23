@@ -24,7 +24,7 @@ const Admin = {
         <label>Позывной</label><input type="text" id="ad-name" autocomplete="username">
         <label>Пароль</label><input type="password" id="ad-pass" autocomplete="current-password">
         <button class="btn btn-orange mt" id="ad-go" style="width:100%">Войти</button>
-        <p class="muted small mt center">Права администратора — у первого зарегистрированного игрока.</p>
+        <p class="muted small mt center">Доступ ограничен.</p>
       </div>`;
     const go = async () => {
       try {

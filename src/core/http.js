@@ -69,7 +69,11 @@ function readBody(req) {
 
 function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+  });
   res.end(body);
 }
 
@@ -99,6 +103,13 @@ function serveStatic(res, urlPath) {
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Cache-Control': cacheControlFor(ext),
+      // БАГ 21: HTTP security headers
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'SAMEORIGIN',
+      'X-XSS-Protection': '1; mode=block',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      // Content-Security-Policy — разрешаем только свои ресурсы
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;",
     });
     res.end(body);
   });
@@ -143,6 +154,7 @@ function createApp() {
             query: Object.fromEntries(new URLSearchParams(qs || '')),
             body: req.method === 'POST' ? await readBody(req) : {},
             user: null,
+            ip: (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown',
           };
 
           // Авторизация (если маршрут не открытый)

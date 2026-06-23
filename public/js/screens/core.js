@@ -20,24 +20,24 @@ App.screens.auth = async (c) => {
     </div>
 
     <div class="card" id="form-login">
-      <label>Позывной</label>
-      <input type="text" id="li-name" maxlength="16" autocomplete="username">
-      <label>Пароль</label>
-      <input type="password" id="li-pass" autocomplete="current-password">
+      <label for="li-name">Позывной</label>
+      <input type="text" id="li-name" maxlength="16" autocomplete="username" required placeholder="Ваш игровой позывной">
+      <label for="li-pass">Пароль</label>
+      <input type="password" id="li-pass" autocomplete="current-password" required placeholder="Пароль от аккаунта">
       <button class="btn btn-orange mt" id="li-go">Войти в строй</button>
       <button class="btn mt" id="li-resend">Не пришло письмо с подтверждением? Отправить повторно</button>
     </div>
 
     <div class="card" id="form-reg" style="display:none">
       <p class="muted small">2034 год. Мир охвачен войной, и каждой армии нужны решительные командиры. Заполни личное дело, боец.</p>
-      <label>Позывной (3–16 символов)</label>
-      <input type="text" id="rg-name" maxlength="16" autocomplete="username">
-      <label>Email (для подтверждения регистрации)</label>
-      <input type="email" id="rg-email" autocomplete="email">
-      <label>Пароль (минимум 4 символа)</label>
-      <input type="password" id="rg-pass" autocomplete="new-password">
-      <label>Страна (даёт постоянный бонус)</label>
-      <select id="rg-country">${countryOptions}</select>
+      <label for="rg-name">Позывной (3–16 символов, только буквы/цифры/_ -)</label>
+      <input type="text" id="rg-name" maxlength="16" autocomplete="username" required placeholder="Например: ShadowGeneral">
+      <label for="rg-email">Email (для подтверждения регистрации)</label>
+      <input type="email" id="rg-email" autocomplete="email" required placeholder="your@email.com">
+      <label for="rg-pass">Пароль (минимум 8 символов, буквы + цифры)</label>
+      <input type="password" id="rg-pass" autocomplete="new-password" required placeholder="Не менее 8 символов" minlength="8">
+      <label for="rg-country">Страна (даёт постоянный бонус)</label>
+      <select id="rg-country" required>${countryOptions}</select>
       <button class="btn btn-orange mt" id="rg-go">Подписать контракт</button>
     </div>`;
 
@@ -83,16 +83,27 @@ App.screens.auth = async (c) => {
   };
 
   document.getElementById('rg-go').onclick = async () => {
+    // БАГ 2: клиентская валидация перед отправкой
+    const name = document.getElementById('rg-name').value.trim();
+    const email = document.getElementById('rg-email').value.trim();
+    const pass  = document.getElementById('rg-pass').value;
+    if (!name)  { UI.toast('⛔ Введите позывной'); return; }
+    if (name.length < 3) { UI.toast('⛔ Позывной минимум 3 символа'); return; }
+    if (!email) { UI.toast('⛔ Введите email'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { UI.toast('⛔ Введите корректный email'); return; }
+    if (!pass)  { UI.toast('⛔ Введите пароль'); return; }
+    if (pass.length < 8) { UI.toast('⛔ Пароль минимум 8 символов'); return; }
+    if (!/[A-Za-zА-Яа-яЁё]/.test(pass) || !/[0-9]/.test(pass)) { UI.toast('⛔ Пароль должен содержать буквы и цифры'); return; }
     try {
       const r = await API.post('/api/register', {
-        login: document.getElementById('rg-name').value,
+        login: name,
         email: document.getElementById('rg-email').value,
-        password: document.getElementById('rg-pass').value,
+        password: pass,
         country: document.getElementById('rg-country').value,
       });
-      if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора (/admin)');
+      if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора');
       if (r.token) {
-        // Dev-режим: почта подтверждена автоматически (RESEND_API_KEY не задан)
+        // Dev-режим: почта подтверждена автоматически
         await finish(r.token);
       } else {
         // Боевой режим: ждём подтверждения почты
@@ -100,9 +111,11 @@ App.screens.auth = async (c) => {
           <div class="title">📧 Подтвердите почту</div>
           <div class="card center">
             <p style="font-size:40px">✉️</p>
-            <p class="mt">Письмо со ссылкой подтверждения отправлено на <b>${UI.esc(r.email)}</b>.</p>
-            <p class="muted small mt">Перейдите по ссылке в письме и вернитесь сюда — сможете войти.</p>
-            <button class="btn btn-orange mt" onclick="App.go('auth')">Уже подтвердил — войти</button>
+            <p class="mt">Регистрация прошла успешно!</p>
+            <p class="mt">Письмо со ссылкой активации отправлено на <b>${UI.esc(r.email)}</b>.</p>
+            <p class="muted small mt">📁 Если письмо не пришло в течение 5 минут — проверьте папку <b>Спам</b>.</p>
+            <p class="muted small mt">Отправитель: <b>noreply@aliance-general.ru</b></p>
+            <button class="btn btn-orange mt" onclick="App.go('auth')">✅ Уже подтвердил — войти</button>
           </div>`;
       }
     } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -456,7 +469,112 @@ App.screens.skills = async (c) => {
   });
 };
 
-// ---------- БАНК (тело определено в начале файла) ----------
+// ---------- БАНК ----------
+App.screens.bank = async (c, param) => {
+  await App.refreshMe();
+  const m = App.me;
+  const tab = param || 'storage';
+
+  const tabs = `
+    <div class="tabs">
+      <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">🏦 Хранилище</div>
+      <div class="tab ${tab === 'reserve' ? 'active' : ''}" onclick="location.hash='#bank/reserve'">💱 Резерв</div>
+      <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'">🪙 Купить золото</div>
+    </div>`;
+
+  if (tab === 'gold') {
+    const { packages } = await API.get('/api/bank/gold-packages');
+    c.innerHTML = `
+      <div class="title">Банк · Покупка золота</div>
+      ${tabs}
+      <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. Курс: <b>1 золото = 1 рубль</b>. На крупных пакетах — бонусное золото.</p></div>
+      ${packages.map((p) => `
+        <div class="card">
+          <div class="list-row" style="border:none;padding:0">
+            <div class="grow">
+              <div class="name"><span class="ic-gold"></span> ${UI.fmtNum(p.total)} золота${p.bonus > 0 ? ` <span class="badge green">+${p.bonusPct}%</span>` : ''}</div>
+              <div class="muted small">${UI.fmtNum(p.gold)}${p.bonus > 0 ? ` + ${UI.fmtNum(p.bonus)} бонус` : ''}</div>
+            </div>
+            <button class="btn btn-orange btn-inline" data-pack="${p.id}">${UI.fmtNum(p.priceRub)} ₽</button>
+          </div>
+        </div>`).join('')}
+      <div class="card"><p class="muted small center">💳 Приём оплаты скоро будет подключён.</p></div>`;
+    c.querySelectorAll('[data-pack]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          const r = await API.post('/api/bank/buy-gold', { packId: btn.dataset.pack });
+          UI.toast('💳 ' + (r.message || 'Пакет зарезервирован'));
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+    return;
+  }
+
+  if (tab === 'reserve') {
+    const legionName = m.legion ? m.legion.name : null;
+    c.innerHTML = `
+      <div class="title">Банк · Резерв</div>
+      ${tabs}
+      <div class="card">
+        <p class="muted small">Конвертируй доллары в Резервы для казны легиона.</p>
+        <div class="kv mt"><span class="k">Курс</span><span class="v">1 000 $ = 1 Резерв</span></div>
+        ${legionName
+          ? `<div class="kv"><span class="k">Ваш легион</span><span class="v">${UI.esc(legionName)}</span></div>`
+          : '<p class="muted small mt" style="color:var(--red)">⛔ Вы не состоите в легионе</p>'}
+      </div>
+      ${legionName ? `
+      <div class="card">
+        <label>Сумма ($)</label>
+        <div class="field-row mt">
+          <input type="number" id="res-amt" min="1000" step="1000" placeholder="мин. 1 000 $">
+          <button class="btn btn-orange btn-inline" id="res-go">Зарезервировать</button>
+        </div>
+        <p class="muted small mt">Деньги списываются из ваших наличных и поступают в казну легиона как Резервы.</p>
+      </div>` : ''}`;
+    if (legionName) {
+      document.getElementById('res-go').onclick = async () => {
+        try {
+          await API.post('/api/bank/reserve', { dollars: document.getElementById('res-amt').value });
+          await App.refreshMe();
+          App.rerender();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    }
+    return;
+  }
+
+  // Вкладка «Хранилище»
+  c.innerHTML = `
+    <div class="title">Банк · Хранилище</div>
+    ${tabs}
+    <div class="card">
+      <div class="kv"><span class="k">Наличные</span><span class="v money">$ ${UI.fmtNum(m.dollars)}</span></div>
+      <div class="kv"><span class="k">В хранилище</span><span class="v money">$ ${UI.fmtNum(m.bank)}</span></div>
+      <p class="muted small mt">При вложении снимается комиссия 10%. Деньги в хранилище нельзя ограбить.</p>
+    </div>
+    <div class="card">
+      <label>Положить в хранилище</label>
+      <div class="field-row">
+        <input type="number" id="bk-dep" min="1" placeholder="Сумма">
+        <button class="btn btn-orange btn-inline" id="bk-dep-go">Положить</button>
+      </div>
+      <label>Снять из хранилища</label>
+      <div class="field-row">
+        <input type="number" id="bk-wd" min="1" placeholder="Сумма">
+        <button class="btn btn-inline" id="bk-wd-go">Снять</button>
+      </div>
+    </div>`;
+
+  const op = (action, inputId) => async () => {
+    try {
+      await API.post('/api/bank', { action, amount: document.getElementById(inputId).value });
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  document.getElementById('bk-dep-go').onclick = op('deposit', 'bk-dep');
+  document.getElementById('bk-wd-go').onclick  = op('withdraw', 'bk-wd');
+};
 
 App.screens.settings = async (c) => {
   await App.refreshMe();
