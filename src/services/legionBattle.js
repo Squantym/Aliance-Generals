@@ -108,6 +108,11 @@ function addActivity(battle, userId, type, amount) {
 
 // ───────────────────────────────────────────────────────────────────
 // Урон: щит, иммунитет, отражение, прикрытие
+//
+// Принцип «ресурсы боя = ресурсы профиля»: hp в combatant — лишь
+// зеркало user.res.hp.cur. Снимаем урон в обоих местах одновременно,
+// чтобы лечение в госпитале / эффекты регенерации игрока сразу
+// отражались в бою и наоборот.
 // ───────────────────────────────────────────────────────────────────
 function applyDamage(battle, targetId, rawDmg, sourceId) {
   const c = battle.combatants[targetId];
@@ -159,6 +164,13 @@ function applyDamage(battle, targetId, rawDmg, sourceId) {
   const actual = Math.min(dmg, c.hp);
   c.hp = Math.max(0, c.hp - dmg);
 
+  // Синхронизируем HP в профиле жертвы — ресурсы боя = текущие ресурсы
+  const targetUser = allUsers()[targetId];
+  if (targetUser && targetUser.res && targetUser.res.hp) {
+    targetUser.res.hp.cur = Math.max(0, Math.min(player.maxima(targetUser).hp, c.hp));
+    targetUser.res.hp.t = now();
+  }
+
   // Очки активности — штраф за получение урона
   if (actual > 0) addActivity(battle, targetId, 'damage_taken');
 
@@ -169,6 +181,10 @@ function applyDamage(battle, targetId, rawDmg, sourceId) {
 // Расчёт урона между двумя бойцами
 // ───────────────────────────────────────────────────────────────────
 function calcDamage(attacker, defender, aUser, dUser) {
+  // player.totalPower уже умножает на эффекты «atk_pct» / «def_pct»
+  // (Боевой стимулятор, Композитные накладки, командиры аукциона,
+  // падлянки чёрного рынка) — поэтому эти бонусы автоматически
+  // учитываются и в боях легиона, как требует ТЗ.
   const aAtk = player.totalPower(aUser, 'atk').power * attacker.roleMul.atk;
   const dDef = player.totalPower(dUser, 'def').power * defender.roleMul.def;
 
@@ -201,6 +217,13 @@ function calcDamage(attacker, defender, aUser, dUser) {
 
 // ───────────────────────────────────────────────────────────────────
 // Регистрация игрока + выбор роли (фаза prep)
+//
+// joinBattle создаёт combatant с ready=false и direction=null. Это
+// означает «игрок вошёл в окно боя и выбрал роль, но ещё не нажал
+// кнопку Готов». Без явного нажатия Готов в фазу prep его выкинут
+// на старте active-фазы (см. startActivePhaseTick).
+//
+// Можно вызывать повторно для смены роли в prep-фазе.
 // ───────────────────────────────────────────────────────────────────
 function joinBattle(user, roleId, notices) {
   player.refresh(user);
@@ -216,6 +239,7 @@ function joinBattle(user, roleId, notices) {
   const side = l.id === battle.legionA ? 'A' : 'B';
   const mx   = player.maxima(user);
   const shieldVal = roleId === 'guardian' ? user.res.en.cur : 0;
+  const existing = battle.combatants[user.id];
 
   battle.combatants[user.id] = {
     userId: user.id,
@@ -223,26 +247,65 @@ function joinBattle(user, roleId, notices) {
     side,
     role: roleId,
     roleMul: { atk: role.atkMul, def: role.defMul, dmgReduce: role.dmgReduce },
+    // HP/EN/AM в бою привязаны к текущим ресурсам игрока:
+    //   hp в combatant — лишь зеркало user.res.hp.cur,
+    //   синхронизируется в обе стороны при applyDamage/heal/attack.
     hp: user.res.hp.cur,
     maxHp: mx.hp,
     shield: shieldVal,
-    direction: null,
-    ready: true,
-    readyAt: now(),
-    lastActionAt: 0,
-    lastMoveAt: 0,
-    lastItemAt: 0,
-    gear: ((battle.gear || {})[user.id]) || [],
-    statusEffects: [],
+    // Сохраняем направление и готовность при смене роли в prep
+    direction: existing ? existing.direction : null,
+    ready: existing ? !!existing.ready : false,
+    readyAt: existing ? existing.readyAt : 0,
+    lastActionAt: existing ? existing.lastActionAt : 0,
+    lastMoveAt:   existing ? existing.lastMoveAt   : 0,
+    lastItemAt:   existing ? existing.lastItemAt   : 0,
+    gear: ((battle.gear || {})[user.id]) || (existing ? existing.gear : []),
+    statusEffects: existing ? existing.statusEffects : [],
     alive: true,
     // Статистика для итогов
-    stats: { dmgDealt: 0, dmgTaken: 0, healed: 0, kills: 0, guards: 0, itemsUsed: 0 },
+    stats: existing ? existing.stats : { dmgDealt: 0, dmgTaken: 0, healed: 0, kills: 0, guards: 0, itemsUsed: 0 },
   };
 
-  log(battle, `${user.name} готов (${role.label})`, 'prep');
+  log(battle, `${user.name} выбрал роль: ${role.label}`, 'prep');
   db.save('legions');
-  notices.push(`✅ Вы в составе! Роль: ${role.label}. Выберите направление во вкладке «Война».`);
-  return { ok: true, role: roleId };
+  notices.push(`✅ Роль выбрана: ${role.label}. Нажмите «Готов», чтобы участвовать в бою.`);
+  return { ok: true, role: roleId, ready: battle.combatants[user.id].ready };
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Готов / Не готов — toggle
+//
+// Только тех, у кого ready=true на момент окончания prep, оставляют в
+// бою. Готовность видна всем союзникам в окне боя.
+//
+// При снятии готовности направление сбрасывается (игрок ещё мог сидеть
+// в общем списке — и снова туда возвращается).
+// ───────────────────────────────────────────────────────────────────
+function setReady(user, ready, notices) {
+  const l = legions()[user.legionId];
+  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя легиона');
+  const battle = l.activeBattle;
+  if (battle.phase !== 'prep') throw new u.ApiError('Готовность можно менять только до начала боя');
+  if (now() > battle.prepEndsAt) throw new u.ApiError('Время подготовки истекло');
+
+  const c = battle.combatants[user.id];
+  if (!c) throw new u.ApiError('Сначала выберите роль');
+
+  const wantReady = !!ready;
+  c.ready = wantReady;
+  if (wantReady) {
+    c.readyAt = now();
+    log(battle, `✅ ${user.name} готов к бою`, 'prep');
+    notices.push('✅ Вы готовы. Теперь выберите направление.');
+  } else {
+    c.readyAt = 0;
+    c.direction = null;
+    log(battle, `❌ ${user.name} снял готовность`, 'prep');
+    notices.push('❌ Готовность снята.');
+  }
+  db.save('legions');
+  return { ready: c.ready };
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -256,6 +319,8 @@ function chooseDirection(user, dir, notices) {
 
   const c = findCombatant(battle, user.id);
   if (!c) throw new u.ApiError('Вы не зарегистрированы в бою');
+  // В фазе prep направление можно выбирать только после нажатия «Готов»
+  if (battle.phase === 'prep' && !c.ready) throw new u.ApiError('Сначала нажмите «Готов»');
 
   const d = u.toInt(dir, 0);
   if (d < 1 || d > DIRECTIONS) throw new u.ApiError(`Направление 1–${DIRECTIONS}`);
@@ -306,6 +371,11 @@ function attack(user, targetUserId, notices) {
   const stunned = (c.statusEffects || []).find(e => e.type === 'stun' && e.expiresAt > now());
   if (stunned) throw new u.ApiError(`Оглушены ещё ${Math.ceil((stunned.expiresAt - now()) / 1000)} сек`);
 
+  // Боеприпасы — общий пул с личными боями. 1 удар = 1 боеприпас.
+  if ((user.res.am.cur || 0) < 1) {
+    throw new u.ApiError('Нет боеприпасов. Дождитесь восстановления или используйте «Цинк боеприпасов».');
+  }
+
   const tc = findCombatant(battle, targetUserId);
   if (!tc || !tc.alive || tc.hp <= 0) throw new u.ApiError('Цель уже выбыла');
   if (tc.side === c.side) throw new u.ApiError('Нельзя атаковать союзника');
@@ -315,8 +385,18 @@ function attack(user, targetUserId, notices) {
   const targetUser = users[targetUserId];
   if (!targetUser) throw new u.ApiError('Игрок не найден');
 
+  // Перед расчётом — синхронизируем HP combatant с актуальным HP игрока:
+  // если игрок успел вылечиться в госпитале или восстановиться регеном,
+  // эти изменения попадают в бой.
+  syncCombatantHpFromUser(c, user);
+  syncCombatantHpFromUser(tc, targetUser);
+
   const { dmg, crit } = calcDamage(c, tc, user, targetUser);
   const { actual, shieldAbsorbed } = applyDamage(battle, targetUserId, dmg, user.id);
+
+  // Списываем 1 боеприпас (после успешной атаки)
+  user.res.am.cur = Math.max(0, (user.res.am.cur || 0) - 1);
+  user.res.am.t = now();
 
   c.lastActionAt = now();
   c.stats.dmgDealt += actual;
@@ -334,9 +414,13 @@ function attack(user, targetUserId, notices) {
     c.stats.kills++;
     addActivity(battle, user.id, 'kill');
     msg += ` 💀 ${tc.name} ВЫБЫЛ!`;
-    // Оставляем 1 HP в профиле
+    // Оставляем 1 HP в профиле (соответствует MIN_HP_TO_FIGHT — игрок
+    // не сможет атаковать в обычных боях, но не «сгорает»).
     const deadUser = users[targetUserId];
-    if (deadUser) deadUser.res.hp.cur = 1;
+    if (deadUser) {
+      deadUser.res.hp.cur = 1;
+      deadUser.res.hp.t = now();
+    }
   }
 
   log(battle, msg, crit ? 'crit' : 'attack');
@@ -344,7 +428,20 @@ function attack(user, targetUserId, notices) {
   db.save('legions');
 
   notices.push(msg);
-  return { dmg: actual, crit, targetHp: tc.hp, targetAlive: tc.alive };
+  return {
+    dmg: actual, crit,
+    targetHp: tc.hp, targetAlive: tc.alive,
+    ammoLeft: user.res.am.cur,
+  };
+}
+
+// Подтягиваем HP combatant'а из user.res.hp.cur (если игрок вылечился
+// в госпитале вне боя — это должно стать видно в окне боя). НЕ
+// поднимаем выше maxHp.
+function syncCombatantHpFromUser(c, user) {
+  if (!c || !user || !user.res || !user.res.hp) return;
+  const cur = user.res.hp.cur;
+  if (cur > c.hp) c.hp = Math.min(c.maxHp || cur, cur);
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -711,12 +808,19 @@ function finalizeBattle(battle, l, all, users, winningSide, reason) {
   const wResult = addGlory(winner, +gloryGain);
   addGlory(loser,  -gloryLoss);
 
-  // Экономика
-  const loot = Math.floor((loser.kmarks || 0) * 0.20);
-  loser.kmarks  = Math.max(0, (loser.kmarks || 0) - loot);
-  winner.kmarks = (winner.kmarks || 0) + loot + config.LEGION.BATTLE_LOOT_KMARKS;
+  // Экономика — победитель забирает 20% РЕЗ проигравшего + фикс. бонус.
+  // (Раньше тут случайно остались имена «kmarks» от старой версии.)
+  const loot = Math.floor((loser.reserves || 0) * 0.20);
+  loser.reserves  = Math.max(0, (loser.reserves || 0) - loot);
+  winner.reserves = (winner.reserves || 0) + loot + (config.LEGION.BATTLE_LOOT_RESERVES || 0);
   winner.ratingPoints = (winner.ratingPoints || 0) + 10;
   loser.ratingPoints  = Math.max(0, (loser.ratingPoints || 0) - 3);
+
+  // Боевая статистика
+  winner.battleStats = winner.battleStats || { wins: 0, losses: 0 };
+  loser.battleStats  = loser.battleStats  || { wins: 0, losses: 0 };
+  winner.battleStats.wins   = (winner.battleStats.wins   || 0) + 1;
+  loser.battleStats.losses  = (loser.battleStats.losses  || 0) + 1;
 
   // Итоговый отчёт
   const report = buildFinalReport(battle, winningSide);
@@ -763,8 +867,16 @@ function startActivePhaseTick(l, all, users) {
   if (battle.phase !== 'prep') return;
   if (now() < battle.prepEndsAt) return;
 
-  // Убираем незарегистрированных / без направления
+  // Убираем всех, кто не нажал «Готов» или не выбрал направление.
+  // Это и есть требование «не зашёл в окно боя и не нажал кнопку —
+  // не получает шанса участвовать».
   for (const [uid, c] of Object.entries(battle.combatants)) {
+    if (!c.ready) {
+      delete battle.combatants[uid];
+      const u2 = users[uid];
+      if (u2) notif.push(uid, 'legion_battle_kicked', '⛔ Вы не были готовы к бою — выбыли из состава', {});
+      continue;
+    }
     if (!c.direction) {
       delete battle.combatants[uid];
       const u2 = users[uid];
@@ -798,9 +910,31 @@ function startActivePhaseTick(l, all, users) {
 // ───────────────────────────────────────────────────────────────────
 function battleState(user) {
   const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) return { battle: null };
-  const battle = l.activeBattle;
+  if (!l) return { battle: null };
 
+  // Когда боя нет, но есть входящий вызов — отдаём заголовок,
+  // чтобы фронт мог показать окно «Принять / Отклонить» для лидера.
+  if (!l.activeBattle) {
+    if (l.pendingChallenge) {
+      const ch = l.pendingChallenge;
+      const enemy = legions()[ch.enemyId];
+      return {
+        battle: null,
+        challenge: {
+          role: ch.role,                                  // 'challenger' | 'challenged'
+          enemyId: ch.enemyId,
+          enemyName: enemy ? enemy.name : '—',
+          expiresAt: ch.expiresAt,
+          secondsLeft: Math.max(0, Math.floor((ch.expiresAt - now()) / 1000)),
+          isLeader: l.leaderId === user.id,
+          canDecide: l.leaderId === user.id && ch.role === 'challenged',
+        },
+      };
+    }
+    return { battle: null };
+  }
+
+  const battle = l.activeBattle;
   const mySide = l.id === battle.legionA ? 'A' : 'B';
   const me = battle.combatants[user.id] || null;
   const t  = now();
@@ -820,7 +954,9 @@ function battleState(user) {
 
   const allCombatants = Object.values(battle.combatants).map(c => ({
     userId: c.userId, name: c.name, side: c.side, role: c.role,
-    ready: c.ready, hp: c.hp, maxHp: c.maxHp, direction: c.direction,
+    roleName: ROLES[c.role] ? ROLES[c.role].label : c.role,
+    ready: !!c.ready,
+    hp: c.hp, maxHp: c.maxHp, direction: c.direction,
     alive: c.alive, dirName: c.direction ? DIR_NAMES[c.direction-1] : null,
   }));
 
@@ -867,10 +1003,10 @@ function battleState(user) {
 function serializeCombatant(c, t, isSelf) {
   const fx = (type) => (c.statusEffects || []).filter(e => e.type === type && e.expiresAt > t);
   return {
-    userId: c.userId, name: c.name,
+    userId: c.userId, name: c.name, side: c.side,
     role: c.role, roleName: ROLES[c.role] ? ROLES[c.role].label : c.role,
     hp: c.hp, maxHp: c.maxHp, shield: c.shield || 0,
-    alive: c.alive, ready: c.ready, direction: c.direction,
+    alive: c.alive, ready: !!c.ready, direction: c.direction,
     dirName: c.direction ? DIR_NAMES[c.direction-1] : null,
     stunned:    fx('stun').length    > 0 ? Math.ceil((fx('stun')[0].expiresAt    - t) / 1000) : 0,
     noHeal:     fx('no_heal').length > 0 ? Math.ceil((fx('no_heal')[0].expiresAt - t) / 1000) : 0,
@@ -912,7 +1048,7 @@ function leaveBattle(user, notices) {
 }
 
 module.exports = {
-  joinBattle, chooseDirection, attack, heal, guard, useItem, leaveBattle,
+  joinBattle, setReady, chooseDirection, attack, heal, guard, useItem, leaveBattle,
   battleState, tickEffects, startActivePhaseTick,
   ROLES, DIRECTIONS, DIR_NAMES, MAX_PER_DIR, PREP_MS, BATTLE_MS,
   ensureLegionGlory, addGlory, calcLegionLevel, GLORY_THRESHOLDS,

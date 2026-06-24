@@ -954,6 +954,7 @@ module.exports = {
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
+  setReady:         (...a) => require('./legionBattle').setReady(...a),
   chooseDirection:  (...a) => require('./legionBattle').chooseDirection(...a),
   attack:           (...a) => require('./legionBattle').attack(...a),
   heal:             (...a) => require('./legionBattle').heal(...a),
