@@ -36,11 +36,14 @@ const App = {
     if (App.me && App.me.pendingGifts && App.me.pendingGifts.length) {
       setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 800);
     }
-    // Открываем боевое окно если игрок был в бою
+    // Открываем боевое окно автоматически:
+    //   • если игрок участник боя клана (фаза prep/active);
+    //   • если игрок — лидер и есть входящий вызов (нужно решить).
+    // Дальше окно периодически перерисовывается через _bwPoll.
     if (App.me && App.me.legionId) {
       try {
-        const { battle } = await API.get('/api/legion/battle');
-        if (battle && (battle.phase === 'prep' || battle.phase === 'active') && battle.me) {
+        const r = await API.get('/api/legion/battle');
+        if (App._shouldShowBattleWindow(r)) {
           setTimeout(() => App._openBattleWindow(), 500);
         }
       } catch(e) {}
@@ -67,12 +70,11 @@ const App = {
         App._showGiftPopup(App.me.pendingGifts[0]);
       }
       // Открываем боевое окно если игрок участвует в бою
+      // (или если лидеру пришёл вызов, требующий решения)
       if (App.me.legionId && !document.getElementById('battle-window')) {
         try {
-          const { battle } = await API.get('/api/legion/battle');
-          if (battle && (battle.phase === 'prep' || battle.phase === 'active') && battle.me) {
-            App._openBattleWindow();
-          }
+          const r = await API.get('/api/legion/battle');
+          if (App._shouldShowBattleWindow(r)) App._openBattleWindow();
         } catch(e) {}
       }
     } catch (e) { /* сеть моргнула — попробуем в следующий раз */ }
@@ -135,10 +137,27 @@ const App = {
 
   // Загрузка и отображение чата легиона
   // ── Боевое окно (полноэкранный overlay) ─────────────────────────
+  // Это ОТДЕЛЬНЫЙ DOM-узел поверх любого экрана: при переходе на
+  // другой раздел (#war, #home, …) окно не закрывается — игрок может
+  // продолжать управлять боем, оставаясь в любой части игры.
   _battleWindow: null,
+  _bwPollId: null,
+  _bwClosedManually: false, // игрок свернул окно — не открываем снова сам
+
+  // Окно показываем, когда:
+  //   • есть activeBattle и фаза prep/active (для всех членов легиона);
+  //   • есть pendingChallenge с role='challenged' (только лидеру —
+  //     ему надо принять или отклонить вызов).
+  _shouldShowBattleWindow(r) {
+    if (!r) return false;
+    if (r.battle && (r.battle.phase === 'prep' || r.battle.phase === 'active')) return true;
+    if (r.challenge && r.challenge.canDecide) return true;
+    return false;
+  },
 
   async _openBattleWindow() {
     if (document.getElementById('battle-window')) return; // уже открыто
+    App._bwClosedManually = false;
     const win = document.createElement('div');
     win.id = 'battle-window';
     win.style.cssText = `
@@ -149,6 +168,14 @@ const App = {
     document.body.appendChild(win);
     App._battleWindow = win;
     await App._renderBattleWindow();
+    // Авто-обновление окна раз в 3 сек, пока оно открыто
+    if (App._bwPollId) clearInterval(App._bwPollId);
+    App._bwPollId = setInterval(() => {
+      if (!document.getElementById('battle-window')) {
+        clearInterval(App._bwPollId); App._bwPollId = null; return;
+      }
+      App._renderBattleWindow();
+    }, 3000);
   },
 
   async _renderBattleWindow() {
@@ -156,17 +183,23 @@ const App = {
     if (!win) return;
     if (!App.me || !App.me.legionId) { App._closeBattleWindow(); return; }
     try {
-      const { battle } = await API.get('/api/legion/battle');
-      if (!battle || battle.phase === 'done') {
-        // Бой завершён — показываем итоги и кнопку закрыть
-        if (battle && battle.phase === 'done') {
-          App._renderBattleDone(win, battle);
+      const r = await API.get('/api/legion/battle');
+      // 1) Активный бой
+      if (r.battle) {
+        if (r.battle.phase === 'done') {
+          App._renderBattleDone(win, r.battle);
         } else {
-          App._closeBattleWindow();
+          App._renderBattleContent(win, r.battle);
         }
         return;
       }
-      App._renderBattleContent(win, battle);
+      // 2) Входящий вызов — окно для лидера с «Принять/Отклонить»
+      if (r.challenge && r.challenge.canDecide) {
+        App._renderChallengePrompt(win, r.challenge);
+        return;
+      }
+      // Ни боя, ни вызова — закрываем
+      App._closeBattleWindow();
     } catch(e) {
       App._closeBattleWindow();
     }
@@ -176,6 +209,60 @@ const App = {
     const win = document.getElementById('battle-window');
     if (win) win.remove();
     App._battleWindow = null;
+    if (App._bwPollId) { clearInterval(App._bwPollId); App._bwPollId = null; }
+  },
+
+  // Свернуть окно вручную — игрок хочет временно вернуться к игре,
+  // но не выходит из боя. Окно можно открыть снова из карточки боя
+  // на странице легиона (или вернётся само при следующем pollMe).
+  _hideBattleWindow() {
+    App._closeBattleWindow();
+    App._bwClosedManually = true;
+    UI.toast('Окно боя свёрнуто. Нажмите «Открыть бой» в меню легиона, чтобы вернуться.');
+  },
+
+  // Окно «Вам бросили вызов». Только лидер обороняющегося легиона.
+  _renderChallengePrompt(win, ch) {
+    win.innerHTML = `
+      <div style="padding:24px 16px;text-align:center;max-width:480px;margin:0 auto">
+        <div style="font-size:60px;margin-bottom:8px">⚔️</div>
+        <div style="font-size:22px;font-weight:bold;color:var(--red);margin-bottom:6px">ВАМ БРОСИЛИ ВЫЗОВ!</div>
+        <p class="muted">Легион <b style="color:var(--text)">«${UI.esc(ch.enemyName)}»</b> вызывает вас на бой.</p>
+        <p class="muted small" style="margin-top:12px">На решение: <b id="ch-timer" style="color:var(--orange)">${UI.fmtTimer(ch.secondsLeft)}</b></p>
+        <p class="muted small">Если принять — 10 минут на подготовку, затем 1 час боя.</p>
+        <div style="display:flex;gap:10px;margin-top:24px">
+          <button id="ch-accept" class="btn btn-orange" style="flex:1;padding:14px;font-weight:bold">✅ Принять</button>
+          <button id="ch-decline" class="btn btn-red" style="flex:1;padding:14px">🚫 Отклонить</button>
+        </div>
+        <button id="ch-hide" class="btn" style="width:100%;margin-top:8px;padding:10px;opacity:.7">Закрыть окно</button>
+      </div>`;
+
+    // Локальный обратный отсчёт
+    let secs = ch.secondsLeft;
+    const tEl = document.getElementById('ch-timer');
+    const t = setInterval(() => {
+      secs--;
+      if (secs < 0) { clearInterval(t); App._renderBattleWindow(); return; }
+      if (tEl) tEl.textContent = UI.fmtTimer(secs);
+    }, 1000);
+
+    win.querySelector('#ch-accept').onclick = async () => {
+      try {
+        await API.post('/api/legion/challenge/accept');
+        UI.toast('✅ Вызов принят! Окно подготовки открыто.');
+        await App._renderBattleWindow();
+      } catch(e) { UI.toast('⛔ ' + e.message); }
+    };
+    win.querySelector('#ch-decline').onclick = async () => {
+      if (!confirm('Отклонить вызов?')) return;
+      try {
+        await API.post('/api/legion/challenge/decline');
+        UI.toast('🚫 Вызов отклонён.');
+        App._closeBattleWindow();
+        App.rerender();
+      } catch(e) { UI.toast('⛔ ' + e.message); }
+    };
+    win.querySelector('#ch-hide').onclick = () => App._hideBattleWindow();
   },
 
   _renderBattleContent(win, b) {
@@ -221,51 +308,101 @@ const App = {
       <div style="padding:10px 16px">`;
 
     // ── ФАЗА ПОДГОТОВКИ ──────────────────────────────────────────
+    // Логика:
+    //   1) Игрок ВЫБИРАЕТ роль (если ещё не выбрал) — это создаёт
+    //      combatant с ready=false. Зайти в окно может любой член
+    //      легиона, выбор роли пока не блокирует ничего.
+    //   2) Кнопка «Готов / Не готов» — toggle. Без нажатия Готов в
+    //      бой не попадёшь.
+    //   3) Если Готов — открывается выбор направления. Имя и роль
+    //      попадают в карточку направления, видны союзникам.
+    //   4) Воевать (Атаковать / Защищать / Лечить) — только когда
+    //      бой стартанёт (фаза active).
     if (b.phase === 'prep') {
-      if (!b.me) {
-        html += `<div style="background:rgba(255,150,0,.1);border:1px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:12px">
-          <p style="margin:0 0 10px">Выберите роль — все роли умеют атаковать:</p>
-          <div style="display:flex;flex-direction:column;gap:10px">
-            <button id="bw-join-assault" class="btn btn-orange" style="width:100%;padding:14px;text-align:left">
+      const me = b.me;
+      const isReady = !!(me && me.ready);
+      const hasRole = !!me;
+
+      // Карточка «Моя роль и готовность»
+      html += `<div style="background:${isReady?'rgba(0,200,0,.08)':'rgba(255,150,0,.08)'};border:1px solid ${isReady?'var(--green)':'var(--orange)'};border-radius:8px;padding:10px;margin-bottom:12px">`;
+      if (!hasRole) {
+        html += `<p style="margin:0 0 10px"><b>Выберите роль:</b> все роли могут атаковать.</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button id="bw-join-assault" class="btn btn-orange" style="width:100%;padding:12px;text-align:left">
               🎯 <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>
             </button>
-            <button id="bw-join-guardian" class="btn btn-orange" style="width:100%;padding:14px;text-align:left">
-              🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона, прикрытие</span>
+            <button id="bw-join-guardian" class="btn btn-orange" style="width:100%;padding:12px;text-align:left">
+              🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона, прикрытие союзников</span>
             </button>
-            <button id="bw-join-medic" class="btn btn-orange" style="width:100%;padding:14px;text-align:left">
+            <button id="bw-join-medic" class="btn btn-orange" style="width:100%;padding:12px;text-align:left">
               ➕ <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>
             </button>
-          </div>
-        </div>`;
-      } else {
-        html += `<div style="background:rgba(0,200,0,.08);border:1px solid var(--green);border-radius:8px;padding:10px;margin-bottom:12px">
-          <b style="color:var(--green)">✅ Вы готовы — ${ROLE_ICON[b.me.role]} ${b.me.roleName}</b>
-        </div>`;
-        // Выбор направления
-        html += `<p style="margin:0 0 8px;font-weight:bold">Выберите направление:</p>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-          ${b.directions.map(d => {
-            const sel = b.me && b.me.direction === d.dir;
-            return `<button id="bw-dir-${d.dir}" class="btn ${sel?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
-              ${sel ? '📍' : '○'} <b>${d.name}</b>
-              <span style="float:right;font-size:12px">${(d.allies||[]).length}/5 союзн.</span>
-            </button>`;
-          }).join('')}
           </div>`;
+      } else {
+        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:18px">${ROLE_ICON[me.role]||'?'}</span>
+          <b>Ваша роль: ${UI.esc(me.roleName)}</b>
+        </div>
+        <button id="bw-ready" class="btn ${isReady?'btn-red':'btn-orange'}" style="width:100%;padding:12px;font-weight:bold">
+          ${isReady ? '❌ Снять готовность' : '✅ Я ГОТОВ'}
+        </button>
+        ${!isReady ? '<p class="muted small" style="margin:8px 0 0">Не нажав «Готов», вы НЕ попадёте в бой.</p>' : ''}
+        <details style="margin-top:10px"><summary class="muted small" style="cursor:pointer">Сменить роль</summary>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            ${['assault','guardian','medic'].map(r => r === me.role ? '' : `
+              <button class="btn btn-inline" id="bw-join-${r}" style="flex:1;padding:8px">${ROLE_ICON[r]} ${r === 'assault' ? 'Штурмовик' : r === 'guardian' ? 'Защитник' : 'Медик'}</button>
+            `).join('')}
+          </div>
+        </details>`;
       }
+      html += `</div>`;
 
-      // Список готовых
-      const sides = { A: [], B: [] };
-      for (const c of (b.allCombatants||[])) sides[c.side].push(c);
-      const my = sides[mySide]||[], en = sides[mySide==='A'?'B':'A']||[];
+      // Направления (всегда видны)
+      html += `<p style="margin:14px 0 6px;font-weight:bold">📍 Направления</p>`;
+      if (!isReady && hasRole) {
+        html += `<p class="muted small" style="margin:0 0 8px">Нажмите «Готов», чтобы занять направление.</p>`;
+      }
+      html += `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">`;
+      for (const d of (b.directions || [])) {
+        const allies  = (d.allies  || []);
+        const enemies = (d.enemies || []);
+        const sel = me && me.direction === d.dir;
+        const full = allies.length >= 5;
+        const canPick = isReady && (sel || !full);
+        html += `<div style="border:1px solid ${sel?'var(--green)':'var(--border)'};border-radius:8px;overflow:hidden">
+          <button id="bw-dir-${d.dir}" class="btn btn-inline" ${canPick?'':'disabled'} style="width:100%;padding:10px;text-align:left;background:${sel?'rgba(0,200,0,.10)':'transparent'};border:none;border-radius:0;${canPick?'':'opacity:.5;cursor:not-allowed'}">
+            ${sel?'📍':'○'} <b>${d.name}</b>
+            <span style="float:right;font-size:12px">🟢${allies.length}/5 · 🔴${enemies.length}</span>
+          </button>
+          ${(allies.length || enemies.length) ? `
+            <div style="padding:6px 12px 10px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div>
+                ${allies.map(a => `<div style="padding:2px 0;color:${a.userId===(me&&me.userId)?'var(--gold)':'var(--text)'}">${ROLE_ICON[a.role]||'?'} ${UI.esc(a.name)}</div>`).join('') || '<span class="muted">пусто</span>'}
+              </div>
+              <div>
+                ${enemies.map(e => `<div style="padding:2px 0;color:var(--dim)">${ROLE_ICON[e.role]||'?'} ${UI.esc(e.name)}</div>`).join('') || '<span class="muted">пусто</span>'}
+              </div>
+            </div>` : ''}
+        </div>`;
+      }
+      html += `</div>`;
+
+      // Общий список (без направления) + готовы / не готовы
+      const all = b.allCombatants || [];
+      const myUnassigned = all.filter(c => c.side === mySide && !c.direction);
+      const enUnassigned = all.filter(c => c.side !== mySide && !c.direction);
+      const myReady = all.filter(c => c.side === mySide && c.ready).length;
+      const enReady = all.filter(c => c.side !== mySide && c.ready).length;
+
       html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
         <div style="padding:10px;border-right:1px solid var(--border)">
-          <div style="color:var(--green);font-weight:bold;margin-bottom:6px">🟢 Ваши (${my.length})</div>
-          ${my.map(c=>`<div style="padding:4px 0;font-size:13px">${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}${c.direction?` <span class="muted">${c.dirName||''}</span>`:''}</div>`).join('')||'<span class="muted small">ожидаем...</span>'}
+          <div style="color:var(--green);font-weight:bold;margin-bottom:6px">🟢 Ваши: ${myReady} готовы / ${all.filter(c => c.side===mySide).length} зашло</div>
+          ${myUnassigned.length ? `<div class="muted small" style="margin-bottom:4px">Без направления:</div>
+            ${myUnassigned.map(c => `<div style="padding:2px 0;font-size:12px">${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)} ${c.ready?'<span style="color:var(--green)">●</span>':'<span style="color:var(--dim)">○</span>'}</div>`).join('')}` : '<span class="muted small">все распределены</span>'}
         </div>
         <div style="padding:10px">
-          <div style="color:var(--red);font-weight:bold;margin-bottom:6px">🔴 Враги (${en.length})</div>
-          ${en.map(c=>`<div style="padding:4px 0;font-size:13px">${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}</div>`).join('')||'<span class="muted small">ожидаем...</span>'}
+          <div style="color:var(--red);font-weight:bold;margin-bottom:6px">🔴 Враги: ${enReady} готовы / ${all.filter(c => c.side!==mySide).length} зашло</div>
+          ${enUnassigned.length ? enUnassigned.map(c => `<div style="padding:2px 0;font-size:12px">${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)} ${c.ready?'<span style="color:var(--green)">●</span>':'<span style="color:var(--dim)">○</span>'}</div>`).join('') : '<span class="muted small">ожидаем...</span>'}
         </div>
       </div>`;
     }
@@ -276,6 +413,8 @@ const App = {
       const myCDs = b.cooldowns || {};
 
       // Мой статус
+      const myAm = App.me && App.me.res && App.me.res.am ? App.me.res.am.cur : '?';
+      const myEn = App.me && App.me.res && App.me.res.en ? App.me.res.en.cur : '?';
       html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <span style="font-size:18px">${ROLE_ICON[me.role]||'?'}</span>
@@ -283,10 +422,13 @@ const App = {
           ${statusBadge(me)}
         </div>
         ${hpBar(me.hp, me.maxHp, '#e33')}
-        <div style="font-size:12px;color:var(--dim);margin-top:4px">
-          Кд действия: <b id="bw-cd-action">${myCDs.action||0}с</b> &nbsp;|&nbsp;
-          Кд перемещения: <b id="bw-cd-move">${myCDs.move||0}с</b>
+        <div style="font-size:12px;color:var(--dim);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">
+          <span>🎯 <b>${myAm}</b> боеприпасов</span>
+          <span>⚡ <b>${myEn}</b> энергии</span>
+          <span>Кд действия: <b id="bw-cd-action">${myCDs.action||0}с</b></span>
+          <span>Кд перемещения: <b id="bw-cd-move">${myCDs.move||0}с</b></span>
         </div>
+        <p class="muted" style="margin:6px 0 0;font-size:11px">1 удар = −1 боеприпас. Эффекты чёрного рынка (стимулятор, накладки и т.д.) учитываются.</p>
       </div>`;
 
       // Направления — кнопки
@@ -390,12 +532,13 @@ const App = {
     }
 
     html += `</div>
-      <div style="padding:10px 16px 20px;border-top:1px solid var(--border)">
-        <button id="bw-leave" class="btn btn-red" style="width:100%;padding:12px;opacity:.7">
-          🚪 Покинуть бой
-        </button>
-        <p style="text-align:center;font-size:11px;color:var(--dim);margin-top:6px">При выходе ваша статистика не будет учтена</p>
-      </div>`;
+      <div style="padding:10px 16px 20px;border-top:1px solid var(--border);display:flex;gap:10px">
+        <button id="bw-hide" class="btn btn-inline" style="flex:1;padding:12px">↘️ Свернуть</button>
+        <button id="bw-leave" class="btn btn-red" style="flex:1;padding:12px;opacity:.85">🚪 Покинуть бой</button>
+      </div>
+      <p style="text-align:center;font-size:11px;color:var(--dim);margin-top:0;padding:0 16px 20px">
+        «Свернуть» — окно скроется, но вы остаётесь в бою.&nbsp;«Покинуть» — выход без сохранения статистики.
+      </p>`;
 
     win.innerHTML = html;
     App._bindBattleWindowEvents(win, b);
@@ -437,20 +580,32 @@ const App = {
 
   _bindBattleWindowEvents(win, b) {
     const api = async (url, body, cb) => {
-      try { const r = await API.post(url, body || {}); if(cb) cb(r); await App._renderBattleWindow(); }
-      catch(e) { UI.toast('⛔ ' + e.message); }
+      try {
+        const r = await API.post(url, body || {});
+        if (cb) cb(r);
+        // Обновим состояние игрока (HP/EN/AM в шапке) и перерисуем окно
+        await App.pollMe();
+        await App._renderBattleWindow();
+      } catch(e) { UI.toast('⛔ ' + e.message); }
     };
 
-    // Выбор роли
+    // Выбор / смена роли
     ['assault','guardian','medic'].forEach(role => {
       const btn = win.querySelector('#bw-join-'+role);
       if (btn) btn.onclick = () => api('/api/legion/battle/join', { role });
     });
 
-    // Направления
+    // Кнопка «Готов / Не готов»
+    const readyBtn = win.querySelector('#bw-ready');
+    if (readyBtn) readyBtn.onclick = () => {
+      const isReady = b.me && b.me.ready;
+      api('/api/legion/battle/ready', { ready: !isReady });
+    };
+
+    // Направления — кликабельны только не-disabled
     for (let d = 1; d <= 5; d++) {
       const btn = win.querySelector('#bw-dir-'+d);
-      if (btn) btn.onclick = () => api('/api/legion/battle/direction', { direction: d });
+      if (btn && !btn.disabled) btn.onclick = () => api('/api/legion/battle/direction', { direction: d });
     }
 
     // Атака
@@ -499,6 +654,10 @@ const App = {
         App.rerender();
       } catch(e) { UI.toast('⛔ ' + e.message); }
     };
+
+    // Свернуть окно (не выходим из боя)
+    const hideBtn = win.querySelector('#bw-hide');
+    if (hideBtn) hideBtn.onclick = () => App._hideBattleWindow();
   },
 
   _startBattleWindowTimer(b) {

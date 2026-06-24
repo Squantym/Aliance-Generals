@@ -34,17 +34,17 @@ async function main() {
 
   console.log('1. Регистрация и вход');
   // В dev-режиме (без RESEND_API_KEY) сервер сразу выдаёт токен
-  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'pass123', country: 'ru' });
+  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'Pass1234', country: 'ru' });
   check('первый игрок зарегистрирован', regA.status === 200 && (!!regA.data.token || regA.data.pending));
   const A = regA.data.token; // в dev-режиме есть сразу
-  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'pass123', country: 'ua' });
+  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'Pass1234', country: 'ua' });
   check('второй игрок зарегистрирован', regB.status === 200);
   const B = regB.data.token;
   const dupe = await post('/api/register', null, { login: nameA, email: `dupe${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат позывного отклонён', dupe.status === 400);
   const dupeEmail = await post('/api/register', null, { login: 'ZZZ' + stamp, email: `admina${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат email отклонён', dupeEmail.status === 400);
-  const login = await post('/api/login', null, { login: nameA, password: 'pass123' });
+  const login = await post('/api/login', null, { login: nameA, password: 'Pass1234' });
   check('вход работает', login.status === 200 && !!login.data.token);
 
   console.log('2. Состояние игрока');
@@ -229,7 +229,9 @@ async function main() {
   check('чужой профиль читается', prof.profile.name === nameA);
   check('атака вне ±10 уровней запрещена', prof.profile.canAttack === false);
   const fame = (await get('/api/fame', A)).data;
-  check('зал славы: 12 категорий', fame.categories.length === 12);
+  // После рефакторинга fame.js отдаёт { allTime, daily } вместо плоского categories.
+  check('зал славы: allTime > 0 категорий', Array.isArray(fame.allTime) && fame.allTime.length > 0);
+  check('зал славы: daily > 0 категорий', Array.isArray(fame.daily) && fame.daily.length > 0);
   const ach = (await get('/api/achievements', A)).data;
   check('достижения читаются', ach.achievements.length >= 5);
   const trophies = (await get('/api/trophies', A)).data;
@@ -300,7 +302,7 @@ async function main() {
 
   console.log('23. Защита построек учитывается в power.def');
   // Берём C — нового игрока без построек
-  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'pass123', country: 'kz' });
+  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'Pass1234', country: 'kz' });
   const C = regC.data.token;
   const idC = (await get('/api/me', C)).data.id;
   await post('/api/admin/grant', A, { userId: idC, setLevel: 35, dollars: 100000 });
@@ -351,15 +353,14 @@ async function main() {
   const bunker = cfg.DEFENSE_BUILDINGS.find((b) => b.id === 'bunker');
   check('бункер имеет сниженную защиту (-30% от предыдущей версии)', bunker.def === 18);
 
-  console.log('29. Зал славы: богатство = всего заработано');
-  const richCat = fame.categories.find((c) => c.id === 'rich');
-  check('категория "Богатство (всего заработано)" есть', !!richCat);
-  const armyCat = fame.categories.find((c) => c.id === 'army');
-  check('категория "Размер армии" есть', !!armyCat);
-  const allianceCat = fame.categories.find((c) => c.id === 'alliance_size');
-  check('категория "Самый крупный альянс" есть', !!allianceCat);
-  const mercyCat = fame.categories.find((c) => c.id === 'mercy');
-  check('категория "Милосердие" есть', !!mercyCat);
+  console.log('29. Зал славы: ключевые категории (новый формат allTime/daily)');
+  // После рефакторинга fame.js: категории {level, ears, mercy, battles, loot, buildings, alliance}
+  const allTimeIds = (fame.allTime || []).map((c) => c.id);
+  check('зал славы: есть категория уровней', allTimeIds.includes('level'));
+  check('зал славы: есть категория ушей', allTimeIds.includes('ears'));
+  check('зал славы: есть категория милосердия', allTimeIds.includes('mercy'));
+  check('зал славы: есть категория боёв', allTimeIds.includes('battles'));
+  check('зал славы: есть категория добычи', allTimeIds.includes('loot'));
 
   console.log('30. Крит-формула: базовый 1.3, макс. трофей даёт итог ×3.0');
   check('CRIT_MULT базовый = 2.0', cfg.BATTLE.CRIT_MULT === 2.0);

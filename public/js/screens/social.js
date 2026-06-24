@@ -54,12 +54,19 @@ async function renderGroupScreen(c, kind) {
         }
 
         // ── Активный бой легиона ──────────────────────────────────────
+        // Карточка-«вызов» открыть окно боя (если оно свёрнуто). Сам бой
+        // живёт в отдельном fullscreen-окне App._openBattleWindow().
         let activeBattleHtml = '';
         if (L.activeBattle) {
+          const phaseLbl = L.activeBattle.phase === 'prep'
+            ? '⏳ ПОДГОТОВКА (10 мин)'
+            : L.activeBattle.phase === 'active' ? '⚔️ БОЙ ИДЁТ' : '🏁 ЗАВЕРШАЕТСЯ';
           activeBattleHtml = `
             <div class="card" style="border:2px solid var(--green)">
-              <div class="name" style="color:var(--green)">⚔️ БОЙ ЛЕГИОНА ИДЁТ</div>
-              <p class="small mt">Снарядите боевой пояс в разделе <b>Арсенал</b>.</p>
+              <div class="name" style="color:var(--green)">${phaseLbl}</div>
+              <p class="small mt">Окно боя открыто отдельно — переключение разделов его не закрывает.</p>
+              <button class="btn btn-orange mt" id="lg-open-battle" style="width:100%">🎯 Открыть окно боя</button>
+              <p class="muted small mt">Не зашёл в окно и не нажал «Готов» — не участвуешь в бою.</p>
             </div>`;
         }
 
@@ -744,6 +751,10 @@ async function renderGroupScreen(c, kind) {
         try { await API.post('/api/legion/challenge/decline'); App.rerender(); }
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
+
+      // Открыть свёрнутое окно боя
+      const openBattleBtn = document.getElementById('lg-open-battle');
+      if (openBattleBtn) openBattleBtn.onclick = () => App._openBattleWindow();
 
       // Старая война
       c.querySelectorAll('[data-war]').forEach(b => {
