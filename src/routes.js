@@ -29,6 +29,7 @@ const passport = require('./services/passport');
 const dailyQuests = require('./services/dailyQuests');
 const tutorial = require('./services/tutorial');
 const admin = require('./services/admin');
+const sanctions = require('./services/sanctions');
 
 module.exports = function registerRoutes(app) {
   // Перед каждым авторизованным запросом игрок «освежается»:
@@ -90,6 +91,11 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n)));
   app.add('POST', '/api/war/fatality', act((req, n) => battle.fatality(req.user, req.body.choice, n)));
 
+  // ---------- Санкции (контракты на голову игрока) ----------
+  app.add('GET',  '/api/sanctions',         (req) => sanctions.list(req.user));
+  app.add('POST', '/api/sanctions/declare', act((req, n) => sanctions.declare(req.user, String(req.body.targetId || ''), req.body.reward, n)));
+  app.add('POST', '/api/sanctions/cancel',  act((req, n) => sanctions.cancel(req.user, String(req.body.targetId || ''), n)));
+
   // ---------- Миссии ----------
   app.add('GET',  '/api/missions',          (req) => missions.list(req.user));
   app.add('GET',  '/api/missions/:id',      (req) => missions.detail(req.user, req.params.id));
@@ -114,6 +120,7 @@ module.exports = function registerRoutes(app) {
   // ---------- Шахты ----------
   app.add('GET',  '/api/mines',              (req) => mines.view(req.user));
   app.add('POST', '/api/mines/build',        act((req, n) => mines.build(req.user, n)));
+  app.add('POST', '/api/mines/rebuild',      act((req, n) => mines.rebuild(req.user, req.body.mineId, n)));
   app.add('POST', '/api/mines/descend',      act((req, n) => mines.descend(req.user, req.body.mineId, req.body.minutes, n)));
   app.add('POST', '/api/mines/fight',        act((req, n) => mines.fightTerrorists(req.user, req.body.mineId, n)));
   app.add('POST', '/api/mines/collect',      act((req, n) => mines.collectGold(req.user, req.body.mineId, n)));
@@ -191,7 +198,7 @@ module.exports = function registerRoutes(app) {
   app.add('GET',  '/api/legion/battle',             (req) => legion.battleState(req.user));
   app.add('POST', '/api/legion/deposit',           act((req, n) => legion.deposit(req.user, req.body.amount, n)));
   app.add('POST', '/api/legion/deposit-resources', act((req, n) => legion.depositResources(req.user, req.body.ears, req.body.tokens, req.body.useAdmin, n)));
-  app.add('POST', '/api/legion/exchange',          act((req, n) => legion.exchangeToKmarks(req.user, req.body.dollars, n)));
+  app.add('POST', '/api/legion/exchange',          act((req, n) => legion.exchangeToReserves(req.user, req.body.dollars, n)));
   app.add('POST', '/api/legion/build',             act((req, n) => legion.build(req.user, req.body.buildingId, n)));
   app.add('POST', '/api/legion/build-battle',      act((req, n) => legion.buildBattle(req.user, req.body.buildingId, n)));
   app.add('POST', '/api/legion/tech/start',        act((req, n) => legion.startTech(req.user, req.body.techId, n)));

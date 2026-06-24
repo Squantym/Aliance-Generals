@@ -335,12 +335,14 @@ App._renderMines = async (c, tabsHtml) => {
     if (mine.status === 'building') {
       body = `<p class="muted small mt">Строительство завершится через ${UI.fmtTimer(mine.buildRemainingSec)}</p>`;
     } else if (mine.status === 'collapsed') {
+      // Уже купленный участок восстанавливается за игровые деньги —
+      // золото второй раз НЕ требуется (золото — только за новые участки).
       const ready = mine.rebuildReadyAt <= Date.now();
       body = ready
-        ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен — можно строить новую шахту.</p>
-           <p class="muted small mt">Новая шахта строится 24 часа. Запас золота (от 20 до 45 🪙) будет скрыт до завершения постройки.</p>
-           <button class="btn btn-orange mt" data-rebuild="${mine.id}">⛏ Построить новую шахту: <span class="ic-gold"></span> ${UI.fmtNum(m.nextMineCostGold)} + $${UI.fmtNum(m.nextMineDollars)}</button>`
-        : `<p class="muted small mt">Восстановление участка: ${UI.fmtTimer(Math.max(0, Math.ceil((mine.rebuildReadyAt - Date.now()) / 1000)))}</p>`;
+        ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен — можно восстановить шахту.</p>
+           <p class="muted small mt">Восстановление займёт 24 часа. Запас золота (20-45 🪙) определится после постройки.</p>
+           <button class="btn btn-orange mt" data-rebuild="${mine.id}">🔧 Восстановить шахту за $${UI.fmtNum(m.rebuildDollars)}</button>`
+        : `<p class="muted small mt">Завалы расчищаются ещё: ${UI.fmtTimer(Math.max(0, Math.ceil((mine.rebuildReadyAt - Date.now()) / 1000)))}</p>`;
     } else if (mine.status === 'descending') {
       body = `
         <p class="muted small mt">Шахтёры вернутся через ${UI.fmtTimer(mine.descent.remainingSec)} (спуск на ${mine.descent.minutes} мин.)</p>
@@ -426,11 +428,11 @@ App._renderMines = async (c, tabsHtml) => {
     };
   });
 
-  // Кнопка «Построить новую шахту» на месте обрушившейся
+  // Кнопка «Восстановить шахту» на обвалившемся участке (за $, без золота)
   c.querySelectorAll('[data-rebuild]').forEach((btn) => {
     btn.onclick = async () => {
       try {
-        await API.post('/api/mines/build');
+        await API.post('/api/mines/rebuild', { mineId: btn.dataset.rebuild });
         await App.refreshMe();
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }

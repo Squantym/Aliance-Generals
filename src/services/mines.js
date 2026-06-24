@@ -110,8 +110,11 @@ function view(user) {
   refreshAll(user);
   return {
     mines: mines(user).map(mineView),
+    // Цена для НОВОЙ шахты (нового участка)
     nextMineCostGold: nextMineCost(user),
     nextMineDollars: nextMineDollars(user),
+    // Цена восстановления УЖЕ КУПЛЕННОГО участка после обвала — только доллары
+    rebuildDollars: nextMineDollars(user),
     minutesOptions: stepRange(M.DESCENT_MIN_MINUTES, M.DESCENT_MAX_MINUTES, M.DESCENT_STEP_MINUTES),
     unlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
   };
@@ -123,7 +126,9 @@ function stepRange(min, max, step) {
   return out;
 }
 
-// ---------- Построить новую шахту ----------
+// ---------- Построить НОВУЮ шахту (новый участок) ----------
+// Стоит золото + игровые деньги. Уже купленные слоты восстанавливаются
+// дешевле — через rebuild(), который тратит ТОЛЬКО доллары.
 function build(user, notices) {
   if (user.level < config.PRODUCTION_UNLOCK_LEVEL) {
     throw new u.ApiError(`Шахты доступны с ${config.PRODUCTION_UNLOCK_LEVEL} уровня`);
@@ -149,6 +154,59 @@ function build(user, notices) {
   mines(user).push(mine);
   notices.push(`⛏ Заложен новый участок шахты. Строительство займёт 24 часа. Запас золота определится после завершения постройки.`);
   return mineView(mine);
+}
+
+// ---------- Восстановить ОБВАЛИВШУЮСЯ шахту (тот же участок) ----------
+// Уже купленный слот стоит только игровые деньги, золото второй раз
+// не требуется. Цена в долларах та же, что и для новой шахты — это
+// «расчистка завалов и пересборка вышки», 24 часа стройки.
+function rebuild(user, mineId, notices) {
+  if (user.level < config.PRODUCTION_UNLOCK_LEVEL) {
+    throw new u.ApiError(`Шахты доступны с ${config.PRODUCTION_UNLOCK_LEVEL} уровня`);
+  }
+  const mine = mines(user).find((m) => m.id === mineId);
+  if (!mine) throw new u.ApiError('Шахта не найдена');
+  if (mine.status !== 'collapsed') throw new u.ApiError('Восстанавливать можно только обрушенный участок');
+  const ready = (mine.collapsedAt || 0) + M.COLLAPSE_REBUILD_MS;
+  if (Date.now() < ready) {
+    throw new u.ApiError(`Участок ещё не расчищен — осталось ${UI_fmtSec(ready - Date.now())}`);
+  }
+
+  const dollarCost = nextMineDollars(user);
+  if (user.dollars < dollarCost) {
+    throw new u.ApiError(`Не хватает денег (нужно $${u.fmt(dollarCost)})`);
+  }
+  user.dollars -= dollarCost;
+
+  const goldTotal = rollInitialGold();
+  // Сбрасываем все поля участка кроме id — это та же шахта, новый цикл
+  mine.status = 'building';
+  mine.buildFinishesAt = Date.now() + M.BUILD_TIME_MS;
+  mine.goldTotal = goldTotal;
+  mine.goldLeft = goldTotal;
+  mine.dailyKey = todayUtcKey();
+  mine.minutesUsedToday = 0;
+  mine.descentMinutes = 0;
+  mine.descentFinishesAt = 0;
+  mine.terroristAttack = false;
+  mine.terroristResolved = false;
+  mine.terroristRollDone = false;
+  mine.terroristDeadline = 0;
+  mine.pendingResult = null;
+  mine.extractAmount = 0;
+  mine.extractReadyAt = 0;
+  delete mine.collapsedAt;
+
+  notices.push(`⛏ Участок начали восстанавливать. Строительство займёт 24 часа. Запас золота определится после завершения.`);
+  return mineView(mine);
+}
+
+// Маленький локальный форматтер секунд — чтобы не тащить зависимости
+function UI_fmtSec(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  if (s < 60) return `${s} сек`;
+  if (s < 3600) return `${Math.floor(s/60)} мин`;
+  return `${Math.floor(s/3600)} ч ${Math.floor((s%3600)/60)} мин`;
 }
 
 // ---------- Отправить шахтёров вниз ----------
@@ -278,4 +336,4 @@ function refreshAll(user) {
   }
 }
 
-module.exports = { view, build, descend, fightTerrorists, collectGold, refreshAll };
+module.exports = { view, build, rebuild, descend, fightTerrorists, collectGold, refreshAll };
