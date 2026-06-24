@@ -21,6 +21,7 @@ const registerRoutes = require('./src/routes');
 const market = require('./src/services/market');
 const legion = require('./src/services/legion');
 const fame  = require('./src/services/fame');
+const sanctions = require('./src/services/sanctions');
 
 const PORT = process.env.PORT || 3000;
 
@@ -42,6 +43,7 @@ async function main() {
       market.tick();
       legion.resolveWars();
       fame.resetDailyIfNeeded();
+      sanctions.prune();        // вернуть просроченные контракты заказчикам
       db.saveAll();
     } catch (e) {
       console.error('Ошибка фонового тика:', e);

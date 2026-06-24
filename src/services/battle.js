@@ -396,6 +396,16 @@ function attack(user, targetId, notices) {
     targetHpAfter = target.res.hp.cur;
   }
 
+  // Хук санкций: если цель — живой игрок и его HP упало до ≤5% макс.,
+  // выплачиваем все активные контракты на эту жертву исполнителю атаки.
+  // (Заказчик не получает награду за свой же контракт — деньги к нему вернутся.)
+  let sanctionPayout = null;
+  if (!isBot && target) {
+    try {
+      sanctionPayout = require('./sanctions').checkAndPayout(user, target, { dealt });
+    } catch (e) { /* sanctions module not loaded? пропустим */ }
+  }
+
   // ----- Грабёж, опыт, потери техники -----
   let loot = 0;
   const myLosses = [], enemyLosses = [];
@@ -527,6 +537,11 @@ function attack(user, targetId, notices) {
     .filter((e) => e.taken > 0 && !e.secret)
     .map((e) => ({ name: e.name, count: e.taken }));
 
+  // Если был выплачен контракт санкций — добавляем уведомление
+  if (sanctionPayout && sanctionPayout.totalPayout > 0) {
+    notices.push(`💰 Выполнен контракт санкций на «${target.name}»! Получено $${u.fmt(sanctionPayout.totalPayout)} от ${sanctionPayout.contracts} заказчик(ов).`);
+  }
+
   return {
     win, crit, dodge,
     dealt, received, loot, xp,
@@ -536,6 +551,7 @@ function attack(user, targetId, notices) {
     enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
     myLosses, enemyLosses,
     fatality, fatalityDodged,
+    sanctionPayout, // { totalPayout, contracts, breakdown } | null
   };
 }
 

@@ -6,9 +6,24 @@
 // ===================================================================
 
 // ---------- ВОЙНА ----------
-App.screens.war = async (c) => {
+// Два таба: «Цели» (обычные противники ±10 уровней) и «Санкции»
+// (контракты, открытые любым игроком на голову других — кто
+// добьёт HP цели до 5%, получает награду).
+App.screens.war = async (c, param) => {
+  const tab = param || 'targets';
+  if (tab === 'sanctions') return renderSanctions(c);
+  return renderWarTargets(c);
+};
+
+async function renderWarTargets(c) {
   await App.refreshMe();
   const m = App.me;
+
+  const tabsHtml = `
+    <div class="tabs">
+      <div class="tab active" onclick="location.hash='#war'">🎯 Цели</div>
+      <div class="tab" onclick="location.hash='#war/sanctions'">📜 Санкции</div>
+    </div>`;
 
   // Панель результата последнего боя (если только что дрались)
   let resultHtml = '';
@@ -55,6 +70,7 @@ App.screens.war = async (c) => {
 
   c.innerHTML = `
     <div class="title">Война</div>
+    ${tabsHtml}
     ${fatalityHtml}
     ${resultHtml}
     <div class="card">
@@ -74,12 +90,21 @@ App.screens.war = async (c) => {
   }
   document.getElementById('war-refresh').onclick = () => { App._lastBattle = null; App.rerender(); };
 
-  // Выполнить атаку и перерисовать экран с результатом
+  // Выполнить атаку и перерисовать экран с результатом.
+  // После перерисовки прокручиваем страницу к карточке результата —
+  // иначе если игрок нажал «Атака» внизу длинного списка, он останется
+  // внизу и не увидит итоги боя.
   async function attackTarget(targetId) {
     try {
       App._lastBattle = await API.post('/api/war/attack', { targetId });
       await App.refreshMe();
       App.rerender();
+      // Даём DOM перерисоваться, потом скроллим
+      requestAnimationFrame(() => {
+        const result = document.querySelector('.result-title');
+        if (result) result.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        else window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
     } catch (e) { UI.toast('⛔ ' + e.message); }
   }
 
@@ -108,6 +133,91 @@ App.screens.war = async (c) => {
 
   list.querySelectorAll('[data-target]').forEach((btn) => {
     btn.onclick = () => attackTarget(btn.dataset.target);
+  });
+}
+
+// ---------- ВКЛАДКА «САНКЦИИ» ----------
+// Любой может объявить санкцию на любого живого игрока через его профиль.
+// Цели с активными контрактами видны всем; кто снизит HP цели до ≤5%,
+// получает все выплаченные на эту жертву награды.
+async function renderSanctions(c) {
+  await App.refreshMe();
+  const data = await API.get('/api/sanctions');
+
+  const tabsHtml = `
+    <div class="tabs">
+      <div class="tab" onclick="location.hash='#war'">🎯 Цели</div>
+      <div class="tab active" onclick="location.hash='#war/sanctions'">📜 Санкции</div>
+    </div>`;
+
+  // Шапка с правилами и моими активными контрактами
+  const r = data.rules || {};
+  const onMeHtml = data.onMe ? `
+    <div class="card" style="border:2px solid var(--red);background:rgba(255,80,80,.08)">
+      <div class="name" style="color:var(--red)">⚠️ На ВАС открыты контракты!</div>
+      <p class="small mt">Активных контрактов: <b>${data.onMe.count}</b> на общую сумму <b class="money">$${UI.fmtMoney(data.onMe.totalReward)}</b>.
+      Любой игрок, добивший вас до ${r.targetHpPct}% HP, получит эту сумму.</p>
+    </div>` : '';
+
+  const myContractsHtml = (data.myAsSponsor && data.myAsSponsor.length) ? `
+    <div class="card">
+      <div class="name">💼 Мои контракты как заказчика</div>
+      ${data.myAsSponsor.map(c => {
+        const left = Math.max(0, Math.ceil((c.expiresAt - Date.now()) / 1000));
+        return `
+        <div class="list-row">
+          <div class="grow">
+            <span class="name">${UI.esc(c.targetFlag||'')} ${UI.esc(c.targetName)}</span>
+            <span class="muted small"> · награда <b class="money">$${UI.fmtMoney(c.reward)}</b> · ${UI.fmtTimer(left)} до возврата</span>
+          </div>
+          <button class="btn btn-red btn-inline" data-cancel="${c.targetId}">Отменить</button>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  const targetsHtml = (data.targets && data.targets.length) ? data.targets.map(t => `
+    <div class="card">
+      <div class="list-row" style="border:none;padding:0">
+        <div class="grow">
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${t.targetId}')">${UI.esc(t.targetFlag||'')} ${UI.esc(t.targetName)}</span>
+          <span class="muted small"> Ур. ${t.targetLevel}${t.targetAlliance ? ' · 🤝 ' + UI.esc(t.targetAlliance) : ''}</span>
+          <div class="small mt">HP цели: <b style="color:${t.targetHpPct<=10?'var(--red)':'var(--text)'}">${t.targetHpPct}%</b>
+            ${t.myContract ? ' · <span class="gold">(в этом и ваш контракт)</span>' : ''}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="money" style="font-size:18px">$${UI.fmtMoney(t.totalReward)}</div>
+          <div class="muted small">${t.contractsCount} контракт(ов)</div>
+        </div>
+      </div>
+      ${t.canHunt ? `<button class="btn btn-orange mt" data-hunt="${t.targetId}" style="width:100%">🎯 Атаковать цель</button>` : ''}
+    </div>
+  `).join('') : `<div class="card center muted">Активных санкций нет. Откройте профиль игрока и нажмите «Объявить санкции».</div>`;
+
+  c.innerHTML = `
+    <div class="title">Война</div>
+    ${tabsHtml}
+    <div class="card">
+      <p class="muted small">Любой может объявить санкции на другого живого игрока — указать награду из своего кармана.
+      Кто снизит HP цели до <b>${r.targetHpPct||5}%</b>, получит все выплаченные на жертву награды.
+      Минимум: <b>$${UI.fmtNum(r.minReward||10000)}</b>. Срок: <b>${r.ttlHours||24} ч</b> (после — деньги возвращаются заказчику).
+      Чтобы объявить санкции — откройте профиль игрока.</p>
+    </div>
+    ${onMeHtml}
+    ${myContractsHtml}
+    ${targetsHtml}`;
+
+  // Кнопки «Атаковать цель» — переход к профилю с подсветкой санкции,
+  // оттуда уже обычная атака через карточку
+  c.querySelectorAll('[data-hunt]').forEach(btn => {
+    btn.onclick = () => App.go('profile/' + btn.dataset.hunt);
+  });
+  // Отмена своего контракта
+  c.querySelectorAll('[data-cancel]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Отменить контракт? Деньги вернутся в полном объёме.')) return;
+      try { await API.post('/api/sanctions/cancel', { targetId: btn.dataset.cancel }); App.rerender(); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
   });
 };
 
