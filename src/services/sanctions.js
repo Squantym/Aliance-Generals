@@ -1,16 +1,17 @@
 // ===================================================================
 // src/services/sanctions.js — «Санкции» (контракты на игрока)
 //
-// Любой игрок может объявить санкции на любого ДРУГОГО живого
-// игрока, указав сумму награды из своего кармана (escrow).
-// Цель попадает в список санкций. Любой третий игрок, который
-// атакует цель и снизит её HP до 5% или ниже, получает награду.
+// Игрок с 50+ уровнем может объявить санкции на любого ДРУГОГО
+// живого игрока, указав сумму награды из своего кармана (escrow).
+// Цель попадает в список санкций (вкладка доступна с 50 ур.).
+// Любой игрок, атаковавший цель ИЗ ВКЛАДКИ «Санкции» и добивший
+// её (HP ≤ порога лазарета), получает награду.
 //
 // Принципы:
 //   • Деньги списываются с заказчика сразу при объявлении (escrow).
 //   • На одного игрока могут висеть несколько контрактов от разных
 //     заказчиков — каждый со своей наградой.
-//   • Контракты живут TTL=24ч (см. SANCTION_TTL_MS). По истечении
+//   • Контракты живут TTL=7 суток (см. SANCTION_TTL_MS). По истечении
 //     деньги возвращаются заказчику.
 //   • Заказчик не может выполнить свой контракт (нельзя «сам себе»).
 //   • Заказчик может в любой момент отменить — деньги вернутся.
@@ -18,13 +19,11 @@
 //   • Боты в системе не участвуют (только живые игроки).
 //   • При выплате награды отправляется уведомление и заказчику,
 //     и исполнителю, и цели.
-//   • Атака в обычной войне (battle.attack) после нанесения урона
-//     проверяет, не упало ли HP цели <= 5%. Если да —
-//     выплачиваются ВСЕ активные контракты на эту жертву.
-//   • Контракт можно перевыполнять (если HP вернулось > 5% и снова
-//     упало — выплачивается, если контракт ещё активен; но контракт
-//     удаляется после первой выплаты, так что фактически платит
-//     только первый достигнувший порог).
+//   • Выплата срабатывает ТОЛЬКО при атаке с флагом isSanctionAttack
+//     (вкладка «Санкции»). Атака из «Войны» даёт обычный грабёж.
+//   • Заказчик может бить свою цель во «Войне», но награду санкций
+//     не получит — только обычный loot.
+//   • Цель должна быть добита (HP ≤ MIN_HP_TO_FIGHT).
 // ===================================================================
 
 const config = require('../../config/gameConfig');
@@ -34,10 +33,10 @@ const player = require('./player');
 const social = require('./social');
 const notif  = (() => { try { return require('./notifications'); } catch (e) { return null; } })();
 
-const MIN_REWARD = 10_000;            // минимум $10K на голову
+const MIN_REWARD = 100_000;           // минимум $100K на голову
 const MAX_REWARD = 10_000_000_000;    // макс. $10 млрд — лимит чтобы не было багов
-const SANCTION_TTL_MS = 24 * 3600 * 1000;
-const TARGET_HP_PCT = 0.05;           // 5% от макс. HP — порог выплаты
+const SANCTION_TTL_MS = 7 * 24 * 3600 * 1000;
+const ACCESS_LEVEL = 50;            // вкладка и объявление — с 50 уровня
 
 function store() { return db.load('sanctions', { list: [] }); }
 function all()   { return store().list; }
@@ -87,8 +86,28 @@ function prune() {
 
 // ---------- VIEW: список целей с активными контрактами ----------
 // Группируем по targetId, суммируем награды. Видна каждому игроку.
+function hasActiveContract(targetId) {
+  return all().some(c => c.targetId === targetId);
+}
+
 function list(user) {
   prune();
+  if ((user.level || 1) < ACCESS_LEVEL) {
+    return {
+      locked: true,
+      requiredLevel: ACCESS_LEVEL,
+      targets: [],
+      myAsSponsor: [],
+      onMe: null,
+      rules: {
+        minReward: MIN_REWARD,
+        maxReward: MAX_REWARD,
+        ttlDays: 7,
+        mustKill: true,
+        accessLevel: ACCESS_LEVEL,
+      },
+    };
+  }
   const users = player.users();
   const byTarget = new Map();
   for (const c of all()) {
@@ -146,14 +165,18 @@ function list(user) {
     rules: {
       minReward: MIN_REWARD,
       maxReward: MAX_REWARD,
-      ttlHours: Math.round(SANCTION_TTL_MS / 3600000),
-      targetHpPct: Math.round(TARGET_HP_PCT * 100),
+      ttlDays: Math.round(SANCTION_TTL_MS / 86400000),
+      mustKill: true,
+      accessLevel: ACCESS_LEVEL,
     },
   };
 }
 
 // ---------- DECLARE: объявить санкцию ----------
 function declare(user, targetId, reward, notices) {
+  if ((user.level || 1) < ACCESS_LEVEL) {
+    throw new u.ApiError(`Санкции доступны с ${ACCESS_LEVEL} уровня`);
+  }
   const target = ensureLiveTarget(targetId, user.id);
   reward = u.toInt(reward, 0);
   if (reward < MIN_REWARD) throw new u.ApiError(`Минимальная награда: $${u.fmt(MIN_REWARD)}`);
@@ -209,15 +232,15 @@ function cancel(user, targetId, notices) {
 }
 
 // ---------- HOOK: вызывается из battle.attack после нанесения урона ----------
-// Если HP жертвы стало <= 5% от максимума — выплачиваем ВСЕ контракты
-// на эту жертву исполнителю.
+// Только при isSanctionAttack=true. Если HP жертвы ≤ порога лазарета —
+// выплачиваем ВСЕ контракты на эту жертву исполнителю.
 function checkAndPayout(attacker, victim, ctx) {
+  if (!ctx || !ctx.isSanctionAttack) return null;
   if (!attacker || !victim) return null;
   if (attacker.id === victim.id) return null;
 
-  const maxHp = player.maxima(victim).hp;
-  const hpPct = (victim.res.hp.cur || 0) / Math.max(1, maxHp);
-  if (hpPct > TARGET_HP_PCT) return null;
+  const killThreshold = config.PLAYER.MIN_HP_TO_FIGHT;
+  if ((victim.res.hp.cur || 0) > killThreshold) return null;
 
   const s = store();
   const matching = (s.list || []).filter(c => c.targetId === victim.id);
@@ -263,4 +286,4 @@ function checkAndPayout(attacker, victim, ctx) {
   return { totalPayout, contracts: matching.length, breakdown };
 }
 
-module.exports = { list, declare, cancel, checkAndPayout, prune };
+module.exports = { list, declare, cancel, checkAndPayout, prune, hasActiveContract, ACCESS_LEVEL };

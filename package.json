@@ -4,12 +4,13 @@
   "description": "Генералы — военная текстовая стратегия",
   "main": "server.js",
   "scripts": {
-    "start":   "node server.js",
-    "dev":     "node server.js",
-    "test":    "node test/smoke.js"
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test/smoke.js"
   },
   "dependencies": {
-    "mongodb": "^6.12.0"
+    "mongodb": "^6.12.0",
+    "ws": "^8.21.0"
   },
   "engines": {
     "node": ">=18"

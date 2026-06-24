@@ -283,7 +283,7 @@ App.screens.profile = async (c, param) => {
       </div>
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-msg">✉ Написать сообщение</button>` : ''}
-      ${!own && !isBot ? `<button class="btn btn-red mt" id="pf-sanction">📜 Объявить санкции</button>` : ''}
+      ${!own && !isBot && (App.me.level || 1) >= 50 ? `<button class="btn btn-red mt" id="pf-sanction">📜 Объявить санкции</button>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
         ? `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс «${UI.esc(App.me.alliance.name)}»</button>` : ''}
@@ -433,14 +433,14 @@ App.screens.profile = async (c, param) => {
     const raw = prompt(
       `Объявить санкции на «${p.name}».\n` +
       `Деньги будут списаны с вашего баланса немедленно.\n` +
-      `Кто снизит HP цели до 5%, получит указанную сумму.\n` +
-      `Минимум: $10 000. У вас: $${UI.fmtNum(have)}.\n\n` +
+      `Награда выплачивается только при добивании цели из вкладки «Санкции».\n` +
+      `Минимум: $100 000. У вас: $${UI.fmtNum(have)}.\n\n` +
       `Введите сумму награды в долларах:`,
-      '50000'
+      '100000'
     );
     if (raw === null) return;
     const reward = parseInt(String(raw).replace(/\D/g, ''), 10);
-    if (!reward || reward < 10000) { UI.toast('⛔ Минимум $10 000'); return; }
+    if (!reward || reward < 100000) { UI.toast('⛔ Минимум $100 000'); return; }
     if (!confirm(`Объявить контракт на $${UI.fmtNum(reward)}? Деньги спишутся сразу.`)) return;
     try {
       await API.post('/api/sanctions/declare', { targetId: p.id, reward });

@@ -947,6 +947,27 @@ function publicView(legionId) {
   };
 }
 
+// ===================================================================
+// АДМИН: пропустить фазу подготовки (для тестов и отладки)
+// ===================================================================
+function skipBattlePrep(user, notices) {
+  const l = legionOf(user);
+  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя легиона');
+  if (l.activeBattle.phase !== 'prep') throw new u.ApiError('Бой не в фазе подготовки');
+
+  const all = legions();
+  const battle = l.activeBattle;
+  battle.prepEndsAt = Date.now() - 1000;
+  const la = all[battle.legionA];
+  const lb = all[battle.legionB];
+  if (la && la.activeBattle) la.activeBattle.prepEndsAt = battle.prepEndsAt;
+  if (lb && lb.activeBattle) lb.activeBattle.prepEndsAt = battle.prepEndsAt;
+  db.save('legions');
+  resolveWars();
+  notices.push('⏩ Фаза подготовки пропущена — бой начался');
+  return { ok: true, phase: l.activeBattle ? l.activeBattle.phase : null };
+}
+
 module.exports = {
   view, deposit, build, declareWar, resolveWars,
   exchangeToReserves, buildBattle, depositResources,
@@ -954,6 +975,7 @@ module.exports = {
   shopBuy, gearPick,
   challengeLegion, acceptChallenge, declineChallenge,
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
+  skipBattlePrep,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
   chooseDirection:  (...a) => require('./legionBattle').chooseDirection(...a),

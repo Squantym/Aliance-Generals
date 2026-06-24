@@ -88,7 +88,10 @@ module.exports = function registerRoutes(app) {
 
   // ---------- Война ----------
   app.add('GET', '/api/war/opponents', (req) => battle.opponents(req.user));
-  app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n)));
+  app.add('POST', '/api/war/attack', act((req, n) => battle.attack(
+    req.user, String(req.body.targetId || ''), n,
+    { isSanctionAttack: !!req.body.isSanctionAttack }
+  )));
   app.add('POST', '/api/war/fatality', act((req, n) => battle.fatality(req.user, req.body.choice, n)));
 
   // ---------- Санкции (контракты на голову игрока) ----------
@@ -246,6 +249,7 @@ module.exports = function registerRoutes(app) {
   // ---------- Администратор ----------
   app.add('GET', '/api/admin/players', (req) => admin.listPlayers(req.query.q), { admin: true });
   app.add('POST', '/api/admin/grant',      act((req, n) => admin.grant(req.user, req.body, n)),    { admin: true });
+  app.add('POST', '/api/admin/legion/battle/skip-prep', act((req, n) => legion.skipBattlePrep(req.user, n)), { admin: true });
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));
   app.add('GET',  '/api/admin/discounts', () => admin.discountCategories(), { admin: true });

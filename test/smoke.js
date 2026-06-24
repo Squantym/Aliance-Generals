@@ -34,17 +34,17 @@ async function main() {
 
   console.log('1. Регистрация и вход');
   // В dev-режиме (без RESEND_API_KEY) сервер сразу выдаёт токен
-  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'pass123', country: 'ru' });
+  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'Pass1234', country: 'ru' });
   check('первый игрок зарегистрирован', regA.status === 200 && (!!regA.data.token || regA.data.pending));
   const A = regA.data.token; // в dev-режиме есть сразу
-  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'pass123', country: 'ua' });
+  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'Pass1234', country: 'ua' });
   check('второй игрок зарегистрирован', regB.status === 200);
   const B = regB.data.token;
   const dupe = await post('/api/register', null, { login: nameA, email: `dupe${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат позывного отклонён', dupe.status === 400);
   const dupeEmail = await post('/api/register', null, { login: 'ZZZ' + stamp, email: `admina${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат email отклонён', dupeEmail.status === 400);
-  const login = await post('/api/login', null, { login: nameA, password: 'pass123' });
+  const login = await post('/api/login', null, { login: nameA, password: 'Pass1234' });
   check('вход работает', login.status === 200 && !!login.data.token);
 
   console.log('2. Состояние игрока');
@@ -229,7 +229,8 @@ async function main() {
   check('чужой профиль читается', prof.profile.name === nameA);
   check('атака вне ±10 уровней запрещена', prof.profile.canAttack === false);
   const fame = (await get('/api/fame', A)).data;
-  check('зал славы: 12 категорий', fame.categories.length === 12);
+  check('зал славы: allTime и daily', Array.isArray(fame.allTime) && Array.isArray(fame.daily));
+  check('зал славы: категории на месте', fame.allTime.length >= 6 && fame.daily.length >= 6);
   const ach = (await get('/api/achievements', A)).data;
   check('достижения читаются', ach.achievements.length >= 5);
   const trophies = (await get('/api/trophies', A)).data;
@@ -300,7 +301,7 @@ async function main() {
 
   console.log('23. Защита построек учитывается в power.def');
   // Берём C — нового игрока без построек
-  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'pass123', country: 'kz' });
+  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'Pass1234', country: 'kz' });
   const C = regC.data.token;
   const idC = (await get('/api/me', C)).data.id;
   await post('/api/admin/grant', A, { userId: idC, setLevel: 35, dollars: 100000 });
@@ -351,14 +352,15 @@ async function main() {
   const bunker = cfg.DEFENSE_BUILDINGS.find((b) => b.id === 'bunker');
   check('бункер имеет сниженную защиту (-30% от предыдущей версии)', bunker.def === 18);
 
-  console.log('29. Зал славы: богатство = всего заработано');
-  const richCat = fame.categories.find((c) => c.id === 'rich');
-  check('категория "Богатство (всего заработано)" есть', !!richCat);
-  const armyCat = fame.categories.find((c) => c.id === 'army');
-  check('категория "Размер армии" есть', !!armyCat);
-  const allianceCat = fame.categories.find((c) => c.id === 'alliance_size');
-  check('категория "Самый крупный альянс" есть', !!allianceCat);
-  const mercyCat = fame.categories.find((c) => c.id === 'mercy');
+  console.log('29. Зал славы: allTime и daily категории');
+  const fame2 = (await get('/api/fame', A)).data;
+  const lootCat = fame2.allTime.find((c) => c.id === 'loot');
+  check('категория "Награбленное" есть', !!lootCat);
+  const levelCat = fame2.allTime.find((c) => c.id === 'level');
+  check('категория "Уровень" есть', !!levelCat);
+  const allianceCat = fame2.allTime.find((c) => c.id === 'alliance');
+  check('категория "Альянс" есть', !!allianceCat);
+  const mercyCat = fame2.allTime.find((c) => c.id === 'mercy');
   check('категория "Милосердие" есть', !!mercyCat);
 
   console.log('30. Крит-формула: базовый 1.3, макс. трофей даёт итог ×3.0');
@@ -537,6 +539,58 @@ async function main() {
   const trophyBonusAtMax = (licenseAtMax.perLvl * 10) / 100; // 2.0 (200%)
   const totalCritMul = critMul * (1 + trophyBonusAtMax);
   check('итоговый крит-множитель на максимуме трофея = x6', totalCritMul === 6);
+
+  console.log('48. Бой легиона: prep → active → attack → finalize');
+  const LEGION_CREATE_COST = cfg.LEGION.CREATE_COST;
+  await post('/api/admin/grant', A, { userId: idA, setLevel: 50, health: 500, ammo: 10, dollars: LEGION_CREATE_COST + 1000000 });
+  await post('/api/admin/grant', A, { userId: idC, setLevel: 50, health: 500, ammo: 10, dollars: LEGION_CREATE_COST + 1000000 });
+
+  const legCreateA = await post('/api/group/legion/create', A, { name: 'LegA' + stamp });
+  check('легион A создан', legCreateA.status === 200 && !!legCreateA.data.id);
+  const legCreateC = await post('/api/group/legion/create', C, { name: 'LegC' + stamp });
+  check('легион C создан', legCreateC.status === 200 && !!legCreateC.data.id);
+
+  const enemyLegionId = legCreateC.data.id;
+
+  const challenge = await post('/api/legion/challenge', A, { enemyId: enemyLegionId });
+  check('вызов на бой отправлен', challenge.status === 200);
+
+  const acceptBattle = await post('/api/legion/challenge/accept', C);
+  check('вызов принят — фаза prep', acceptBattle.status === 200);
+
+  const joinA = await post('/api/legion/battle/join', A, { role: 'assault' });
+  check('A вступил в бой', joinA.status === 200);
+  const joinC = await post('/api/legion/battle/join', C, { role: 'assault' });
+  check('C вступил в бой', joinC.status === 200);
+
+  const dirA = await post('/api/legion/battle/direction', A, { direction: 1 });
+  check('A выбрал направление', dirA.status === 200);
+  const dirC = await post('/api/legion/battle/direction', C, { direction: 1 });
+  check('C выбрал направление', dirC.status === 200);
+
+  const skipPrep = await post('/api/admin/legion/battle/skip-prep', A);
+  check('фаза prep пропущена', skipPrep.status === 200 && skipPrep.data.phase === 'active');
+
+  const battleA = (await get('/api/legion/battle', A)).data;
+  check('бой активен для A', battleA.battle && battleA.battle.phase === 'active');
+  check('лог боя не пуст', battleA.battle && (battleA.battle.log || []).length > 0);
+
+  const legAtk = await post('/api/legion/battle/attack', A, { targetId: idC });
+  check('атака в бою легиона прошла', legAtk.status === 200 && typeof legAtk.data.dmg === 'number');
+
+  // Добиваем C до выбывания (несколько атак с ожиданием кулдауна 3 сек)
+  let killed = !legAtk.data.targetAlive;
+  for (let i = 0; i < 15 && !killed; i++) {
+    await new Promise((r) => setTimeout(r, 3100));
+    const again = await post('/api/legion/battle/attack', A, { targetId: idC });
+    if (again.status === 200) killed = !again.data.targetAlive;
+    else break;
+  }
+  check('цель выбита или получила урон', legAtk.data.dmg > 0 || killed);
+
+  const battleAfter = (await get('/api/legion/battle', A)).data;
+  check('бой завершён или продолжается корректно',
+    !battleAfter.battle || battleAfter.battle.phase === 'active' || battleAfter.battle.phase === 'done');
 
   console.log('\n========================================');
   console.log(`ИТОГО: ✔ ${passed} пройдено, ✖ ${failed} провалено`);

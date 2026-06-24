@@ -101,6 +101,22 @@ function log(battle, text, kind) {
   if (battle.log.length > 300) battle.log = battle.log.slice(-300);
 }
 
+function syncBattle(battle) {
+  const all = legions();
+  const legionA = all[battle.legionA];
+  const legionB = all[battle.legionB];
+  if (!legionA || !legionB) return all;
+  legionA.activeBattle = { ...battle, enemyId: legionB.id };
+  legionB.activeBattle = { ...battle, enemyId: legionA.id };
+  return all;
+}
+
+function saveBattle(battle) {
+  syncBattle(battle);
+  db.save('legions');
+  try { require('../core/battleRealtime').pushBattleUpdate(battle); } catch (e) { /* ws optional */ }
+}
+
 function addActivity(battle, userId, type, amount) {
   battle.activity = battle.activity || {};
   battle.activity[userId] = (battle.activity[userId] || 0) + (amount || ACTIVITY[type] || 0);
@@ -240,7 +256,7 @@ function joinBattle(user, roleId, notices) {
   };
 
   log(battle, `${user.name} готов (${role.label})`, 'prep');
-  db.save('legions');
+  saveBattle(battle);
   notices.push(`✅ Вы в составе! Роль: ${role.label}. Выберите направление во вкладке «Война».`);
   return { ok: true, role: roleId };
 }
@@ -281,7 +297,7 @@ function chooseDirection(user, dir, notices) {
   } else {
     log(battle, `${user.name} занял «${DIR_NAMES[d-1]}»`, 'move');
   }
-  db.save('legions');
+  saveBattle(battle);
   notices.push(`📍 Вы на «${DIR_NAMES[d-1]}».`);
   return { direction: d, dirName: DIR_NAMES[d-1] };
 }
@@ -341,7 +357,7 @@ function attack(user, targetUserId, notices) {
 
   log(battle, msg, crit ? 'crit' : 'attack');
   checkBattleEnd(battle, l, legions(), users);
-  db.save('legions');
+  saveBattle(battle);
 
   notices.push(msg);
   return { dmg: actual, crit, targetHp: tc.hp, targetAlive: tc.alive };
@@ -402,7 +418,7 @@ function heal(user, targetUserId, notices) {
 
   const msg = `💊 ${user.name} → ${tc.name}: +${actual} HP${critHeal ? ' ✨ КРИТ!' : ''}`;
   log(battle, msg, critHeal ? 'crit' : 'heal');
-  db.save('legions');
+  saveBattle(battle);
 
   notices.push(msg);
   return { healed: actual, critHeal, targetHp: tc.hp, enLeft: user.res.en.cur };
@@ -447,7 +463,7 @@ function guard(user, targetUserId, notices) {
 
   const msg = `🛡️ ${user.name} прикрывает ${tc.name} на ${GUARD_SEC} сек`;
   log(battle, msg, 'guard');
-  db.save('legions');
+  saveBattle(battle);
 
   notices.push(msg);
   return { guardedUntil: battle.guardExpiry[user.id] };
@@ -600,7 +616,7 @@ function useItem(user, itemId, targetUserId, notices) {
 
   log(battle, resultMsg, 'item');
   checkBattleEnd(battle, l, legions(), allUsers());
-  db.save('legions');
+  saveBattle(battle);
 
   notices.push(resultMsg);
   return { ok: true, gearLeft: c.gear };
@@ -711,10 +727,10 @@ function finalizeBattle(battle, l, all, users, winningSide, reason) {
   const wResult = addGlory(winner, +gloryGain);
   addGlory(loser,  -gloryLoss);
 
-  // Экономика
-  const loot = Math.floor((loser.kmarks || 0) * 0.20);
-  loser.kmarks  = Math.max(0, (loser.kmarks || 0) - loot);
-  winner.kmarks = (winner.kmarks || 0) + loot + config.LEGION.BATTLE_LOOT_KMARKS;
+  // Экономика — победитель забирает 20% РЕЗ проигравшего + фикс. бонус.
+  const loot = Math.floor((loser.reserves || 0) * 0.20);
+  loser.reserves  = Math.max(0, (loser.reserves || 0) - loot);
+  winner.reserves = (winner.reserves || 0) + loot + (config.LEGION.BATTLE_LOOT_RESERVES || 0);
   winner.ratingPoints = (winner.ratingPoints || 0) + 10;
   loser.ratingPoints  = Math.max(0, (loser.ratingPoints || 0) - 3);
 
@@ -738,9 +754,8 @@ function finalizeBattle(battle, l, all, users, winningSide, reason) {
       { won, loot: won ? loot : -loot, report });
   }
 
-  // Очищаем бой из обоих легионов
-  legionA.activeBattle = null;
-  legionB.activeBattle = null;
+  // Оставляем бой в phase=done до следующего тика (клиенты видят итоги)
+  saveBattle(battle);
   // Сохраняем историю
   const hist = { at: now(), enemyId: loser.id, won: winner === legionA, loot, gloryGain, gloryLoss };
   legionA.battleHistory = (legionA.battleHistory || []).concat(hist).slice(-20);
@@ -794,6 +809,7 @@ function startActivePhaseTick(l, all, users) {
         activeEndsAt: battle.activeEndsAt,
       });
   }
+  saveBattle(battle);
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -909,7 +925,7 @@ function leaveBattle(user, notices) {
     }
   }
 
-  db.save('legions');
+  saveBattle(battle);
   notices.push('🚪 Вы покинули бой. Ваша статистика не сохранена.');
   return { ok: true };
 }

@@ -285,7 +285,8 @@ function removeUnits(victim, armyEntries, pctBase, crit) {
 }
 
 // ---------- ГЛАВНАЯ ФУНКЦИЯ: атака цели ----------
-function attack(user, targetId, notices) {
+function attack(user, targetId, notices, opts = {}) {
+  const isSanctionAttack = !!opts.isSanctionAttack;
   if (user.pendingFatality) throw new u.ApiError('Сначала решите судьбу поверженного врага (фаталити)!');
   if (user.res.am.cur < 1) throw new u.ApiError('Нет боеприпасов. Они восстанавливаются со временем.');
   if (user.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) {
@@ -305,7 +306,11 @@ function attack(user, targetId, notices) {
     target = player.users()[targetId];
     if (!target || target.id === user.id) throw new u.ApiError('Цель не найдена');
     player.refresh(target);
-    if (Math.abs(target.level - user.level) > config.PLAYER.LEVEL_RANGE) {
+    if (isSanctionAttack) {
+      if (!require('./sanctions').hasActiveContract(target.id)) {
+        throw new u.ApiError('На эту цель нет активных санкций');
+      }
+    } else if (Math.abs(target.level - user.level) > config.PLAYER.LEVEL_RANGE) {
       throw new u.ApiError('Цель вне диапазона ±10 уровней');
     }
     if (target.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) {
@@ -396,13 +401,12 @@ function attack(user, targetId, notices) {
     targetHpAfter = target.res.hp.cur;
   }
 
-  // Хук санкций: если цель — живой игрок и его HP упало до ≤5% макс.,
-  // выплачиваем все активные контракты на эту жертву исполнителю атаки.
-  // (Заказчик не получает награду за свой же контракт — деньги к нему вернутся.)
+  // Хук санкций: выплата только при атаке из вкладки «Санкции»
+  // и если HP цели упало до порога лазарета (добита).
   let sanctionPayout = null;
-  if (!isBot && target) {
+  if (!isBot && target && isSanctionAttack) {
     try {
-      sanctionPayout = require('./sanctions').checkAndPayout(user, target, { dealt });
+      sanctionPayout = require('./sanctions').checkAndPayout(user, target, { dealt, isSanctionAttack: true });
     } catch (e) { /* sanctions module not loaded? пропустим */ }
   }
 

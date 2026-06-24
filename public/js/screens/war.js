@@ -1,14 +1,15 @@
 // ===================================================================
-// public/js/screens/war.js — экраны «Война» и «Миссии»
+// public/js/screens/war.js — экраны «Война» и «Мissions»
 // Война: 10 целей (игроки ±10 уровней + 2–3 бота-террориста 💀),
 // панель результата боя и окно фаталити. Миссии: карточки операций
 // с этапами по 3 шага и кнопкой «Выполнить шаг».
 // ===================================================================
 
+const SANCTIONS_LEVEL = 50;
+
 // ---------- ВОЙНА ----------
 // Два таба: «Цели» (обычные противники ±10 уровней) и «Санкции»
-// (контракты, открытые любым игроком на голову других — кто
-// добьёт HP цели до 5%, получает награду).
+// (контракты с 50 уровня; атака из вкладки «Санкции» даёт награду).
 App.screens.war = async (c, param) => {
   const tab = param || 'targets';
   if (tab === 'sanctions') return renderSanctions(c);
@@ -18,11 +19,14 @@ App.screens.war = async (c, param) => {
 async function renderWarTargets(c) {
   await App.refreshMe();
   const m = App.me;
+  const canSanctions = (m.level || 1) >= SANCTIONS_LEVEL;
 
   const tabsHtml = `
     <div class="tabs">
       <div class="tab active" onclick="location.hash='#war'">🎯 Цели</div>
-      <div class="tab" onclick="location.hash='#war/sanctions'">📜 Санкции</div>
+      ${canSanctions
+        ? `<div class="tab" onclick="location.hash='#war/sanctions'">📜 Санкции</div>`
+        : `<div class="tab muted" title="С ${SANCTIONS_LEVEL} уровня">🔒 Санкции</div>`}
     </div>`;
 
   // Панель результата последнего боя (если только что дрались)
@@ -32,9 +36,10 @@ async function renderWarTargets(c) {
     const marks = [
       b.crit ? '💥 Критический удар!' : '',
       b.dodge ? '🌀 Враг увернулся' : '',
+      b.sanctionPayout && b.sanctionPayout.totalPayout > 0 ? `💰 Контракт: +$${UI.fmtNum(b.sanctionPayout.totalPayout)}` : '',
     ].filter(Boolean).join(' · ');
     resultHtml = `
-      <div class="card">
+      <div class="card" id="war-result-card">
         <div class="result-title ${b.win ? 'win' : 'lose'}">${b.win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</div>
         <p class="center muted small">${UI.esc(b.targetName)} (ур. ${b.targetLevel})${b.isBot ? ' 💀' : ''} · здоровье врага: ${b.targetHpPct}%</p>
         ${marks ? `<p class="center small mt">${marks}</p>` : ''}
@@ -82,7 +87,7 @@ async function renderWarTargets(c) {
   // Кнопки результата и фаталити
   if (b && !m.pendingFatality) {
     const again = document.getElementById('atk-again');
-    if (again) again.onclick = () => attackTarget(b.targetId);
+    if (again) again.onclick = () => attackTarget(b.targetId, false);
   }
   if (m.pendingFatality) {
     document.getElementById('fat-ear').onclick = () => doFatality('ear');
@@ -90,16 +95,11 @@ async function renderWarTargets(c) {
   }
   document.getElementById('war-refresh').onclick = () => { App._lastBattle = null; App.rerender(); };
 
-  // Выполнить атаку и перерисовать экран с результатом.
-  // После перерисовки прокручиваем страницу к карточке результата —
-  // иначе если игрок нажал «Атака» внизу длинного списка, он останется
-  // внизу и не увидит итоги боя.
-  async function attackTarget(targetId) {
+  async function attackTarget(targetId, isSanctionAttack) {
     try {
-      App._lastBattle = await API.post('/api/war/attack', { targetId });
+      App._lastBattle = await API.post('/api/war/attack', { targetId, isSanctionAttack: !!isSanctionAttack });
       await App.refreshMe();
       App.rerender();
-      // Даём DOM перерисоваться, потом скроллим
       requestAnimationFrame(() => {
         const result = document.querySelector('.result-title');
         if (result) result.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -132,16 +132,29 @@ async function renderWarTargets(c) {
     </div>`).join('');
 
   list.querySelectorAll('[data-target]').forEach((btn) => {
-    btn.onclick = () => attackTarget(btn.dataset.target);
+    btn.onclick = () => attackTarget(btn.dataset.target, false);
   });
 }
 
-// ---------- ВКЛАДКА «САНКЦИИ» ----------
-// Любой может объявить санкцию на любого живого игрока через его профиль.
-// Цели с активными контрактами видны всем; кто снизит HP цели до ≤5%,
-// получает все выплаченные на эту жертву награды.
+// ---------- ВКЛАДКА «САНКЦИИ» (с 50 уровня) ----------
 async function renderSanctions(c) {
   await App.refreshMe();
+  const m = App.me;
+
+  if ((m.level || 1) < SANCTIONS_LEVEL) {
+    c.innerHTML = `
+      <div class="title">Война</div>
+      <div class="tabs">
+        <div class="tab" onclick="location.hash='#war'">🎯 Цели</div>
+        <div class="tab active">📜 Санкции</div>
+      </div>
+      <div class="card center">
+        <p class="name">🔒 Раздел закрыт</p>
+        <p class="muted small mt">Санкции доступны с <b>${SANCTIONS_LEVEL} уровня</b>. У вас: ${m.level}.</p>
+      </div>`;
+    return;
+  }
+
   const data = await API.get('/api/sanctions');
 
   const tabsHtml = `
@@ -150,27 +163,41 @@ async function renderSanctions(c) {
       <div class="tab active" onclick="location.hash='#war/sanctions'">📜 Санкции</div>
     </div>`;
 
-  // Шапка с правилами и моими активными контрактами
   const r = data.rules || {};
+  let resultHtml = '';
+  const b = App._lastSanctionBattle || App._lastBattle;
+  if (b && App._lastSanctionBattle) {
+    resultHtml = `
+      <div class="card" id="sanction-result-card">
+        <div class="result-title ${b.win ? 'win' : 'lose'}">${b.win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</div>
+        <p class="center muted small">${UI.esc(b.targetName)} · HP: ${b.targetHpPct}%</p>
+        ${b.sanctionPayout && b.sanctionPayout.totalPayout > 0
+          ? `<p class="center money mt"><b>💰 Контракт выполнен: +$${UI.fmtMoney(b.sanctionPayout.totalPayout)}</b></p>`
+          : ''}
+        <div class="kv mt"><span class="k">Нанесено</span><span class="v dmg-deal">${b.dealt} урона</span></div>
+        <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(b.loot)}</span></div>
+      </div>`;
+  }
+
   const onMeHtml = data.onMe ? `
     <div class="card" style="border:2px solid var(--red);background:rgba(255,80,80,.08)">
       <div class="name" style="color:var(--red)">⚠️ На ВАС открыты контракты!</div>
       <p class="small mt">Активных контрактов: <b>${data.onMe.count}</b> на общую сумму <b class="money">$${UI.fmtMoney(data.onMe.totalReward)}</b>.
-      Любой игрок, добивший вас до ${r.targetHpPct}% HP, получит эту сумму.</p>
+      Любой игрок, добивший вас во вкладке «Санкции», получит эту сумму.</p>
     </div>` : '';
 
   const myContractsHtml = (data.myAsSponsor && data.myAsSponsor.length) ? `
     <div class="card">
       <div class="name">💼 Мои контракты как заказчика</div>
-      ${data.myAsSponsor.map(c => {
-        const left = Math.max(0, Math.ceil((c.expiresAt - Date.now()) / 1000));
+      ${data.myAsSponsor.map(ct => {
+        const left = Math.max(0, Math.ceil((ct.expiresAt - Date.now()) / 1000));
         return `
         <div class="list-row">
           <div class="grow">
-            <span class="name">${UI.esc(c.targetFlag||'')} ${UI.esc(c.targetName)}</span>
-            <span class="muted small"> · награда <b class="money">$${UI.fmtMoney(c.reward)}</b> · ${UI.fmtTimer(left)} до возврата</span>
+            <span class="name">${UI.esc(ct.targetFlag||'')} ${UI.esc(ct.targetName)}</span>
+            <span class="muted small"> · награда <b class="money">$${UI.fmtMoney(ct.reward)}</b> · ${UI.fmtTimer(left)} до возврата</span>
           </div>
-          <button class="btn btn-red btn-inline" data-cancel="${c.targetId}">Отменить</button>
+          <button class="btn btn-red btn-inline" data-cancel="${ct.targetId}">Отменить</button>
         </div>`;
       }).join('')}
     </div>` : '';
@@ -182,36 +209,47 @@ async function renderSanctions(c) {
           <span class="name" style="cursor:pointer" onclick="App.go('profile/${t.targetId}')">${UI.esc(t.targetFlag||'')} ${UI.esc(t.targetName)}</span>
           <span class="muted small"> Ур. ${t.targetLevel}${t.targetAlliance ? ' · 🤝 ' + UI.esc(t.targetAlliance) : ''}</span>
           <div class="small mt">HP цели: <b style="color:${t.targetHpPct<=10?'var(--red)':'var(--text)'}">${t.targetHpPct}%</b>
-            ${t.myContract ? ' · <span class="gold">(в этом и ваш контракт)</span>' : ''}</div>
+            ${t.myContract ? ' · <span class="gold">(ваш контракт)</span>' : ''}</div>
         </div>
         <div style="text-align:right">
           <div class="money" style="font-size:18px">$${UI.fmtMoney(t.totalReward)}</div>
           <div class="muted small">${t.contractsCount} контракт(ов)</div>
         </div>
       </div>
-      ${t.canHunt ? `<button class="btn btn-orange mt" data-hunt="${t.targetId}" style="width:100%">🎯 Атаковать цель</button>` : ''}
+      ${t.canHunt ? `<button class="btn btn-orange mt" data-hunt="${t.targetId}" style="width:100%">🎯 Атаковать (санкции)</button>` : ''}
     </div>
   `).join('') : `<div class="card center muted">Активных санкций нет. Откройте профиль игрока и нажмите «Объявить санкции».</div>`;
 
   c.innerHTML = `
     <div class="title">Война</div>
     ${tabsHtml}
+    ${resultHtml}
     <div class="card">
-      <p class="muted small">Любой может объявить санкции на другого живого игрока — указать награду из своего кармана.
-      Кто снизит HP цели до <b>${r.targetHpPct||5}%</b>, получит все выплаченные на жертву награды.
-      Минимум: <b>$${UI.fmtNum(r.minReward||10000)}</b>. Срок: <b>${r.ttlHours||24} ч</b> (после — деньги возвращаются заказчику).
-      Чтобы объявить санкции — откройте профиль игрока.</p>
+      <p class="muted small">Объявить санкции можно с <b>${SANCTIONS_LEVEL} ур.</b> через профиль игрока.
+      Награда выплачивается только при атаке <b>из этой вкладки</b> — атака во «Войне» даёт обычный грабёж.
+      Цель нужно <b>добить</b> (довести HP до лазарета).
+      Минимум: <b>$${UI.fmtNum(r.minReward||100000)}</b>. Срок: <b>${r.ttlDays||7} сут.</b></p>
     </div>
     ${onMeHtml}
     ${myContractsHtml}
     ${targetsHtml}`;
 
-  // Кнопки «Атаковать цель» — переход к профилю с подсветкой санкции,
-  // оттуда уже обычная атака через карточку
+  async function huntTarget(targetId) {
+    try {
+      App._lastSanctionBattle = await API.post('/api/war/attack', { targetId, isSanctionAttack: true });
+      App._lastBattle = null;
+      await App.refreshMe();
+      App.rerender();
+      requestAnimationFrame(() => {
+        const card = document.getElementById('sanction-result-card');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
   c.querySelectorAll('[data-hunt]').forEach(btn => {
-    btn.onclick = () => App.go('profile/' + btn.dataset.hunt);
+    btn.onclick = () => huntTarget(btn.dataset.hunt);
   });
-  // Отмена своего контракта
   c.querySelectorAll('[data-cancel]').forEach(btn => {
     btn.onclick = async () => {
       if (!confirm('Отменить контракт? Деньги вернутся в полном объёме.')) return;

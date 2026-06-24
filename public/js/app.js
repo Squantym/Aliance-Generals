@@ -136,6 +136,47 @@ const App = {
   // Загрузка и отображение чата легиона
   // ── Боевое окно (полноэкранный overlay) ─────────────────────────
   _battleWindow: null,
+  _battleWs: null,
+  _battleWsToken: null,
+
+  _connectBattleWs() {
+    const token = API.token();
+    if (!token) return;
+    if (App._battleWs && App._battleWsToken === token && App._battleWs.readyState <= 1) return;
+    App._disconnectBattleWs();
+    App._battleWsToken = token;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${proto}//${location.host}/ws/legion-battle?token=${encodeURIComponent(token)}`);
+    App._battleWs = ws;
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'battle' && document.getElementById('battle-window')) {
+          if (!msg.battle || msg.battle.phase === 'done') {
+            if (msg.battle && msg.battle.phase === 'done') {
+              const win = document.getElementById('battle-window');
+              if (win) App._renderBattleDone(win, msg.battle);
+            } else {
+              App._closeBattleWindow();
+            }
+            return;
+          }
+          const win = document.getElementById('battle-window');
+          if (win) App._renderBattleContent(win, msg.battle);
+        }
+      } catch (e) { /* ignore malformed */ }
+    };
+    ws.onclose = () => {
+      if (App._battleWs === ws) App._battleWs = null;
+    };
+  },
+
+  _disconnectBattleWs() {
+    if (App._battleWs) {
+      try { App._battleWs.close(); } catch (e) {}
+      App._battleWs = null;
+    }
+  },
 
   async _openBattleWindow() {
     if (document.getElementById('battle-window')) return; // уже открыто
@@ -148,6 +189,7 @@ const App = {
     `;
     document.body.appendChild(win);
     App._battleWindow = win;
+    App._connectBattleWs();
     await App._renderBattleWindow();
   },
 
@@ -176,6 +218,7 @@ const App = {
     const win = document.getElementById('battle-window');
     if (win) win.remove();
     App._battleWindow = null;
+    App._disconnectBattleWs();
   },
 
   _renderBattleContent(win, b) {
@@ -374,19 +417,19 @@ const App = {
           </div>
         </div>`;
       }
+    }
 
-      // Лог
-      if (b.log && b.log.length) {
-        html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
-          <b style="font-size:13px">📋 Лог</b>
-          <div style="max-height:120px;overflow-y:auto;margin-top:6px">
-          ${b.log.slice().reverse().map(e=>{
-            const col=e.kind==='crit'?'#f55':e.kind==='heal'?'#0b8':e.kind==='item'?'#fa0':'var(--dim)';
-            return `<div style="color:${col};font-size:11px;padding:2px 0">${UI.esc(e.text)}</div>`;
-          }).join('')}
-          </div>
-        </div>`;
-      }
+    // Лог боя — виден и в подготовке, и в активной фазе
+    if (b.log && b.log.length) {
+      html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
+        <b style="font-size:13px">📋 Лог боя</b>
+        <div id="bw-log" style="max-height:140px;overflow-y:auto;margin-top:6px">
+        ${b.log.slice().reverse().map(e=>{
+          const col=e.kind==='crit'?'#f55':e.kind==='heal'?'#0b8':e.kind==='item'?'#fa0':e.kind==='prep'?'#fa0':'var(--dim)';
+          return `<div style="color:${col};font-size:11px;padding:2px 0">${UI.esc(e.text)}</div>`;
+        }).join('')}
+        </div>
+      </div>`;
     }
 
     html += `</div>
