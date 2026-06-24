@@ -380,14 +380,14 @@ function startTech(user, techId, notices) {
   if (l.reserves < levelData.priceReserves) {
     throw new u.ApiError(`Не хватает РЕЗ (нужно ${u.fmt(levelData.priceReserves)}, есть ${u.fmt(l.reserves)})`);
   }
-  // Уши лидера
-  if ((user.earsCurrent || 0) < levelData.earReq) {
-    throw new u.ApiError(`Не хватает ушей (нужно ${levelData.earReq}, есть ${user.earsCurrent || 0})`);
+  // Трофейные уши лидера (отрезанные в фаталити, не «свои» на голове)
+  if ((user.ears || 0) < levelData.earReq) {
+    throw new u.ApiError(`Не хватает трофейных ушей (нужно ${levelData.earReq}, есть ${user.ears || 0})`);
   }
 
   // Списываем
   l.reserves -= levelData.priceReserves;
-  user.earsCurrent -= levelData.earReq;
+  user.ears -= levelData.earReq;
 
   const durationMs = techDurationMs(tech, lvl + 1);
   l.techQueue = {
@@ -453,10 +453,12 @@ function depositResources(user, ears, tokens, useAdmin, notices) {
     if (ears   > 0) { user.adminEars   -= ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.adminTokens -= tokens; l.treasuryTokens += tokens; }
   } else {
-    // Источник — обычные earsCurrent/tokens
-    if (ears   > 0 && (user.earsCurrent || 0) < ears)   throw new u.ApiError(`Не хватает ушей (нужно ${ears}, есть ${user.earsCurrent || 0})`);
-    if (tokens > 0 && (user.tokens || 0)      < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
-    if (ears   > 0) { user.earsCurrent -= ears;   l.treasuryEars   += ears; }
+    // Источник — ТРОФЕЙНЫЕ уши (user.ears, получены в фаталити «отрезать ухо»)
+    // и жетоны помилования (user.tokens). user.earsCurrent — это «свои» уши
+    // на голове игрока (макс 2), их вкладывать в казну нельзя.
+    if (ears   > 0 && (user.ears   || 0) < ears)   throw new u.ApiError(`Не хватает трофейных ушей (нужно ${ears}, есть ${user.ears || 0})`);
+    if (tokens > 0 && (user.tokens || 0) < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
+    if (ears   > 0) { user.ears   -= ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.tokens = (user.tokens||0) - tokens; l.treasuryTokens += tokens; }
   }
 
