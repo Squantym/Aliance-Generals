@@ -341,7 +341,7 @@ App.screens.profile = async (c, param) => {
       ${p.powerStats.secretLines.map((l) => `
         <div class="secret-row">
           <div class="img-frame img-frame-row ${l.id === 'zero_judgement' ? 'img-frame-super' : ''}">
-            <img src="/img/secret/${l.id}.webp" alt="${UI.esc(l.name)}">
+            <img src="/img/secret/${l.id}.webp" alt="${UI.esc(l.name)}" loading="lazy" decoding="async">
           </div>
           <div class="secret-row-info">
             <div class="secret-row-name">${UI.esc(l.name)}</div>

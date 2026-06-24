@@ -73,7 +73,7 @@ App.screens.market = async (c, param) => {
       ${data.containers.map((x) => `
         <div class="card container-card">
           <div class="img-frame img-frame-lg">
-            <img src="/img/containers/${x.id}.webp" alt="${UI.esc(x.name)}">
+            <img src="/img/containers/${x.id}.webp" alt="${UI.esc(x.name)}" loading="lazy" decoding="async">
           </div>
           <div class="container-card-body">
             <div class="name">📦 ${UI.esc(x.name)}</div>
@@ -91,7 +91,7 @@ App.screens.market = async (c, param) => {
         ${data.collection.map((d) => `
           <div class="secret-row ${d.count ? '' : 'secret-row-empty'}">
             <div class="img-frame img-frame-row">
-              <img src="/img/secret/${d.id}.webp" alt="${UI.esc(d.name)}">
+              <img src="/img/secret/${d.id}.webp" alt="${UI.esc(d.name)}" loading="lazy" decoding="async">
             </div>
             <div class="secret-row-info">
               <div class="secret-row-name">${UI.esc(d.name)}</div>
@@ -101,7 +101,7 @@ App.screens.market = async (c, param) => {
           </div>`).join('')}
         <div class="secret-row secret-row-super ${data.superSecret.count ? '' : 'secret-row-empty'}">
           <div class="img-frame img-frame-row img-frame-super">
-            <img src="/img/secret/${data.superSecret.id}.webp" alt="${UI.esc(data.superSecret.name)}">
+            <img src="/img/secret/${data.superSecret.id}.webp" alt="${UI.esc(data.superSecret.name)}" loading="lazy" decoding="async">
           </div>
           <div class="secret-row-info">
             <div class="secret-row-name gold">🛸 ${UI.esc(data.superSecret.name)}</div>
