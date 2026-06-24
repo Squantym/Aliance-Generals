@@ -119,7 +119,10 @@ function describe(path, body, result) {
 
       // ── Легион: казна и постройки ──────────────────────────────
       case '/api/legion/deposit':          return `💰 Внёс в казну легиона: $${money(body.amount)}`;
-      case '/api/legion/exchange':         return `💱 Обменял $${money(body.dollars)} → КМ`;
+      case '/api/legion/exchange':         return `💱 Обменял $${money(body.dollars)} → РЕЗ`;
+
+      case '/api/sanctions/declare':       return `🎯 Объявил санкции на цель за $${money(body.reward)}`;
+      case '/api/sanctions/cancel':        return '🚫 Отменил свою санкцию';
       case '/api/legion/deposit-resources':return `📦 Внёс в казначейство: ${body.ears ? body.ears + ' 👂 ' : ''}${body.tokens ? body.tokens + ' 🎖' : ''}`;
       case '/api/legion/build':            return `🏛 Улучшил постройку легиона «${body.buildingId}»`;
       case '/api/legion/build-battle':     return `⚔️ Улучшил боевую постройку «${body.buildingId}»`;

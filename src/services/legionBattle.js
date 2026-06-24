@@ -728,10 +728,13 @@ function finalizeBattle(battle, l, all, users, winningSide, reason) {
     if (!u2) continue;
     const won = c.side === winningSide;
     player.addXp(u2, won ? config.LEGION.BATTLE_XP_WIN : config.LEGION.BATTLE_XP_LOSS, []);
+    const lootText = won
+      ? `+${u.fmt(loot)} РЕЗ из казны врага + бонус ${u.fmt(config.LEGION.BATTLE_LOOT_RESERVES || 0)} РЕЗ`
+      : `−${u.fmt(loot)} РЕЗ из казны`;
     notif.push(c.userId, 'legion_battle_result',
       won
-        ? `🏆 Победа легиона! +${gloryGain} ⭐ ${wResult.levelUp ? '🎉 Новый уровень легиона!' : ''}`
-        : `💀 Поражение легиона. −${gloryLoss} ⭐`,
+        ? `🏆 Победа легиона! +${gloryGain} ⭐, ${lootText}. ${wResult.levelUp ? '🎉 Новый уровень легиона!' : ''}`
+        : `💀 Поражение легиона. −${gloryLoss} ⭐, ${lootText}.`,
       { won, loot: won ? loot : -loot, report });
   }
 

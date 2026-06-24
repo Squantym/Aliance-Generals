@@ -244,7 +244,7 @@ async function renderGroupScreen(c, kind) {
           if (L.canChallenge) {
             html += `<div class="card">
               <div class="name">⚔️ Вызвать на бой</div>
-              <p class="muted small mt">Победитель получает КМ из казны врага + рейтинговые очки.</p>
+              <p class="muted small mt">Победитель получает РЕЗ из казны врага + рейтинговые очки.</p>
               ${L.targets.length ? L.targets.map(t => `
                 <div class="list-row">
                   <div class="grow"><span class="name">${UI.esc(t.name)}</span> <span class="muted small">${t.members} бойцов</span></div>
@@ -281,7 +281,7 @@ async function renderGroupScreen(c, kind) {
             html += `<div class="card"><div class="name">📜 История боёв</div>
               ${L.battleHistory.map(h => `
                 <div class="kv"><span class="k">${h.won?'🏆':'💀'} ${h.won?'Победа':'Поражение'}</span>
-                <span class="v ${h.loot>=0?'green':'red'}">${h.loot>=0?'+':''}${UI.fmtNum(h.loot)} КМ</span></div>`).join('')}
+                <span class="v ${h.loot>=0?'green':'red'}">${h.loot>=0?'+':''}${UI.fmtNum(h.loot)} РЕЗ</span></div>`).join('')}
             </div>`;
           }
           return html;
@@ -638,14 +638,14 @@ async function renderGroupScreen(c, kind) {
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
 
-      // Обмен $ → КМ (из вкладки Постройки)
+      // Обмен $ → РЕЗ (из вкладки Постройки)
       const exchBtn = document.getElementById('lg-exch-go');
       if (exchBtn) exchBtn.onclick = async () => {
         try { await API.post('/api/legion/exchange', { dollars: document.getElementById('lg-exch').value }); App.rerender(); }
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
 
-      // Обмен $ → КМ (из Казначейства)
+      // Обмен $ → РЕЗ (из Казначейства)
       const exchBtn2 = document.getElementById('lg-exch2-go');
       if (exchBtn2) exchBtn2.onclick = async () => {
         try { await API.post('/api/legion/exchange', { dollars: document.getElementById('lg-exch2').value }); App.rerender(); }
@@ -698,7 +698,7 @@ async function renderGroupScreen(c, kind) {
       // Технологии
       c.querySelectorAll('[data-tech]').forEach(b => {
         b.onclick = async () => {
-          if (!confirm('Начать изучение этой технологии? Потребуются КМ и уши.')) return;
+          if (!confirm('Начать изучение этой технологии? Потребуются РЕЗ и трофейные уши.')) return;
           try { await API.post('/api/legion/tech/start', { techId: b.dataset.tech }); App.rerender(); }
           catch (e) { UI.toast('⛔ ' + e.message); }
         };
