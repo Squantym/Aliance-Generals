@@ -283,6 +283,7 @@ App.screens.profile = async (c, param) => {
       </div>
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-msg">✉ Написать сообщение</button>` : ''}
+      ${!own ? `<button class="btn mt" id="pf-sanction" style="border-color:var(--red);color:var(--red)">🎯 Объявить санкции</button>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
         ? `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс «${UI.esc(App.me.alliance.name)}»</button>` : ''}
@@ -411,6 +412,20 @@ App.screens.profile = async (c, param) => {
       API.post('/api/mail', { toName: p.name, subject, text })
         .then(() => UI.toast('✉ Сообщение отправлено игроку ' + p.name))
         .catch((e) => UI.toast('⛔ ' + e.message));
+    };
+
+    const btnSanction = document.getElementById('pf-sanction');
+    if (btnSanction) btnSanction.onclick = async () => {
+      const amountStr = prompt(`🎯 Объявить санкцию на «${p.name}».\n\nУкажите награду из вашего кармана (минимум 1000 $).\nДеньги спишутся сразу. Кто снизит HP цели до ≤5% — заберёт награду.\n\nСумма ($):`);
+      if (amountStr === null) return;
+      const amount = parseInt(amountStr.replace(/\D/g, ''), 10);
+      if (!amount || amount < 1000) { UI.toast('⛔ Минимум 1000 $'); return; }
+      if (!confirm(`Списать $${UI.fmtNum(amount)} и объявить санкцию на «${p.name}»?`)) return;
+      try {
+        const r = await API.post('/api/sanctions/declare', { targetId: p.id, amount });
+        await App.refreshMe();
+        UI.toast(`🎯 Санкция объявлена! Награда за цель: $${UI.fmtNum(r.bounty)}`);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   }
 

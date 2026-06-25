@@ -10,6 +10,7 @@ const u = require('./core/utils');
 const player = require('./services/player');
 const auth = require('./services/auth');
 const battle = require('./services/battle');
+const sanctions = require('./services/sanctions');
 const missions = require('./services/missions');
 const units = require('./services/units');
 const buildings = require('./services/buildings');
@@ -88,6 +89,8 @@ module.exports = function registerRoutes(app) {
   // ---------- Война ----------
   app.add('GET', '/api/war/opponents', (req) => battle.opponents(req.user));
   app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n)));
+  app.add('GET',  '/api/sanctions', (req) => sanctions.list(req.user));
+  app.add('POST', '/api/sanctions/declare', act((req, n) => sanctions.declare(req.user, String(req.body.targetId || ''), req.body.amount, n)));
   app.add('POST', '/api/war/fatality', act((req, n) => battle.fatality(req.user, req.body.choice, n)));
 
   // ---------- Миссии ----------
@@ -114,6 +117,7 @@ module.exports = function registerRoutes(app) {
   // ---------- Шахты ----------
   app.add('GET',  '/api/mines',              (req) => mines.view(req.user));
   app.add('POST', '/api/mines/build',        act((req, n) => mines.build(req.user, n)));
+  app.add('POST', '/api/mines/rebuild',      act((req, n) => mines.rebuild(req.user, req.body.mineId, n)));
   app.add('POST', '/api/mines/descend',      act((req, n) => mines.descend(req.user, req.body.mineId, req.body.minutes, n)));
   app.add('POST', '/api/mines/fight',        act((req, n) => mines.fightTerrorists(req.user, req.body.mineId, n)));
   app.add('POST', '/api/mines/collect',      act((req, n) => mines.collectGold(req.user, req.body.mineId, n)));
@@ -206,6 +210,7 @@ module.exports = function registerRoutes(app) {
   app.add('POST', '/api/legion/chat',              act((req, n) => legion.chatPost(req.user, req.body.text, n)));
   app.add('GET',  '/api/legion/public/:id',        (req) => legion.publicView(req.params.id));
   app.add('POST', '/api/legion/battle/join',       act((req, n) => legion.joinBattle(req.user, req.body.role, n)));
+  app.add('POST', '/api/legion/battle/ready',      act((req, n) => legion.setReady(req.user, req.body.ready, n)));
   app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));
   app.add('POST', '/api/legion/battle/attack',     act((req, n) => legion.attack(req.user, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/heal',       act((req, n) => legion.heal(req.user, req.body.targetId, n)));

@@ -40,7 +40,7 @@ const App = {
     if (App.me && App.me.legionId) {
       try {
         const { battle } = await API.get('/api/legion/battle');
-        if (battle && (battle.phase === 'prep' || battle.phase === 'active') && battle.me) {
+        if (battle && (battle.phase === 'prep' || battle.phase === 'active')) {
           setTimeout(() => App._openBattleWindow(), 500);
         }
       } catch(e) {}
@@ -70,7 +70,7 @@ const App = {
       if (App.me.legionId && !document.getElementById('battle-window')) {
         try {
           const { battle } = await API.get('/api/legion/battle');
-          if (battle && (battle.phase === 'prep' || battle.phase === 'active') && battle.me) {
+          if (battle && (battle.phase === 'prep' || battle.phase === 'active')) {
             App._openBattleWindow();
           }
         } catch(e) {}
@@ -238,34 +238,53 @@ const App = {
           </div>
         </div>`;
       } else {
-        html += `<div style="background:rgba(0,200,0,.08);border:1px solid var(--green);border-radius:8px;padding:10px;margin-bottom:12px">
-          <b style="color:var(--green)">✅ Вы готовы — ${ROLE_ICON[b.me.role]} ${b.me.roleName}</b>
+        const ready = b.me.ready;
+        // Блок роли + кнопка Готов/Не готов
+        html += `<div style="background:${ready?'rgba(0,200,0,.08)':'rgba(255,150,0,.1)'};border:1px solid var(--${ready?'green':'orange'});border-radius:8px;padding:12px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <b>${ROLE_ICON[b.me.role]} ${b.me.roleName}</b>
+            <span style="color:var(--${ready?'green':'orange'})">${ready ? '✅ Готов' : '⏳ Не готов'}</span>
+          </div>
+          <button id="bw-ready" class="btn ${ready?'btn-inline':'btn-green'}" style="width:100%;padding:12px">
+            ${ready ? '❌ Не готов (сменить роль)' : '✅ Готов к бою'}
+          </button>
+          ${!ready ? '<p class="muted small" style="margin:8px 0 0">После «Готов» выберите направление. В бой попадут только готовые бойцы с направлением.</p>' : ''}
         </div>`;
-        // Выбор направления
-        html += `<p style="margin:0 0 8px;font-weight:bold">Выберите направление:</p>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-          ${b.directions.map(d => {
-            const sel = b.me && b.me.direction === d.dir;
-            return `<button id="bw-dir-${d.dir}" class="btn ${sel?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
-              ${sel ? '📍' : '○'} <b>${d.name}</b>
-              <span style="float:right;font-size:12px">${(d.allies||[]).length}/5 союзн.</span>
-            </button>`;
-          }).join('')}
-          </div>`;
+
+        // Выбор направления — только если готов
+        if (ready) {
+          html += `<p style="margin:0 0 8px;font-weight:bold">Выберите направление:</p>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            ${b.directions.map(d => {
+              const sel = b.me && b.me.direction === d.dir;
+              return `<button id="bw-dir-${d.dir}" class="btn ${sel?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+                ${sel ? '📍' : '○'} <b>${d.name}</b>
+                <span style="float:right;font-size:12px">${(d.allies||[]).length}/5 союзн.</span>
+              </button>`;
+            }).join('')}
+            </div>`;
+        }
       }
 
-      // Список готовых
+      // Список участников: готовые и кто на каком направлении (значок роли)
       const sides = { A: [], B: [] };
       for (const c of (b.allCombatants||[])) sides[c.side].push(c);
       const my = sides[mySide]||[], en = sides[mySide==='A'?'B':'A']||[];
+      const renderMember = (c, showDir) => {
+        const readyMark = c.ready ? '<span style="color:var(--green)">✅</span>' : '<span class="muted">⏳</span>';
+        const dirInfo = showDir && c.direction ? ` <span class="muted">→ ${c.dirName||('Напр.'+c.direction)}</span>` : '';
+        return `<div style="padding:5px 0;font-size:13px;border-bottom:1px solid var(--border-dim)">
+          ${readyMark} ${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}${dirInfo}
+        </div>`;
+      };
       html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
         <div style="padding:10px;border-right:1px solid var(--border)">
           <div style="color:var(--green);font-weight:bold;margin-bottom:6px">🟢 Ваши (${my.length})</div>
-          ${my.map(c=>`<div style="padding:4px 0;font-size:13px">${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}${c.direction?` <span class="muted">${c.dirName||''}</span>`:''}</div>`).join('')||'<span class="muted small">ожидаем...</span>'}
+          ${my.map(c=>renderMember(c, true)).join('')||'<span class="muted small">ожидаем...</span>'}
         </div>
         <div style="padding:10px">
           <div style="color:var(--red);font-weight:bold;margin-bottom:6px">🔴 Враги (${en.length})</div>
-          ${en.map(c=>`<div style="padding:4px 0;font-size:13px">${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}</div>`).join('')||'<span class="muted small">ожидаем...</span>'}
+          ${en.map(c=>renderMember(c, false)).join('')||'<span class="muted small">ожидаем...</span>'}
         </div>
       </div>`;
     }
@@ -446,6 +465,13 @@ const App = {
       const btn = win.querySelector('#bw-join-'+role);
       if (btn) btn.onclick = () => api('/api/legion/battle/join', { role });
     });
+
+    // Кнопка Готов / Не готов
+    const readyBtn = win.querySelector('#bw-ready');
+    if (readyBtn) {
+      const newReady = !(b.me && b.me.ready);
+      readyBtn.onclick = () => api('/api/legion/battle/ready', { ready: newReady });
+    }
 
     // Направления
     for (let d = 1; d <= 5; d++) {

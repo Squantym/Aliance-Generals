@@ -171,14 +171,23 @@ function view(user) {
     }
   }
 
-  // Активный бой
+  // Активный бой — читаем фазу из единого объекта battles
   let activeBattleInfo = null;
-  if (l.activeBattle) {
-    activeBattleInfo = {
-      enemyId: l.activeBattle.enemyId,
-      startedAt: l.activeBattle.startedAt,
-      phase: l.activeBattle.phase,
-    };
+  if (l.activeBattle && l.activeBattle.battleId) {
+    const battle = db.load('battles', {})[l.activeBattle.battleId];
+    if (battle) {
+      activeBattleInfo = {
+        battleId: l.activeBattle.battleId,
+        enemyId: l.activeBattle.enemyId,
+        startedAt: battle.startedAt,
+        phase: battle.phase,
+        prepEndsAt: battle.prepEndsAt,
+        activeEndsAt: battle.activeEndsAt,
+      };
+    } else {
+      // Бой не найден (завершён и удалён) — отвязываем
+      l.activeBattle = null;
+    }
   }
 
   // Арсенал
@@ -380,14 +389,14 @@ function startTech(user, techId, notices) {
   if (l.reserves < levelData.priceReserves) {
     throw new u.ApiError(`Не хватает РЕЗ (нужно ${u.fmt(levelData.priceReserves)}, есть ${u.fmt(l.reserves)})`);
   }
-  // Уши лидера
-  if ((user.earsCurrent || 0) < levelData.earReq) {
-    throw new u.ApiError(`Не хватает ушей (нужно ${levelData.earReq}, есть ${user.earsCurrent || 0})`);
+  // Уши лидера (трофейные)
+  if ((user.ears || 0) < levelData.earReq) {
+    throw new u.ApiError(`Не хватает трофейных ушей (нужно ${levelData.earReq}, есть ${user.ears || 0})`);
   }
 
   // Списываем
   l.reserves -= levelData.priceReserves;
-  user.earsCurrent -= levelData.earReq;
+  user.ears = (user.ears || 0) - levelData.earReq;
 
   const durationMs = techDurationMs(tech, lvl + 1);
   l.techQueue = {
@@ -453,14 +462,15 @@ function depositResources(user, ears, tokens, useAdmin, notices) {
     if (ears   > 0) { user.adminEars   -= ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.adminTokens -= tokens; l.treasuryTokens += tokens; }
   } else {
-    // Источник — обычные earsCurrent/tokens
-    if (ears   > 0 && (user.earsCurrent || 0) < ears)   throw new u.ApiError(`Не хватает ушей (нужно ${ears}, есть ${user.earsCurrent || 0})`);
-    if (tokens > 0 && (user.tokens || 0)      < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
-    if (ears   > 0) { user.earsCurrent -= ears;   l.treasuryEars   += ears; }
+    // Источник — трофейные уши (user.ears) и жетоны (user.tokens)
+    if (ears   > 0 && (user.ears   || 0) < ears)   throw new u.ApiError(`Не хватает трофейных ушей (нужно ${ears}, есть ${user.ears || 0})`);
+    if (tokens > 0 && (user.tokens || 0) < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
+    if (ears   > 0) { user.ears   = (user.ears||0)   - ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.tokens = (user.tokens||0) - tokens; l.treasuryTokens += tokens; }
   }
 
   db.save('legions');
+  db.save('users');
   const parts = [];
   if (ears   > 0) parts.push(`${ears} 👂`);
   if (tokens > 0) parts.push(`${tokens} 🎖`);
@@ -513,26 +523,36 @@ function gearPick(user, itemId, notices) {
   if (!l) throw new u.ApiError('Вы не состоите в легионе');
   ensureLegionFields(l);
 
-  if (!l.activeBattle) throw new u.ApiError('Нет активного боя легиона');
+  if (!l.activeBattle || !l.activeBattle.battleId) throw new u.ApiError('Нет активного боя легиона');
+
+  const battle = db.load('battles', {})[l.activeBattle.battleId];
+  if (!battle) throw new u.ApiError('Бой не найден');
+  // Брать предметы можно только в фазе подготовки (до начала боя)
+  if (battle.phase !== 'prep') throw new u.ApiError('Предметы можно брать только до начала боя');
 
   const item = config.LEGION_SHOP_ITEM_BY_ID[itemId];
   if (!item) throw new u.ApiError('Неизвестный предмет');
   if ((l.arsenal[itemId] || 0) <= 0) throw new u.ApiError('Предмет закончился в арсенале');
 
-  // Максимум слотов на бойца
   const extraSlots = (l.battleBuildings['gear_slots'] || 0);
   const maxSlots = config.LEGION.GEAR_SLOTS_DEFAULT + extraSlots;
 
-  const userGear = l.activeBattle.gear || {};
-  const myGear = userGear[user.id] || [];
+  battle.gear = battle.gear || {};
+  const myGear = battle.gear[user.id] || [];
   if (myGear.length >= maxSlots) {
     throw new u.ApiError(`Боевой пояс заполнен (максимум ${maxSlots} предметов)`);
   }
 
   myGear.push(itemId);
-  userGear[user.id] = myGear;
-  l.activeBattle.gear = userGear;
+  battle.gear[user.id] = myGear;
+
+  // Если игрок уже в составе боя — сразу даём предмет в его пояс
+  if (battle.combatants[user.id]) {
+    battle.combatants[user.id].gear = myGear.slice();
+  }
+
   l.arsenal[itemId]--;
+  db.save('battles');
   db.save('legions');
 
   notices.push(`🎒 ${item.name} добавлен в боевой пояс (${myGear.length}/${maxSlots}).`);
@@ -609,11 +629,14 @@ function acceptChallenge(user, notices) {
   const battleId = u.uid(12);
   const prepEndsAt = Date.now() + lb.PREP_MS;
 
-  // legionA = вызывающий (challenger), legionB = принявший вызов
+  // ЕДИНЫЙ объект боя в отдельной коллекции 'battles'.
+  // Оба легиона ссылаются на него по ID — combatants общие для всех.
   const battleObj = {
     id: battleId,
     legionA: challenger.id,
     legionB: l.id,
+    legionAName: challenger.name,
+    legionBName: l.name,
     startedAt: Date.now(),
     prepEndsAt,
     phase: 'prep',   // prep → active → done
@@ -624,8 +647,13 @@ function acceptChallenge(user, notices) {
     log: [],
   };
 
-  challenger.activeBattle = { ...battleObj, enemyId: l.id };
-  l.activeBattle          = { ...battleObj, enemyId: challenger.id };
+  const battles = db.load('battles', {});
+  battles[battleId] = battleObj;
+  db.save('battles');
+
+  // Каждый легион хранит только ССЫЛКУ на бой (id + enemyId).
+  challenger.activeBattle = { battleId, enemyId: l.id };
+  l.activeBattle          = { battleId, enemyId: challenger.id };
   challenger.pendingChallenge = null;
   l.pendingChallenge          = null;
   db.save('legions');
@@ -775,27 +803,9 @@ function resolveWars() {
     l.war = null; enemy.war = null;
   }
 
-  // Новые бои легиона: тик через legionBattle
+  // Новые бои легиона: единый тик по коллекции battles
   const lb = require('./legionBattle');
-  const processedBattle = new Set();
-  for (const l of Object.values(all)) {
-    if (!l.activeBattle || processedBattle.has(l.id)) continue;
-    if (l.activeBattle.phase === 'done') { l.activeBattle = null; continue; }
-
-    processedBattle.add(l.id);
-    const enemyId = l.activeBattle.enemyId;
-    if (enemyId) processedBattle.add(enemyId);
-
-    ensureLegionFields(l);
-
-    // Фаза prep → active по таймеру
-    lb.startActivePhaseTick(l, all, users);
-
-    // Тик DoT-эффектов в активном бою
-    if (l.activeBattle && l.activeBattle.phase === 'active') {
-      lb.tickEffects(l.activeBattle);
-    }
-  }
+  lb.tickAllBattles(all, users);
 
   // Истёкшие вызовы — чистим
   for (const l of Object.values(all)) {
@@ -954,6 +964,7 @@ module.exports = {
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
+  setReady:         (...a) => require('./legionBattle').setReady(...a),
   chooseDirection:  (...a) => require('./legionBattle').chooseDirection(...a),
   attack:           (...a) => require('./legionBattle').attack(...a),
   heal:             (...a) => require('./legionBattle').heal(...a),

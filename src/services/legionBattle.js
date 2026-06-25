@@ -59,8 +59,26 @@ const ROLES = {
 // Хелперы
 // ───────────────────────────────────────────────────────────────────
 function legions()  { return db.load('legions', {}); }
+function battles()  { return db.load('battles', {}); }
 function allUsers() { return player.users(); }
 function now()      { return Date.now(); }
+
+// Получить единый объект боя по ссылке из легиона игрока.
+// Возвращает { battle, legion } или { battle: null }.
+function resolveBattle(user) {
+  const l = legions()[user.legionId];
+  if (!l || !l.activeBattle || !l.activeBattle.battleId) return { battle: null, legion: l };
+  const battle = battles()[l.activeBattle.battleId];
+  return { battle: battle || null, legion: l };
+}
+
+// Сохранить единый бой в коллекцию battles.
+function saveBattle(battle) {
+  if (!battle) return;
+  const all = battles();
+  all[battle.id] = battle;
+  db.save('battles');
+}
 
 function ensureLegionGlory(l) {
   if (l.gloryPoints  === undefined) l.gloryPoints  = 0;  // текущий баланс (может уменьшаться)
@@ -204,9 +222,8 @@ function calcDamage(attacker, defender, aUser, dUser) {
 // ───────────────────────────────────────────────────────────────────
 function joinBattle(user, roleId, notices) {
   player.refresh(user);
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя легиона');
-  const battle = l.activeBattle;
+  const { battle, legion: l } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя легиона');
 
   if (battle.phase !== 'prep') throw new u.ApiError('Фаза подготовки завершена');
   if (now() > battle.prepEndsAt) throw new u.ApiError('Время подготовки истекло');
@@ -215,7 +232,13 @@ function joinBattle(user, roleId, notices) {
   const role = ROLES[roleId];
   const side = l.id === battle.legionA ? 'A' : 'B';
   const mx   = player.maxima(user);
-  const shieldVal = roleId === 'guardian' ? user.res.en.cur : 0;
+  const shieldVal = roleId === 'guardian' ? Math.floor(user.res.en.cur) : 0;
+
+  // Если уже в бою — позволяем сменить роль (пока не нажал «Готов»)
+  const existing = battle.combatants[user.id];
+  if (existing && existing.ready) {
+    throw new u.ApiError('Вы уже отметились «Готов». Сначала нажмите «Не готов», чтобы сменить роль.');
+  }
 
   battle.combatants[user.id] = {
     userId: user.id,
@@ -223,45 +246,69 @@ function joinBattle(user, roleId, notices) {
     side,
     role: roleId,
     roleMul: { atk: role.atkMul, def: role.defMul, dmgReduce: role.dmgReduce },
-    hp: user.res.hp.cur,
+    hp: Math.floor(user.res.hp.cur),
     maxHp: mx.hp,
     shield: shieldVal,
     direction: null,
-    ready: true,
-    readyAt: now(),
+    ready: false,          // НЕ готов по умолчанию — нужно нажать «Готов»
+    readyAt: 0,
     lastActionAt: 0,
     lastMoveAt: 0,
     lastItemAt: 0,
     gear: ((battle.gear || {})[user.id]) || [],
     statusEffects: [],
     alive: true,
-    // Статистика для итогов
     stats: { dmgDealt: 0, dmgTaken: 0, healed: 0, kills: 0, guards: 0, itemsUsed: 0 },
   };
 
-  log(battle, `${user.name} готов (${role.label})`, 'prep');
-  db.save('legions');
-  notices.push(`✅ Вы в составе! Роль: ${role.label}. Выберите направление во вкладке «Война».`);
+  log(battle, `${user.name} выбрал роль «${role.label}»`, 'prep');
+  saveBattle(battle);
+  notices.push(`Роль выбрана: ${role.label}. Нажмите «Готов» и выберите направление.`);
   return { ok: true, role: roleId };
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Переключение готовности «Готов» / «Не готов»
+// ───────────────────────────────────────────────────────────────────
+function setReady(user, ready, notices) {
+  player.refresh(user);
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
+  if (battle.phase !== 'prep') throw new u.ApiError('Фаза подготовки завершена');
+  if (now() > battle.prepEndsAt) throw new u.ApiError('Время подготовки истекло');
+
+  const c = battle.combatants[user.id];
+  if (!c) throw new u.ApiError('Сначала выберите роль');
+
+  c.ready = !!ready;
+  c.readyAt = ready ? now() : 0;
+  log(battle, `${user.name} ${ready ? 'готов ✅' : 'не готов'}`, 'prep');
+  saveBattle(battle);
+  notices.push(ready ? '✅ Вы готовы к бою!' : 'Вы отметились «Не готов».');
+  return { ready: c.ready };
 }
 
 // ───────────────────────────────────────────────────────────────────
 // Выбор / смена направления
 // ───────────────────────────────────────────────────────────────────
 function chooseDirection(user, dir, notices) {
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
-  const battle = l.activeBattle;
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
   if (battle.phase !== 'active' && battle.phase !== 'prep') throw new u.ApiError('Нельзя выбрать направление сейчас');
 
   const c = findCombatant(battle, user.id);
   if (!c) throw new u.ApiError('Вы не зарегистрированы в бою');
 
+  // В фазе подготовки направление можно выбрать только если нажат «Готов»
+  if (battle.phase === 'prep' && !c.ready) {
+    throw new u.ApiError('Сначала нажмите «Готов», затем выбирайте направление');
+  }
+
   const d = u.toInt(dir, 0);
   if (d < 1 || d > DIRECTIONS) throw new u.ApiError(`Направление 1–${DIRECTIONS}`);
 
-  // Кулдаун смены
-  if (c.direction !== null && c.direction !== d) {
+  // Кулдаун смены (только в активной фазе)
+  if (battle.phase === 'active' && c.direction !== null && c.direction !== d) {
     const cdLeft = Math.ceil((c.lastMoveAt + MOVE_CD_MS - now()) / 1000);
     if (cdLeft > 0) throw new u.ApiError(`Смена направления: ещё ${cdLeft} сек`);
   }
@@ -275,13 +322,13 @@ function chooseDirection(user, dir, notices) {
 
   const wasDir = c.direction;
   c.direction = d;
-  if (wasDir !== null && wasDir !== d) {
+  if (battle.phase === 'active' && wasDir !== null && wasDir !== d) {
     c.lastMoveAt = now();
     log(battle, `${user.name}: ${DIR_NAMES[wasDir-1]} → ${DIR_NAMES[d-1]}`, 'move');
   } else {
     log(battle, `${user.name} занял «${DIR_NAMES[d-1]}»`, 'move');
   }
-  db.save('legions');
+  saveBattle(battle);
   notices.push(`📍 Вы на «${DIR_NAMES[d-1]}».`);
   return { direction: d, dirName: DIR_NAMES[d-1] };
 }
@@ -291,9 +338,8 @@ function chooseDirection(user, dir, notices) {
 // ───────────────────────────────────────────────────────────────────
 function attack(user, targetUserId, notices) {
   player.refresh(user);
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
-  const battle = l.activeBattle;
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
   if (battle.phase !== 'active') throw new u.ApiError('Бой ещё не начался');
 
   const c = findCombatant(battle, user.id);
@@ -305,6 +351,11 @@ function attack(user, targetUserId, notices) {
 
   const stunned = (c.statusEffects || []).find(e => e.type === 'stun' && e.expiresAt > now());
   if (stunned) throw new u.ApiError(`Оглушены ещё ${Math.ceil((stunned.expiresAt - now()) / 1000)} сек`);
+
+  // Расход боеприпасов: 1 удар = 1 боеприпас (привязка к текущим ресурсам)
+  if (Math.floor(user.res.am.cur) < 1) {
+    throw new u.ApiError('Нет боеприпасов! Пополните запас вне боя.');
+  }
 
   const tc = findCombatant(battle, targetUserId);
   if (!tc || !tc.alive || tc.hp <= 0) throw new u.ApiError('Цель уже выбыла');
@@ -318,11 +369,13 @@ function attack(user, targetUserId, notices) {
   const { dmg, crit } = calcDamage(c, tc, user, targetUser);
   const { actual, shieldAbsorbed } = applyDamage(battle, targetUserId, dmg, user.id);
 
+  // Списываем 1 боеприпас
+  user.res.am.cur = Math.max(0, user.res.am.cur - 1);
+
   c.lastActionAt = now();
   c.stats.dmgDealt += actual;
   tc.stats.dmgTaken += actual;
 
-  // Очки активности атакующему
   addActivity(battle, user.id, 'attack_hit');
 
   let msg = `⚔️ ${user.name} → ${tc.name} [${DIR_NAMES[c.direction-1]}]: ${actual} урона`;
@@ -334,17 +387,16 @@ function attack(user, targetUserId, notices) {
     c.stats.kills++;
     addActivity(battle, user.id, 'kill');
     msg += ` 💀 ${tc.name} ВЫБЫЛ!`;
-    // Оставляем 1 HP в профиле
     const deadUser = users[targetUserId];
     if (deadUser) deadUser.res.hp.cur = 1;
   }
 
   log(battle, msg, crit ? 'crit' : 'attack');
-  checkBattleEnd(battle, l, legions(), users);
-  db.save('legions');
+  checkBattleEnd(battle, legions(), users);
+  saveBattle(battle);
 
   notices.push(msg);
-  return { dmg: actual, crit, targetHp: tc.hp, targetAlive: tc.alive };
+  return { dmg: actual, crit, targetHp: tc.hp, targetAlive: tc.alive, ammoLeft: Math.floor(user.res.am.cur) };
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -352,9 +404,8 @@ function attack(user, targetUserId, notices) {
 // ───────────────────────────────────────────────────────────────────
 function heal(user, targetUserId, notices) {
   player.refresh(user);
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
-  const battle = l.activeBattle;
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
   if (battle.phase !== 'active') throw new u.ApiError('Бой ещё не начался');
 
   const c = findCombatant(battle, user.id);
@@ -376,7 +427,6 @@ function heal(user, targetUserId, notices) {
   if (tc.side !== c.side) throw new u.ApiError('Нельзя лечить врага');
   if (tc.direction !== c.direction) throw new u.ApiError('Цель на другом направлении');
 
-  // Блок лечения
   const blocked = (tc.statusEffects || []).find(e => e.type === 'no_heal' && e.expiresAt > now());
   if (blocked) throw new u.ApiError(`Лечение цели заблокировано (${Math.ceil((blocked.expiresAt - now()) / 1000)} сек)`);
 
@@ -394,7 +444,6 @@ function heal(user, targetUserId, notices) {
 
   addActivity(battle, user.id, 'heal_done');
 
-  // Синхронизируем HP цели в профиле
   const targetUser = allUsers()[targetUserId];
   if (targetUser) {
     targetUser.res.hp.cur = Math.min(player.maxima(targetUser).hp, targetUser.res.hp.cur + actual);
@@ -402,10 +451,10 @@ function heal(user, targetUserId, notices) {
 
   const msg = `💊 ${user.name} → ${tc.name}: +${actual} HP${critHeal ? ' ✨ КРИТ!' : ''}`;
   log(battle, msg, critHeal ? 'crit' : 'heal');
-  db.save('legions');
+  saveBattle(battle);
 
   notices.push(msg);
-  return { healed: actual, critHeal, targetHp: tc.hp, enLeft: user.res.en.cur };
+  return { healed: actual, critHeal, targetHp: tc.hp, enLeft: Math.floor(user.res.en.cur) };
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -413,9 +462,8 @@ function heal(user, targetUserId, notices) {
 // ───────────────────────────────────────────────────────────────────
 function guard(user, targetUserId, notices) {
   player.refresh(user);
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
-  const battle = l.activeBattle;
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
   if (battle.phase !== 'active') throw new u.ApiError('Бой ещё не начался');
 
   const c = findCombatant(battle, user.id);
@@ -447,7 +495,7 @@ function guard(user, targetUserId, notices) {
 
   const msg = `🛡️ ${user.name} прикрывает ${tc.name} на ${GUARD_SEC} сек`;
   log(battle, msg, 'guard');
-  db.save('legions');
+  saveBattle(battle);
 
   notices.push(msg);
   return { guardedUntil: battle.guardExpiry[user.id] };
@@ -458,9 +506,8 @@ function guard(user, targetUserId, notices) {
 // ───────────────────────────────────────────────────────────────────
 function useItem(user, itemId, targetUserId, notices) {
   player.refresh(user);
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
-  const battle = l.activeBattle;
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
   if (battle.phase !== 'active') throw new u.ApiError('Бой ещё не начался');
 
   const c = findCombatant(battle, user.id);
@@ -599,8 +646,8 @@ function useItem(user, itemId, targetUserId, notices) {
   addActivity(battle, user.id, 'item_used');
 
   log(battle, resultMsg, 'item');
-  checkBattleEnd(battle, l, legions(), allUsers());
-  db.save('legions');
+  checkBattleEnd(battle, legions(), allUsers());
+  saveBattle(battle);
 
   notices.push(resultMsg);
   return { ok: true, gearLeft: c.gear };
@@ -680,27 +727,26 @@ function buildFinalReport(battle, winningSide) {
 // ───────────────────────────────────────────────────────────────────
 // Проверка и завершение боя
 // ───────────────────────────────────────────────────────────────────
-function checkBattleEnd(battle, l, all, users) {
+function checkBattleEnd(battle, all, users) {
   if (battle.phase !== 'active') return;
 
   const aliveA = Object.values(battle.combatants).filter(c => c.side === 'A' && c.alive).length;
   const aliveB = Object.values(battle.combatants).filter(c => c.side === 'B' && c.alive).length;
 
   if (aliveA === 0 || aliveB === 0) {
-    finalizeBattle(battle, l, all, users, aliveA > 0 ? 'A' : 'B', 'elimination');
+    finalizeBattle(battle, all, users, aliveA > 0 ? 'A' : 'B', 'elimination');
   }
 }
 
-function finalizeBattle(battle, l, all, users, winningSide, reason) {
+function finalizeBattle(battle, all, users, winningSide, reason) {
   battle.phase = 'done';
   battle.finishedAt = now();
   battle.winningSide = winningSide;
   battle.finishReason = reason || 'time';
 
-  // Определяем легионы A и B
   const legionA = all[battle.legionA];
   const legionB = all[battle.legionB];
-  if (!legionA || !legionB) return;
+  if (!legionA || !legionB) { saveBattle(battle); return; }
 
   const winner = winningSide === 'A' ? legionA : legionB;
   const loser  = winningSide === 'A' ? legionB : legionA;
@@ -711,18 +757,23 @@ function finalizeBattle(battle, l, all, users, winningSide, reason) {
   const wResult = addGlory(winner, +gloryGain);
   addGlory(loser,  -gloryLoss);
 
-  // Экономика
-  const loot = Math.floor((loser.kmarks || 0) * 0.20);
-  loser.kmarks  = Math.max(0, (loser.kmarks || 0) - loot);
-  winner.kmarks = (winner.kmarks || 0) + loot + config.LEGION.BATTLE_LOOT_KMARKS;
+  // Статистика побед/поражений
+  winner.battleStats = winner.battleStats || { wins: 0, losses: 0 };
+  loser.battleStats  = loser.battleStats  || { wins: 0, losses: 0 };
+  winner.battleStats.wins   = (winner.battleStats.wins   || 0) + 1;
+  loser.battleStats.losses  = (loser.battleStats.losses  || 0) + 1;
+
+  // Экономика (валюта «Резервы»)
+  const loot = Math.floor((loser.reserves || 0) * 0.20);
+  loser.reserves  = Math.max(0, (loser.reserves || 0) - loot);
+  winner.reserves = (winner.reserves || 0) + loot + (config.LEGION.BATTLE_LOOT_RESERVES || 0);
   winner.ratingPoints = (winner.ratingPoints || 0) + 10;
   loser.ratingPoints  = Math.max(0, (loser.ratingPoints || 0) - 3);
 
-  // Итоговый отчёт
   const report = buildFinalReport(battle, winningSide);
   battle.finalReport = report;
 
-  // XP и уведомления
+  // XP и уведомления (только тем кто реально в бою)
   for (const c of Object.values(battle.combatants)) {
     const u2 = users[c.userId];
     if (!u2) continue;
@@ -735,71 +786,88 @@ function finalizeBattle(battle, l, all, users, winningSide, reason) {
       { won, loot: won ? loot : -loot, report });
   }
 
-  // Очищаем бой из обоих легионов
+  // Отвязываем бой от обоих легионов
   legionA.activeBattle = null;
   legionB.activeBattle = null;
-  // Сохраняем историю
   const hist = { at: now(), enemyId: loser.id, won: winner === legionA, loot, gloryGain, gloryLoss };
   legionA.battleHistory = (legionA.battleHistory || []).concat(hist).slice(-20);
   legionB.battleHistory = (legionB.battleHistory || []).concat({ ...hist, enemyId: legionA.id, won: winner === legionB }).slice(-20);
+
+  // Сохраняем и бой (завершённый), и легионы
+  saveBattle(battle);
+  db.save('legions');
 }
 
 // ───────────────────────────────────────────────────────────────────
-// Тик: prep → active, таймер 1 час, завершение по времени
+// Единый тик всех боёв (вызывается из resolveWars каждые 30 сек)
+// Проходит по коллекции battles, двигает фазы prep→active→done.
 // ───────────────────────────────────────────────────────────────────
-function startActivePhaseTick(l, all, users) {
-  const battle = l.activeBattle;
-  if (!battle) return;
+function tickAllBattles(all, users) {
+  const allBattles = battles();
+  let changed = false;
 
-  // Завершаем по истечении 1 часа
-  if (battle.phase === 'active' && now() >= battle.activeEndsAt) {
-    // Победа по очкам активности
-    const { scores } = calcActivityScores(battle);
-    const winningSide = (scores.A || 0) >= (scores.B || 0) ? 'A' : 'B';
-    finalizeBattle(battle, l, all, users, winningSide, 'time');
-    return;
-  }
+  for (const battle of Object.values(allBattles)) {
+    if (!battle || battle.phase === 'done') continue;
 
-  if (battle.phase !== 'prep') return;
-  if (now() < battle.prepEndsAt) return;
+    // Завершение по истечении 1 часа активной фазы
+    if (battle.phase === 'active' && now() >= battle.activeEndsAt) {
+      const { scores } = calcActivityScores(battle);
+      const winningSide = (scores.A || 0) >= (scores.B || 0) ? 'A' : 'B';
+      finalizeBattle(battle, all, users, winningSide, 'time');
+      changed = true;
+      continue;
+    }
 
-  // Убираем незарегистрированных / без направления
-  for (const [uid, c] of Object.entries(battle.combatants)) {
-    if (!c.direction) {
-      delete battle.combatants[uid];
-      const u2 = users[uid];
-      if (u2) notif.push(uid, 'legion_battle_kicked', '⛔ Вы не выбрали направление — выбыли из боя легиона', {});
+    // DoT-эффекты в активном бою
+    if (battle.phase === 'active') {
+      tickEffects(battle);
+      changed = true;
+      continue;
+    }
+
+    // Фаза prep → active по таймеру
+    if (battle.phase === 'prep' && now() >= battle.prepEndsAt) {
+      // Убираем тех кто не нажал «Готов» ИЛИ не выбрал направление
+      for (const [uid, c] of Object.entries(battle.combatants)) {
+        if (!c.ready || !c.direction) {
+          delete battle.combatants[uid];
+          notif.push(uid, 'legion_battle_kicked',
+            '⛔ Вы не подготовились к бою (нужно «Готов» + направление) — выбыли', {});
+        }
+      }
+
+      const sideA = Object.values(battle.combatants).filter(c => c.side === 'A');
+      const sideB = Object.values(battle.combatants).filter(c => c.side === 'B');
+
+      if (sideA.length === 0 || sideB.length === 0) {
+        const winner = sideA.length > 0 ? 'A' : 'B';
+        finalizeBattle(battle, all, users, winner, 'no_show');
+        changed = true;
+        continue;
+      }
+
+      battle.phase = 'active';
+      battle.activeStartAt = now();
+      battle.activeEndsAt  = now() + BATTLE_MS;
+
+      for (const c of Object.values(battle.combatants)) {
+        notif.push(c.userId, 'legion_battle_active',
+          `⚔️ Бой начался! Атакуйте врагов на «${DIR_NAMES[c.direction-1]}».`,
+          { activeEndsAt: battle.activeEndsAt });
+      }
+      changed = true;
     }
   }
 
-  const sideA = Object.values(battle.combatants).filter(c => c.side === 'A');
-  const sideB = Object.values(battle.combatants).filter(c => c.side === 'B');
-
-  if (sideA.length === 0 || sideB.length === 0) {
-    const winner = sideA.length > 0 ? 'A' : 'B';
-    finalizeBattle(battle, l, all, users, winner, 'no_show');
-    return;
-  }
-
-  battle.phase = 'active';
-  battle.activeStartAt = now();
-  battle.activeEndsAt  = now() + BATTLE_MS;
-
-  for (const c of Object.values(battle.combatants)) {
-    notif.push(c.userId, 'legion_battle_active',
-      `⚔️ Бой начался! Выбирайте цели на «${DIR_NAMES[c.direction-1]}».`, {
-        activeEndsAt: battle.activeEndsAt,
-      });
-  }
+  if (changed) db.save('battles');
 }
 
 // ───────────────────────────────────────────────────────────────────
 // Состояние боя для клиента
 // ───────────────────────────────────────────────────────────────────
 function battleState(user) {
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) return { battle: null };
-  const battle = l.activeBattle;
+  const { battle, legion: l } = resolveBattle(user);
+  if (!battle) return { battle: null };
 
   const mySide = l.id === battle.legionA ? 'A' : 'B';
   const me = battle.combatants[user.id] || null;
@@ -885,9 +953,8 @@ function serializeCombatant(c, t, isSelf) {
 
 // ── Выйти из боя (добровольно) ────────────────────────────────────
 function leaveBattle(user, notices) {
-  const l = legions()[user.legionId];
-  if (!l || !l.activeBattle) throw new u.ApiError('Нет активного боя');
-  const battle = l.activeBattle;
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
   const c = battle.combatants[user.id];
   if (!c) throw new u.ApiError('Вы не участник боя');
 
@@ -900,20 +967,18 @@ function leaveBattle(user, notices) {
     const aliveA = Object.values(battle.combatants).filter(c2 => c2.side === 'A' && c2.alive).length;
     const aliveB = Object.values(battle.combatants).filter(c2 => c2.side === 'B' && c2.alive).length;
     if (aliveA === 0 || aliveB === 0) {
-      const all = legions();
-      const users = allUsers();
-      finalizeBattle(battle, l, all, users, aliveA > 0 ? 'A' : 'B', 'elimination');
+      finalizeBattle(battle, legions(), allUsers(), aliveA > 0 ? 'A' : 'B', 'elimination');
     }
   }
 
-  db.save('legions');
+  saveBattle(battle);
   notices.push('🚪 Вы покинули бой. Ваша статистика не сохранена.');
   return { ok: true };
 }
 
 module.exports = {
-  joinBattle, chooseDirection, attack, heal, guard, useItem, leaveBattle,
-  battleState, tickEffects, startActivePhaseTick,
+  joinBattle, setReady, chooseDirection, attack, heal, guard, useItem, leaveBattle,
+  battleState, tickEffects, tickAllBattles,
   ROLES, DIRECTIONS, DIR_NAMES, MAX_PER_DIR, PREP_MS, BATTLE_MS,
   ensureLegionGlory, addGlory, calcLegionLevel, GLORY_THRESHOLDS,
 };

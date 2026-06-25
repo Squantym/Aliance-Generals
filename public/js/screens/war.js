@@ -53,15 +53,33 @@ App.screens.war = async (c) => {
       <p class="muted small mt center">Ухо — трофей жестокости, жетон — знак милосердия. Оба ресурса пригодятся альянсу в будущем.</p>
     </div>` : '';
 
+  const warTab = App._warTab || 'targets';
+
   c.innerHTML = `
     <div class="title">Война</div>
     ${fatalityHtml}
     ${resultHtml}
-    <div class="card">
-      <p class="muted small">Цели подобраны в диапазоне ±10 уровней. 💀 — боты-террористы. Каждая атака тратит 1 боеприпас 🎯.</p>
-      <button class="btn mt" id="war-refresh">🔄 Обновить список целей</button>
+    <div class="tabs">
+      <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">🎯 Цели</div>
+      <div class="tab ${warTab === 'sanctions' ? 'active' : ''}" data-wartab="sanctions">💰 Санкции</div>
     </div>
-    <div class="card" id="war-list"><div class="loading">Разведка ищет цели…</div></div>`;
+    ${warTab === 'targets' ? `
+      <div class="card">
+        <p class="muted small">Цели подобраны в диапазоне ±10 уровней. 💀 — боты-террористы. Каждая атака тратит 1 боеприпас 🎯.</p>
+        <button class="btn mt" id="war-refresh">🔄 Обновить список целей</button>
+      </div>
+      <div class="card" id="war-list"><div class="loading">Разведка ищет цели…</div></div>
+    ` : `
+      <div class="card">
+        <p class="muted small">🎯 <b>Санкции</b> — заказы на игроков. Любой может объявить санкцию на любого через его профиль, заморозив награду. Кто снизит HP цели до ≤5% в бою — забирает всю награду. Несколько заказов на одну цель суммируются.</p>
+      </div>
+      <div class="card" id="sanctions-list"><div class="loading">Загрузка списка санкций…</div></div>
+    `}`;
+
+  // Переключение вкладок войны
+  c.querySelectorAll('[data-wartab]').forEach((t) => {
+    t.onclick = () => { App._warTab = t.dataset.wartab; App.rerender(); };
+  });
 
   // Кнопки результата и фаталити
   if (b && !m.pendingFatality) {
@@ -72,7 +90,8 @@ App.screens.war = async (c) => {
     document.getElementById('fat-ear').onclick = () => doFatality('ear');
     document.getElementById('fat-mercy').onclick = () => doFatality('mercy');
   }
-  document.getElementById('war-refresh').onclick = () => { App._lastBattle = null; App.rerender(); };
+  const refreshBtn = document.getElementById('war-refresh');
+  if (refreshBtn) refreshBtn.onclick = () => { App._lastBattle = null; App.rerender(); };
 
   // Выполнить атаку и перерисовать экран с результатом
   async function attackTarget(targetId) {
@@ -80,6 +99,8 @@ App.screens.war = async (c) => {
       App._lastBattle = await API.post('/api/war/attack', { targetId });
       await App.refreshMe();
       App.rerender();
+      // Прокручиваем наверх к окну боя, чтобы игрок видел результат атаки
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) { UI.toast('⛔ ' + e.message); }
   }
 
@@ -92,23 +113,49 @@ App.screens.war = async (c) => {
     } catch (e) { UI.toast('⛔ ' + e.message); }
   }
 
-  // Загружаем список целей
-  const { opponents } = await API.get('/api/war/opponents');
-  const list = document.getElementById('war-list');
-  list.innerHTML = opponents.map((o) => `
-    <div class="list-row">
-      <div class="grow">
-        <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${o.flag} ${UI.esc(o.name)}</span>
-        <span class="muted small"> Ур. ${o.level}</span>
-        ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
-        ${o.online ? '<span class="small" style="color:var(--green)"> ●</span>' : ''}
-      </div>
-      <button class="btn btn-orange btn-inline" data-target="${o.id}">Атака</button>
-    </div>`).join('');
+  // Загружаем список целей (только на вкладке «Цели»)
+  if (warTab === 'targets') {
+    const { opponents } = await API.get('/api/war/opponents');
+    const list = document.getElementById('war-list');
+    list.innerHTML = opponents.map((o) => `
+      <div class="list-row">
+        <div class="grow">
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${o.flag} ${UI.esc(o.name)}</span>
+          <span class="muted small"> Ур. ${o.level}</span>
+          ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
+          ${o.online ? '<span class="small" style="color:var(--green)"> ●</span>' : ''}
+        </div>
+        <button class="btn btn-orange btn-inline" data-target="${o.id}">Атака</button>
+      </div>`).join('');
 
-  list.querySelectorAll('[data-target]').forEach((btn) => {
-    btn.onclick = () => attackTarget(btn.dataset.target);
-  });
+    list.querySelectorAll('[data-target]').forEach((btn) => {
+      btn.onclick = () => attackTarget(btn.dataset.target);
+    });
+  }
+
+  // Загружаем список санкций (только на вкладке «Санкции»)
+  if (warTab === 'sanctions') {
+    const { sanctions, threshold } = await API.get('/api/sanctions');
+    const list = document.getElementById('sanctions-list');
+    if (!sanctions.length) {
+      list.innerHTML = '<p class="muted center" style="padding:20px">Активных санкций нет. Объявите санкцию через профиль любого игрока.</p>';
+    } else {
+      list.innerHTML = sanctions.map((s) => `
+        <div class="list-row">
+          <div class="grow">
+            <span class="name" style="cursor:pointer" onclick="App.go('profile/${s.targetId}')">${s.flag} ${UI.esc(s.targetName)}</span>
+            <span class="muted small"> Ур. ${s.level} · HP ${s.hpPct}%</span>
+            <div class="small" style="color:var(--money)">💰 Награда: $${UI.fmtNum(s.bounty)}${s.orderCount > 1 ? ` (${s.orderCount} заказов)` : ''}</div>
+            ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: $${UI.fmtNum(s.myOrder)}</div>` : ''}
+          </div>
+          <button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>
+        </div>`).join('');
+
+      list.querySelectorAll('[data-sanction-target]').forEach((btn) => {
+        btn.onclick = () => attackTarget(btn.dataset.sanctionTarget);
+      });
+    }
+  }
 };
 
 // ---------- МИССИИ (конфликты) ----------

@@ -305,10 +305,14 @@ function attack(user, targetId, notices) {
     target = player.users()[targetId];
     if (!target || target.id === user.id) throw new u.ApiError('Цель не найдена');
     player.refresh(target);
-    if (Math.abs(target.level - user.level) > config.PLAYER.LEVEL_RANGE) {
+    // Цель с активной санкцией можно атаковать вне диапазона уровней и
+    // добивать ниже лазаретного порога (охота за наградой)
+    let underSanction = false;
+    try { underSanction = !!(require('./sanctions').list(user).sanctions || []).find(x => x.targetId === targetId); } catch (e) {}
+    if (!underSanction && Math.abs(target.level - user.level) > config.PLAYER.LEVEL_RANGE) {
       throw new u.ApiError('Цель вне диапазона ±10 уровней');
     }
-    if (target.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) {
+    if (!underSanction && target.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) {
       throw new u.ApiError('Игрок восстанавливается в лазарете — добивать лежачих запрещено уставом.');
     }
   }
@@ -394,6 +398,15 @@ function attack(user, targetId, notices) {
   } else {
     target.res.hp.cur = Math.max(1, target.res.hp.cur - dealt);
     targetHpAfter = target.res.hp.cur;
+  }
+
+  // Проверка санкций: если цель — живой игрок и его HP упало до ≤5%,
+  // охотник получает накопленный банк по этой цели.
+  if (!isBot && win) {
+    try {
+      const targetMax = player.maxima(target).hp;
+      require('./sanctions').checkPayout(user, target, targetHpAfter, targetMax, notices);
+    } catch (e) { /* санкций нет — игнор */ }
   }
 
   // ----- Грабёж, опыт, потери техники -----

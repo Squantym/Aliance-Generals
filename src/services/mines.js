@@ -278,4 +278,44 @@ function refreshAll(user) {
   }
 }
 
-module.exports = { view, build, descend, fightTerrorists, collectGold, refreshAll };
+// ---------- Восстановить обрушенную шахту (только за игровые деньги) ----------
+// Новая шахта покупается за золото (build), а уже существующий участок
+// после обвала восстанавливается за доллары — золото повторно не тратится.
+function rebuild(user, mineId, notices) {
+  const mine = mines(user).find((m) => m.id === mineId);
+  if (!mine) throw new u.ApiError('Шахта не найдена');
+  if (mine.status !== 'collapsed') throw new u.ApiError('Эту шахту не нужно восстанавливать');
+
+  // Проверяем что прошёл срок восстановления участка
+  const readyAt = mine.collapsedAt + M.COLLAPSE_REBUILD_MS;
+  if (Date.now() < readyAt) {
+    const left = Math.ceil((readyAt - Date.now()) / 3600000);
+    throw new u.ApiError(`Участок ещё восстанавливается (осталось ~${left} ч)`);
+  }
+
+  const dollarCost = nextMineDollars(user);
+  if (user.dollars < dollarCost) {
+    throw new u.ApiError(`Не хватает денег на восстановление (нужно $${u.fmt(dollarCost)})`);
+  }
+
+  user.dollars -= dollarCost;
+
+  // Заново закладываем участок: новый запас золота, статус «строится»
+  const goldTotal = rollInitialGold();
+  mine.status = 'building';
+  mine.buildFinishesAt = Date.now() + M.BUILD_TIME_MS;
+  mine.goldTotal = goldTotal;
+  mine.goldLeft = goldTotal;
+  mine.collapsedAt = null;
+  mine.minutesUsedToday = 0;
+  mine.dailyKey = todayUtcKey();
+  mine.terroristAttack = false;
+  mine.terroristResolved = false;
+  mine.terroristRollDone = false;
+
+  db.save('users');
+  notices.push(`🔨 Участок восстанавливается за $${u.fmt(dollarCost)}. Стройка займёт 24 часа.`);
+  return mineView(mine);
+}
+
+module.exports = { view, build, rebuild, descend, fightTerrorists, collectGold, refreshAll };

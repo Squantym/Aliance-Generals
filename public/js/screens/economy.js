@@ -337,9 +337,9 @@ App._renderMines = async (c, tabsHtml) => {
     } else if (mine.status === 'collapsed') {
       const ready = mine.rebuildReadyAt <= Date.now();
       body = ready
-        ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен — можно строить новую шахту.</p>
-           <p class="muted small mt">Новая шахта строится 24 часа. Запас золота (от 20 до 45 🪙) будет скрыт до завершения постройки.</p>
-           <button class="btn btn-orange mt" data-rebuild="${mine.id}">⛏ Построить новую шахту: <span class="ic-gold"></span> ${UI.fmtNum(m.nextMineCostGold)} + $${UI.fmtNum(m.nextMineDollars)}</button>`
+        ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен — можно восстановить шахту.</p>
+           <p class="muted small mt">Восстановление за игровые деньги (золото тратится только на новые шахты). Стройка 24 часа, запас золота (20–45 🪙) скрыт до завершения.</p>
+           <button class="btn btn-orange mt" data-rebuild="${mine.id}">🔨 Восстановить шахту: $${UI.fmtNum(m.nextMineDollars)}</button>`
         : `<p class="muted small mt">Восстановление участка: ${UI.fmtTimer(Math.max(0, Math.ceil((mine.rebuildReadyAt - Date.now()) / 1000)))}</p>`;
     } else if (mine.status === 'descending') {
       body = `
@@ -426,11 +426,11 @@ App._renderMines = async (c, tabsHtml) => {
     };
   });
 
-  // Кнопка «Построить новую шахту» на месте обрушившейся
+  // Кнопка «Восстановить шахту» на месте обрушившейся (за игровые деньги)
   c.querySelectorAll('[data-rebuild]').forEach((btn) => {
     btn.onclick = async () => {
       try {
-        await API.post('/api/mines/build');
+        await API.post('/api/mines/rebuild', { mineId: btn.dataset.rebuild });
         await App.refreshMe();
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }
