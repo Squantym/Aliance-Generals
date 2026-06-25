@@ -37,7 +37,7 @@ const App = {
       setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 800);
     }
     // Открываем боевое окно если игрок был в бою
-    if (App.me && App.me.legionId) {
+    if (App.me && App.me.legion) {
       try {
         const { battle } = await API.get('/api/legion/battle');
         if (battle && (battle.phase === 'prep' || battle.phase === 'active')) {
@@ -67,7 +67,7 @@ const App = {
         App._showGiftPopup(App.me.pendingGifts[0]);
       }
       // Открываем боевое окно если игрок участвует в бою
-      if (App.me.legionId && !document.getElementById('battle-window')) {
+      if (App.me.legion && !document.getElementById('battle-window')) {
         try {
           const { battle } = await API.get('/api/legion/battle');
           if (battle && (battle.phase === 'prep' || battle.phase === 'active')) {
@@ -154,7 +154,7 @@ const App = {
   async _renderBattleWindow() {
     const win = document.getElementById('battle-window');
     if (!win) return;
-    if (!App.me || !App.me.legionId) { App._closeBattleWindow(); return; }
+    if (!App.me || !App.me.legion) { App._closeBattleWindow(); return; }
     try {
       const { battle } = await API.get('/api/legion/battle');
       if (!battle || battle.phase === 'done') {
@@ -215,7 +215,7 @@ const App = {
         ${b.phase === 'active' && b.liveScores ? `
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px">
           <span style="color:var(--green)">🟢 Ваши: ${UI.fmtNum(scores[mySide]||0)} очк.</span>
-          <span style="color:var(--red)">🔴 Врagi: ${UI.fmtNum(scores[mySide==='A'?'B':'A']||0)} очк.</span>
+          <span style="color:var(--red)">🔴 Враги: ${UI.fmtNum(scores[mySide==='A'?'B':'A']||0)} очк.</span>
         </div>` : ''}
       </div>
       <div style="padding:10px 16px">`;
