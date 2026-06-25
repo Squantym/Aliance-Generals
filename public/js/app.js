@@ -66,6 +66,10 @@ const App = {
       if (App.me.pendingGifts && App.me.pendingGifts.length) {
         App._showGiftPopup(App.me.pendingGifts[0]);
       }
+      // Проверка «я не робот» при подозрении на автоматизацию
+      if (App.me.needsVerification && !document.getElementById('human-verify')) {
+        App._showHumanVerify();
+      }
       // Открываем боевое окно если игрок участвует в бою
       if (App.me.legion && !document.getElementById('battle-window')) {
         try {
@@ -83,6 +87,48 @@ const App = {
   // минималистичный баннер сверху (на всех остальных экранах).
   // ── Попап подарка от администратора ─────────────────────────────
   _shownGiftIds: new Set(),
+
+  // Проверка «я не робот» — лёгкая задача, которую человек решит за секунды,
+  // а скрипт-автоатака не пройдёт без ручного вмешательства.
+  _showHumanVerify() {
+    if (document.getElementById('human-verify')) return;
+    const a = Math.floor(Math.random() * 8) + 2;
+    const b = Math.floor(Math.random() * 8) + 2;
+    const answer = a + b;
+
+    const popup = document.createElement('div');
+    popup.id = 'human-verify';
+    popup.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);
+      z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px`;
+    popup.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--orange);border-radius:12px;max-width:360px;width:100%;padding:24px;text-align:center">
+        <div style="font-size:36px;margin-bottom:8px">🤖</div>
+        <div style="font-size:18px;font-weight:bold;margin-bottom:6px">Подтвердите, что вы не робот</div>
+        <p class="muted small" style="margin-bottom:16px">Система заметила необычно частые действия. Решите пример, чтобы продолжить.</p>
+        <div style="font-size:24px;font-weight:bold;margin-bottom:12px">${a} + ${b} = ?</div>
+        <input type="number" id="hv-answer" inputmode="numeric" style="width:100%;padding:12px;font-size:18px;text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text)" placeholder="Ответ">
+        <button class="btn btn-orange" style="width:100%;padding:12px;margin-top:12px" id="hv-submit">Подтвердить</button>
+        <p class="muted small" id="hv-error" style="color:var(--red);margin-top:8px;display:none">Неверно, попробуйте ещё раз.</p>
+      </div>`;
+    document.body.appendChild(popup);
+
+    const input = popup.querySelector('#hv-answer');
+    input.focus();
+    const submit = async () => {
+      if (parseInt(input.value, 10) === answer) {
+        try { await API.post('/api/verify-human'); } catch (e) {}
+        popup.remove();
+        await App.refreshMe();
+        UI.toast('✅ Спасибо! Можете продолжать игру.');
+      } else {
+        popup.querySelector('#hv-error').style.display = 'block';
+        input.value = '';
+        input.focus();
+      }
+    };
+    popup.querySelector('#hv-submit').onclick = submit;
+    input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+  },
 
   _showGiftPopup(gift) {
     if (!gift || App._shownGiftIds.has(gift.id)) return;

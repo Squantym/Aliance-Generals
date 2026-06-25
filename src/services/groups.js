@@ -320,29 +320,46 @@ function respondInvite(user, kind, groupId, accept, notices) {
 
   if (accept) {
     if (kind === 'alliance') {
-      // Альянс — взаимное добавление. Каждый остаётся в своём альянсе.
-      // Лидер-инициатор (g.leaderId) добавляет user в свой альянс,
-      // а user добавляет лидера в свой альянс (если у user есть свой альянс).
+      // Альянс — это ЛИЧНАЯ сеть союзников у каждого игрока. У каждого
+      // свой отдельный альянс со своим составом. Принятие приглашения
+      // означает взаимный обмен: лидер добавляет игрока в свой альянс,
+      // а игрок — лидера в свой (создаём, если у игрока альянса ещё нет).
       const leader = player.users()[g.leaderId];
 
-      // 1. Добавляем user в альянс лидера (если его там ещё нет)
+      // 1. Добавляем принявшего в альянс лидера-инициатора
       if (!g.members.includes(user.id)) {
         g.members.push(user.id);
       }
 
-      // 2. Если у принявшего игрока есть свой альянс — добавляем лидера туда
-      if (user.allianceId) {
-        const userAlliances = coll('alliance');
-        const userAlliance = userAlliances[user.allianceId];
-        if (userAlliance && !userAlliance.members.includes(g.leaderId)) {
-          userAlliance.members.push(g.leaderId);
-          db.save('alliances');
-        }
+      // 2. Гарантируем что у принявшего есть СВОЙ отдельный альянс
+      const userAlliances = coll('alliance');
+      let userAlliance = user.allianceId ? userAlliances[user.allianceId] : null;
+      if (!userAlliance) {
+        // Создаём личный альянс для принявшего (бесплатно, как ответный союз)
+        const aid = u.uid(10);
+        userAlliance = {
+          id: aid,
+          name: `Союз ${user.name}`,
+          leaderId: user.id,
+          members: [user.id],
+          requests: [], invites: [],
+          createdAt: Date.now(),
+        };
+        userAlliances[aid] = userAlliance;
+        user.allianceId = aid;
       }
 
+      // 3. Добавляем лидера-инициатора в альянс принявшего (его отдельный состав)
+      if (!userAlliance.members.includes(g.leaderId)) {
+        userAlliance.members.push(g.leaderId);
+      }
+
+      db.save('alliances');
+      db.save('users');
+
       if (leader) social.systemMail(leader, 'Приглашение принято!',
-        `${user.name} принял ваше приглашение. Ваш альянс пополнился.`);
-      notices.push(`Вы приняли приглашение от «${g.name}». Союзник добавлен в ваш альянс.`);
+        `${user.name} принял ваше приглашение. Вы теперь в союзе.`);
+      notices.push(`Вы заключили союз с «${g.name}». У вас свой состав альянса.`);
     } else {
       // Легион — классическое вступление (один легион на игрока)
       if (user[def.userField]) throw new u.ApiError('Сначала покиньте текущую группу');

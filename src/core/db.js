@@ -26,6 +26,8 @@ const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 // Кэш коллекций в памяти (как и раньше) — отсюда всё читается синхронно
 const store = {};
 const dirty = new Set();
+const dirtyUsers = new Set();   // id игроков, которых нужно сохранить точечно
+let allUsersDirty = false;       // флаг «сохранить всех игроков» (миграции)
 let saveTimer = null;
 
 // Режим работы: 'json' (по умолчанию) или 'mongo'
@@ -134,9 +136,27 @@ function load(name, def) {
 // ---------- Запись (отложенная) ----------
 // Помечает коллекцию «грязной» и планирует сохранение через 400 мс.
 // Несколько вызовов save() подряд склеиваются в одну запись.
+//
+// ВАЖНО про users: вызов save('users') помечает «сохранить ВСЕХ игроков».
+// Это дорого при большом числе игроков. Для точечного сохранения одного
+// игрока используйте markUser(id) — он запишет только одного.
 function save(name) {
   if (store[name] === undefined) return;
+  if (name === 'users') {
+    // Полное сохранение всех игроков нужно редко (миграции, массовые
+    // изменения). Обычные действия должны звать markUser(id).
+    allUsersDirty = true;
+    scheduleFlush();
+    return;
+  }
   dirty.add(name);
+  scheduleFlush();
+}
+
+// Точечно пометить одного игрока на сохранение (дёшево при 1000+ игроков).
+function markUser(id) {
+  if (!id) return;
+  dirtyUsers.add(id);
   scheduleFlush();
 }
 
@@ -147,24 +167,34 @@ function scheduleFlush() {
   }, 400);
 }
 
-// Записать одну коллекцию в текущий backend (mongo или файл)
+// Записать одну «прочую» коллекцию (не users) в backend
 async function flushOne(name) {
   if (mode === 'mongo') {
-    if (name === 'users') {
-      // Каждый игрок — отдельный документ. bulkWrite заменяет всех
-      // изменившихся игроков за один сетевой запрос.
-      const entries = Object.entries(store.users || {});
-      if (entries.length === 0) return;
-      const ops = entries.map(([id, u]) => ({
-        replaceOne: { filter: { _id: id }, replacement: { ...u, _id: id }, upsert: true },
-      }));
-      await usersColl.bulkWrite(ops, { ordered: false });
-    } else {
-      await collColl.updateOne({ _id: name }, { $set: { data: store[name] } }, { upsert: true });
-    }
+    await collColl.updateOne({ _id: name }, { $set: { data: store[name] } }, { upsert: true });
   } else {
     ensureDir();
     fs.writeFileSync(fileOf(name), JSON.stringify(store[name]));
+  }
+}
+
+// Записать игроков. Если allUsersDirty — пишем всех (миграции),
+// иначе только тех, кто помечен через markUser (обычный случай).
+async function flushUsers(allUserIds) {
+  const usersObj = store.users || {};
+  if (mode === 'mongo') {
+    const ids = allUserIds ? Object.keys(usersObj) : Array.from(dirtyUsers);
+    if (ids.length === 0) return;
+    const ops = ids
+      .filter((id) => usersObj[id])
+      .map((id) => ({
+        replaceOne: { filter: { _id: id }, replacement: { ...usersObj[id], _id: id }, upsert: true },
+      }));
+    if (ops.length) await usersColl.bulkWrite(ops, { ordered: false });
+  } else {
+    // JSON-режим: пишем весь файл (один файл на коллекцию). Дёшево до
+    // ~неск. тысяч игроков; в проде всё равно используется mongo.
+    ensureDir();
+    fs.writeFileSync(fileOf('users'), JSON.stringify(usersObj));
   }
 }
 
@@ -173,22 +203,44 @@ async function flush() {
   saveTimer = null;
   const names = Array.from(dirty);
   dirty.clear();
+
+  // Игроки — отдельной веткой (точечно или все)
+  const needAllUsers = allUsersDirty;
+  const hadDirtyUsers = dirtyUsers.size > 0 || needAllUsers;
+  allUsersDirty = false;
+  const userIds = Array.from(dirtyUsers);
+  dirtyUsers.clear();
+
   for (const name of names) {
     try {
       await flushOne(name);
     } catch (e) {
       console.error(`Не удалось сохранить «${name}»:`, e.message);
-      dirty.add(name); // попробуем снова при следующем тике
+      dirty.add(name);
+      scheduleFlush();
+    }
+  }
+
+  if (hadDirtyUsers) {
+    try {
+      await flushUsers(needAllUsers);
+    } catch (e) {
+      console.error('Не удалось сохранить игроков:', e.message);
+      // Возвращаем id обратно в очередь
+      if (needAllUsers) allUsersDirty = true;
+      else userIds.forEach((id) => dirtyUsers.add(id));
       scheduleFlush();
     }
   }
 }
 
-// Пометить все загруженные коллекции на сохранение (вызывается после
-// каждого запроса и фоновым тиком — лишний save() ничего не стоит,
-// т.к. запись всё равно склеивается debounce'ом)
+// Пометить все «прочие» загруженные коллекции на сохранение.
+// НЕ трогает users — игроки сохраняются точечно через markUser(id),
+// чтобы не писать тысячи документов после каждого запроса.
 function saveAll() {
-  Object.keys(store).forEach(save);
+  Object.keys(store).forEach((name) => {
+    if (name !== 'users') save(name);
+  });
 }
 
 // Немедленное сохранение всего и аккуратное закрытие соединения —
@@ -197,12 +249,21 @@ async function flushAllNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
   dirty.clear();
+  dirtyUsers.clear();
+  allUsersDirty = false;
   for (const name of Object.keys(store)) {
+    if (name === 'users') continue;
     try {
       await flushOne(name);
     } catch (e) {
       console.error(`Не удалось сохранить «${name}» при выходе:`, e.message);
     }
+  }
+  // Всех игроков — гарантированно при выходе
+  try {
+    await flushUsers(true);
+  } catch (e) {
+    console.error('Не удалось сохранить игроков при выходе:', e.message);
   }
   if (mongoClient) {
     await mongoClient.close();
@@ -210,6 +271,6 @@ async function flushAllNow() {
 }
 
 module.exports = {
-  init, load, save, saveAll, flushAllNow, DATA_DIR,
+  init, load, save, markUser, saveAll, flushAllNow, DATA_DIR,
   get mode() { return mode; },
 };

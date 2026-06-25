@@ -292,6 +292,10 @@ function attack(user, targetId, notices) {
     throw new u.ApiError(`Здоровье ниже ${config.PLAYER.MIN_HP_TO_FIGHT} — сначала подлечитесь.`);
   }
 
+  // Поведенческая проверка на автоматизацию
+  const ab = require('./antibot').track(user, 'attack');
+  if (!ab.ok) throw new u.ApiError('Подтвердите, что вы не робот, чтобы продолжить (проверка появится автоматически).');
+
   // Находим цель: бот из кэша или реальный игрок из базы
   let target = null, isBot = false;
   if (String(targetId).startsWith('bot_')) {
@@ -532,6 +536,10 @@ function attack(user, targetId, notices) {
   }
 
   tutorial.notify(user, 'attack', notices); // задание «Боевое крещение»
+
+  // Цель (живой игрок) тоже изменилась — HP, деньги, потери техники.
+  // Помечаем её на точечное сохранение (атакующий сохранится в http.js).
+  if (!isBot && target && target.id) db.markUser(target.id);
 
   // Сводка участвовавшей техники для окна боя: ТОЛЬКО обычная военная
   // техника (секретные разработки в бою участвуют всегда полностью, но

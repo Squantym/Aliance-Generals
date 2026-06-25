@@ -61,6 +61,7 @@ module.exports = function registerRoutes(app) {
     notifUnread: notifications.unreadCount(req.user),
   }));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
+  app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
   app.add('POST', '/api/ears/restore', act((req, n) => player.restoreEar(req.user, n)));
   app.add('POST', '/api/skill', act((req, notices) => {
     player.spendSkill(req.user, req.body.stat);

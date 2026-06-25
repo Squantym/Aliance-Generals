@@ -118,6 +118,10 @@ function openContainer(user, tier, notices, qty) {
   qty = u.clamp(u.toInt(qty, 1), 1, 5);
   if (![1, 3, 5].includes(qty)) throw new u.ApiError('Можно открыть только 1, 3 или 5 контейнеров за раз');
 
+  // Поведенческая проверка на автоматизацию (защита от авто-открытия)
+  const ab = require('./antibot').track(user, 'open_container');
+  if (!ab.ok) throw new u.ApiError('Подтвердите, что вы не робот, чтобы продолжить.');
+
   const unitPrice = containerGold(c);
   const totalPrice = unitPrice * qty;
   if (user.gold < totalPrice) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${totalPrice} за ${qty} шт.)`);

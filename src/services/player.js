@@ -722,6 +722,7 @@ function mePayload(user) {
     pendingFatality: user.pendingFatality ? { name: user.pendingFatality.name } : null,
     pendingGifts: user.pendingGifts && user.pendingGifts.length ? user.pendingGifts : [],
     effects: effectsView(user),
+    needsVerification: (() => { try { return require('./antibot').needsVerification(user); } catch (e) { return false; } })(),
     unlocked: { production: user.level >= config.PRODUCTION_UNLOCK_LEVEL },
     productionUnlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
   };
