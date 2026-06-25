@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": false,
+    "sourceMap": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": [
+    "server.ts",
+    "server.js",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "config/**/*.ts",
+    "config/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "public",
+    "test"
+  ]
+}
