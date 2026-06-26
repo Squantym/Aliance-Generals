@@ -15,6 +15,36 @@
 //   APP_URL        — публичный адрес игры (для ссылок в письмах)
 // ===================================================================
 
+// Лёгкий загрузчик .env без сторонних библиотек. Читает файл .env из
+// корня проекта (если он есть) и переносит переменные в process.env.
+// Уже заданные в окружении переменные имеют приоритет и не затираются.
+// Это нужно, чтобы строка подключения MONGODB_URI и прочие настройки
+// подхватывались автоматически при любом способе запуска (pm2, node).
+(function loadDotEnv() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.join(process.cwd(), '.env');
+    if (!fs.existsSync(envPath)) return;
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;       // пропускаем пустые и комментарии
+      const eq = line.indexOf('=');
+      if (eq === -1) continue;
+      const key = line.slice(0, eq).trim();
+      let val = line.slice(eq + 1).trim();
+      // Снимаем обрамляющие кавычки, если есть
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (key && process.env[key] === undefined) process.env[key] = val;
+    }
+  } catch (e: any) {
+    console.warn('Не удалось прочитать .env:', e.message);
+  }
+})();
+
 import http = require('./src/core/http');
 import db = require('./src/core/db');
 import registerRoutes = require('./src/routes');
