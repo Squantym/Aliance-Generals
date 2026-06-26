@@ -120,9 +120,10 @@ export interface User {
   skills: PlayerSkills;
   res: PlayerResources;
 
-  units: Record<string, [number, number, number]>; // unitId -> [t1,t2,t3] по слотам модернизации
+  units: Record<string, any>; // unitId -> { 0, 1, 2 } по слотам модернизации
   workshops: number;
   modernQueue: any[];
+  modernization?: any;
   buildings: Record<string, number>;
   secretDevs: Record<string, number>;
   superSecret: number;
@@ -167,6 +168,9 @@ export interface User {
   passport?: { nameChanges: number; countryChanges: number };
   daily?: any;
   trophyQueue?: any[];
+  missionProgress?: Record<string, any>;
+  missionQueue?: any[];
+  containerHistory?: any[];
 }
 
 // ---------- Группа (Альянс / Легион) — общие поля ----------
@@ -290,10 +294,12 @@ export interface Battle {
   guardLinks: Record<string, string>;
   guardExpiry: Record<string, number>;
   log: BattleLogEntry[];
+  activity?: Record<string, any>;
   finalReport?: unknown;
 }
 
 export interface BattleLogEntry {
+  t?: number;
   text: string;
   kind: string;
   at?: number;
