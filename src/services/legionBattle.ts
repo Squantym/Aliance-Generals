@@ -548,8 +548,14 @@ function useItem(user: User, itemId: string, targetUserId: string, notices: Noti
       if (!tc) throw new u.ApiError('Укажите цель');
       if (tc.side === c.side) throw new u.ApiError('Только на врагов');
       const tUser = allUsers()[targetUserId];
-      const basePow = player.totalPower(user, 'atk').power;
-      const dmg = Math.round(basePow * ieff.pct / 100);
+      // Урон гранаты считается от ОБЫЧНОГО урона игрока по этой цели —
+      // то есть уже с учётом брони (защиты) противника, — и умножается
+      // на множитель предмета. Если у цели сильная броня и обычный удар
+      // слабый, граната тоже будет слабее. crit при этом не применяем
+      // (это разовый предмет, а не серия атак).
+      const base = calcDamage(c, tc, user, tUser);
+      const mult = ieff.pct / 100;            // pct=1000 → ×10
+      const dmg = Math.round(base.dmg * mult);
       const { actual } = applyDamage(battle, targetUserId, dmg, user.id);
       c.stats.dmgDealt += actual;
       if (tc.hp <= 0) { tc.alive = false; c.stats.kills++; addActivity(battle, user.id, 'kill'); }
@@ -911,6 +917,21 @@ function battleState(user: User): any {
     liveScores = scores;
   }
 
+  // Боевой пояс игрока и доступный арсенал легиона (для взятия предметов
+  // как в фазе подготовки, так и для отображения слотов в бою).
+  const config = require('../../config/gameConfig');
+  const extraSlots = (l.battleBuildings && l.battleBuildings['gear_slots']) || 0;
+  const maxSlots = config.LEGION.GEAR_SLOTS_DEFAULT + extraSlots;
+  const myGear = (battle.gear && battle.gear[user.id]) || (me ? me.gear : []) || [];
+  // Список предметов, которые ещё можно взять из арсенала легиона
+  const arsenal = Object.entries(l.arsenal || {})
+    .filter(([, qty]) => (qty as number) > 0)
+    .map(([itemId, qty]) => {
+      const item = config.LEGION_SHOP_ITEM_BY_ID[itemId];
+      return item ? { itemId, name: item.name, qty: qty as number, desc: item.desc || '' } : null;
+    })
+    .filter(Boolean);
+
   return {
     battle: {
       id: battle.id,
@@ -930,6 +951,10 @@ function battleState(user: User): any {
       log: (battle.log || []).slice(-40),
       liveScores,
       finalReport: battle.finalReport || null,
+      // Боевой пояс и арсенал для UI слотов
+      myGear,
+      maxSlots,
+      arsenal,
     },
   };
 }

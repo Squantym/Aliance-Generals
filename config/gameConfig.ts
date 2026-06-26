@@ -966,7 +966,7 @@ const LEGION = {
   TECH_DAYS_GROWTH: 1.5,
 
   // ---------- Арсенал ----------
-  GEAR_SLOTS_DEFAULT: 2,
+  GEAR_SLOTS_DEFAULT: 3,
 
   // ---------- Состав легиона ----------
   BASE_MEMBER_LIMIT: 10,                 // базовый лимит участников
@@ -1246,7 +1246,7 @@ const LEGION_SHOP_ITEMS = [
     id: 'assault_grenade',
     category: 'combat',
     name: '🔴 Наступательная граната',
-    desc: 'Наносит 1000% урона от обычной атаки игрока (с учётом брони).',
+    desc: 'Наносит 1000% от вашего обычного удара по цели (с учётом её брони).',
     earCost: 1,
     effect: { type: 'damage_pct', pct: 1000 },
   },

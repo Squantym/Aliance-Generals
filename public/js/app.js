@@ -178,6 +178,94 @@ const App = {
     App._battleWindow = null;
   },
 
+  // Рисует боевой пояс как фиксированное число слотов (maxSlots).
+  // Заполненные слоты показывают предмет; пустые — кнопку «+» для взятия
+  // из арсенала (в подготовке) либо просто пустую ячейку (в бою).
+  // mode: 'prep' — можно брать предметы; 'active' — можно применять.
+  _gearSlotsHtml(b, mode) {
+    const ITEM_NAMES = {
+      gas_grenade:'💨 Газовая шашка', flashbang:'💥 Светошумовая',
+      assault_grenade:'🔴 Граната', napalm:'🔥 Напалм',
+      uranium_ammo:'☢️ Урановые БП', hydrogen_bomb:'💣 Водородная бомба',
+      medkit:'🩹 Аптечка', dome:'🔵 Купол', kevlar:'🦺 Бронеплиты', reflect_shield:'🪞 Отраж. щит',
+    };
+    const maxSlots = b.maxSlots || 3;
+    const gear = (b.myGear || (b.me && b.me.gear) || []).slice();
+    const arsenal = b.arsenal || [];
+
+    let cells = '';
+    for (let i = 0; i < maxSlots; i++) {
+      const id = gear[i];
+      if (id) {
+        const applyBtn = mode === 'active'
+          ? `<button class="btn btn-orange btn-inline" id="bw-item-${id}" style="margin-top:4px;width:100%">Применить</button>`
+          : '';
+        cells += `<div style="flex:1;min-width:0;border:1px solid var(--orange);border-radius:8px;padding:8px;text-align:center;background:rgba(255,150,0,.08)">
+          <div style="font-size:13px;font-weight:bold">${ITEM_NAMES[id]||id}</div>
+          ${applyBtn}
+        </div>`;
+      } else {
+        const plus = mode === 'prep' && arsenal.length
+          ? `<button class="btn btn-inline" id="bw-gear-add-${i}" style="width:100%;height:100%;border-style:dashed">➕ Взять</button>`
+          : `<span class="muted" style="font-size:24px">○</span>`;
+        cells += `<div style="flex:1;min-width:0;border:1px dashed var(--border);border-radius:8px;padding:8px;text-align:center;min-height:56px;display:flex;align-items:center;justify-content:center">
+          ${plus}
+        </div>`;
+      }
+    }
+
+    const targetLine = (mode === 'active' && App._bwItemTarget)
+      ? ` → цель: <span style="color:var(--gold)">${App._bwItemTargetName||App._bwItemTarget}</span>`
+      : '';
+
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
+      <b>🎒 Боевой пояс (${gear.length}/${maxSlots})${targetLine}</b>
+      <div style="display:flex;gap:8px;margin-top:8px">${cells}</div>
+      ${mode==='prep' && arsenal.length ? '<p class="muted small" style="margin:8px 0 0">Нажмите «Взять», чтобы выбрать предмет из арсенала легиона.</p>' : ''}
+      ${mode==='prep' && !arsenal.length && gear.length===0 ? '<p class="muted small" style="margin:8px 0 0">Арсенал легиона пуст. Лидер может закупить предметы в разделе легиона.</p>' : ''}
+    </div>`;
+  },
+
+  // Модалка выбора предмета из арсенала для взятия в слот (фаза подготовки)
+  _showGearPicker(b) {
+    const arsenal = b.arsenal || [];
+    if (!arsenal.length) { UI.toast('Арсенал легиона пуст'); return; }
+    const existing = document.getElementById('gear-picker');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.id = 'gear-picker';
+    popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
+    popup.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--orange);border-radius:12px;max-width:380px;width:100%;padding:20px;max-height:80vh;overflow-y:auto">
+        <div style="font-size:16px;font-weight:bold;margin-bottom:12px">🎒 Выберите предмет из арсенала</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${arsenal.map(it => `
+            <button class="btn btn-inline gear-pick-btn" data-item="${it.itemId}" style="width:100%;padding:12px;text-align:left">
+              <b>${UI.esc(it.name)}</b> <span class="muted small">×${it.qty}</span>
+              ${it.desc?`<br><span class="muted small">${UI.esc(it.desc)}</span>`:''}
+            </button>`).join('')}
+        </div>
+        <button class="btn btn-inline" id="gear-pick-cancel" style="width:100%;padding:10px;margin-top:12px">Отмена</button>
+      </div>`;
+    document.body.appendChild(popup);
+
+    popup.querySelectorAll('.gear-pick-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const itemId = btn.getAttribute('data-item');
+        try {
+          await API.post('/api/legion/gear/pick', { itemId });
+          popup.remove();
+          UI.toast('🎒 Предмет в поясе');
+          await App._renderBattleWindow();
+        } catch (e) {
+          UI.toast('⛔ ' + (e.message || 'Не удалось взять предмет'));
+        }
+      };
+    });
+    popup.querySelector('#gear-pick-cancel').onclick = () => popup.remove();
+  },
+
   _renderBattleContent(win, b) {
     const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
 
@@ -250,6 +338,9 @@ const App = {
           </button>
           ${!ready ? '<p class="muted small" style="margin:8px 0 0">После «Готов» выберите направление. В бой попадут только готовые бойцы с направлением.</p>' : ''}
         </div>`;
+
+        // ── Боевой пояс: 3 слота, можно взять предметы из арсенала ──
+        html += App._gearSlotsHtml(b, 'prep');
 
         // Выбор направления — только если готов
         if (ready) {
@@ -370,29 +461,8 @@ const App = {
         }
       }
 
-      // Боевой пояс
-      if (me.gear && me.gear.length > 0) {
-        const itemNames = {
-          gas_grenade:'💨 Газовая шашка',flashbang:'💥 Светошумовая',
-          assault_grenade:'🔴 Граната',napalm:'🔥 Напалм',
-          uranium_ammo:'☢️ Боеприпасы с ураном',hydrogen_bomb:'💣 Водородная бомба',
-          medkit:'🩹 Аптечка',dome:'🔵 Купол',kevlar:'🦺 Бронеплиты',reflect_shield:'🪞 Отраж. щит',
-        };
-        const done = new Set();
-        html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
-          <b>🎒 Боевой пояс${App._bwItemTarget?` → цель: <span style="color:var(--gold)">${App._bwItemTargetName||App._bwItemTarget}</span>`:''}</b>
-          <div style="margin-top:8px">
-          ${me.gear.map(id=>{
-            if(done.has(id))return'';done.add(id);
-            const cnt=me.gear.filter(x=>x===id).length;
-            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-dim)">
-              <span style="font-size:13px">${itemNames[id]||id} ×${cnt}</span>
-              <button class="btn btn-orange btn-inline" id="bw-item-${id}">Применить</button>
-            </div>`;
-          }).join('')}
-          </div>
-        </div>`;
-      }
+      // Боевой пояс — 3 слота с предметами, применяются по цели
+      html += App._gearSlotsHtml(b, 'active');
 
       // Лог
       if (b.log && b.log.length) {
@@ -478,6 +548,11 @@ const App = {
       const btn = win.querySelector('#bw-dir-'+d);
       if (btn) btn.onclick = () => api('/api/legion/battle/direction', { direction: d });
     }
+
+    // Кнопки «Взять» в пустых слотах боевого пояса (фаза подготовки)
+    win.querySelectorAll('[id^="bw-gear-add-"]').forEach(btn => {
+      btn.onclick = () => App._showGearPicker(b);
+    });
 
     // Атака
     win.querySelectorAll('[id^="bw-attack-"]').forEach(btn => {
