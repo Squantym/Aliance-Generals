@@ -151,7 +151,7 @@ function list(user: User) {
 function activeView(proc: any) {
   const secLeft = Math.max(0, Math.floor((proc.finishesAt - Date.now()) / 1000));
   const conf = config.CONFLICT_BY_ID[proc.confId];
-  const op = conf.operations[proc.opIdx];
+  const op = (conf as any).operations[proc.opIdx];
   const step = op.steps[proc.stepIdx];
   return {
     id: proc.id, confId: proc.confId, confName: conf.name,
@@ -173,7 +173,7 @@ function detail(user: User, confId: string) {
     locked: user.level < conf.minLevel,
     spReward: conf.spReward, goldReward: conf.goldReward,
     rewardAvailable: !progress(user, conf.id).firstReward,
-    operations: conf.operations.map((op) => ({
+    operations: (conf as any).operations.map((op: any) => ({
       idx: op.idx, id: op.id, name: op.name,
       stepsDone: stepsDone(user, conf.id, op.idx),
       steps: op.steps.map((s) => ({
@@ -193,7 +193,7 @@ function detail(user: User, confId: string) {
 function startStep(user: User, confId: string, opIdx: number, stepIdx: number, notices: Notices) {
   const conf = config.CONFLICT_BY_ID[confId];
   if (!conf) throw new u.ApiError('Конфликт не найден');
-  const op = conf.operations[opIdx];
+  const op = (conf as any).operations[opIdx];
   if (!op) throw new u.ApiError('Спецоперация не найдена');
   const step = op.steps[stepIdx];
   if (!step) throw new u.ApiError('Шаг не найден');
