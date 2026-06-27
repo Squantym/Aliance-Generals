@@ -251,8 +251,9 @@ App.screens.profile = async (c, param) => {
   const own = p.id === App.me.id;
 
   const isBot = !!p.isBot;
+  // Техника — сеткой картинок с количеством, по клику модалка с названием
   const unitsHtml = (!isBot && p.units && p.units.length)
-    ? p.units.map((x) => `<div class="kv"><span class="k">${UI.esc(x.name)} <span class="muted small">(${UI.esc(x.type)})</span></span><span class="v">×${UI.fmtNum(x.count)}</span></div>`).join('')
+    ? UI.imgGrid(p.units, 'units')
     : '<p class="muted">Ангар не разглашается.</p>';
 
   const devsHtml = (!isBot && (p.secretDevs && p.secretDevs.length || p.superSecret))
@@ -260,8 +261,12 @@ App.screens.profile = async (c, param) => {
       (p.superSecret ? `<div class="kv"><span class="k gold">🛸 Межконтинентальный ядерный комплекс «Диктатор»</span><span class="v gold">×${p.superSecret}</span></div>` : '')
     : '<p class="muted">Секретных разработок нет.</p>';
 
+  // Постройки — отдельно доходные и оборонительные, сетками картинок
+  const incomeB = (p.buildings || []).filter((x) => x.kind === 'income');
+  const defenseB = (p.buildings || []).filter((x) => x.kind !== 'income');
   const buildingsHtml = (!isBot && p.buildings && p.buildings.length)
-    ? p.buildings.map((x) => `<div class="kv"><span class="k">${x.kind === 'income' ? '💵' : '🛡'} ${UI.esc(x.name)}</span><span class="v">×${UI.fmtNum(x.count)}</span></div>`).join('')
+    ? `${incomeB.length ? `<p class="small" style="margin:4px 0">💵 Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
+       ${defenseB.length ? `<p class="small" style="margin:10px 0 4px">🛡 Оборонительные (защита базы)</p>${UI.imgGrid(defenseB, 'buildings')}` : ''}`
     : '<p class="muted">Постройки не разглашаются.</p>';
 
   c.innerHTML = `

@@ -270,6 +270,7 @@ function removeUnits(victim: any, armyEntries: any[], pctBase: number, crit: boo
   if (toLose <= 0) return [];
 
   const lost = {};
+  const lostMeta = {};
   for (const e of pool) {
     if (toLose <= 0) break;
     const m = victim.units[e.unitId];
@@ -280,9 +281,13 @@ function removeUnits(victim: any, armyEntries: any[], pctBase: number, crit: boo
     e.taken -= n;
     toLose -= n;
     lost[e.name] = (lost[e.name] || 0) + n;
+    lostMeta[e.name] = { id: e.unitId, type: (config.UNIT_BY_ID[e.unitId] || {}).type };
     if ((m[0] || 0) + (m[1] || 0) + (m[2] || 0) <= 0) delete victim.units[e.unitId];
   }
-  return Object.entries(lost).map(([name, count]) => `${name} ×${count}`);
+  // Возвращаем объекты с id (для картинок) — фронт сам решит как показать
+  return Object.entries(lost).map(([name, count]) => ({
+    name, count, id: lostMeta[name].id, unitType: lostMeta[name].type,
+  }));
 }
 
 // ---------- ГЛАВНАЯ ФУНКЦИЯ: атака цели ----------
@@ -459,7 +464,7 @@ function attack(user: User, targetId: string, notices: Notices) {
         for (const e of dArmy.entries) {
           if (e.taken > 0) {
             const lost = Math.floor(e.taken * B.LOSS_DEF_PCT * (1 - lossReduce) * 1.5 * botRandMul);
-            if (lost > 0) enemyLosses.push(`${e.name} ×${lost}`);
+            if (lost > 0) enemyLosses.push({ name: e.name, count: lost, id: e.unitId, unitType: (config.UNIT_BY_ID[e.unitId] || {}).type });
           }
         }
       }
@@ -549,7 +554,18 @@ function attack(user: User, targetId: string, notices: Notices) {
   // в окне атаки не показываются — по требованию игрового дизайна).
   const armyBrief = (entries: any[]) => entries
     .filter((e) => e.taken > 0 && !e.secret)
-    .map((e) => ({ name: e.name, count: e.taken }));
+    .map((e) => ({ name: e.name, count: e.taken, id: e.unitId, unitType: (config.UNIT_BY_ID[e.unitId] || {}).type }));
+
+  // Оборонительные постройки цели, участвующие в защите (для окна боя)
+  const defenseBuildings = (!isBot && target && target.buildings)
+    ? Object.entries(target.buildings)
+        .map(([id, count]) => {
+          const bd = config.BUILDING_BY_ID[id];
+          return (bd && bd.kind === 'defense' && (count as number) > 0)
+            ? { id, name: bd.name, count: count as number, def: bd.def || 0 } : null;
+        })
+        .filter(Boolean)
+    : [];
 
   return {
     win, crit, dodge,
@@ -558,6 +574,7 @@ function attack(user: User, targetId: string, notices: Notices) {
     targetHpPct: Math.round((targetHpAfter / targetMaxHp) * 100),
     myArmy: armyBrief(aArmy.entries),
     enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
+    enemyDefenseBuildings: defenseBuildings,
     myLosses, enemyLosses,
     fatality, fatalityDodged,
   };

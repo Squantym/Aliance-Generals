@@ -224,10 +224,15 @@ export interface Legion extends GroupBase {
 export interface BattleHistoryEntry {
   at: number;
   enemyId: string;
+  enemyName?: string;
   won: boolean;
   loot: number;
   gloryGain?: number;
   gloryLoss?: number;
+  myDamage?: number;
+  enemyDamage?: number;
+  myParticipants?: number;
+  enemyParticipants?: number;
 }
 
 export interface PendingChallenge {
@@ -304,6 +309,8 @@ export interface Battle {
   log: BattleLogEntry[];
   activity?: Record<string, any>;
   finalReport?: unknown;
+  teamChat?: Record<string, any[]>;   // чат по сторонам: { A: [...], B: [...] }
+  globalChat?: any[];                 // общий чат боя
 }
 
 export interface BattleLogEntry {

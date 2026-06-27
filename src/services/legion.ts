@@ -177,9 +177,12 @@ function view(user: User): any {
   if (l.activeBattle && l.activeBattle.battleId) {
     const battle = db.load('battles', {})[l.activeBattle.battleId];
     if (battle) {
+      const enemyId = l.activeBattle.enemyId;
+      const enemyLegion = enemyId ? legions()[enemyId] : null;
       activeBattleInfo = {
         battleId: l.activeBattle.battleId,
-        enemyId: l.activeBattle.enemyId,
+        enemyId,
+        enemyName: enemyLegion ? enemyLegion.name : 'враг',
         startedAt: battle.startedAt,
         phase: battle.phase,
         prepEndsAt: battle.prepEndsAt,
@@ -972,4 +975,5 @@ export = {
   guard:            (...a) => require('./legionBattle').guard(...a),
   useItem:          (...a) => require('./legionBattle').useItem(...a),
   leaveBattle:      (...a) => require('./legionBattle').leaveBattle(...a),
+  sendChat:         (...a) => require('./legionBattle').sendChat(...a),
 };

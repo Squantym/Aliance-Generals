@@ -45,7 +45,13 @@ App.screens.units = async (c, param) => {
       Содержание всей техники: <b style="color:var(--red)">$ ${UI.fmtMoney(data.upkeepPerHour)}/час</b>.</p>
     </div>
     ${items.map((x) => `
-      <div class="card" ${x.locked ? 'style="opacity:.6"' : ''}>
+      <div class="card" ${x.locked ? 'style="opacity:.6"' : ''} style="overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:center;height:120px;background:radial-gradient(circle at center, rgba(255,150,0,.08), transparent 70%);border-radius:10px;margin-bottom:8px">
+          <img src="img/units/${String(x.id).replace(/[^a-z0-9_]/gi,'')}.webp" loading="lazy"
+            style="max-height:110px;max-width:90%;object-fit:contain"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <span style="display:none;font-size:48px">🚜</span>
+        </div>
         <div class="name">
           ${x.isNext ? '⏳ ' : ''}${UI.esc(x.name)}
           ${x.isNext ? '<span class="badge">скоро</span>' : ''}
@@ -114,7 +120,13 @@ App.screens.buildings = async (c, param) => {
       <div class="tab ${tab === 'defense' ? 'active' : ''}" onclick="location.hash='#buildings/defense'">🛡 Оборонительные</div>
     </div>
     ${list.map((x) => `
-      <div class="card" ${x.locked ? 'style="opacity:.6"' : ''}>
+      <div class="card" ${x.locked ? 'style="opacity:.6"' : ''} style="overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:center;height:110px;background:radial-gradient(circle at center, rgba(255,150,0,.08), transparent 70%);border-radius:10px;margin-bottom:8px">
+          <img src="img/buildings/${String(x.id).replace(/[^a-z0-9_]/gi,'')}.webp" loading="lazy"
+            style="max-height:100px;max-width:90%;object-fit:contain"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <span style="display:none;font-size:44px">${tab === 'income' ? '🏭' : '🛡'}</span>
+        </div>
         <div class="name">
           ${x.isNext ? '⏳ ' : ''}${UI.esc(x.name)}
           ${x.isNext ? '<span class="badge">скоро</span>' : ''}

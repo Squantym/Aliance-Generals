@@ -860,8 +860,14 @@ function publicProfile(target: User, viewer: User): any {
       const count = (mkMap && mkMap[mk]) || 0;
       if (count > 0) {
         unitsList.push({
+          id: unitId,                 // для картинки (air_1, ground_5...)
+          unitType: cu.type,          // ground/air/sea
+          mk,
           name: cu.name + (mk ? ` Mk${mk}` : ''),
+          baseName: cu.name,
           type: config.UNIT_TYPE_NAMES[cu.type],
+          attack: Math.round(cu.attack * config.MK_MULT[mk]),
+          defense: Math.round(cu.defense * config.MK_MULT[mk]),
           count,
         });
       }
@@ -870,7 +876,8 @@ function publicProfile(target: User, viewer: User): any {
   const buildingsList = Object.entries(target.buildings)
     .map(([id, count]) => {
       const b = config.BUILDING_BY_ID[id];
-      return b && count ? { name: b.name, count, kind: b.kind } : null;
+      return b && count ? { id, name: b.name, count, kind: b.kind,
+        income: b.income || 0, def: b.def || 0 } : null;
     })
     .filter(Boolean);
   const devsList = config.SECRET_DEVS

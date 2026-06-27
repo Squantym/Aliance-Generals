@@ -723,6 +723,35 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
   const topGuardian = byRole('guardian')[0] || null;
   const topAssault  = byRole('assault')[0]  || null;
 
+  // ── Топы среди ВСЕХ участников (видны всем) ──
+  const sortedByDmg  = [...combatants].sort((a, b) => b.stats.dmgDealt - a.stats.dmgDealt);
+  const sortedByHeal = [...combatants].sort((a, b) => b.stats.healed   - a.stats.healed);
+  const sortedByDef  = [...combatants].sort((a, b) => (b.stats.guards||0) - (a.stats.guards||0));
+  const topItem = (x: any, val: number) => x ? { name: x.name, side: x.side, value: val } : null;
+  const tops = {
+    damage:  topItem(sortedByDmg[0],  sortedByDmg[0]  ? sortedByDmg[0].stats.dmgDealt : 0),
+    healing: topItem(sortedByHeal[0], sortedByHeal[0] ? sortedByHeal[0].stats.healed  : 0),
+    defense: topItem(sortedByDef[0],  sortedByDef[0]  ? (sortedByDef[0].stats.guards||0) : 0),
+  };
+
+  // ── Сводка по кланам (обе стороны): участники и суммарные показатели ──
+  const sideSummary = (side: string) => {
+    const members = combatants.filter(x => x.side === side);
+    return {
+      side,
+      name: side === 'A' ? battle.legionAName : battle.legionBName,
+      memberCount: members.length,
+      totalDamage:  members.reduce((s, x) => s + (x.stats.dmgDealt || 0), 0),
+      totalHealed:  members.reduce((s, x) => s + (x.stats.healed   || 0), 0),
+      totalKills:   members.reduce((s, x) => s + (x.stats.kills    || 0), 0),
+      members: members.map(x => ({
+        name: x.name, role: x.role,
+        dmgDealt: x.stats.dmgDealt || 0, healed: x.stats.healed || 0,
+        guards: x.stats.guards || 0, kills: x.stats.kills || 0,
+      })),
+    };
+  };
+
   return {
     winningSide,
     activityScores: scores,
@@ -730,6 +759,8 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
     topMedic,
     topGuardian,
     topAssault,
+    tops,
+    clanResults: { A: sideSummary('A'), B: sideSummary('B') },
   };
 }
 
@@ -798,9 +829,24 @@ function finalizeBattle(battle: Battle, all: any, users: any, winningSide: strin
   // Отвязываем бой от обоих легионов
   legionA.activeBattle = null;
   legionB.activeBattle = null;
-  const hist = { at: now(), enemyId: loser.id, won: winner === legionA, loot, gloryGain, gloryLoss };
-  legionA.battleHistory = (legionA.battleHistory || []).concat(hist).slice(-20);
-  legionB.battleHistory = (legionB.battleHistory || []).concat({ ...hist, enemyId: legionA.id, won: winner === legionB }).slice(-20);
+  // Подробная история: имя врага, что получили/потеряли, суммарный урон сторон, дата
+  const crA = report.clanResults ? report.clanResults.A : null;
+  const crB = report.clanResults ? report.clanResults.B : null;
+  const histA = {
+    at: now(), enemyId: loser.id === legionA.id ? legionB.id : loser.id,
+    enemyName: legionB.name,
+    won: winner === legionA, loot, gloryGain, gloryLoss,
+    myDamage: crA ? crA.totalDamage : 0, enemyDamage: crB ? crB.totalDamage : 0,
+    myParticipants: crA ? crA.memberCount : 0, enemyParticipants: crB ? crB.memberCount : 0,
+  };
+  const histB = {
+    at: now(), enemyId: legionA.id, enemyName: legionA.name,
+    won: winner === legionB, loot, gloryGain, gloryLoss,
+    myDamage: crB ? crB.totalDamage : 0, enemyDamage: crA ? crA.totalDamage : 0,
+    myParticipants: crB ? crB.memberCount : 0, enemyParticipants: crA ? crA.memberCount : 0,
+  };
+  legionA.battleHistory = (legionA.battleHistory || []).concat(histA).slice(-20);
+  legionB.battleHistory = (legionB.battleHistory || []).concat(histB).slice(-20);
 
   // Сохраняем и бой (завершённый), и легионы
   saveBattle(battle);
@@ -956,16 +1002,26 @@ function battleState(user: User): any {
       myGear,
       maxSlots,
       arsenal,
+      // Чат боя: командный (своя сторона) и общий (все участники)
+      teamChat: (battle.teamChat && battle.teamChat[mySide]) || [],
+      globalChat: battle.globalChat || [],
     },
   };
 }
 
 function serializeCombatant(c: Combatant, t: number, isSelf: boolean): any {
   const fx = (type) => (c.statusEffects || []).filter(e => e.type === type && e.expiresAt > t);
+  // Боеприпасы и энергия берём из ресурсов игрока (для ряда ресурсов в бою)
+  let ammo: number | null = null, energy: number | null = null;
+  try {
+    const usr = player.users()[c.userId];
+    if (usr && usr.res) { ammo = Math.floor(usr.res.am.cur); energy = Math.floor(usr.res.en.cur); }
+  } catch (e) {}
   return {
     userId: c.userId, name: c.name,
     role: c.role, roleName: ROLES[c.role] ? ROLES[c.role].label : c.role,
     hp: c.hp, maxHp: c.maxHp, shield: c.shield || 0,
+    ammo, energy,
     alive: c.alive, ready: c.ready, direction: c.direction,
     dirName: c.direction ? DIR_NAMES[(c.direction || 1)-1] : null,
     stunned:    fx('stun').length    > 0 ? Math.ceil((fx('stun')[0].expiresAt    - t) / 1000) : 0,
@@ -1004,9 +1060,33 @@ function leaveBattle(user: User, notices: Notices) {
   return { ok: true };
 }
 
+// Отправить сообщение в чат боя. scope: 'team' (своя сторона) | 'global' (все).
+function sendChat(user: User, scope: string, text: string, notices: Notices) {
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
+  const c = findCombatant(battle, user.id);
+  if (!c) throw new u.ApiError('Вы не участник боя');
+  const clean = String(text || '').trim().slice(0, 200);
+  if (!clean) return { ok: true };
+  const msg = { userId: user.id, name: user.name, text: clean, at: Date.now() };
+  if (scope === 'global') {
+    if (!battle.globalChat) battle.globalChat = [];
+    battle.globalChat.push(msg);
+    if (battle.globalChat.length > 100) battle.globalChat = battle.globalChat.slice(-100);
+  } else {
+    const side = c.side;
+    if (!battle.teamChat) battle.teamChat = {};
+    if (!battle.teamChat[side]) battle.teamChat[side] = [];
+    battle.teamChat[side].push(msg);
+    if (battle.teamChat[side].length > 100) battle.teamChat[side] = battle.teamChat[side].slice(-100);
+  }
+  db.save('battles');
+  return { ok: true };
+}
+
 export = {
   joinBattle, setReady, chooseDirection, attack, heal, guard, useItem, leaveBattle,
-  battleState, tickEffects, tickAllBattles,
+  battleState, tickEffects, tickAllBattles, sendChat,
   ROLES, DIRECTIONS, DIR_NAMES, MAX_PER_DIR, PREP_MS, BATTLE_MS,
   ensureLegionGlory, addGlory, calcLegionLevel, GLORY_THRESHOLDS,
 };

@@ -36,11 +36,12 @@ const App = {
     if (App.me && App.me.pendingGifts && App.me.pendingGifts.length) {
       setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 800);
     }
-    // Открываем боевое окно если игрок был в бою
+    // Открываем боевое окно ТОЛЬКО если игрок уже вступил в бой (нажал
+    // «Подготовиться к бою»). Тех, кто не вступил, в окно не закидываем.
     if (App.me && App.me.legion) {
       try {
         const { battle } = await API.get('/api/legion/battle');
-        if (battle && (battle.phase === 'prep' || battle.phase === 'active')) {
+        if (battle && battle.me && (battle.phase === 'prep' || battle.phase === 'active')) {
           setTimeout(() => App._openBattleWindow(), 500);
         }
       } catch(e) {}
@@ -66,11 +67,11 @@ const App = {
       if (App.me.pendingGifts && App.me.pendingGifts.length) {
         App._showGiftPopup(App.me.pendingGifts[0]);
       }
-      // Открываем боевое окно если игрок участвует в бою
+      // Открываем боевое окно только если игрок уже участник боя
       if (App.me.legion && !document.getElementById('battle-window')) {
         try {
           const { battle } = await API.get('/api/legion/battle');
-          if (battle && (battle.phase === 'prep' || battle.phase === 'active')) {
+          if (battle && battle.me && (battle.phase === 'prep' || battle.phase === 'active')) {
             App._openBattleWindow();
           }
         } catch(e) {}
@@ -176,6 +177,50 @@ const App = {
     const win = document.getElementById('battle-window');
     if (win) win.remove();
     App._battleWindow = null;
+  },
+
+  // Ряд ресурсов участников боя сверху: боеприпасы / энергия / здоровье.
+  // Показывает всех живых бойцов с обеих сторон на направлении игрока.
+  _bwResourcesRow(b) {
+    const me = b.me;
+    if (!me || me.direction === null) return '';
+    const dirData = (b.directions||[]).find(x => x.dir === me.direction);
+    if (!dirData) return '';
+    const allies = (dirData.allies||[]).filter(a => a.alive);
+    const enemies = (dirData.enemies||[]).filter(e => e.alive);
+    const cell = (c, color) => `
+      <div style="flex:0 0 auto;min-width:96px;border:1px solid var(--border);border-radius:6px;padding:6px;background:rgba(255,255,255,.02)">
+        <div style="font-size:11px;font-weight:bold;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ROLE_ICON[c.role]||''} ${UI.esc(c.name)}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">❤️ ${Math.round(c.hp)}/${c.maxHp}</div>
+        ${c.ammo!=null?`<div style="font-size:10px;color:var(--dim)">🔫 ${Math.round(c.ammo)}</div>`:''}
+        ${c.energy!=null?`<div style="font-size:10px;color:var(--dim)">⚡ ${Math.round(c.energy)}</div>`:''}
+      </div>`;
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:10px">
+      <b style="font-size:12px">📊 Ресурсы в бою — ${dirData.name}</b>
+      <div style="display:flex;gap:6px;overflow-x:auto;margin-top:6px;padding-bottom:4px">
+        ${allies.map(c=>cell(c,'var(--green)')).join('')}
+        ${enemies.map(c=>cell(c,'var(--red)')).join('')}
+      </div>
+    </div>`;
+  },
+
+  // Чат боя: общий и командный (вкладки), внизу окна
+  _bwChatHtml(b) {
+    const mode = App._bwChatMode || 'team';
+    const msgs = (mode === 'team' ? (b.teamChat||[]) : (b.globalChat||[]));
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:10px">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button class="btn btn-inline" id="bw-chat-team" style="flex:1;padding:6px;${mode==='team'?'border:2px solid var(--green)':''}">👥 Командный</button>
+        <button class="btn btn-inline" id="bw-chat-global" style="flex:1;padding:6px;${mode==='global'?'border:2px solid var(--orange)':''}">🌐 Общий</button>
+      </div>
+      <div style="max-height:110px;overflow-y:auto;margin-bottom:6px;font-size:12px" id="bw-chat-box">
+        ${msgs.length ? msgs.slice(-30).map(m=>`<div style="padding:2px 0"><b style="color:var(--${mode==='team'?'green':'orange'})">${UI.esc(m.name)}:</b> ${UI.esc(m.text)}</div>`).join('') : '<span class="muted small">Сообщений нет</span>'}
+      </div>
+      <div style="display:flex;gap:6px">
+        <input id="bw-chat-input" maxlength="200" placeholder="Сообщение..." style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-orange" id="bw-chat-send" style="padding:8px 14px">▶</button>
+      </div>
+    </div>`;
   },
 
   // Рисует боевой пояс как фиксированное число слотов (maxSlots).
@@ -451,6 +496,22 @@ const App = {
       const me = b.me;
       const myCDs = b.cooldowns || {};
 
+      // ── ЛОГ СВЕРХУ (чтобы не листать вниз после действий) ──
+      if (b.log && b.log.length) {
+        html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
+          <b style="font-size:13px">📋 Лог боя</b>
+          <div style="max-height:120px;overflow-y:auto;margin-top:6px">
+          ${b.log.slice().reverse().map(e=>{
+            const col=e.kind==='crit'?'#f55':e.kind==='heal'?'#0b8':e.kind==='item'?'#fa0':'var(--dim)';
+            return `<div style="color:${col};font-size:11px;padding:2px 0">${UI.esc(e.text)}</div>`;
+          }).join('')}
+          </div>
+        </div>`;
+      }
+
+      // ── РЕСУРСЫ УЧАСТНИКОВ БОЯ СВЕРХУ (боеприпасы/энергия/здоровье) ──
+      html += App._bwResourcesRow(b);
+
       // Мой статус
       html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -463,6 +524,7 @@ const App = {
           Кд действия: <b id="bw-cd-action">${myCDs.action||0}с</b> &nbsp;|&nbsp;
           Кд перемещения: <b id="bw-cd-move">${myCDs.move||0}с</b>
         </div>
+        ${me.role==='medic'?`<button class="btn btn-green" style="width:100%;padding:8px;margin-top:8px" id="bw-heal-self">➕ Лечить себя</button>`:''}
       </div>`;
 
       // Направления — кнопки
@@ -530,18 +592,8 @@ const App = {
       // Боевой пояс — 3 слота с предметами, применяются по цели
       html += App._gearSlotsHtml(b, 'active');
 
-      // Лог
-      if (b.log && b.log.length) {
-        html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
-          <b style="font-size:13px">📋 Лог</b>
-          <div style="max-height:120px;overflow-y:auto;margin-top:6px">
-          ${b.log.slice().reverse().map(e=>{
-            const col=e.kind==='crit'?'#f55':e.kind==='heal'?'#0b8':e.kind==='item'?'#fa0':'var(--dim)';
-            return `<div style="color:${col};font-size:11px;padding:2px 0">${UI.esc(e.text)}</div>`;
-          }).join('')}
-          </div>
-        </div>`;
-      }
+      // ── ЧАТ боя (общий + командный) внизу ──
+      html += App._bwChatHtml(b);
     }
 
     html += `</div>
@@ -564,25 +616,65 @@ const App = {
     const scores = r ? r.activityScores : {};
     const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
 
+    // Мои личные результаты
+    const myDetail = (r && b.me && r.playerDetails) ? r.playerDetails[b.me.userId] : null;
+    const myStats = myDetail ? myDetail.stats : (b.me ? b.me.stats : null);
+    const myBlock = myStats ? `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;text-align:left">
+        <p style="font-weight:bold;margin:0 0 8px">📈 Ваши результаты</p>
+        <div class="kv"><span class="k">🎯 Нанесено урона</span><span class="v">${UI.fmtNum(myStats.dmgDealt||0)}</span></div>
+        <div class="kv"><span class="k">➕ Вылечено</span><span class="v">${UI.fmtNum(myStats.healed||0)}</span></div>
+        <div class="kv"><span class="k">🛡️ Прикрытий</span><span class="v">${myStats.guards||0}</span></div>
+        <div class="kv"><span class="k">💀 Убийств</span><span class="v">${myStats.kills||0}</span></div>
+      </div>` : '';
+
+    // Клановая сводка одной стороны
+    const clanBlock = (cr, isMine) => cr ? `
+      <div style="border:1px solid var(--${isMine?'green':'red'});border-radius:8px;padding:12px;margin-bottom:10px;text-align:left">
+        <div style="font-weight:bold;color:var(--${isMine?'green':'red'});margin-bottom:6px">${isMine?'🟢':'🔴'} ${UI.esc(cr.name||'Легион')} ${isMine?'(ваш)':''}</div>
+        <div class="kv"><span class="k">Участников</span><span class="v">${cr.memberCount}</span></div>
+        <div class="kv"><span class="k">Суммарный урон</span><span class="v">${UI.fmtNum(cr.totalDamage)}</span></div>
+        <div class="kv"><span class="k">Суммарное лечение</span><span class="v">${UI.fmtNum(cr.totalHealed)}</span></div>
+        <div class="kv"><span class="k">Убийств</span><span class="v">${cr.totalKills}</span></div>
+        <div style="margin-top:6px">
+          ${(cr.members||[]).map(m => `<div style="font-size:12px;padding:3px 0;border-top:1px solid var(--border-dim)">${ROLE_ICON[m.role]||''} ${UI.esc(m.name)} — <span class="muted">🎯${UI.fmtNum(m.dmgDealt)} ➕${UI.fmtNum(m.healed)} 🛡️${m.guards}</span></div>`).join('')}
+        </div>
+      </div>` : '';
+
+    const cr = r ? r.clanResults : null;
+    const tops = r ? r.tops : null;
+
     win.innerHTML = `
-      <div style="padding:24px 16px;text-align:center">
-        <div style="font-size:48px;margin-bottom:16px">${won ? '🏆' : '💀'}</div>
-        <div style="font-size:22px;font-weight:bold;color:var(--${won?'green':'red'});margin-bottom:12px">
-          ${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}
+      <div style="padding:24px 16px">
+        <div style="text-align:center">
+          <div style="font-size:48px;margin-bottom:8px">${won ? '🏆' : '💀'}</div>
+          <div style="font-size:22px;font-weight:bold;color:var(--${won?'green':'red'});margin-bottom:8px">
+            ${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}
+          </div>
+          ${r ? `<div style="display:flex;justify-content:space-around;margin:12px 0 18px;font-size:18px">
+            <span style="color:var(--green)">🟢 ${UI.fmtNum(scores[mySide]||0)}</span>
+            <span>vs</span>
+            <span style="color:var(--red)">🔴 ${UI.fmtNum(scores[mySide==='A'?'B':'A']||0)}</span>
+          </div>` : ''}
         </div>
-        ${r ? `
-        <div style="display:flex;justify-content:space-around;margin:16px 0;font-size:18px">
-          <span style="color:var(--green)">🟢 ${UI.fmtNum(scores[mySide]||0)}</span>
-          <span>vs</span>
-          <span style="color:var(--red)">🔴 ${UI.fmtNum(scores[mySide==='A'?'B':'A']||0)}</span>
-        </div>
-        <div style="margin-bottom:16px;text-align:left">
-          <p style="font-weight:bold;margin-bottom:8px">🏅 Лучшие</p>
-          ${r.topAssault  ? `<div>🎯 ${UI.esc(r.topAssault.name)}: ${UI.fmtNum(r.topAssault.stats.dmgDealt)} урона</div>` : ''}
-          ${r.topGuardian ? `<div>🛡️ ${UI.esc(r.topGuardian.name)}: ${r.topGuardian.stats.guards} прикрытий</div>` : ''}
-          ${r.topMedic    ? `<div>➕ ${UI.esc(r.topMedic.name)}: ${UI.fmtNum(r.topMedic.stats.healed)} HP вылечено</div>` : ''}
+
+        ${myBlock}
+
+        ${tops ? `
+        <div style="border:1px solid var(--gold);border-radius:8px;padding:12px;margin-bottom:14px;text-align:left">
+          <p style="font-weight:bold;margin:0 0 8px;color:var(--gold)">🏅 Топы боя</p>
+          ${tops.damage  ? `<div class="kv"><span class="k">🎯 Топ урона</span><span class="v">${UI.esc(tops.damage.name)} — ${UI.fmtNum(tops.damage.value)}</span></div>` : ''}
+          ${tops.healing ? `<div class="kv"><span class="k">➕ Топ лечения</span><span class="v">${UI.esc(tops.healing.name)} — ${UI.fmtNum(tops.healing.value)}</span></div>` : ''}
+          ${tops.defense ? `<div class="kv"><span class="k">🛡️ Топ защиты</span><span class="v">${UI.esc(tops.defense.name)} — ${tops.defense.value}</span></div>` : ''}
         </div>` : ''}
-        <button class="btn btn-orange" style="width:100%;padding:14px" id="bw-close">
+
+        ${cr ? `
+        <p style="font-weight:bold;margin:0 0 8px">📊 Результаты кланов</p>
+        ${clanBlock(cr[mySide], true)}
+        ${clanBlock(cr[mySide==='A'?'B':'A'], false)}
+        ` : ''}
+
+        <button class="btn btn-orange" style="width:100%;padding:14px;margin-top:8px" id="bw-close">
           ← Вернуться в легион
         </button>
       </div>`;
@@ -630,7 +722,9 @@ const App = {
 
     // Лечение
     win.querySelectorAll('[id^="bw-heal-"]').forEach(btn => {
-      const uid = btn.id.replace('bw-heal-','');
+      let uid = btn.id.replace('bw-heal-','');
+      // Кнопка «Лечить себя» — подставляем свой userId
+      if (uid === 'self') uid = b.me ? b.me.userId : '';
       btn.onclick = () => api('/api/legion/battle/heal', { targetId: uid }, r => {
         UI.toast(`➕ +${r.healed} HP${r.critHeal?' ✨':''}`)
       });
@@ -643,6 +737,24 @@ const App = {
         UI.toast('🛡️ Прикрытие активировано')
       });
     });
+
+    // Чат боя: переключение вкладок (командный/общий)
+    const chatTeam = win.querySelector('#bw-chat-team');
+    if (chatTeam) chatTeam.onclick = () => { App._bwChatMode = 'team'; App._renderBattleWindow(); };
+    const chatGlobal = win.querySelector('#bw-chat-global');
+    if (chatGlobal) chatGlobal.onclick = () => { App._bwChatMode = 'global'; App._renderBattleWindow(); };
+    // Отправка сообщения
+    const chatSend = win.querySelector('#bw-chat-send');
+    if (chatSend) chatSend.onclick = async () => {
+      const input = win.querySelector('#bw-chat-input');
+      const text = input ? input.value.trim() : '';
+      if (!text) return;
+      try {
+        await API.post('/api/legion/battle/chat', { scope: App._bwChatMode || 'team', text });
+        if (input) input.value = '';
+        await App._renderBattleWindow();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
 
     // Предметы
     win.querySelectorAll('[id^="bw-item-"]').forEach(btn => {

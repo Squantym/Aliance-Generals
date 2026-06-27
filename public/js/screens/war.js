@@ -31,12 +31,19 @@ App.screens.war = async (c) => {
         ${(b.myArmy && b.myArmy.length) ? `
           <hr class="hr">
           <p class="small mt"><b>Ваша техника в бою:</b></p>
-          <p class="muted small">${b.myArmy.map((x) => `${UI.esc(x.name)} ×${UI.fmtNum(x.count)}`).join(' · ')}</p>` : ''}
+          ${UI.battleImgRow(b.myArmy, 'units')}` : ''}
         ${(b.enemyArmy && b.enemyArmy.length) ? `
           <p class="small mt"><b>Техника врага:</b></p>
-          <p class="muted small">${b.enemyArmy.map((x) => `${UI.esc(x.name)} ×${UI.fmtNum(x.count)}`).join(' · ')}</p>` : ''}
-        ${b.myLosses.length ? `<p class="small mt">⚠️ Ваши потери: <span class="dmg-take">${UI.esc(b.myLosses.join(', '))}</span></p>` : '<p class="small mt muted">Без потерь техники с вашей стороны</p>'}
-        ${b.enemyLosses.length ? `<p class="small mt">💥 Потери врага: <span class="dmg-deal">${UI.esc(b.enemyLosses.join(', '))}</span></p>` : ''}
+          ${UI.battleImgRow(b.enemyArmy, 'units')}` : ''}
+        ${(b.enemyDefenseBuildings && b.enemyDefenseBuildings.length) ? `
+          <p class="small mt"><b>🛡 Постройки врага в защите:</b></p>
+          ${UI.battleImgRow(b.enemyDefenseBuildings, 'buildings')}` : ''}
+        ${(b.myLosses && b.myLosses.length) ? `
+          <p class="small mt">⚠️ <span class="dmg-take">Ваши потери:</span></p>
+          ${UI.battleImgRow(b.myLosses, 'units')}` : '<p class="small mt muted">Без потерь техники с вашей стороны</p>'}
+        ${(b.enemyLosses && b.enemyLosses.length) ? `
+          <p class="small mt">💥 <span class="dmg-deal">Потери врага:</span></p>
+          ${UI.battleImgRow(b.enemyLosses, 'units')}` : ''}
         ${!m.pendingFatality ? `<button class="btn btn-orange mt" id="atk-again">Атаковать снова</button>` : ''}
       </div>`;
   }

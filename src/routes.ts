@@ -216,6 +216,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));
   app.add('POST', '/api/legion/battle/attack',     act((req, n) => legion.attack(req.user, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/heal',       act((req, n) => legion.heal(req.user, req.body.targetId, n)));
+  app.add('POST', '/api/legion/battle/chat',       act((req, n) => legion.sendChat(req.user, String(req.body.scope||'team'), String(req.body.text||''), n)));
   app.add('POST', '/api/legion/battle/guard',      act((req, n) => legion.guard(req.user, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/item',       act((req, n) => legion.useItem(req.user, req.body.itemId, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/leave',      act((req, n) => legion.leaveBattle(req.user, n)));

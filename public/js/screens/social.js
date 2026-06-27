@@ -56,10 +56,13 @@ async function renderGroupScreen(c, kind) {
         // ── Активный бой легиона ──────────────────────────────────────
         let activeBattleHtml = '';
         if (L.activeBattle) {
+          const phaseLabel = L.activeBattle.phase === 'active' ? '⚔️ БОЙ ИДЁТ' : '⏳ ПОДГОТОВКА К БОЮ';
           activeBattleHtml = `
             <div class="card" style="border:2px solid var(--green)">
-              <div class="name" style="color:var(--green)">⚔️ БОЙ ЛЕГИОНА ИДЁТ</div>
-              <p class="small mt">Снарядите боевой пояс в разделе <b>Арсенал</b>.</p>
+              <div class="name" style="color:var(--green)">${phaseLabel}</div>
+              <p class="small mt">Ваш легион сражается с <b>${UI.esc(L.activeBattle.enemyName || 'врагом')}</b>.</p>
+              <p class="muted small">Нажмите кнопку, чтобы войти в окно боя, выбрать роль и снарядить пояс. В бою участвуют только те, кто подготовился.</p>
+              <button class="btn btn-green mt" id="lg-prepare-battle" style="width:100%">⚔️ Подготовиться к бою</button>
             </div>`;
         }
 
@@ -278,10 +281,23 @@ async function renderGroupScreen(c, kind) {
           }
 
           if (L.battleHistory && L.battleHistory.length) {
-            html += `<div class="card"><div class="name">📜 История боёв</div>
-              ${L.battleHistory.map(h => `
-                <div class="kv"><span class="k">${h.won?'🏆':'💀'} ${h.won?'Победа':'Поражение'}</span>
-                <span class="v ${h.loot>=0?'green':'red'}">${h.loot>=0?'+':''}${UI.fmtNum(h.loot)} РЕЗ</span></div>`).join('')}
+            html += `<div class="card"><div class="name">📜 История боёв легиона</div>
+              ${L.battleHistory.map(h => {
+                const d = new Date(h.at);
+                const dateStr = d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+                return `
+                <div style="border:1px solid var(--${h.won?'green':'red'});border-radius:8px;padding:10px;margin-top:8px">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <b style="color:var(--${h.won?'green':'red'})">${h.won?'🏆 Победа':'💀 Поражение'}</b>
+                    <span class="muted small">${dateStr}</span>
+                  </div>
+                  <div class="kv mt"><span class="k">Противник</span><span class="v">${UI.esc(h.enemyName||'легион')}</span></div>
+                  <div class="kv"><span class="k">${h.loot>=0?'Получено':'Потеряно'} ресурсов</span><span class="v ${h.loot>=0?'green':'red'}">${h.loot>=0?'+':''}${UI.fmtNum(h.loot)}</span></div>
+                  ${h.gloryGain!=null||h.gloryLoss!=null?`<div class="kv"><span class="k">Слава</span><span class="v ${h.won?'green':'red'}">${h.won?'+'+(h.gloryGain||0):'−'+(h.gloryLoss||0)} ⭐</span></div>`:''}
+                  ${h.myDamage!=null?`<div class="kv"><span class="k">Урон сторон</span><span class="v">🟢 ${UI.fmtNum(h.myDamage||0)} vs 🔴 ${UI.fmtNum(h.enemyDamage||0)}</span></div>`:''}
+                  ${h.myParticipants!=null?`<div class="kv"><span class="k">Участников</span><span class="v">🟢 ${h.myParticipants||0} vs 🔴 ${h.enemyParticipants||0}</span></div>`:''}
+                </div>`;
+              }).join('')}
             </div>`;
           }
           return html;
@@ -744,6 +760,10 @@ async function renderGroupScreen(c, kind) {
         try { await API.post('/api/legion/challenge/decline'); App.rerender(); }
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
+
+      // Подготовиться к бою — открывает боевое окно (вступление через него)
+      const prepBtn = document.getElementById('lg-prepare-battle');
+      if (prepBtn) prepBtn.onclick = () => App._openBattleWindow();
 
       // Старая война
       c.querySelectorAll('[data-war]').forEach(b => {
