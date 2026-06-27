@@ -1750,3 +1750,10 @@ body.theme-cyber .img-frame {
   gap: 8px;
   margin-bottom: 2px;
 }
+
+/* Сворачиваемый блок построек защиты в окне атаки */
+.def-buildings summary::-webkit-details-marker { display: none; }
+.def-buildings summary { user-select: none; }
+.def-buildings[open] .def-toggle::after { content: "Свернуть"; }
+.def-buildings:not([open]) .def-toggle::after { content: "Показать"; }
+.def-buildings .def-toggle::after { font-size: 13px; }

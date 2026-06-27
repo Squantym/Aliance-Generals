@@ -36,8 +36,15 @@ App.screens.war = async (c) => {
           <p class="small mt"><b>Техника врага:</b></p>
           ${UI.battleImgRow(b.enemyArmy, 'units')}` : ''}
         ${(b.enemyDefenseBuildings && b.enemyDefenseBuildings.length) ? `
-          <p class="small mt"><b>🛡 Постройки врага в защите:</b></p>
-          ${UI.battleImgRow(b.enemyDefenseBuildings, 'buildings')}` : ''}
+          <details class="def-buildings" style="margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:8px">
+            <summary style="cursor:pointer;font-weight:bold;list-style:none;display:flex;align-items:center;justify-content:space-between">
+              <span>🛡 Постройки врага в защите (${b.enemyDefenseBuildings.length})</span>
+              <span class="def-toggle" style="color:var(--orange)"></span>
+            </summary>
+            <div style="margin-top:8px">
+              ${UI.battleImgRow(b.enemyDefenseBuildings, 'buildings')}
+            </div>
+          </details>` : ''}
         ${(b.myLosses && b.myLosses.length) ? `
           <p class="small mt">⚠️ <span class="dmg-take">Ваши потери:</span></p>
           ${UI.battleImgRow(b.myLosses, 'units')}` : '<p class="small mt muted">Без потерь техники с вашей стороны</p>'}
