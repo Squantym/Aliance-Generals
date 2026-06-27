@@ -377,7 +377,7 @@ App.screens.profile = async (c, param) => {
   // Редактирование собственного статуса
   if (own) {
     document.getElementById('edit-status').onclick = async () => {
-      const text = prompt('Новый статус (до 120 символов):', p.status || '');
+      const text = await UI.prompt('', {title:'Новый статус', icon:'✍️', value:p.status||'', placeholder:'Ваш девиз...', multiline:true, maxLength:120, hint:'До 120 символов', okText:'Сохранить'});
       if (text === null) return;
       try {
         await API.post('/api/status', { text });
@@ -422,10 +422,10 @@ App.screens.profile = async (c, param) => {
   // Личное сообщение игроку
   if (!own) {
     const btnMsg = document.getElementById('pf-msg');
-    if (btnMsg) btnMsg.onclick = () => {
-      const subject = prompt('Тема письма:', 'Привет, ' + p.name);
+    if (btnMsg) btnMsg.onclick = async () => {
+      const subject = await UI.prompt('', {title:'Письмо игроку ' + p.name, icon:'✉️', value:'Привет, ' + p.name, placeholder:'Тема письма', okText:'Далее'});
       if (subject === null) return;
-      const text = prompt('Текст сообщения:');
+      const text = await UI.prompt('', {title:'Текст письма', icon:'✉️', placeholder:'Ваше сообщение...', multiline:true, maxLength:500, okText:'Отправить'});
       if (!text) return;
       API.post('/api/mail', { toName: p.name, subject, text })
         .then(() => UI.toast('✉ Сообщение отправлено игроку ' + p.name))
@@ -434,11 +434,11 @@ App.screens.profile = async (c, param) => {
 
     const btnSanction = document.getElementById('pf-sanction');
     if (btnSanction) btnSanction.onclick = async () => {
-      const amountStr = prompt(`🎯 Объявить санкцию на «${p.name}».\n\nУкажите награду из вашего кармана (минимум 1000 $).\nДеньги спишутся сразу. Кто снизит HP цели до ≤5% — заберёт награду.\n\nСумма ($):`);
+      const amountStr = await UI.prompt(`Награда из вашего кармана (минимум 1000 $). Деньги спишутся сразу. Кто снизит HP цели до ≤5% — заберёт награду.`, {title:`Санкция на ${p.name}`, icon:'🎯', type:'number', placeholder:'Сумма $', okText:'Далее'});
       if (amountStr === null) return;
-      const amount = parseInt(amountStr.replace(/\D/g, ''), 10);
+      const amount = parseInt(String(amountStr).replace(/\D/g, ''), 10);
       if (!amount || amount < 1000) { UI.toast('⛔ Минимум 1000 $'); return; }
-      if (!confirm(`Списать $${UI.fmtNum(amount)} и объявить санкцию на «${p.name}»?`)) return;
+      if (!await UI.confirm(`Списать $${UI.fmtNum(amount)} и объявить санкцию на «${p.name}»?`, {title:'Подтверждение', icon:'🎯', okText:'Объявить', danger:true})) return;
       try {
         const r = await API.post('/api/sanctions/declare', { targetId: p.id, amount });
         await App.refreshMe();

@@ -231,7 +231,7 @@ const Admin = {
     const vals = Admin._grantVals('all');
     const hasAny = ['dollars','gold','xp','skillPoints','ears','tokens'].some(k => parseInt(vals[k]) !== 0 && vals[k] !== '');
     if (!hasAny) { UI.toast('⛔ Укажите хотя бы один ресурс'); return; }
-    if (!confirm('Выдать ресурсы ВСЕМ игрокам?')) return;
+    if (!await UI.confirm('Выдать ресурсы ВСЕМ игрокам?', {title:'Массовая выдача', icon:'🎁', okText:'Выдать', danger:true})) return;
     try {
       const r = await API.post('/api/admin/grant-all', vals);
       UI.toast(`✅ Выдано ${r.count} игрокам!`);

@@ -771,7 +771,7 @@ const App = {
     // Покинуть бой
     const leaveBtn = win.querySelector('#bw-leave');
     if (leaveBtn) leaveBtn.onclick = async () => {
-      if (!confirm('⚠️ Покинуть бой?\nВаша статистика не сохранится.')) return;
+      if (!await UI.confirm('Ваша статистика не сохранится.', {title:'Покинуть бой?', icon:'🚪', okText:'Покинуть', danger:true})) return;
       try {
         await API.post('/api/legion/battle/leave');
         App._closeBattleWindow();
@@ -1040,7 +1040,7 @@ const App = {
 
   // Быстрое лечение по нажатию на баннер HP<25
   async _quickHeal() {
-    if (!confirm(`Восстановить здоровье за $${UI.fmtMoney(App.me.healCost)}?`)) return;
+    if (!await UI.confirm(`Восстановить здоровье за $${UI.fmtMoney(App.me.healCost)}?`, {title:'Лазарет', icon:'🏥', okText:'Лечиться'})) return;
     try {
       await API.post('/api/hospital/heal');
       await App.refreshMe();

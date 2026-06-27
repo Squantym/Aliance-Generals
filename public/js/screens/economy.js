@@ -307,7 +307,7 @@ App.screens.production = async (c, param) => {
   // Ускорение процесса
   c.querySelectorAll('[data-boost]').forEach((btn) => {
     btn.onclick = async () => {
-      if (!confirm(`Ускорить за ${p.boostGoldCost} золота?`)) return;
+      if (!await UI.confirm(`Ускорить за ${p.boostGoldCost} золота?`, {title:'Ускорение', icon:'⚡', okText:'Ускорить'})) return;
       try {
         await API.post('/api/production/boost', { processId: btn.dataset.boost });
         await App.refreshMe();
@@ -559,13 +559,13 @@ App._renderSilos = async (c, tabsHtml) => {
   });
   c.querySelectorAll('[data-launch]').forEach((btn) => {
     btn.onclick = async () => {
-      const targetName = prompt('Введите позывной цели для ракетного удара:');
+      const targetName = await UI.prompt('', {title:'Ракетный удар', icon:'🚀', placeholder:'Позывной цели', okText:'Найти цель'});
       if (!targetName) return;
       try {
         // Находим ID цели по имени через поиск в админке-подобный публичный поиск
         const found = await API.get('/api/find-player?name=' + encodeURIComponent(targetName));
         if (!found.userId) { UI.toast('⛔ Игрок не найден'); return; }
-        if (!confirm(`Запустить ракету по «${targetName}»? Это нанесёт урон постройкам и технике цели.`)) return;
+        if (!await UI.confirm(`Это нанесёт урон постройкам и технике цели «${targetName}».`, {title:'Ракетный удар', icon:'🚀', okText:'Запустить', danger:true})) return;
         const r = await API.post('/api/silos/launch', { siloId: btn.dataset.launch, targetId: found.userId });
         App._showRocketResult(r);
         await App.refreshMe();

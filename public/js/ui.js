@@ -163,6 +163,85 @@ const UI = {
     setTimeout(() => el.remove(), 4500);
   },
 
+  // Игровое окно подтверждения (замена браузерного confirm).
+  // Возвращает Promise<boolean>. Использование: if (await UI.confirm('...')) {...}
+  // opts: { title, okText, cancelText, danger, icon }
+  confirm(message, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const old = document.getElementById('game-dialog');
+      if (old) old.remove();
+      const m = document.createElement('div');
+      m.id = 'game-dialog';
+      m.className = 'game-dialog-overlay';
+      const okClass = opts.danger ? 'btn-red' : 'btn-orange';
+      m.innerHTML = `
+        <div class="game-dialog">
+          ${opts.icon ? `<div class="game-dialog-icon">${opts.icon}</div>` : ''}
+          ${opts.title ? `<div class="game-dialog-title">${UI.esc(opts.title)}</div>` : ''}
+          <div class="game-dialog-body">${UI.esc(message).replace(/\n/g, '<br>')}</div>
+          <div class="game-dialog-actions">
+            <button class="btn ${okClass}" id="gd-ok">${UI.esc(opts.okText || 'Подтвердить')}</button>
+            <button class="btn btn-inline" id="gd-cancel">${UI.esc(opts.cancelText || 'Отмена')}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(m);
+      const close = (val) => { m.remove(); resolve(val); };
+      m.querySelector('#gd-ok').onclick = () => close(true);
+      m.querySelector('#gd-cancel').onclick = () => close(false);
+      m.onclick = (e) => { if (e.target === m) close(false); };
+      // Enter подтверждает, Esc отменяет
+      m.querySelector('#gd-ok').focus();
+      m.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') close(true);
+        if (e.key === 'Escape') close(false);
+      });
+    });
+  },
+
+  // Игровое окно ввода текста (замена браузерного prompt).
+  // Возвращает Promise<string|null> (null если отменили).
+  // opts: { title, placeholder, value, okText, multiline, maxLength, type, icon, hint }
+  prompt(message, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const old = document.getElementById('game-dialog');
+      if (old) old.remove();
+      const m = document.createElement('div');
+      m.id = 'game-dialog';
+      m.className = 'game-dialog-overlay';
+      const ml = opts.multiline;
+      const maxAttr = opts.maxLength ? `maxlength="${opts.maxLength}"` : '';
+      const field = ml
+        ? `<textarea id="gd-input" class="game-dialog-input" rows="3" ${maxAttr} placeholder="${UI.esc(opts.placeholder || '')}">${UI.esc(opts.value || '')}</textarea>`
+        : `<input id="gd-input" class="game-dialog-input" type="${opts.type || 'text'}" ${maxAttr} placeholder="${UI.esc(opts.placeholder || '')}" value="${UI.esc(opts.value || '')}">`;
+      m.innerHTML = `
+        <div class="game-dialog">
+          ${opts.icon ? `<div class="game-dialog-icon">${opts.icon}</div>` : ''}
+          ${opts.title ? `<div class="game-dialog-title">${UI.esc(opts.title)}</div>` : ''}
+          ${message ? `<div class="game-dialog-body">${UI.esc(message).replace(/\n/g, '<br>')}</div>` : ''}
+          ${field}
+          ${opts.hint ? `<div class="game-dialog-hint">${UI.esc(opts.hint)}</div>` : ''}
+          <div class="game-dialog-actions">
+            <button class="btn btn-orange" id="gd-ok">${UI.esc(opts.okText || 'OK')}</button>
+            <button class="btn btn-inline" id="gd-cancel">Отмена</button>
+          </div>
+        </div>`;
+      document.body.appendChild(m);
+      const input = m.querySelector('#gd-input');
+      const close = (val) => { m.remove(); resolve(val); };
+      m.querySelector('#gd-ok').onclick = () => close(input.value);
+      m.querySelector('#gd-cancel').onclick = () => close(null);
+      m.onclick = (e) => { if (e.target === m) close(null); };
+      input.focus();
+      input.select();
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !ml) { e.preventDefault(); close(input.value); }
+        if (e.key === 'Escape') close(null);
+      });
+    });
+  },
+
   // Прогресс-бар: cur/max c подписью. cls: hp | en | xp | gold
   bar(cur, max, cls, label) {
     const pct = max > 0 ? Math.min(100, Math.round((cur / max) * 100)) : 0;

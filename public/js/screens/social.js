@@ -481,13 +481,13 @@ async function renderGroupScreen(c, kind) {
       ${legionPanel}`;
 
     document.getElementById('g-leave').onclick = async () => {
-      if (!confirm(`Точно покинуть ${label.toLowerCase()}?`)) return;
+      if (!await UI.confirm(`Точно покинуть ${label.toLowerCase()}?`, {title:'Выход', icon:'🚪', okText:'Покинуть', danger:true})) return;
       try { await API.post(`/api/group/${kind}/leave`); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
     const diplomatBtn = document.getElementById('g-hire-diplomat');
     if (diplomatBtn) diplomatBtn.onclick = async () => {
-      if (!confirm(`Нанять дипломата за ${g.nextDiplomatCost} золота?`)) return;
+      if (!await UI.confirm(`Нанять дипломата за ${g.nextDiplomatCost} золота?`, {title:'Дипломат', icon:'🤝', okText:'Нанять'})) return;
       try { await API.post(`/api/group/${kind}/diplomat`); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
@@ -568,7 +568,7 @@ async function renderGroupScreen(c, kind) {
       const leaveBattleBtn = document.getElementById('leave-battle-btn');
       if (leaveBattleBtn) {
         leaveBattleBtn.onclick = async () => {
-          if (!confirm('⚠️ Покинуть бой?\n\nВаша статистика не будет учтена. Вы вернётесь на главную.')) return;
+          if (!await UI.confirm('Ваша статистика не будет учтена. Вы вернётесь на главную.', {title:'Покинуть бой?', icon:'🚪', okText:'Покинуть', danger:true})) return;
           try {
             await API.post('/api/legion/battle/leave');
             App._legionTab = 'base';
@@ -714,7 +714,7 @@ async function renderGroupScreen(c, kind) {
       // Технологии
       c.querySelectorAll('[data-tech]').forEach(b => {
         b.onclick = async () => {
-          if (!confirm('Начать изучение этой технологии? Потребуются Резервы и уши.')) return;
+          if (!await UI.confirm('Потребуются Резервы и уши.', {title:'Изучить технологию?', icon:'🔬', okText:'Изучить'})) return;
           try { await API.post('/api/legion/tech/start', { techId: b.dataset.tech }); App.rerender(); }
           catch (e) { UI.toast('⛔ ' + e.message); }
         };
@@ -740,7 +740,7 @@ async function renderGroupScreen(c, kind) {
       // Вызов на бой
       c.querySelectorAll('[data-challenge]').forEach(b => {
         b.onclick = async () => {
-          if (!confirm('Вызвать этот легион на бой?')) return;
+          if (!await UI.confirm('Вызвать этот легион на бой?', {title:'Кланвойна', icon:'⚔️', okText:'Вызвать'})) return;
           try { await API.post('/api/legion/challenge', { enemyId: b.dataset.challenge }); App.rerender(); }
           catch (e) { UI.toast('⛔ ' + e.message); }
         };
@@ -749,7 +749,7 @@ async function renderGroupScreen(c, kind) {
       // Принять вызов
       const acceptBtn = document.getElementById('lg-accept-challenge');
       if (acceptBtn) acceptBtn.onclick = async () => {
-        if (!confirm('Принять вызов на бой?')) return;
+        if (!await UI.confirm('Принять вызов на бой?', {title:'Кланвойна', icon:'⚔️', okText:'Принять'})) return;
         try { await API.post('/api/legion/challenge/accept'); App.rerender(); }
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
@@ -768,7 +768,7 @@ async function renderGroupScreen(c, kind) {
       // Старая война
       c.querySelectorAll('[data-war]').forEach(b => {
         b.onclick = async () => {
-          if (!confirm('Объявить автоматическую войну этому легиону?')) return;
+          if (!await UI.confirm('Объявить автоматическую войну этому легиону?', {title:'Автовойна', icon:'⚔️', okText:'Объявить', danger:true})) return;
           try { await API.post('/api/legion/war', { enemyId: b.dataset.war }); App.rerender(); }
           catch (e) { UI.toast('⛔ ' + e.message); }
         };

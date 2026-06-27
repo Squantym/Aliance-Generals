@@ -171,7 +171,7 @@ App.screens.market = async (c, param) => {
 
     document.getElementById('pp-name-go').onclick = async () => {
       const newName = document.getElementById('pp-newname').value.trim();
-      if (!confirm(`Сменить имя на «${newName}» за ${p.namePrice} золота?`)) return;
+      if (!await UI.confirm(`Сменить имя на «${newName}» за ${p.namePrice} золота?`, {title:'Смена позывного', icon:'📛', okText:'Сменить'})) return;
       try {
         await API.post('/api/passport/name', { newName });
         await App.refreshMe();
@@ -180,7 +180,7 @@ App.screens.market = async (c, param) => {
     };
     document.getElementById('pp-country-go').onclick = async () => {
       const country = document.getElementById('pp-newcountry').value;
-      if (!confirm(`Сменить гражданство на «${country.toUpperCase()}» за ${p.countryPrice} золота?`)) return;
+      if (!await UI.confirm(`Сменить гражданство на «${country.toUpperCase()}» за ${p.countryPrice} золота?`, {title:'Смена гражданства', icon:'🏴', okText:'Сменить'})) return;
       try {
         await API.post('/api/passport/country', { country });
         await App.refreshMe();
