@@ -21,8 +21,17 @@ App.screens.war = async (c) => {
     resultHtml = `
       <div class="card">
         <div class="result-title ${b.win ? 'win' : 'lose'}">${b.win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</div>
-        <p class="center muted small">${UI.esc(b.targetName)} (ур. ${b.targetLevel})${b.isBot ? ' 💀' : ''} · здоровье врага: ${b.targetHpPct}%</p>
+        <p class="center muted small">${UI.esc(b.targetName)} (ур. ${b.targetLevel})${b.isBot ? ' 💀' : ''}</p>
+        <div style="margin:8px 0">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+            <span class="muted">❤️ Здоровье врага</span><span style="font-weight:bold;color:var(--${b.targetHpPct>50?'green':b.targetHpPct>20?'orange':'red'})">${b.targetHpPct}%</span>
+          </div>
+          <div style="height:10px;background:rgba(255,255,255,.08);border-radius:5px;overflow:hidden">
+            <div style="height:100%;width:${b.targetHpPct}%;background:linear-gradient(90deg, var(--${b.targetHpPct>50?'green':b.targetHpPct>20?'orange':'red'}), var(--${b.targetHpPct>20?'orange':'red'}));transition:width .4s ease"></div>
+          </div>
+        </div>
         ${marks ? `<p class="center small mt">${marks}</p>` : ''}
+        ${!m.pendingFatality ? `<button class="btn btn-orange mt" id="atk-again" style="width:100%">⚔️ Атаковать снова</button>` : ''}
         <hr class="hr">
         <div class="kv"><span class="k">Нанесено</span><span class="v dmg-deal">${b.dealt} урона</span></div>
         <div class="kv"><span class="k">Получено</span><span class="v dmg-take">${b.received} урона</span></div>
@@ -51,7 +60,6 @@ App.screens.war = async (c) => {
         ${(b.enemyLosses && b.enemyLosses.length) ? `
           <p class="small mt">💥 <span class="dmg-deal">Потери врага:</span></p>
           ${UI.battleImgRow(b.enemyLosses, 'units')}` : ''}
-        ${!m.pendingFatality ? `<button class="btn btn-orange mt" id="atk-again">Атаковать снова</button>` : ''}
       </div>`;
   }
 
