@@ -244,10 +244,14 @@ function invite(user: User, kind: string, targetId: string, notices: Notices) {
     }
   }
 
-  // Проверка лимита приглашений в час
-  const limit = inviteLimit(g);
+  // Проверка лимита приглашений в час.
+  // Наёмник «Дипломат Вектор» (invite_unlimited) снимает этот лимит на 24ч.
+  const hasUnlimited = (user.effects || []).some(
+    (e) => e.type === 'invite_unlimited' && e.expiresAt > Date.now()
+  );
+  const limit = hasUnlimited ? 999 : inviteLimit(g);
   const used = pruneInviteLog(g);
-  if (used >= limit) {
+  if (!hasUnlimited && used >= limit) {
     const wait = inviteCooldownMin(g);
     throw new u.ApiError(`Лимит ${limit} приглашений/час исчерпан. Слот освободится через ~${wait} мин. Наймите дипломата чтобы увеличить лимит.`);
   }

@@ -61,6 +61,9 @@ export interface Effect {
   type: string;
   value: number;
   expiresAt: number;
+  byId?: string;      // кто наложил эффект (для подлянок)
+  byName?: string;    // имя наложившего (видно жертве)
+  hostile?: boolean;  // true = вражеский эффект (подлянка)
 }
 
 // ---------- Поведенческий профиль (антибот) ----------
@@ -133,6 +136,11 @@ export interface User {
   earsLost: number;
   earsCurrent: number;   // собственные уши (лимит), регенерируют
   earsLostAt: number[];
+  // Кто отрезал уши: earCutters[0] = левое (первое отрезанное),
+  // earCutters[1] = правое (второе). Каждый элемент: { id, name } или null.
+  earCutters?: ({ id: string; name: string } | null)[];
+  // Послание от того, кто отрезал оба уха (видно всем в профиле)
+  earMessage?: { byId: string; byName: string; text: string } | null;
   earPenaltyUntil: number;
   adminEars?: number;    // выданные админом (не учитываются в статистике)
   adminTokens?: number;

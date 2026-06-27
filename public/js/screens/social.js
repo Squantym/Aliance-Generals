@@ -1072,9 +1072,9 @@ App.screens.notifications = async (c) => {
       body = `
         <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <div class="kv"><span class="k">Урон ракеты</span><span class="v dmg-take">${UI.fmtNum(p.damage)} (мощность ${p.powerPct}%)</span></div>
-        <div class="kv"><span class="k">Разрушено построек</span><span class="v">${p.destroyedBuildingsText ? UI.esc(p.destroyedBuildingsText) : 'постройки уцелели'}</span></div>
-        <div class="kv"><span class="k">Уничтожено техники</span><span class="v">${p.techLostText ? UI.esc(p.techLostText) : 'техника уцелела'}</span></div>`;
+        <div class="kv"><span class="k">Мощность удара</span><span class="v dmg-take">${p.powerPct}%</span></div>
+        <div class="kv"><span class="k">Уничтожено техники</span><span class="v dmg-take">${UI.fmtNum(p.techDestroyedCount||0)} ед.${p.techLostText ? ' ('+UI.esc(p.techLostText)+')' : ''}</span></div>
+        <div class="kv"><span class="k">Разрушено зданий</span><span class="v dmg-take">${UI.fmtNum(p.buildingsDestroyedCount||0)} ед.${p.destroyedBuildingsText ? ' ('+UI.esc(p.destroyedBuildingsText)+')' : ''}</span></div>`;
     } else if (n.kind === 'fatality_ear') {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>

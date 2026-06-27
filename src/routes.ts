@@ -93,6 +93,7 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/sanctions', (req) => sanctions.list(req.user));
   app.add('POST', '/api/sanctions/declare', act((req, n) => sanctions.declare(req.user, String(req.body.targetId || ''), req.body.amount, n)));
   app.add('POST', '/api/war/fatality', act((req, n) => battle.fatality(req.user, req.body.choice, n)));
+  app.add('POST', '/api/war/ear-message', act((req, n) => battle.leaveEarMessage(req.user, String(req.body.victimId || ''), String(req.body.text || ''), n)));
 
   // ---------- Миссии ----------
   app.add('GET',  '/api/missions',          (req) => missions.list(req.user));

@@ -34,11 +34,27 @@ function itemsList() {
   };
 }
 
-function pushEffect(target: User, item: any): void {
+// Накладывает эффект. Если эффект ТАКОГО ЖЕ типа уже есть — НЕ суммирует,
+// а обновляет (значение + таймер), т.е. повторная покупка просто продлевает.
+// by — игрок, наложивший эффект (для подлянок, чтобы жертва видела автора).
+function pushEffect(target: User, item: any, by?: User): void {
+  const expiresAt = Date.now() + (item.durMin || 0) * 60 * 1000;
+  const existing = target.effects.find((e) => e.type === item.effect.type);
+  if (existing) {
+    // Обновляем существующий эффект того же типа (без суммирования)
+    existing.value = item.effect.value;
+    existing.expiresAt = expiresAt;
+    existing.name = item.name;
+    if (by) { existing.byId = by.id; existing.byName = by.name; existing.hostile = true; }
+    return;
+  }
   target.effects.push({
     id: item.id, name: item.name,
     type: item.effect.type, value: item.effect.value,
-    expiresAt: Date.now() + (item.durMin || 0) * 60 * 1000,
+    expiresAt,
+    byId: by ? by.id : undefined,
+    byName: by ? by.name : undefined,
+    hostile: by ? true : false,
   });
 }
 
@@ -55,7 +71,7 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     if (!target) throw new u.ApiError('Жертва с таким именем не найдена');
     if (target.id === user.id) throw new u.ApiError('Падлянка самому себе? Оригинально, но нет.');
     user.gold -= price;
-    pushEffect(target, item);
+    pushEffect(target, item, user);
     social.mailTo(target, 'Чёрный рынок', 'Диверсия!',
       `Игрок ${user.name} устроил вам «${item.name}»: ${item.desc}`, user.id);
     notices.push(`😈 «${item.name}» применена к игроку ${target.name}.`);
@@ -162,19 +178,56 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
 }
 
 // ---------- Аукцион командиров ----------
-function makeLot(now: number): any {
-  const commander = u.pick(config.COMMANDERS);
+// Время окончания текущего аукциона: ближайшие 23:59:59 по Москве (UTC+3).
+// Эффекты начинают действовать в 00:00 (сразу после закрытия).
+function auctionEndMsk(now: number): number {
+  const MSK_OFFSET = 3 * 3600 * 1000;
+  const mskNow = new Date(now + MSK_OFFSET);
+  // Конец текущих МСК-суток: 23:59:59.999
+  const endMsk = Date.UTC(
+    mskNow.getUTCFullYear(), mskNow.getUTCMonth(), mskNow.getUTCDate(),
+    23, 59, 59, 999
+  );
+  // Переводим обратно в реальное (серверное UTC) время
+  return endMsk - MSK_OFFSET;
+}
+
+function makeLotFor(commander: any, now: number): any {
   return {
     id: u.uid(10),
     commanderId: commander.id,
     minBid: config.AUCTION.MIN_BID,
     best: null, // { userId, name, amount }
-    endsAt: now + config.AUCTION.DURATION_MIN * 60 * 1000 + u.rnd(0, 120) * 60 * 1000,
+    endsAt: auctionEndMsk(now),
   };
 }
 
-// Фоновый тик: закрываем истёкшие лоты, выдаём командиров победителям,
-// поддерживаем нужное количество активных лотов.
+function makeLot(now: number): any {
+  return makeLotFor(u.pick(config.COMMANDERS), now);
+}
+
+// Применяет эффект выигранного наёмника победителю.
+// Некоторые наёмники дают нестандартные эффекты (комбо, флаги).
+function applyCommanderEffect(winner: User, commander: any, now: number): void {
+  const expiresAt = now + config.AUCTION.RENT_HOURS * 3600 * 1000;
+  const eff = commander.effect;
+  const pushOne = (type: string, value: number) => {
+    const ex = winner.effects.find((e) => e.type === type);
+    if (ex) { ex.value = value; ex.expiresAt = expiresAt; ex.name = commander.name; }
+    else winner.effects.push({ id: 'cmd_' + commander.id + '_' + type, name: commander.name, type, value, expiresAt });
+  };
+  if (eff.type === 'economy_combo') {
+    // Содержание −100% и доход +100%
+    pushOne('upkeep_pct', -100);
+    pushOne('income_pct', 100);
+  } else {
+    // Обычные и флаговые эффекты (atk_pct, def_pct, invite_unlimited, fatality_immunity)
+    pushOne(eff.type, eff.value);
+  }
+}
+
+// Фоновый тик: закрываем лоты после 23:59:59 МСК, выдаём наёмников
+// победителям (эффект действует с 00:00), создаём лоты на новые сутки.
 function tick(): void {
   const w = world();
   const now = Date.now();
@@ -187,11 +240,7 @@ function tick(): void {
     if (lot.best && commander) {
       const winner = users[lot.best.userId];
       if (winner) {
-        winner.effects.push({
-          id: 'cmd_' + commander.id, name: commander.name,
-          type: commander.effect.type, value: commander.effect.value,
-          expiresAt: now + config.AUCTION.RENT_HOURS * 3600 * 1000,
-        });
+        applyCommanderEffect(winner, commander, now);
         social.systemMail(winner, 'Аукцион выигран!',
           `${commander.name} поступает в ваше распоряжение на ${config.AUCTION.RENT_HOURS} часа. ${commander.desc}.`);
       }
@@ -199,7 +248,12 @@ function tick(): void {
     w.auctions.splice(i, 1);
   }
   while (w.auctions.length < config.AUCTION.LOTS) {
-    w.auctions.push(makeLot(now));
+    // Берём наёмников, которых ещё нет на аукционе, чтобы все 5 были
+    // уникальными (а не случайные повторы).
+    const taken = new Set(w.auctions.map((l: any) => l.commanderId));
+    const available = config.COMMANDERS.filter((c: any) => !taken.has(c.id));
+    const commander = available.length ? available[0] : u.pick(config.COMMANDERS);
+    w.auctions.push(makeLotFor(commander, now));
   }
   db.save('world');
 }
@@ -213,12 +267,14 @@ function auctionView() {
       return {
         id: lot.id,
         commander: { name: c.name, desc: c.desc },
-        minBid: lot.best ? Math.ceil(lot.best.amount * config.AUCTION.STEP) : lot.minBid,
+        minBid: lot.best ? lot.best.amount + config.AUCTION.BID_STEP : lot.minBid,
         best: lot.best ? { name: lot.best.name, amount: lot.best.amount } : null,
         endsInSec: Math.max(0, Math.ceil((lot.endsAt - now) / 1000)),
       };
     }),
     rentHours: config.AUCTION.RENT_HOURS,
+    minBid: config.AUCTION.MIN_BID,
+    bidStep: config.AUCTION.BID_STEP,
   };
 }
 
@@ -228,8 +284,13 @@ function bid(user: User, lotId: string, amount: number, notices: Notices) {
   const lot = w.auctions.find((l) => l.id === lotId);
   if (!lot) throw new u.ApiError('Лот уже закрыт. Обновите аукцион.');
   amount = u.toInt(amount);
-  const min = lot.best ? Math.ceil(lot.best.amount * config.AUCTION.STEP) : lot.minBid;
+  // Минимум: первая ставка — MIN_BID (500), далее +BID_STEP (50) к текущей
+  const min = lot.best ? lot.best.amount + config.AUCTION.BID_STEP : lot.minBid;
   if (amount < min) throw new u.ApiError(`Минимальная ставка: 🪙 ${min}`);
+  // Ставка должна быть кратна шагу относительно минимума
+  if ((amount - lot.minBid) % config.AUCTION.BID_STEP !== 0) {
+    throw new u.ApiError(`Ставка должна быть кратна шагу 🪙 ${config.AUCTION.BID_STEP} (например ${min}, ${min + config.AUCTION.BID_STEP})`);
+  }
   if (user.gold < amount) throw new u.ApiError('Не хватает золота для ставки');
   if (lot.best && lot.best.userId === user.id) throw new u.ApiError('Ваша ставка и так лидирует');
 

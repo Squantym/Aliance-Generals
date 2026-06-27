@@ -315,8 +315,21 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">🏷 Жетоны милосердия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
       <div class="kv"><span class="k">Потеряно своих ушей</span><span class="v">${UI.fmtNum(p.earsLost)}</span></div>
       <div class="kv"><span class="k">Свои уши сейчас</span><span class="v">${p.earsCurrent} / ${p.earsMax}${p.earPenaltyActive ? ' <span style="color:var(--red)">⚠ штраф −10%</span>' : ''}</span></div>
+      ${p.earCutInfo && p.earCutInfo.left ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Левое ухо у</span><span class="v"><a href="#" onclick="App.go('profile','${p.earCutInfo.left.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.left.name)}</a></span></div>` : ''}
+      ${p.earCutInfo && p.earCutInfo.right ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Правое ухо у</span><span class="v"><a href="#" onclick="App.go('profile','${p.earCutInfo.right.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.right.name)}</a></span></div>` : ''}
+      ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile','${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
       ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%">👂 Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
     </div>
+
+    ${(p.activeEffects && p.activeEffects.length) ? `
+    <div class="card">
+      <div class="title" style="margin-top:0">✨ Активные эффекты</div>
+      ${p.activeEffects.map(e => `
+        <div class="kv">
+          <span class="k" style="${e.hostile?'color:var(--red)':''}">${e.hostile?'😈':'💉'} ${UI.esc(e.name)} <span class="muted small">(${UI.esc(e.desc)})</span>${e.byName?` <span class="muted small">— от <b style="color:var(--gold)">${UI.esc(e.byName)}</b></span>`:''}</span>
+          <span class="v">${UI.esc(e.timeLeft)}</span>
+        </div>`).join('')}
+    </div>` : ''}
 
     ${p.isOwn && p.powerStats ? `
     <div class="card" id="pf-stats-block" style="display:none">

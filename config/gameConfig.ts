@@ -543,16 +543,18 @@ const SILO = {
   READY_ENERGY_NEEDED: 3000,      // энергии нужно для полного заполнения готовности
   POWER_AMMO_NEEDED: 1000,        // боеприпасов нужно для полной мощности
 
-  MAX_DAMAGE: 3000,               // урон ракеты при 100% мощности
+  // ---- Разрушения при ПОЛНОЙ (100%) мощности ----
+  // Уничтожение техники цели: 300-1000 единиц, случайно слабая и сильная
+  TECH_LOSS_MIN: 300,
+  TECH_LOSS_MAX: 1000,
+  TECH_LOSS_WEAK_PCT_MIN: 0.40,   // 40-60% слабой техники
+  TECH_LOSS_WEAK_PCT_MAX: 0.60,
+  TECH_LOSS_STRONG_PCT_MIN: 0.20, // 20-30% мощной/новой техники
+  TECH_LOSS_STRONG_PCT_MAX: 0.30, // остаток — средняя
 
-  // Потери техники цели при ПОЛНОЙ мощности: 100-300 единиц,
-  // 60-70% слабой техники, 20-30% мощной/новой (остаток — средняя)
-  TECH_LOSS_MIN: 100,
-  TECH_LOSS_MAX: 300,
-  TECH_LOSS_WEAK_PCT_MIN: 0.60,
-  TECH_LOSS_WEAK_PCT_MAX: 0.70,
-  TECH_LOSS_STRONG_PCT_MIN: 0.20,
-  TECH_LOSS_STRONG_PCT_MAX: 0.30,
+  // Разрушение зданий: 140-560 единиц, и защитные, и доходные
+  BUILDING_LOSS_MIN: 140,
+  BUILDING_LOSS_MAX: 560,
 };
 const MK_COST_MULT = [0, 3, 6];
 
@@ -761,6 +763,22 @@ const MARKET_ITEMS = [
     desc: '−15% к атаке врага на 2 часа.' },
   { id: 'diversia',name: 'Диверсия на складах', kind: 'debuff', effect: { type: 'def_pct', value: -15 }, durMin: 120, gold: 15,
     desc: '−15% к защите врага на 2 часа.' },
+
+  // ── Новый допинг (бонусы себе) ──
+  { id: 'ammo_boost', name: 'Логистический пакет «Конвой»', kind: 'buff', effect: { type: 'ammo_regen_pct', value: 50 }, durMin: 240, gold: 12,
+    desc: '+50% к скорости восстановления боеприпасов на 4 часа.' },
+  { id: 'energy_boost', name: 'Стимулятор «Адреналин-Х»', kind: 'buff', effect: { type: 'energy_regen_pct', value: 50 }, durMin: 240, gold: 12,
+    desc: '+50% к скорости восстановления энергии на 4 часа.' },
+  { id: 'crit_boost', name: 'Тактический анализатор «Ястреб»', kind: 'buff', effect: { type: 'crit_bonus', value: 20 }, durMin: 120, gold: 18,
+    desc: '+20% к шансу крит. удара СВЕРХ лимита 50% на 2 часа.' },
+  { id: 'dodge_boost', name: 'Маскировочный комплекс «Призрак»', kind: 'buff', effect: { type: 'dodge_bonus', value: 20 }, durMin: 120, gold: 18,
+    desc: '+20% к шансу уворота СВЕРХ лимита 50% на 2 часа.' },
+
+  // ── Новые подлянки (замедляют развитие врага) ──
+  { id: 'bureaucracy', name: 'Бюрократический саботаж', kind: 'debuff', effect: { type: 'build_slow_pct', value: 50 }, durMin: 180, gold: 20,
+    desc: 'Стройки и улучшения врага идут на 50% дольше в течение 3 часов.' },
+  { id: 'espionage', name: 'Промышленный шпионаж', kind: 'debuff', effect: { type: 'research_slow_pct', value: 50 }, durMin: 180, gold: 20,
+    desc: 'Исследования и модернизации врага идут на 50% дольше в течение 3 часов.' },
 ];
 const MARKET_ITEM_BY_ID = Object.fromEntries(MARKET_ITEMS.map(i => [i.id, i]));
 
@@ -808,13 +826,13 @@ function secretAtk(user: any, def: any): number { return Math.round(def.atk * se
 function secretDef(user: any, def: any): number { return Math.round(def.def * secretLevelMul(user)); }
 
 const COMMANDERS = [
-  { id: 'steel',  name: 'Генерал «Сталь»',      effect: { type: 'atk_pct',    value: 25 },  desc: '+25% атака 24ч' },
-  { id: 'shadow', name: 'Полковник «Тень»',     effect: { type: 'def_pct',    value: 25 },  desc: '+25% защита 24ч' },
-  { id: 'hammer', name: 'Майор «Кувалда»',      effect: { type: 'loot_pct',   value: 30 },  desc: '+30% грабёж 24ч' },
-  { id: 'wrench', name: 'Инженер «Гайка»',      effect: { type: 'upkeep_pct', value: -50 }, desc: '−50% содержание 24ч' },
-  { id: 'trader', name: 'Снабженец «Барыга»',   effect: { type: 'income_pct', value: 30 },  desc: '+30% доход 24ч' },
+  { id: 'berserk', name: 'Наёмник «Берсерк»',     effect: { type: 'atk_pct',  value: 100 }, desc: '+100% к атаке на 24 часа' },
+  { id: 'fortress', name: 'Наёмник «Бастион»',     effect: { type: 'def_pct',  value: 100 }, desc: '+100% к защите на 24 часа' },
+  { id: 'tycoon',  name: 'Магнат «Кронос»',        effect: { type: 'economy_combo', value: 100 }, desc: 'Содержание техники −100% и доход построек +100% на 24 часа' },
+  { id: 'envoy',   name: 'Дипломат «Вектор»',      effect: { type: 'invite_unlimited', value: 1 }, desc: 'Безлимитные приглашения в альянс (без ограничений в час) на 24 часа' },
+  { id: 'ghost',   name: 'Призрак «Нерушимый»',    effect: { type: 'fatality_immunity', value: 1 }, desc: 'Вам не смогут сделать фаталити в течение 24 часов' },
 ];
-const AUCTION = { LOTS: 3, DURATION_MIN: 360, MIN_BID: 20, RENT_HOURS: 24, STEP: 1.1 };
+const AUCTION = { LOTS: 5, MIN_BID: 500, BID_STEP: 50, RENT_HOURS: 24 };
 
 // ---------- КЛУБ ОФИЦЕРОВ ----------
 const RIDDLES = [

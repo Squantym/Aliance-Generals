@@ -349,13 +349,14 @@ function attack(user: User, targetId: string, notices: Notices) {
   }
 
   // ----- Броски: крит атакующего, полный уворот защитника -----
-  const critChance = Math.min(B.CRIT_MAX_CHANCE, B.CRIT_BASE + user.skills.cruelty * B.CRIT_PER_CRUELTY);
+  // Допинг «Ястреб» добавляет крит СВЕРХ лимита (capped-часть + бонус эффекта)
+  const critBase = Math.min(B.CRIT_MAX_CHANCE, B.CRIT_BASE + user.skills.cruelty * B.CRIT_PER_CRUELTY);
+  const critChance = critBase + player.effMul(user, 'crit_bonus') - 1; // effMul=1.2 → +0.2
   const crit = Math.random() < critChance;
   // Ловкость даёт ШАНС НА ПОЛНЫЙ УВОРОТ (не просто снижение урона):
-  // 0.5% за уровень, максимум 50%. При уворачивании защитник получает
-  // 0 урона, но победа всё равно засчитывается атакующему (он «попал
-  // мимо», но инициативу не потерял).
-  const dodgeChance = isBot ? 0 : Math.min(B.DODGE_MAX, target.skills.agility * B.DODGE_PER_AGILITY);
+  // 0.5% за уровень, максимум 50%. Допинг «Призрак» добавляет сверх лимита.
+  const dodgeBase = isBot ? 0 : Math.min(B.DODGE_MAX, target.skills.agility * B.DODGE_PER_AGILITY);
+  const dodgeChance = isBot ? 0 : dodgeBase + player.effMul(target, 'dodge_bonus') - 1;
   const dodge = Math.random() < dodgeChance;
 
   // Базовый урон (БЕЗ крита) по пороговой формуле — соотносим обычную
@@ -509,9 +510,14 @@ function attack(user: User, targetId: string, notices: Notices) {
   // позывными и флагами). На обычных террористах (💀) — нельзя, это
   // безликая массовка.
   const fatalityAllowed = !isBot || (isBot && target.isPlayerLike);
+  // Наёмник «Призрак Нерушимый» (fatality_immunity) защищает жертву:
+  // окно фаталити против неё не появляется в течение 24ч.
+  const targetImmune = !isBot && (target.effects || []).some(
+    (e: any) => e.type === 'fatality_immunity' && e.expiresAt > Date.now()
+  );
   let fatality = false;
   let fatalityDodged = false;
-  if (fatalityAllowed && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
+  if (!targetImmune && fatalityAllowed && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
     // Жестокость даёт ШАНС совершить фаталити (не гарантию): 0.5% за
     // уровень навыка, максимум 50%.
     const fatalityChance = Math.min(0.50, user.skills.cruelty * 0.005);
@@ -585,12 +591,24 @@ function fatality(user: User, choice: string, notices: Notices) {
     // и реальное снижение earsCurrent (лимит 2 уха на игрока)
     user.ears++;
     ach.bump(user, 'earsCut', 1, notices);
+    let canLeaveMessage = false;  // true, если этот игрок отрезал ОБА уха
     if (!pf.isBot) {
       const victim = player.users()[pf.targetId];
       if (victim) {
         victim.earsLost++;
         victim.earsCurrent = Math.max(0, victim.earsCurrent - 1);
         victim.earsLostAt.push(Date.now());
+        // Записываем, КТО отрезал это ухо. Первое отрезанное → левое (0),
+        // второе → правое (1). Слот определяем по числу уже отрезанных.
+        if (!victim.earCutters) victim.earCutters = [null, null];
+        const cutIndex = config.EARS.MAX - victim.earsCurrent - 1; // 0 для первого, 1 для второго
+        const slot = Math.max(0, Math.min(config.EARS.MAX - 1, cutIndex));
+        victim.earCutters[slot] = { id: user.id, name: user.name };
+        // Если оба уха отрезаны ОДНИМ и тем же игроком — он может оставить послание
+        const both = victim.earCutters[0] && victim.earCutters[1];
+        if (both && victim.earCutters[0]!.id === user.id && victim.earCutters[1]!.id === user.id) {
+          canLeaveMessage = true;
+        }
         let penaltyNote = '';
         if (victim.earsCurrent <= 0) {
           victim.earPenaltyUntil = Date.now() + config.EARS.PENALTY_MS;
@@ -607,7 +625,7 @@ function fatality(user: User, choice: string, notices: Notices) {
     } else {
       notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
     }
-    return { choice, ears: user.ears, tokens: user.tokens };
+    return { choice, ears: user.ears, tokens: user.tokens, canLeaveMessage, victimId: pf.isBot ? null : pf.targetId };
   }
 
   // Отпускаем: +1 жетон милосердия
@@ -624,4 +642,22 @@ function fatality(user: User, choice: string, notices: Notices) {
   return { choice, ears: user.ears, tokens: user.tokens };
 }
 
-export = { opponents, attack, fatality, botProfile, peekBot };
+// Оставить послание на профиле жертвы — доступно только тому, кто отрезал
+// ОБА уха этому игроку. Послание видно всем в профиле жертвы.
+function leaveEarMessage(user: User, victimId: string, text: string, notices: Notices) {
+  const victim = player.users()[victimId];
+  if (!victim) throw new u.ApiError('Игрок не найден');
+  const c = victim.earCutters;
+  const bothByUser = c && c[0] && c[1] && c[0].id === user.id && c[1].id === user.id;
+  if (!bothByUser) throw new u.ApiError('Оставить послание может только тот, кто отрезал оба уха этому игроку');
+  const clean = String(text || '').trim().slice(0, 200);
+  if (!clean) {
+    // Пустой текст = отказ оставить послание
+    return { ok: true, left: false };
+  }
+  victim.earMessage = { byId: user.id, byName: user.name, text: clean };
+  notices.push('✍️ Послание оставлено на профиле жертвы.');
+  return { ok: true, left: true };
+}
+
+export = { opponents, attack, fatality, leaveEarMessage, botProfile, peekBot };

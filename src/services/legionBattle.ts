@@ -207,7 +207,8 @@ function calcDamage(attacker: Combatant, defender: Combatant, aUser: User, dUser
   if (boost) dmg = Math.round(dmg * (1 + (boost as any).bonus / 100));
 
   // Крит
-  const critChance = Math.min(0.50, 0.05 + aUser.skills.cruelty * 0.005);
+  // Крит (допинг «Ястреб» добавляет сверх лимита 50%)
+  const critChance = Math.min(0.50, 0.05 + aUser.skills.cruelty * 0.005) + (player.effMul(aUser, 'crit_bonus') - 1);
   const crit = Math.random() < critChance;
   if (crit) dmg = Math.round(dmg * 2.0);
   dmg = u.clamp(dmg, 1, 200);

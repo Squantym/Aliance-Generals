@@ -106,8 +106,12 @@ App.screens.war = async (c) => {
 
   async function doFatality(choice) {
     try {
-      await API.post('/api/war/fatality', { choice });
+      const res = await API.post('/api/war/fatality', { choice });
       App._lastBattle = null;
+      // Если игрок отрезал ОБА уха одной жертве — предлагаем оставить послание
+      if (res && res.canLeaveMessage && res.victimId) {
+        App._showEarMessagePrompt(res.victimId);
+      }
       await App.refreshMe();
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }

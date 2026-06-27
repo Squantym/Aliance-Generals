@@ -226,6 +226,72 @@ const App = {
     </div>`;
   },
 
+  // Окно результатов ракетного удара — показывает что разрушено,
+  // игрок закрывает сам, ознакомившись.
+  _showRocketResult(r) {
+    const existing = document.getElementById('rocket-result');
+    if (existing) existing.remove();
+    const techRows = Object.entries(r.techLost || {}).map(([n, c]) =>
+      `<div class="kv"><span class="k">${UI.esc(n)}</span><span class="v dmg-take">−${c}</span></div>`).join('') || '<p class="muted small">Техника уцелела</p>';
+    const buildRows = Object.entries(r.destroyedBuildings || {}).map(([n, c]) =>
+      `<div class="kv"><span class="k">${UI.esc(n)}</span><span class="v dmg-take">−${c}</span></div>`).join('') || '<p class="muted small">Постройки уцелели</p>';
+    const popup = document.createElement('div');
+    popup.id = 'rocket-result';
+    popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px';
+    popup.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--red);border-radius:12px;max-width:440px;width:100%;padding:20px;max-height:85vh;overflow-y:auto">
+        <div style="font-size:18px;font-weight:bold;text-align:center;margin-bottom:4px">🚀 Ракетный удар нанесён!</div>
+        <p class="muted small" style="text-align:center;margin-bottom:14px">Цель: <b>${UI.esc(r.targetName||'')}</b> · Мощность ${r.powerPct}%</p>
+        <div style="display:flex;gap:10px;margin-bottom:14px">
+          <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
+            <div style="font-size:24px;font-weight:bold;color:var(--red)">${r.techDestroyedCount||0}</div>
+            <div class="muted small">единиц техники</div>
+          </div>
+          <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
+            <div style="font-size:24px;font-weight:bold;color:var(--red)">${r.buildingsDestroyedCount||0}</div>
+            <div class="muted small">зданий</div>
+          </div>
+        </div>
+        <div style="margin-bottom:10px"><b>🔧 Уничтоженная техника:</b>${techRows}</div>
+        <div style="margin-bottom:14px"><b>🏚 Разрушенные здания:</b>${buildRows}</div>
+        <button class="btn btn-orange" id="rocket-result-close" style="width:100%">Закрыть</button>
+      </div>`;
+    document.body.appendChild(popup);
+    popup.querySelector('#rocket-result-close').onclick = () => popup.remove();
+  },
+
+  // Окно предложения оставить послание на профиле жертвы, которой
+  // игрок отрезал ОБА уха. Можно написать текст или отказаться.
+  _showEarMessagePrompt(victimId) {
+    const existing = document.getElementById('ear-msg-prompt');
+    if (existing) existing.remove();
+    const popup = document.createElement('div');
+    popup.id = 'ear-msg-prompt';
+    popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px';
+    popup.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--red);border-radius:12px;max-width:400px;width:100%;padding:20px">
+        <div style="font-size:17px;font-weight:bold;margin-bottom:6px">✂️ Вы отрезали оба уха!</div>
+        <p class="muted small" style="margin-bottom:12px">Можете оставить короткое послание на профиле жертвы — его увидят все. Или откажитесь.</p>
+        <textarea id="ear-msg-text" maxlength="200" rows="3" placeholder="Ваше послание (до 200 символов)..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-orange" id="ear-msg-send" style="flex:1">✍️ Оставить</button>
+          <button class="btn" id="ear-msg-skip" style="flex:1">Отказаться</button>
+        </div>
+      </div>`;
+    document.body.appendChild(popup);
+
+    popup.querySelector('#ear-msg-send').onclick = async () => {
+      const text = popup.querySelector('#ear-msg-text').value.trim();
+      if (!text) { popup.remove(); return; }
+      try {
+        await API.post('/api/war/ear-message', { victimId, text });
+        UI.toast('✍️ Послание оставлено');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+      popup.remove();
+    };
+    popup.querySelector('#ear-msg-skip').onclick = () => popup.remove();
+  },
+
   // Модалка выбора предмета из арсенала для взятия в слот (фаза подготовки)
   _showGearPicker(b) {
     const arsenal = b.arsenal || [];

@@ -166,7 +166,9 @@ function startModernization(user: User, body: any, notices: Notices) {
     catch (e) { return 0; }
   })();
   const minutesPerUnit = Math.max(1, baseMin * (1 - speedupPct / 100));
-  const durationMs = Math.round(qty * minutesPerUnit * 60 * 1000);
+  // Подлянка «Промышленный шпионаж» замедляет модернизацию
+  const slowMul = 1 + (player.effMul(user, 'research_slow_pct') - 1);
+  const durationMs = Math.round(qty * minutesPerUnit * 60 * 1000 * slowMul);
   const proc = {
     id: u.uid(8),
     unitId, unitName: cu.name,

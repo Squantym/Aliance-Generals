@@ -472,7 +472,8 @@ App._renderSilos = async (c, tabsHtml) => {
           ${UI.bar(silo.readyEnergy, silo.readyNeeded, 'en')}
         </div>
         <div class="mt">
-          <p class="small">💪 Мощность: ${silo.powerAmmo} / ${silo.powerNeeded} боеприпасов (урон: ${UI.fmtNum(silo.estimatedDamage)})</p>
+          <p class="small">💪 Мощность: ${silo.powerAmmo} / ${silo.powerNeeded} боеприпасов</p>
+          <p class="muted small">При ударе: техника ~${silo.estTechMin}-${silo.estTechMax} ед., здания ~${silo.estBuildMin}-${silo.estBuildMax} ед.</p>
           ${UI.bar(silo.powerAmmo, silo.powerNeeded, 'am')}
         </div>
         <div class="field-row mt">
@@ -554,7 +555,7 @@ App._renderSilos = async (c, tabsHtml) => {
         if (!found.userId) { UI.toast('⛔ Игрок не найден'); return; }
         if (!confirm(`Запустить ракету по «${targetName}»? Это нанесёт урон постройкам и технике цели.`)) return;
         const r = await API.post('/api/silos/launch', { siloId: btn.dataset.launch, targetId: found.userId });
-        UI.toast(`🚀 Удар нанесён! Урон: ${r.damage}`);
+        App._showRocketResult(r);
         await App.refreshMe();
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }

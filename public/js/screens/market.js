@@ -195,7 +195,7 @@ App.screens.market = async (c, param) => {
   c.innerHTML = `
     <div class="title">Чёрный рынок</div>
     ${tabsHtml}
-    <div class="card"><p class="muted small">Уникальные командиры сдаются в аренду на ${data.rentHours} часа. Ставки золотом, шаг +10%. Перебитая ставка возвращается. Победитель определяется по истечении таймера.</p></div>
+    <div class="card"><p class="muted small">Уникальные наёмники сдаются в аренду на ${data.rentHours} часа. Ставки от <span class="ic-gold"></span> ${UI.fmtNum(data.minBid||500)}, шаг <span class="ic-gold"></span> ${data.bidStep||50}. Аукцион закрывается в 23:59 по Москве, эффект начинает действовать с 00:00. Перебитая ставка возвращается.</p></div>
     ${data.lots.map((l) => `
       <div class="card">
         <div class="name">⭐ ${UI.esc(l.commander.name)}</div>
@@ -203,7 +203,7 @@ App.screens.market = async (c, param) => {
         <div class="kv mt"><span class="k">Лидер</span><span class="v">${l.best ? UI.esc(l.best.name) + ' — <span class="ic-gold"></span> ' + UI.fmtNum(l.best.amount) : '<span class="muted">ставок нет</span>'}</span></div>
         <div class="kv"><span class="k">До закрытия</span><span class="v">${UI.fmtTimer(l.endsInSec)}</span></div>
         <div class="field-row mt">
-          <input type="number" class="qty" style="width:110px" min="${l.minBid}" value="${l.minBid}" id="bid-${l.id}">
+          <input type="number" class="qty" style="width:110px" min="${l.minBid}" step="${data.bidStep||50}" value="${l.minBid}" id="bid-${l.id}">
           <button class="btn btn-orange" data-bid="${l.id}">Ставка (мин. <span class="ic-gold"></span> ${UI.fmtNum(l.minBid)})</button>
         </div>
       </div>`).join('')}

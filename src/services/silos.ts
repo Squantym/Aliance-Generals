@@ -73,7 +73,11 @@ function siloView(silo: any) {
     readyEnergy: r.readyEnergy, readyNeeded: S.READY_ENERGY_NEEDED,
     powerAmmo: r.powerAmmo, powerNeeded: S.POWER_AMMO_NEEDED,
     canLaunch: !building && r.readyEnergy >= S.READY_ENERGY_NEEDED,
-    estimatedDamage: Math.round(S.MAX_DAMAGE * Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED)),
+    // Оценка разрушений при текущей мощности (для интерфейса)
+    estTechMin: Math.round(S.TECH_LOSS_MIN * Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED)),
+    estTechMax: Math.round(S.TECH_LOSS_MAX * Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED)),
+    estBuildMin: Math.round(S.BUILDING_LOSS_MIN * Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED)),
+    estBuildMax: Math.round(S.BUILDING_LOSS_MAX * Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED)),
   };
 }
 
@@ -167,9 +171,9 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
 
   // Урон пропорционален текущей мощности (не обязательно 100%)
   const powerFrac = Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED);
-  const damage = Math.round(S.MAX_DAMAGE * powerFrac);
 
-  // ----- Разрушение построек цели (случайным образом, пока хватает урона) -----
+  // ----- Разрушение построек цели: 140-560 единиц при 100% мощности -----
+  // Уничтожаются случайно и защитные, и доходные постройки.
   const buildingEntries: any[] = [];
   for (const [id, count] of Object.entries(target.buildings || {})) {
     const def = config.BUILDING_BY_ID[id];
@@ -178,17 +182,20 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
     }
   }
   u.shuffle(buildingEntries);
-  let remainingDamage = damage;
-  const destroyed = {};
+  const buildingLossTotal = Math.round(
+    (S.BUILDING_LOSS_MIN + (S.BUILDING_LOSS_MAX - S.BUILDING_LOSS_MIN) * Math.random()) * powerFrac
+  );
+  const destroyed: Record<string, number> = {};
+  let buildingsToDestroy = buildingLossTotal;
   for (const id of buildingEntries) {
+    if (buildingsToDestroy <= 0) break;
     const def = config.BUILDING_BY_ID[id];
-    const hp = def.hp || 30;
-    if (remainingDamage < hp) break;
-    remainingDamage -= hp;
     target.buildings[id] = (target.buildings[id] || 1) - 1;
     if (target.buildings[id] <= 0) delete target.buildings[id];
     destroyed[def.name] = (destroyed[def.name] || 0) + 1;
+    buildingsToDestroy--;
   }
+  const buildingsDestroyedCount = buildingLossTotal - buildingsToDestroy;
 
   // ----- Уничтожение техники цели (масштаб от мощности) -----
   const techLossTotal = Math.round((S.TECH_LOSS_MIN + (S.TECH_LOSS_MAX - S.TECH_LOSS_MIN) * powerFrac));
@@ -208,7 +215,7 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
   }
   unitPool.sort((a, b) => a.unlock - b.unlock); // слабые (низкий unlock) первыми
 
-  const techLost = {};
+  const techLost: Record<string, number> = {};
   let toLoseWeak = Math.round(techLossTotal * weakPct);
   let toLoseStrong = Math.round(techLossTotal * strongPct);
   let toLoseMid = Math.max(0, techLossTotal - toLoseWeak - toLoseStrong);
@@ -245,22 +252,29 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
   // ----- Уведомления -----
   const destroyedList = Object.entries(destroyed).map(([n, c]) => `${n} ×${c}`).join(', ');
   const techLostList = Object.entries(techLost).map(([n, c]) => `${n} ×${c}`).join(', ');
+  // Суммарно техники уничтожено
+  const techDestroyedCount = (Object.values(techLost) as number[]).reduce((s, c) => s + c, 0);
   notices.push(
-    `🚀 Ракета запущена по «${target.name}»! Урон: ${damage} (мощность ${Math.round(powerFrac * 100)}%).` +
-    (destroyedList ? ` Разрушено построек: ${destroyedList}.` : ' Постройки уцелели.') +
-    (techLostList ? ` Уничтожено техники: ${techLostList}.` : '')
+    `🚀 Ракета запущена по «${target.name}»! Мощность ${Math.round(powerFrac * 100)}%. ` +
+    `Уничтожено техники: ${techDestroyedCount} ед., разрушено зданий: ${buildingsDestroyedCount}.`
   );
   notifications.push(target.id, 'rocket_hit', `🚀 ${user.name} нанёс по вам ракетный удар`, {
     attackerName: user.name, attackerId: user.id, attackerLevel: user.level,
-    damage, powerPct: Math.round(powerFrac * 100),
+    powerPct: Math.round(powerFrac * 100),
+    techDestroyedCount, buildingsDestroyedCount,
     destroyedBuildingsText: destroyedList || null,
     techLostText: techLostList || null,
     at: Date.now(),
   });
 
+  // Возвращаем подробный отчёт для окна разрушений (игрок закроет сам)
   return {
-    damage, powerPct: Math.round(powerFrac * 100),
-    destroyedBuildings: destroyed, techLost,
+    powerPct: Math.round(powerFrac * 100),
+    targetName: target.name,
+    techDestroyedCount,
+    buildingsDestroyedCount,
+    destroyedBuildings: destroyed,   // { название: количество }
+    techLost,                        // { название: количество }
     silo: siloView(silo),
   };
 }

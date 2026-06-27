@@ -204,18 +204,55 @@ function legionBonus(user: User, type: string): number {
 // ---------- Эффекты (допинг, падлянки, командиры) ----------
 function effMul(user: User, type: string): number {
   const now = Date.now();
-  return user.effects
-    .filter((e) => e.type === type && e.expiresAt > now)
-    .reduce((m, e) => m * (1 + e.value / 100), 1);
+  // Берём только ОДИН (первый активный) эффект каждого типа — без
+  // суммирования. pushEffect гарантирует уникальность по типу, но на
+  // случай старых данных берём максимальный по модулю.
+  const active = user.effects.filter((e) => e.type === type && e.expiresAt > now);
+  if (active.length === 0) return 1;
+  // Если вдруг несколько (старые сохранения) — берём один, не перемножаем
+  const e = active.reduce((best, cur) => Math.abs(cur.value) > Math.abs(best.value) ? cur : best, active[0]);
+  return 1 + e.value / 100;
+}
+
+// Человекочитаемое описание типа эффекта
+function effLabel(type: string): string {
+  const map: Record<string, string> = {
+    atk_pct: 'атака', def_pct: 'защита', loot_pct: 'грабёж',
+    income_pct: 'доход', upkeep_pct: 'содержание',
+    enemy_atk_pct: 'атака врага', enemy_def_pct: 'защита врага',
+    ammo_regen_pct: 'восст. боеприпасов', energy_regen_pct: 'восст. энергии',
+    crit_bonus: 'шанс крита', dodge_bonus: 'шанс уворота',
+    xp_pct: 'опыт', build_slow_pct: 'замедление строек', research_slow_pct: 'замедление исследований',
+    invite_unlimited: 'безлимит приглашений', fatality_immunity: 'иммунитет к фаталити',
+  };
+  return map[type] || type;
 }
 
 function effectsView(user: User): any[] {
   const now = Date.now();
-  return user.effects.map((e) => ({
-    name: e.name,
-    desc: `${e.value > 0 ? '+' : ''}${e.value}% (${e.type.includes('atk') ? 'атака' : e.type.includes('def') ? 'защита' : e.type.includes('loot') ? 'грабёж' : e.type.includes('income') ? 'доход' : 'содержание'})`,
-    secLeft: Math.max(0, Math.ceil((e.expiresAt - now) / 1000)),
-  }));
+  return user.effects
+    .filter((e) => e.expiresAt > now)
+    .map((e) => {
+      const secLeft = Math.max(0, Math.ceil((e.expiresAt - now) / 1000));
+      const h = Math.floor(secLeft / 3600);
+      const m = Math.floor((secLeft % 3600) / 60);
+      const timeStr = h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+      // Флаговые эффекты (value=1, не проценты) показываем как статус
+      const isFlag = e.type === 'invite_unlimited' || e.type === 'fatality_immunity';
+      const desc = isFlag
+        ? effLabel(e.type)
+        : `${e.value > 0 ? '+' : ''}${e.value}% (${effLabel(e.type)})`;
+      return {
+        name: e.name,
+        type: e.type,
+        value: e.value,
+        desc,
+        secLeft,
+        timeLeft: timeStr,
+        hostile: !!e.hostile,
+        byName: e.byName || null,   // кто наложил (видно жертве для подлянок)
+      };
+    });
 }
 
 // ---------- Армия и боевая мощь ----------
@@ -429,11 +466,16 @@ function refresh(user: User): void {
   const now = Date.now();
   const mx = maxima(user);
   applyRegen(user.res.hp, mx.hp, config.REGEN.hp, now);
-  // Трофей «Логистика» снижает интервал регенерации энергии
-  const enInterval = Math.max(5, Math.round(config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100)));
+  // Трофей «Логистика» снижает интервал регенерации энергии,
+  // допинг «Адреналин-Х» дополнительно ускоряет (делим интервал на множитель)
+  const enInterval = Math.max(5, Math.round(
+    config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100) / effMul(user, 'energy_regen_pct')
+  ));
   applyRegen(user.res.en, mx.en, enInterval, now, config.REGEN.EN_PER_TICK);
-  // Трофей «Боевая логистика» снижает интервал восстановления боеприпасов
-  const amInterval = Math.max(15, Math.round(config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100)));
+  // Трофей «Боевая логистика» + допинг «Конвой» ускоряют боеприпасы
+  const amInterval = Math.max(15, Math.round(
+    config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct')
+  ));
   applyRegen(user.res.am, mx.am, amInterval, now);
 
   // Истёкшие эффекты удаляем
@@ -474,6 +516,11 @@ function refresh(user: User): void {
          && earsNow - user.earsLostAt[0] >= config.EARS.REGROW_MS) {
     user.earsLostAt.shift();
     user.earsCurrent = Math.min(config.EARS.MAX, user.earsCurrent + 1);
+  }
+  // Если оба уха отросли — стираем записи об отрезавших и послание
+  if (user.earsCurrent >= config.EARS.MAX && (user.earMessage || (user.earCutters && (user.earCutters[0] || user.earCutters[1])))) {
+    user.earCutters = [null, null];
+    user.earMessage = null;
   }
   // Штраф снимается автоматически по истечении срока
   if (user.earPenaltyUntil > 0 && earsNow >= user.earPenaltyUntil) {
@@ -844,9 +891,32 @@ function publicProfile(target: User, viewer: User): any {
     ears: target.ears, tokens: target.tokens, earsLost: target.earsLost,
     earsCurrent: target.earsCurrent, earsMax: config.EARS.MAX,
     earPenaltyActive: !!(target.earPenaltyUntil && target.earPenaltyUntil > Date.now()),
+    // Кто отрезал уши (видно всем): левое = earCutters[0], правое = [1].
+    // Показываем только реально отрезанные (earsCurrent < MAX).
+    earCutInfo: (() => {
+      const c = target.earCutters || [null, null];
+      const out: any = { left: null, right: null };
+      // Левое ухо считается отрезанным, если потеряно хотя бы одно ухо
+      const lost = config.EARS.MAX - (target.earsCurrent ?? config.EARS.MAX);
+      if (lost >= 1 && c[0]) out.left = { id: c[0].id, name: c[0].name };
+      if (lost >= 2 && c[1]) out.right = { id: c[1].id, name: c[1].name };
+      return out;
+    })(),
+    earMessage: target.earMessage ? {
+      byName: target.earMessage.byName,
+      byId: target.earMessage.byId,
+      text: target.earMessage.text,
+    } : null,
+    // Активные эффекты видны всем (название + сколько осталось). Имя
+    // того, кто наложил подлянку, видит ТОЛЬКО сама жертва (isOwn).
+    activeEffects: effectsView(target).map((e) => ({
+      name: e.name, desc: e.desc, timeLeft: e.timeLeft,
+      hostile: e.hostile,
+      byName: isOwn ? e.byName : null,
+    })),
     power:          isOwn ? { atk: atk.power, def: def.power } : null,
-    critChancePct:  isOwn ? Math.round(Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) * 1000) / 10 : null,
-    dodgeChancePct: isOwn ? Math.round(Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) * 1000) / 10 : null,
+    critChancePct:  isOwn ? Math.round((Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) + (effMul(target, 'crit_bonus') - 1)) * 1000) / 10 : null,
+    dodgeChancePct: isOwn ? Math.round((Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) + (effMul(target, 'dodge_bonus') - 1)) * 1000) / 10 : null,
     powerStats:     isOwn ? powerStats(target) : null,
     capacity: capacity(target),
     units: unitsList, buildings: buildingsList,
@@ -877,6 +947,11 @@ function restoreEar(user: User, notices: Notices) {
   if (user.earsLostAt.length > 0) user.earsLostAt.shift();
   // Если теперь снова есть хотя бы одно ухо — штраф снимается
   if (user.earsCurrent > 0) user.earPenaltyUntil = 0;
+  // Если оба уха восстановлены — стираем записи о том, кто отрезал, и послание
+  if (user.earsCurrent >= config.EARS.MAX) {
+    user.earCutters = [null, null];
+    user.earMessage = null;
+  }
   notices.push(`👂 Ухо восстановлено за 🪙 ${config.EARS.RESTORE_GOLD}. Сейчас ушей: ${user.earsCurrent}/${config.EARS.MAX}.`);
   return { earsCurrent: user.earsCurrent };
 }

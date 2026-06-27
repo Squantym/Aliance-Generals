@@ -208,6 +208,8 @@ function startStep(user: User, confId: string, opIdx: number, stepIdx: number, n
 
   // Постановка в очередь
   const now = Date.now();
+  // Подлянка «Бюрократический саботаж» замедляет операции/задания игрока
+  const slowMul = 1 + (player.effMul(user, 'build_slow_pct') - 1);
   const proc = {
     id: u.uid(8),
     confId, opIdx, stepIdx,
@@ -215,7 +217,7 @@ function startStep(user: User, confId: string, opIdx: number, stepIdx: number, n
     xp: step.xp,
     money: step.money,
     startedAt: now,
-    finishesAt: now + step.timeMin * 60 * 1000,
+    finishesAt: now + Math.round(step.timeMin * 60 * 1000 * slowMul),
   };
   if (!user.missionQueue) user.missionQueue = [];
   user.missionQueue.push(proc);
