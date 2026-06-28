@@ -81,8 +81,8 @@ App.screens.market = async (c, param) => {
             <div class="muted small">Цена за 1 шт: ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</div>
             <div class="btn-row mt">
               <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="1">×1</button>
-              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="3">×3</button>
               <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="5">×5</button>
+              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="10">×10</button>
             </div>
           </div>
         </div>`).join('')}
@@ -207,6 +207,14 @@ App.screens.market = async (c, param) => {
           <button class="btn btn-orange" data-bid="${l.id}">Ставка (мин. <span class="ic-gold"></span> ${UI.fmtNum(l.minBid)})</button>
         </div>
       </div>`).join('')}
+    ${(data.holders && data.holders.length) ? `
+      <div class="card">
+        <div class="name">🎖 Наёмники сейчас на службе</div>
+        <p class="muted small">У кого сейчас действуют выигранные наёмники:</p>
+        ${data.holders.map((h) => `
+          <div class="kv mt"><span class="k">⭐ ${UI.esc(h.commanderName)}</span>
+            <span class="v"><a href="#" onclick="App.go('profile/${h.holderId}');return false" style="color:var(--gold)">${UI.esc(h.holderName)}</a> <span class="muted small">(${UI.fmtTimer(h.expiresInSec)})</span></span></div>`).join('')}
+      </div>` : ''}
     <button class="btn" onclick="App.rerender()">🔄 Обновить лоты</button>`;
 
   c.querySelectorAll('[data-bid]').forEach((btn) => {
@@ -224,94 +232,185 @@ App.screens.market = async (c, param) => {
 };
 
 // ---------- КЛУБ ОФИЦЕРОВ ----------
+// ---------- КЛУБ ОФИЦЕРОВ (5 многоступенчатых игр) ----------
 App.screens.club = async (c) => {
   await App.refreshMe();
   const data = await API.get('/api/club');
+  const R = (id) => document.getElementById(id);
+  const post = async (url, body) => {
+    try { return await API.post(url, body || {}); }
+    catch (e) { UI.toast('⛔ ' + e.message); return null; }
+  };
+  const cdLine = (sec) => `<p class="muted center mt">⏳ Доступно через ${UI.fmtTimer(sec)}</p>`;
 
-  // Стенгазета (загадка)
-  let riddleHtml;
-  if (data.riddle.state === 'active') {
-    riddleHtml = `
-      <p class="story small">«${UI.esc(data.riddle.q)}»</p>
+  // ── 1. ВОЕННЫЙ ПРЕФЕРАНС ──────────────────────────────────────
+  let prefHtml;
+  const pf = data.pref;
+  if (pf.state === 'active') {
+    prefHtml = `
+      <p class="small">Ваши карты: <b class="gold" style="font-size:18px">${pf.hand.join(' + ')}</b> = <b>${pf.sum}</b></p>
+      <p class="muted small">Цель — набрать как можно ближе к ${pf.target}, не перебрав. Затем добирает генерал.</p>
       <div class="field-row mt">
-        <input type="text" id="riddle-answer" placeholder="Ваш ответ">
-        <button class="btn btn-orange btn-inline" id="riddle-go">Ответить</button>
+        <button class="btn btn-orange btn-inline" id="pref-hit">🃏 Ещё карту</button>
+        <button class="btn btn-inline" id="pref-stand">✋ Хватит</button>
       </div>`;
+  } else if (pf.state === 'cooldown') {
+    prefHtml = cdLine(pf.cooldownSec);
   } else {
-    riddleHtml = `<p class="muted center">Свежий выпуск стенгазеты через ${UI.fmtTimer(data.riddle.cooldownSec)}</p>`;
+    prefHtml = `
+      <p class="muted small">Наберите ближе к ${pf.target}, чем генерал, не перебрав. Награда <span class="ic-gold"></span> ${pf.rewardMin}–${pf.rewardMax}.</p>
+      <button class="btn btn-orange mt" id="pref-start">Сесть за стол</button>`;
   }
 
-  // Загадка ветерана (угадай число)
-  let guessHtml;
-  if (data.guess.state === 'active') {
-    guessHtml = `
-      <p class="small">Дедуля загадал число от 1 до ${UI.fmtNum(data.guess.range)}. Осталось попыток: <b class="gold">${data.guess.left}</b></p>
-      ${data.guess.lastHint ? `<p class="small mt">Подсказка: <b>${UI.esc(data.guess.lastHint)}</b></p>` : ''}
+  // ── 2. СЕЙФ ШТАБА ─────────────────────────────────────────────
+  let safeHtml;
+  const sf = data.safe;
+  if (sf.state === 'active') {
+    const hist = (sf.history || []).map((h) =>
+      `<div class="kv"><span class="k" style="font-family:monospace;letter-spacing:3px">${h.guess}</span>
+        <span class="v">🎯 ${h.bulls} точно · 🔄 ${h.cows} не на месте</span></div>`).join('');
+    safeHtml = `
+      <p class="small">Подберите ${sf.digits}-значный код (цифры не повторяются). Осталось попыток: <b class="gold">${sf.triesLeft}</b></p>
+      <p class="muted small">🎯 — цифра на своём месте, 🔄 — есть в коде, но не там.</p>
+      ${hist ? `<div class="mt">${hist}</div>` : ''}
       <div class="field-row mt">
-        <input type="number" id="guess-n" min="1" placeholder="Число">
-        <button class="btn btn-orange btn-inline" id="guess-go">Назвать</button>
+        <input type="text" id="safe-guess" maxlength="${sf.digits}" inputmode="numeric" placeholder="${'0'.repeat(sf.digits)}" style="font-family:monospace;letter-spacing:4px">
+        <button class="btn btn-orange btn-inline" id="safe-go">Ввести</button>
       </div>`;
-  } else if (data.guess.state === 'cooldown') {
-    guessHtml = `<p class="muted center">Дедуля отдыхает ещё ${UI.fmtTimer(data.guess.cooldownSec)}</p>`;
+  } else if (sf.state === 'cooldown') {
+    safeHtml = cdLine(sf.cooldownSec);
   } else {
-    guessHtml = `
-      <p class="small muted">Цель игры — угадать число, которое загадал дедуля, за ${data.guess.tries} попыток. Победитель получит кучу золота (<span class="ic-gold"></span> ${data.guess.reward}). Удачи!</p>
-      <button class="btn btn-orange mt" id="guess-start">Начать игру</button>`;
+    safeHtml = `
+      <p class="muted small">Взломайте код за ${sf.tries} попыток методом дедукции. Награда <span class="ic-gold"></span> ${sf.reward}.</p>
+      <button class="btn btn-orange mt" id="safe-start">Подойти к сейфу</button>`;
+  }
+
+  // ── 3. МИННОЕ ПОЛЕ ────────────────────────────────────────────
+  let mineHtml;
+  const mn = data.mine;
+  if (mn.state === 'active') {
+    const grid = Array.from({ length: mn.cells }, (_, i) => {
+      const opened = mn.opened.includes(i);
+      return `<button class="mine-cell${opened ? ' mine-open' : ''}" data-mine="${i}" ${opened ? 'disabled' : ''}>${opened ? '✅' : '?'}</button>`;
+    }).join('');
+    mineHtml = `
+      <p class="small">Накоплено: <b class="gold" style="font-size:18px">🪙 ${mn.pot}</b> · безопасных ячеек: ${mn.safeLeft}</p>
+      <p class="muted small">Под ${mn.bombs} ячейками — мины. Открывайте по одной, забирайте до взрыва!</p>
+      <div class="mine-grid mt">${grid}</div>
+      <button class="btn btn-orange mt" id="mine-cashout" ${mn.pot <= 0 ? 'disabled' : ''} style="width:100%">💰 Забрать 🪙 ${mn.pot}</button>`;
+  } else if (mn.state === 'cooldown') {
+    mineHtml = cdLine(mn.cooldownSec);
+  } else {
+    mineHtml = `
+      <p class="muted small">Поле ${mn.cells} ячеек, ${mn.bombs} мин. Открывайте и копите награду, забирайте вовремя! До <span class="ic-gold"></span> ${mn.rewardMax}.</p>
+      <button class="btn btn-orange mt" id="mine-start">Выйти на поле</button>`;
+  }
+
+  // ── 4. ПОЛОСА ПРЕПЯТСТВИЙ ─────────────────────────────────────
+  let runHtml;
+  const rn = data.run;
+  if (rn.state === 'active') {
+    const lv = rn.levels;
+    runHtml = `
+      <p class="small">Этап <b class="gold">${rn.stage}</b> из ${rn.totalStages} · накоплено: <b class="gold">🪙 ${rn.pot}</b></p>
+      <p class="muted small">Выберите сложность этапа. Провал — потеряете всё накопленное!</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        <button class="btn btn-inline" data-run="easy">🟢 Лёгкий — ${Math.round(lv.easy.chance*100)}% · +🪙 ${lv.easy.reward}</button>
+        <button class="btn btn-inline" data-run="medium">🟡 Средний — ${Math.round(lv.medium.chance*100)}% · +🪙 ${lv.medium.reward}</button>
+        <button class="btn btn-inline" data-run="hard">🔴 Тяжёлый — ${Math.round(lv.hard.chance*100)}% · +🪙 ${lv.hard.reward}</button>
+      </div>
+      ${rn.canCashout ? `<button class="btn btn-orange mt" id="run-cashout" style="width:100%">🏃 Сойти с наградой 🪙 ${rn.pot}</button>` : '<p class="muted small center mt">Сойти можно после 3-го этапа</p>'}`;
+  } else if (rn.state === 'cooldown') {
+    runHtml = cdLine(rn.cooldownSec);
+  } else {
+    runHtml = `
+      <p class="muted small">${rn.totalStages} этапов, на каждом выбор риска. Награда копится, провал обнуляет. До <span class="ic-gold"></span> ${rn.rewardMax}.</p>
+      <button class="btn btn-orange mt" id="run-start">На старт</button>`;
+  }
+
+  // ── 5. ШТАБНАЯ ПАРТИЯ ─────────────────────────────────────────
+  let duelHtml;
+  const dl = data.duel;
+  if (dl.state === 'active') {
+    const lr = dl.lastRound;
+    const lrText = lr
+      ? `<p class="small mt">Прошлый ход: вы ${dl.units[lr.my]} · генерал ${dl.units[lr.foe]} → <b class="${lr.outcome==='win'?'gold':lr.outcome==='lose'?'red':''}">${lr.outcome==='win'?'победа':lr.outcome==='lose'?'поражение':'ничья'}</b></p>`
+      : '';
+    duelHtml = `
+      <p class="small">Счёт: вы <b class="gold">${dl.myWins}</b> — <b class="red">${dl.foeWins}</b> генерал (до ${dl.needed} побед)</p>
+      <p class="muted small">🪖 Пехота сбивает ✈️ авиацию · ✈️ авиация бьёт 🛡 танк · 🛡 танк давит 🪖 пехоту.</p>
+      ${lrText}
+      <div class="field-row mt">
+        <button class="btn btn-inline" data-duel="infantry">🪖 Пехота</button>
+        <button class="btn btn-inline" data-duel="air">✈️ Авиация</button>
+        <button class="btn btn-inline" data-duel="tank">🛡 Танк</button>
+      </div>`;
+  } else if (dl.state === 'cooldown') {
+    duelHtml = cdLine(dl.cooldownSec);
+  } else {
+    duelHtml = `
+      <p class="muted small">Тактическая дуэль до ${dl.needed} побед. Угадывайте ход генерала. Награда <span class="ic-gold"></span> ${dl.rewardMin}–${dl.rewardMax}.</p>
+      <button class="btn btn-orange mt" id="duel-start">Бросить вызов</button>`;
   }
 
   c.innerHTML = `
     <div class="title">Клуб офицеров</div>
-    <div class="card">
-      <div class="name">📰 Стенгазета</div>
-      <p class="muted small">Верный ответ на загадку — <span class="ic-gold"></span> ${data.riddle.reward}.</p>
-      <div class="mt">${riddleHtml}</div>
-    </div>
-    <div class="card">
-      <div class="name">🎲 Загадка ветерана</div>
-      <div class="mt">${guessHtml}</div>
-    </div>
-    <div class="card">
-      <div class="name">💪 Армрестлинг</div>
-      <p class="muted small">Ставка от $ ${UI.fmtNum(data.arm.minBet)}. Победа удваивает ставку. Жестокость укрепляет хват!</p>
-      ${data.arm.cooldownSec > 0
-        ? `<p class="muted center mt">Рука отдыхает ${UI.fmtTimer(data.arm.cooldownSec)}</p>`
-        : `<div class="field-row mt">
-            <input type="number" id="arm-bet" min="${data.arm.minBet}" value="${data.arm.minBet}">
-            <button class="btn btn-orange btn-inline" id="arm-go">Бороться</button>
-          </div>`}
-    </div>`;
+    <p class="muted small" style="margin:-4px 4px 10px">Пять игр на удачу и смекалку. Награды от <span class="ic-gold"></span> 10 до 20.</p>
+    <div class="card"><div class="name">🃏 Военный преферанс</div><div class="mt">${prefHtml}</div></div>
+    <div class="card"><div class="name">🗝 Сейф штаба</div><div class="mt">${safeHtml}</div></div>
+    <div class="card"><div class="name">💣 Минное поле</div><div class="mt">${mineHtml}</div></div>
+    <div class="card"><div class="name">🎯 Полоса препятствий</div><div class="mt">${runHtml}</div></div>
+    <div class="card"><div class="name">♟ Штабная партия</div><div class="mt">${duelHtml}</div></div>`;
 
-  // Обработчики мини-игр
-  const r = (id) => document.getElementById(id);
-  if (r('riddle-go')) r('riddle-go').onclick = async () => {
-    try {
-      const res = await API.post('/api/club/riddle', { answer: r('riddle-answer').value });
-      if (!res.correct) UI.toast(`📰 Мимо! Правильный ответ: ${res.rightAnswer}`);
-      await App.refreshMe();
-      App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+  // ── Обработчики ──
+  // Преферанс
+  if (R('pref-start')) R('pref-start').onclick = async () => { if (await post('/api/club/pref/start')) App.rerender(); };
+  if (R('pref-hit')) R('pref-hit').onclick = async () => {
+    const r = await post('/api/club/pref/hit');
+    if (r && r.result === 'bust') UI.toast(`🃏 Перебор! ${r.sum} > 21. Вы проиграли.`);
+    await App.refreshMe(); App.rerender();
   };
-  if (r('guess-start')) r('guess-start').onclick = async () => {
-    try { await API.post('/api/club/guess/start'); App.rerender(); }
-    catch (e) { UI.toast('⛔ ' + e.message); }
+  if (R('pref-stand')) R('pref-stand').onclick = async () => {
+    const r = await post('/api/club/pref/stand');
+    if (r && r.result === 'lose') UI.toast(`🃏 Генерал сильнее: ${r.mySum} против ${r.dealerSum}.`);
+    await App.refreshMe(); App.rerender();
   };
-  if (r('guess-go')) r('guess-go').onclick = async () => {
-    try {
-      const res = await API.post('/api/club/guess', { number: r('guess-n').value });
-      if (res.result === 'fail') UI.toast(`🎲 Попытки кончились. Дедуля загадал: ${res.secret}`);
-      if (res.result === 'hint') UI.toast(`🎲 ${res.hint}. Осталось: ${res.left}`);
-      await App.refreshMe();
-      App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+  // Сейф
+  if (R('safe-start')) R('safe-start').onclick = async () => { if (await post('/api/club/safe/start')) App.rerender(); };
+  if (R('safe-go')) R('safe-go').onclick = async () => {
+    const r = await post('/api/club/safe/try', { guess: R('safe-guess').value });
+    if (r && r.result === 'fail') UI.toast(`🗝 Сейф заблокирован! Код был: ${r.code}`);
+    await App.refreshMe(); App.rerender();
   };
-  if (r('arm-go')) r('arm-go').onclick = async () => {
-    try {
-      const res = await API.post('/api/club/arm', { bet: r('arm-bet').value });
-      if (!res.win) UI.toast(`💪 Хрусть… Вы проиграли $${UI.fmtNum(res.bet)}. Реванш через минуту!`);
-      await App.refreshMe();
-      App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
-  };
+  // Минное поле
+  if (R('mine-start')) R('mine-start').onclick = async () => { if (await post('/api/club/mine/start')) App.rerender(); };
+  if (R('mine-cashout')) R('mine-cashout').onclick = async () => { await post('/api/club/mine/cashout'); await App.refreshMe(); App.rerender(); };
+  c.querySelectorAll('[data-mine]').forEach((btn) => {
+    btn.onclick = async () => {
+      const r = await post('/api/club/mine/open', { cell: btn.dataset.mine });
+      if (r && r.result === 'boom') UI.toast('💥 БУМ! Вы подорвались и потеряли накопленное.');
+      await App.refreshMe(); App.rerender();
+    };
+  });
+  // Полоса
+  if (R('run-start')) R('run-start').onclick = async () => { if (await post('/api/club/run/start')) App.rerender(); };
+  if (R('run-cashout')) R('run-cashout').onclick = async () => { await post('/api/club/run/cashout'); await App.refreshMe(); App.rerender(); };
+  c.querySelectorAll('[data-run]').forEach((btn) => {
+    btn.onclick = async () => {
+      const r = await post('/api/club/run/step', { level: btn.dataset.run });
+      if (r && r.result === 'fail') UI.toast(`🎯 Провал на этапе «${r.level}»! Награда потеряна.`);
+      await App.refreshMe(); App.rerender();
+    };
+  });
+  // Дуэль
+  if (R('duel-start')) R('duel-start').onclick = async () => { if (await post('/api/club/duel/start')) App.rerender(); };
+  c.querySelectorAll('[data-duel]').forEach((btn) => {
+    btn.onclick = async () => {
+      const r = await post('/api/club/duel/move', { unit: btn.dataset.duel });
+      if (r && r.result === 'match_lose') UI.toast('♟ Генерал переиграл вас в этой партии.');
+      await App.refreshMe(); App.rerender();
+    };
+  });
 };
 
 // ---------- ТРОФЕИ ----------
@@ -374,20 +473,22 @@ App.screens.hospital = async (c) => {
   await App.refreshMe();
   const data = await API.get('/api/hospital');
   const needsHeal = data.hp < data.maxHp;
+  const onCooldown = (data.cooldownLeft || 0) > 0;
 
   c.innerHTML = `
     <div class="title">Полевой госпиталь</div>
     <div class="card center">
       <p style="font-size:40px">🏥</p>
-      <p class="muted small">Полное восстановление здоровья за доллары. Цена растёт с уровнем — берегите бойцов, лечение дорогое.</p>
+      <p class="muted small">Полное восстановление здоровья за доллары. Цена растёт с уровнем — берегите бойцов, лечение дорогое. Лечиться можно раз в 5 минут.</p>
     </div>
     <div class="card">
       <div class="kv"><span class="k">❤ Здоровье</span><span class="v">${data.hp} / ${data.maxHp}</span></div>
       <div class="kv"><span class="k">💵 У вас</span><span class="v money">$ ${UI.fmtMoney(data.dollars)}</span></div>
       <hr class="hr">
       <div class="kv"><span class="k">Полное восстановление</span><span class="v">${UI.priceWithSale(data.baseFullHeal, data.fullHeal, '$')}</span></div>
-      <button class="btn btn-orange mt" id="hp-heal" ${!needsHeal || data.dollars < data.fullHeal ? 'disabled' : ''}>
-        ${!needsHeal ? 'Здоровье в норме' : (data.dollars < data.fullHeal ? 'Не хватает денег' : 'Полностью вылечиться')}
+      ${onCooldown ? `<div class="kv"><span class="k">⏳ До следующего лечения</span><span class="v" style="color:var(--orange)">${UI.fmtTimer(data.cooldownLeft)}</span></div>` : ''}
+      <button class="btn btn-orange mt" id="hp-heal" ${!needsHeal || onCooldown || data.dollars < data.fullHeal ? 'disabled' : ''}>
+        ${!needsHeal ? 'Здоровье в норме' : onCooldown ? `Лечение через ${UI.fmtTimer(data.cooldownLeft)}` : (data.dollars < data.fullHeal ? 'Не хватает денег' : 'Полностью вылечиться')}
       </button>
       ${data.baseFullHeal !== data.fullHeal ? `<p class="muted small center mt">Учтена скидка трофея «Полевой госпиталь»</p>` : ''}
     </div>`;

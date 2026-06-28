@@ -750,6 +750,7 @@ function mePayload(user: User): any {
     skillPoints: user.skillPoints, skills: { ...user.skills }, skillCosts: config.SKILL_COSTS,
     res: resView(user),
     healCost: config.hospitalPrice(user.level),  // для баннера «вылечиться» при HP < 25
+    healCooldownLeft: Math.max(0, Math.ceil((((user as any).lastHospitalHeal || 0) + 5 * 60 * 1000 - Date.now()) / 1000)),
     battle: { ...user.battle },
     ears: user.ears, tokens: user.tokens, earsLost: user.earsLost,
     adminEars: user.adminEars || 0, adminTokens: user.adminTokens || 0,
@@ -881,7 +882,11 @@ function publicProfile(target: User, viewer: User): any {
     })
     .filter(Boolean);
   const devsList = config.SECRET_DEVS
-    .map((d) => ({ name: d.name, count: (target.secretDevs || {})[d.id] || 0 }))
+    .map((d) => ({
+      id: d.id, name: d.name,
+      count: (target.secretDevs || {})[d.id] || 0,
+      attack: d.atk, defense: d.def,
+    }))
     .filter((d) => d.count > 0);
 
   const country = config.COUNTRY_BY_ID[target.country];
@@ -928,6 +933,10 @@ function publicProfile(target: User, viewer: User): any {
     capacity: capacity(target),
     units: unitsList, buildings: buildingsList,
     secretDevs: devsList, superSecret: target.superSecret,
+    superDevInfo: target.superSecret > 0 ? {
+      id: config.SUPER_DEV.id, name: config.SUPER_DEV.name,
+      count: target.superSecret, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
+    } : null,
     isOwn,
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,

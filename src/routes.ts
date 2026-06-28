@@ -30,6 +30,8 @@ import passport = require('./services/passport');
 import dailyQuests = require('./services/dailyQuests');
 import tutorial = require('./services/tutorial');
 import admin = require('./services/admin');
+import support = require('./services/support');
+import payments = require('./services/payments');
 
 function registerRoutes(app: any) {
   // Перед каждым авторизованным запросом игрок «освежается»:
@@ -59,6 +61,7 @@ function registerRoutes(app: any) {
     ...player.mePayload(req.user),
     mailUnread: social.unread(req.user),
     notifUnread: notifications.unreadCount(req.user),
+    supportUnread: support.myTickets(req.user).open.filter((t: any) => t.status === 'answered' || t.lastFrom === 'admin').length,
   }));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
   app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
@@ -143,10 +146,24 @@ function registerRoutes(app: any) {
 
   // ---------- Клуб офицеров ----------
   app.add('GET', '/api/club', (req) => club.view(req.user));
-  app.add('POST', '/api/club/riddle', act((req, n) => club.answerRiddle(req.user, req.body.answer, n)));
-  app.add('POST', '/api/club/guess/start', act((req) => club.guessStart(req.user)));
-  app.add('POST', '/api/club/guess', act((req, n) => club.guessTry(req.user, req.body.number, n)));
-  app.add('POST', '/api/club/arm', act((req, n) => club.armWrestle(req.user, req.body.bet, n)));
+  // 1. Военный преферанс
+  app.add('POST', '/api/club/pref/start', act((req) => club.prefStart(req.user)));
+  app.add('POST', '/api/club/pref/hit',   act((req, n) => club.prefHit(req.user, n)));
+  app.add('POST', '/api/club/pref/stand', act((req, n) => club.prefStand(req.user, n)));
+  // 2. Сейф штаба
+  app.add('POST', '/api/club/safe/start', act((req) => club.safeStart(req.user)));
+  app.add('POST', '/api/club/safe/try',   act((req, n) => club.safeTry(req.user, req.body.guess, n)));
+  // 3. Минное поле
+  app.add('POST', '/api/club/mine/start',   act((req) => club.mineStart(req.user)));
+  app.add('POST', '/api/club/mine/open',    act((req, n) => club.mineOpen(req.user, req.body.cell, n)));
+  app.add('POST', '/api/club/mine/cashout', act((req, n) => club.mineCashout(req.user, n)));
+  // 4. Полоса препятствий
+  app.add('POST', '/api/club/run/start',   act((req) => club.runStart(req.user)));
+  app.add('POST', '/api/club/run/step',    act((req, n) => club.runStep(req.user, req.body.level, n)));
+  app.add('POST', '/api/club/run/cashout', act((req, n) => club.runCashout(req.user, n)));
+  // 5. Штабная партия
+  app.add('POST', '/api/club/duel/start', act((req) => club.duelStart(req.user)));
+  app.add('POST', '/api/club/duel/move',  act((req, n) => club.duelMove(req.user, req.body.unit, n)));
 
   // ---------- Трофеи ----------
   app.add('GET', '/api/trophies', (req) => trophies.list(req.user));
@@ -254,6 +271,20 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/admin/global-buffs', () => admin.listGlobalBuffs(), { admin: true });
   app.add('POST', '/api/admin/global-buff',  act((req, n) => admin.setGlobalBuff(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/logs',      (req) => admin.listLogs(req.query), { admin: true });
+  // Бан и обнуление аккаунтов
+  app.add('POST', '/api/admin/ban',   act((req, n) => admin.setBan(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });
+  // Служба поддержки — пользователь
+  app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));
+  app.add('POST', '/api/support/create', act((req, n) => support.createTicket(req.user, req.body.subject, req.body.text, n)));
+  app.add('POST', '/api/support/reply',  act((req, n) => support.replyTicket(req.user, req.body.ticketId, req.body.text, n)));
+  // Служба поддержки — администратор
+  app.add('GET',  '/api/admin/support',       (req) => support.adminList(req.query), { admin: true });
+  app.add('POST', '/api/admin/support/reply', act((req, n) => support.adminReply(req.user, req.body.ticketId, req.body.text, !!req.body.close, n)), { admin: true });
+  // Платёжная система (заготовка)
+  app.add('GET',  '/api/payments/packages', (req) => payments.packages());
+  app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
+  app.add('POST', '/api/payments/create',   act((req, n) => payments.createOrder(req.user, req.body.packageId, n)));
 };
 
 export = registerRoutes;

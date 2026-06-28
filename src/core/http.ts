@@ -304,6 +304,12 @@ function createApp() {
             const userId = sessions[token];
             const user = userId && users[userId];
             if (!user) return sendJson(res, 401, { error: 'Требуется вход в игру' }, acceptEncoding);
+            if (user.banned) {
+              return sendJson(res, 403, {
+                error: 'Ваш аккаунт заблокирован администрацией.' + (user.banReason ? ' Причина: ' + user.banReason : ''),
+                banned: true,
+              }, acceptEncoding);
+            }
             if (found.opts.admin && !user.isAdmin) return sendJson(res, 403, { error: 'Только для администратора' }, acceptEncoding);
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов

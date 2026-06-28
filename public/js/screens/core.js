@@ -188,6 +188,8 @@ App.screens.home = async (c) => {
     ['notifications', '🔔', 'Уведомления', m.notifUnread > 0 ? `<span class="badge">${m.notifUnread}</span>` : ''],
     ['ach', '🎖', 'Достижения', ''],
     ['trophies', '🎁', 'Трофеи', ''],
+    ['shop', '💎', 'Магазин золота', ''],
+    ['support', '🛟', 'Поддержка', m.supportUnread > 0 ? `<span class="badge">${m.supportUnread}</span>` : ''],
     ['settings', '⚙', 'Настройки', ''],
   ];
 
@@ -230,6 +232,7 @@ App.screens.home = async (c) => {
       <div class="kv"><span class="k">🔧 Содержание в час</span><span class="v" style="color:var(--red)">$ ${UI.fmtMoney(m.upkeepPerHour)}</span></div>
       <div class="kv"><span class="k">⏱ Выплата через</span><span class="v">${UI.fmtTimer(m.nextPayoutSec)}</span></div>
     </div>
+    <button class="btn" style="width:100%;margin-top:8px" onclick="App.go('support')">🛟 Служба поддержки</button>
     <p class="center muted small">© generals-game · сделано в учебных целях</p>`;
 
   // Обратный отсчёт таймера вызова на главном экране
@@ -256,9 +259,16 @@ App.screens.profile = async (c, param) => {
     ? UI.imgGrid(p.units, 'units')
     : '<p class="muted">Ангар не разглашается.</p>';
 
-  const devsHtml = (!isBot && (p.secretDevs && p.secretDevs.length || p.superSecret))
-    ? (p.secretDevs || []).map((x) => `<div class="kv"><span class="k">${UI.esc(x.name)}</span><span class="v">×${x.count}</span></div>`).join('') +
-      (p.superSecret ? `<div class="kv"><span class="k gold">🛸 Межконтинентальный ядерный комплекс «Диктатор»</span><span class="v gold">×${p.superSecret}</span></div>` : '')
+  // Секретные разработки — сеткой картинок (kind='secret'), как техника.
+  // Картинки кладутся в public/img/secret/{id}.webp; если файла нет —
+  // показывается короткое название (fallback).
+  const secretItems = [];
+  if (!isBot) {
+    for (const x of (p.secretDevs || [])) secretItems.push(x);
+    if (p.superDevInfo) secretItems.push(p.superDevInfo);
+  }
+  const devsHtml = secretItems.length
+    ? UI.imgGrid(secretItems, 'secret')
     : '<p class="muted">Секретных разработок нет.</p>';
 
   // Постройки — отдельно доходные и оборонительные, сетками картинок
@@ -320,9 +330,9 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">🏷 Жетоны милосердия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
       <div class="kv"><span class="k">Потеряно своих ушей</span><span class="v">${UI.fmtNum(p.earsLost)}</span></div>
       <div class="kv"><span class="k">Свои уши сейчас</span><span class="v">${p.earsCurrent} / ${p.earsMax}${p.earPenaltyActive ? ' <span style="color:var(--red)">⚠ штраф −10%</span>' : ''}</span></div>
-      ${p.earCutInfo && p.earCutInfo.left ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Левое ухо у</span><span class="v"><a href="#" onclick="App.go('profile','${p.earCutInfo.left.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.left.name)}</a></span></div>` : ''}
-      ${p.earCutInfo && p.earCutInfo.right ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Правое ухо у</span><span class="v"><a href="#" onclick="App.go('profile','${p.earCutInfo.right.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.right.name)}</a></span></div>` : ''}
-      ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile','${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
+      ${p.earCutInfo && p.earCutInfo.left ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Левое ухо у</span><span class="v"><a href="#" onclick="App.go('profile/${p.earCutInfo.left.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.left.name)}</a></span></div>` : ''}
+      ${p.earCutInfo && p.earCutInfo.right ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Правое ухо у</span><span class="v"><a href="#" onclick="App.go('profile/${p.earCutInfo.right.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.right.name)}</a></span></div>` : ''}
+      ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile/${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
       ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%">👂 Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
     </div>
 
@@ -703,4 +713,115 @@ App.screens.daily = async (c) => {
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
+};
+
+// ---------- СЛУЖБА ПОДДЕРЖКИ (обращения игрока) ----------
+App.screens.support = async (c, param) => {
+  await App.refreshMe();
+  const tab = param || 'open'; // open | closed | new
+  const data = await API.get('/api/support');
+
+  const statusBadge = (s) => {
+    if (s === 'open') return '<span class="badge" style="background:var(--orange-1)">ожидает ответа</span>';
+    if (s === 'answered') return '<span class="badge" style="background:var(--green)">есть ответ</span>';
+    return '<span class="badge">закрыто</span>';
+  };
+
+  const ticketCard = (t) => `
+    <div class="card">
+      <div class="name" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>${UI.esc(t.subject)}</span> ${statusBadge(t.status)}
+      </div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+        ${t.messages.map((m) => `
+          <div style="padding:8px 10px;border-radius:8px;background:${m.from === 'admin' ? 'rgba(60,180,90,.1)' : 'rgba(255,255,255,.03)'};border:1px solid ${m.from === 'admin' ? 'var(--green)' : 'var(--border)'}">
+            <div class="muted small">${m.from === 'admin' ? '🛟 Поддержка' : '👤 ' + UI.esc(m.authorName)} · ${new Date(m.at).toLocaleString('ru-RU')}</div>
+            <div style="margin-top:3px;white-space:pre-wrap">${UI.esc(m.text)}</div>
+          </div>`).join('')}
+      </div>
+      ${t.status !== 'closed' ? `
+        <div class="field-row mt">
+          <input type="text" id="reply-${t.id}" placeholder="Добавить сообщение...">
+          <button class="btn btn-orange btn-inline" data-reply="${t.id}">Отправить</button>
+        </div>` : ''}
+    </div>`;
+
+  let body;
+  if (tab === 'new') {
+    body = `
+      <div class="card">
+        <div class="name">📝 Новое обращение</div>
+        <p class="muted small">Опишите проблему — администрация ответит здесь же.</p>
+        <input type="text" id="sup-subject" maxlength="80" placeholder="Тема обращения" class="mt" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
+        <textarea id="sup-text" maxlength="2000" rows="5" placeholder="Опишите ситуацию и проблему подробно..." class="mt" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
+        <button class="btn btn-orange mt" id="sup-send" style="width:100%">Отправить обращение</button>
+      </div>`;
+  } else {
+    const list = tab === 'open' ? data.open : data.closed;
+    body = list.length
+      ? list.map(ticketCard).join('')
+      : `<div class="card center muted">${tab === 'open' ? 'Нет открытых обращений' : 'Нет закрытых обращений'}</div>`;
+  }
+
+  c.innerHTML = `
+    <div class="title">🛟 Служба поддержки</div>
+    <div class="tabs">
+      <div class="tab ${tab === 'open' ? 'active' : ''}" onclick="App.go('support/open')">Открытые (${data.open.length})</div>
+      <div class="tab ${tab === 'closed' ? 'active' : ''}" onclick="App.go('support/closed')">Закрытые (${data.closed.length})</div>
+      <div class="tab ${tab === 'new' ? 'active' : ''}" onclick="App.go('support/new')">➕ Новое</div>
+    </div>
+    ${body}`;
+
+  const R = (id) => document.getElementById(id);
+  if (R('sup-send')) R('sup-send').onclick = async () => {
+    try {
+      await API.post('/api/support/create', { subject: R('sup-subject').value, text: R('sup-text').value });
+      UI.toast('✅ Обращение отправлено');
+      App.go('support/open');
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  c.querySelectorAll('[data-reply]').forEach((btn) => {
+    btn.onclick = async () => {
+      const inp = R('reply-' + btn.dataset.reply);
+      if (!inp || !inp.value.trim()) return;
+      try {
+        await API.post('/api/support/reply', { ticketId: btn.dataset.reply, text: inp.value });
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+};
+
+// ---------- МАГАЗИН ЗОЛОТА (заготовка платёжной системы) ----------
+App.screens.shop = async (c) => {
+  await App.refreshMe();
+  const data = await API.get('/api/payments/packages');
+  const { orders } = await API.get('/api/payments/orders');
+
+  c.innerHTML = `
+    <div class="title">💎 Магазин золота</div>
+    ${!data.enabled ? `<div class="card center"><p class="muted">${UI.esc(data.note || 'Скоро')}</p></div>` : ''}
+    ${data.packages.map((p) => `
+      <div class="card">
+        <div class="name">${UI.esc(p.label)} ${p.bonus ? `<span class="badge" style="background:var(--green)">${p.bonus}</span>` : ''}</div>
+        <div class="kv mt"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(p.gold)} золота</span><span class="v gold">${p.priceRub} ₽</span></div>
+        <button class="btn btn-orange mt" data-buy-pkg="${p.id}" style="width:100%">Купить</button>
+      </div>`).join('')}
+    ${orders.length ? `
+      <div class="card">
+        <div class="name">🧾 История заказов</div>
+        ${orders.map((o) => `
+          <div class="kv"><span class="k">🪙 ${UI.fmtNum(o.gold)} · ${o.priceRub} ₽</span>
+            <span class="v">${o.status === 'paid' ? '✅ оплачено' : o.status === 'pending' ? '⏳ ожидает' : '❌ ' + o.status}</span></div>`).join('')}
+      </div>` : ''}`;
+
+  c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
+        if (r.payUrl) { window.location.href = r.payUrl; }
+        else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
 };

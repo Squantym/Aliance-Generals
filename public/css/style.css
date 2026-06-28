@@ -1824,3 +1824,30 @@ body.theme-cyber .img-frame {
   display: flex; gap: 10px; margin-top: 16px;
 }
 .game-dialog-actions .btn { flex: 1; padding: 12px; }
+
+/* ===== Клуб офицеров: минное поле ===== */
+.mine-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.mine-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.mine-cell:hover:not(:disabled) {
+  background: rgba(192,122,22,.25);
+  transform: scale(1.05);
+}
+.mine-cell.mine-open {
+  background: rgba(60,180,90,.2);
+  border-color: var(--green);
+  cursor: default;
+}

@@ -21,6 +21,7 @@ function brief(p: User) {
     skillPoints: p.skillPoints,
     ears: p.ears, earsCurrent: p.earsCurrent, tokens: p.tokens,
     createdAt: p.createdAt, lastSeen: p.lastSeen,
+    banned: !!p.banned, banReason: p.banReason || '',
     online: (Date.now() - (p.lastSeen || 0)) < 5 * 60 * 1000,
   };
 }
@@ -206,9 +207,95 @@ function listLogs(query: any) {
   return { logs: entries };
 }
 
+// ── Бан / разбан игрока ───────────────────────────────────────────
+function setBan(adminUser: User, body: any, notices: Notices) {
+  const players: Record<string, User> = require('./player').users();
+  const target = players[body.userId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (target.isAdmin) throw new u.ApiError('Нельзя забанить администратора');
+
+  const ban = !!body.banned;
+  target.banned = ban;
+  if (ban) {
+    target.banReason = String(body.reason || 'Нарушение правил').slice(0, 200);
+    target.bannedAt = Date.now();
+    // Завершаем все сессии забаненного игрока
+    try {
+      const sessions = require('../core/db').load('sessions', {});
+      for (const [tok, uid] of Object.entries(sessions)) {
+        if (uid === target.id) delete (sessions as any)[tok];
+      }
+      require('../core/db').save('sessions');
+    } catch (e) {}
+  } else {
+    target.banReason = '';
+    target.bannedAt = 0;
+  }
+  require('../core/db').save('users');
+  notices.push(ban
+    ? `🚫 Игрок «${target.name}» забанен. Причина: ${target.banReason}`
+    : `✅ Игрок «${target.name}» разбанен.`);
+  return { userId: target.id, banned: ban };
+}
+
+// ── Полное обнуление аккаунта (игрок начинает заново) ─────────────
+// Сбрасывает все игровые характеристики к стартовым значениям, сохраняя
+// учётные данные (логин, пароль, email, имя, гражданство, статус админа).
+function resetAccount(adminUser: User, body: any, notices: Notices) {
+  const players: Record<string, User> = require('./player').users();
+  const target = players[body.userId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (target.isAdmin && target.id !== adminUser.id) {
+    throw new u.ApiError('Нельзя обнулить аккаунт другого администратора');
+  }
+  const now = Date.now();
+
+  // Сбрасываем игровой прогресс к стартовым значениям
+  target.level = 1; target.xp = 0;
+  target.dollars = config.PLAYER.START_DOLLARS;
+  target.gold = config.PLAYER.START_GOLD;
+  target.bank = 0;
+  target.skillPoints = 0;
+  target.skills = { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 };
+  target.res = {
+    hp: { cur: config.PLAYER.BASE_HP, t: now },
+    en: { cur: config.PLAYER.BASE_ENERGY, t: now },
+    am: { cur: config.PLAYER.BASE_AMMO, t: now },
+  };
+  target.units = {}; target.workshops = 0; (target as any).modernQueue = [];
+  target.buildings = {};
+  target.secretDevs = {}; target.superSecret = 0;
+  target.ears = 0; target.tokens = 0; target.earsLost = 0;
+  target.earsCurrent = config.EARS.MAX; target.earsLostAt = []; target.earPenaltyUntil = 0;
+  target.earCutters = [null, null]; target.earMessage = null;
+  target.battle = { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 };
+  (target as any).counters = { wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0, level: 1 };
+  (target as any).achStages = {};
+  target.missions = {};
+  (target as any).tutorial = { step: 0, done: false };
+  target.effects = [];
+  target.trophies = Object.fromEntries(config.TROPHIES.map((t: any) => [t.id, 0]));
+  target.club = {};
+  target.allianceId = null;
+  target.legionId = null;
+  (target as any).lastIncomeAt = now;
+  target.pendingFatality = null;
+  (target as any).lastHospitalHeal = 0;
+  (target as any).lastAttackAt = 0;
+
+  require('../core/db').save('users');
+  // Уведомляем игрока
+  try {
+    require('./notifications').push(target.id, 'account_reset',
+      '⚠️ Ваш аккаунт был обнулён администрацией. Вы начинаете игру заново.', {});
+  } catch (e) {}
+  notices.push(`♻️ Аккаунт «${target.name}» полностью обнулён — игрок начинает заново.`);
+  return { userId: target.id };
+}
+
 export = {
   listPlayers, grant, grantAll, claimGift,
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
-  listLogs,
+  listLogs, setBan, resetAccount,
 };

@@ -1099,7 +1099,12 @@ App.screens.notifications = async (c) => {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt">✂️ Совершил фаталити и отрезал вам ухо.</p>`;
+        <p class="small mt">✂️ Совершил фаталити и отрезал вам ${p.doubleCut ? '<b style="color:var(--red)">оба уха одним ударом</b>' : 'ухо'}.${p.restored ? ' <span style="color:var(--green)">Но вы мгновенно восстановили ухо полевым хирургом! 🩹</span>' : ''}</p>`;
+    } else if (n.kind === 'fatality_escape') {
+      body = `
+        <div class="kv"><span class="k">Кто пытался</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <p class="small mt" style="color:var(--green)">💨 Вы ускользнули от фаталити благодаря ловкости!</p>`;
     } else if (n.kind === 'fatality_mercy') {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>

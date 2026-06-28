@@ -882,13 +882,19 @@ function tickAllBattles(all: any, users: any): void {
 
     // Фаза prep → active по таймеру
     if (battle.phase === 'prep' && now() >= battle.prepEndsAt) {
-      // Убираем тех кто не нажал «Готов» ИЛИ не выбрал направление
+      // Игрок, выбравший роль, считается подготовившимся. Если он не нажал
+      // «Готов» или не выбрал направление — проставляем автоматически, чтобы
+      // не выкидывать тех, кто реально зашёл в подготовку и выбрал роль.
       for (const [uid, c] of Object.entries(battle.combatants)) {
-        if (!c.ready || !c.direction) {
-          delete battle.combatants[uid];
-          notif.push(uid, 'legion_battle_kicked',
-            '⛔ Вы не подготовились к бою (нужно «Готов» + направление) — выбыли', {});
+        if (!c.direction) {
+          // Назначаем направление с наименьшим числом союзников (балансировка)
+          const counts = [1, 2, 3].map((d) => ({
+            d, n: Object.values(battle.combatants).filter((x) => x.side === c.side && x.direction === d).length,
+          }));
+          counts.sort((a, b) => a.n - b.n);
+          c.direction = counts[0].d as any;
         }
+        if (!c.ready) { c.ready = true; c.readyAt = now(); }
       }
 
       const sideA = Object.values(battle.combatants).filter(c => c.side === 'A');

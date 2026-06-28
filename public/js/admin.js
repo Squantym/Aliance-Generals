@@ -45,6 +45,7 @@ const Admin = {
   render() {
     const tabs = [
       { id:'players',   label:'👥 Игроки' },
+      { id:'support',   label:'🛟 Поддержка' },
       { id:'logs',      label:'📋 Журнал' },
       { id:'discounts', label:'🏷 Скидки' },
       { id:'buffs',     label:'🎉 Бонусы' },
@@ -70,6 +71,7 @@ const Admin = {
     });
     const c = document.getElementById('tab-content');
     if (Admin.tab === 'players')   return Admin.renderPlayers(c);
+    if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
@@ -145,6 +147,7 @@ const Admin = {
               <td style="padding:8px">
                 <span style="font-weight:bold">${p.flag} ${UI.esc(p.name)}</span>
                 ${p.isAdmin ? ' <span class="badge">admin</span>' : ''}
+                ${p.banned ? ' <span class="badge" style="background:var(--red)">🚫 бан</span>' : ''}
                 ${p.online ? ' <span style="color:var(--green);font-size:10px">● онлайн</span>' : ''}
                 <br><span class="muted small">Ур.${p.level} · ID: ${p.id}</span>
               </td>
@@ -152,9 +155,11 @@ const Admin = {
               <td style="padding:8px;text-align:right;font-size:12px">${UI.fmtNum(p.gold)}</td>
               <td style="padding:8px;text-align:right;font-size:12px">${p.earsCurrent ?? p.ears}</td>
               <td style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
-              <td style="padding:8px">
+              <td style="padding:8px;white-space:nowrap">
                 <button class="btn btn-orange btn-inline" data-pick="${p.id}">Выдать</button>
                 <button class="btn btn-inline" data-log="${p.id}" data-log-name="${UI.esc(p.name)}">📋</button>
+                ${!p.isAdmin ? `<button class="btn btn-inline" data-ban="${p.id}" data-banned="${p.banned ? '1' : '0'}" data-name="${UI.esc(p.name)}">${p.banned ? '✅ разбан' : '🚫 бан'}</button>
+                <button class="btn btn-inline" data-reset="${p.id}" data-name="${UI.esc(p.name)}" style="color:var(--red)">♻️ обнулить</button>` : ''}
               </td>
             </tr>`).join('')}
           </tbody>
@@ -174,6 +179,34 @@ const Admin = {
             const el = document.getElementById('log-uid');
             if (el) { el.value = btn.dataset.log; Admin.loadLogs(); }
           }, 50);
+        };
+      });
+      box.querySelectorAll('[data-ban]').forEach(btn => {
+        btn.onclick = async () => {
+          const isBanned = btn.dataset.banned === '1';
+          const name = btn.dataset.name;
+          if (isBanned) {
+            if (!confirm(`Разбанить игрока «${name}»?`)) return;
+            try { await API.post('/api/admin/ban', { userId: btn.dataset.ban, banned: false }); Admin.loadPlayers(); }
+            catch (e) { UI.toast('⛔ ' + e.message); }
+          } else {
+            const reason = prompt(`Причина бана игрока «${name}»:`, 'Нарушение правил');
+            if (reason === null) return;
+            try { await API.post('/api/admin/ban', { userId: btn.dataset.ban, banned: true, reason }); Admin.loadPlayers(); }
+            catch (e) { UI.toast('⛔ ' + e.message); }
+          }
+        };
+      });
+      box.querySelectorAll('[data-reset]').forEach(btn => {
+        btn.onclick = async () => {
+          const name = btn.dataset.name;
+          if (!confirm(`⚠️ ОБНУЛИТЬ аккаунт «${name}»?\n\nВсе характеристики, техника, постройки, прогресс будут сброшены к началу игры. Учётные данные (логин/пароль) сохранятся. Действие необратимо!`)) return;
+          if (!confirm(`Точно обнулить «${name}»? Это нельзя отменить.`)) return;
+          try {
+            await API.post('/api/admin/reset', { userId: btn.dataset.reset });
+            UI.toast(`♻️ Аккаунт «${name}» обнулён`);
+            Admin.loadPlayers();
+          } catch (e) { UI.toast('⛔ ' + e.message); }
         };
       });
     } catch(e) {
@@ -239,6 +272,62 @@ const Admin = {
   },
 
   // ── Вкладка: Журнал ─────────────────────────────────────────────
+  // ── Окно ответов на обращения игроков ──
+  async renderSupport(c) {
+    Admin._supStatus = Admin._supStatus || 'open';
+    c.innerHTML = `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn btn-inline ${Admin._supStatus==='open'?'btn-orange':''}" data-sup-f="open">Открытые</button>
+        <button class="btn btn-inline ${Admin._supStatus==='answered'?'btn-orange':''}" data-sup-f="answered">Отвеченные</button>
+        <button class="btn btn-inline ${Admin._supStatus==='closed'?'btn-orange':''}" data-sup-f="closed">Закрытые</button>
+        <button class="btn btn-inline ${Admin._supStatus==='all'?'btn-orange':''}" data-sup-f="all">Все</button>
+      </div>
+      <div id="sup-list"><div class="loading">Загрузка…</div></div>`;
+    c.querySelectorAll('[data-sup-f]').forEach(b => {
+      b.onclick = () => { Admin._supStatus = b.dataset.supF; Admin.renderSupport(c); };
+    });
+    try {
+      const data = await API.get('/api/admin/support?status=' + Admin._supStatus);
+      const box = document.getElementById('sup-list');
+      if (!data.tickets.length) { box.innerHTML = '<p class="muted center">Обращений нет.</p>'; return; }
+      box.innerHTML = data.tickets.map(t => `
+        <div class="card">
+          <div class="name" style="display:flex;justify-content:space-between;gap:8px">
+            <span>${UI.esc(t.subject)}</span>
+            <span class="muted small">${UI.esc(t.userName)} · ${t.status}</span>
+          </div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto">
+            ${t.messages.map(m => `
+              <div style="padding:7px 9px;border-radius:8px;background:${m.from==='admin'?'rgba(60,180,90,.1)':'rgba(255,255,255,.03)'};border:1px solid ${m.from==='admin'?'var(--green)':'var(--border)'}">
+                <div class="muted small">${m.from==='admin'?'🛟 '+UI.esc(m.authorName):'👤 '+UI.esc(m.authorName)} · ${new Date(m.at).toLocaleString('ru-RU')}</div>
+                <div style="margin-top:2px;white-space:pre-wrap">${UI.esc(m.text)}</div>
+              </div>`).join('')}
+          </div>
+          ${t.status!=='closed' ? `
+            <textarea id="ans-${t.id}" rows="2" placeholder="Ответ игроку…" style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <button class="btn btn-orange btn-inline" data-ans="${t.id}">Ответить</button>
+              <button class="btn btn-inline" data-ans-close="${t.id}">Ответить и закрыть</button>
+            </div>` : '<p class="muted small mt">Обращение закрыто.</p>'}
+        </div>`).join('');
+      box.querySelectorAll('[data-ans]').forEach(btn => {
+        btn.onclick = async () => {
+          const txt = (document.getElementById('ans-'+btn.dataset.ans)||{}).value||'';
+          try { await API.post('/api/admin/support/reply', { ticketId: btn.dataset.ans, text: txt, close: false }); Admin.renderSupport(c); }
+          catch(e){ UI.toast('⛔ '+e.message); }
+        };
+      });
+      box.querySelectorAll('[data-ans-close]').forEach(btn => {
+        btn.onclick = async () => {
+          const txt = (document.getElementById('ans-'+btn.dataset.ansClose)||{}).value||'';
+          try { await API.post('/api/admin/support/reply', { ticketId: btn.dataset.ansClose, text: txt, close: true }); Admin.renderSupport(c); }
+          catch(e){ UI.toast('⛔ '+e.message); }
+        };
+      });
+    } catch(e) {
+      document.getElementById('sup-list').innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>`;
+    }
+  },
   renderLogs(c) {
     c.innerHTML = `
       <div class="card">

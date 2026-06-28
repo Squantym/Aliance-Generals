@@ -749,9 +749,9 @@ const STORY_EPILOGUE =
 
 // ---------- ЧЁРНЫЙ РЫНОК ----------
 const MARKET_ITEMS = [
-  { id: 'stim',    name: 'Боевой стимулятор',  kind: 'buff',   effect: { type: 'atk_pct', value: 20 },  durMin: 120, gold: 8,
+  { id: 'stim',    name: 'Боевой стимулятор',  kind: 'buff',   effect: { type: 'atk_pct', value: 20 },  durMin: 120, gold: 15,
     desc: '+20% к атаке на 2 часа.' },
-  { id: 'armor',   name: 'Композитные накладки', kind: 'buff', effect: { type: 'def_pct', value: 20 },  durMin: 120, gold: 8,
+  { id: 'armor',   name: 'Композитные накладки', kind: 'buff', effect: { type: 'def_pct', value: 20 },  durMin: 120, gold: 15,
     desc: '+20% к защите на 2 часа.' },
   { id: 'energy',  name: 'Армейский энергетик «Заря»', kind: 'refill_energy', gold: 6,
     desc: 'Мгновенно восстанавливает всю энергию.' },
@@ -759,25 +759,25 @@ const MARKET_ITEMS = [
     desc: 'Мгновенно восстанавливает всё здоровье.' },
   { id: 'ammo',    name: 'Цинк боеприпасов',   kind: 'refill_ammo', gold: 10,
     desc: 'Мгновенно восстанавливает все боеприпасы.' },
-  { id: 'sabotage',name: 'Саботаж снабжения',  kind: 'debuff', effect: { type: 'atk_pct', value: -15 }, durMin: 120, gold: 15,
+  { id: 'sabotage',name: 'Саботаж снабжения',  kind: 'debuff', effect: { type: 'atk_pct', value: -15 }, durMin: 120, gold: 20,
     desc: '−15% к атаке врага на 2 часа.' },
-  { id: 'diversia',name: 'Диверсия на складах', kind: 'debuff', effect: { type: 'def_pct', value: -15 }, durMin: 120, gold: 15,
+  { id: 'diversia',name: 'Диверсия на складах', kind: 'debuff', effect: { type: 'def_pct', value: -15 }, durMin: 120, gold: 20,
     desc: '−15% к защите врага на 2 часа.' },
 
   // ── Новый допинг (бонусы себе) ──
-  { id: 'ammo_boost', name: 'Логистический пакет «Конвой»', kind: 'buff', effect: { type: 'ammo_regen_pct', value: 50 }, durMin: 240, gold: 12,
+  { id: 'ammo_boost', name: 'Логистический пакет «Конвой»', kind: 'buff', effect: { type: 'ammo_regen_pct', value: 50 }, durMin: 240, gold: 18,
     desc: '+50% к скорости восстановления боеприпасов на 4 часа.' },
-  { id: 'energy_boost', name: 'Стимулятор «Адреналин-Х»', kind: 'buff', effect: { type: 'energy_regen_pct', value: 50 }, durMin: 240, gold: 12,
+  { id: 'energy_boost', name: 'Стимулятор «Адреналин-Х»', kind: 'buff', effect: { type: 'energy_regen_pct', value: 50 }, durMin: 240, gold: 18,
     desc: '+50% к скорости восстановления энергии на 4 часа.' },
-  { id: 'crit_boost', name: 'Тактический анализатор «Ястреб»', kind: 'buff', effect: { type: 'crit_bonus', value: 20 }, durMin: 120, gold: 18,
+  { id: 'crit_boost', name: 'Тактический анализатор «Ястреб»', kind: 'buff', effect: { type: 'crit_bonus', value: 20 }, durMin: 120, gold: 28,
     desc: '+20% к шансу крит. удара СВЕРХ лимита 50% на 2 часа.' },
-  { id: 'dodge_boost', name: 'Маскировочный комплекс «Призрак»', kind: 'buff', effect: { type: 'dodge_bonus', value: 20 }, durMin: 120, gold: 18,
+  { id: 'dodge_boost', name: 'Маскировочный комплекс «Призрак»', kind: 'buff', effect: { type: 'dodge_bonus', value: 20 }, durMin: 120, gold: 28,
     desc: '+20% к шансу уворота СВЕРХ лимита 50% на 2 часа.' },
 
   // ── Новые подлянки (замедляют развитие врага) ──
-  { id: 'bureaucracy', name: 'Бюрократический саботаж', kind: 'debuff', effect: { type: 'build_slow_pct', value: 50 }, durMin: 180, gold: 20,
+  { id: 'bureaucracy', name: 'Бюрократический саботаж', kind: 'debuff', effect: { type: 'build_slow_pct', value: 50 }, durMin: 180, gold: 25,
     desc: 'Стройки и улучшения врага идут на 50% дольше в течение 3 часов.' },
-  { id: 'espionage', name: 'Промышленный шпионаж', kind: 'debuff', effect: { type: 'research_slow_pct', value: 50 }, durMin: 180, gold: 20,
+  { id: 'espionage', name: 'Промышленный шпионаж', kind: 'debuff', effect: { type: 'research_slow_pct', value: 50 }, durMin: 180, gold: 25,
     desc: 'Исследования и модернизации врага идут на 50% дольше в течение 3 часов.' },
 ];
 const MARKET_ITEM_BY_ID = Object.fromEntries(MARKET_ITEMS.map(i => [i.id, i]));
@@ -850,9 +850,18 @@ const RIDDLES = [
   { q: 'У него глаза цветные — не глаза, а три огня.', a: ['светофор'] },
 ];
 const CLUB = {
-  RIDDLE_GOLD: 3, RIDDLE_WIN_CD_MIN: 45, RIDDLE_FAIL_CD_MIN: 10,
-  GUESS_GOLD: 10, GUESS_RANGE: 500, GUESS_TRIES: 8, GUESS_WIN_CD_MIN: 30, GUESS_FAIL_CD_MIN: 15,
-  ARM_MIN_BET: 1000, ARM_CD_SEC: 60, ARM_BASE_CHANCE: 0.47,
+  // ── 1. Военный преферанс (блэкджек до 21 против генерала) ──
+  PREF_REWARD_MIN: 12, PREF_REWARD_MAX: 18, PREF_CD_WIN_MIN: 20, PREF_CD_FAIL_MIN: 8,
+  PREF_TARGET: 21, PREF_DEALER_STOP: 17,
+  // ── 2. Сейф штаба (взлом 4-значного кода, быки и коровы) ──
+  SAFE_REWARD: 20, SAFE_DIGITS: 4, SAFE_TRIES: 8, SAFE_CD_WIN_MIN: 35, SAFE_CD_FAIL_MIN: 12,
+  // ── 3. Минное поле (открывай ячейки, забирай вовремя) ──
+  MINE_REWARD_MAX: 20, MINE_CELLS: 25, MINE_BOMBS: 5, MINE_CD_MIN: 25,
+  MINE_STEP_REWARD: 2,  // золота за безопасную ячейку (растёт)
+  // ── 4. Полоса препятствий (5 этапов с выбором риска) ──
+  RUN_STAGES: 5, RUN_REWARD_MAX: 18, RUN_CD_WIN_MIN: 30, RUN_CD_FAIL_MIN: 10,
+  // ── 5. Штабная партия (тактическая дуэль, best of 5) ──
+  DUEL_REWARD_MIN: 10, DUEL_REWARD_MAX: 16, DUEL_WINS_NEEDED: 3, DUEL_CD_WIN_MIN: 18, DUEL_CD_FAIL_MIN: 6,
 };
 
 // ---------- ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ----------
@@ -905,7 +914,8 @@ const TROPHIES = [
   { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает критический урон: на макс. уровне крит наносит ×6 от базового урона (база крита ×2, трофей добавляет ещё +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
-  { id: 'sewing',    name: 'Набор швеи',                  desc: 'Шанс пришить ухо +4% за уровень (макс. 40%). (заглушка)', perLvl: 4, flavor: true },
+  { id: 'sewing',    name: 'Набор полевого хирурга',      desc: 'Шанс мгновенно восстановить отрезанное ухо +6% за уровень (макс. 60%).', perLvl: 6, apply: 'ear_restore' },
+  { id: 'butcher',   name: 'Тесак мясника',               desc: 'Шанс отрезать СРАЗУ ОБА уха при фаталити +6% за уровень (макс. 60%).', perLvl: 6, apply: 'double_ear', expensive: true },
   { id: 'hospital',  name: 'Полевой госпиталь',           desc: '−5% к цене лечения в госпитале за уровень (макс. 50%).', perLvl: 5, apply: 'hospital' },
   { id: 'supply',    name: 'Снабженческие линии',         desc: '−5% к содержанию техники за уровень (макс. 50%).',     perLvl: 5,   apply: 'upkeep' },
   { id: 'logistics', name: 'Логистика',                   desc: '−5% к времени регенерации энергии за уровень (макс. 50%).', perLvl: 5, apply: 'regen_en' },

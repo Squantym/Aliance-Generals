@@ -50,6 +50,16 @@ const App = {
     // Периодическая синхронизация с сервером и посекундный тик шапки
     // pollMe вызывается только при действиях игрока
     setInterval(() => App.tickHeader(), 1000);
+    // Автообновление боевого окна, пока оно открыто (чтобы видеть смену фаз
+    // prep→active→done и действия других игроков без ручного нажатия).
+    setInterval(() => {
+      if (!document.getElementById('battle-window')) return;
+      // Не перерисовываем, пока игрок печатает в поле (чат/ввод) — иначе
+      // перерисовка собьёт фокус и введённый текст.
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+      App._renderBattleWindow();
+    }, 2500);
   },
 
   // Обновить состояние игрока с сервера и перерисовать шапку
@@ -156,21 +166,31 @@ const App = {
     const win = document.getElementById('battle-window');
     if (!win) return;
     if (!App.me || !App.me.legion) { App._closeBattleWindow(); return; }
+    let battle;
     try {
-      const { battle } = await API.get('/api/legion/battle');
-      if (!battle || battle.phase === 'done') {
-        // Бой завершён — показываем итоги и кнопку закрыть
-        if (battle && battle.phase === 'done') {
-          App._renderBattleDone(win, battle);
-        } else {
-          App._closeBattleWindow();
-        }
-        return;
-      }
-      App._renderBattleContent(win, battle);
-    } catch(e) {
-      App._closeBattleWindow();
+      const res = await API.get('/api/legion/battle');
+      battle = res.battle;
+    } catch (e) {
+      // Сетевой сбой/таймаут — НЕ закрываем окно (иначе игрока выкидывает
+      // из подготовки при любом лаге). Просто пропускаем этот цикл,
+      // следующий poll перерисует окно.
+      return;
     }
+    // Бой пропал из ответа сервера — но это может быть кратковременный сбой.
+    // Закрываем только если у нас уже есть отрисованное содержимое и бой
+    // явно завершён; иначе оставляем окно ждать следующего обновления.
+    if (!battle) {
+      // Если окно ещё пустое (только открыли) — закрываем, открывать нечего.
+      if (!win.dataset.rendered) { App._closeBattleWindow(); }
+      return;
+    }
+    if (battle.phase === 'done') {
+      App._renderBattleDone(win, battle);
+      win.dataset.rendered = '1';
+      return;
+    }
+    App._renderBattleContent(win, battle);
+    win.dataset.rendered = '1';
   },
 
   _closeBattleWindow() {

@@ -293,6 +293,12 @@ function removeUnits(victim: any, armyEntries: any[], pctBase: number, crit: boo
 // ---------- ГЛАВНАЯ ФУНКЦИЯ: атака цели ----------
 function attack(user: User, targetId: string, notices: Notices) {
   if (user.pendingFatality) throw new u.ApiError('Сначала решите судьбу поверженного врага (фаталити)!');
+  // Кулдаун атак — 1 секунда (защита от спама)
+  const ATTACK_CD_MS = 1000;
+  const nowMs = Date.now();
+  if ((user as any).lastAttackAt && nowMs - (user as any).lastAttackAt < ATTACK_CD_MS) {
+    throw new u.ApiError('Слишком быстро! Между атаками нужна 1 секунда.');
+  }
   if (user.res.am.cur < 1) throw new u.ApiError('Нет боеприпасов. Они восстанавливаются со временем.');
   if (user.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) {
     throw new u.ApiError(`Здоровье ниже ${config.PLAYER.MIN_HP_TO_FIGHT} — сначала подлечитесь.`);
@@ -311,6 +317,14 @@ function attack(user: User, targetId: string, notices: Notices) {
     target = player.users()[targetId];
     if (!target || target.id === user.id) throw new u.ApiError('Цель не найдена');
     player.refresh(target);
+    // Заказчик санкции НЕ может сам атаковать свою цель — её бьют другие.
+    try {
+      if (require('./sanctions').isOrderer(user.id, targetId)) {
+        throw new u.ApiError('Вы заказали санкцию на этого игрока — его бьют другие, вам атаковать нельзя.');
+      }
+    } catch (e) {
+      if (e instanceof u.ApiError) throw e;
+    }
     // Цель с активной санкцией можно атаковать вне диапазона уровней и
     // добивать ниже лазаретного порога (охота за наградой)
     let underSanction = false;
@@ -325,6 +339,7 @@ function attack(user: User, targetId: string, notices: Notices) {
 
   // Тратим боеприпас и фиксируем попытку
   user.res.am.cur -= 1;
+  (user as any).lastAttackAt = nowMs;
   user.battle.attacks++;
   require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
@@ -596,6 +611,19 @@ function fatality(user: User, choice: string, notices: Notices) {
         user.pendingFatality = null;
         throw new u.ApiError(`У «${victimCheck.name}» уже нет ушей — фаталити невозможно совершить.`);
       }
+      // ЛОВКОСТЬ ЖЕРТВЫ: тем же шансом, что и уворот в бою (база макс 50% +
+      // допинг «Призрак» до +20%), жертва может ускользнуть от фаталити —
+      // и от отрезания уха, и от помилования. Окно просто закрывается.
+      const dodgeBase = Math.min(B.DODGE_MAX, victimCheck.skills.agility * B.DODGE_PER_AGILITY);
+      const dodgeChance = dodgeBase + (player.effMul(victimCheck, 'dodge_bonus') - 1);
+      if (Math.random() < dodgeChance) {
+        user.pendingFatality = null;
+        notifications.push(victimCheck.id, 'fatality_escape', `Вы ускользнули от фаталити игрока ${user.name}!`, {
+          attackerName: user.name, attackerId: user.id, at: Date.now(),
+        });
+        notices.push(`💨 «${victimCheck.name}» ускользнул в последний момент — фаталити сорвалось!`);
+        return { choice: 'escaped', escaped: true, ears: user.ears, tokens: user.tokens };
+      }
     }
   }
   user.pendingFatality = null;
@@ -604,38 +632,62 @@ function fatality(user: User, choice: string, notices: Notices) {
   require('./dailyQuests').bump(user, 'fatalities', 1);
 
   if (choice === 'ear') {
-    // Отрезаем ухо: +1 ресурс «ухо» себе, жертве — счётчик потерянных ушей
-    // и реальное снижение earsCurrent (лимит 2 уха на игрока)
     user.ears++;
     ach.bump(user, 'earsCut', 1, notices);
     let canLeaveMessage = false;  // true, если этот игрок отрезал ОБА уха
     if (!pf.isBot) {
       const victim = player.users()[pf.targetId];
       if (victim) {
-        victim.earsLost++;
-        victim.earsCurrent = Math.max(0, victim.earsCurrent - 1);
-        victim.earsLostAt.push(Date.now());
-        // Записываем, КТО отрезал это ухо. Первое отрезанное → левое (0),
-        // второе → правое (1). Слот определяем по числу уже отрезанных.
+        // Трофей «Тесак мясника»: шанс отрезать СРАЗУ ОБА уха
+        const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
+        const doubleCut = victim.earsCurrent >= 2 && Math.random() * 100 < doublePct;
+        const cutsToMake = doubleCut ? 2 : 1;
+        if (doubleCut) user.ears++; // второе ухо тоже в коллекцию
+
         if (!victim.earCutters) victim.earCutters = [null, null];
-        const cutIndex = config.EARS.MAX - victim.earsCurrent - 1; // 0 для первого, 1 для второго
-        const slot = Math.max(0, Math.min(config.EARS.MAX - 1, cutIndex));
-        victim.earCutters[slot] = { id: user.id, name: user.name };
-        // Если оба уха отрезаны ОДНИМ и тем же игроком — он может оставить послание
-        const both = victim.earCutters[0] && victim.earCutters[1];
-        if (both && victim.earCutters[0]!.id === user.id && victim.earCutters[1]!.id === user.id) {
+        for (let k = 0; k < cutsToMake; k++) {
+          victim.earsLost++;
+          victim.earsCurrent = Math.max(0, victim.earsCurrent - 1);
+          victim.earsLostAt.push(Date.now());
+          const cutIndex = config.EARS.MAX - victim.earsCurrent - 1;
+          const slot = Math.max(0, Math.min(config.EARS.MAX - 1, cutIndex));
+          victim.earCutters[slot] = { id: user.id, name: user.name };
+        }
+
+        // Трофей жертвы «Полевой хирург»: шанс мгновенно восстановить ухо.
+        // Восстанавливает ОДНО ухо (последнее отрезанное). Если восстановил —
+        // нападавший уже не отрезал «оба», и послание оставить нельзя.
+        const restorePct = trophies.discountPct ? trophies.discountPct(victim, 'ear_restore') : 0;
+        let restored = false;
+        if (restorePct > 0 && Math.random() * 100 < restorePct && victim.earsCurrent < config.EARS.MAX) {
+          victim.earsCurrent = Math.min(config.EARS.MAX, victim.earsCurrent + 1);
+          if (victim.earsLostAt.length > 0) victim.earsLostAt.pop();
+          // Снимаем последнюю отметку об отрезавшем (ухо вернулось)
+          const lostNow = config.EARS.MAX - victim.earsCurrent;
+          if (lostNow < 2) victim.earCutters[1] = null;
+          if (lostNow < 1) victim.earCutters[0] = null;
+          restored = true;
+        }
+
+        // Послание можно оставить только если СЕЙЧАС оба уха отрезаны этим игроком
+        const c0 = victim.earCutters[0], c1 = victim.earCutters[1];
+        if (c0 && c1 && c0.id === user.id && c1.id === user.id) {
           canLeaveMessage = true;
         }
+
         let penaltyNote = '';
         if (victim.earsCurrent <= 0) {
           victim.earPenaltyUntil = Date.now() + config.EARS.PENALTY_MS;
-          penaltyNote = ' Оба уха отрезаны — действует штраф −10% к атаке и защите на 6 часов.';
+          penaltyNote = ' Оба уха отрезаны — штраф −10% к атаке и защите на 6 часов.';
         }
-        notifications.push(victim.id, 'fatality_ear', `${user.name} совершил фаталити и отрезал вам ухо`, {
+        const cutMsg = doubleCut ? 'оба уха одним ударом' : 'ухо';
+        const restMsg = restored ? ' Но жертва мгновенно восстановила ухо полевым хирургом!' : '';
+        notifications.push(victim.id, 'fatality_ear', `${user.name} совершил фаталити и отрезал вам ${cutMsg}${restored ? ', но вы восстановили ухо' : ''}`, {
           attackerName: user.name, attackerId: user.id, at: Date.now(),
           earsLeft: victim.earsCurrent, penaltyApplied: victim.earsCurrent <= 0,
+          doubleCut, restored,
         });
-        notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).${penaltyNote ? ' (Жертва получила штраф)' : ''}`);
+        notices.push(`✂️ Фаталити! Отрезано: ${cutMsg} (трофеев-ушей всего: ${user.ears}).${penaltyNote}${restMsg}`);
       } else {
         notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
       }

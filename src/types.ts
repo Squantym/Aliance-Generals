@@ -105,6 +105,9 @@ export interface User {
   passHash: string;
   salt: string;
   isAdmin: boolean;
+  banned?: boolean;          // забанен администратором
+  banReason?: string;        // причина бана (видна игроку)
+  bannedAt?: number;         // когда забанен
   emailVerified: boolean;
   emailVerifyToken: string | null;
   emailVerifySentAt: number;
@@ -142,6 +145,8 @@ export interface User {
   // Послание от того, кто отрезал оба уха (видно всем в профиле)
   earMessage?: { byId: string; byName: string; text: string } | null;
   earPenaltyUntil: number;
+  lastAttackAt?: number;      // время последней атаки (кулдаун 1 сек)
+  lastHospitalHeal?: number;  // время последнего лечения в госпитале (кулдаун 5 мин)
   adminEars?: number;    // выданные админом (не учитываются в статистике)
   adminTokens?: number;
 

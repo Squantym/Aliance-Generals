@@ -88,13 +88,16 @@ const UI = {
     const old = document.getElementById('item-modal');
     if (old) old.remove();
     const isUnit = d.kind === 'units';
-    const statsHtml = isUnit
+    const isSecret = d.kind === 'secret';
+    const statsHtml = (isUnit || isSecret)
       ? `<div class="kv"><span class="k">⚔ Атака</span><span class="v">${UI.fmtNum(d.attack||0)}</span></div>
          <div class="kv"><span class="k">🛡 Защита</span><span class="v">${UI.fmtNum(d.defense||0)}</span></div>
-         ${d.type ? `<div class="kv"><span class="k">Тип</span><span class="v">${UI.esc(d.type)}</span></div>` : ''}`
+         ${d.type ? `<div class="kv"><span class="k">Тип</span><span class="v">${UI.esc(d.type)}</span></div>` : ''}
+         ${isSecret ? `<div class="kv"><span class="k gold">🔬 Секретная разработка</span><span class="v"></span></div>` : ''}`
       : (d.kindB === 'income'
           ? `<div class="kv"><span class="k">💵 Доход</span><span class="v">$ ${UI.fmtMoney(d.income||0)}/час</span></div>`
           : `<div class="kv"><span class="k">🛡 Защита</span><span class="v">+${UI.fmtNum(d.def||0)} очков</span></div>`);
+    const fallbackIcon = isSecret ? '🛸' : (isUnit ? '🚜' : '🏛');
     const m = document.createElement('div');
     m.id = 'item-modal';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -105,7 +108,7 @@ const UI = {
           <img src="img/${d.kind}/${String(d.id||'').replace(/[^a-z0-9_]/gi,'')}.webp"
             style="max-width:100%;max-height:180px;object-fit:contain"
             onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-          <span style="display:none;font-size:40px">${isUnit?'🚜':'🏛'}</span>
+          <span style="display:none;font-size:40px">${fallbackIcon}</span>
         </div>
         <div style="font-size:18px;font-weight:bold;margin-bottom:4px">${UI.esc(d.name)}</div>
         <div style="font-size:14px;color:var(--gold);margin-bottom:12px">В наличии: ×${UI.fmtNum(d.count)}</div>

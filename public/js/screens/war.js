@@ -130,6 +130,10 @@ App.screens.war = async (c) => {
     try {
       const res = await API.post('/api/war/fatality', { choice });
       App._lastBattle = null;
+      // Жертва ускользнула благодаря ловкости
+      if (res && res.escaped) {
+        UI.toast('💨 Жертва ускользнула — фаталити сорвалось!');
+      }
       // Если игрок отрезал ОБА уха одной жертве — предлагаем оставить послание
       if (res && res.canLeaveMessage && res.victimId) {
         App._showEarMessagePrompt(res.victimId);

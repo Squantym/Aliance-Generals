@@ -203,6 +203,9 @@ function login(loginName: string, password: string, ip: string) {
   if (!found.emailVerified) {
     throw new u.ApiError(`Подтвердите почту — письмо отправлено при регистрации. Не пришло? Нажмите «Отправить повторно».`);
   }
+  if (found.banned) {
+    throw new u.ApiError('Ваш аккаунт заблокирован администрацией.' + (found.banReason ? ' Причина: ' + found.banReason : ''));
+  }
 
   // Успешный вход — сбрасываем счётчик попыток
   if (ip) clearRateLimit(ip);

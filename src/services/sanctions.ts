@@ -37,6 +37,14 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   if (!target) throw new u.ApiError('Игрок не найден');
   if (target.isBot) throw new u.ApiError('Нельзя объявить санкцию на бота');
 
+  // Объявить санкцию можно ТОЛЬКО на того, кто напал и отрезал тебе ухо.
+  // Проверяем по earCutters — там записаны те, кто отрезал уши заказчику.
+  const cutters = user.earCutters || [];
+  const cutByTarget = cutters.some((c) => c && c.id === targetId);
+  if (!cutByTarget) {
+    throw new u.ApiError('Объявить санкцию можно только на того, кто напал на вас и отрезал ухо.');
+  }
+
   if (user.dollars < amount) {
     throw new u.ApiError(`Не хватает денег (нужно $${u.fmt(amount)}, есть $${u.fmt(Math.floor(user.dollars))})`);
   }
@@ -133,4 +141,13 @@ function clearTarget(targetId: string): void {
   if (s[targetId]) { delete s[targetId]; db.save('sanctions'); }
 }
 
-export = { declare, list, checkPayout, clearTarget, MIN_BOUNTY, HP_THRESHOLD_PCT };
+// Проверка: заказывал ли userId санкцию на targetId.
+// Используется в бою — заказчик не может сам бить свою цель (её бьют другие).
+function isOrderer(userId: string, targetId: string): boolean {
+  const s = store();
+  const entry = s[targetId];
+  if (!entry || !entry.orders) return false;
+  return entry.orders.some((o: any) => o.byId === userId);
+}
+
+export = { declare, list, checkPayout, clearTarget, isOrderer, MIN_BOUNTY, HP_THRESHOLD_PCT };

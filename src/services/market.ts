@@ -132,8 +132,8 @@ function containersView(user: User) {
 function openContainer(user: User, tier: number | string, notices: Notices, qty?: number) {
   const c = config.CONTAINERS.find((x) => x.tier === u.toInt(tier));
   if (!c) throw new u.ApiError('Такого контейнера не существует');
-  qty = u.clamp(u.toInt(qty, 1), 1, 5);
-  if (![1, 3, 5].includes(qty)) throw new u.ApiError('Можно открыть только 1, 3 или 5 контейнеров за раз');
+  qty = u.clamp(u.toInt(qty, 1), 1, 10);
+  if (![1, 5, 10].includes(qty)) throw new u.ApiError('Можно открыть только 1, 5 или 10 контейнеров за раз');
 
   const unitPrice = containerGold(c);
   const totalPrice = unitPrice * qty;
@@ -261,6 +261,30 @@ function tick(): void {
 function auctionView() {
   tick();
   const now = Date.now();
+  // Кто сейчас владеет наёмниками (активный эффект, выигранный на аукционе).
+  // Эффекты наёмников имеют id вида cmd_{commanderId}_{type}.
+  const holders: any[] = [];
+  const seen = new Set<string>();
+  for (const usr of Object.values(player.users())) {
+    for (const e of (usr.effects || [])) {
+      if (typeof e.id === 'string' && e.id.startsWith('cmd_') && e.expiresAt > now) {
+        const cmdId = e.id.split('_')[1];
+        const key = usr.id + '_' + cmdId;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const c = config.COMMANDERS.find((x: any) => x.id === cmdId);
+        if (c) {
+          holders.push({
+            commanderName: c.name,
+            holderId: usr.id,
+            holderName: usr.name,
+            expiresInSec: Math.max(0, Math.ceil((e.expiresAt - now) / 1000)),
+          });
+        }
+      }
+    }
+  }
+
   return {
     lots: world().auctions.map((lot) => {
       const c = config.COMMANDERS.find((x: any) => x.id === lot.commanderId) || { name: '?', desc: '' };
@@ -272,6 +296,7 @@ function auctionView() {
         endsInSec: Math.max(0, Math.ceil((lot.endsAt - now) / 1000)),
       };
     }),
+    holders,
     rentHours: config.AUCTION.RENT_HOURS,
     minBid: config.AUCTION.MIN_BID,
     bidStep: config.AUCTION.BID_STEP,
