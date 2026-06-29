@@ -598,21 +598,21 @@ const INCOME_BUILDINGS = [
 
 const DEFENSE_BUILDINGS = [
   // Защита уменьшена ещё на 50% от предыдущей версии (по балансу).
-  { id: 'bunker',    name: 'Бункер',                          def: 9,     price: 1250,         unlock: 30  },
-  { id: 'bashnya',   name: 'Дозорная башня',                  def: 21,    price: 3500,         unlock: 40  },
-  { id: 'pvo',       name: 'Система ПВО',                     def: 39,    price: 10000,        unlock: 50  },
-  { id: 'batareya',  name: 'Защитная батарея',                def: 67,    price: 27500,        unlock: 60  },
-  { id: 'mine',      name: 'Минное поле',                     def: 105,   price: 75000,        unlock: 70  },
-  { id: 'strazh',    name: 'Система «Страж»',                 def: 158,   price: 200000,       unlock: 80  },
-  { id: 'bereg',     name: 'Береговая оборона',               def: 228,   price: 500000,       unlock: 90  },
-  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 333,   price: 1400000,      unlock: 100 },
-  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 473,   price: 3750000,      unlock: 110 },
-  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 665,   price: 10000000,     unlock: 120 },
-  { id: 'kupol',     name: 'Энергетический купол',            def: 928,   price: 27000000,     unlock: 130 },
-  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 1313,  price: 70000000,     unlock: 140 },
-  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 1838,  price: 190000000,    unlock: 150 },
-  { id: 'grav_wall', name: 'Гравитационная стена',            def: 2538,  price: 500000000,    unlock: 160 },
-  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 3500,  price: 1400000000,   unlock: 170 },
+  { id: 'bunker',    name: 'Бункер',                          def: 9,     price: 1250,         unlock: 15  },
+  { id: 'bashnya',   name: 'Дозорная башня',                  def: 21,    price: 3500,         unlock: 25  },
+  { id: 'pvo',       name: 'Система ПВО',                     def: 39,    price: 10000,        unlock: 35  },
+  { id: 'batareya',  name: 'Защитная батарея',                def: 67,    price: 27500,        unlock: 45  },
+  { id: 'mine',      name: 'Минное поле',                     def: 105,   price: 75000,        unlock: 55  },
+  { id: 'strazh',    name: 'Система «Страж»',                 def: 158,   price: 200000,       unlock: 65  },
+  { id: 'bereg',     name: 'Береговая оборона',               def: 228,   price: 500000,       unlock: 75  },
+  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 333,   price: 1400000,      unlock: 85  },
+  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 473,   price: 3750000,      unlock: 95  },
+  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 665,   price: 10000000,     unlock: 105 },
+  { id: 'kupol',     name: 'Энергетический купол',            def: 928,   price: 27000000,     unlock: 115 },
+  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 1313,  price: 70000000,     unlock: 125 },
+  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 1838,  price: 190000000,    unlock: 135 },
+  { id: 'grav_wall', name: 'Гравитационная стена',            def: 2538,  price: 500000000,    unlock: 145 },
+  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 3500,  price: 1400000000,   unlock: 155 },
 ];
 
 const BUILDING_BY_ID = Object.fromEntries(

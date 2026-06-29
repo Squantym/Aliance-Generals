@@ -196,6 +196,7 @@ export interface User {
   allianceMembers?: number;
   allianceRoster?: { id: string; name: string; isBot?: boolean }[];
   allianceDiplomats?: number;
+  allianceInviteLog?: number[];   // метки времени отправленных заявок (для лимита/час)
   legionId: string | null;
 
   lastIncomeAt: number;

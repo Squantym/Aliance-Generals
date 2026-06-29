@@ -343,14 +343,15 @@ App.screens.profile = async (c, param) => {
 
   c.innerHTML = `
     <div class="title">Личное дело</div>
-    <div class="card">
+    <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="list-row">
-        <div class="face" style="font-size:34px">${p.online ? '🟢' : '⚪'}</div>
+        <div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">${p.online ? '🟢' : '⚪'}</div>
         <div class="grow">
           <div class="name" style="font-size:17px">${p.flag} ${UI.esc(p.name)}</div>
+          ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}
           <div class="muted small">Звание: <b>${UI.esc(p.rank)}</b> · Ур. ${p.level} · Рейтинг ${UI.fmtNum(p.rating)}</div>
           ${p.countryName ? `<div class="muted small">${p.flag} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
-          <div class="muted small">${p.alliance ? 'Альянс: <b>' + UI.esc(p.alliance.name) + '</b> (' + p.alliance.members + ' чел.)' : 'Без альянса'}</div>
+          <div class="muted small">${(p.alliance && p.alliance.members) ? 'Альянс: <b>' + p.alliance.members + ' бойцов</b>' : 'Без альянса'}</div>
           ${p.legion ? `<div class="muted small">Легион: <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${p.legion.id}')">🏰 ${UI.esc(p.legion.name)}</b> <span style="font-size:10px">(${p.legion.rankName || 'Боец'})</span></div>` : '<div class="muted small">Без легиона</div>'}
         </div>
       </div>

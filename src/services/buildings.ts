@@ -44,9 +44,22 @@ function viewOne(user: User, b: any) {
 
 function list(user: User) {
   const now = Date.now();
+  // Фильтр витрины: показываем открытые + те, что откроются в ближайшие 10 ур.
+  // Но если так ничего не попадает (все постройки ещё далеко по уровню) —
+  // показываем хотя бы ближайшую открывающуюся, чтобы игрок видел, с какого
+  // уровня раздел станет доступен (иначе вкладка пустая).
+  const visibleFilter = (arr: any[]) => {
+    let vis = arr.filter((b) => b.unlock <= user.level + 10);
+    if (vis.length === 0 && arr.length > 0) {
+      // ближайшая по уровню заблокированная
+      const next = arr.slice().sort((a, b) => a.unlock - b.unlock)[0];
+      vis = [next];
+    }
+    return vis;
+  };
   return {
-    income: config.INCOME_BUILDINGS.filter((b) => b.unlock <= user.level + 10).map((b) => viewOne(user, { ...b, kind: 'income' })),
-    defense: config.DEFENSE_BUILDINGS.filter((b) => b.unlock <= user.level + 10).map((b) => viewOne(user, { ...b, kind: 'defense' })),
+    income: visibleFilter(config.INCOME_BUILDINGS).map((b) => viewOne(user, { ...b, kind: 'income' })),
+    defense: visibleFilter(config.DEFENSE_BUILDINGS).map((b) => viewOne(user, { ...b, kind: 'defense' })),
     totals: {
       incomePerHour: player.totalIncome(user),
       upkeepPerHour: player.totalUpkeep(user),

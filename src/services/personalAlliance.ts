@@ -12,8 +12,9 @@ import config = require('../../config/gameConfig');
 import type { User, Notices } from '../types';
 
 const A = config.ALLIANCE;
-const INVITE_COST_GOLD = 50;     // приглашение бота-наёмника стоит золота
-const DIPLOMAT_BASE = 5;
+const INVITE_BASE_PER_HOUR = 5;      // базовый лимит заявок в час
+const DIPLOMAT_BASE_COST = 200;      // первый дипломат — 200 золота
+const HOUR_MS = 3600 * 1000;
 
 function users(): Record<string, User> { return require('./player').users(); }
 
@@ -22,6 +23,7 @@ function ensure(user: User): void {
   if (typeof user.allianceMembers !== 'number') user.allianceMembers = 0;
   if (!Array.isArray(user.allianceRoster)) user.allianceRoster = [];
   if (typeof user.allianceDiplomats !== 'number') user.allianceDiplomats = 0;
+  if (!Array.isArray(user.allianceInviteLog)) user.allianceInviteLog = [];
 }
 
 // Лимит размера альянса = уровень × MEMBERS_PER_LEVEL
@@ -29,9 +31,35 @@ function maxMembers(user: User): number {
   return user.level * (A.MEMBERS_PER_LEVEL || 10);
 }
 
+// Лимит заявок в час = база + число дипломатов
+function inviteLimit(user: User): number {
+  return INVITE_BASE_PER_HOUR + (user.allianceDiplomats || 0);
+}
+
+// Сколько заявок отправлено за последний час (чистит старые записи)
+function invitesUsedThisHour(user: User): number {
+  ensure(user);
+  const now = Date.now();
+  user.allianceInviteLog = user.allianceInviteLog!.filter((t) => now - t < HOUR_MS);
+  return user.allianceInviteLog!.length;
+}
+
+// Цена следующего дипломата: 200, 400, 800… (вдвое за каждого купленного)
+function nextDiplomatCost(user: User): number {
+  return DIPLOMAT_BASE_COST * Math.pow(2, user.allianceDiplomats || 0);
+}
+
+// Записать использование одной заявки
+function logInvite(user: User): void {
+  ensure(user);
+  user.allianceInviteLog!.push(Date.now());
+}
+
 // ── Вид экрана альянса ────────────────────────────────────────────
 function view(user: User) {
   ensure(user);
+  const used = invitesUsedThisHour(user);
+  const limit = inviteLimit(user);
   return {
     members: user.allianceMembers,
     maxMembers: maxMembers(user),
@@ -39,26 +67,46 @@ function view(user: User) {
     diplomats: user.allianceDiplomats,
     perMember: A.PER_MEMBER,
     bonusCapacity: A.PER_MEMBER * (user.allianceMembers || 0),
-    inviteCostGold: INVITE_COST_GOLD,
+    // Заявки в час
+    inviteLimit: limit,
+    invitesUsed: used,
+    invitesLeft: Math.max(0, limit - used),
+    nextDiplomatCost: nextDiplomatCost(user),
   };
 }
 
-// ── Пригласить бота-наёмника (мгновенно +1) ──────────────────────
-function recruitBot(user: User, notices: Notices) {
+// ── Пригласить бота в альянс (расходует заявку в час, без золота) ──
+function inviteBot(user: User, notices: Notices) {
   ensure(user);
   if (user.allianceMembers! >= maxMembers(user)) {
     throw new u.ApiError(`Лимит альянса: ${maxMembers(user)} (растёт с уровнем). Поднимите уровень.`);
   }
-  if (user.gold < INVITE_COST_GOLD) {
-    throw new u.ApiError(`Вербовка наёмника стоит 🪙 ${INVITE_COST_GOLD}`);
+  const used = invitesUsedThisHour(user);
+  const limit = inviteLimit(user);
+  if (used >= limit) {
+    throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
   }
-  user.gold -= INVITE_COST_GOLD;
+  logInvite(user);
   user.allianceMembers!++;
   const botNames = ['Ветеран', 'Снайпер', 'Сапёр', 'Радист', 'Танкист', 'Десантник', 'Пулемётчик', 'Разведчик', 'Гранатомётчик', 'Медик'];
   const name = u.pick(botNames) + ' #' + Math.floor(Math.random() * 900 + 100);
   user.allianceRoster!.push({ id: 'bot_' + u.uid(8), name, isBot: true });
   db.save('users');
-  notices.push(`🤝 Наёмник «${name}» завербован в ваш альянс! Теперь в строю: ${user.allianceMembers}.`);
+  notices.push(`🤝 Боец «${name}» вступил в ваш альянс! В строю: ${user.allianceMembers}. Заявок осталось: ${limit - used - 1}/час.`);
+  return view(user);
+}
+
+// ── Купить дипломата (+1 к лимиту заявок в час) ──────────────────
+function buyDiplomat(user: User, notices: Notices) {
+  ensure(user);
+  const cost = nextDiplomatCost(user);
+  if (user.gold < cost) {
+    throw new u.ApiError(`Дипломат стоит 🪙 ${cost} (каждый следующий вдвое дороже).`);
+  }
+  user.gold -= cost;
+  user.allianceDiplomats = (user.allianceDiplomats || 0) + 1;
+  db.save('users');
+  notices.push(`🎩 Дипломат нанят! Лимит заявок: ${inviteLimit(user)}/час. Всего дипломатов: ${user.allianceDiplomats}.`);
   return view(user);
 }
 
@@ -68,12 +116,17 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
   if (user.allianceMembers! >= maxMembers(user)) {
     throw new u.ApiError(`Лимит альянса: ${maxMembers(user)}. Поднимите уровень.`);
   }
+  const used = invitesUsedThisHour(user);
+  const limit = inviteLimit(user);
+  if (used >= limit) {
+    throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
+  }
   const q = String(targetName || '').trim().toLowerCase();
   if (!q) throw new u.ApiError('Введите позывной игрока');
   const target = Object.values(users()).find((p) => p.name.toLowerCase() === q);
   if (!target) throw new u.ApiError('Игрок не найден');
   if (target.id === user.id) throw new u.ApiError('Нельзя пригласить самого себя');
-  if (target.isBot) throw new u.ApiError('Это бот — вербуйте наёмников отдельной кнопкой');
+  if (target.isBot) throw new u.ApiError('Это бот — приглашайте бойцов отдельной кнопкой');
 
   // Кладём заявку в инбокс цели
   const inv = db.load<Record<string, any[]>>('alliance_invites', {});
@@ -81,13 +134,15 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
   if (inv[target.id].some((x: any) => x.fromId === user.id)) {
     throw new u.ApiError('Вы уже приглашали этого игрока');
   }
+  logInvite(user);
   inv[target.id].push({ fromId: user.id, fromName: user.name, at: Date.now() });
   db.save('alliance_invites');
+  db.save('users');
   try {
     require('./notifications').push(target.id, 'alliance_invite',
       `🤝 ${user.name} приглашает вас в свой альянс`, { fromId: user.id, fromName: user.name });
   } catch (e) {}
-  notices.push(`✉️ Приглашение отправлено игроку «${target.name}».`);
+  notices.push(`✉️ Приглашение отправлено игроку «${target.name}». Заявок осталось: ${limit - used - 1}/час.`);
   return { ok: true };
 }
 
@@ -156,6 +211,6 @@ function removeMember(user: User, memberId: string, notices: Notices) {
 }
 
 export = {
-  ensure, maxMembers, view, recruitBot, invitePlayer,
+  ensure, maxMembers, view, inviteBot, buyDiplomat, invitePlayer,
   myInvites, acceptInvite, declineInvite, removeMember,
 };

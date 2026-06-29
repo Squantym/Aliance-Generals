@@ -218,7 +218,8 @@ function registerRoutes(app: any) {
   // Личный альянс (у каждого игрока свой)
   app.add('GET',  '/api/alliance',          (req) => palliance.view(req.user));
   app.add('GET',  '/api/alliance/invites',  (req) => palliance.myInvites(req.user));
-  app.add('POST', '/api/alliance/recruit',  act((req, n) => palliance.recruitBot(req.user, n)));
+  app.add('POST', '/api/alliance/invite-bot', act((req, n) => palliance.inviteBot(req.user, n)));
+  app.add('POST', '/api/alliance/diplomat',   act((req, n) => palliance.buyDiplomat(req.user, n)));
   app.add('POST', '/api/alliance/invite',   act((req, n) => palliance.invitePlayer(req.user, req.body.name, n)));
   app.add('POST', '/api/alliance/accept',   act((req, n) => palliance.acceptInvite(req.user, req.body.fromId, n)));
   app.add('POST', '/api/alliance/decline',  act((req, n) => palliance.declineInvite(req.user, req.body.fromId, n)));

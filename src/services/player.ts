@@ -948,6 +948,10 @@ function publicProfile(target: User, viewer: User): any {
       count: target.superSecret, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
     } : null,
     hideArmy: !isOwn,   // флаг для фронта: армия скрыта, нужна разведка
+    // Титул и косметика профиля — видны всем
+    activeTitle: (() => { try { return require('./features').activeTitleName(target); } catch (e) { return null; } })(),
+    profileFrame: target.profileFrame || null,
+    profileBg: target.profileBg || null,
     isOwn,
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,

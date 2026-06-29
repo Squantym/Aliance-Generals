@@ -1851,3 +1851,27 @@ body.theme-cyber .img-frame {
   border-color: var(--green);
   cursor: default;
 }
+
+/* ===== Косметика профиля: рамки аватара ===== */
+.pf-avatar {
+  width: 56px; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 34px; border-radius: 50%;
+  background: rgba(255,255,255,.04);
+  box-sizing: border-box;
+}
+.pf-avatar.frame_gold   { border: 3px solid #e9c75c; box-shadow: 0 0 8px rgba(233,199,92,.6); }
+.pf-avatar.frame_steel  { border: 3px solid #8c9aa8; box-shadow: 0 0 6px rgba(140,154,168,.5); }
+.pf-avatar.frame_blood  { border: 3px solid #b3262b; box-shadow: 0 0 8px rgba(179,38,43,.6); }
+
+/* Фоны профиля — накладываются на верхнюю карточку профиля */
+.pf-card.bg_camo    { background: repeating-linear-gradient(45deg,#243018,#243018 12px,#2f3d20 12px,#2f3d20 24px); }
+.pf-card.bg_war     { background: linear-gradient(135deg,#3a1f1f,#1a0f0f); }
+.pf-card.bg_command { background: linear-gradient(135deg,#16243a,#0d1726); }
+
+/* Титул под именем */
+.pf-title {
+  display: inline-block; margin-top: 2px;
+  font-size: 12px; font-weight: 700; color: #e9c75c;
+  text-shadow: 0 0 4px rgba(233,199,92,.4);
+}

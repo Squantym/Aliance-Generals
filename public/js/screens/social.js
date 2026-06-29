@@ -862,23 +862,32 @@ async function renderPersonalAlliance(c) {
   c.innerHTML = `
     <div class="title">🤝 Мой альянс</div>
     <div class="card">
-      <p class="muted small">Альянс — ваша личная команда. Каждый боец в строю даёт <b>+${data.perMember}</b> единиц техники в бой. Растите альянс, вербуя наёмников и приглашая игроков.</p>
+      <p class="muted small">Альянс — ваша личная команда. Каждый боец в строю даёт <b>+${data.perMember}</b> единиц техники в бой. Приглашайте бойцов и игроков по заявкам.</p>
       <div class="kv mt"><span class="k">Бойцов в альянсе</span><span class="v gold" style="font-size:18px">${data.members} / ${data.maxMembers}</span></div>
       <div class="kv"><span class="k">Бонус техники в бой</span><span class="v gold">+${UI.fmtNum(data.bonusCapacity)}</span></div>
-      <p class="muted small mt">Лимит = ваш уровень × 10. Поднимайте уровень — откроются новые места.</p>
+      <div class="kv"><span class="k">Заявок осталось (в час)</span><span class="v">${data.invitesLeft} / ${data.inviteLimit}</span></div>
+      <p class="muted small mt">Лимит альянса = ваш уровень × 10. Лимит заявок в час = 5 + дипломаты.</p>
     </div>
 
     <div class="card">
-      <div class="name">⚔️ Вербовка наёмника</div>
-      <p class="muted small">Нанять бойца-наёмника в свой альянс мгновенно за золото.</p>
-      <button class="btn btn-orange mt" id="al-recruit" ${data.members >= data.maxMembers ? 'disabled' : ''} style="width:100%">
-        ${data.members >= data.maxMembers ? 'Лимит достигнут' : `Завербовать за <span class="ic-gold"></span> ${data.inviteCostGold}`}
+      <div class="name">🪖 Пригласить бойца</div>
+      <p class="muted small">Пригласите бойца в свой альянс. Расходует одну заявку из часового лимита.</p>
+      <button class="btn btn-orange mt" id="al-invite-bot" ${data.members >= data.maxMembers || data.invitesLeft <= 0 ? 'disabled' : ''} style="width:100%">
+        ${data.members >= data.maxMembers ? 'Лимит альянса достигнут' : data.invitesLeft <= 0 ? 'Заявки на час исчерпаны' : 'Пригласить бойца (заявка)'}
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="name">🎩 Дипломаты</div>
+      <p class="muted small">Каждый дипломат добавляет +1 к лимиту заявок в час. Сейчас дипломатов: <b>${data.diplomats}</b>.</p>
+      <button class="btn btn-orange mt" id="al-diplomat" style="width:100%">
+        Нанять дипломата за <span class="ic-gold"></span> ${UI.fmtNum(data.nextDiplomatCost)}
       </button>
     </div>
 
     <div class="card">
       <div class="name">✉️ Пригласить игрока</div>
-      <p class="muted small">Пригласите реального игрока. Если он примет — вам обоим +1 в личный альянс.</p>
+      <p class="muted small">Пригласите реального игрока. Если он примет — вам обоим +1 в личный альянс. Расходует заявку.</p>
       <div class="field-row mt">
         <input type="text" id="al-invite-name" placeholder="Позывной игрока">
         <button class="btn btn-orange btn-inline" id="al-invite-go">Пригласить</button>
@@ -901,14 +910,18 @@ async function renderPersonalAlliance(c) {
         <div class="title" style="margin-top:0">Состав альянса</div>
         ${data.roster.map((m) => `
           <div class="list-row">
-            <div class="grow">${m.isBot ? '🤖' : '👤'} ${m.isBot ? UI.esc(m.name) : `<span class="name" onclick="App.go('profile/${m.id}')" style="cursor:pointer">${UI.esc(m.name)}</span>`}</div>
+            <div class="grow">${m.isBot ? '🪖' : '👤'} ${m.isBot ? UI.esc(m.name) : `<span class="name" onclick="App.go('profile/${m.id}')" style="cursor:pointer">${UI.esc(m.name)}</span>`}</div>
             <button class="btn btn-red btn-inline" data-remove="${m.id}">Исключить</button>
           </div>`).join('')}
-      </div>` : '<div class="card center muted">В альянсе пока никого. Завербуйте наёмника или пригласите игрока.</div>'}`;
+      </div>` : '<div class="card center muted">В альянсе пока никого. Пригласите бойца или игрока.</div>'}`;
 
   const R = (id) => document.getElementById(id);
-  if (R('al-recruit')) R('al-recruit').onclick = async () => {
-    try { await API.post('/api/alliance/recruit'); await App.refreshMe(); App.rerender(); }
+  if (R('al-invite-bot')) R('al-invite-bot').onclick = async () => {
+    try { await API.post('/api/alliance/invite-bot'); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  if (R('al-diplomat')) R('al-diplomat').onclick = async () => {
+    try { await API.post('/api/alliance/diplomat'); await App.refreshMe(); App.rerender(); }
     catch (e) { UI.toast('⛔ ' + e.message); }
   };
   if (R('al-invite-go')) R('al-invite-go').onclick = async () => {
