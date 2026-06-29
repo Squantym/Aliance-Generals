@@ -597,24 +597,22 @@ const INCOME_BUILDINGS = [
 ];
 
 const DEFENSE_BUILDINGS = [
-  // Цены снижены в 20 раз от предыдущей версии, рост каждой следующей
-  // копии замедлен до +1.5% (было +2.5%). Защита: -50% от оригинала,
-  // затем дополнительно ещё -30% (итог: ×0.7×0.5 = ×0.35 от оригинала).
-  { id: 'bunker',    name: 'Бункер',                          def: 18,    price: 1250,         unlock: 30  },
-  { id: 'bashnya',   name: 'Дозорная башня',                  def: 42,    price: 3500,         unlock: 40  },
-  { id: 'pvo',       name: 'Система ПВО',                     def: 77,    price: 10000,        unlock: 50  },
-  { id: 'batareya',  name: 'Защитная батарея',                def: 133,   price: 27500,        unlock: 60  },
-  { id: 'mine',      name: 'Минное поле',                     def: 210,   price: 75000,        unlock: 70  },
-  { id: 'strazh',    name: 'Система «Страж»',                 def: 315,   price: 200000,       unlock: 80  },
-  { id: 'bereg',     name: 'Береговая оборона',               def: 455,   price: 500000,       unlock: 90  },
-  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 665,   price: 1400000,      unlock: 100 },
-  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 945,   price: 3750000,      unlock: 110 },
-  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 1330,  price: 10000000,     unlock: 120 },
-  { id: 'kupol',     name: 'Энергетический купол',            def: 1855,  price: 27000000,     unlock: 130 },
-  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 2625,  price: 70000000,     unlock: 140 },
-  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 3675,  price: 190000000,    unlock: 150 },
-  { id: 'grav_wall', name: 'Гравитационная стена',            def: 5075,  price: 500000000,    unlock: 160 },
-  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 7000,  price: 1400000000,   unlock: 170 },
+  // Защита уменьшена ещё на 50% от предыдущей версии (по балансу).
+  { id: 'bunker',    name: 'Бункер',                          def: 9,     price: 1250,         unlock: 30  },
+  { id: 'bashnya',   name: 'Дозорная башня',                  def: 21,    price: 3500,         unlock: 40  },
+  { id: 'pvo',       name: 'Система ПВО',                     def: 39,    price: 10000,        unlock: 50  },
+  { id: 'batareya',  name: 'Защитная батарея',                def: 67,    price: 27500,        unlock: 60  },
+  { id: 'mine',      name: 'Минное поле',                     def: 105,   price: 75000,        unlock: 70  },
+  { id: 'strazh',    name: 'Система «Страж»',                 def: 158,   price: 200000,       unlock: 80  },
+  { id: 'bereg',     name: 'Береговая оборона',               def: 228,   price: 500000,       unlock: 90  },
+  { id: 'lazer_pvo', name: 'Лазерная ПРО',                    def: 333,   price: 1400000,      unlock: 100 },
+  { id: 'shtorm',    name: 'Комплекс «Буревестник»',          def: 473,   price: 3750000,      unlock: 110 },
+  { id: 'railgun_d', name: 'Рельсовая оборона',               def: 665,   price: 10000000,     unlock: 120 },
+  { id: 'kupol',     name: 'Энергетический купол',            def: 928,   price: 27000000,     unlock: 130 },
+  { id: 'orbital_d', name: 'Орбитальный щит',                 def: 1313,  price: 70000000,     unlock: 140 },
+  { id: 'nanoroj',   name: 'Нанозавеса',                      def: 1838,  price: 190000000,    unlock: 150 },
+  { id: 'grav_wall', name: 'Гравитационная стена',            def: 2538,  price: 500000000,    unlock: 160 },
+  { id: 'absolut_d', name: 'Абсолютный барьер',               def: 3500,  price: 1400000000,   unlock: 170 },
 ];
 
 const BUILDING_BY_ID = Object.fromEntries(
@@ -632,7 +630,7 @@ const BUILDING_BY_ID = Object.fromEntries(
   DEFENSE_BUILDINGS.forEach((b, i) => { BUILDING_BY_ID[b.id].hp = 30 + i * 2; });
 })();
 // Рост цены при покупке КАЖДОЙ копии того же типа постройки
-const BUILDING_PRICE_GROWTH = { income: 1.025, defense: 1.015 };
+const BUILDING_PRICE_GROWTH = { income: 1.012, defense: 1.008 };
 const BUILDING_DEF_POWER = 1;
 const INCOME_PERIOD_MS = 3600 * 1000;
 
@@ -939,15 +937,24 @@ function trophyUpgradeCost(level: number, expensive?: boolean): number {
 
 // ---------- ДОСТИЖЕНИЯ (этапы «Ветеран» обновлены до 300 уровней) ----------
 const ACHIEVEMENTS = [
-  { id: 'wins',       name: 'Ликвидатор',        desc: 'Одержать побед',            counter: 'wins',           steps: [25, 250, 2500, 25000, 250000] },
-  { id: 'attacks',    name: 'Агрессор',          desc: 'Совершить нападений',       counter: 'attacks',        steps: [50, 500, 5000, 50000, 500000] },
-  { id: 'fatalities', name: 'Палач',             desc: 'Совершить фаталити',        counter: 'fatalities',     steps: [1, 10, 100, 1000, 10000] },
-  { id: 'ears',       name: 'Охотник за ушами',  desc: 'Отрезать ушей',             counter: 'earsCut',        steps: [1, 10, 100, 1000, 10000] },
-  { id: 'units',      name: 'Коллекционер',      desc: 'Купить техники',            counter: 'unitsBought',    steps: [10, 100, 1000, 10000, 100000] },
-  { id: 'builder',    name: 'Строитель',         desc: 'Построить сооружений',      counter: 'buildingsBuilt', steps: [10, 100, 1000, 10000, 100000] },
-  { id: 'scout',      name: 'Следопыт',          desc: 'Завершить этапов миссий',   counter: 'missionStages',  steps: [5, 25, 100, 400, 1500] },
-  { id: 'oligarch',   name: 'Олигарх',           desc: 'Заработать долларов',       counter: 'moneyEarned',    steps: [1e5, 1e7, 1e9, 1e11, 1e13] },
-  { id: 'veteran',    name: 'Ветеран',           desc: 'Достигнуть уровня',         counter: 'level',          steps: [25, 75, 150, 225, 300] },
+  { id: 'wins',       name: 'Ликвидатор',        desc: 'Одержать побед',            counter: 'wins',           steps: [25, 250, 2500, 25000, 250000],
+    titles: ['Боец', 'Ликвидатор', 'Истребитель', 'Гроза врагов', 'Бог войны'] },
+  { id: 'attacks',    name: 'Агрессор',          desc: 'Совершить нападений',       counter: 'attacks',        steps: [50, 500, 5000, 50000, 500000],
+    titles: ['Задира', 'Агрессор', 'Налётчик', 'Каратель', 'Беспощадный'] },
+  { id: 'fatalities', name: 'Палач',             desc: 'Совершить фаталити',        counter: 'fatalities',     steps: [1, 10, 100, 1000, 10000],
+    titles: ['Мститель', 'Палач', 'Душегуб', 'Жнец', 'Ангел смерти'] },
+  { id: 'ears',       name: 'Охотник за ушами',  desc: 'Отрезать ушей',             counter: 'earsCut',        steps: [1, 10, 100, 1000, 10000],
+    titles: ['Резник', 'Охотник за ушами', 'Коллекционер ушей', 'Мясник', 'Потрошитель'] },
+  { id: 'units',      name: 'Коллекционер',      desc: 'Купить техники',            counter: 'unitsBought',    steps: [10, 100, 1000, 10000, 100000],
+    titles: ['Снабженец', 'Коллекционер', 'Арсенальщик', 'Командарм', 'Властелин армий'] },
+  { id: 'builder',    name: 'Строитель',         desc: 'Построить сооружений',      counter: 'buildingsBuilt', steps: [10, 100, 1000, 10000, 100000],
+    titles: ['Прораб', 'Строитель', 'Зодчий', 'Архитектор', 'Создатель империй'] },
+  { id: 'scout',      name: 'Следопыт',          desc: 'Завершить этапов миссий',   counter: 'missionStages',  steps: [5, 25, 100, 400, 1500],
+    titles: ['Разведчик', 'Следопыт', 'Диверсант', 'Призрак', 'Тень войны'] },
+  { id: 'oligarch',   name: 'Олигарх',           desc: 'Заработать долларов',       counter: 'moneyEarned',    steps: [1e5, 1e7, 1e9, 1e11, 1e13],
+    titles: ['Делец', 'Олигарх', 'Магнат', 'Толстосум', 'Военный король'] },
+  { id: 'veteran',    name: 'Ветеран',           desc: 'Достигнуть уровня',         counter: 'level',          steps: [25, 75, 150, 225, 300],
+    titles: ['Сержант', 'Ветеран', 'Офицер', 'Генерал', 'Маршал'] },
 ];
 const ACH_DOLLARS = [5000, 30000, 180000, 1080000, 6500000];
 const ACH_GOLD =    [0,    0,     5,      15,      40];
@@ -1422,6 +1429,74 @@ const BANK = { DEPOSIT_FEE: 0.10 };
 const CHAT = { MAX_LEN: 300, RATE_MS: 3000, KEEP: 200 };
 const MAIL = { KEEP: 100, MAX_LEN: 2000 };
 
+// ===== Новые системы =====
+
+// Награды за серию ежедневных входов (день 1..7+, потом цикл)
+const LOGIN_STREAK = {
+  rewards: [
+    { day: 1, gold: 10 },
+    { day: 2, gold: 15 },
+    { day: 3, gold: 25, ammo: 20 },
+    { day: 4, gold: 30 },
+    { day: 5, gold: 40, energy: 30 },
+    { day: 6, gold: 50 },
+    { day: 7, gold: 100, tokens: 1 },  // недельный джекпот
+  ],
+};
+
+// Титулы (разблокируются за вехи; видны в профиле)
+const TITLES = [
+  { id: 'recruit',     name: 'Новобранец',     desc: 'Начни игру',                  cond: { type: 'always' } },
+  { id: 'butcher',     name: 'Палач',          desc: 'Отрежь 10 ушей',              cond: { type: 'earsCut', value: 10 } },
+  { id: 'warlord',     name: 'Полководец',     desc: 'Выиграй 100 боёв',            cond: { type: 'wins', value: 100 } },
+  { id: 'tycoon',      name: 'Магнат',         desc: 'Заработай $1 млрд всего',     cond: { type: 'moneyEarned', value: 1000000000 } },
+  { id: 'veteran',    name: 'Ветеран',        desc: 'Достигни 50 уровня',          cond: { type: 'level', value: 50 } },
+  { id: 'executioner', name: 'Каратель',       desc: 'Соверши 50 фаталити',         cond: { type: 'fatalities', value: 50 } },
+  { id: 'collector',   name: 'Коллекционер',   desc: 'Купи 1000 единиц техники',    cond: { type: 'unitsBought', value: 1000 } },
+  { id: 'legend',      name: 'Легенда войны',  desc: 'Достигни 100 уровня',         cond: { type: 'level', value: 100 } },
+];
+const TITLE_BY_ID: Record<string, any> = Object.fromEntries(TITLES.map((t) => [t.id, t]));
+
+// Контракты от NPC (ежедневные задания за золото/опыт)
+const CONTRACTS_POOL = [
+  { id: 'c_attack', name: 'Зачистка', desc: 'Соверши {n} атак',          counter: 'attacks',       targets: [3, 5, 8], rewardGold: [12, 18, 25] },
+  { id: 'c_win',    name: 'Триумф',   desc: 'Выиграй {n} боёв',          counter: 'wins',          targets: [2, 4, 6], rewardGold: [15, 22, 30] },
+  { id: 'c_buy',    name: 'Снабжение',desc: 'Купи {n} единиц техники',   counter: 'unitsBought',   targets: [5, 10, 20], rewardGold: [10, 16, 24] },
+  { id: 'c_build',  name: 'Стройка',  desc: 'Построй {n} зданий',        counter: 'buildingsBuilt',targets: [2, 4, 6], rewardGold: [14, 20, 28] },
+  { id: 'c_ear',    name: 'Трофеи',   desc: 'Отрежь {n} ушей',           counter: 'earsCut',       targets: [1, 2, 3], rewardGold: [20, 30, 45] },
+];
+const CONTRACTS_PER_DAY = 3;
+
+// Косметика профиля (рамки и фоны за золото)
+const COSMETICS = [
+  { id: 'frame_gold',   type: 'frame', name: 'Золотая рамка',     priceGold: 200 },
+  { id: 'frame_steel',  type: 'frame', name: 'Стальная рамка',    priceGold: 150 },
+  { id: 'frame_blood',  type: 'frame', name: 'Кровавая рамка',    priceGold: 250 },
+  { id: 'bg_camo',      type: 'bg',    name: 'Камуфляжный фон',   priceGold: 180 },
+  { id: 'bg_war',       type: 'bg',    name: 'Поле боя',          priceGold: 220 },
+  { id: 'bg_command',   type: 'bg',    name: 'Командный пункт',   priceGold: 300 },
+];
+const COSMETIC_BY_ID: Record<string, any> = Object.fromEntries(COSMETICS.map((c) => [c.id, c]));
+
+// Реферальная система
+const REFERRAL = {
+  inviteeGold: 50,          // новичку сразу за ввод кода
+  level50Reward: 500,       // пригласившему, когда друг достигнет 50 уровня
+  level50Tokens: 3,
+  purchaseSharePct: 10,     // % от КУПЛЕННОГО другом золота — пригласившему
+};
+
+// Шпионаж/разведка
+const SPY = {
+  freePerDay: 3,      // бесплатных разведданных в день
+  extraCostGold: 20,  // сверх лимита — за золото
+};
+
+// PvE-событие (мировой босс) — параметры задаёт админ при запуске
+const WORLD_EVENT = {
+  defaultName: 'Вражеская армада',
+};
+
 export = {
   PLAYER, SKILL_COSTS, REGEN, xpToNext,
   COUNTRIES, COUNTRY_BY_ID, RANKS,
@@ -1443,4 +1518,6 @@ export = {
   BATTLE, EARS, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
+  LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY,
+  COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT,
 };

@@ -96,4 +96,12 @@ function sendMail(user: User, toName: string, subject: string, text: string) {
 const fameMod: any = require('./fame');
 const fame = fameMod.fame;
 
-export = { chatGet, chatPost, mailTo, systemMail, unread, inbox, readMail, sendMail, fame };
+function markAllRead(user: User) {
+  const box = mailboxOf(user.id);
+  let n = 0;
+  for (const m of box) { if (!m.read) { m.read = true; n++; } }
+  if (n > 0) db.save('mail');
+  return { marked: n };
+}
+
+export = { chatGet, chatPost, mailTo, systemMail, unread, inbox, readMail, markAllRead, sendMail, fame };

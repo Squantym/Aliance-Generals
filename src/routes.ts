@@ -32,6 +32,9 @@ import tutorial = require('./services/tutorial');
 import admin = require('./services/admin');
 import support = require('./services/support');
 import payments = require('./services/payments');
+import palliance = require('./services/personalAlliance');
+import features = require('./services/features');
+import worldEvent = require('./services/worldEvent');
 
 function registerRoutes(app: any) {
   // Перед каждым авторизованным запросом игрок «освежается»:
@@ -55,6 +58,8 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login), { open: true });
+  app.add('POST', '/api/request-password-reset', (req) => auth.requestPasswordReset(req.body.loginOrEmail), { open: true });
+  app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password), { open: true });
 
   // ---------- Игрок ----------
   app.add('GET', '/api/me', (req) => ({
@@ -62,6 +67,9 @@ function registerRoutes(app: any) {
     mailUnread: social.unread(req.user),
     notifUnread: notifications.unreadCount(req.user),
     supportUnread: support.myTickets(req.user).open.filter((t: any) => t.status === 'answered' || t.lastFrom === 'admin').length,
+    streakAvailable: !features.loginStreakView(req.user).claimedToday,
+    eventActive: worldEvent.view(req.user).active,
+    activeTitle: features.activeTitleName(req.user),
   }));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
   app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
@@ -207,6 +215,42 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/group/:kind/diplomat', act((req, n) => groups.hireDiplomat(req.user, req.params.kind, n)));
   app.add('POST', '/api/group/:kind/respond', act((req, n) => groups.respondInvite(req.user, req.params.kind, req.body.groupId, !!req.body.accept, n)));
   app.add('POST', '/api/group/:kind/kick',    act((req, n) => groups.kick(req.user, req.params.kind, req.body.userId, n)));
+  // Личный альянс (у каждого игрока свой)
+  app.add('GET',  '/api/alliance',          (req) => palliance.view(req.user));
+  app.add('GET',  '/api/alliance/invites',  (req) => palliance.myInvites(req.user));
+  app.add('POST', '/api/alliance/recruit',  act((req, n) => palliance.recruitBot(req.user, n)));
+  app.add('POST', '/api/alliance/invite',   act((req, n) => palliance.invitePlayer(req.user, req.body.name, n)));
+  app.add('POST', '/api/alliance/accept',   act((req, n) => palliance.acceptInvite(req.user, req.body.fromId, n)));
+  app.add('POST', '/api/alliance/decline',  act((req, n) => palliance.declineInvite(req.user, req.body.fromId, n)));
+  app.add('POST', '/api/alliance/remove',   act((req, n) => palliance.removeMember(req.user, req.body.memberId, n)));
+  // ── Новые системы ──
+  // Ежедневный вход
+  app.add('GET',  '/api/streak',       (req) => features.loginStreakView(req.user));
+  app.add('POST', '/api/streak/claim', act((req, n) => features.claimLoginStreak(req.user, n)));
+  // Титулы
+  app.add('GET',  '/api/titles',     (req) => features.titlesView(req.user));
+  app.add('POST', '/api/titles/set', act((req, n) => features.setTitle(req.user, req.body.titleId, n)));
+  // Контракты
+  app.add('GET',  '/api/contracts',       (req) => features.contractsView(req.user));
+  app.add('POST', '/api/contracts/claim', act((req, n) => features.claimContract(req.user, req.body.contractId, n)));
+  // Косметика
+  app.add('GET',  '/api/cosmetics',         (req) => features.cosmeticsView(req.user));
+  app.add('POST', '/api/cosmetics/buy',     act((req, n) => features.buyCosmetic(req.user, req.body.id, n)));
+  app.add('POST', '/api/cosmetics/equip',   act((req, n) => features.equipCosmetic(req.user, req.body.id, n)));
+  app.add('POST', '/api/cosmetics/unequip', act((req, n) => features.unequipCosmetic(req.user, req.body.type)));
+  // Рефералы
+  app.add('GET',  '/api/referral',       (req) => features.referralView(req.user));
+  app.add('POST', '/api/referral/apply', act((req, n) => features.applyReferral(req.user, req.body.code, n)));
+  // Шпионаж
+  app.add('POST', '/api/spy', act((req, n) => features.spyOn(req.user, req.body.targetId, n)));
+  // Рейтинговые сезоны
+  app.add('GET',  '/api/season', (req) => features.seasonView(req.user));
+  app.add('POST', '/api/admin/season/end', act((req, n) => features.adminEndSeason(req.user, req.body, n)), { admin: true });
+  // Мировое событие (босс)
+  app.add('GET',  '/api/event',        (req) => worldEvent.view(req.user));
+  app.add('POST', '/api/event/attack', act((req, n) => worldEvent.attack(req.user, n)));
+  app.add('POST', '/api/admin/event/start', act((req, n) => worldEvent.adminStart(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/event/stop',  act((req, n) => worldEvent.adminStop(req.user, n)), { admin: true });
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
 
   // ---------- Легион: казна, постройки, кланвойны ----------
@@ -243,6 +287,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/chat', act((req) => { social.chatPost(req.user, req.body.text); return { ok: true }; }));
   app.add('GET', '/api/mail', (req) => social.inbox(req.user));
   app.add('GET', '/api/mail/:id', (req) => social.readMail(req.user, req.params.id));
+  app.add('POST', '/api/mail/read-all', act((req) => social.markAllRead(req.user)));
   app.add('POST', '/api/mail', act((req, n) => {
     social.sendMail(req.user, req.body.toName, req.body.subject, req.body.text);
     n.push('✉ Письмо отправлено.');
@@ -274,6 +319,7 @@ function registerRoutes(app: any) {
   // Бан и обнуление аккаунтов
   app.add('POST', '/api/admin/ban',   act((req, n) => admin.setBan(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/wipe-groups', act((req, n) => admin.wipeGroups(req.user, req.body, n)), { admin: true });
   // Служба поддержки — пользователь
   app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));
   app.add('POST', '/api/support/create', act((req, n) => support.createTicket(req.user, req.body.subject, req.body.text, n)));

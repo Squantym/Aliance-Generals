@@ -94,6 +94,8 @@ function confirmPayment(orderId: string): { ok: boolean } {
   if (!user) return { ok: false };
 
   require('./player').addGold(user, order.gold);
+  // Реферальный процент: 10% от купленного золота — пригласившему
+  try { require('./features').onReferralPurchase(user, order.gold); } catch (e) {}
   order.status = 'paid';
   order.paidAt = Date.now();
   db.save('payments');

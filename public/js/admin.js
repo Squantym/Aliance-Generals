@@ -93,7 +93,81 @@ const Admin = {
         <p class="muted small mt">Ресурсы получат сразу все зарегистрированные игроки.</p>
         ${Admin._grantFields('all')}
         <button class="btn btn-orange mt" id="grant-all-go" style="width:100%">💥 Выдать всем</button>
+      </div>
+      <div class="card" style="margin-top:16px;border-color:var(--red)">
+        <div class="name">🧹 Очистка групп</div>
+        <p class="muted small mt">Полностью стирает группы у ВСЕХ игроков — они создают заново. Необратимо!</p>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <button class="btn btn-inline" id="wipe-alliances">Обнулить все альянсы</button>
+          <button class="btn btn-inline" id="wipe-legions">Удалить все легионы + логи боёв</button>
+          <button class="btn btn-red" id="wipe-all">Стереть всё (альянсы + легионы)</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
+        <div class="name">🐉 Мировое событие (босс)</div>
+        <p class="muted small mt">Запустите PvE-босса для всех игроков. Они атакуют его раз в день, при победе получают награду.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div><label style="font-size:11px;color:var(--dim)">Название</label><input type="text" id="ev-name" placeholder="Вражеская армада"></div>
+          <div><label style="font-size:11px;color:var(--dim)">❤️ Здоровье</label><input type="number" id="ev-hp" placeholder="100000"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🛡 Защита</label><input type="number" id="ev-def" placeholder="1000"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 Награда золото (победа)</label><input type="number" id="ev-gold" placeholder="50"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🎖 Награда жетоны (победа)</label><input type="number" id="ev-tokens" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: от</label><input type="number" id="ev-drop-min" placeholder="5"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: до</label><input type="number" id="ev-drop-max" placeholder="15"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🎲 Шанс выпадения (%)</label><input type="number" id="ev-drop-chance" placeholder="50"></div>
+          <div><label style="font-size:11px;color:var(--dim)">⏰ Отложить старт (мин, 0=сразу)</label><input type="number" id="ev-delay" placeholder="0"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-orange" id="ev-start" style="flex:1">🐉 Запустить</button>
+          <button class="btn btn-red btn-inline" id="ev-stop">🛑 Остановить</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;border-color:var(--gold)">
+        <div class="name">🏆 Завершить сезон</div>
+        <p class="muted small mt">Наградит топ-3 по рейтингу и обнулит рейтинги, начав новый сезон.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div><label style="font-size:11px;color:var(--dim)">🥇 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g1" placeholder="1000"><input type="number" id="se-t1" placeholder="5"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥈 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g2" placeholder="500"><input type="number" id="se-t2" placeholder="3"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥉 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g3" placeholder="250"><input type="number" id="se-t3" placeholder="1"></div></div>
+        </div>
+        <button class="btn btn-orange mt" id="se-end" style="width:100%">🏁 Завершить сезон</button>
       </div>`;
+    const wipe = async (what, label) => {
+      if (!confirm(`${label}\n\nЭто затронет ВСЕХ игроков и необратимо. Продолжить?`)) return;
+      try { const r = await API.post('/api/admin/wipe-groups', { what }); UI.toast('🧹 Очищено: ' + (r.cleared || []).join(', ')); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('wipe-alliances').onclick = () => wipe('alliances', 'Обнулить ВСЕ альянсы?');
+    document.getElementById('wipe-legions').onclick = () => wipe('legions', 'Удалить ВСЕ легионы и логи боёв?');
+    document.getElementById('wipe-all').onclick = () => wipe('all', 'Стереть ВСЕ альянсы и легионы?');
+    const evVal = (id) => (document.getElementById(id) || {}).value || '';
+    document.getElementById('ev-start').onclick = async () => {
+      try {
+        await API.post('/api/admin/event/start', {
+          name: evVal('ev-name'), hp: evVal('ev-hp'), def: evVal('ev-def'),
+          rewardGold: evVal('ev-gold'), rewardTokens: evVal('ev-tokens'),
+          dropMin: evVal('ev-drop-min'), dropMax: evVal('ev-drop-max'),
+          dropChance: evVal('ev-drop-chance'), delayMin: evVal('ev-delay'),
+        });
+        UI.toast('🐉 Событие запущено');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('ev-stop').onclick = async () => {
+      if (!confirm('Остановить событие без награды?')) return;
+      try { await API.post('/api/admin/event/stop'); UI.toast('🛑 Событие остановлено'); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('se-end').onclick = async () => {
+      if (!confirm('Завершить сезон, наградить топ-3 и обнулить рейтинги?')) return;
+      try {
+        const r = await API.post('/api/admin/season/end', {
+          gold1: evVal('se-g1'), tokens1: evVal('se-t1'),
+          gold2: evVal('se-g2'), tokens2: evVal('se-t2'),
+          gold3: evVal('se-g3'), tokens3: evVal('se-t3'),
+        });
+        UI.toast('🏁 Сезон завершён. Победители: ' + (r.winners || []).length);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
     document.getElementById('ad-search').onclick = () => Admin.loadPlayers();
     document.getElementById('ad-q').onkeydown = e => { if(e.key==='Enter') Admin.loadPlayers(); };
     document.getElementById('grant-all-go').onclick = () => Admin.submitGrantAll();

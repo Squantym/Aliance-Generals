@@ -134,6 +134,10 @@ function addXp(user: User, amount: number, notices: Notices): number {
     if (notices) notices.push(`⭐ Новый уровень: ${user.level}! +${ups * config.PLAYER.SKILLPOINTS_PER_LEVEL} очка(ов) навыков, ресурсы восстановлены.`);
   }
   user.counters.level = user.level;
+  // Реферальная награда пригласившему при достижении 50 уровня
+  if (ups > 0 && user.level >= 50) {
+    try { require('./features').onReferralLevelUp(user); } catch (e) {}
+  }
   return realXp; // реальный XP с учётом всех бонусов
 }
 
@@ -162,8 +166,9 @@ function legionOf(user: User): any {
 }
 
 function allianceInfo(user: User): any {
-  const a = allianceOf(user);
-  return a ? { id: a.id, name: a.name, members: a.members.length, leaderId: a.leaderId } : null;
+  // Личный альянс — у каждого свой счётчик
+  const members = (user as any).allianceMembers || 0;
+  return { members, bonusCapacity: config.ALLIANCE.PER_MEMBER * members };
 }
 function legionInfo(user: User): any {
   const l = legionOf(user);
@@ -181,8 +186,9 @@ function legionInfo(user: User): any {
 //   30 базы + 10 за каждого участника альянса
 // Легион capacity НЕ даёт — он работает через клановые постройки и битвы клан-vs-клан
 function capacity(user: User) {
-  const a = allianceOf(user);
-  const aBonus = a ? config.ALLIANCE.PER_MEMBER * a.members.length : 0;
+  // Личный альянс: бонус от собственного счётчика участников
+  const members = (user as any).allianceMembers || 0;
+  const aBonus = config.ALLIANCE.PER_MEMBER * members;
   return config.ALLIANCE.BASE_CAPACITY + aBonus;
 }
 
@@ -931,12 +937,17 @@ function publicProfile(target: User, viewer: User): any {
     dodgeChancePct: isOwn ? Math.round((Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) + (effMul(target, 'dodge_bonus') - 1)) * 1000) / 10 : null,
     powerStats:     isOwn ? powerStats(target) : null,
     capacity: capacity(target),
-    units: unitsList, buildings: buildingsList,
-    secretDevs: devsList, superSecret: target.superSecret,
-    superDevInfo: target.superSecret > 0 ? {
+    // Техника, постройки и секретки врага СКРЫТЫ от чужих — их можно
+    // увидеть только через шпионаж (разведку). Свои всегда видны.
+    units: isOwn ? unitsList : [],
+    buildings: isOwn ? buildingsList : [],
+    secretDevs: isOwn ? devsList : [],
+    superSecret: isOwn ? target.superSecret : 0,
+    superDevInfo: (isOwn && target.superSecret > 0) ? {
       id: config.SUPER_DEV.id, name: config.SUPER_DEV.name,
       count: target.superSecret, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
     } : null,
+    hideArmy: !isOwn,   // флаг для фронта: армия скрыта, нужна разведка
     isOwn,
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,

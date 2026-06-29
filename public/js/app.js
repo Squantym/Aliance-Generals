@@ -963,6 +963,10 @@ const App = {
     if (name === 'verify' && param) {
       App._handleVerify(param); return;
     }
+    // #reset/<token> — ссылка для сброса пароля из письма
+    if (name === 'reset' && param) {
+      App._handlePasswordReset(param); return;
+    }
 
     if (!API.token() && name !== 'auth') { location.hash = '#auth'; return; }
     if (API.token() && name === 'auth') { location.hash = '#home'; return; }
@@ -1120,5 +1124,38 @@ const App = {
           <p class="muted small mt">Ссылка уже использована или истекла. Попробуйте <a href="#auth">войти</a> — возможно, почта уже подтверждена.</p>
         </div>`;
     }
+  },
+
+  // Обработка ссылки сброса пароля: #reset/<token>
+  async _handlePasswordReset(token) {
+    const c = document.getElementById('content');
+    App.renderHeader();
+    c.innerHTML = `
+      <div class="title">🔑 Новый пароль</div>
+      <div class="card">
+        <p class="muted small">Задайте новый пароль для входа в игру (минимум 8 символов, буквы и цифры).</p>
+        <label for="rs-pass">Новый пароль</label>
+        <input type="password" id="rs-pass" autocomplete="new-password" placeholder="Не менее 8 символов" minlength="8">
+        <label for="rs-pass2">Повторите пароль</label>
+        <input type="password" id="rs-pass2" autocomplete="new-password" placeholder="Ещё раз">
+        <button class="btn btn-orange mt" id="rs-go">Сохранить пароль</button>
+      </div>`;
+    document.getElementById('rs-go').onclick = async () => {
+      const p1 = document.getElementById('rs-pass').value;
+      const p2 = document.getElementById('rs-pass2').value;
+      if (p1.length < 8) { UI.toast('⛔ Пароль минимум 8 символов'); return; }
+      if (!/[A-Za-zА-Яа-яЁё]/.test(p1) || !/[0-9]/.test(p1)) { UI.toast('⛔ Пароль должен содержать буквы и цифры'); return; }
+      if (p1 !== p2) { UI.toast('⛔ Пароли не совпадают'); return; }
+      try {
+        await API.post('/api/reset-password', { token, password: p1 });
+        c.innerHTML = `
+          <div class="title">✅ Пароль изменён</div>
+          <div class="card center">
+            <p style="font-size:40px">🔓</p>
+            <p class="mt">Новый пароль сохранён. Теперь войдите с ним.</p>
+            <button class="btn btn-orange mt" onclick="location.hash='#auth'">Ко входу</button>
+          </div>`;
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
   },
 };

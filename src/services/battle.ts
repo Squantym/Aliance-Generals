@@ -83,8 +83,15 @@ function makeBot(user: User): any {
   // удар), общая «казна» бота — это сумма геометрически убывающей серии
   // из ~20 потенциальных выплат, где первая выплата самая крупная.
   const unitPrice = config.minUnitPriceAtLevel(user.level);
-  const firstHitMin = unitPrice * 10;
-  const firstHitMax = unitPrice * 30;
+  // Награда привязана к уровню: на старте игрок получает скромную сумму
+  // (несколько единиц техники), с ростом уровня множитель плавно растёт
+  // до полного 10-30. Так первая атака на 1 уровне не даёт состояние.
+  //   ур.1   → ×3-8
+  //   ур.50  → ×7-21
+  //   ур.100+→ ×10-30 (полный)
+  const lvlFactor = Math.min(1, 0.3 + 0.7 * (user.level / 100)); // 0.3 → 1.0
+  const firstHitMin = unitPrice * Math.round(10 * lvlFactor);
+  const firstHitMax = unitPrice * Math.round(30 * lvlFactor);
   const firstHit = u.rnd(Math.round(firstHitMin), Math.round(firstHitMax));
   // Геометрическая прогрессия с коэффициентом ~0.95 (близко к темпу
   // убывания HP за удар) и ~20 членами: казна ≈ firstHit / (1 - 0.95)
@@ -457,6 +464,12 @@ function attack(user: User, targetId: string, notices: Notices) {
     user.battle.wins++;
     require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
+    // Сезонный рейтинг и проверка титулов
+    try {
+      const feat = require('./features');
+      feat.addSeasonRating(user, 10);
+      feat.checkTitles(user, notices);
+    } catch (e) {}
     if (isBot) {
       // Выплата = очередной член геометрически убывающей серии из казны
       // бота. Первая атака на этого бота — самая крупная (10-30 единиц

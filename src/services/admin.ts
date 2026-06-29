@@ -293,9 +293,53 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   return { userId: target.id };
 }
 
+// ── Полная очистка всех групп (альянсов и легионов) ──────────────
+// Стирает все альянсы, легионы, активные/прошедшие бои и логи.
+// Игроки начинают создавать группы заново.
+function wipeGroups(adminUser: User, body: any, notices: Notices) {
+  const db = require('../core/db');
+  const what = (body && body.what) || 'all'; // 'alliances' | 'legions' | 'all'
+
+  let cleared: string[] = [];
+  if (what === 'alliances' || what === 'all') {
+    // Стираем общие альянсы (старая система) и личные счётчики
+    const alliances = db.load('alliances', {});
+    for (const k of Object.keys(alliances)) delete alliances[k];
+    db.save('alliances');
+    const inv = db.load('alliance_invites', {});
+    for (const k of Object.keys(inv)) delete inv[k];
+    db.save('alliance_invites');
+    const players: Record<string, User> = require('./player').users();
+    for (const p of Object.values(players)) {
+      p.allianceId = null;
+      (p as any).allianceMembers = 0;
+      (p as any).allianceRoster = [];
+      (p as any).allianceDiplomats = 0;
+    }
+    cleared.push('альянсы');
+  }
+  if (what === 'legions' || what === 'all') {
+    // Стираем легионы, бои и логи боёв
+    const legions = db.load('legions', {});
+    for (const k of Object.keys(legions)) delete legions[k];
+    db.save('legions');
+    const battles = db.load('battles', {});
+    for (const k of Object.keys(battles)) delete battles[k];
+    db.save('battles');
+    const players: Record<string, User> = require('./player').users();
+    for (const p of Object.values(players)) {
+      p.legionId = null;
+    }
+    cleared.push('легионы и логи боёв');
+  }
+  db.save('users');
+  notices.push(`🧹 Очищено: ${cleared.join(', ')}. Игроки создают заново.`);
+  return { cleared };
+}
+
 export = {
   listPlayers, grant, grantAll, claimGift,
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
-  listLogs, setBan, resetAccount,
+  listLogs, setBan, resetAccount, wipeGroups,
 };

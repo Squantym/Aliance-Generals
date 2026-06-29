@@ -108,6 +108,8 @@ export interface User {
   banned?: boolean;          // забанен администратором
   banReason?: string;        // причина бана (видна игроку)
   bannedAt?: number;         // когда забанен
+  resetToken?: string | null;     // токен сброса пароля
+  resetTokenExp?: number;         // срок действия токена сброса
   emailVerified: boolean;
   emailVerifyToken: string | null;
   emailVerifySentAt: number;
@@ -159,7 +161,41 @@ export interface User {
   trophies: Record<string, number>;
   club: Record<string, unknown>;
 
+  // Ежедневный вход (streak)
+  loginStreak?: number;
+  lastLoginDay?: string;       // YYYY-MM-DD последнего награждённого входа
+  // Титулы (выбранный отображается в профиле)
+  titles?: string[];           // разблокированные id титулов
+  activeTitle?: string | null; // выбранный титул
+  // Шпионаж: бесплатные разведданные в день
+  lastSpyDay?: string;
+  spyCount?: number;
+  spyReports?: Record<string, any>;  // кэш разведданных: targetId -> снапшот
+  // Контракты от NPC
+  contracts?: { id: string; progress: number; claimed?: boolean }[];
+  contractsDay?: string;
+  // Кастомизация профиля
+  profileFrame?: string;       // id рамки
+  profileBg?: string;          // id фона
+  ownedCosmetics?: string[];   // купленные косметические id
+  // Реферальная система
+  refCode?: string;            // личный код-приглашение
+  referredBy?: string | null;  // кто пригласил
+  refCount?: number;           // сколько привёл
+  refRewarded?: boolean;       // получил ли реферал-бонус за вход по коду
+  refLevel50Paid?: boolean;    // выплачена ли награда пригласившему за 50 ур.
+  refEarnings?: number;        // сколько золота заработал на покупках рефералов
+  // Рейтинговые сезоны
+  seasonRating?: number;
+  seasonId?: string;
+
   allianceId: string | null;
+  // Личный альянс: каждый игрок растит СВОЙ счётч「члена альянса». Значения
+  // не общие — у каждого своё. allianceMembers = размер личного альянса,
+  // allianceRoster = список приглашённых (id/имя ботов или игроков).
+  allianceMembers?: number;
+  allianceRoster?: { id: string; name: string; isBot?: boolean }[];
+  allianceDiplomats?: number;
   legionId: string | null;
 
   lastIncomeAt: number;

@@ -218,4 +218,49 @@ function logout(token: string) {
   db.save('sessions');
 }
 
-export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit };
+// Запрос на сброс пароля: по позывному или email отправляем письмо со ссылкой.
+// Не раскрываем, существует ли аккаунт (отвечаем одинаково в любом случае).
+async function requestPasswordReset(loginOrEmail: string) {
+  const q = String(loginOrEmail || '').trim().toLowerCase();
+  const found = Object.values(users()).find(
+    (p) => p.name.toLowerCase() === q || (p.email || '').toLowerCase() === q
+  );
+  // Всегда отвечаем успехом — не раскрываем существование аккаунта
+  if (found && found.emailVerified && !found.banned) {
+    found.resetToken = u.uid(32);
+    found.resetTokenExp = Date.now() + 60 * 60 * 1000; // действует 1 час
+    db.save('users');
+    await email.sendPasswordResetEmail(found.email, found.name, found.resetToken);
+  }
+  return { ok: true };
+}
+
+// Сброс пароля по токену из письма
+function resetPassword(token: string, newPassword: string) {
+  const t = String(token || '');
+  if (!t) throw new u.ApiError('Неверная ссылка восстановления');
+  const found = Object.values(users()).find((p) => p.resetToken && p.resetToken === t);
+  if (!found || !found.resetTokenExp || found.resetTokenExp < Date.now()) {
+    throw new u.ApiError('Ссылка восстановления недействительна или истекла. Запросите новую.');
+  }
+  if (String(newPassword || '').length < 8) throw new u.ApiError('Пароль: минимум 8 символов');
+  if (!/[A-Za-zА-Яа-яЁё]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    throw new u.ApiError('Пароль должен содержать буквы и цифры');
+  }
+  const salt = u.uid(16);
+  found.passHash = u.hashPassword(newPassword, salt);
+  found.salt = salt;
+  found.resetToken = null;
+  found.resetTokenExp = 0;
+  // Сбрасываем все сессии — на случай компрометации
+  const ss = sessions();
+  for (const [tok, uid] of Object.entries(ss)) {
+    if (uid === found.id) delete ss[tok];
+  }
+  db.save('sessions');
+  db.save('users');
+  auditLog.record({ userId: found.id, userName: found.name, path: '/api/reset-password' });
+  return { ok: true };
+}
+
+export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword };

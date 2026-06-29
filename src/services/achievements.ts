@@ -33,6 +33,9 @@ function check(user: User, notices?: Notices): void {
       const text = `🏆 Достижение «${a.name}» — этап ${s}/5! Награда: $${u.fmt(dollars)}${gold ? ` и 🪙 ${gold}` : ''}`;
       if (notices) notices.push(text);
       social.systemMail(user, `Достижение: ${a.name}`, text);
+      // Разблокирован новый титул за эту ступень
+      const titleName = ((a as any).titles || [])[s - 1];
+      if (titleName && notices) notices.push(`🏅 Разблокирован титул «${titleName}»! Выберите его в разделе «Титулы».`);
     }
     if (stage > claimed) user.achStages[a.id] = stage;
   }

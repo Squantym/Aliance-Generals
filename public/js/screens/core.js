@@ -26,6 +26,15 @@ App.screens.auth = async (c) => {
       <input type="password" id="li-pass" autocomplete="current-password" required placeholder="Пароль от аккаунта">
       <button class="btn btn-orange mt" id="li-go">Войти в строй</button>
       <button class="btn mt" id="li-resend">Не пришло письмо с подтверждением? Отправить повторно</button>
+      <p class="center mt"><a href="javascript:void 0" id="li-forgot" class="small">Забыли пароль?</a></p>
+    </div>
+
+    <div class="card" id="form-forgot" style="display:none">
+      <p class="muted small">Введите позывной или email — мы отправим ссылку для восстановления пароля на вашу почту.</p>
+      <label for="fg-id">Позывной или email</label>
+      <input type="text" id="fg-id" placeholder="Позывной или your@email.com">
+      <button class="btn btn-orange mt" id="fg-go">Отправить ссылку</button>
+      <p class="center mt"><a href="javascript:void 0" id="fg-back" class="small">← Назад ко входу</a></p>
     </div>
 
     <div class="card" id="form-reg" style="display:none">
@@ -38,8 +47,28 @@ App.screens.auth = async (c) => {
       <input type="password" id="rg-pass" autocomplete="new-password" required placeholder="Не менее 8 символов" minlength="8">
       <label for="rg-country">Страна (даёт постоянный бонус)</label>
       <select id="rg-country" required>${countryOptions}</select>
+      <div id="rg-country-bonus" class="card" style="margin-top:8px;background:rgba(233,199,92,.06);border-color:var(--gold)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="rg-flag" style="font-size:32px"></span>
+          <div>
+            <div id="rg-cname" style="font-weight:bold;color:var(--gold)"></div>
+            <div id="rg-cbonus" class="small" style="color:var(--text)"></div>
+          </div>
+        </div>
+      </div>
       <button class="btn btn-orange mt" id="rg-go">Подписать контракт</button>
     </div>`;
+
+  // Показ бонуса выбранной страны
+  const updateCountryBonus = () => {
+    const sel = document.getElementById('rg-country');
+    if (!sel) return;
+    const ct = countries.find((x) => x.id === sel.value);
+    if (!ct) return;
+    document.getElementById('rg-flag').textContent = ct.flag;
+    document.getElementById('rg-cname').textContent = ct.name;
+    document.getElementById('rg-cbonus').innerHTML = '🎖 ' + UI.esc(ct.desc || ct.bonus || '') + (ct.gold ? ` <span class="gold">(+🪙 ${ct.gold} на старте)</span>` : '');
+  };
 
   // Переключение вкладок входа/регистрации
   const show = (login) => {
@@ -50,6 +79,9 @@ App.screens.auth = async (c) => {
   };
   document.getElementById('tab-login').onclick = () => show(true);
   document.getElementById('tab-reg').onclick = () => show(false);
+  // Обновление блока бонуса страны
+  const countrySel = document.getElementById('rg-country');
+  if (countrySel) { countrySel.onchange = updateCountryBonus; updateCountryBonus(); }
 
   // Общее завершение: сохранить токен, загрузить игрока, на главную
   const finish = async (token) => {
@@ -79,6 +111,23 @@ App.screens.auth = async (c) => {
       } else {
         UI.toast('📧 Письмо отправлено на вашу почту');
       }
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+
+  // Восстановление пароля
+  const showForgot = (on) => {
+    document.getElementById('form-login').style.display = on ? 'none' : '';
+    document.getElementById('form-forgot').style.display = on ? '' : 'none';
+  };
+  document.getElementById('li-forgot').onclick = () => showForgot(true);
+  document.getElementById('fg-back').onclick = () => showForgot(false);
+  document.getElementById('fg-go').onclick = async () => {
+    const id = document.getElementById('fg-id').value.trim();
+    if (!id) { UI.toast('⛔ Введите позывной или email'); return; }
+    try {
+      await API.post('/api/request-password-reset', { loginOrEmail: id });
+      UI.toast('📧 Если аккаунт существует, письмо со ссылкой отправлено на почту');
+      showForgot(false);
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
 
@@ -188,6 +237,13 @@ App.screens.home = async (c) => {
     ['notifications', '🔔', 'Уведомления', m.notifUnread > 0 ? `<span class="badge">${m.notifUnread}</span>` : ''],
     ['ach', '🎖', 'Достижения', ''],
     ['trophies', '🎁', 'Трофеи', ''],
+    ['streak', '📅', 'Ежедневный вход', m.streakAvailable ? '<span class="badge">!</span>' : ''],
+    ['contracts', '📋', 'Контракты', ''],
+    ['titles', '🏅', 'Титулы', ''],
+    ['season', '🏆', 'Сезон', ''],
+    ['event', '🐉', 'Событие', m.eventActive ? '<span class="badge">!</span>' : ''],
+    ['referral', '🎁', 'Пригласить друга', ''],
+    ['cosmetics', '🎨', 'Внешний вид', ''],
     ['shop', '💎', 'Магазин золота', ''],
     ['support', '🛟', 'Поддержка', m.supportUnread > 0 ? `<span class="badge">${m.supportUnread}</span>` : ''],
     ['settings', '⚙', 'Настройки', ''],
@@ -254,30 +310,36 @@ App.screens.profile = async (c, param) => {
   const own = p.id === App.me.id;
 
   const isBot = !!p.isBot;
-  // Техника — сеткой картинок с количеством, по клику модалка с названием
-  const unitsHtml = (!isBot && p.units && p.units.length)
-    ? UI.imgGrid(p.units, 'units')
-    : '<p class="muted">Ангар не разглашается.</p>';
+  // Техника врага скрыта — видна только через разведку (шпионаж).
+  const hidden = p.hideArmy;
+  const hiddenMsg = '<p class="muted">🔒 Скрыто. Используйте «Разведку» в профиле, чтобы узнать состав.</p>';
+  const unitsHtml = hidden
+    ? hiddenMsg
+    : ((!isBot && p.units && p.units.length)
+      ? UI.imgGrid(p.units, 'units')
+      : '<p class="muted">Ангар не разглашается.</p>');
 
   // Секретные разработки — сеткой картинок (kind='secret'), как техника.
-  // Картинки кладутся в public/img/secret/{id}.webp; если файла нет —
-  // показывается короткое название (fallback).
   const secretItems = [];
-  if (!isBot) {
+  if (!isBot && !hidden) {
     for (const x of (p.secretDevs || [])) secretItems.push(x);
     if (p.superDevInfo) secretItems.push(p.superDevInfo);
   }
-  const devsHtml = secretItems.length
-    ? UI.imgGrid(secretItems, 'secret')
-    : '<p class="muted">Секретных разработок нет.</p>';
+  const devsHtml = hidden
+    ? hiddenMsg
+    : (secretItems.length
+      ? UI.imgGrid(secretItems, 'secret')
+      : '<p class="muted">Секретных разработок нет.</p>');
 
   // Постройки — отдельно доходные и оборонительные, сетками картинок
   const incomeB = (p.buildings || []).filter((x) => x.kind === 'income');
   const defenseB = (p.buildings || []).filter((x) => x.kind !== 'income');
-  const buildingsHtml = (!isBot && p.buildings && p.buildings.length)
-    ? `${incomeB.length ? `<p class="small" style="margin:4px 0">💵 Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
-       ${defenseB.length ? `<p class="small" style="margin:10px 0 4px">🛡 Оборонительные (защита базы)</p>${UI.imgGrid(defenseB, 'buildings')}` : ''}`
-    : '<p class="muted">Постройки не разглашаются.</p>';
+  const buildingsHtml = hidden
+    ? hiddenMsg
+    : ((!isBot && p.buildings && p.buildings.length)
+      ? `${incomeB.length ? `<p class="small" style="margin:4px 0">💵 Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
+         ${defenseB.length ? `<p class="small" style="margin:10px 0 4px">🛡 Оборонительные (защита базы)</p>${UI.imgGrid(defenseB, 'buildings')}` : ''}`
+      : '<p class="muted">Постройки не разглашаются.</p>');
 
   c.innerHTML = `
     <div class="title">Личное дело</div>
@@ -297,6 +359,7 @@ App.screens.profile = async (c, param) => {
         ${own ? '<a href="javascript:void 0" class="small" id="edit-status">редактировать статус</a>' : ''}
       </div>
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
+      ${!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-msg">✉ Написать сообщение</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-sanction" style="border-color:var(--red);color:var(--red)">🎯 Объявить санкции</button>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
@@ -431,6 +494,28 @@ App.screens.profile = async (c, param) => {
   }
   // Личное сообщение игроку
   if (!own) {
+    const btnSpy = document.getElementById('pf-spy');
+    if (btnSpy) btnSpy.onclick = async () => {
+      try {
+        const r = await API.post('/api/spy', { targetId: p.id });
+        const defList = (r.defBuildings || []).map((b) => `${UI.esc(b.name)} ×${b.count}`).join(', ') || 'нет';
+        const ut = r.unitsByType || {};
+        await UI.confirm(
+          `🔭 Разведданные по «${r.targetName}»:\n\n` +
+          `Уровень: ${r.targetLevel}\n` +
+          `Здоровье: ${r.hp}\n` +
+          `Техника всего: ${r.unitsTotal}\n` +
+          `  🪖 Наземная: ${ut.ground || 0}\n` +
+          `  ✈️ Воздушная: ${ut.air || 0}\n` +
+          `  🚢 Морская: ${ut.sea || 0}\n` +
+          `Ушей: ${r.earsCurrent}\n` +
+          `Оборона: ${defList}\n\n` +
+          `Осталось бесплатной разведки: ${r.spyLeft} (далее 🪙 20)`,
+          { title: 'Разведка', icon: '🔭', okText: 'Понятно', cancelText: '' }
+        );
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+
     const btnMsg = document.getElementById('pf-msg');
     if (btnMsg) btnMsg.onclick = async () => {
       const subject = await UI.prompt('', {title:'Письмо игроку ' + p.name, icon:'✉️', value:'Привет, ' + p.name, placeholder:'Тема письма', okText:'Далее'});
@@ -823,5 +908,263 @@ App.screens.shop = async (c) => {
         else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
+  });
+};
+
+// ========== НОВЫЕ СИСТЕМЫ ==========
+
+// ---------- Ежедневный вход ----------
+App.screens.streak = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/streak');
+  const reward = (r) => {
+    const parts = [];
+    if (r.gold) parts.push(`🪙 ${r.gold}`);
+    if (r.tokens) parts.push(`🎖 ${r.tokens}`);
+    if (r.ammo) parts.push(`🔫 ${r.ammo}`);
+    if (r.energy) parts.push(`⚡ ${r.energy}`);
+    return parts.join(' ');
+  };
+  c.innerHTML = `
+    <div class="title">📅 Ежедневный вход</div>
+    <div class="card center">
+      <p class="muted small">Заходите каждый день — награда растёт! Пропуск дня сбрасывает серию.</p>
+      <p style="font-size:32px;margin:8px 0" class="gold">🔥 ${d.streak} ${d.streak === 1 ? 'день' : 'дней'} подряд</p>
+      <button class="btn btn-orange mt" id="streak-claim" ${d.claimedToday ? 'disabled' : ''} style="width:100%">
+        ${d.claimedToday ? '✅ Награда получена, заходите завтра' : `Забрать награду дня ${d.nextDayNum}: ${reward(d.nextReward)}`}
+      </button>
+    </div>
+    <div class="card">
+      <div class="name">Расписание наград (7-дневный цикл)</div>
+      ${d.allRewards.map((r, i) => `
+        <div class="kv"><span class="k">День ${r.day}${r.tokens ? ' 🎁' : ''}</span><span class="v gold">${reward(r)}</span></div>`).join('')}
+    </div>`;
+  const btn = document.getElementById('streak-claim');
+  if (btn && !d.claimedToday) btn.onclick = async () => {
+    try { await API.post('/api/streak/claim'); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+};
+
+// ---------- Контракты ----------
+App.screens.contracts = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/contracts');
+  c.innerHTML = `
+    <div class="title">📋 Контракты</div>
+    <p class="muted small" style="margin:-4px 4px 10px">Ежедневные задания от штаба. Обновляются каждый день.</p>
+    ${d.contracts.map((ct) => `
+      <div class="card">
+        <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
+        <p class="muted small">${UI.esc(ct.desc)}</p>
+        ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
+        <div class="kv mt"><span class="k">Награда</span><span class="v gold">🪙 ${ct.reward}</span></div>
+        ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? 'Забрать награду' : 'Не выполнено'}</button>` : ''}
+      </div>`).join('')}`;
+  c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/contracts/claim', { contractId: b.dataset.claim }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+};
+
+// ---------- Титулы ----------
+App.screens.titles = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/titles');
+  // Группируем титулы по достижению (achName)
+  const groups = {};
+  for (const t of d.list) {
+    if (!groups[t.achName]) groups[t.achName] = [];
+    groups[t.achName].push(t);
+  }
+  const unlockedCount = d.list.filter((t) => t.unlocked).length;
+  c.innerHTML = `
+    <div class="title">🏅 Титулы</div>
+    <p class="muted small" style="margin:-4px 4px 10px">Титулы открываются за ступени достижений. Разблокировано: <b class="gold">${unlockedCount}</b> из ${d.list.length}. Выбранный отображается в профиле.</p>
+    <div class="card">
+      <button class="btn ${!d.active ? 'btn-orange' : ''}" data-title="" style="width:100%">Без титула</button>
+    </div>
+    ${Object.entries(groups).map(([achName, titles]) => `
+      <div class="card">
+        <div class="name">🎖 ${UI.esc(achName)}</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+          ${titles.map((t) => `
+            <div style="display:flex;align-items:center;gap:8px;${!t.unlocked ? 'opacity:.5' : ''}">
+              <span style="flex:0 0 22px;text-align:center">${t.unlocked ? '🏅' : '🔒'}</span>
+              <div style="flex:1">
+                <div style="font-weight:bold;font-size:14px">${UI.esc(t.name)} ${d.active === t.id ? '<span class="badge">надет</span>' : ''}</div>
+                <div class="muted small">Ступень ${t.step}/5 · нужно ${UI.fmtNum(t.target)}</div>
+              </div>
+              ${t.unlocked
+                ? `<button class="btn btn-inline ${d.active === t.id ? 'btn-orange' : ''}" data-title="${t.id}">${d.active === t.id ? '✓' : 'Надеть'}</button>`
+                : ''}
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}`;
+  c.querySelectorAll('[data-title]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/titles/set', { titleId: b.dataset.title }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+};
+
+// ---------- Рейтинговый сезон ----------
+App.screens.season = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/season');
+  c.innerHTML = `
+    <div class="title">🏆 Рейтинговый сезон</div>
+    <div class="card">
+      <div class="kv"><span class="k">Ваш рейтинг</span><span class="v gold">${UI.fmtNum(d.myRating)}</span></div>
+      <div class="kv"><span class="k">Ваше место</span><span class="v">${d.myRank ? '#' + d.myRank : '—'}</span></div>
+      <p class="muted small mt">Рейтинг растёт за победы в боях (+10 за победу). По итогам сезона топ-3 получают награды, рейтинг обнуляется.</p>
+    </div>
+    <div class="card">
+      <div class="title" style="margin-top:0">Топ-20 сезона</div>
+      ${d.top.length ? d.top.map((p, i) => `
+        <div class="list-row">
+          <div class="grow">${i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.'} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${p.flag} ${UI.esc(p.name)}</span></div>
+          <span class="gold">${UI.fmtNum(p.rating)}</span>
+        </div>`).join('') : '<p class="muted center">Сезон только начался — рейтинг пока пуст.</p>'}
+    </div>`;
+};
+
+// ---------- Мировое событие (босс) ----------
+App.screens.event = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/event');
+  if (d.scheduled) {
+    c.innerHTML = `
+      <div class="title">🐉 Скоро событие</div>
+      <div class="card center">
+        <p style="font-size:40px">⏳</p>
+        <p class="mt"><b class="gold" style="font-size:18px">${UI.esc(d.name)}</b></p>
+        <p class="muted">Событие начнётся через:</p>
+        <p style="font-size:28px;font-weight:bold;color:var(--orange)" id="event-countdown">${UI.fmtTimer(d.startsInSec)}</p>
+        <p class="muted small">Готовьте армию к бою!</p>
+      </div>`;
+    // Тикаем таймер
+    let left = d.startsInSec;
+    const el = document.getElementById('event-countdown');
+    const iv = setInterval(() => {
+      left--;
+      if (left <= 0) { clearInterval(iv); App.rerender(); return; }
+      if (el) el.textContent = UI.fmtTimer(left);
+    }, 1000);
+    return;
+  }
+  if (!d.active) {
+    c.innerHTML = `
+      <div class="title">🐉 Мировое событие</div>
+      <div class="card center"><p style="font-size:40px">😴</p><p class="muted">Сейчас нет активного события. Следите за объявлениями!</p></div>`;
+    return;
+  }
+  const dropInfo = (d.dropMax > 0)
+    ? `🪙 ${d.dropMin}–${d.dropMax} с шансом ${d.dropChance}%`
+    : 'нет';
+  c.innerHTML = `
+    <div class="title">🐉 ${UI.esc(d.name)}</div>
+    <div class="card">
+      <p class="muted small">Все командиры объединились против общего врага! Атакуйте босса раз в день — урон копится. Когда босс падёт, все участники получат награду.</p>
+      <div style="margin:10px 0">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+          <span class="muted">❤️ Здоровье босса</span><span style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
+        </div>
+        <div style="height:14px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden">
+          <div style="height:100%;width:${d.hpPct}%;background:linear-gradient(90deg,var(--red),var(--orange));transition:width .4s"></div>
+        </div>
+      </div>
+      <div class="kv"><span class="k">🛡 Защита босса</span><span class="v">${UI.fmtNum(d.def)}</span></div>
+      <div class="kv"><span class="k">🪙 Награда за атаку</span><span class="v gold">${dropInfo}</span></div>
+      <div class="kv"><span class="k">🎁 Награда за победу</span><span class="v gold">🪙 ${d.rewardGold}${d.rewardTokens ? ` + 🎖 ${d.rewardTokens}` : ''}</span></div>
+      <div class="kv"><span class="k">💥 Ваш вклад</span><span class="v">${UI.fmtNum(d.myDamage)} урона</span></div>
+      <div class="kv"><span class="k">👥 Участников</span><span class="v">${d.contributorsCount}</span></div>
+      <button class="btn btn-orange mt" id="event-attack" ${!d.canAttack ? 'disabled' : ''} style="width:100%">
+        ${d.canAttack ? '⚔️ Атаковать босса' : '✅ Вы атаковали сегодня, возвращайтесь завтра'}
+      </button>
+    </div>`;
+  const btn = document.getElementById('event-attack');
+  if (btn && d.canAttack) btn.onclick = async () => {
+    try {
+      const r = await API.post('/api/event/attack');
+      if (r.finished) UI.toast('🏆 Босс повержен! Награда начислена всем участникам!');
+      else UI.toast(`💥 Урон ${UI.fmtNum(r.dealtDamage)}!${r.goldDrop > 0 ? ` Выпало 🪙 ${r.goldDrop}` : ''}`);
+      await App.refreshMe(); App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+};
+
+// ---------- Реферальная система ----------
+App.screens.referral = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/referral');
+  c.innerHTML = `
+    <div class="title">🎁 Пригласить друга</div>
+    <div class="card center">
+      <p class="muted small">Поделитесь кодом. Когда друг введёт его — он сразу получит 🪙 ${d.inviteeGold}, а вы получите награду, когда он достигнет 50 уровня, и 10% золотом от всех его покупок золота!</p>
+      <p style="font-size:26px;letter-spacing:3px;font-weight:bold;margin:10px 0" class="gold">${d.code}</p>
+      <button class="btn btn-orange" id="ref-copy" style="width:100%">📋 Скопировать код</button>
+    </div>
+    <div class="card">
+      <div class="kv"><span class="k">Приглашено друзей</span><span class="v gold">${d.refCount}</span></div>
+      <div class="kv"><span class="k">Заработано с покупок друзей</span><span class="v gold">🪙 ${UI.fmtNum(d.refEarnings)}</span></div>
+      <hr class="hr">
+      <div class="kv"><span class="k">🎁 Другу за ввод кода</span><span class="v">🪙 ${d.inviteeGold}</span></div>
+      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v">🪙 ${d.level50Reward} + 🎖 ${d.level50Tokens}</span></div>
+      <div class="kv"><span class="k">💰 Вам с покупок друга</span><span class="v">${d.purchaseSharePct}% золотом</span></div>
+    </div>
+    ${d.canApply ? `
+      <div class="card">
+        <div class="name">Ввести чужой код</div>
+        <p class="muted small">Если вас пригласили — введите код приглашающего (один раз, до 50 уровня).</p>
+        <div class="field-row mt">
+          <input type="text" id="ref-input" placeholder="Код друга" style="text-transform:uppercase">
+          <button class="btn btn-orange btn-inline" id="ref-apply">Применить</button>
+        </div>
+      </div>` : (d.referredBy ? '<div class="card center muted">Вы уже использовали реферальный код.</div>' : '<div class="card center muted">Ввод кода доступен только до 50 уровня.</div>')}`;
+  document.getElementById('ref-copy').onclick = () => {
+    navigator.clipboard?.writeText(d.code).then(() => UI.toast('📋 Код скопирован')).catch(() => UI.toast('Код: ' + d.code));
+  };
+  const apply = document.getElementById('ref-apply');
+  if (apply) apply.onclick = async () => {
+    const code = document.getElementById('ref-input').value.trim();
+    if (!code) { UI.toast('Введите код'); return; }
+    try { await API.post('/api/referral/apply', { code }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+};
+
+// ---------- Косметика профиля ----------
+App.screens.cosmetics = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/cosmetics');
+  const frames = d.items.filter((x) => x.type === 'frame');
+  const bgs = d.items.filter((x) => x.type === 'bg');
+  const renderItem = (x) => `
+    <div class="card">
+      <div class="name">${UI.esc(x.name)} ${(x.type === 'frame' ? d.activeFrame : d.activeBg) === x.id ? '<span class="badge">надето</span>' : ''}</div>
+      ${x.owned
+        ? `<button class="btn ${(x.type === 'frame' ? d.activeFrame : d.activeBg) === x.id ? 'btn-orange' : ''} mt" data-equip="${x.id}" style="width:100%">${(x.type === 'frame' ? d.activeFrame : d.activeBg) === x.id ? 'Снять' : 'Надеть'}</button>`
+        : `<button class="btn btn-orange mt" data-buy-cos="${x.id}" style="width:100%">Купить за <span class="ic-gold"></span> ${x.priceGold}</button>`}
+    </div>`;
+  c.innerHTML = `
+    <div class="title">🎨 Внешний вид</div>
+    <p class="muted small" style="margin:-4px 4px 10px">Рамки и фоны для вашего профиля. Чистая косметика — на силу не влияет.</p>
+    <div class="card"><div class="name">🖼 Рамки профиля</div></div>
+    ${frames.map(renderItem).join('')}
+    <div class="card"><div class="name">🌆 Фоны профиля</div></div>
+    ${bgs.map(renderItem).join('')}`;
+  c.querySelectorAll('[data-buy-cos]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/cosmetics/buy', { id: b.dataset.buyCos }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  c.querySelectorAll('[data-equip]').forEach((b) => b.onclick = async () => {
+    const id = b.dataset.equip;
+    const item = d.items.find((x) => x.id === id);
+    const isActive = (item.type === 'frame' ? d.activeFrame : d.activeBg) === id;
+    try {
+      if (isActive) await API.post('/api/cosmetics/unequip', { type: item.type });
+      else await API.post('/api/cosmetics/equip', { id });
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
   });
 };

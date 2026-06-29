@@ -850,8 +850,86 @@ async function renderGroupScreen(c, kind) {
   c.querySelectorAll('[data-rej-inv]').forEach((b) => b.onclick = respond(b.dataset.rejInv, false));
 }
 
-App.screens.alliance = (c) => renderGroupScreen(c, 'alliance');
+App.screens.alliance = (c) => renderPersonalAlliance(c);
 App.screens.legion   = (c) => renderGroupScreen(c, 'legion');
+
+// ---------- ЛИЧНЫЙ АЛЬЯНС (у каждого игрока свой) ----------
+async function renderPersonalAlliance(c) {
+  await App.refreshMe();
+  const data = await API.get('/api/alliance');
+  const { invites } = await API.get('/api/alliance/invites');
+
+  c.innerHTML = `
+    <div class="title">🤝 Мой альянс</div>
+    <div class="card">
+      <p class="muted small">Альянс — ваша личная команда. Каждый боец в строю даёт <b>+${data.perMember}</b> единиц техники в бой. Растите альянс, вербуя наёмников и приглашая игроков.</p>
+      <div class="kv mt"><span class="k">Бойцов в альянсе</span><span class="v gold" style="font-size:18px">${data.members} / ${data.maxMembers}</span></div>
+      <div class="kv"><span class="k">Бонус техники в бой</span><span class="v gold">+${UI.fmtNum(data.bonusCapacity)}</span></div>
+      <p class="muted small mt">Лимит = ваш уровень × 10. Поднимайте уровень — откроются новые места.</p>
+    </div>
+
+    <div class="card">
+      <div class="name">⚔️ Вербовка наёмника</div>
+      <p class="muted small">Нанять бойца-наёмника в свой альянс мгновенно за золото.</p>
+      <button class="btn btn-orange mt" id="al-recruit" ${data.members >= data.maxMembers ? 'disabled' : ''} style="width:100%">
+        ${data.members >= data.maxMembers ? 'Лимит достигнут' : `Завербовать за <span class="ic-gold"></span> ${data.inviteCostGold}`}
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="name">✉️ Пригласить игрока</div>
+      <p class="muted small">Пригласите реального игрока. Если он примет — вам обоим +1 в личный альянс.</p>
+      <div class="field-row mt">
+        <input type="text" id="al-invite-name" placeholder="Позывной игрока">
+        <button class="btn btn-orange btn-inline" id="al-invite-go">Пригласить</button>
+      </div>
+    </div>
+
+    ${invites.length ? `
+      <div class="card">
+        <div class="name">📨 Приглашения вам (${invites.length})</div>
+        ${invites.map((iv) => `
+          <div class="list-row">
+            <div class="grow"><span class="name" onclick="App.go('profile/${iv.fromId}')" style="cursor:pointer">${UI.esc(iv.fromName)}</span> зовёт в альянс</div>
+            <button class="btn btn-green btn-inline" data-acc-inv="${iv.fromId}">✔</button>
+            <button class="btn btn-red btn-inline" data-dec-inv="${iv.fromId}">✖</button>
+          </div>`).join('')}
+      </div>` : ''}
+
+    ${data.roster && data.roster.length ? `
+      <div class="card">
+        <div class="title" style="margin-top:0">Состав альянса</div>
+        ${data.roster.map((m) => `
+          <div class="list-row">
+            <div class="grow">${m.isBot ? '🤖' : '👤'} ${m.isBot ? UI.esc(m.name) : `<span class="name" onclick="App.go('profile/${m.id}')" style="cursor:pointer">${UI.esc(m.name)}</span>`}</div>
+            <button class="btn btn-red btn-inline" data-remove="${m.id}">Исключить</button>
+          </div>`).join('')}
+      </div>` : '<div class="card center muted">В альянсе пока никого. Завербуйте наёмника или пригласите игрока.</div>'}`;
+
+  const R = (id) => document.getElementById(id);
+  if (R('al-recruit')) R('al-recruit').onclick = async () => {
+    try { await API.post('/api/alliance/recruit'); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  if (R('al-invite-go')) R('al-invite-go').onclick = async () => {
+    const name = R('al-invite-name').value.trim();
+    if (!name) { UI.toast('Введите позывной'); return; }
+    try { await API.post('/api/alliance/invite', { name }); UI.toast('✉️ Приглашение отправлено'); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  c.querySelectorAll('[data-acc-inv]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/alliance/accept', { fromId: b.dataset.accInv }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  c.querySelectorAll('[data-dec-inv]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/alliance/decline', { fromId: b.dataset.decInv }); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  c.querySelectorAll('[data-remove]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/alliance/remove', { memberId: b.dataset.remove }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+}
 
 // ---------- ОБЩЕНИЕ (общий чат) ----------
 App.screens.chat = async (c) => {
@@ -954,9 +1032,13 @@ App.screens.mail = async (c, param) => {
   }
 
   const { messages } = await API.get('/api/mail');
+  const unreadCount = messages.filter((msg) => !msg.read).length;
   c.innerHTML = `
     <div class="title">Почта</div>
-    <button class="btn btn-orange" onclick="App.go('mail/new')" style="margin-bottom:10px">✍ Написать письмо</button>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-orange" onclick="App.go('mail/new')" style="flex:1">✍ Написать письмо</button>
+      ${unreadCount > 0 ? `<button class="btn btn-inline" id="mail-read-all">✓ Прочитать все (${unreadCount})</button>` : ''}
+    </div>
     <div class="card">
       ${messages.length ? messages.map((msg) => `
         <div class="list-row" style="cursor:pointer" onclick="App.go('mail/${msg.id}')">
@@ -966,6 +1048,14 @@ App.screens.mail = async (c, param) => {
           </div>
         </div>`).join('') : '<p class="muted center">Почтовый ящик пуст.</p>'}
     </div>`;
+  const readAllBtn = document.getElementById('mail-read-all');
+  if (readAllBtn) readAllBtn.onclick = async () => {
+    try {
+      await API.post('/api/mail/read-all');
+      await App.refreshMe();   // обновит счётчик непрочитанных на иконке
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
 };
 
 // ---------- ЗАЛ СЛАВЫ ----------

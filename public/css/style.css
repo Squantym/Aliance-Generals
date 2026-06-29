@@ -218,7 +218,7 @@ a:hover { text-decoration: underline; }
 .fill.gold { background: linear-gradient(#d9b14a, #9c7c27); }
 
 /* ---------- ФОРМЫ ---------- */
-input[type=text], input[type=password], input[type=number], select, textarea {
+input[type=text], input[type=password], input[type=number], input[type=email], input[type=tel], input[type=search], select, textarea {
   width: 100%; padding: 9px 10px; background: #10150b; color: var(--text);
   border: 1px solid var(--border); border-radius: 5px; font-size: 14px; outline: none;
 }

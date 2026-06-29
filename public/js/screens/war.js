@@ -10,6 +10,35 @@ App.screens.war = async (c) => {
   await App.refreshMe();
   const m = App.me;
 
+  // Баннер мирового события (активного или запланированного с таймером)
+  let eventBanner = '';
+  try {
+    const ev = await API.get('/api/event');
+    if (ev.scheduled) {
+      eventBanner = `
+        <div class="card" style="border-color:var(--orange);cursor:pointer" onclick="App.go('event')">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:28px">⏳</span>
+            <div>
+              <div style="font-weight:bold;color:var(--orange)">Скоро: ${UI.esc(ev.name)}</div>
+              <div class="small muted">До начала: <span id="war-event-timer" style="color:var(--orange);font-weight:bold">${UI.fmtTimer(ev.startsInSec)}</span></div>
+            </div>
+          </div>
+        </div>`;
+    } else if (ev.active) {
+      eventBanner = `
+        <div class="card" style="border-color:var(--red);cursor:pointer" onclick="App.go('event')">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:28px">🐉</span>
+            <div>
+              <div style="font-weight:bold;color:var(--red)">Идёт событие: ${UI.esc(ev.name)}</div>
+              <div class="small muted">HP босса: ${ev.hpPct}% · нажмите, чтобы атаковать</div>
+            </div>
+          </div>
+        </div>`;
+    }
+  } catch (e) {}
+
   // Панель результата последнего боя (если только что дрались)
   let resultHtml = '';
   const b = App._lastBattle;
@@ -79,6 +108,7 @@ App.screens.war = async (c) => {
 
   c.innerHTML = `
     <div class="title">Война</div>
+    ${eventBanner}
     ${fatalityHtml}
     ${resultHtml}
     <div class="tabs">
@@ -102,6 +132,23 @@ App.screens.war = async (c) => {
   c.querySelectorAll('[data-wartab]').forEach((t) => {
     t.onclick = () => { App._warTab = t.dataset.wartab; App.rerender(); };
   });
+
+  // Тикающий таймер баннера события (если запланировано)
+  const evTimer = document.getElementById('war-event-timer');
+  if (evTimer) {
+    let secs = parseInt(evTimer.dataset.left || '0', 10);
+    // считываем стартовое значение из текста (мм:сс)
+    const startTxt = evTimer.textContent.trim();
+    const parts = startTxt.split(':').map((x) => parseInt(x, 10));
+    secs = parts.length === 3 ? parts[0]*3600+parts[1]*60+parts[2] : parts[0]*60+(parts[1]||0);
+    const iv = setInterval(() => {
+      secs--;
+      if (secs <= 0) { clearInterval(iv); if (App._screen === 'war') App.rerender(); return; }
+      const t = document.getElementById('war-event-timer');
+      if (!t) { clearInterval(iv); return; }
+      t.textContent = UI.fmtTimer(secs);
+    }, 1000);
+  }
 
   // Кнопки результата и фаталити
   if (b && !m.pendingFatality) {

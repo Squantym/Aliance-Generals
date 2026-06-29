@@ -79,4 +79,50 @@ async function sendVerificationEmail(toEmail: string, name: string, token: strin
   }
 }
 
-export = { sendVerificationEmail, isConfigured };
+// Письмо для восстановления пароля
+async function sendPasswordResetEmail(toEmail: string, name: string, token: string): Promise<{ sent: boolean; link: string }> {
+  const link = `${APP_URL}/#reset/${token}`;
+
+  if (!isConfigured) {
+    console.log('📧 [DEV] Отправка почты не настроена (нет RESEND_API_KEY).');
+    console.log(`📧 [DEV] Ссылка сброса пароля для «${name}» <${toEmail}>: ${link}`);
+    return { sent: false, link };
+  }
+
+  const subject = 'Восстановление пароля — Генералы';
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; color: #222;">
+      <h2 style="color:#2e5b1f">Привет, ${escapeHtml(name)}!</h2>
+      <p>Вы запросили сброс пароля в игре «Генералы». Нажмите кнопку, чтобы задать новый пароль:</p>
+      <p style="margin: 24px 0;">
+        <a href="${link}" style="display:inline-block;padding:12px 24px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold;">
+          Сбросить пароль
+        </a>
+      </p>
+      <p style="color:#666;font-size:13px">Если кнопка не работает, перейдите по ссылке:<br>
+        <a href="${link}">${link}</a></p>
+      <p style="color:#999;font-size:12px;margin-top:24px">Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо, ваш пароль не изменится.</p>
+    </div>`;
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: EMAIL_FROM, to: [toEmail], subject, html }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('Ошибка отправки письма:', res.status, text);
+      return { sent: false, link };
+    }
+    return { sent: true, link };
+  } catch (e: any) {
+    console.error('Ошибка отправки письма:', e.message);
+    return { sent: false, link };
+  }
+}
+
+export = { sendVerificationEmail, sendPasswordResetEmail, isConfigured };
