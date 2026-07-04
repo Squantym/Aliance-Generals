@@ -272,6 +272,8 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   (target as any).counters = { wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0, level: 1 };
   (target as any).achStages = {};
   target.missions = {};
+  target.missionProgress = {};
+  target.missionQueue = [];
   (target as any).tutorial = { step: 0, done: false };
   target.effects = [];
   target.trophies = Object.fromEntries(config.TROPHIES.map((t: any) => [t.id, 0]));
@@ -302,7 +304,15 @@ function resetParam(adminUser: User, body: any, notices: Notices) {
   const userId = body.userId ? String(body.userId) : null;
 
   const RESETTERS: Record<string, (t: User) => void> = {
-    missions: (t) => { t.missions = {}; (t as any).counters.missionStages = 0; },
+    // Прогресс миссий хранится в missionProgress (пройденные шаги/конфликты)
+    // и missionQueue (шаги в процессе с таймерами). Легаси-поле user.missions
+    // системой миссий не используется — чистим всё, чтобы наверняка.
+    missions: (t) => {
+      t.missionProgress = {};
+      t.missionQueue = [];
+      t.missions = {};
+      (t as any).counters.missionStages = 0;
+    },
     achievements: (t) => { (t as any).achStages = {};
       (t as any).counters = { ...(t as any).counters, wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0 }; },
     trophies: (t) => { t.trophies = Object.fromEntries(config.TROPHIES.map((tr: any) => [tr.id, 0])); (t as any).trophyQueue = []; },

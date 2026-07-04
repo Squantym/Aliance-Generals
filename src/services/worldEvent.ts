@@ -58,6 +58,18 @@ function playerDamage(user: User): { dmg: number; crit: boolean } {
 }
 
 // ── Текущее состояние события (для игроков) ──────────────────────
+// Рейтинг участников по урону (общий для живого экрана и итогов)
+function buildRanking(e: any, all: Record<string, User>): any[] {
+  return Object.keys(e.contributors || {})
+    .map((uid) => ({
+      id: uid,
+      name: (e.names && e.names[uid]) || (all[uid] ? all[uid].name : '???'),
+      damage: e.contributors[uid] || 0,
+      attacks: (e.attacks && e.attacks[uid]) || 0,
+    }))
+    .sort((a, b) => b.damage - a.damage);
+}
+
 function view(user: User) {
   const e = store();
   activateIfDue(e);
@@ -76,6 +88,8 @@ function view(user: User) {
 
   const myDamage = (e.contributors || {})[user.id] || 0;
   const myAttacks = (e.attacks || {})[user.id] || 0;
+  const ranking = buildRanking(e, users());
+  const myRank = ranking.findIndex((r) => r.id === user.id) + 1; // 0 = не участвовал
   return {
     active: true,
     name: e.name,
@@ -88,6 +102,8 @@ function view(user: User) {
     top3: [e.reward1, e.reward2, e.reward3],
     myDamage, myAttacks,
     contributorsCount: Object.keys(e.contributors || {}).length,
+    ranking: ranking.slice(0, 20),  // топ-20 для живой таблицы
+    myRank,
   };
 }
 
@@ -145,9 +161,9 @@ function attack(user: User, notices: Notices) {
 
   db.save('world_event');
   db.save('users');
-  const dropMsg = goldDrop > 0 ? ` Выпало 🪙 ${goldDrop}!` : '';
-  const killMsg = finished && killReward > 0 ? ` 🏆 Вы добили босса и получили 🪙 ${killReward}!` : '';
-  notices.push(`💥 Урон боссу «${e.name}»: ${u.fmt(dmg)}${crit ? ' 🔥КРИТ' : ''}!${dropMsg}${finished ? ' Босс повержен!' : ''}${killMsg}`);
+  // Уведомления по атаке формирует клиент: урон/крит/добивание идут в
+  // персональный лог внизу окна босса, а всплывающим уведомлением
+  // показывается только выпавшее золото (чтобы не перекрывать окно).
   return { ...view(user), dealtDamage: dmg, crit, goldDrop, finished, killReward };
 }
 
@@ -155,14 +171,7 @@ function attack(user: User, notices: Notices) {
 function finishEvent(e: any, killer: User): void {
   const all = users();
   // Рейтинг участников по урону
-  const ranking = Object.keys(e.contributors || {})
-    .map((uid) => ({
-      id: uid,
-      name: (e.names && e.names[uid]) || (all[uid] ? all[uid].name : '???'),
-      damage: e.contributors[uid] || 0,
-      attacks: (e.attacks && e.attacks[uid]) || 0,
-    }))
-    .sort((a, b) => b.damage - a.damage);
+  const ranking = buildRanking(e, all);
 
   // Награды топ-3 (заданы админом)
   const rewards = [e.reward1 || 0, e.reward2 || 0, e.reward3 || 0];

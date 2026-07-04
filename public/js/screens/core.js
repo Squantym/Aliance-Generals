@@ -1103,6 +1103,14 @@ App.screens.event = async (c) => {
     ? `🪙 ${d.dropMin}–${d.dropMax} с шансом ${d.dropChance}%`
     : 'пул исчерпан';
   const canAttack = App.me.res.am.cur > 0 && App.me.res.hp.cur >= 25;
+
+  // Персональный лог атак (клиентский, у каждого игрока свой). Сбрасываем
+  // при смене события, чтобы не смешивать лог разных боссов.
+  if (App._eventLogKey !== d.name) { App._eventLogKey = d.name; App._eventLog = []; }
+  const logHtml = (App._eventLog && App._eventLog.length)
+    ? App._eventLog.map((l) => `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span class="muted small">${l.time}</span> <span class="small">${l.text}</span></div>`).join('')
+    : '<p class="muted small center" style="padding:8px 0">Пока нет атак — ударьте по боссу!</p>';
+
   c.innerHTML = `
     <div class="title">🐉 ${UI.esc(d.name)}</div>
     <div class="card">
@@ -1124,13 +1132,50 @@ App.screens.event = async (c) => {
       <button class="btn btn-orange mt" id="event-attack" ${!canAttack ? 'disabled' : ''} style="width:100%">
         ${canAttack ? '⚔️ Атаковать босса (−1 🎯)' : (App.me.res.am.cur <= 0 ? 'Нет боеприпасов' : 'Здоровье ниже 25')}
       </button>
+    </div>
+    <div class="card">
+      <div class="name">🏆 Рейтинг по урону</div>
+      <p class="muted small">Обновляется по мере атак. Топ-3 получат награду, добивший — бонус за килл.</p>
+      <div style="margin-top:8px">
+        ${(d.ranking && d.ranking.length) ? d.ranking.map((r, i) => {
+          const me = r.id === App.me.id;
+          const place = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.';
+          return `<div class="list-row" style="${me ? 'background:rgba(255,180,0,.10);border-radius:8px;padding:4px 6px' : ''}">
+            <div class="grow">${place} <span class="name" onclick="App.go('profile/${r.id}')" style="cursor:pointer">${UI.esc(r.name)}</span>${me ? ' <span class="gold small">(вы)</span>' : ''}</div>
+            <div style="text-align:right">
+              <div class="gold small">${UI.fmtNum(r.damage)} урона</div>
+              <div class="muted small">${r.attacks} ${r.attacks === 1 ? 'атака' : 'атак'}</div>
+            </div>
+          </div>`;
+        }).join('') : '<p class="muted center small" style="padding:8px 0">Пока никто не атаковал — станьте первым!</p>'}
+      </div>
+      ${d.myRank > 20 ? `<hr class="hr"><p class="muted small center">Вы вне топ-20 · место ${d.myRank}: <b class="gold">${UI.fmtNum(d.myDamage)}</b> урона</p>` : ''}
+    </div>
+    <div class="card">
+      <div class="name">📜 Лог ваших атак</div>
+      <div id="event-log" style="margin-top:6px;max-height:240px;overflow-y:auto">${logHtml}</div>
     </div>`;
   const btn = document.getElementById('event-attack');
   if (btn && canAttack) btn.onclick = async () => {
     try {
       const r = await API.post('/api/event/attack');
-      if (r.finished) UI.toast(`🏆 Босс повержен!${r.killReward > 0 ? ` Вы добили и получили 🪙 ${r.killReward}!` : ''}`);
-      else UI.toast(`💥 Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' 🔥КРИТ' : ''}!${r.goldDrop > 0 ? ` Выпало 🪙 ${r.goldDrop}` : ''}`);
+      // Запись в персональный лог атак (у каждого игрока свой)
+      const text = r.finished
+        ? `🏆 <b>Добивание!</b> Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''} — босс повержен${r.killReward > 0 ? `, награда 🪙${r.killReward}` : ''}`
+        : `💥 Урон <b>${UI.fmtNum(r.dealtDamage)}</b>${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''}${r.goldDrop > 0 ? ` · выпало 🪙${r.goldDrop}` : ''}`;
+      const entry = { time: new Date().toLocaleTimeString('ru-RU'), text };
+      if (!App._eventLog) App._eventLog = [];
+      App._eventLog.unshift(entry);
+      if (App._eventLog.length > 50) App._eventLog.length = 50;
+      // Мгновенно показываем строку в логе (ещё до перерисовки экрана)
+      const logEl = document.getElementById('event-log');
+      if (logEl) {
+        const row = `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span class="muted small">${entry.time}</span> <span class="small">${entry.text}</span></div>`;
+        if (App._eventLog.length === 1) logEl.innerHTML = row;       // убрать плейсхолдер
+        else logEl.insertAdjacentHTML('afterbegin', row);
+      }
+      // Сверху — ТОЛЬКО уведомление о выпавшем золоте
+      if (r.goldDrop > 0) UI.toast(`🪙 Выпало золото: ${UI.fmtNum(r.goldDrop)}!`);
       await App.refreshMe(); App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };

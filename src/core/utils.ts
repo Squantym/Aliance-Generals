@@ -48,6 +48,10 @@ function clamp(n: number, min: number, max: number): number {
 
 // Безопасно привести значение к целому числу
 function toInt(v: unknown, def = 0): number {
+  // Пустая строка / пробелы / null / undefined — это «нет значения»,
+  // возвращаем дефолт. Иначе Number('') === 0 молча съедал бы дефолт
+  // (из-за этого пустые поля админ-форм превращались в 0).
+  if (v == null || (typeof v === 'string' && v.trim() === '')) return def;
   const n = Math.floor(Number(v));
   return Number.isFinite(n) ? n : def;
 }
