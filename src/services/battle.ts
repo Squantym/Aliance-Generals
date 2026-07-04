@@ -232,18 +232,19 @@ function resolveDamage(atk: number, def: number): any {
   const ratio = def / Math.max(1, atk); // >1 защитник сильнее, <1 — атакующий сильнее
   let dealt;
 
+  // Потолок обычного урона — 30. Крит ×2 = 60, с трофеем на макс (+200%) = 180.
   if (ratio >= 1.5) {
-    dealt = u.rnd(1, 5);
+    dealt = u.rnd(1, 4);
   } else if (ratio >= 1.2) {
-    dealt = u.rnd(5, 15);
+    dealt = u.rnd(4, 10);
   } else if (ratio >= 0.9 && ratio <= 1.1) {
-    dealt = u.rnd(10, 25);
+    dealt = u.rnd(8, 18);
   } else {
     const dominance = Math.min(1, (0.9 - ratio) / 0.9);
-    dealt = Math.round(25 + dominance * 20 + Math.random() * 5);
+    dealt = Math.round(18 + dominance * 9 + Math.random() * 3);
   }
 
-  dealt = u.clamp(Math.round(dealt), 1, 45);
+  dealt = u.clamp(Math.round(dealt), 1, 30);
   return { dealt };
 }
 
@@ -324,14 +325,9 @@ function attack(user: User, targetId: string, notices: Notices) {
     target = player.users()[targetId];
     if (!target || target.id === user.id) throw new u.ApiError('Цель не найдена');
     player.refresh(target);
-    // Заказчик санкции НЕ может сам атаковать свою цель — её бьют другие.
-    try {
-      if (require('./sanctions').isOrderer(user.id, targetId)) {
-        throw new u.ApiError('Вы заказали санкцию на этого игрока — его бьют другие, вам атаковать нельзя.');
-      }
-    } catch (e) {
-      if (e instanceof u.ApiError) throw e;
-    }
+    // Обычные атаки по цели РАЗРЕШЕНЫ всем, включая заказчика санкции.
+    // Ограничение только на награду: заказчик не может забрать СВОЮ же
+    // награду за санкцию (см. checkPayout ниже).
     // Цель с активной санкцией можно атаковать вне диапазона уровней и
     // добивать ниже лазаретного порога (охота за наградой)
     let underSanction = false;
@@ -401,13 +397,13 @@ function attack(user: User, targetId: string, notices: Notices) {
     ? Math.round(dealtBase * B.CRIT_MULT * (1 + critTrophyBonus))
     : dealtBase;
 
-  // Для определения победителя сравниваем эффективную атаку (с учётом
-  // крита) против защиты — честно, без отдельного случайного броска
+  // Определение победителя ДЕТЕРМИНИРОВАНО: сравниваем эффективную мощь
+  // атаки (с учётом крита) против мощи защиты напрямую, без случайных
+  // бросков. Если у нападающего мощь ниже — он НЕ выигрывает. Крит может
+  // «дожать» победу, усилив атаку, но случайность исход не переворачивает.
   let effectiveAtk = aPow;
   if (crit) effectiveAtk *= B.CRIT_MULT * (1 + critTrophyBonus);
-  const aRollFinal = effectiveAtk * (0.85 + Math.random() * 0.3);
-  const dRollFinal = dPow * (0.85 + Math.random() * 0.3);
-  const win = aRollFinal >= dRollFinal;
+  const win = effectiveAtk >= dPow;
 
   // Полный уворот — обнуляем урон, но не исход боя
   const dealt = dodge ? 0 : dealtCrit;
@@ -462,6 +458,13 @@ function attack(user: User, targetId: string, notices: Notices) {
 
   if (win) {
     user.battle.wins++;
+    // Личная история против реального противника: +победа
+    if (!isBot) {
+      if (!user.vsRecord) user.vsRecord = {};
+      const rec = user.vsRecord[target.id] || { wins: 0, losses: 0 };
+      rec.wins++;
+      user.vsRecord[target.id] = rec;
+    }
     require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
     // Сезонный рейтинг и проверка титулов
@@ -479,6 +482,9 @@ function attack(user: User, targetId: string, notices: Notices) {
       // тем, сколько раз именно ПО ЭТОМУ боту уже ударили.
       const DECAY = 0.95;
       loot = Math.round(target.firstHit * Math.pow(DECAY, target.hitsLanded || 0));
+      // Трофей «Мародёр» (+5%/ур) и эффект loot_pct действуют и на ботов
+      const looterBonusBot = 1 + (player.trophyDiscountPct ? player.trophyDiscountPct(user, 'loot') / 100 : 0);
+      loot = Math.round(loot * player.effMul(user, 'loot_pct') * looterBonusBot);
       loot = Math.min(loot, target.loot); // не больше, чем осталось в казне
       loot = Math.max(0, loot);
       target.hitsLanded = (target.hitsLanded || 0) + 1;
@@ -497,8 +503,8 @@ function attack(user: User, targetId: string, notices: Notices) {
         }
       }
     } else {
-      // С игрока: 7% от наличных (было 10%), с учётом уменьшающего множителя
-      // и трофея «Мародёр» (+2% за уровень)
+      // С игрока: 7% от наличных, с учётом уменьшающего множителя
+      // и трофея «Мародёр» (+5% за уровень)
       const looterBonus = 1 + (player.trophyDiscountPct ? player.trophyDiscountPct(user, 'loot') / 100 : 0);
       loot = Math.floor(target.dollars * B.LOOT_PCT * (1 - lootReduce) * lootMul * player.effMul(user, 'loot_pct') * looterBonus);
       loot = Math.max(0, Math.min(loot, target.dollars));
@@ -518,6 +524,11 @@ function attack(user: User, targetId: string, notices: Notices) {
   } else {
     user.battle.losses++;
     if (!isBot) {
+      // Личная история против реального противника: +поражение
+      if (!user.vsRecord) user.vsRecord = {};
+      const rec = user.vsRecord[target.id] || { wins: 0, losses: 0 };
+      rec.losses++;
+      user.vsRecord[target.id] = rec;
       target.battle.defWins++;
       // Защитник, отразив атаку, тоже несёт минимальные потери
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT, false));
@@ -550,7 +561,16 @@ function attack(user: User, targetId: string, notices: Notices) {
   );
   let fatality = false;
   let fatalityDodged = false;
-  if (!targetImmune && fatalityAllowed && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
+  // Фаталити доступно только тому, кто РЕАЛЬНО побеждает противника.
+  // Если по личной истории боёв игрок проигрывает этой цели чаще, чем
+  // выигрывает — шанс фаталити над ней блокируется (нельзя «фармить»
+  // фаталити над тем, кто обычно сильнее).
+  let fatalityVsOk = true;
+  if (!isBot) {
+    const rec = (user.vsRecord || {})[target.id] || { wins: 0, losses: 0 };
+    if (rec.losses > rec.wins) fatalityVsOk = false;
+  }
+  if (!targetImmune && fatalityAllowed && fatalityVsOk && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
     // Жестокость даёт ШАНС совершить фаталити (не гарантию): 0.5% за
     // уровень навыка, максимум 50%.
     const fatalityChance = Math.min(0.50, user.skills.cruelty * 0.005);

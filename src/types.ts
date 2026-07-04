@@ -205,6 +205,10 @@ export interface User {
 
   // Необязательные поля, появляющиеся в рантайме
   recentAttacks?: Record<string, number[]>;
+  // Личная история боёв против конкретного противника (по его id):
+  // { wins, losses } — нужна для ограничения фаталити тем, кто часто
+  // проигрывает данному противнику.
+  vsRecord?: Record<string, { wins: number; losses: number }>;
   behavior?: BehaviorProfile;
   pendingGifts?: Gift[];
   isBot?: boolean;

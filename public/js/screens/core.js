@@ -225,25 +225,22 @@ App.screens.home = async (c) => {
     ['market', '💣', 'Чёрный рынок'],
     ['club', '🎲', 'Клуб офицеров'],
   ];
+  // Прямой доступ ко всем разделам. Достижения и внешний вид — внутри
+  // профиля. Событие — во вкладке «Война» (бои). Ежедневный вход — авто.
   const small = [
     ['profile', '👤', 'Профиль', ''],
-    ['fame/alltime/level', '🏆', 'Зал славы', ''],
     ['skills', '📈', 'Навыки', m.skillPoints > 0 ? `<span class="badge">+${m.skillPoints}</span>` : ''],
-    ['chat', '💬', 'Общение', ''],
     ['alliance', '🤝', 'Альянс', ''],
-    ['bank', '🏦', 'Банк', ''],
-    ['hospital', '🏥', 'Госпиталь', ''],
+    ['fame/alltime/level', '🏆', 'Зал славы', ''],
+    ['chat', '💬', 'Общение', ''],
     ['mail', '✉', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
     ['notifications', '🔔', 'Уведомления', m.notifUnread > 0 ? `<span class="badge">${m.notifUnread}</span>` : ''],
-    ['ach', '🎖', 'Достижения', ''],
     ['trophies', '🎁', 'Трофеи', ''],
-    ['streak', '📅', 'Ежедневный вход', m.streakAvailable ? '<span class="badge">!</span>' : ''],
-    ['contracts', '📋', 'Контракты', ''],
-    ['titles', '🏅', 'Титулы', ''],
+    ['dailytasks', '📋', 'Ежедневные задания', ''],
     ['season', '🏆', 'Сезон', ''],
-    ['event', '🐉', 'Событие', m.eventActive ? '<span class="badge">!</span>' : ''],
     ['referral', '🎁', 'Пригласить друга', ''],
-    ['cosmetics', '🎨', 'Внешний вид', ''],
+    ['bank', '🏦', 'Банк', ''],
+    ['hospital', '🏥', 'Госпиталь', ''],
     ['shop', '💎', 'Магазин золота', ''],
     ['support', '🛟', 'Поддержка', m.supportUnread > 0 ? `<span class="badge">${m.supportUnread}</span>` : ''],
     ['settings', '⚙', 'Настройки', ''],
@@ -304,6 +301,27 @@ App.screens.home = async (c) => {
 };
 
 // ---------- ПРОФИЛЬ (свой или чужой: #profile/ид) ----------
+// ---------- Ежедневные задания (контракты) ----------
+App.screens.dailytasks = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/contracts');
+  c.innerHTML = `
+    <div class="title">📋 Ежедневные задания</div>
+    <p class="muted small" style="margin:-4px 4px 10px">Задания от штаба. Обновляются каждый день в 00:00 МСК. Выполняйте и забирайте награду.</p>
+    ${d.contracts.length ? d.contracts.map((ct) => `
+      <div class="card">
+        <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
+        <p class="muted small">${UI.esc(ct.desc)}</p>
+        ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
+        <div class="kv mt"><span class="k">Награда</span><span class="v gold">🪙 ${ct.reward}</span></div>
+        ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? 'Забрать награду' : 'Не выполнено'}</button>` : ''}
+      </div>`).join('') : '<div class="card center muted">Заданий нет. Загляните позже.</div>'}`;
+  c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async () => {
+    try { await API.post('/api/contracts/claim', { contractId: b.dataset.claim }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+};
+
 App.screens.profile = async (c, param) => {
   const id = param || App.me.id;
   const { profile: p } = await API.get('/api/profile/' + encodeURIComponent(id));
@@ -399,6 +417,16 @@ App.screens.profile = async (c, param) => {
       ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile/${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
       ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%">👂 Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
     </div>
+
+    ${own ? `
+    <div class="card">
+      <div class="title" style="margin-top:0">Разделы профиля</div>
+      <div class="menu-grid">
+        <div class="menu-btn small-row" onclick="App.go('ach')"><span class="ic">🎖</span>Достижения</div>
+        <div class="menu-btn small-row" onclick="App.go('titles')"><span class="ic">🏅</span>Титулы</div>
+        <div class="menu-btn small-row" onclick="App.go('cosmetics')"><span class="ic">🎨</span>Внешний вид</div>
+      </div>
+    </div>` : ''}
 
     ${(p.activeEffects && p.activeEffects.length) ? `
     <div class="card">
@@ -915,59 +943,6 @@ App.screens.shop = async (c) => {
 // ========== НОВЫЕ СИСТЕМЫ ==========
 
 // ---------- Ежедневный вход ----------
-App.screens.streak = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/streak');
-  const reward = (r) => {
-    const parts = [];
-    if (r.gold) parts.push(`🪙 ${r.gold}`);
-    if (r.tokens) parts.push(`🎖 ${r.tokens}`);
-    if (r.ammo) parts.push(`🔫 ${r.ammo}`);
-    if (r.energy) parts.push(`⚡ ${r.energy}`);
-    return parts.join(' ');
-  };
-  c.innerHTML = `
-    <div class="title">📅 Ежедневный вход</div>
-    <div class="card center">
-      <p class="muted small">Заходите каждый день — награда растёт! Пропуск дня сбрасывает серию.</p>
-      <p style="font-size:32px;margin:8px 0" class="gold">🔥 ${d.streak} ${d.streak === 1 ? 'день' : 'дней'} подряд</p>
-      <button class="btn btn-orange mt" id="streak-claim" ${d.claimedToday ? 'disabled' : ''} style="width:100%">
-        ${d.claimedToday ? '✅ Награда получена, заходите завтра' : `Забрать награду дня ${d.nextDayNum}: ${reward(d.nextReward)}`}
-      </button>
-    </div>
-    <div class="card">
-      <div class="name">Расписание наград (7-дневный цикл)</div>
-      ${d.allRewards.map((r, i) => `
-        <div class="kv"><span class="k">День ${r.day}${r.tokens ? ' 🎁' : ''}</span><span class="v gold">${reward(r)}</span></div>`).join('')}
-    </div>`;
-  const btn = document.getElementById('streak-claim');
-  if (btn && !d.claimedToday) btn.onclick = async () => {
-    try { await API.post('/api/streak/claim'); await App.refreshMe(); App.rerender(); }
-    catch (e) { UI.toast('⛔ ' + e.message); }
-  };
-};
-
-// ---------- Контракты ----------
-App.screens.contracts = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/contracts');
-  c.innerHTML = `
-    <div class="title">📋 Контракты</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Ежедневные задания от штаба. Обновляются каждый день.</p>
-    ${d.contracts.map((ct) => `
-      <div class="card">
-        <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
-        <p class="muted small">${UI.esc(ct.desc)}</p>
-        ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
-        <div class="kv mt"><span class="k">Награда</span><span class="v gold">🪙 ${ct.reward}</span></div>
-        ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? 'Забрать награду' : 'Не выполнено'}</button>` : ''}
-      </div>`).join('')}`;
-  c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async () => {
-    try { await API.post('/api/contracts/claim', { contractId: b.dataset.claim }); await App.refreshMe(); App.rerender(); }
-    catch (e) { UI.toast('⛔ ' + e.message); }
-  });
-};
-
 // ---------- Титулы ----------
 App.screens.titles = async (c) => {
   await App.refreshMe();
@@ -1054,18 +1029,51 @@ App.screens.event = async (c) => {
     return;
   }
   if (!d.active) {
+    // Нет активного события — показываем итоги прошлого, если они есть
+    if (d.lastResult) {
+      const lr = d.lastResult;
+      const medal = (i) => ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
+      c.innerHTML = `
+        <div class="title">🏁 Итоги события</div>
+        <div class="card center">
+          <p style="font-size:34px">${lr.stopped ? '🛑' : '🏆'}</p>
+          <p><b class="gold" style="font-size:17px">${UI.esc(lr.name)}</b></p>
+          <p class="muted small">${lr.stopped ? 'Событие остановлено администратором' : 'Босс повержен!'}</p>
+          ${lr.killerName ? `<p class="small">⚔️ Последний удар: <b>${UI.esc(lr.killerName)}</b></p>` : ''}
+        </div>
+        <div class="card">
+          <div class="name">📊 Рейтинг участников</div>
+          <p class="muted small">Урон по боссу и число атак каждого бойца.</p>
+          <div style="margin-top:8px">
+            ${lr.ranking.length ? lr.ranking.map((r, i) => `
+              <div class="list-row">
+                <div class="grow">${medal(i)} <span class="name">${UI.esc(r.name)}</span>
+                  ${i < 3 && lr.rewards[i] > 0 ? `<span class="gold small"> +🪙${lr.rewards[i]}</span>` : ''}
+                </div>
+                <div style="text-align:right">
+                  <div class="gold small">${UI.fmtNum(r.damage)} урона</div>
+                  <div class="muted small">${r.attacks} ${r.attacks === 1 ? 'атака' : 'атак'}</div>
+                </div>
+              </div>`).join('') : '<p class="muted center">Никто не успел атаковать.</p>'}
+          </div>
+        </div>
+        <p class="muted small center">Следующее событие запустит администратор.</p>`;
+      return;
+    }
     c.innerHTML = `
       <div class="title">🐉 Мировое событие</div>
       <div class="card center"><p style="font-size:40px">😴</p><p class="muted">Сейчас нет активного события. Следите за объявлениями!</p></div>`;
     return;
   }
-  const dropInfo = (d.dropMax > 0)
+  // Активное событие
+  const dropInfo = (d.dropMax > 0 && d.goldPoolLeft > 0)
     ? `🪙 ${d.dropMin}–${d.dropMax} с шансом ${d.dropChance}%`
-    : 'нет';
+    : 'пул исчерпан';
+  const canAttack = App.me.res.am.cur > 0 && App.me.res.hp.cur >= 25;
   c.innerHTML = `
     <div class="title">🐉 ${UI.esc(d.name)}</div>
     <div class="card">
-      <p class="muted small">Все командиры объединились против общего врага! Атакуйте босса раз в день — урон копится. Когда босс падёт, все участники получат награду.</p>
+      <p class="muted small">Общий враг! Атакуйте босса — тратится боеприпас, как в обычном бою. Бейте сколько хватит патронов и здоровья. За атаки капает золото, а лучшие по урону и добивший получат награду.</p>
       <div style="margin:10px 0">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
           <span class="muted">❤️ Здоровье босса</span><span style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
@@ -1074,21 +1082,22 @@ App.screens.event = async (c) => {
           <div style="height:100%;width:${d.hpPct}%;background:linear-gradient(90deg,var(--red),var(--orange));transition:width .4s"></div>
         </div>
       </div>
-      <div class="kv"><span class="k">🛡 Защита босса</span><span class="v">${UI.fmtNum(d.def)}</span></div>
-      <div class="kv"><span class="k">🪙 Награда за атаку</span><span class="v gold">${dropInfo}</span></div>
-      <div class="kv"><span class="k">🎁 Награда за победу</span><span class="v gold">🪙 ${d.rewardGold}${d.rewardTokens ? ` + 🎖 ${d.rewardTokens}` : ''}</span></div>
-      <div class="kv"><span class="k">💥 Ваш вклад</span><span class="v">${UI.fmtNum(d.myDamage)} урона</span></div>
+      <div class="kv"><span class="k">🪙 Золото за атаку</span><span class="v gold">${dropInfo}</span></div>
+      <div class="kv"><span class="k">💰 Осталось в пуле</span><span class="v gold">🪙 ${UI.fmtNum(d.goldPoolLeft)}</span></div>
+      <div class="kv"><span class="k">🏆 Награда за добивание</span><span class="v gold">🪙 ${UI.fmtNum(d.killReward)}</span></div>
+      <div class="kv"><span class="k">🥇🥈🥉 Топ-3 по урону</span><span class="v gold">🪙 ${d.top3.map((x) => UI.fmtNum(x)).join(' / ')}</span></div>
+      <div class="kv"><span class="k">💥 Ваш урон / атак</span><span class="v">${UI.fmtNum(d.myDamage)} / ${d.myAttacks}</span></div>
       <div class="kv"><span class="k">👥 Участников</span><span class="v">${d.contributorsCount}</span></div>
-      <button class="btn btn-orange mt" id="event-attack" ${!d.canAttack ? 'disabled' : ''} style="width:100%">
-        ${d.canAttack ? '⚔️ Атаковать босса' : '✅ Вы атаковали сегодня, возвращайтесь завтра'}
+      <button class="btn btn-orange mt" id="event-attack" ${!canAttack ? 'disabled' : ''} style="width:100%">
+        ${canAttack ? '⚔️ Атаковать босса (−1 🎯)' : (App.me.res.am.cur <= 0 ? 'Нет боеприпасов' : 'Здоровье ниже 25')}
       </button>
     </div>`;
   const btn = document.getElementById('event-attack');
-  if (btn && d.canAttack) btn.onclick = async () => {
+  if (btn && canAttack) btn.onclick = async () => {
     try {
       const r = await API.post('/api/event/attack');
-      if (r.finished) UI.toast('🏆 Босс повержен! Награда начислена всем участникам!');
-      else UI.toast(`💥 Урон ${UI.fmtNum(r.dealtDamage)}!${r.goldDrop > 0 ? ` Выпало 🪙 ${r.goldDrop}` : ''}`);
+      if (r.finished) UI.toast(`🏆 Босс повержен!${r.killReward > 0 ? ` Вы добили и получили 🪙 ${r.killReward}!` : ''}`);
+      else UI.toast(`💥 Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' 🔥КРИТ' : ''}!${r.goldDrop > 0 ? ` Выпало 🪙 ${r.goldDrop}` : ''}`);
       await App.refreshMe(); App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };

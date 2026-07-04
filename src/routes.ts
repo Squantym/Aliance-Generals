@@ -62,15 +62,20 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password), { open: true });
 
   // ---------- Игрок ----------
-  app.add('GET', '/api/me', (req) => ({
-    ...player.mePayload(req.user),
-    mailUnread: social.unread(req.user),
-    notifUnread: notifications.unreadCount(req.user),
-    supportUnread: support.myTickets(req.user).open.filter((t: any) => t.status === 'answered' || t.lastFrom === 'admin').length,
-    streakAvailable: !features.loginStreakView(req.user).claimedToday,
-    eventActive: worldEvent.view(req.user).active,
-    activeTitle: features.activeTitleName(req.user),
-  }));
+  app.add('GET', '/api/me', (req) => {
+    // Ежедневная награда выдаётся автоматически при первом заходе в новый
+    // день (00:00 МСК) — без отдельного окна/кнопки.
+    const daily = features.claimDailyIfDue(req.user);
+    return {
+      ...player.mePayload(req.user),
+      mailUnread: social.unread(req.user),
+      notifUnread: notifications.unreadCount(req.user),
+      supportUnread: support.myTickets(req.user).open.filter((t: any) => t.status === 'answered' || t.lastFrom === 'admin').length,
+      eventActive: worldEvent.view(req.user).active,
+      activeTitle: features.activeTitleName(req.user),
+      dailyReward: daily ? { streak: daily.streak, message: daily.message } : null,
+    };
+  });
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
   app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
   app.add('POST', '/api/ears/restore', act((req, n) => player.restoreEar(req.user, n)));
@@ -227,7 +232,6 @@ function registerRoutes(app: any) {
   // ── Новые системы ──
   // Ежедневный вход
   app.add('GET',  '/api/streak',       (req) => features.loginStreakView(req.user));
-  app.add('POST', '/api/streak/claim', act((req, n) => features.claimLoginStreak(req.user, n)));
   // Титулы
   app.add('GET',  '/api/titles',     (req) => features.titlesView(req.user));
   app.add('POST', '/api/titles/set', act((req, n) => features.setTitle(req.user, req.body.titleId, n)));
@@ -320,6 +324,8 @@ function registerRoutes(app: any) {
   // Бан и обнуление аккаунтов
   app.add('POST', '/api/admin/ban',   act((req, n) => admin.setBan(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/reset-param', act((req, n) => admin.resetParam(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/reset-missions', act((req, n) => admin.resetMissions(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/wipe-groups', act((req, n) => admin.wipeGroups(req.user, req.body, n)), { admin: true });
   // Служба поддержки — пользователь
   app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));

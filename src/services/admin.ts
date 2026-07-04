@@ -293,6 +293,62 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   return { userId: target.id };
 }
 
+// ── Сброс отдельного ПАРАМЕТРА: у всех игроков или у одного ───────
+// param — какой параметр сбросить; userId — если задан, только у этого
+// игрока, иначе у всех. Позволяет точечно чинить/обнулять системы.
+function resetParam(adminUser: User, body: any, notices: Notices) {
+  const players: Record<string, User> = require('./player').users();
+  const param = String(body.param || '');
+  const userId = body.userId ? String(body.userId) : null;
+
+  const RESETTERS: Record<string, (t: User) => void> = {
+    missions: (t) => { t.missions = {}; (t as any).counters.missionStages = 0; },
+    achievements: (t) => { (t as any).achStages = {};
+      (t as any).counters = { ...(t as any).counters, wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0 }; },
+    trophies: (t) => { t.trophies = Object.fromEntries(config.TROPHIES.map((tr: any) => [tr.id, 0])); (t as any).trophyQueue = []; },
+    skills: (t) => { t.skills = { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 }; t.skillPoints = 0; },
+    money: (t) => { t.dollars = config.PLAYER.START_DOLLARS; t.gold = config.PLAYER.START_GOLD; t.bank = 0; },
+    units: (t) => { t.units = {}; t.workshops = 0; (t as any).modernQueue = []; },
+    buildings: (t) => { t.buildings = {}; },
+    ears: (t) => { t.ears = 0; t.earsLost = 0; t.earsCurrent = config.EARS.MAX; t.earsLostAt = []; t.earPenaltyUntil = 0; t.earCutters = [null, null]; t.earMessage = null; },
+    battle: (t) => { t.battle = { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 }; t.vsRecord = {}; },
+    effects: (t) => { t.effects = []; },
+    alliances: (t) => { t.allianceMembers = 0; t.allianceRoster = []; t.allianceDiplomats = 0; t.allianceInviteLog = []; t.allianceId = null; t.legionId = null; },
+    tokens: (t) => { t.tokens = 0; },
+    cosmetics: (t) => { (t as any).ownedCosmetics = []; (t as any).profileFrame = null; (t as any).profileBg = null; (t as any).titles = []; (t as any).activeTitle = null; },
+    streak: (t) => { t.loginStreak = 0; t.lastLoginDay = ''; },
+  };
+
+  const fn = RESETTERS[param];
+  if (!fn) throw new u.ApiError(`Неизвестный параметр: ${param}`);
+
+  let count = 0;
+  if (userId) {
+    const target = players[userId];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    if (target.isAdmin && target.id !== adminUser.id) {
+      throw new u.ApiError('Нельзя сбрасывать параметры другого администратора');
+    }
+    fn(target);
+    count = 1;
+  } else {
+    for (const t of Object.values(players)) {
+      if (t.isAdmin) continue;
+      fn(t);
+      count++;
+    }
+  }
+  require('../core/db').save('users');
+  const scope = userId ? `у игрока «${players[userId].name}»` : `у всех (${count})`;
+  notices.push(`♻️ Параметр «${param}» сброшен ${scope}.`);
+  return { param, count, userId };
+}
+
+// ── Сброс ВСЕХ миссий (у всех или у одного игрока) ────────────────
+function resetMissions(adminUser: User, body: any, notices: Notices) {
+  return resetParam(adminUser, { param: 'missions', userId: body.userId }, notices);
+}
+
 // ── Полная очистка всех групп (альянсов и легионов) ──────────────
 // Стирает все альянсы, легионы, активные/прошедшие бои и логи.
 // Игроки начинают создавать группы заново.
@@ -341,5 +397,5 @@ export = {
   listPlayers, grant, grantAll, claimGift,
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
-  listLogs, setBan, resetAccount, wipeGroups,
+  listLogs, setBan, resetAccount, resetParam, resetMissions, wipeGroups,
 };

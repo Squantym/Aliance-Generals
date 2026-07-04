@@ -15,60 +15,61 @@ import player = require('./player');
 import type { User, Notices } from '../types';
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  // День по МСК (UTC+3): новый день наступает в 00:00 МСК
+  return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
 }
 function users(): Record<string, User> { return player.users(); }
 
 // ===================================================================
-// 1. ЕЖЕДНЕВНЫЙ ВХОД (STREAK)
+// 1. ЕЖЕДНЕВНЫЙ ВХОД (STREAK) — награда выдаётся АВТОМАТИЧЕСКИ при
+// первом заходе в новый день (00:00 МСК). Серия до 7 дней, пропуск
+// сбрасывает на день 1, после 7-го дня отсчёт начинается заново.
 // ===================================================================
+
+// Вызывается при каждом обращении игрока (из mePayload). Если сегодня
+// награда ещё не выдана — начисляет её и возвращает данные для тоста.
+function claimDailyIfDue(user: User, notices?: Notices): any | null {
+  const day = today();
+  if (user.lastLoginDay === day) return null; // уже получено сегодня
+
+  // Определяем серию: если вчера заходил — продолжаем, иначе сброс на 1.
+  // После 7-го дня серия сбрасывается и начинается заново с 1.
+  const yesterday = new Date(Date.now() + 3 * 3600 * 1000 - 86400000).toISOString().slice(0, 10);
+  let streak;
+  if (user.lastLoginDay === yesterday) {
+    streak = (user.loginStreak || 0) + 1;
+    if (streak > 7) streak = 1; // после недельного джекпота — заново
+  } else {
+    streak = 1; // пропуск дня или первый вход — начинаем заново
+  }
+  user.loginStreak = streak;
+  user.lastLoginDay = day;
+
+  const rewards = config.LOGIN_STREAK.rewards;
+  const r = rewards[streak - 1];
+
+  if (r.dollars) player.addMoney(user, r.dollars, false);
+  if (r.gold) player.addGold(user, r.gold);
+  db.save('users');
+
+  const parts: string[] = [];
+  if (r.dollars) parts.push(`$ ${u.fmt(r.dollars)}`);
+  if (r.gold) parts.push(`🪙 ${r.gold}`);
+  const msg = `📅 День ${streak}/7! Награда за вход: ${parts.join(', ')}.${streak === 7 ? ' 🎉 Недельный джекпот!' : ''}`;
+  if (notices) notices.push(msg);
+  try { checkTitles(user, notices || { push: () => {} } as any); } catch (e) {}
+  return { streak, reward: r, message: msg };
+}
+
+// Данные для отображения прогресса серии (профиль/уведомление)
 function loginStreakView(user: User) {
   const day = today();
   const claimedToday = user.lastLoginDay === day;
   const streak = user.loginStreak || 0;
-  const nextDay = claimedToday ? streak : streak + 1;
-  const rewards = config.LOGIN_STREAK.rewards;
-  const idx = ((nextDay - 1) % rewards.length);
   return {
     streak, claimedToday,
-    nextReward: rewards[idx],
-    nextDayNum: nextDay,
-    allRewards: rewards,
+    allRewards: config.LOGIN_STREAK.rewards,
   };
-}
-
-function claimLoginStreak(user: User, notices: Notices) {
-  const day = today();
-  if (user.lastLoginDay === day) {
-    throw new u.ApiError('Награда за вход уже получена сегодня. Заходите завтра!');
-  }
-  // Проверяем непрерывность: если пропустил день — сброс серии
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  if (user.lastLoginDay === yesterday) {
-    user.loginStreak = (user.loginStreak || 0) + 1;
-  } else {
-    user.loginStreak = 1; // серия начинается заново
-  }
-  user.lastLoginDay = day;
-
-  const rewards = config.LOGIN_STREAK.rewards;
-  const idx = ((user.loginStreak - 1) % rewards.length);
-  const r = rewards[idx];
-
-  if (r.gold) player.addGold(user, r.gold);
-  if (r.tokens) user.tokens = (user.tokens || 0) + r.tokens;
-  if (r.ammo) user.res.am.cur += r.ammo;
-  if (r.energy) user.res.en.cur += r.energy;
-  db.save('users');
-
-  const parts: string[] = [];
-  if (r.gold) parts.push(`🪙 ${r.gold}`);
-  if (r.tokens) parts.push(`🎖 ${r.tokens}`);
-  if (r.ammo) parts.push(`🔫 ${r.ammo}`);
-  if (r.energy) parts.push(`⚡ ${r.energy}`);
-  notices.push(`📅 День ${user.loginStreak}! Награда за вход: ${parts.join(', ')}.`);
-  checkTitles(user, notices);
-  return loginStreakView(user);
 }
 
 // ===================================================================
@@ -480,7 +481,7 @@ function adminEndSeason(adminUser: User, body: any, notices: Notices) {
 }
 
 export = {
-  loginStreakView, claimLoginStreak,
+  loginStreakView, claimDailyIfDue,
   checkTitles, titlesView, setTitle, activeTitleName,
   contractsView, claimContract, rollContracts,
   cosmeticsView, buyCosmetic, equipCosmetic, unequipCosmetic,

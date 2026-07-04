@@ -69,6 +69,11 @@ const App = {
       const prevNotifUnread = App.me ? App.me.notifUnread : 0;
       App.me = await API.get('/api/me');
       App.renderHeader();
+      // Ежедневная награда за вход выдана автоматически — показываем тост
+      if (App.me.dailyReward && App.me.dailyReward.message && !App._dailyShown) {
+        App._dailyShown = true;
+        UI.toast(App.me.dailyReward.message);
+      }
       // Если появились новые уведомления — показываем окно/баннер атаки
       if (App.me.notifUnread > prevNotifUnread) {
         App._checkNewAttackNotification();

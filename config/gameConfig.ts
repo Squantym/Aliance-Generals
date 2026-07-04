@@ -1433,14 +1433,16 @@ const MAIL = { KEEP: 100, MAX_LEN: 2000 };
 
 // Награды за серию ежедневных входов (день 1..7+, потом цикл)
 const LOGIN_STREAK = {
+  // Дни 1-6 — только игровые доллары ($), растут по серии.
+  // День 7 — джекпот: 100 золота + крупная сумма долларов.
   rewards: [
-    { day: 1, gold: 10 },
-    { day: 2, gold: 15 },
-    { day: 3, gold: 25, ammo: 20 },
-    { day: 4, gold: 30 },
-    { day: 5, gold: 40, energy: 30 },
-    { day: 6, gold: 50 },
-    { day: 7, gold: 100, tokens: 1 },  // недельный джекпот
+    { day: 1, dollars: 20000 },
+    { day: 2, dollars: 40000 },
+    { day: 3, dollars: 70000 },
+    { day: 4, dollars: 110000 },
+    { day: 5, dollars: 160000 },
+    { day: 6, dollars: 220000 },
+    { day: 7, dollars: 300000, gold: 100 },  // недельный джекпот
   ],
 };
 

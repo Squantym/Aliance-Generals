@@ -114,8 +114,14 @@ App.screens.war = async (c) => {
     <div class="tabs">
       <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">🎯 Цели</div>
       <div class="tab ${warTab === 'sanctions' ? 'active' : ''}" data-wartab="sanctions">💰 Санкции</div>
+      <div class="tab ${warTab === 'event' ? 'active' : ''}" data-wartab="event">🐉 Событие</div>
     </div>
-    ${warTab === 'targets' ? `
+    ${warTab === 'event' ? `
+      <div class="card center">
+        <p class="muted small">Мировое PvE-событие: командиры вместе бьют общего босса. Открыть полный экран события:</p>
+        <button class="btn btn-orange mt" onclick="App.go('event')" style="width:100%">🐉 Перейти к событию</button>
+      </div>
+    ` : warTab === 'targets' ? `
       <div class="card">
         <p class="muted small">Цели подобраны в диапазоне ±10 уровней. 💀 — боты-террористы. Каждая атака тратит 1 боеприпас 🎯.</p>
         <button class="btn mt" id="war-refresh">🔄 Обновить список целей</button>

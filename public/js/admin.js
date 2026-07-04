@@ -103,18 +103,49 @@ const Admin = {
           <button class="btn btn-red" id="wipe-all">Стереть всё (альянсы + легионы)</button>
         </div>
       </div>
+      <div class="card" style="margin-top:16px;border-color:var(--red)">
+        <div class="name">♻️ Сброс параметров</div>
+        <p class="muted small mt">Сбросить отдельный параметр — у всех игроков или у одного конкретного. Оставьте поле игрока пустым для сброса у всех. Необратимо!</p>
+        <div style="margin-top:8px">
+          <label style="font-size:11px;color:var(--dim)">Параметр</label>
+          <select id="rp-param" style="width:100%">
+            <option value="missions">📋 Миссии</option>
+            <option value="achievements">🎖 Достижения (+счётчики)</option>
+            <option value="trophies">🎁 Трофеи</option>
+            <option value="skills">📈 Навыки (+очки)</option>
+            <option value="money">💰 Деньги (доллары/золото/банк)</option>
+            <option value="tokens">🎖 Жетоны</option>
+            <option value="units">🪖 Техника</option>
+            <option value="buildings">🏗 Постройки</option>
+            <option value="ears">👂 Уши</option>
+            <option value="battle">⚔️ Боевая статистика</option>
+            <option value="effects">💊 Активные эффекты</option>
+            <option value="alliances">🤝 Альянсы/легионы</option>
+            <option value="cosmetics">🎨 Косметика/титулы</option>
+            <option value="streak">📅 Серия входов</option>
+          </select>
+          <label style="font-size:11px;color:var(--dim);margin-top:6px;display:block">ID игрока (пусто = у всех)</label>
+          <input type="text" id="rp-userid" placeholder="оставьте пустым для сброса у всех">
+          <button class="btn btn-red mt" id="rp-go" style="width:100%">♻️ Сбросить параметр</button>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,.08);margin-top:12px;padding-top:10px">
+          <button class="btn btn-inline" id="rm-all" style="width:100%">📋 Сбросить ВСЕ миссии у всех игроков</button>
+        </div>
+      </div>
       <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
         <div class="name">🐉 Мировое событие (босс)</div>
         <p class="muted small mt">Запустите PvE-босса для всех игроков. Они атакуют его раз в день, при победе получают награду.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
           <div><label style="font-size:11px;color:var(--dim)">Название</label><input type="text" id="ev-name" placeholder="Вражеская армада"></div>
-          <div><label style="font-size:11px;color:var(--dim)">❤️ Здоровье</label><input type="number" id="ev-hp" placeholder="100000"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🛡 Защита</label><input type="number" id="ev-def" placeholder="1000"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 Награда золото (победа)</label><input type="number" id="ev-gold" placeholder="50"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🎖 Награда жетоны (победа)</label><input type="number" id="ev-tokens" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)">❤️ Здоровье босса</label><input type="number" id="ev-hp" placeholder="100000"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 Пул золота (всего)</label><input type="number" id="ev-goldpool" placeholder="100000"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🎲 Шанс выпадения (%)</label><input type="number" id="ev-drop-chance" placeholder="2"></div>
           <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: от</label><input type="number" id="ev-drop-min" placeholder="5"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: до</label><input type="number" id="ev-drop-max" placeholder="15"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🎲 Шанс выпадения (%)</label><input type="number" id="ev-drop-chance" placeholder="50"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: до</label><input type="number" id="ev-drop-max" placeholder="10"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🏆 Награда за килл (последний удар)</label><input type="number" id="ev-kill" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥇 Топ-1 по урону</label><input type="number" id="ev-r1" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥈 Топ-2 по урону</label><input type="number" id="ev-r2" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥉 Топ-3 по урону</label><input type="number" id="ev-r3" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">⏰ Отложить старт (мин, 0=сразу)</label><input type="number" id="ev-delay" placeholder="0"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px">
@@ -140,14 +171,34 @@ const Admin = {
     document.getElementById('wipe-alliances').onclick = () => wipe('alliances', 'Обнулить ВСЕ альянсы?');
     document.getElementById('wipe-legions').onclick = () => wipe('legions', 'Удалить ВСЕ легионы и логи боёв?');
     document.getElementById('wipe-all').onclick = () => wipe('all', 'Стереть ВСЕ альянсы и легионы?');
+
+    // Сброс отдельного параметра (у всех или у одного)
+    document.getElementById('rp-go').onclick = async () => {
+      const param = document.getElementById('rp-param').value;
+      const userId = document.getElementById('rp-userid').value.trim();
+      const scope = userId ? `у игрока ${userId}` : 'у ВСЕХ игроков';
+      if (!confirm(`Сбросить «${param}» ${scope}?\n\nЭто необратимо. Продолжить?`)) return;
+      try {
+        const r = await API.post('/api/admin/reset-param', userId ? { param, userId } : { param });
+        UI.toast(`♻️ «${param}» сброшен (${r.count})`);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('rm-all').onclick = async () => {
+      if (!confirm('Сбросить ВСЕ миссии у ВСЕХ игроков?\n\nНеобратимо. Продолжить?')) return;
+      try { const r = await API.post('/api/admin/reset-missions', {}); UI.toast(`📋 Миссии сброшены у ${r.count} игроков`); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
     const evVal = (id) => (document.getElementById(id) || {}).value || '';
     document.getElementById('ev-start').onclick = async () => {
       try {
         await API.post('/api/admin/event/start', {
-          name: evVal('ev-name'), hp: evVal('ev-hp'), def: evVal('ev-def'),
-          rewardGold: evVal('ev-gold'), rewardTokens: evVal('ev-tokens'),
+          name: evVal('ev-name'), hp: evVal('ev-hp'),
+          goldPool: evVal('ev-goldpool'),
+          dropChance: evVal('ev-drop-chance'),
           dropMin: evVal('ev-drop-min'), dropMax: evVal('ev-drop-max'),
-          dropChance: evVal('ev-drop-chance'), delayMin: evVal('ev-delay'),
+          killReward: evVal('ev-kill'),
+          reward1: evVal('ev-r1'), reward2: evVal('ev-r2'), reward3: evVal('ev-r3'),
+          delayMin: evVal('ev-delay'),
         });
         UI.toast('🐉 Событие запущено');
       } catch (e) { UI.toast('⛔ ' + e.message); }

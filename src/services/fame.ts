@@ -30,6 +30,8 @@ const GETTERS: Record<string, (u: User) => number> = {
                       + (p.battle && p.battle.losses || 0),
   battleLoot:    (p) => (p.counters && p.counters.battleLoot)     || 0,
   buildingsBuilt:(p) => (p.counters && p.counters.buildingsBuilt) || 0,
+  level:         (p) => p.level || 1,
+  allianceMembers: (p) => (p as any).allianceMembers || 0,
 };
 
 // ── 7 категорий ───────────────────────────────────────────────────
@@ -37,9 +39,9 @@ const CATEGORIES = [
   {
     id: 'level',
     name: '⭐ Восхождение',
-    desc: 'Наивысший уровень генерала',
-    getter: null,           // null = абсолютное значение (нет дельты)
-    absGetter: (p) => p.level,
+    desc: 'Прирост уровня',
+    getter: 'level',        // дельта: прирост уровня за день
+    absGetter: (p) => p.level,   // «за всё время» — абсолютный уровень
     fmt: 'number',
   },
   {
@@ -85,9 +87,9 @@ const CATEGORIES = [
   {
     id: 'alliance',
     name: '🤝 Полководец армий',
-    desc: 'Размер альянса',
-    getter: null,           // абсолютное — альянс не «растёт за день»
-    absGetter: (p) => { const a = player.allianceOf(p); return a ? a.members.length : 0; },
+    desc: 'Прирост альянса',
+    getter: 'allianceMembers',   // дельта: прирост за день
+    absGetter: (p) => (p as any).allianceMembers || 0,  // всего — размер альянса
     fmt: 'number',
   },
 ];

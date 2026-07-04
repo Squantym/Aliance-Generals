@@ -112,6 +112,13 @@ function checkPayout(hunter: User, target: User, hpAfter: number, maxHp: number,
   const pct = hpAfter / Math.max(1, maxHp);
   if (pct > HP_THRESHOLD_PCT) return 0; // порог не достигнут
 
+  // Заказчик санкции не может забрать СВОЮ же награду — её получают другие.
+  // Бой засчитывается как обычный, но выплаты нет и санкция не снимается.
+  if ((entry.orders || []).some((o: any) => o.byId === hunter.id)) {
+    notices.push(`⚠️ Вы заказали эту санкцию — награду за неё получают другие охотники, не вы.`);
+    return 0;
+  }
+
   // Выплата охотнику
   const payout = entry.bounty;
   const pl = require('./player');
