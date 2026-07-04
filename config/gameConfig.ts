@@ -922,18 +922,44 @@ const TROPHIES = [
   { id: 'tax',       name: 'Налоговая льгота',            desc: '−5% к комиссии банка за уровень (макс. 50%).',         perLvl: 5,   apply: 'bank_fee' },
   { id: 'quarterm',  name: 'Армейский квартирмейстер',    desc: '+5% к доходу построек за уровень (макс. 50%).',        perLvl: 5,   apply: 'income',  expensive: true },
   { id: 'looter',    name: 'Мародёр',                     desc: '+5% к грабежу в боях за уровень (макс. 50%).',         perLvl: 5,   apply: 'loot',    expensive: true },
+  // Разведывательный трофей: гейтит рассекречивание армии в профиле цели
+  // после шпионажа. perLvl:0 — это не процентный бонус, эффект описан в spyReveal().
+  // costMul 1.3 (+30% к цене), timeMul 2.0 (время прокачки удвоено).
+  { id: 'satellite', name: 'Спутник-шпион',               desc: 'Раскрывает армию противника прямо в его профиле после разведки. Ур. 1–5 — техника (точность 50→100%), ур. 5–7 — +постройки (70→100%), ур. 8–9 — +секретные разработки (70→80%), ур. 10 — всё максимально (секретки 90%), а данные обновляются в реальном времени 3 дня.', perLvl: 0, apply: 'spy', spy: true, costMul: 1.3, timeMul: 2.0 },
 ];
 const TROPHY_MAX_LEVEL = 10;
 const TROPHY_BOOST_GOLD = 50;
-// Время прокачки растёт геометрически (×1.7) — на 10 ур. почти неделя
-function trophyTrainMinutes(targetLevel: number): number {
-  return Math.round(60 * Math.pow(1.7, Math.max(0, targetLevel - 1)));
+// Время прокачки растёт геометрически (×1.7) — на 10 ур. почти неделя.
+// timeMul — индивидуальный множитель времени трофея (у «Спутника-шпиона» ×2).
+function trophyTrainMinutes(targetLevel: number, timeMul?: number): number {
+  const base = 60 * Math.pow(1.7, Math.max(0, targetLevel - 1));
+  return Math.round(base * (timeMul || 1));
 }
 // Стоимость прокачки в золоте. expensive-трофеи на 50% дороже.
-function trophyUpgradeCost(level: number, expensive?: boolean): number {
+// costMul — индивидуальная надбавка (у «Спутника-шпиона» +30% → 1.3).
+function trophyUpgradeCost(level: number, expensive?: boolean, costMul?: number): number {
   const base = 10 * Math.pow(2, level);
-  return Math.round(expensive ? base * 1.5 : base);
+  const mul = (expensive ? 1.5 : 1) * (costMul || 1);
+  return Math.round(base * mul);
 }
+
+// ---------- РАЗВЕДКА (трофей «Спутник-шпион») ----------
+// По уровню трофея возвращает точности (доли 0..1) для каждой категории
+// и признак live-режима. null = категория ещё не рассекречивается.
+// Точность 1 → показывается точное число; <1 → число зашумляется в
+// пределах ±(1−точность) (см. features.fuzz).
+//   Техника:   с 1 ур. — 50%→100% на ур. 1..5, далее 100%.
+//   Постройки: с 5 ур. — 70%→100% на ур. 5..7, далее 100%.
+//   Секретки:  с 8 ур. — 70%→90% на ур. 8..10 (максимум 90% «для загадочности»).
+//   На 10 ур. — live: данные актуальны 3 дня (см. features.spyReport).
+function spyReveal(trophyLvl: number): { units: number; buildings: number | null; secrets: number | null; live: boolean } {
+  const lvl = Math.max(0, Math.min(TROPHY_MAX_LEVEL, trophyLvl || 0));
+  const units = Math.min(1, 0.5 + 0.125 * (Math.max(1, lvl) - 1));
+  const buildings = lvl >= 5 ? Math.min(1, 0.70 + 0.15 * (lvl - 5)) : null;
+  const secrets = lvl >= 8 ? Math.min(0.90, 0.70 + 0.10 * (lvl - 8)) : null;
+  return { units, buildings, secrets, live: lvl >= 10 };
+}
+const SPY_LIVE_MS = 3 * 24 * 3600 * 1000; // live-отчёт актуален 3 суток
 
 // ---------- ДОСТИЖЕНИЯ (этапы «Ветеран» обновлены до 300 уровней) ----------
 const ACHIEVEMENTS = [
@@ -1365,10 +1391,11 @@ const BATTLE = {
   LOOT_PCT: 0.07,            // снижено с 10% до 7% — фарм невыгоден
   DEF_LOOT_SOFT: 1200,
   DEF_LOSS_SOFT: 1500,
-  LOSS_DEF_PCT: 0.02,        // потери защитника при поражении
-  LOSS_DEF_WIN_PCT: 0.005,   // потери защитника даже при успешной обороне
-  LOSS_ATK_PCT: 0.012,       // потери атакующего при поражении
-  LOSS_ATK_WIN_PCT: 0.006,   // даже победитель теряет немного техники (война)
+  // Потери техники снижены в 5 раз (по решению баланса): было 0.02/0.005/0.012/0.006.
+  LOSS_DEF_PCT: 0.004,        // потери защитника при поражении
+  LOSS_DEF_WIN_PCT: 0.001,    // потери защитника даже при успешной обороне
+  LOSS_ATK_PCT: 0.0024,       // потери атакующего при поражении
+  LOSS_ATK_WIN_PCT: 0.0012,   // даже победитель теряет немного техники (война)
   FATALITY_HP_PCT: 0.15,
   FATALITY_WINDOW_MS: 3 * 60 * 1000,
   BOTS_TTL_MS: 15 * 60 * 1000,
@@ -1511,6 +1538,7 @@ export = {
   COMMANDERS, AUCTION,
   RIDDLES, CLUB,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
+  spyReveal, SPY_LIVE_MS,
   DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID,

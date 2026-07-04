@@ -762,4 +762,4 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
   return { ok: true, left: true };
 }
 
-export = { opponents, attack, fatality, leaveEarMessage, botProfile, peekBot };
+export = { opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits };

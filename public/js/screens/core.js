@@ -328,36 +328,78 @@ App.screens.profile = async (c, param) => {
   const own = p.id === App.me.id;
 
   const isBot = !!p.isBot;
-  // Техника врага скрыта — видна только через разведку (шпионаж).
-  const hidden = p.hideArmy;
-  const hiddenMsg = '<p class="muted">🔒 Скрыто. Используйте «Разведку» в профиле, чтобы узнать состав.</p>';
-  const unitsHtml = hidden
-    ? hiddenMsg
-    : ((!isBot && p.units && p.units.length)
-      ? UI.imgGrid(p.units, 'units')
-      : '<p class="muted">Ангар не разглашается.</p>');
+  // Армия врага скрыта — рассекречивается разведкой (трофей «Спутник-шпион»).
+  // Свои/открытые данные берём из p, разведданные по чужим — из p.spyIntel.
+  const intel = p.spyIntel || null;
+  const armyOpen = own || !p.hideArmy;
+  const lockMsg = (what, hint) => `<p class="muted">🔒 ${what} скрыты.${hint ? ' ' + hint : ' Используйте «🛰 Разведку», чтобы рассекретить.'}</p>`;
 
-  // Секретные разработки — сеткой картинок (kind='secret'), как техника.
-  const secretItems = [];
-  if (!isBot && !hidden) {
-    for (const x of (p.secretDevs || [])) secretItems.push(x);
-    if (p.superDevInfo) secretItems.push(p.superDevInfo);
+  // --- Техника ---
+  let unitsHtml;
+  if (armyOpen) {
+    unitsHtml = (!isBot && p.units && p.units.length)
+      ? UI.imgGrid(p.units, 'units') : '<p class="muted">Ангар не разглашается.</p>';
+  } else if (intel && intel.units) {
+    unitsHtml = intel.units.length
+      ? UI.imgGrid(intel.units, 'units') : '<p class="muted">Техники не обнаружено.</p>';
+  } else {
+    unitsHtml = lockMsg('Техника');
   }
-  const devsHtml = hidden
-    ? hiddenMsg
-    : (secretItems.length
-      ? UI.imgGrid(secretItems, 'secret')
-      : '<p class="muted">Секретных разработок нет.</p>');
 
-  // Постройки — отдельно доходные и оборонительные, сетками картинок
-  const incomeB = (p.buildings || []).filter((x) => x.kind === 'income');
-  const defenseB = (p.buildings || []).filter((x) => x.kind !== 'income');
-  const buildingsHtml = hidden
-    ? hiddenMsg
-    : ((!isBot && p.buildings && p.buildings.length)
-      ? `${incomeB.length ? `<p class="small" style="margin:4px 0">💵 Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
-         ${defenseB.length ? `<p class="small" style="margin:10px 0 4px">🛡 Оборонительные (защита базы)</p>${UI.imgGrid(defenseB, 'buildings')}` : ''}`
-      : '<p class="muted">Постройки не разглашаются.</p>');
+  // --- Секретные разработки (сеткой картинок, kind='secret') ---
+  let devsHtml;
+  const secretItems = [];
+  if (armyOpen) {
+    if (!isBot) {
+      for (const x of (p.secretDevs || [])) secretItems.push(x);
+      if (p.superDevInfo) secretItems.push(p.superDevInfo);
+    }
+    devsHtml = secretItems.length ? UI.imgGrid(secretItems, 'secret') : '<p class="muted">Секретных разработок нет.</p>';
+  } else if (intel && intel.secretDevs) {
+    for (const x of (intel.secretDevs || [])) secretItems.push(x);
+    if (intel.superDevInfo) secretItems.push(intel.superDevInfo);
+    devsHtml = secretItems.length ? UI.imgGrid(secretItems, 'secret') : '<p class="muted">Секретных разработок не обнаружено.</p>';
+  } else {
+    devsHtml = lockMsg('Секретные разработки', intel ? 'Нужен «Спутник-шпион» 8+ ур.' : '');
+  }
+
+  // --- Постройки (доходные + оборонительные) ---
+  let buildingsHtml;
+  const bSource = armyOpen ? (!isBot && p.buildings ? p.buildings : null)
+                           : (intel && intel.buildings ? intel.buildings : null);
+  if (armyOpen && !bSource) {
+    buildingsHtml = '<p class="muted">Постройки не разглашаются.</p>';
+  } else if (!armyOpen && !bSource) {
+    buildingsHtml = lockMsg('Постройки', intel ? 'Нужен «Спутник-шпион» 5+ ур.' : '');
+  } else {
+    const incomeB = bSource.filter((x) => x.kind === 'income');
+    const defenseB = bSource.filter((x) => x.kind !== 'income');
+    buildingsHtml = (!incomeB.length && !defenseB.length)
+      ? '<p class="muted">Построек не обнаружено.</p>'
+      : `${incomeB.length ? `<p class="small" style="margin:4px 0">💵 Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
+         ${defenseB.length ? `<p class="small" style="margin:10px 0 4px">🛡 Оборонительные (защита базы)</p>${UI.imgGrid(defenseB, 'buildings')}` : ''}`;
+  }
+
+  // --- Баннер разведданных (точность + свежесть) ---
+  let intelBanner = '';
+  if (!own && intel) {
+    const acc = [`техника ${intel.accUnits}%`];
+    if (intel.accBuild != null)  acc.push(`постройки ${intel.accBuild}%`);
+    if (intel.accSecret != null) acc.push(`секретки ${intel.accSecret}%`);
+    let fresh;
+    if (intel.live && intel.liveUntil) {
+      const leftH = Math.max(0, Math.floor((intel.liveUntil - Date.now()) / 3600000));
+      fresh = `🟢 Live — данные в реальном времени, ещё ~${leftH} ч`;
+    } else {
+      const d = new Date(intel.at);
+      fresh = `📅 Снимок от ${d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — мог устареть`;
+    }
+    intelBanner = `<div class="card" style="border-color:var(--gold)">
+      <div class="name">🛰 Разведданные</div>
+      <p class="muted small">Точность: ${acc.join(', ')}. Числа приблизительны — реальные значения в пределах ± по точности.</p>
+      <p class="small">${fresh}</p>
+    </div>`;
+  }
 
   c.innerHTML = `
     <div class="title">Личное дело</div>
@@ -472,6 +514,7 @@ App.screens.profile = async (c, param) => {
         </div>`).join('')}` : ''}
     </div>` : ''}
 
+    ${intelBanner}
     <div class="card"><div class="title" style="margin-top:0">Техника</div>${unitsHtml}</div>
     <div class="card"><div class="title" style="margin-top:0">Секретные разработки</div>${devsHtml}</div>
     <div class="card"><div class="title" style="margin-top:0">Постройки</div>${buildingsHtml}</div>`;
@@ -527,21 +570,11 @@ App.screens.profile = async (c, param) => {
     if (btnSpy) btnSpy.onclick = async () => {
       try {
         const r = await API.post('/api/spy', { targetId: p.id });
-        const defList = (r.defBuildings || []).map((b) => `${UI.esc(b.name)} ×${b.count}`).join(', ') || 'нет';
-        const ut = r.unitsByType || {};
-        await UI.confirm(
-          `🔭 Разведданные по «${r.targetName}»:\n\n` +
-          `Уровень: ${r.targetLevel}\n` +
-          `Здоровье: ${r.hp}\n` +
-          `Техника всего: ${r.unitsTotal}\n` +
-          `  🪖 Наземная: ${ut.ground || 0}\n` +
-          `  ✈️ Воздушная: ${ut.air || 0}\n` +
-          `  🚢 Морская: ${ut.sea || 0}\n` +
-          `Ушей: ${r.earsCurrent}\n` +
-          `Оборона: ${defList}\n\n` +
-          `Осталось бесплатной разведки: ${r.spyLeft} (далее 🪙 20)`,
-          { title: 'Разведка', icon: '🔭', okText: 'Понятно', cancelText: '' }
-        );
+        await App.refreshMe();
+        UI.toast(r.live
+          ? '🛰 Спутник-шпион ведёт цель в реальном времени (3 дня)'
+          : `🔭 Разведка проведена. Осталось бесплатной: ${r.spyLeft} (далее 🪙 20)`);
+        App.rerender(); // перерисовать профиль — данные раскроются ниже
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
 

@@ -12,6 +12,7 @@ import db = require('../core/db');
 import u = require('../core/utils');
 import config = require('../../config/gameConfig');
 import player = require('./player');
+import trophies = require('./trophies');
 import type { User, Notices } from '../types';
 
 function today(): string {
@@ -347,6 +348,92 @@ function onReferralPurchase(user: User, goldBought: number): void {
 // ===================================================================
 // 6. ШПИОНАЖ / РАЗВЕДКА
 // ===================================================================
+// Зашумление числа: при точности acc<1 показываем случайное значение из
+// диапазона ±(1−acc) вокруг истинного (например, точность 50% → ±50%).
+// Значение фиксируется в снапшоте, поэтому цель не может «усреднить» его.
+function fuzz(trueVal: number, acc: number): number {
+  if (!(trueVal > 0)) return 0;
+  const e = 1 - acc;
+  if (e <= 0) return trueVal;               // точность 100% → точное число
+  const factor = 1 + (Math.random() * 2 - 1) * e; // ∈ [1−e, 1+e]
+  return Math.max(0, Math.round(trueVal * factor));
+}
+
+// Сборка разведотчёта по цели с учётом точностей reveal (по уровню трофея).
+// at/liveUntil — метки времени (для live-режима переносятся из исходного отчёта).
+function buildSpyReport(target: User, reveal: ReturnType<typeof config.spyReveal>,
+                        trophyLvl: number, at: number, liveUntil: number | null) {
+  // --- Техника (рассекречивается с 1 ур., точность reveal.units) ---
+  const units: any[] = [];
+  const unitsByType: Record<string, number> = { ground: 0, air: 0, sea: 0 };
+  let unitsTotal = 0;
+  for (const [unitId, mkMap] of Object.entries(target.units || {})) {
+    const cu = config.UNIT_BY_ID[unitId];
+    if (!cu) continue;
+    for (let mk = 0; mk <= 2; mk++) {
+      const real = (mkMap && (mkMap as any)[mk]) || 0;
+      if (real <= 0) continue;
+      const count = fuzz(real, reveal.units);
+      if (count <= 0) continue;
+      units.push({
+        id: unitId, unitType: cu.type, mk,
+        name: cu.name + (mk ? ` Mk${mk}` : ''),
+        type: config.UNIT_TYPE_NAMES[cu.type],
+        attack: Math.round(cu.attack * config.MK_MULT[mk]),
+        defense: Math.round(cu.defense * config.MK_MULT[mk]),
+        count,
+      });
+      unitsTotal += count;
+      if (unitsByType[cu.type] != null) unitsByType[cu.type] += count;
+    }
+  }
+
+  // --- Постройки (доходные + защитные, рассекречиваются с 5 ур.) ---
+  let buildings: any[] | null = null;
+  if (reveal.buildings != null) {
+    buildings = Object.entries(target.buildings || {}).map(([id, cnt]) => {
+      const b = config.BUILDING_BY_ID[id];
+      const real = (cnt as number) || 0;
+      if (!b || real <= 0) return null;
+      const count = fuzz(real, reveal.buildings as number);
+      if (count <= 0) return null;
+      return { id, name: b.name, count, kind: b.kind, income: b.income || 0, def: b.def || 0 };
+    }).filter(Boolean);
+  }
+
+  // --- Секретные разработки (рассекречиваются с 8 ур.) ---
+  let secretDevs: any[] | null = null;
+  let superDevInfo: any = null;
+  if (reveal.secrets != null) {
+    secretDevs = config.SECRET_DEVS.map((d) => {
+      const real = (target.secretDevs || {})[d.id] || 0;
+      if (real <= 0) return null;
+      const count = fuzz(real, reveal.secrets as number);
+      if (count <= 0) return null;
+      return { id: d.id, name: d.name, count, attack: d.atk, defense: d.def };
+    }).filter(Boolean);
+    if ((target.superSecret || 0) > 0) {
+      const count = fuzz(target.superSecret, reveal.secrets as number);
+      if (count > 0) superDevInfo = {
+        id: config.SUPER_DEV.id, name: config.SUPER_DEV.name,
+        count, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
+      };
+    }
+  }
+
+  return {
+    targetId: target.id, targetName: target.name, targetLevel: target.level,
+    hp: target.res.hp.cur, earsCurrent: target.earsCurrent,
+    trophyLvl,
+    units, unitsTotal, unitsByType,
+    buildings, secretDevs, superDevInfo,
+    accUnits:  Math.round(reveal.units * 100),
+    accBuild:  reveal.buildings != null ? Math.round(reveal.buildings * 100) : null,
+    accSecret: reveal.secrets != null ? Math.round(reveal.secrets * 100) : null,
+    live: !!reveal.live, at, liveUntil,
+  };
+}
+
 function spyOn(user: User, targetId: string, notices: Notices) {
   const day = today();
   if (user.lastSpyDay !== day) { user.lastSpyDay = day; user.spyCount = 0; }
@@ -366,44 +453,46 @@ function spyOn(user: User, targetId: string, notices: Notices) {
   user.spyCount = used + 1;
 
   player.refresh(target);
-  // Детальный состав техники по типам (для отображения и в бою)
-  const unitsByType: Record<string, number> = { ground: 0, air: 0, sea: 0 };
-  let unitsTotal = 0;
-  for (const [uid, mk] of Object.entries(target.units || {})) {
-    const def = config.UNIT_BY_ID[uid];
-    const cnt = ((mk as any)[0] || 0) + ((mk as any)[1] || 0) + ((mk as any)[2] || 0);
-    unitsTotal += cnt;
-    if (def && unitsByType[def.type] != null) unitsByType[def.type] += cnt;
-  }
-  const defBuildings = Object.entries(target.buildings || {})
-    .map(([id, cnt]) => {
-      const b = config.BUILDING_BY_ID[id];
-      return b && b.kind === 'defense' && (cnt as number) > 0 ? { name: b.name, count: cnt } : null;
-    }).filter(Boolean);
+  const lvl = trophies.spyLevel(user);        // уровень трофея «Спутник-шпион»
+  const reveal = config.spyReveal(lvl);
+  const now = Date.now();
+  const liveUntil = reveal.live ? now + config.SPY_LIVE_MS : null;
 
-  // Сохраняем снапшот разведки — игрок будет видеть ЭТИ значения,
-  // пока не сделает новую разведку (даже если цель прокачается).
+  // Сохраняем отчёт — игрок увидит ЭТИ данные в профиле цели, пока не
+  // разведает заново (для 10 ур. — live-режим, актуален 3 дня).
   if (!user.spyReports) user.spyReports = {};
-  const snapshot = {
-    targetName: target.name,
-    targetLevel: target.level,
-    hp: target.res.hp.cur,
-    unitsTotal,
-    unitsByType,
-    defBuildings,
-    earsCurrent: target.earsCurrent,
-    at: Date.now(),
-  };
-  user.spyReports[targetId] = snapshot;
+  user.spyReports[targetId] = buildSpyReport(target, reveal, lvl, now, liveUntil);
   db.save('users');
 
-  notices.push(`🔭 Разведка по «${target.name}» проведена.`);
-  return { ...snapshot, spyLeft: Math.max(0, free - user.spyCount), fresh: true };
+  notices.push(reveal.live
+    ? `🛰 Спутник-шпион ведёт цель «${target.name}» в реальном времени (3 дня).`
+    : `🔭 Разведка по «${target.name}» проведена — данные в профиле.`);
+  return {
+    ok: true, fresh: true,
+    spyLeft: Math.max(0, free - user.spyCount),
+    trophyLvl: lvl, live: reveal.live,
+  };
 }
 
-// Получить сохранённый снапшот разведки по цели (или null)
+// Получить разведданные по цели для профиля (или null, если не раскрыто).
+// Для live-отчётов (10 ур.): пока не истекли 3 дня — пересобираем по
+// АКТУАЛЬНЫМ данным цели; после истечения — удаляем и снова скрываем.
 function spyReport(user: User, targetId: string) {
-  return (user.spyReports || {})[targetId] || null;
+  const rep: any = (user.spyReports || {})[targetId];
+  if (!rep) return null;
+  if (rep.live && rep.liveUntil) {
+    if (Date.now() >= rep.liveUntil) {
+      delete user.spyReports![targetId];
+      db.save('users');
+      return null;
+    }
+    const target = users()[targetId];
+    if (!target) return null;
+    player.refresh(target);
+    const reveal = config.spyReveal(rep.trophyLvl);
+    return buildSpyReport(target, reveal, rep.trophyLvl, rep.at, rep.liveUntil);
+  }
+  return rep;
 }
 
 // ===================================================================

@@ -14,7 +14,7 @@ function levelOf(user: User, id: string): number { return (user.trophies && user
 
 // Базовая стоимость прокачки и со скидкой (учитываем флаг expensive)
 function baseNextCost(level: number, def: any): number {
-  return config.trophyUpgradeCost(level, !!(def && def.expensive));
+  return config.trophyUpgradeCost(level, !!(def && def.expensive), def && def.costMul);
 }
 function nextCost(level: number, def: any): number {
   return discounts.applyTo('trophy', baseNextCost(level, def));
@@ -59,6 +59,21 @@ function checkCompleted(user: User): void {
   (user as any).trophyQueue = remaining;
 }
 
+// Уровень разведывательного трофея (для features.spyOn)
+function spyLevel(user: User): number { return levelOf(user, 'satellite'); }
+
+// Человекочитаемое описание, что рассекречивает спутник-шпион на данном уровне
+function spyUnlockText(lvl: number): string {
+  const r = config.spyReveal(lvl);
+  if (lvl <= 0) return 'нужна прокачка';
+  const parts: string[] = [];
+  parts.push(`техника ${Math.round(r.units * 100)}%`);
+  if (r.buildings != null) parts.push(`постройки ${Math.round(r.buildings * 100)}%`);
+  if (r.secrets != null)   parts.push(`секретки ${Math.round(r.secrets * 100)}%`);
+  if (r.live) parts.push('live 3 дня');
+  return parts.join(', ');
+}
+
 // Список трофеев для UI
 function list(user: User) {
   return {
@@ -69,12 +84,17 @@ function list(user: User) {
       const level = levelOf(user, t.id);
       const active = activeFor(user, t.id);
       const targetLevel = level + 1;
-      const trainMin = config.trophyTrainMinutes(targetLevel);
+      const trainMin = config.trophyTrainMinutes(targetLevel, (t as any).timeMul);
       const secLeft = active ? Math.max(0, Math.floor((active.finishesAt - Date.now()) / 1000)) : 0;
+      const isSpy = !!(t as any).spy;
       return {
         id: t.id, name: t.name, desc: t.desc, level, flavor: !!t.flavor, expensive: !!t.expensive,
-        bonusNow: level * t.perLvl,
-        bonusNext: level < config.TROPHY_MAX_LEVEL ? targetLevel * t.perLvl : null,
+        spy: isSpy,
+        // Для спутника-шпиона процентного бонуса нет — вместо него текст разблокировки.
+        bonusNow:  isSpy ? spyUnlockText(level) : level * t.perLvl,
+        bonusNext: isSpy
+          ? (level < config.TROPHY_MAX_LEVEL ? spyUnlockText(targetLevel) : null)
+          : (level < config.TROPHY_MAX_LEVEL ? targetLevel * t.perLvl : null),
         baseNextCost: level < config.TROPHY_MAX_LEVEL ? baseNextCost(level, t) : null,
         nextCost:     level < config.TROPHY_MAX_LEVEL ? nextCost(level, t) : null,
         trainMinutes: level < config.TROPHY_MAX_LEVEL ? trainMin : null,
@@ -99,7 +119,7 @@ function startUpgrade(user: User, id: string, notices: Notices) {
   if (!(user as any).trophyQueue) (user as any).trophyQueue = [];
   const now = Date.now();
   const targetLevel = level + 1;
-  const minutes = config.trophyTrainMinutes(targetLevel);
+  const minutes = config.trophyTrainMinutes(targetLevel, (def as any).timeMul);
   (user as any).trophyQueue.push({
     id, level: targetLevel,
     startedAt: now,
@@ -153,5 +173,5 @@ function missionEnergyMul(user: User): number {
 
 export = {
   list, startUpgrade, boostUpgrade, bonusOf, discountPct, checkCompleted,
-  atkBonus, defBonus, critPower, missionEnergyMul,
+  atkBonus, defBonus, critPower, missionEnergyMul, spyLevel,
 };

@@ -418,35 +418,47 @@ App.screens.trophies = async (c) => {
   await App.refreshMe();
   const data = await API.get('/api/trophies');
 
+  // Форматирование минут прокачки: "Xм / Xч Yм / Xсут Yч"
+  const fmtMin = (min) => {
+    if (min == null) return '';
+    if (min < 60) return `${min} мин`;
+    if (min < 24 * 60) return `${Math.floor(min / 60)} ч ${min % 60} мин`;
+    const days = Math.floor(min / (24 * 60));
+    const hours = Math.floor((min % (24 * 60)) / 60);
+    return `${days} сут ${hours} ч`;
+  };
+  // Текущий/будущий бонус: для спутника-шпиona bonusNow — строка, иначе проценты
+  const bonusStr = (t, val) => (t.spy ? UI.esc(String(val)) : `${val}%`);
+
   c.innerHTML = `
     <div class="title">Трофеи</div>
     ${UI.saleBanner(data.discount)}
     <div class="card"><p class="muted small">
-      Уникальные предметы с прокачкой до ${data.maxLevel} уровня. Прокачка занимает
-      <b>${data.trainMinutesPerLevel} минут</b> и стоит золото. Можно ускорить за
+      Уникальные предметы с прокачкой до ${data.maxLevel} уровня. Время прокачки
+      растёт с уровнем (у некоторых трофеев — дольше). Можно ускорить за
       <span class="ic-gold"></span> ${data.boostGoldCost} (мгновенно). Помеченные
       «🔧 в разработке» эффекты — декоративные.</p>
     </div>
     ${data.trophies.map((t) => `
       <div class="card">
-        <div class="name">${UI.esc(t.name)} <span class="muted">ур. ${t.level}/${data.maxLevel}</span>${t.flavor ? ' <span class="badge">🔧 в разработке</span>' : ''}</div>
+        <div class="name">${UI.esc(t.name)} <span class="muted">ур. ${t.level}/${data.maxLevel}</span>${t.flavor ? ' <span class="badge">🔧 в разработке</span>' : ''}${t.spy ? ' <span class="badge">🛰 разведка</span>' : ''}</div>
         <p class="muted small">${UI.esc(t.desc)}</p>
         <div class="mt">${UI.bar(t.level, data.maxLevel, 'gold', `${t.level} / ${data.maxLevel}`)}</div>
         ${t.level > 0
-          ? `<p class="small mt">Текущий бонус: <b class="gold">${t.bonusNow}%</b></p>`
+          ? `<p class="small mt">${t.spy ? 'Сейчас раскрывает' : 'Текущий бонус'}: <b class="gold">${bonusStr(t, t.bonusNow)}</b></p>`
           : ''}
         ${t.training
           ? `<div class="mt">${UI.bar(
-              data.trainMinutesPerLevel * 60 - t.secondsLeft,
-              data.trainMinutesPerLevel * 60,
+              t.totalSec - t.secondsLeft,
+              t.totalSec,
               'xp',
               t.secondsLeft > 0 ? '⏳ Прокачка: ' + UI.fmtTimer(t.secondsLeft) : 'Готово, обновите страницу'
             )}</div>
             <button class="btn mt" data-tboost="${t.id}">⚡ Ускорить за <span class="ic-gold"></span> ${data.boostGoldCost}</button>`
           : (t.nextCost !== null
-              ? `<p class="small mt">Будущий бонус: <b>${t.bonusNext}%</b></p>
+              ? `<p class="small mt">${t.spy ? 'Станет раскрывать' : 'Будущий бонус'}: <b>${bonusStr(t, t.bonusNext)}</b></p>
                  <button class="btn btn-orange mt" data-tstart="${t.id}">Прокачать до ур. ${t.level + 1} за ${UI.priceWithSale(t.baseNextCost, t.nextCost, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
-                 <p class="muted small center mt">Прокачка займёт ${data.trainMinutesPerLevel} минут</p>`
+                 <p class="muted small center mt">Прокачка займёт ${fmtMin(t.trainMinutes)}</p>`
               : `<p class="center gold mt">Максимальный уровень ✔</p>`)}
       </div>`).join('')}`;
 

@@ -94,7 +94,14 @@ function registerRoutes(app: any) {
     const target = player.users()[req.params.id];
     if (!target) throw new u.ApiError('Игрок не найден');
     player.refresh(target);
-    return { profile: player.publicProfile(target, req.user) };
+    const prof: any = player.publicProfile(target, req.user);
+    // Раскрытие армии по разведке (трофей «Спутник-шпион»): если игрок ранее
+    // провёл разведку этой цели — отдаём рассекреченные данные для профиля.
+    if (!prof.isOwn) {
+      const intel = features.spyReport(req.user, target.id);
+      if (intel) prof.spyIntel = intel;
+    }
+    return { profile: prof };
   });
   // Найти игрока по позывному (для выбора цели — например, ракетный удар)
   app.add('GET', '/api/find-player', (req) => {
