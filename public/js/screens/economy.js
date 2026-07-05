@@ -42,7 +42,7 @@ App.screens.units = async (c, param) => {
       ${tab === 'ground' ? 'Наземные войска — баланс атаки и защиты, опора любой армии.' : ''}
       ${tab === 'air' ? 'Авиация — высокая атака, слабая защита. Бей первым!' : ''}
       ${tab === 'sea' ? 'Флот — высокая защита, скромная атака. Крепость на воде.' : ''}
-      Содержание всей техники: <b style="color:var(--red)">$ ${UI.fmtMoney(data.upkeepPerHour)}/час</b>.</p>
+      Содержание всей техники: <b style="color:var(--red)"><span class="ic-dollar"></span> ${UI.fmtMoney(data.upkeepPerHour)}/час</b>.</p>
     </div>
     ${items.map((x) => `
       <div class="card" ${x.locked ? 'style="opacity:.6"' : ''} style="overflow:hidden">
@@ -64,8 +64,8 @@ App.screens.units = async (c, param) => {
             ${x.ownedMk[2] > 0 ? ` · Mk2: <b>${UI.fmtNum(x.ownedMk[2])}</b>` : ''}
           </div>` : ''}
         <div class="kv mt"><span class="k">база: атака <b>${UI.fmtNum(x.baseAttack)}</b> · защита <b>${UI.fmtNum(x.baseDefense)}</b></span>
-          <span class="k">содержание: <b style="color:var(--red)">$ ${UI.fmtMoney(x.upkeep)}</b>/ч</span></div>
-        <div class="kv"><span class="k">стоимость</span><span class="v">${UI.priceWithSale(x.basePrice, x.price, '$')}</span></div>
+          <span class="k">содержание: <b style="color:var(--red)"><span class="ic-dollar"></span> ${UI.fmtMoney(x.upkeep)}</b>/ч</span></div>
+        <div class="kv"><span class="k">стоимость</span><span class="v">${UI.priceWithSale(x.basePrice, x.price, '<span class="ic-dollar"></span>')}</span></div>
         ${x.locked
           ? `<p class="center muted mt">🔒 Откроется на ${x.unlock} уровне</p>`
           : `<div class="field-row mt">
@@ -110,8 +110,8 @@ App.screens.buildings = async (c, param) => {
     <div class="title">Постройки</div>
     ${UI.saleBanner(data.discount)}
     <div class="card">
-      <div class="kv"><span class="k">Общий доход</span><span class="v money">$ ${UI.fmtMoney(t.incomePerHour)} /час</span></div>
-      <div class="kv"><span class="k">Содержание техники</span><span class="v" style="color:var(--red)">$ ${UI.fmtMoney(t.upkeepPerHour)} /час</span></div>
+      <div class="kv"><span class="k">Общий доход</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtMoney(t.incomePerHour)} /час</span></div>
+      <div class="kv"><span class="k">Содержание техники</span><span class="v" style="color:var(--red)"><span class="ic-dollar"></span> ${UI.fmtMoney(t.upkeepPerHour)} /час</span></div>
       <div class="kv"><span class="k">Очки защиты базы</span><span class="v">${UI.fmtNum(t.defensePoints)}</span></div>
       <div class="kv"><span class="k">Следующая выплата через</span><span class="v">${UI.fmtTimer(t.nextPayoutSec)}</span></div>
     </div>
@@ -134,9 +134,9 @@ App.screens.buildings = async (c, param) => {
         </div>
         <div class="kv mt">
           ${x.kind === 'income'
-            ? `<span class="k">Доход: <b class="money">$ ${UI.fmtMoney(x.income)}</b>/час за штуку</span>`
+            ? `<span class="k">Доход: <b class="money"><span class="ic-dollar"></span> ${UI.fmtMoney(x.income)}</b>/час за штуку</span>`
             : `<span class="k">Защита: <b>+${UI.fmtNum(x.def)}</b> очков за штуку</span>`}
-          <span class="k">Цена: ${UI.priceWithSale(x.baseNextPrice, x.nextPrice, '$')}</span>
+          <span class="k">Цена: ${UI.priceWithSale(x.baseNextPrice, x.nextPrice, '<span class="ic-dollar"></span>')}</span>
         </div>
         ${x.locked
           ? `<p class="center muted mt">🔒 Откроется на ${x.unlock} уровне</p>`
@@ -265,7 +265,7 @@ App.screens.production = async (c, param) => {
           <div class="name">${UI.esc(cand.name)} <span class="badge">Mk${cand.fromMk} → Mk${cand.toMk}</span></div>
           <div class="muted small">${UI.esc(cand.type)} · в наличии: <b>${UI.fmtNum(cand.available)}</b>${cand.available > p.maxBatch ? ` (за партию — макс. ${p.maxBatch})` : ''}</div>
           <div class="kv mt"><span class="k">Бонус сейчас → после</span><span class="v">+${cand.bonusBefore}% → +${cand.bonusAfter}%</span></div>
-          <div class="kv"><span class="k">Цена за единицу</span><span class="v">${UI.priceWithSale(cand.basePricePerUnit, cand.pricePerUnit, '$')}</span></div>
+          <div class="kv"><span class="k">Цена за единицу</span><span class="v">${UI.priceWithSale(cand.basePricePerUnit, cand.pricePerUnit, '<span class="ic-dollar"></span>')}</span></div>
           <label>Количество (1–${maxQty}):</label>
           <div class="field-row">
             <input type="number" class="qty" id="${id}" value="${maxQty}" min="1" max="${maxQty}" style="width:90px">
@@ -339,7 +339,7 @@ App._renderMines = async (c, tabsHtml) => {
 
   const statusLabel = (s) => ({
     building: '🏗 Строится', idle: '⛏ Готова к спуску', descending: '⬇ Шахтёры внизу',
-    extracting: '🪙 Золото добывается', collapsed: '💥 Обрушена',
+    extracting: '<span class="ic-gold"></span> Золото добывается', collapsed: '💥 Обрушена',
   }[s] || s);
 
   const mineCard = (mine) => {
@@ -350,8 +350,8 @@ App._renderMines = async (c, tabsHtml) => {
       const ready = mine.rebuildReadyAt <= Date.now();
       body = ready
         ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен — можно восстановить шахту.</p>
-           <p class="muted small mt">Восстановление за игровые деньги (золото тратится только на новые шахты). Стройка 24 часа, запас золота (20–45 🪙) скрыт до завершения.</p>
-           <button class="btn btn-orange mt" data-rebuild="${mine.id}">🔨 Восстановить шахту: $${UI.fmtNum(m.nextMineDollars)}</button>`
+           <p class="muted small mt">Восстановление за игровые деньги (золото тратится только на новые шахты). Стройка 24 часа, запас золота (20–45 <span class="ic-gold"></span>) скрыт до завершения.</p>
+           <button class="btn btn-orange mt" data-rebuild="${mine.id}">🔨 Восстановить шахту: <span class="ic-dollar"></span>${UI.fmtNum(m.nextMineDollars)}</button>`
         : `<p class="muted small mt">Восстановление участка: ${UI.fmtTimer(Math.max(0, Math.ceil((mine.rebuildReadyAt - Date.now()) / 1000)))}</p>`;
     } else if (mine.status === 'descending') {
       body = `
@@ -363,8 +363,8 @@ App._renderMines = async (c, tabsHtml) => {
     } else if (mine.status === 'extracting') {
       const ready = mine.goldReady.remainingSec <= 0;
       body = ready
-        ? `<button class="btn btn-orange mt" data-collect="${mine.id}">🪙 Забрать золото: +${mine.goldReady.amount}</button>`
-        : `<p class="muted small mt">Золото будет готово через ${UI.fmtTimer(mine.goldReady.remainingSec)} (+${mine.goldReady.amount} 🪙)</p>`;
+        ? `<button class="btn btn-orange mt" data-collect="${mine.id}"><span class="ic-gold"></span> Забрать золото: +${mine.goldReady.amount}</button>`
+        : `<p class="muted small mt">Золото будет готово через ${UI.fmtTimer(mine.goldReady.remainingSec)} (+${mine.goldReady.amount} <span class="ic-gold"></span>)</p>`;
     } else if (mine.status === 'idle') {
       const opts = m.minutesOptions
         .filter((min) => min <= mine.minutesLeftToday)
@@ -394,12 +394,12 @@ App._renderMines = async (c, tabsHtml) => {
     <div class="title">Производство</div>
     ${tabsHtml}
     <div class="card">
-      <p class="muted small">Шахта при постройке получает случайный запас золота (20-45 🪙, точное число скрыто до окончания стройки). Спуск шахтёров — от 10 до 90 минут, не более 90 мин. в сутки на шахту. Есть шанс не найти золото, а есть риск нападения террористов — нужно успеть среагировать за 10 минут.</p>
+      <p class="muted small">Шахта при постройке получает случайный запас золота (20-45 <span class="ic-gold"></span>, точное число скрыто до окончания стройки). Спуск шахтёров — от 10 до 90 минут, не более 90 мин. в сутки на шахту. Есть шанс не найти золото, а есть риск нападения террористов — нужно успеть среагировать за 10 минут.</p>
     </div>
     ${m.mines.length === 0 ? '<div class="card center muted">У вас пока нет шахт.</div>' : ''}
     ${m.mines.map(mineCard).join('')}
     <div class="card center">
-      <button class="btn btn-orange" id="mine-build">⛏ Построить шахту: <span class="ic-gold"></span> ${UI.fmtNum(m.nextMineCostGold)} + $${UI.fmtNum(m.nextMineDollars)}</button>
+      <button class="btn btn-orange" id="mine-build">⛏ Построить шахту: <span class="ic-gold"></span> ${UI.fmtNum(m.nextMineCostGold)} + <span class="ic-dollar"></span>${UI.fmtNum(m.nextMineDollars)}</button>
     </div>`;
 
   document.getElementById('mine-build').onclick = async () => {

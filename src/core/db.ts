@@ -40,6 +40,8 @@ let mode: 'json' | 'mongo' = 'json';
 let mongoClient: any = null;
 let usersColl: any = null; // коллекция игроков: один документ = один игрок
 let collColl: any = null;  // коллекция «прочих» данных: один документ = одна коллекция
+let logsColl: any = null;  // аудит-лог: отдельная capped-коллекция, один документ = одна запись
+let periodicTimer: NodeJS.Timeout | null = null;
 
 function ensureDir(): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -89,6 +91,16 @@ async function init(): Promise<void> {
     usersColl = database.collection('users');
     collColl = database.collection('collections');
 
+    // Аудит-лог: отдельная capped-коллекция (FIFO, авто-вытеснение старых
+    // записей). Одна запись = один документ → вставка стоит ~200 байт вместо
+    // перезаписи всего массива при каждом действии (это и был источник
+    // терабайтного трафика к Atlas).
+    try {
+      await database.createCollection('actionLogs', { capped: true, size: 64 * 1024 * 1024, max: 50000 });
+    } catch (e) { /* уже существует — ок */ }
+    logsColl = database.collection('actionLogs');
+    try { await logsColl.createIndex({ userId: 1, at: -1 }); } catch (e) {}
+
     // Предзагрузка игроков: каждый — отдельный документ
     const userDocs = await usersColl.find({}).toArray();
     const usersObj: Record<string, any> = {};
@@ -106,6 +118,7 @@ async function init(): Promise<void> {
 
     mode = 'mongo';
     console.log(`💾 База данных: MongoDB (${dbName}). Игроков загружено: ${userDocs.length}, прочих коллекций: ${collDocs.length}.`);
+    startPeriodicFlush();
   } catch (e: any) {
     console.error('⚠️  Не удалось подключиться к MongoDB, использую локальные JSON-файлы:', e.message);
     mongoClient = null;
@@ -242,8 +255,50 @@ async function flush(): Promise<void> {
 // чтобы не писать тысячи документов после каждого запроса.
 function saveAll(): void {
   Object.keys(store).forEach((name) => {
-    if (name !== 'users') save(name);
+    // users сохраняются точечно (markUser); actionLogs — append-only коллекция
+    if (name !== 'users' && name !== 'actionLogs') save(name);
   });
+}
+
+// Периодическая подстраховка: раз в 30 с сбрасываем ИЗМЕНЁННЫЕ прочие
+// коллекции. Раньше saveAll() звался после КАЖДОГО POST и переписывал все
+// коллекции целиком в Atlas — это давало терабайты трафика. Теперь per-request
+// saveAll убран; точечные save()/markUser() пишут сразу, а этот таймер — лишь
+// страховка от мутаций без явного save (не чаще 2 раз/мин).
+function startPeriodicFlush(): void {
+  if (periodicTimer) return;
+  periodicTimer = setInterval(() => {
+    try { saveAll(); } catch (e) {}
+  }, 30000);
+  if (periodicTimer.unref) periodicTimer.unref();
+}
+
+// ── Аудит-лог: append-only (одна запись = один документ) ───────────
+// В mongo — вставка в capped-коллекцию (быстро, ~200 байт, авто-вытеснение).
+// В json — дописываем в массив в кэше и лениво пишем файл (локальная разработка).
+function appendLog(entry: any): void {
+  if (mode === 'mongo') {
+    if (logsColl) logsColl.insertOne(entry).catch((e: any) => console.error('Ошибка записи лога:', e.message));
+    return;
+  }
+  const arr = load<any[]>('actionLogs', []);
+  arr.push(entry);
+  if (arr.length > 20000) arr.splice(0, arr.length - 20000);
+  save('actionLogs');
+}
+
+// Последние N записей лога (опционально по игроку). Async — читает из БД.
+async function tailLogs(limit: number, userId?: string): Promise<any[]> {
+  const n = Math.max(1, Math.min(1000, limit || 200));
+  if (mode === 'mongo') {
+    if (!logsColl) return [];
+    const q = userId ? { userId } : {};
+    const docs = await logsColl.find(q).sort({ at: -1 }).limit(n).toArray();
+    return docs.map((d: any) => { const { _id, ...rest } = d; return rest; });
+  }
+  const arr = load<any[]>('actionLogs', []) as any[];
+  const filtered = userId ? arr.filter((e) => e.userId === userId) : arr;
+  return filtered.slice(-n).reverse();
 }
 
 // Немедленное сохранение всего и аккуратное закрытие соединения —
@@ -274,6 +329,6 @@ async function flushAllNow(): Promise<void> {
 }
 
 export = {
-  init, load, save, markUser, saveAll, flushAllNow, DATA_DIR,
+  init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
   get mode() { return mode; },
 };

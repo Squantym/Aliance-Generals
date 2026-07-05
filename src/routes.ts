@@ -256,8 +256,9 @@ function registerRoutes(app: any) {
   // Шпионаж
   app.add('POST', '/api/spy', act((req, n) => features.spyOn(req.user, req.body.targetId, n)));
   // Рейтинговые сезоны
-  app.add('GET',  '/api/season', (req) => features.seasonView(req.user));
-  app.add('POST', '/api/admin/season/end', act((req, n) => features.adminEndSeason(req.user, req.body, n)), { admin: true });
+  app.add('GET',  '/api/season', (req) => require('./services/seasons').view(req.user));
+  app.add('POST', '/api/admin/season/config', act((req) => require('./services/seasons').adminSetRewards(req.user, req.body)), { admin: true });
+  app.add('POST', '/api/admin/season/end',    act((req, n) => require('./services/seasons').adminForceRollover(req.user, n)), { admin: true });
   // Мировое событие (босс)
   app.add('GET',  '/api/event',        (req) => worldEvent.view(req.user));
   app.add('POST', '/api/event/attack', act((req, n) => worldEvent.attack(req.user, n)));
@@ -334,6 +335,9 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset-param', act((req, n) => admin.resetParam(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset-missions', act((req, n) => admin.resetMissions(req.user, req.body, n)), { admin: true });
+  // Диагностика почты: статус конфигурации и тестовая отправка
+  app.add('GET',  '/api/admin/email/status', () => require('./services/email').status(), { admin: true });
+  app.add('POST', '/api/admin/email/test', (req) => require('./services/email').sendTest(req.body.to), { admin: true });
   app.add('POST', '/api/admin/wipe-groups', act((req, n) => admin.wipeGroups(req.user, req.body, n)), { admin: true });
   // Служба поддержки — пользователь
   app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));

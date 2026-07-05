@@ -95,7 +95,7 @@ const UI = {
          ${d.type ? `<div class="kv"><span class="k">Тип</span><span class="v">${UI.esc(d.type)}</span></div>` : ''}
          ${isSecret ? `<div class="kv"><span class="k gold">🔬 Секретная разработка</span><span class="v"></span></div>` : ''}`
       : (d.kindB === 'income'
-          ? `<div class="kv"><span class="k">💵 Доход</span><span class="v">$ ${UI.fmtMoney(d.income||0)}/час</span></div>`
+          ? `<div class="kv"><span class="k">Доход</span><span class="v"><span class="ic-dollar"></span> ${UI.fmtMoney(d.income||0)}/час</span></div>`
           : `<div class="kv"><span class="k">🛡 Защита</span><span class="v">+${UI.fmtNum(d.def||0)} очков</span></div>`);
     const fallbackIcon = isSecret ? '🛸' : (isUnit ? '🚜' : '🏛');
     const m = document.createElement('div');

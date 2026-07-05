@@ -346,6 +346,7 @@ function attack(user: User, targetId: string, notices: Notices) {
   user.battle.attacks++;
   require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
+  try { require('./seasons').onAttack(user); } catch (e) {}
 
   // ----- Мощь атакующего: армия × эффекты × трофеи -----
   const aArmy = player.buildArmy(user, 'atk');
@@ -467,11 +468,10 @@ function attack(user: User, targetId: string, notices: Notices) {
     }
     require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
-    // Сезонный рейтинг и проверка титулов
+    try { require('./seasons').onWin(user); } catch (e) {}
+    // Проверка титулов
     try {
-      const feat = require('./features');
-      feat.addSeasonRating(user, 10);
-      feat.checkTitles(user, notices);
+      require('./features').checkTitles(user, notices);
     } catch (e) {}
     if (isBot) {
       // Выплата = очередной член геометрически убывающей серии из казны
@@ -521,6 +521,7 @@ function attack(user: User, targetId: string, notices: Notices) {
     // Победитель тоже несёт небольшие потери (война есть война)
     myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT, false));
     player.addBattleLoot(user, loot);
+    try { require('./seasons').onLoot(user, loot); } catch (e) {}
   } else {
     user.battle.losses++;
     if (!isBot) {
@@ -667,6 +668,7 @@ function fatality(user: User, choice: string, notices: Notices) {
   if (choice === 'ear') {
     user.ears++;
     ach.bump(user, 'earsCut', 1, notices);
+    try { require('./seasons').onFatalityEar(user); } catch (e) {}
     let canLeaveMessage = false;  // true, если этот игрок отрезал ОБА уха
     if (!pf.isBot) {
       const victim = player.users()[pf.targetId];
@@ -732,6 +734,7 @@ function fatality(user: User, choice: string, notices: Notices) {
 
   // Отпускаем: +1 жетон милосердия
   user.tokens++;
+  try { require('./seasons').onMercy(user); } catch (e) {}
   if (!pf.isBot) {
     const victim = player.users()[pf.targetId];
     if (victim) {

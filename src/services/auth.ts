@@ -151,8 +151,11 @@ async function register(login: string, password: string, emailAddr: string, coun
   if (autoVerified) {
     return { token: issueToken(id), isAdmin: isFirst, emailVerified: true };
   }
-  await email.sendVerificationEmail(emailAddr, login, newU.emailVerifyToken || '');
-  return { pending: true, email: emailAddr, emailVerified: false };
+  const sendRes = await email.sendVerificationEmail(emailAddr, login, newU.emailVerifyToken || '');
+  if (!sendRes.sent) {
+    console.error(`📧 ВНИМАНИЕ: письмо подтверждения для «${login}» <${emailAddr}> НЕ отправлено (${sendRes.error || '—'}). Игрок не сможет войти, пока не подтвердит почту. Проверьте настройки почты в админке.`);
+  }
+  return { pending: true, email: emailAddr, emailVerified: false, emailSent: sendRes.sent };
 }
 
 function verifyEmail(token: string) {
@@ -230,7 +233,10 @@ async function requestPasswordReset(loginOrEmail: string) {
     found.resetToken = u.uid(32);
     found.resetTokenExp = Date.now() + 60 * 60 * 1000; // действует 1 час
     db.save('users');
-    await email.sendPasswordResetEmail(found.email, found.name, found.resetToken);
+    const rr = await email.sendPasswordResetEmail(found.email, found.name, found.resetToken);
+    if (!rr.sent) {
+      console.error(`📧 ВНИМАНИЕ: письмо сброса пароля для «${found.name}» <${found.email}> НЕ отправлено (${rr.error || '—'}). Проверьте настройки почты в админке.`);
+    }
   }
   return { ok: true };
 }

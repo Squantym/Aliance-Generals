@@ -53,13 +53,16 @@ const App = {
     // Автообновление боевого окна, пока оно открыто (чтобы видеть смену фаз
     // prep→active→done и действия других игроков без ручного нажатия).
     setInterval(() => {
-      if (!document.getElementById('battle-window')) return;
-      // Не перерисовываем, пока игрок печатает в поле (чат/ввод) — иначе
-      // перерисовка собьёт фокус и введённый текст.
+      // Не поллим в фоновой вкладке (огромная экономия трафика при открытых вкладках)
+      if (document.hidden) return;
+      const win = document.getElementById('battle-window');
+      // Окна нет или бой уже завершён — не перезапрашиваем состояние
+      if (!win || win.dataset.done === '1') return;
+      // Не перерисовываем, пока игрок печатает (чат/ввод) — иначе собьётся фокус.
       const active = document.activeElement;
       if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
       App._renderBattleWindow();
-    }, 2500);
+    }, 4000);
   },
 
   // Обновить состояние игрока с сервера и перерисовать шапку
@@ -192,6 +195,7 @@ const App = {
     if (battle.phase === 'done') {
       App._renderBattleDone(win, battle);
       win.dataset.rendered = '1';
+      win.dataset.done = '1';   // бой завершён — прекращаем автополлинг окна
       return;
     }
     App._renderBattleContent(win, battle);
@@ -216,9 +220,9 @@ const App = {
     const cell = (c, color) => `
       <div style="flex:0 0 auto;min-width:96px;border:1px solid var(--border);border-radius:6px;padding:6px;background:rgba(255,255,255,.02)">
         <div style="font-size:11px;font-weight:bold;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ROLE_ICON[c.role]||''} ${UI.esc(c.name)}</div>
-        <div style="font-size:10px;color:var(--dim);margin-top:2px">❤️ ${Math.round(c.hp)}/${c.maxHp}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px"><span class="ic-health"></span> ${Math.round(c.hp)}/${c.maxHp}</div>
         ${c.ammo!=null?`<div style="font-size:10px;color:var(--dim)">🔫 ${Math.round(c.ammo)}</div>`:''}
-        ${c.energy!=null?`<div style="font-size:10px;color:var(--dim)">⚡ ${Math.round(c.energy)}</div>`:''}
+        ${c.energy!=null?`<div style="font-size:10px;color:var(--dim)"><span class="ic-energy"></span> ${Math.round(c.energy)}</div>`:''}
       </div>`;
     return `<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:10px">
       <b style="font-size:12px">📊 Ресурсы в бою — ${dirData.name}</b>
@@ -900,7 +904,7 @@ const App = {
     if (n.kind === 'attack_lost') {
       body = `
         <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt} ед.</span></div>
-        <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(p.loot)}</span></div>
+        <div class="kv"><span class="k">Награблено</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(p.loot)}</span></div>
         <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>`;
     } else if (n.kind === 'attack_defended') {
       body = `
@@ -1012,8 +1016,8 @@ const App = {
       return;
     }
     const m = App.me;
-    const mail = m.mailUnread > 0 ? `✉ <span class="badge">${m.mailUnread}</span>` : '✉';
-    const bell = m.notifUnread > 0 ? `🔔 <span class="badge">${m.notifUnread}</span>` : '🔔';
+    const mail = m.mailUnread > 0 ? `<span class="ic-mail"></span> <span class="badge">${m.mailUnread}</span>` : '<span class="ic-mail"></span>';
+    const bell = m.notifUnread > 0 ? `<span class="ic-bell"></span> <span class="badge">${m.notifUnread}</span>` : '<span class="ic-bell"></span>';
     // Полоска опыта: текущий xp / необходимый для следующего уровня
     const xpPct = m.xpNext > 0 ? Math.min(100, Math.round((m.xp / m.xpNext) * 100)) : 100;
     // Уровень кликабелен: ведёт в навыки если есть очки, иначе в профиль
@@ -1025,20 +1029,20 @@ const App = {
         <span class="xp-strip-label">Ур. ${m.level} · ${UI.fmtNum(m.xp)} / ${UI.fmtNum(m.xpNext)} XP</span>
       </div>
       <div class="res-row">
-        <div class="clickable" onclick="App.go('bank')">$ <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
+        <div class="clickable" onclick="App.go('bank')"><span class="ic-dollar"></span> <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
         <div class="clickable" onclick="App.go('market')"><span class="ic-gold" aria-hidden="true"></span> <span class="gold" id="hd-gold">${UI.fmtNum(m.gold)}</span></div>
         <div class="clickable" onclick="App.go('${lvlTarget}')">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? ' <span class="badge">+' + m.skillPoints + '</span>' : ''}</div>
         <div class="clickable" onclick="App.go('notifications')">${bell}</div>
         <div class="clickable" onclick="App.go('mail')">${mail}</div>
       </div>
       <div class="stat-row">
-        <div class="clickable" onclick="App.go('hospital')" title="В госпиталь">❤ <span class="stat-hp" id="st-hp">${m.res.hp.cur}/${m.res.hp.max}</span> <span class="timer" id="st-hp-t"></span></div>
-        <div class="clickable" onclick="App.go('missions')" title="В спецоперации">⚡ <span class="stat-en" id="st-en">${m.res.en.cur}/${m.res.en.max}</span> <span class="timer" id="st-en-t"></span></div>
-        <div class="clickable" onclick="App.go('war')" title="В бой">🎯 <span class="stat-am" id="st-am">${m.res.am.cur}/${m.res.am.max}</span> <span class="timer" id="st-am-t"></span></div>
+        <div class="clickable" onclick="App.go('hospital')" title="В госпиталь"><span class="ic-health"></span> <span class="stat-hp" id="st-hp">${m.res.hp.cur}/${m.res.hp.max}</span> <span class="timer" id="st-hp-t"></span></div>
+        <div class="clickable" onclick="App.go('missions')" title="В спецоперации"><span class="ic-energy"></span> <span class="stat-en" id="st-en">${m.res.en.cur}/${m.res.en.max}</span> <span class="timer" id="st-en-t"></span></div>
+        <div class="clickable" onclick="App.go('war')" title="В бой"><span class="ic-ammo"></span> <span class="stat-am" id="st-am">${m.res.am.cur}/${m.res.am.max}</span> <span class="timer" id="st-am-t"></span></div>
       </div>
       ${m.res.hp.cur < 25 ? `
         <div class="low-hp-banner" onclick="App._quickHeal()">
-          ⚠️ Здоровье ниже 25 — атаки запрещены. <b>Восстановить полностью за $${UI.fmtMoney(m.healCost || 0)}</b>
+          ⚠️ Здоровье ниже 25 — атаки запрещены. <b>Восстановить полностью за <span class="ic-dollar"></span>${UI.fmtMoney(m.healCost || 0)}</b>
         </div>` : ''}`;
     App.tickHeader(true);
   },
@@ -1091,7 +1095,7 @@ const App = {
     box.style.cssText = 'max-width:380px;width:100%;max-height:80vh;overflow-y:auto;';
     box.innerHTML = `
       <div class="title" style="margin-top:0">📦 Открыто контейнеров: ${r.qty}</div>
-      <p class="muted small center">Потрачено: <span class="gold">🪙 ${UI.fmtNum(r.spent)}</span></p>
+      <p class="muted small center">Потрачено: <span class="gold"><span class="ic-gold"></span> ${UI.fmtNum(r.spent)}</span></p>
       <hr class="hr">
       <p class="small mt"><b>Итоговая добыча:</b></p>
       ${dropsList}

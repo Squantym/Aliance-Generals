@@ -173,6 +173,8 @@ function decide(user: User, kind: string, applicantId: string, accept: boolean, 
   if (accept && applicant && !applicant[def.userField]) {
     applicant[def.userField] = g.id;
     g.members.push(applicant.id);
+    // Сезон: очки набора получает лидер альянса (не легиона)
+    if (kind === 'alliance') { try { require('./seasons').onAllianceRecruit(user); } catch (e) {} }
     social.systemMail(applicant, 'Добро пожаловать!',
       `Вы приняты в ${def.label.toLowerCase()} «${g.name}».`);
     notices.push(`${applicant.name} принят. Бойцов: ${g.members.length}.`);

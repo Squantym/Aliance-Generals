@@ -118,7 +118,7 @@ App.screens.market = async (c, param) => {
               <span class="name small">${UI.esc(h.tierName)} ×${h.qty}</span>
               <span class="muted small">${UI.fmtDate(h.at)}</span>
             </div>
-            <div class="muted small">Потрачено: 🪙 ${UI.fmtNum(h.spent)}</div>
+            <div class="muted small">Потрачено: <span class="ic-gold"></span> ${UI.fmtNum(h.spent)}</div>
             <div class="small mt">${Object.keys(h.dropped).length ? Object.entries(h.dropped).map(([n, c]) => `${UI.esc(n)} ×${c}`).join(', ') : 'Пусто — ничего не выпало'}</div>
           </div>`).join('')}
       </div>`;
@@ -294,10 +294,10 @@ App.screens.club = async (c) => {
       return `<button class="mine-cell${opened ? ' mine-open' : ''}" data-mine="${i}" ${opened ? 'disabled' : ''}>${opened ? '✅' : '?'}</button>`;
     }).join('');
     mineHtml = `
-      <p class="small">Накоплено: <b class="gold" style="font-size:18px">🪙 ${mn.pot}</b> · безопасных ячеек: ${mn.safeLeft}</p>
+      <p class="small">Накоплено: <b class="gold" style="font-size:18px"><span class="ic-gold"></span> ${mn.pot}</b> · безопасных ячеек: ${mn.safeLeft}</p>
       <p class="muted small">Под ${mn.bombs} ячейками — мины. Открывайте по одной, забирайте до взрыва!</p>
       <div class="mine-grid mt">${grid}</div>
-      <button class="btn btn-orange mt" id="mine-cashout" ${mn.pot <= 0 ? 'disabled' : ''} style="width:100%">💰 Забрать 🪙 ${mn.pot}</button>`;
+      <button class="btn btn-orange mt" id="mine-cashout" ${mn.pot <= 0 ? 'disabled' : ''} style="width:100%">💰 Забрать <span class="ic-gold"></span> ${mn.pot}</button>`;
   } else if (mn.state === 'cooldown') {
     mineHtml = cdLine(mn.cooldownSec);
   } else {
@@ -312,14 +312,14 @@ App.screens.club = async (c) => {
   if (rn.state === 'active') {
     const lv = rn.levels;
     runHtml = `
-      <p class="small">Этап <b class="gold">${rn.stage}</b> из ${rn.totalStages} · накоплено: <b class="gold">🪙 ${rn.pot}</b></p>
+      <p class="small">Этап <b class="gold">${rn.stage}</b> из ${rn.totalStages} · накоплено: <b class="gold"><span class="ic-gold"></span> ${rn.pot}</b></p>
       <p class="muted small">Выберите сложность этапа. Провал — потеряете всё накопленное!</p>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-        <button class="btn btn-inline" data-run="easy">🟢 Лёгкий — ${Math.round(lv.easy.chance*100)}% · +🪙 ${lv.easy.reward}</button>
-        <button class="btn btn-inline" data-run="medium">🟡 Средний — ${Math.round(lv.medium.chance*100)}% · +🪙 ${lv.medium.reward}</button>
-        <button class="btn btn-inline" data-run="hard">🔴 Тяжёлый — ${Math.round(lv.hard.chance*100)}% · +🪙 ${lv.hard.reward}</button>
+        <button class="btn btn-inline" data-run="easy">🟢 Лёгкий — ${Math.round(lv.easy.chance*100)}% · +<span class="ic-gold"></span> ${lv.easy.reward}</button>
+        <button class="btn btn-inline" data-run="medium">🟡 Средний — ${Math.round(lv.medium.chance*100)}% · +<span class="ic-gold"></span> ${lv.medium.reward}</button>
+        <button class="btn btn-inline" data-run="hard">🔴 Тяжёлый — ${Math.round(lv.hard.chance*100)}% · +<span class="ic-gold"></span> ${lv.hard.reward}</button>
       </div>
-      ${rn.canCashout ? `<button class="btn btn-orange mt" id="run-cashout" style="width:100%">🏃 Сойти с наградой 🪙 ${rn.pot}</button>` : '<p class="muted small center mt">Сойти можно после 3-го этапа</p>'}`;
+      ${rn.canCashout ? `<button class="btn btn-orange mt" id="run-cashout" style="width:100%">🏃 Сойти с наградой <span class="ic-gold"></span> ${rn.pot}</button>` : '<p class="muted small center mt">Сойти можно после 3-го этапа</p>'}`;
   } else if (rn.state === 'cooldown') {
     runHtml = cdLine(rn.cooldownSec);
   } else {
@@ -494,10 +494,10 @@ App.screens.hospital = async (c) => {
       <p class="muted small">Полное восстановление здоровья за доллары. Цена растёт с уровнем — берегите бойцов, лечение дорогое. Лечиться можно раз в 5 минут.</p>
     </div>
     <div class="card">
-      <div class="kv"><span class="k">❤ Здоровье</span><span class="v">${data.hp} / ${data.maxHp}</span></div>
-      <div class="kv"><span class="k">💵 У вас</span><span class="v money">$ ${UI.fmtMoney(data.dollars)}</span></div>
+      <div class="kv"><span class="k"><span class="ic-health"></span> Здоровье</span><span class="v">${data.hp} / ${data.maxHp}</span></div>
+      <div class="kv"><span class="k">Наличные</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtMoney(data.dollars)}</span></div>
       <hr class="hr">
-      <div class="kv"><span class="k">Полное восстановление</span><span class="v">${UI.priceWithSale(data.baseFullHeal, data.fullHeal, '$')}</span></div>
+      <div class="kv"><span class="k">Полное восстановление</span><span class="v">${UI.priceWithSale(data.baseFullHeal, data.fullHeal, '<span class="ic-dollar"></span>')}</span></div>
       ${onCooldown ? `<div class="kv"><span class="k">⏳ До следующего лечения</span><span class="v" style="color:var(--orange)">${UI.fmtTimer(data.cooldownLeft)}</span></div>` : ''}
       <button class="btn btn-orange mt" id="hp-heal" ${!needsHeal || onCooldown || data.dollars < data.fullHeal ? 'disabled' : ''}>
         ${!needsHeal ? 'Здоровье в норме' : onCooldown ? `Лечение через ${UI.fmtTimer(data.cooldownLeft)}` : (data.dollars < data.fullHeal ? 'Не хватает денег' : 'Полностью вылечиться')}

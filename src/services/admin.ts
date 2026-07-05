@@ -199,11 +199,11 @@ function setGlobalBuff(adminUser: User, body: any, notices: Notices) {
 // ──────────────────────────────────────────────────────────────────
 // Журнал действий
 // ──────────────────────────────────────────────────────────────────
-function listLogs(query: any) {
+async function listLogs(query: any) {
   const limit = Math.min(1000, Math.max(1, u.toInt(query.limit, 200)));
   const entries = query.userId
-    ? auditLog.listForUser(String(query.userId), limit)
-    : auditLog.listAll(limit);
+    ? await auditLog.listForUser(String(query.userId), limit)
+    : await auditLog.listAll(limit);
   return { logs: entries };
 }
 

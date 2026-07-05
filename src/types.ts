@@ -188,6 +188,12 @@ export interface User {
   // Рейтинговые сезоны
   seasonRating?: number;
   seasonId?: string;
+  // Еженедельные метрики рейтингового сезона (пн–вс МСК)
+  weekly?: {
+    weekId: string;
+    rating: number; wins: number; ears: number; mercy: number;
+    loot: number; alliance: number; missions: number;
+  };
 
   allianceId: string | null;
   // Личный альянс: каждый игрок растит СВОЙ счётч「члена альянса». Значения

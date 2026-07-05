@@ -9,7 +9,7 @@ App.screens.auth = async (c) => {
   const { countries } = await API.get('/api/countries');
 
   const countryOptions = countries.map((x) =>
-    `<option value="${x.id}">${x.flag} ${UI.esc(x.name)} — ${UI.esc(x.bonus)}${x.gold ? ` (🪙 ${x.gold})` : ''}</option>`
+    `<option value="${x.id}">${x.flag} ${UI.esc(x.name)} — ${UI.esc(x.bonus)}${x.gold ? ` (<span class="ic-gold"></span> ${x.gold})` : ''}</option>`
   ).join('');
 
   c.innerHTML = `
@@ -67,7 +67,7 @@ App.screens.auth = async (c) => {
     if (!ct) return;
     document.getElementById('rg-flag').textContent = ct.flag;
     document.getElementById('rg-cname').textContent = ct.name;
-    document.getElementById('rg-cbonus').innerHTML = '🎖 ' + UI.esc(ct.desc || ct.bonus || '') + (ct.gold ? ` <span class="gold">(+🪙 ${ct.gold} на старте)</span>` : '');
+    document.getElementById('rg-cbonus').innerHTML = '🎖 ' + UI.esc(ct.desc || ct.bonus || '') + (ct.gold ? ` <span class="gold">(+<span class="ic-gold"></span> ${ct.gold} на старте)</span>` : '');
   };
 
   // Переключение вкладок входа/регистрации
@@ -159,7 +159,7 @@ App.screens.auth = async (c) => {
         c.innerHTML = `
           <div class="title">📧 Подтвердите почту</div>
           <div class="card center">
-            <p style="font-size:40px">✉️</p>
+            <p><span class="ic-mail" style="width:40px;height:40px"></span></p>
             <p class="mt">Регистрация прошла успешно!</p>
             <p class="mt">Письмо со ссылкой активации отправлено на <b>${UI.esc(r.email)}</b>.</p>
             <p class="muted small mt">📁 Если письмо не пришло в течение 5 минут — проверьте папку <b>Спам</b>.</p>
@@ -232,7 +232,7 @@ App.screens.home = async (c) => {
     ['alliance', '🤝', 'Альянс', ''],
     ['fame/alltime/level', '🏆', 'Зал славы', ''],
     ['chat', '💬', 'Общение', ''],
-    ['mail', '✉', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
+    ['mail', '<span class="ic-mail"></span>', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
     ['trophies', '🎁', 'Трофеи', ''],
     ['season', '🏆', 'Сезон', ''],
     ['referral', '🎁', 'Пригласить друга', ''],
@@ -276,8 +276,8 @@ App.screens.home = async (c) => {
       <div class="kv"><span class="k">🛡 Мощь обороны</span><span class="v">${UI.fmtNum(m.power.def)}</span></div>
       <div class="kv"><span class="k">🚚 Техники в бою</span><span class="v">${UI.fmtNum(m.power.unitTaken || 0)} / ${UI.fmtNum(m.capacity)}</span></div>
       ${m.power.secretTaken > 0 ? `<div class="kv"><span class="k">🛸 Секретные разработки в бою</span><span class="v gold">${UI.fmtNum(m.power.secretTaken)} (вне лимита)</span></div>` : ''}
-      <div class="kv"><span class="k">💵 Доход в час</span><span class="v money">$ ${UI.fmtMoney(m.incomePerHour)}</span></div>
-      <div class="kv"><span class="k">🔧 Содержание в час</span><span class="v" style="color:var(--red)">$ ${UI.fmtMoney(m.upkeepPerHour)}</span></div>
+      <div class="kv"><span class="k">Доход в час</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtMoney(m.incomePerHour)}</span></div>
+      <div class="kv"><span class="k">🔧 Содержание в час</span><span class="v" style="color:var(--red)"><span class="ic-dollar"></span> ${UI.fmtMoney(m.upkeepPerHour)}</span></div>
       <div class="kv"><span class="k">⏱ Выплата через</span><span class="v">${UI.fmtTimer(m.nextPayoutSec)}</span></div>
     </div>
     <button class="btn" style="width:100%;margin-top:8px" onclick="App.go('support')">🛟 Служба поддержки</button>
@@ -335,7 +335,7 @@ App.screens.dailytasks = async (c) => {
         <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
         <p class="muted small">${UI.esc(ct.desc)}</p>
         ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
-        <div class="kv mt"><span class="k">Награда</span><span class="v gold">🪙 ${ct.reward}</span></div>
+        <div class="kv mt"><span class="k">Награда</span><span class="v gold"><span class="ic-gold"></span> ${ct.reward}</span></div>
         ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? 'Забрать награду' : 'Не выполнено'}</button>` : ''}
       </div>`).join('') : '<div class="card center muted">Заданий нет. Загляните позже.</div>'}`;
   c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async () => {
@@ -398,7 +398,7 @@ App.screens.profile = async (c, param) => {
     const defenseB = bSource.filter((x) => x.kind !== 'income');
     buildingsHtml = (!incomeB.length && !defenseB.length)
       ? '<p class="muted">Построек не обнаружено.</p>'
-      : `${incomeB.length ? `<p class="small" style="margin:4px 0">💵 Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
+      : `${incomeB.length ? `<p class="small" style="margin:4px 0"><span class="ic-dollar"></span> Доходные</p>${UI.imgGrid(incomeB, 'buildings')}` : ''}
          ${defenseB.length ? `<p class="small" style="margin:10px 0 4px">🛡 Оборонительные (защита базы)</p>${UI.imgGrid(defenseB, 'buildings')}` : ''}`;
   }
 
@@ -443,7 +443,7 @@ App.screens.profile = async (c, param) => {
       </div>
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : ''}
-      ${!own ? `<button class="btn mt" id="pf-msg">✉ Написать сообщение</button>` : ''}
+      ${!own ? `<button class="btn mt" id="pf-msg"><span class="ic-mail"></span> Написать сообщение</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-sanction" style="border-color:var(--red);color:var(--red)">🎯 Объявить санкции</button>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
@@ -603,9 +603,9 @@ App.screens.profile = async (c, param) => {
 
     const btnMsg = document.getElementById('pf-msg');
     if (btnMsg) btnMsg.onclick = async () => {
-      const subject = await UI.prompt('', {title:'Письмо игроку ' + p.name, icon:'✉️', value:'Привет, ' + p.name, placeholder:'Тема письма', okText:'Далее'});
+      const subject = await UI.prompt('', {title:'Письмо игроку ' + p.name, icon:'<span class="ic-mail"></span>', value:'Привет, ' + p.name, placeholder:'Тема письма', okText:'Далее'});
       if (subject === null) return;
-      const text = await UI.prompt('', {title:'Текст письма', icon:'✉️', placeholder:'Ваше сообщение...', multiline:true, maxLength:500, okText:'Отправить'});
+      const text = await UI.prompt('', {title:'Текст письма', icon:'<span class="ic-mail"></span>', placeholder:'Ваше сообщение...', multiline:true, maxLength:500, okText:'Отправить'});
       if (!text) return;
       API.post('/api/mail', { toName: p.name, subject, text })
         .then(() => UI.toast('✉ Сообщение отправлено игроку ' + p.name))
@@ -646,9 +646,9 @@ App.screens.skills = async (c) => {
   // [id, лейбл, описание, сколько единиц даёт прокачка] — цена берётся
   // из m.skillCosts (приходит с сервера, всегда актуальна)
   const defs = [
-    ['energy',  '⚡ Энергия',     'Расходуется в миссиях. +10 к максимуму за прокачку.', 10],
-    ['health',  '❤ Здоровье',    'Ниже 25 — в бой нельзя. +10 к максимуму за прокачку.', 10],
-    ['ammo',    '🎯 Боеприпасы', 'Сколько атак в запасе. +1 к максимуму.', 1],
+    ['energy',  '<span class="ic-energy"></span> Энергия',     'Расходуется в миссиях. +10 к максимуму за прокачку.', 10],
+    ['health',  '<span class="ic-health"></span> Здоровье',    'Ниже 25 — в бой нельзя. +10 к максимуму за прокачку.', 10],
+    ['ammo',    '<span class="ic-ammo"></span> Боеприпасы', 'Сколько атак в запасе. +1 к максимуму.', 1],
     ['cruelty', '💀 Жестокость', '+0.5% к шансу крита и +0.5% к шансу фаталити (макс. 50% каждое).', 1],
     ['agility', '🏃 Ловкость',    '+0.5% к шансу увернуться от атаки и +0.5% ускользнуть от фаталити (макс. 50% каждое).', 1],
   ];
@@ -692,7 +692,7 @@ App.screens.bank = async (c, param) => {
     <div class="tabs">
       <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">🏦 Хранилище</div>
       <div class="tab ${tab === 'reserve' ? 'active' : ''}" onclick="location.hash='#bank/reserve'">💱 Резерв</div>
-      <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'">🪙 Купить золото</div>
+      <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'"><span class="ic-gold"></span> Купить золото</div>
     </div>`;
 
   if (tab === 'gold') {
@@ -713,7 +713,7 @@ App.screens.bank = async (c, param) => {
         <div class="card">
           <div class="name">🧾 История заказов</div>
           ${orders.map((o) => `
-            <div class="kv"><span class="k">🪙 ${UI.fmtNum(o.gold)} · ${o.priceRub} ₽</span>
+            <div class="kv"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(o.gold)} · ${o.priceRub} ₽</span>
               <span class="v">${o.status === 'paid' ? '✅ оплачено' : o.status === 'pending' ? '⏳ ожидает' : '❌ ' + o.status}</span></div>`).join('')}
         </div>` : ''}`;
     c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
@@ -735,14 +735,14 @@ App.screens.bank = async (c, param) => {
       ${tabs}
       <div class="card">
         <p class="muted small">Конвертируй доллары в Резервы для казны легиона.</p>
-        <div class="kv mt"><span class="k">Курс</span><span class="v">1 000 $ = 1 Резерв</span></div>
+        <div class="kv mt"><span class="k">Курс</span><span class="v">1 000 <span class="ic-dollar"></span> = 1 Резерв</span></div>
         ${legionName
           ? `<div class="kv"><span class="k">Ваш легион</span><span class="v">${UI.esc(legionName)}</span></div>`
           : '<p class="muted small mt" style="color:var(--red)">⛔ Вы не состоите в легионе</p>'}
       </div>
       ${legionName ? `
       <div class="card">
-        <label>Сумма ($)</label>
+        <label>Сумма (<span class="ic-dollar"></span>)</label>
         <div class="field-row mt">
           <input type="number" id="res-amt" min="1000" step="1000" placeholder="мин. 1 000 $">
           <button class="btn btn-orange btn-inline" id="res-go">Зарезервировать</button>
@@ -766,8 +766,8 @@ App.screens.bank = async (c, param) => {
     <div class="title">Банк · Хранилище</div>
     ${tabs}
     <div class="card">
-      <div class="kv"><span class="k">Наличные</span><span class="v money">$ ${UI.fmtNum(m.dollars)}</span></div>
-      <div class="kv"><span class="k">В хранилище</span><span class="v money">$ ${UI.fmtNum(m.bank)}</span></div>
+      <div class="kv"><span class="k">Наличные</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(m.dollars)}</span></div>
+      <div class="kv"><span class="k">В хранилище</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(m.bank)}</span></div>
       <p class="muted small mt">При вложении снимается комиссия 10%. Деньги в хранилище нельзя ограбить.</p>
     </div>
     <div class="card">
@@ -846,13 +846,13 @@ App.screens.daily = async (c) => {
     <div class="title">🎯 Ежедневные задания</div>
     <div class="card center">
       <p class="muted small">Выполнено: <b>${d.doneCount} / ${d.total}</b> · Обнуление через ~${d.resetInHours} ч</p>
-      <p class="small mt">Награда за задание: +${UI.fmtNum(d.reward.xp)} XP, +$${UI.fmtNum(d.reward.dollars)}</p>
+      <p class="small mt">Награда за задание: +${UI.fmtNum(d.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(d.reward.dollars)}</p>
       ${d.allDone && !d.bonusClaimed ? `
         <button class="btn btn-orange mt" id="daily-bonus">🎉 Забрать бонус: <span class="ic-gold"></span> ${d.bonusGold}</button>
       ` : d.bonusClaimed ? `
-        <p class="small mt" style="color:var(--money)">✅ Бонус 🪙 ${d.bonusGold} уже получен сегодня</p>
+        <p class="small mt" style="color:var(--money)">✅ Бонус <span class="ic-gold"></span> ${d.bonusGold} уже получен сегодня</p>
       ` : `
-        <p class="small mt muted">Выполните все ${d.total} заданий чтобы получить бонус 🪙 ${d.bonusGold}</p>
+        <p class="small mt muted">Выполните все ${d.total} заданий чтобы получить бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
       `}
     </div>
 
@@ -1020,21 +1020,80 @@ App.screens.titles = async (c) => {
 App.screens.season = async (c) => {
   await App.refreshMe();
   const d = await API.get('/api/season');
+  App._seasonData = d;
+  if (!App._seasonCat || !d.categories.some((x) => x.id === App._seasonCat)) {
+    App._seasonCat = d.categories[0].id;
+  }
+
+  const fmtLeft = (ms) => {
+    if (ms <= 0) return 'подведение итогов…';
+    const dd = Math.floor(ms / 86400000);
+    const hh = Math.floor((ms % 86400000) / 3600000);
+    const mm = Math.floor((ms % 3600000) / 60000);
+    return `${dd}д ${hh}ч ${mm}м`;
+  };
+  const val = (cat, v) => cat.money ? ('<span class="ic-dollar"></span>' + UI.fmtNum(v)) : UI.fmtNum(v);
+
+  const renderCat = () => {
+    const cat = d.categories.find((x) => x.id === App._seasonCat) || d.categories[0];
+    const rw = d.rewards || [];
+    const box = document.getElementById('season-body');
+    if (!box) return;
+
+    const winnersHtml = (cat.winners && cat.winners.length) ? `
+      <div class="card" style="border-color:var(--gold)">
+        <div class="name">🏆 Победители прошлой недели</div>
+        ${cat.winners.map((w, i) => `
+          <div class="list-row">
+            <div class="grow">${['🥇','🥈','🥉'][i] || (i+1)+'.'} <span class="name" onclick="App.go('profile/${w.id}')" style="cursor:pointer">${w.flag} ${UI.esc(w.name)}</span></div>
+            <span class="gold">${val(cat, w.value)} ${cat.unit}</span>
+          </div>`).join('')}
+      </div>` : '';
+
+    box.innerHTML = `
+      <div class="card">
+        <div class="kv"><span class="k">⏳ До конца недели</span><span class="v gold" id="season-timer">${fmtLeft(d.endsAt - Date.now())}</span></div>
+        <div class="kv"><span class="k">${cat.icon} Ваш результат</span><span class="v">${val(cat, cat.myValue)} ${cat.unit}</span></div>
+        <div class="kv"><span class="k">📍 Ваше место</span><span class="v">${cat.myRank ? '#' + cat.myRank : '—'}</span></div>
+        <p class="muted small mt">Топ-3 в конце недели (вс 23:59 МСК) получают: 🥇 <span class="ic-gold"></span>${rw[0]?.gold}/🎖${rw[0]?.tokens} · 🥈 <span class="ic-gold"></span>${rw[1]?.gold}/🎖${rw[1]?.tokens} · 🥉 <span class="ic-gold"></span>${rw[2]?.gold}/🎖${rw[2]?.tokens}. Затем метрики обнуляются.</p>
+      </div>
+      ${winnersHtml}
+      <div class="card">
+        <div class="title" style="margin-top:0">${cat.icon} Топ-20 · ${UI.esc(cat.name)}</div>
+        ${cat.top.length ? cat.top.map((p, i) => `
+          <div class="list-row" ${p.id === App.me.id ? 'style="background:rgba(255,180,0,.10);border-radius:8px;padding:4px 6px"' : ''}>
+            <div class="grow">${i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1) + '.'} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${p.flag} ${UI.esc(p.name)}</span>${p.id === App.me.id ? ' <span class="gold small">(вы)</span>' : ''}</div>
+            <span class="gold">${val(cat, p.value)}</span>
+          </div>`).join('') : '<p class="muted center">Пока пусто — заработайте очки на этой неделе!</p>'}
+      </div>`;
+
+    // Активная кнопка подкатегории
+    d.categories.forEach((x) => {
+      const b = document.getElementById('scat-' + x.id);
+      if (b) b.className = `btn btn-inline ${x.id === App._seasonCat ? 'btn-orange' : ''}`;
+    });
+  };
+
   c.innerHTML = `
     <div class="title">🏆 Рейтинговый сезон</div>
-    <div class="card">
-      <div class="kv"><span class="k">Ваш рейтинг</span><span class="v gold">${UI.fmtNum(d.myRating)}</span></div>
-      <div class="kv"><span class="k">Ваше место</span><span class="v">${d.myRank ? '#' + d.myRank : '—'}</span></div>
-      <p class="muted small mt">Рейтинг растёт за победы в боях (+10 за победу). По итогам сезона топ-3 получают награды, рейтинг обнуляется.</p>
+    <p class="muted small" style="margin:-4px 4px 10px">Еженедельные рейтинги (пн 00:00 — вс 23:59 МСК). В каждой категории свой топ-20; топ-3 получают награды, затем обнуление.</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${d.categories.map((x) => `<button class="btn btn-inline ${x.id === App._seasonCat ? 'btn-orange' : ''}" id="scat-${x.id}">${x.icon} ${UI.esc(x.name)}</button>`).join('')}
     </div>
-    <div class="card">
-      <div class="title" style="margin-top:0">Топ-20 сезона</div>
-      ${d.top.length ? d.top.map((p, i) => `
-        <div class="list-row">
-          <div class="grow">${i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.'} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${p.flag} ${UI.esc(p.name)}</span></div>
-          <span class="gold">${UI.fmtNum(p.rating)}</span>
-        </div>`).join('') : '<p class="muted center">Сезон только начался — рейтинг пока пуст.</p>'}
-    </div>`;
+    <div id="season-body"></div>`;
+
+  d.categories.forEach((x) => {
+    document.getElementById('scat-' + x.id).onclick = () => { App._seasonCat = x.id; renderCat(); };
+  });
+  renderCat();
+
+  // Живой таймер (самоочищается, когда экран сменился)
+  if (App._seasonTimer) clearInterval(App._seasonTimer);
+  App._seasonTimer = setInterval(() => {
+    const el = document.getElementById('season-timer');
+    if (!el) { clearInterval(App._seasonTimer); App._seasonTimer = null; return; }
+    el.textContent = fmtLeft(d.endsAt - Date.now());
+  }, 30000);
 };
 
 // ---------- Мировое событие (босс) ----------
@@ -1081,7 +1140,7 @@ App.screens.event = async (c) => {
             ${lr.ranking.length ? lr.ranking.map((r, i) => `
               <div class="list-row">
                 <div class="grow">${medal(i)} <span class="name">${UI.esc(r.name)}</span>
-                  ${i < 3 && lr.rewards[i] > 0 ? `<span class="gold small"> +🪙${lr.rewards[i]}</span>` : ''}
+                  ${i < 3 && lr.rewards[i] > 0 ? `<span class="gold small"> +<span class="ic-gold"></span>${lr.rewards[i]}</span>` : ''}
                 </div>
                 <div style="text-align:right">
                   <div class="gold small">${UI.fmtNum(r.damage)} урона</div>
@@ -1100,7 +1159,7 @@ App.screens.event = async (c) => {
   }
   // Активное событие
   const dropInfo = (d.dropMax > 0 && d.goldPoolLeft > 0)
-    ? `🪙 ${d.dropMin}–${d.dropMax} с шансом ${d.dropChance}%`
+    ? `<span class="ic-gold"></span> ${d.dropMin}–${d.dropMax} с шансом ${d.dropChance}%`
     : 'пул исчерпан';
   const canAttack = App.me.res.am.cur > 0 && App.me.res.hp.cur >= 25;
 
@@ -1117,16 +1176,16 @@ App.screens.event = async (c) => {
       <p class="muted small">Общий враг! Атакуйте босса — тратится боеприпас, как в обычном бою. Бейте сколько хватит патронов и здоровья. За атаки капает золото, а лучшие по урону и добивший получат награду.</p>
       <div style="margin:10px 0">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
-          <span class="muted">❤️ Здоровье босса</span><span style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
+          <span class="muted"><span class="ic-health"></span> Здоровье босса</span><span style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
         </div>
         <div style="height:14px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden">
           <div style="height:100%;width:${d.hpPct}%;background:linear-gradient(90deg,var(--red),var(--orange));transition:width .4s"></div>
         </div>
       </div>
-      <div class="kv"><span class="k">🪙 Золото за атаку</span><span class="v gold">${dropInfo}</span></div>
-      <div class="kv"><span class="k">💰 Осталось в пуле</span><span class="v gold">🪙 ${UI.fmtNum(d.goldPoolLeft)}</span></div>
-      <div class="kv"><span class="k">🏆 Награда за добивание</span><span class="v gold">🪙 ${UI.fmtNum(d.killReward)}</span></div>
-      <div class="kv"><span class="k">🥇🥈🥉 Топ-3 по урону</span><span class="v gold">🪙 ${d.top3.map((x) => UI.fmtNum(x)).join(' / ')}</span></div>
+      <div class="kv"><span class="k"><span class="ic-gold"></span> Золото за атаку</span><span class="v gold">${dropInfo}</span></div>
+      <div class="kv"><span class="k">💰 Осталось в пуле</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.goldPoolLeft)}</span></div>
+      <div class="kv"><span class="k">🏆 Награда за добивание</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.killReward)}</span></div>
+      <div class="kv"><span class="k">🥇🥈🥉 Топ-3 по урону</span><span class="v gold"><span class="ic-gold"></span> ${d.top3.map((x) => UI.fmtNum(x)).join(' / ')}</span></div>
       <div class="kv"><span class="k">💥 Ваш урон / атак</span><span class="v">${UI.fmtNum(d.myDamage)} / ${d.myAttacks}</span></div>
       <div class="kv"><span class="k">👥 Участников</span><span class="v">${d.contributorsCount}</span></div>
       <button class="btn btn-orange mt" id="event-attack" ${!canAttack ? 'disabled' : ''} style="width:100%">
@@ -1161,8 +1220,8 @@ App.screens.event = async (c) => {
       const r = await API.post('/api/event/attack');
       // Запись в персональный лог атак (у каждого игрока свой)
       const text = r.finished
-        ? `🏆 <b>Добивание!</b> Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''} — босс повержен${r.killReward > 0 ? `, награда 🪙${r.killReward}` : ''}`
-        : `💥 Урон <b>${UI.fmtNum(r.dealtDamage)}</b>${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''}${r.goldDrop > 0 ? ` · выпало 🪙${r.goldDrop}` : ''}`;
+        ? `🏆 <b>Добивание!</b> Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''} — босс повержен${r.killReward > 0 ? `, награда <span class="ic-gold"></span>${r.killReward}` : ''}`
+        : `💥 Урон <b>${UI.fmtNum(r.dealtDamage)}</b>${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''}${r.goldDrop > 0 ? ` · выпало <span class="ic-gold"></span>${r.goldDrop}` : ''}`;
       const entry = { time: new Date().toLocaleTimeString('ru-RU'), text };
       if (!App._eventLog) App._eventLog = [];
       App._eventLog.unshift(entry);
@@ -1188,16 +1247,16 @@ App.screens.referral = async (c) => {
   c.innerHTML = `
     <div class="title">🎁 Пригласить друга</div>
     <div class="card center">
-      <p class="muted small">Поделитесь кодом. Когда друг введёт его — он сразу получит 🪙 ${d.inviteeGold}, а вы получите награду, когда он достигнет 50 уровня, и 10% золотом от всех его покупок золота!</p>
+      <p class="muted small">Поделитесь кодом. Когда друг введёт его — он сразу получит <span class="ic-gold"></span> ${d.inviteeGold}, а вы получите награду, когда он достигнет 50 уровня, и 10% золотом от всех его покупок золота!</p>
       <p style="font-size:26px;letter-spacing:3px;font-weight:bold;margin:10px 0" class="gold">${d.code}</p>
       <button class="btn btn-orange" id="ref-copy" style="width:100%">📋 Скопировать код</button>
     </div>
     <div class="card">
       <div class="kv"><span class="k">Приглашено друзей</span><span class="v gold">${d.refCount}</span></div>
-      <div class="kv"><span class="k">Заработано с покупок друзей</span><span class="v gold">🪙 ${UI.fmtNum(d.refEarnings)}</span></div>
+      <div class="kv"><span class="k">Заработано с покупок друзей</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.refEarnings)}</span></div>
       <hr class="hr">
-      <div class="kv"><span class="k">🎁 Другу за ввод кода</span><span class="v">🪙 ${d.inviteeGold}</span></div>
-      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v">🪙 ${d.level50Reward} + 🎖 ${d.level50Tokens}</span></div>
+      <div class="kv"><span class="k">🎁 Другу за ввод кода</span><span class="v"><span class="ic-gold"></span> ${d.inviteeGold}</span></div>
+      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v"><span class="ic-gold"></span> ${d.level50Reward} + 🎖 ${d.level50Tokens}</span></div>
       <div class="kv"><span class="k">💰 Вам с покупок друга</span><span class="v">${d.purchaseSharePct}% золотом</span></div>
     </div>
     ${d.canApply ? `

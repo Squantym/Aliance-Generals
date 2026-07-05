@@ -145,6 +145,15 @@ const Admin = {
           <button class="btn btn-inline" id="wipe-legions">Удалить все легионы + логи боёв</button>
           <button class="btn btn-red" id="wipe-all">Стереть всё (альянсы + легионы)</button>
         </div>
+      </div>
+      <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
+        <div class="name">📧 Диагностика почты</div>
+        <div id="email-status" class="muted small mt">Загрузка статуса…</div>
+        <div class="field-row mt">
+          <input type="email" id="email-test-to" placeholder="куда отправить тест…" style="flex:1">
+          <button class="btn btn-orange btn-inline" id="email-test-go"><span class="ic-mail"></span> Тест</button>
+        </div>
+        <div id="email-test-result" class="small mt"></div>
       </div>`;
     document.getElementById('grant-all-go').onclick = () => Admin.submitGrantAll();
     const wipe = async (what, label) => {
@@ -170,21 +179,54 @@ const Admin = {
       try { const r = await API.post('/api/admin/reset-missions', {}); UI.toast(`📋 Миссии сброшены у ${r.count} игроков`); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
+    // Диагностика почты: подгружаем статус
+    (async () => {
+      const box = document.getElementById('email-status');
+      try {
+        const s = await API.get('/api/admin/email/status');
+        const badge = s.configured
+          ? (s.usingTestSender ? '<span style="color:var(--orange)">⚠️ тестовый отправитель</span>' : '<span style="color:var(--green)">✅ настроена</span>')
+          : '<span style="color:var(--red)">❌ не настроена</span>';
+        box.innerHTML = `
+          Статус: ${badge}<br>
+          Отправитель: <b>${UI.esc(s.from)}</b><br>
+          APP_URL: <b>${UI.esc(s.appUrl)}</b>${s.keyMasked ? `<br>Ключ: <b>${UI.esc(s.keyMasked)}</b>` : ''}<br>
+          <span style="color:var(--dim)">${UI.esc(s.hint)}</span>`;
+      } catch (e) { box.innerHTML = '<span style="color:var(--red)">Ошибка: ' + UI.esc(e.message) + '</span>'; }
+    })();
+    document.getElementById('email-test-go').onclick = async () => {
+      const to = (document.getElementById('email-test-to') || {}).value || '';
+      const res = document.getElementById('email-test-result');
+      res.innerHTML = '<span class="muted">Отправка…</span>';
+      try {
+        const r = await API.post('/api/admin/email/test', { to });
+        res.innerHTML = r.sent
+          ? '<span style="color:var(--green)">✅ Отправлено успешно. Проверьте ящик (и «Спам»).</span>'
+          : `<span style="color:var(--red)">❌ Не отправлено (HTTP ${r.status}). Причина: ${UI.esc(r.error || '—')}</span>`;
+      } catch (e) { res.innerHTML = '<span style="color:var(--red)">Ошибка: ' + UI.esc(e.message) + '</span>'; }
+    };
   },
 
-  // ── Вкладка: События (мировой босс + завершение сезона) ─────────
-  renderEvents(c) {
+  // ── Вкладка: События (мировой босс + рейтинговый сезон) ────────
+  async renderEvents(c) {
+    let season = null; try { season = await API.get('/api/season'); } catch (e) {}
+    const rw = (season && season.rewards) || [{ gold: 500, tokens: 3 }, { gold: 300, tokens: 2 }, { gold: 150, tokens: 1 }];
+    const fmtLeft = (ms) => {
+      if (!ms || ms <= 0) return '—';
+      const dd = Math.floor(ms / 86400000), hh = Math.floor((ms % 86400000) / 3600000);
+      return `${dd}д ${hh}ч`;
+    };
     c.innerHTML = `
       <div class="card" style="border-color:var(--orange-1)">
         <div class="name">🐉 Мировое событие (босс)</div>
         <p class="muted small mt">Запустите PvE-босса для всех игроков. Они атакуют его раз в день, при победе получают награду.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
           <div><label style="font-size:11px;color:var(--dim)">Название</label><input type="text" id="ev-name" placeholder="Вражеская армада"></div>
-          <div><label style="font-size:11px;color:var(--dim)">❤️ Здоровье босса</label><input type="number" id="ev-hp" placeholder="100000"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 Пул золота (всего)</label><input type="number" id="ev-goldpool" placeholder="100000"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-health"></span> Здоровье босса</label><input type="number" id="ev-hp" placeholder="100000"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> Пул золота (всего)</label><input type="number" id="ev-goldpool" placeholder="100000"></div>
           <div><label style="font-size:11px;color:var(--dim)">🎲 Шанс выпадения (%)</label><input type="number" id="ev-drop-chance" placeholder="2"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: от</label><input type="number" id="ev-drop-min" placeholder="5"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: до</label><input type="number" id="ev-drop-max" placeholder="10"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> За атаку: от</label><input type="number" id="ev-drop-min" placeholder="5"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> За атаку: до</label><input type="number" id="ev-drop-max" placeholder="10"></div>
           <div><label style="font-size:11px;color:var(--dim)">🏆 Награда за килл (последний удар)</label><input type="number" id="ev-kill" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">🥇 Топ-1 по урону</label><input type="number" id="ev-r1" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">🥈 Топ-2 по урону</label><input type="number" id="ev-r2" placeholder="0"></div>
@@ -200,21 +242,23 @@ const Admin = {
         <p class="muted small">Меняет золото у уже запущенного босса без перезапуска (рейтинг и HP сохраняются). Пустые поля не трогаются.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
           <div><label style="font-size:11px;color:var(--dim)">🎲 Новый шанс (%)</label><input type="number" id="evd-chance" placeholder="напр. 25"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 Докинуть в пул</label><input type="number" id="evd-pool" placeholder="напр. 50000"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: от</label><input type="number" id="evd-min" placeholder="5"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: до</label><input type="number" id="evd-max" placeholder="10"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> Докинуть в пул</label><input type="number" id="evd-pool" placeholder="напр. 50000"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> За атаку: от</label><input type="number" id="evd-min" placeholder="5"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> За атаку: до</label><input type="number" id="evd-max" placeholder="10"></div>
         </div>
         <button class="btn btn-orange mt" id="evd-apply" style="width:100%">🔧 Применить к текущему событию</button>
       </div>
       <div class="card" style="margin-top:16px;border-color:var(--gold)">
-        <div class="name">🏆 Завершить сезон</div>
-        <p class="muted small mt">Наградит топ-3 по рейтингу и обнулит рейтинги, начав новый сезон.</p>
+        <div class="name">🏆 Рейтинговый сезон (недельный)</div>
+        <p class="muted small mt">Автосброс каждую неделю: пн 00:00 — вс 23:59 МСК. Топ-3 КАЖДОЙ из 7 категорий получают награду, затем метрики обнуляются.${season ? ` Текущая неделя: <b>${season.weekId}</b>, до конца: <b>${fmtLeft(season.endsAt - Date.now())}</b>.` : ''}</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-          <div><label style="font-size:11px;color:var(--dim)">🥇 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g1" placeholder="1000"><input type="number" id="se-t1" placeholder="5"></div></div>
-          <div><label style="font-size:11px;color:var(--dim)">🥈 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g2" placeholder="500"><input type="number" id="se-t2" placeholder="3"></div></div>
-          <div><label style="font-size:11px;color:var(--dim)">🥉 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g3" placeholder="250"><input type="number" id="se-t3" placeholder="1"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥇 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g1" value="${rw[0].gold}"><input type="number" id="se-t1" value="${rw[0].tokens}"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥈 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g2" value="${rw[1].gold}"><input type="number" id="se-t2" value="${rw[1].tokens}"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥉 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g3" value="${rw[2].gold}"><input type="number" id="se-t3" value="${rw[2].tokens}"></div></div>
         </div>
-        <button class="btn btn-orange mt" id="se-end" style="width:100%">🏁 Завершить сезон</button>
+        <button class="btn btn-orange mt" id="se-save" style="width:100%">💾 Сохранить награды</button>
+        <hr class="hr">
+        <button class="btn btn-red" id="se-end" style="width:100%">🏁 Завершить неделю СЕЙЧАС (наградить топ-3 + обнулить)</button>
       </div>`;
     const evVal = (id) => (document.getElementById(id) || {}).value || '';
     document.getElementById('ev-start').onclick = async () => {
@@ -246,15 +290,22 @@ const Admin = {
         UI.toast(`🔧 Дроп обновлён: шанс ${r.dropChance}%, ${r.dropMin}–${r.dropMax}, пул 🪙 ${UI.fmtNum(r.goldPoolLeft)}`);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
-    document.getElementById('se-end').onclick = async () => {
-      if (!confirm('Завершить сезон, наградить топ-3 и обнулить рейтинги?')) return;
+    document.getElementById('se-save').onclick = async () => {
       try {
-        const r = await API.post('/api/admin/season/end', {
+        const r = await API.post('/api/admin/season/config', {
           gold1: evVal('se-g1'), tokens1: evVal('se-t1'),
           gold2: evVal('se-g2'), tokens2: evVal('se-t2'),
           gold3: evVal('se-g3'), tokens3: evVal('se-t3'),
         });
-        UI.toast('🏁 Сезон завершён. Победители: ' + (r.winners || []).length);
+        UI.toast('💾 Награды сохранены: 🥇🪙' + r.rewards[0].gold + ' / 🥈🪙' + r.rewards[1].gold + ' / 🥉🪙' + r.rewards[2].gold);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('se-end').onclick = async () => {
+      if (!confirm('Завершить ТЕКУЩУЮ неделю сейчас?\n\nТоп-3 каждой категории получат награды, все метрики обнулятся. Продолжить?')) return;
+      try {
+        const r = await API.post('/api/admin/season/end', {});
+        const n = Object.values(r.winners || {}).reduce((s, a) => s + a.length, 0);
+        UI.toast('🏁 Неделя завершена. Награждено призёров: ' + n);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   },
@@ -262,14 +313,14 @@ const Admin = {
   _grantFields(prefix) {
     return `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-        <div><label style="font-size:11px;color:var(--dim)">💵 Доллары</label><input type="number" id="${prefix}-dollars" placeholder="0"></div>
-        <div><label style="font-size:11px;color:var(--dim)">🪙 Золото</label><input type="number" id="${prefix}-gold" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)"><span class="ic-dollar"></span> Доллары</label><input type="number" id="${prefix}-dollars" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> Золото</label><input type="number" id="${prefix}-gold" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">⭐ Опыт</label><input type="number" id="${prefix}-xp" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">📈 Очки навыков</label><input type="number" id="${prefix}-skill" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="${prefix}-ears" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="${prefix}-tokens" placeholder="0"></div>
       </div>
-      <label style="font-size:11px;color:var(--dim);display:block;margin-top:8px">✉️ Сообщение игрокам (необязательно)</label>
+      <label style="font-size:11px;color:var(--dim);display:block;margin-top:8px"><span class="ic-mail"></span> Сообщение игрокам (необязательно)</label>
       <textarea id="${prefix}-note" placeholder="Текст сообщения от администратора…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>`;
   },
 
@@ -294,8 +345,8 @@ const Admin = {
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="border-bottom:1px solid var(--border)">
             <th style="padding:8px;text-align:left">Игрок</th>
-            <th style="padding:8px;text-align:right">💵</th>
-            <th style="padding:8px;text-align:right">🪙</th>
+            <th style="padding:8px;text-align:right"><span class="ic-dollar"></span></th>
+            <th style="padding:8px;text-align:right"><span class="ic-gold"></span></th>
             <th style="padding:8px;text-align:right">👂</th>
             <th style="padding:8px;text-align:right">🎖</th>
             <th style="padding:8px"></th>
@@ -379,8 +430,8 @@ const Admin = {
       <div class="card" style="border:2px solid var(--orange)">
         <div class="name">🎁 Выдача: ${p.flag} ${UI.esc(p.name)} <span class="muted small">Ур.${p.level}</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-          <div><label style="font-size:11px;color:var(--dim)">💵 Доллары</label><input type="number" id="g-dollars" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🪙 Золото</label><input type="number" id="g-gold" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-dollar"></span> Доллары</label><input type="number" id="g-dollars" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> Золото</label><input type="number" id="g-gold" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">⭐ Опыт</label><input type="number" id="g-xp" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">📈 Очки навыков</label><input type="number" id="g-skill" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="g-ears" placeholder="0"></div>
@@ -389,12 +440,12 @@ const Admin = {
         <hr class="hr">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div><label style="font-size:11px;color:var(--dim)">🎚 Уровень (1-300)</label><input type="number" id="g-level" placeholder="не трогать"></div>
-          <div><label style="font-size:11px;color:var(--dim)">⚡ Энергия</label><input type="number" id="g-energy" placeholder="не трогать"></div>
-          <div><label style="font-size:11px;color:var(--dim)">❤️ Здоровье</label><input type="number" id="g-health" placeholder="не трогать"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🎯 Боеприпасы</label><input type="number" id="g-ammo" placeholder="не трогать"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-energy"></span> Энергия</label><input type="number" id="g-energy" placeholder="не трогать"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-health"></span> Здоровье</label><input type="number" id="g-health" placeholder="не трогать"></div>
+          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-ammo"></span> Боеприпасы</label><input type="number" id="g-ammo" placeholder="не трогать"></div>
         </div>
         <hr class="hr">
-        <label style="font-size:11px;color:var(--dim)">✉️ Сообщение игроку (необязательно)</label>
+        <label style="font-size:11px;color:var(--dim)"><span class="ic-mail"></span> Сообщение игроку (необязательно)</label>
         <textarea id="g-note" placeholder="Текст сообщения от администрации…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>
         <div class="btn-row mt">
           <button class="btn btn-orange" id="g-go">✅ Выдать</button>

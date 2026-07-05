@@ -73,7 +73,7 @@ async function renderGroupScreen(c, kind) {
             <div class="muted small">${UI.esc(b.desc)}</div>
             <div class="kv mt"><span class="k">Бонус</span><span class="v">+${b.bonusNow}%</span></div>
             ${b.nextPrice !== null
-              ? `<div class="kv"><span class="k">След. ур. +${b.bonusNext}%</span><span class="v money">$${UI.fmtMoney(b.nextPrice)}</span></div>
+              ? `<div class="kv"><span class="k">След. ур. +${b.bonusNext}%</span><span class="v money"><span class="ic-dollar"></span>${UI.fmtMoney(b.nextPrice)}</span></div>
                  ${L.isLeader ? `<button class="btn btn-orange mt" data-build="${b.id}">Улучшить из казны</button>`
                               : '<p class="muted small mt center">Только лидер</p>'}`
               : '<p class="gold center mt small">Макс. уровень ✔</p>'}
@@ -83,7 +83,7 @@ async function renderGroupScreen(c, kind) {
           const c = b.nextCost;
           let resStr = '';
           if (c) {
-            resStr = `$${UI.fmtMoney(c.dollars)} из казны`;
+            resStr = `<span class="ic-dollar"></span>${UI.fmtMoney(c.dollars)} из казны`;
             if (c.ears)   resStr += ` + ${c.ears} 👂`;
             if (c.tokens) resStr += ` + ${c.tokens} 🎖`;
           }
@@ -103,7 +103,7 @@ async function renderGroupScreen(c, kind) {
 
         const buildingsTab = `
           <div class="card">
-            <p class="muted small">Постройки — эндгейм контент. Цена высокая: $500 млрд и выше из казны легиона. Для улучшений потребуются уши 👂 и жетоны 🎖 из казначейства.</p>
+            <p class="muted small">Постройки — эндгейм контент. Цена высокая: <span class="ic-dollar"></span>500 млрд и выше из казны легиона. Для улучшений потребуются уши 👂 и жетоны 🎖 из казначейства.</p>
           </div>
           <div class="name mt" style="padding:0 16px">⚔️ Боевые постройки и казармы</div>
           ${btBldHtml}`;
@@ -316,12 +316,12 @@ async function renderGroupScreen(c, kind) {
           </div>
           <div class="card">
             <div class="name">💰 Казна легиона</div>
-            <div class="kv mt"><span class="k">Доллары в казне</span><span class="v money">$${UI.fmtMoney(L.treasury)}</span></div>
+            <div class="kv mt"><span class="k">Доллары в казне</span><span class="v money"><span class="ic-dollar"></span>${UI.fmtMoney(L.treasury)}</span></div>
             <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L.reserves || 0)} РЕЗ</span></div>
             <div class="kv"><span class="k">Рейтинг клана</span><span class="v">${UI.fmtNum(L.ratingPoints)} очк.</span></div>
-            <p class="muted small mt">Обмен $ → Резервы находится в разделе <b>Банк → Резерв</b>.</p>
+            <p class="muted small mt">Обмен <span class="ic-dollar"></span> → Резервы находится в разделе <b>Банк → Резерв</b>.</p>
             <hr class="hr">
-            <label class="small">Внести деньги в казну ($):</label>
+            <label class="small">Внести деньги в казну (<span class="ic-dollar"></span>):</label>
             <div class="field-row mt">
               <input type="number" id="lg-dep" min="1" placeholder="Сумма $">
               <button class="btn btn-orange btn-inline" id="lg-dep-go">Внести</button>
@@ -378,7 +378,7 @@ async function renderGroupScreen(c, kind) {
               <div class="kv"><span class="k">Бойцов</span><span class="v">${L2.members} / ${L2.memberLimit || '?'}</span></div>
               <div class="kv"><span class="k">Победы</span><span class="v" style="color:var(--green)">${(L2.battleStats || {}).wins || 0}</span></div>
               <div class="kv"><span class="k">Поражения</span><span class="v" style="color:var(--red)">${(L2.battleStats || {}).losses || 0}</span></div>
-              <div class="kv"><span class="k">Казна</span><span class="v money">$${UI.fmtMoney(L2.treasury)}</span></div>
+              <div class="kv"><span class="k">Казна</span><span class="v money"><span class="ic-dollar"></span>${UI.fmtMoney(L2.treasury)}</span></div>
               <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L2.reserves || 0)} РЕЗ</span></div>
               <div class="kv"><span class="k">Уши 👂</span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
               <div class="kv"><span class="k">Жетоны 🎖</span><span class="v">${UI.fmtNum(L2.treasuryTokens || 0)}</span></div>
@@ -819,7 +819,7 @@ async function renderGroupScreen(c, kind) {
       <div class="title" style="margin-top:0">Основать свой ${label.toLowerCase()}</div>
       <label>Название (3–20 символов)</label>
       <input type="text" id="g-name" maxlength="20">
-      <button class="btn btn-orange mt" id="g-create">Основать за $ ${UI.fmtMoney(data.rules.createCost)} (с ${data.rules.minLevel} ур.)</button>
+      <button class="btn btn-orange mt" id="g-create">Основать за <span class="ic-dollar"></span> ${UI.fmtMoney(data.rules.createCost)} (с ${data.rules.minLevel} ур.)</button>
     </div>
     <div class="card">
       <div class="title" style="margin-top:0">Крупнейшие ${kind === 'legion' ? 'легионы' : 'альянсы'}</div>
@@ -886,7 +886,7 @@ async function renderPersonalAlliance(c) {
     </div>
 
     <div class="card">
-      <div class="name">✉️ Пригласить игрока</div>
+      <div class="name"><span class="ic-mail"></span> Пригласить игрока</div>
       <p class="muted small">Пригласите реального игрока. Если он примет — вам обоим +1 в личный альянс. Расходует заявку.</p>
       <div class="field-row mt">
         <input type="text" id="al-invite-name" placeholder="Позывной игрока">
@@ -1085,7 +1085,7 @@ App.screens.fame = async (c, param) => {
 
   const medals = ['🥇', '🥈', '🥉'];
   const fmtVal = (fmt, v) => {
-    if (fmt === 'money') return `$${UI.fmtMoney(v)}`;
+    if (fmt === 'money') return `<span class="ic-dollar"></span>${UI.fmtMoney(v)}`;
     return UI.fmtNum(v);
   };
 
@@ -1182,7 +1182,7 @@ App.screens.notifications = async (c) => {
         <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
         <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt} ед.</span></div>
-        <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(p.loot)}</span></div>
+        <div class="kv"><span class="k">Награблено</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(p.loot)}</span></div>
         <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>`;
     } else if (n.kind === 'attack_defended') {
       body = `
@@ -1219,13 +1219,13 @@ App.screens.notifications = async (c) => {
 
     return `
       <div class="card" data-notif="${n.id}" style="${n.read ? 'opacity:.65' : ''}">
-        <div class="name">${n.kind.includes('lost') || n.kind === 'rocket_hit' ? '⚠️' : n.kind.includes('defended') || n.kind === 'fatality_mercy' ? '✅' : '🔔'} ${UI.esc(n.title)}</div>
+        <div class="name">${n.kind.includes('lost') || n.kind === 'rocket_hit' ? '⚠️' : n.kind.includes('defended') || n.kind === 'fatality_mercy' ? '✅' : '<span class="ic-bell"></span>'} ${UI.esc(n.title)}</div>
         ${body}
       </div>`;
   };
 
   c.innerHTML = `
-    <div class="title">🔔 Уведомления</div>
+    <div class="title"><span class="ic-bell"></span> Уведомления</div>
     ${notifications.length > 0 ? `<button class="btn mt" id="notif-read-all" style="width:100%">Отметить все как прочитанные</button>` : ''}
     ${notifications.length === 0 ? '<div class="card center muted">Уведомлений пока нет.</div>' : ''}
     ${notifications.map(renderOne).join('')}`;

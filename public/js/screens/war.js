@@ -9,9 +9,9 @@
 // kind: 'ammo' | 'energy' | 'health'. Возвращает true, если куплено.
 async function _offerRestore(kind) {
   const map = {
-    ammo:   { item: 'ammo',   label: 'боеприпасы', icon: '🎯' },
-    energy: { item: 'energy', label: 'энергия',    icon: '⚡' },
-    health: { item: 'medkit', label: 'здоровье',   icon: '❤️' },
+    ammo:   { item: 'ammo',   label: 'боеприпасы', icon: '<span class="ic-ammo"></span>' },
+    energy: { item: 'energy', label: 'энергия',    icon: '<span class="ic-energy"></span>' },
+    health: { item: 'medkit', label: 'здоровье',   icon: '<span class="ic-health"></span>' },
   };
   const cfg = map[kind];
   if (!cfg) return false;
@@ -22,16 +22,16 @@ async function _offerRestore(kind) {
     const it = (data.buffs || []).find((x) => x.id === cfg.item);
     if (it) price = it.gold;
   } catch (e) {}
-  const priceTxt = price != null ? `🪙 ${price}` : 'золото';
+  const priceTxt = price != null ? `${price} золота` : 'золото';
   const ok = await UI.confirm(
     `У вас закончились ресурсы: ${cfg.label}!\n\nВосстановить полностью с чёрного рынка за ${priceTxt}?`,
-    { title: `${cfg.icon} Пополнить ресурсы`, icon: cfg.icon, okText: `Купить за ${priceTxt}`, cancelText: 'Отмена' }
+    { title: `Пополнить ресурсы: ${cfg.label}`, icon: cfg.icon, okText: `Купить за ${priceTxt}`, cancelText: 'Отмена' }
   );
   if (!ok) return false;
   try {
     await API.post('/api/market/buy', { itemId: cfg.item });
     await App.refreshMe();
-    UI.toast(`${cfg.icon} Ресурс восстановлен!`);
+    UI.toast(`Ресурс восстановлен: ${cfg.label}!`);
     return true;
   } catch (e) { UI.toast('⛔ ' + e.message); return false; }
 }
@@ -84,7 +84,7 @@ App.screens.war = async (c) => {
         <p class="center muted small">${UI.esc(b.targetName)} (ур. ${b.targetLevel})${b.isBot ? ' 💀' : ''}</p>
         <div style="margin:8px 0">
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-            <span class="muted">❤️ Здоровье врага</span><span style="font-weight:bold;color:var(--${b.targetHpPct>50?'green':b.targetHpPct>20?'orange':'red'})">${b.targetHpPct}%</span>
+            <span class="muted"><span class="ic-health"></span> Здоровье врага</span><span style="font-weight:bold;color:var(--${b.targetHpPct>50?'green':b.targetHpPct>20?'orange':'red'})">${b.targetHpPct}%</span>
           </div>
           <div style="height:10px;background:rgba(255,255,255,.08);border-radius:5px;overflow:hidden">
             <div style="height:100%;width:${b.targetHpPct}%;background:linear-gradient(90deg, var(--${b.targetHpPct>50?'green':b.targetHpPct>20?'orange':'red'}), var(--${b.targetHpPct>20?'orange':'red'}));transition:width .4s ease"></div>
@@ -95,7 +95,7 @@ App.screens.war = async (c) => {
         <hr class="hr">
         <div class="kv"><span class="k">Нанесено</span><span class="v dmg-deal">${b.dealt} урона</span></div>
         <div class="kv"><span class="k">Получено</span><span class="v dmg-take">${b.received} урона</span></div>
-        <div class="kv"><span class="k">Награблено</span><span class="v money">$ ${UI.fmtNum(b.loot)}</span></div>
+        <div class="kv"><span class="k">Награблено</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(b.loot)}</span></div>
         <div class="kv"><span class="k">Заработано</span><span class="v">${b.xp} опыта</span></div>
         ${(b.myArmy && b.myArmy.length) ? `
           <hr class="hr">
@@ -266,8 +266,8 @@ App.screens.war = async (c) => {
           <div class="grow">
             <span class="name" style="cursor:pointer" onclick="App.go('profile/${s.targetId}')">${s.flag} ${UI.esc(s.targetName)}</span>
             <span class="muted small"> Ур. ${s.level} · HP ${s.hpPct}%</span>
-            <div class="small" style="color:var(--money)">💰 Награда: $${UI.fmtNum(s.bounty)}${s.orderCount > 1 ? ` (${s.orderCount} заказов)` : ''}</div>
-            ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: $${UI.fmtNum(s.myOrder)}</div>` : ''}
+            <div class="small" style="color:var(--money)">💰 Награда: <span class="ic-dollar"></span>${UI.fmtNum(s.bounty)}${s.orderCount > 1 ? ` (${s.orderCount} заказов)` : ''}</div>
+            ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: <span class="ic-dollar"></span>${UI.fmtNum(s.myOrder)}</div>` : ''}
           </div>
           <button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>
         </div>`).join('');
@@ -308,7 +308,7 @@ App.screens.missions = async (c, param) => {
     <div class="card"><p class="muted small">10 конфликтов в мире. У каждого 7-10 спецопераций по 3 шага. Шаги требуют времени и условий. Награда: 7-10 очков навыков и 30-500 золота за первое полное прохождение конфликта.</p></div>
     ${data.conflicts.map((cf) => `
       <div class="card" ${cf.locked ? 'style="opacity:.6"' : 'style="cursor:pointer"'} ${!cf.locked ? `onclick="App.go('missions/${cf.id}')"` : ''}>
-        <div class="name">${UI.esc(cf.name)}${cf.completed > 0 ? ` <span class="badge green">пройден ×${cf.completed}</span>` : ''}${cf.rewardAvailable && !cf.locked ? ' <span class="badge">⭐ ' + cf.spReward + ' + 🪙 ' + cf.goldReward + '</span>' : ''}</div>
+        <div class="name">${UI.esc(cf.name)}${cf.completed > 0 ? ` <span class="badge green">пройден ×${cf.completed}</span>` : ''}${cf.rewardAvailable && !cf.locked ? ' <span class="badge">⭐ ' + cf.spReward + ' + <span class="ic-gold"></span> ' + cf.goldReward + '</span>' : ''}</div>
         ${cf.locked
           ? `<p class="muted small mt">🔒 Откроется на ${cf.minLevel} уровне</p>`
           : `<div class="mt">${UI.bar(cf.opsDone, cf.opsTotal, 'gold', `Спецопераций: ${cf.opsDone} / ${cf.opsTotal}`)}</div>
@@ -369,9 +369,9 @@ async function renderConflictDetail(c, confId) {
         ${fullyDone
           ? '<p class="muted small mt">Спецоперация завершена</p>'
           : `<div class="muted small mt">Следующий шаг: <b>${UI.esc(nextStep.name)}</b></div>
-             <div class="kv mt"><span class="k">⚡ Энергия</span><span class="v">${nextStep.energy}</span></div>
+             <div class="kv mt"><span class="k"><span class="ic-energy"></span> Энергия</span><span class="v">${nextStep.energy}</span></div>
              <div class="kv"><span class="k">⏱ Время</span><span class="v">${nextStep.timeMin} мин</span></div>
-             <div class="kv"><span class="k">Награда</span><span class="v">${nextStep.xp} опыта, $${UI.fmtMoney(nextStep.money)}</span></div>
+             <div class="kv"><span class="k">Награда</span><span class="v">${nextStep.xp} опыта, <span class="ic-dollar"></span>${UI.fmtMoney(nextStep.money)}</span></div>
              <div class="kv"><span class="k">Требования</span><span class="v small">мощь ${UI.fmtNum(nextStep.require.power)}, ур. ${nextStep.require.level}</span></div>
              <button class="btn btn-orange mt" data-start="${op.idx}-${nextStep.idx}" ${conf.activeStep || conf.locked ? 'disabled' : ''}>Начать шаг</button>
              ${conf.activeStep ? '<p class="muted small center mt">Сначала завершите текущий активный шаг</p>' : ''}`}

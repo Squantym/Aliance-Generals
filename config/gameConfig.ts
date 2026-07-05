@@ -1526,6 +1526,39 @@ const WORLD_EVENT = {
   defaultName: 'Вражеская армада',
 };
 
+// ── ЕЖЕНЕДЕЛЬНЫЙ РЕЙТИНГОВЫЙ СЕЗОН (пн 00:00 — вс 23:59 МСК) ──────────
+// 7 категорий-подтабов, у каждой свой топ-20. Топ-3 каждой недели
+// получают награду, затем метрики обнуляются. Очки общего рейтинга — 3..10.
+const SEASON = {
+  // Очки, которые идут в ОБЩИЙ рейтинг за действия (баланс: правь свободно)
+  points: {
+    attack: 3,            // совершил атаку
+    win: 5,               // победа в бою
+    loot: 3,              // успешный грабёж (за бой с добычей)
+    fatalityEar: 10,      // фаталити — отрезал ухо
+    mercy: 7,             // помилование (жетон милосердия)
+    missionStep: 4,       // выполнил шаг спецоперации
+    missionComplete: 10,  // полностью прошёл конфликт
+    allianceRecruit: 8,   // принял игрока в альянс
+  },
+  // Подкатегории (порядок = порядок вкладок). value — поле в user.weekly.
+  categories: [
+    { id: 'rating',   metric: 'rating',   name: 'Общий рейтинг',  icon: '🏆', unit: 'очк.',    money: false },
+    { id: 'wins',     metric: 'wins',     name: 'Победы в боях',  icon: '⚔️', unit: 'побед',   money: false },
+    { id: 'ears',     metric: 'ears',     name: 'Отрезано ушей',  icon: '👂', unit: 'ушей',    money: false },
+    { id: 'mercy',    metric: 'mercy',    name: 'Помилования',    icon: '🕊', unit: 'помил.',   money: false },
+    { id: 'loot',     metric: 'loot',     name: 'Награблено',     icon: '💰', unit: '$',        money: true  },
+    { id: 'alliance', metric: 'alliance', name: 'Набор в альянс', icon: '🤝', unit: 'бойцов',  money: false },
+    { id: 'missions', metric: 'missions', name: 'Спецоперации',   icon: '🎯', unit: 'шагов',   money: false },
+  ],
+  // Награды топ-3 в КАЖДОЙ категории (дефолт; настраивается в админке)
+  rewards: [
+    { gold: 500, tokens: 3 },  // 🥇
+    { gold: 300, tokens: 2 },  // 🥈
+    { gold: 150, tokens: 1 },  // 🥉
+  ],
+};
+
 export = {
   PLAYER, SKILL_COSTS, REGEN, xpToNext,
   COUNTRIES, COUNTRY_BY_ID, RANKS,
@@ -1549,5 +1582,5 @@ export = {
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
   LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY,
-  COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT,
+  COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON,
 };

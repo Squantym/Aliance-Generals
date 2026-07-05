@@ -92,6 +92,7 @@ function checkCompleted(user: User, notices: Notices): void {
       p.ops[proc.opIdx] = (p.ops[proc.opIdx] || 0) + 1;
       // Счётчик для ежедневного задания
       require('./dailyQuests').bump(user, 'missionStages', 1);
+      try { require('./seasons').onMissionStep(user); } catch (e) {}
       // Награда за шаг
       player.addXp(user, proc.xp, notices || []);
       player.addMoney(user, proc.money, false);
@@ -100,6 +101,7 @@ function checkCompleted(user: User, notices: Notices): void {
       const done = opsCompleted(user, conf);
       if (done >= conf.ops) {
         p.completed++;
+        try { require('./seasons').onMissionComplete(user); } catch (e) {}
         if (!p.firstReward) {
           p.firstReward = true;
           user.skillPoints += conf.spReward;

@@ -276,13 +276,38 @@ label { display: block; margin: 8px 0 4px; color: var(--dim); font-size: 13px; }
    и всех мест, где упоминается цена в золоте (контейнеры, рынок,
    аукцион, клуб, трофеи).
    =================================================================== */
-.ic-gold {
+/* ===================================================================
+   ИКОНКИ ОСНОВНЫХ ХАРАКТЕРИСТИК: реальные PNG/WebP-иконки (не эмодзи).
+   Единые значки для шапки и всех мест, где упоминается соответствующий
+   ресурс (рынок, банк, госпиталь, миссии, бой, почта, уведомления и т.д).
+   Размер по умолчанию подогнан под строчный текст (1em с небольшим
+   увеличением); при необходимости переопределяется через font-size
+   родителя — .ic-* масштабируется вместе с ним (width/height в em).
+   =================================================================== */
+.ic-gold, .ic-dollar, .ic-health, .ic-energy, .ic-ammo, .ic-mail, .ic-bell {
   display: inline-block;
-  font-size: 16px;
-  vertical-align: -1px;
-  line-height: 1;
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.22em;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
 }
-.ic-gold::before { content: '🪙'; }
+.ic-gold   { background-image: url('/img/icons/gold.webp'); }
+.ic-dollar { background-image: url('/img/icons/dollar.webp'); }
+.ic-health { background-image: url('/img/icons/health.webp'); }
+.ic-energy { background-image: url('/img/icons/energy.webp'); }
+.ic-ammo   { background-image: url('/img/icons/ammo.webp'); }
+.ic-mail   { background-image: url('/img/icons/mail.webp'); }
+.ic-bell   { background-image: url('/img/icons/bell.webp'); }
+
+/* В темах (кибер/пустыня/нуар/аврора) золото раньше меняло цвет через
+   текстовый ::before — с реальной картинкой цвет темы вместо этого
+   подсвечивается лёгким свечением вокруг иконки. */
+body.theme-cyber   .ic-gold { filter: drop-shadow(0 0 4px #00d4ff); }
+body.theme-desert  .ic-gold { filter: sepia(0.3) saturate(1.4); }
+body.theme-noir    .ic-gold { filter: grayscale(0.6) contrast(1.2); }
+body.theme-aurora  .ic-gold { filter: drop-shadow(0 0 4px #7dffb3); }
 
 /* ===================================================================
    АКЦИОННЫЙ БАННЕР И СТАРАЯ/НОВАЯ ЦЕНА
@@ -685,7 +710,6 @@ body.theme-cyber .gold { color: #00d4ff; }
 body.theme-cyber .name { color: #ffffff; }
 body.theme-cyber .money { color: #00ffd1; }
 
-body.theme-cyber .ic-gold::before { content: '◆'; color: #00d4ff; text-shadow: 0 0 6px #00d4ff; }
 
 /* ===================================================================
    ТЕМА 3: КИБЕР-ВОЙНА (футуристический военный HUD)
@@ -925,7 +949,6 @@ body.theme-cyber .badge.green {
 }
 
 /* Иконки шапки переопределяем под кибер-стиль */
-body.theme-cyber .ic-gold::before { content: '◆'; color: #ffce47; text-shadow: 0 0 8px rgba(255, 206, 71, .8); }
 
 /* Тосты */
 body.theme-cyber .toast {
@@ -1221,11 +1244,6 @@ body.theme-desert .sale-banner {
 }
 body.theme-desert .sale-banner b { color: #ffd24a; }
 
-body.theme-desert .ic-gold::before {
-  content: '☀';
-  color: #ffd24a;
-  text-shadow: 0 0 8px rgba(255, 210, 74, .7);
-}
 
 /* ===================================================================
    ТЕМА 5: ПОЛУНОЧНЫЙ ШТАБ (тёмная, без контрастных цветов)
@@ -1402,10 +1420,6 @@ body.theme-noir .sale-banner {
 }
 body.theme-noir .sale-banner b { color: #c4b48a; }
 
-body.theme-noir .ic-gold::before {
-  content: '◉';
-  color: #c4b48a;
-}
 
 body.theme-noir .low-hp-banner {
   background: linear-gradient(180deg, #6a3a3a, #4a2424);
@@ -1624,10 +1638,6 @@ body.theme-aurora .sale-banner {
 }
 body.theme-aurora .sale-banner b { color: #9c6428; }
 
-body.theme-aurora .ic-gold::before {
-  content: '✦';
-  color: #b8823a;
-}
 
 body.theme-aurora .low-hp-banner {
   background: linear-gradient(135deg, #b8604a, #9c4d3a);
