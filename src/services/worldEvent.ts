@@ -58,6 +58,21 @@ function playerDamage(user: User): { dmg: number; crit: boolean } {
 }
 
 // ── Текущее состояние события (для игроков) ──────────────────────
+// Авто-восстановление параметров дропа. Старые события (созданные до фикса
+// u.toInt) хранят dropChance/dropMin/dropMax == 0 → золото не капало вообще.
+// Если пул золота есть, а все три параметра пустые/нулевые — это явно
+// недонастройка (а не намеренное отключение), восстанавливаем рабочие дефолты.
+function ensureDropConfig(e: any): boolean {
+  if (!e || !e.active) return false;
+  const unset = !e.dropChance && !e.dropMin && !e.dropMax;
+  if (unset && e.goldPool > 0) {
+    e.dropChance = 2; e.dropMin = 5; e.dropMax = 10;
+    db.save('world_event');
+    return true;
+  }
+  return false;
+}
+
 // Рейтинг участников по урону (общий для живого экрана и итогов)
 function buildRanking(e: any, all: Record<string, User>): any[] {
   return Object.keys(e.contributors || {})
@@ -73,6 +88,7 @@ function buildRanking(e: any, all: Record<string, User>): any[] {
 function view(user: User) {
   const e = store();
   activateIfDue(e);
+  ensureDropConfig(e);   // чиним «нулевой» дроп у старых событий
 
   // Запланированное событие — таймер до старта
   if (!e.active && e.startsAt && e.startsAt > Date.now() && e.name && e.hp > 0) {
@@ -112,6 +128,7 @@ function attack(user: User, notices: Notices) {
   const e = store();
   activateIfDue(e);
   if (!e.active) throw new u.ApiError('Сейчас нет активного события');
+  ensureDropConfig(e);   // на случай старого события с «нулевым» дропом
 
   // Ограничения как в обычном бою: кулдаун, боеприпасы, здоровье
   const nowMs = Date.now();
@@ -283,4 +300,34 @@ function adminStop(adminUser: User, notices: Notices) {
   return { active: false };
 }
 
-export = { view, attack, adminStart, adminStop };
+// ── АДМИН: настроить дроп золота у АКТИВНОГО события (без перезапуска) ──
+// Позволяет чинить/тюнить текущее событие: шанс, диапазон, докинуть в пул.
+// Переданы только нужные поля; пустые — не меняем.
+function adminSetDrops(adminUser: User, body: any, notices: Notices) {
+  const e = store();
+  activateIfDue(e);
+  if (!e.active) throw new u.ApiError('Нет активного события для настройки');
+
+  if (body.dropChance !== undefined && String(body.dropChance).trim() !== '') {
+    e.dropChance = Math.min(100, Math.max(0, u.toInt(body.dropChance, e.dropChance)));
+  }
+  if (body.dropMin !== undefined && String(body.dropMin).trim() !== '') {
+    e.dropMin = Math.max(0, u.toInt(body.dropMin, e.dropMin));
+  }
+  if (body.dropMax !== undefined && String(body.dropMax).trim() !== '') {
+    e.dropMax = u.toInt(body.dropMax, e.dropMax);
+  }
+  // Докинуть золота в пул (необязательно)
+  if (body.addGoldPool !== undefined && String(body.addGoldPool).trim() !== '') {
+    e.goldPool = Math.max(0, (e.goldPool || 0) + u.toInt(body.addGoldPool, 0));
+  }
+  // Гарантируем связность значений
+  e.dropMin = Math.max(0, e.dropMin || 0);
+  e.dropMax = Math.max(e.dropMin, e.dropMax || 0);
+
+  db.save('world_event');
+  notices.push(`🪙 Дроп события обновлён: шанс ${e.dropChance}%, ${e.dropMin}–${e.dropMax} за атаку, пул 🪙 ${u.fmt(e.goldPool)}.`);
+  return view(adminUser);
+}
+
+export = { view, attack, adminStart, adminStop, adminSetDrops };

@@ -45,10 +45,12 @@ const Admin = {
   render() {
     const tabs = [
       { id:'players',   label:'👥 Игроки' },
-      { id:'support',   label:'🛟 Поддержка' },
-      { id:'logs',      label:'📋 Журнал' },
+      { id:'tools',     label:'🛠 Инструменты' },
+      { id:'events',    label:'🐉 События' },
       { id:'discounts', label:'🏷 Скидки' },
       { id:'buffs',     label:'🎉 Бонусы' },
+      { id:'logs',      label:'📋 Журнал' },
+      { id:'support',   label:'🛟 Поддержка' },
     ];
     document.getElementById('content').innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
@@ -60,24 +62,27 @@ const Admin = {
     tabs.forEach(t => {
       document.getElementById('tab-'+t.id).onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
     });
+    Admin._tabIds = tabs.map(t => t.id);
     Admin.renderTab();
   },
 
   renderTab() {
     // Обновить активную кнопку
-    ['players','logs','discounts','buffs'].forEach(id => {
+    (Admin._tabIds || []).forEach(id => {
       const btn = document.getElementById('tab-'+id);
       if (btn) btn.className = `btn btn-inline ${Admin.tab===id?'btn-orange':''}`;
     });
     const c = document.getElementById('tab-content');
     if (Admin.tab === 'players')   return Admin.renderPlayers(c);
+    if (Admin.tab === 'tools')     return Admin.renderTools(c);
+    if (Admin.tab === 'events')    return Admin.renderEvents(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
   },
 
-  // ── Вкладка: Игроки ─────────────────────────────────────────────
+  // ── Вкладка: Игроки (поиск + карточки + выдача конкретному) ─────
   renderPlayers(c) {
     c.innerHTML = `
       <div class="card">
@@ -85,27 +90,27 @@ const Admin = {
           <input type="text" id="ad-q" placeholder="Поиск по позывному…" style="flex:1">
           <button class="btn btn-orange btn-inline" id="ad-search">🔍 Найти</button>
         </div>
+        <p class="muted small mt">Найдите игрока, чтобы выдать ресурсы, забанить или обнулить аккаунт. Массовые операции — во вкладке «🛠 Инструменты».</p>
       </div>
       <div id="ad-list"><div class="loading">Загрузка…</div></div>
-      <div id="ad-grant-wrap"></div>
-      <div class="card" style="margin-top:16px">
+      <div id="ad-grant-wrap"></div>`;
+    document.getElementById('ad-search').onclick = () => Admin.loadPlayers();
+    document.getElementById('ad-q').onkeydown = e => { if(e.key==='Enter') Admin.loadPlayers(); };
+    Admin.loadPlayers();
+  },
+
+  // ── Вкладка: Инструменты (массовые/опасные операции) ────────────
+  renderTools(c) {
+    c.innerHTML = `
+      <div class="card">
         <div class="name">🌍 Выдать всем игрокам</div>
         <p class="muted small mt">Ресурсы получат сразу все зарегистрированные игроки.</p>
         ${Admin._grantFields('all')}
         <button class="btn btn-orange mt" id="grant-all-go" style="width:100%">💥 Выдать всем</button>
       </div>
       <div class="card" style="margin-top:16px;border-color:var(--red)">
-        <div class="name">🧹 Очистка групп</div>
-        <p class="muted small mt">Полностью стирает группы у ВСЕХ игроков — они создают заново. Необратимо!</p>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-          <button class="btn btn-inline" id="wipe-alliances">Обнулить все альянсы</button>
-          <button class="btn btn-inline" id="wipe-legions">Удалить все легионы + логи боёв</button>
-          <button class="btn btn-red" id="wipe-all">Стереть всё (альянсы + легионы)</button>
-        </div>
-      </div>
-      <div class="card" style="margin-top:16px;border-color:var(--red)">
         <div class="name">♻️ Сброс параметров</div>
-        <p class="muted small mt">Сбросить отдельный параметр — у всех игроков или у одного конкретного. Оставьте поле игрока пустым для сброса у всех. Необратимо!</p>
+        <p class="muted small mt">Сбросить отдельный параметр — у всех игроков или у одного. Пусто = у всех. Необратимо!</p>
         <div style="margin-top:8px">
           <label style="font-size:11px;color:var(--dim)">Параметр</label>
           <select id="rp-param" style="width:100%">
@@ -132,7 +137,45 @@ const Admin = {
           <button class="btn btn-inline" id="rm-all" style="width:100%">📋 Сбросить ВСЕ миссии у всех игроков</button>
         </div>
       </div>
-      <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
+      <div class="card" style="margin-top:16px;border-color:var(--red)">
+        <div class="name">🧹 Очистка групп</div>
+        <p class="muted small mt">Полностью стирает группы у ВСЕХ игроков — их создают заново. Необратимо!</p>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <button class="btn btn-inline" id="wipe-alliances">Обнулить все альянсы</button>
+          <button class="btn btn-inline" id="wipe-legions">Удалить все легионы + логи боёв</button>
+          <button class="btn btn-red" id="wipe-all">Стереть всё (альянсы + легионы)</button>
+        </div>
+      </div>`;
+    document.getElementById('grant-all-go').onclick = () => Admin.submitGrantAll();
+    const wipe = async (what, label) => {
+      if (!confirm(`${label}\n\nЭто затронет ВСЕХ игроков и необратимо. Продолжить?`)) return;
+      try { const r = await API.post('/api/admin/wipe-groups', { what }); UI.toast('🧹 Очищено: ' + (r.cleared || []).join(', ')); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('wipe-alliances').onclick = () => wipe('alliances', 'Обнулить ВСЕ альянсы?');
+    document.getElementById('wipe-legions').onclick = () => wipe('legions', 'Удалить ВСЕ легионы и логи боёв?');
+    document.getElementById('wipe-all').onclick = () => wipe('all', 'Стереть ВСЕ альянсы и легионы?');
+    document.getElementById('rp-go').onclick = async () => {
+      const param = document.getElementById('rp-param').value;
+      const userId = document.getElementById('rp-userid').value.trim();
+      const scope = userId ? `у игрока ${userId}` : 'у ВСЕХ игроков';
+      if (!confirm(`Сбросить «${param}» ${scope}?\n\nЭто необратимо. Продолжить?`)) return;
+      try {
+        const r = await API.post('/api/admin/reset-param', userId ? { param, userId } : { param });
+        UI.toast(`♻️ «${param}» сброшен (${r.count})`);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('rm-all').onclick = async () => {
+      if (!confirm('Сбросить ВСЕ миссии у ВСЕХ игроков?\n\nНеобратимо. Продолжить?')) return;
+      try { const r = await API.post('/api/admin/reset-missions', {}); UI.toast(`📋 Миссии сброшены у ${r.count} игроков`); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  },
+
+  // ── Вкладка: События (мировой босс + завершение сезона) ─────────
+  renderEvents(c) {
+    c.innerHTML = `
+      <div class="card" style="border-color:var(--orange-1)">
         <div class="name">🐉 Мировое событие (босс)</div>
         <p class="muted small mt">Запустите PvE-босса для всех игроков. Они атакуют его раз в день, при победе получают награду.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
@@ -152,6 +195,16 @@ const Admin = {
           <button class="btn btn-orange" id="ev-start" style="flex:1">🐉 Запустить</button>
           <button class="btn btn-red btn-inline" id="ev-stop">🛑 Остановить</button>
         </div>
+        <hr class="hr">
+        <div class="name" style="font-size:14px">🔧 Настроить дроп ТЕКУЩЕГО события</div>
+        <p class="muted small">Меняет золото у уже запущенного босса без перезапуска (рейтинг и HP сохраняются). Пустые поля не трогаются.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div><label style="font-size:11px;color:var(--dim)">🎲 Новый шанс (%)</label><input type="number" id="evd-chance" placeholder="напр. 25"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 Докинуть в пул</label><input type="number" id="evd-pool" placeholder="напр. 50000"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: от</label><input type="number" id="evd-min" placeholder="5"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🪙 За атаку: до</label><input type="number" id="evd-max" placeholder="10"></div>
+        </div>
+        <button class="btn btn-orange mt" id="evd-apply" style="width:100%">🔧 Применить к текущему событию</button>
       </div>
       <div class="card" style="margin-top:16px;border-color:var(--gold)">
         <div class="name">🏆 Завершить сезон</div>
@@ -163,31 +216,6 @@ const Admin = {
         </div>
         <button class="btn btn-orange mt" id="se-end" style="width:100%">🏁 Завершить сезон</button>
       </div>`;
-    const wipe = async (what, label) => {
-      if (!confirm(`${label}\n\nЭто затронет ВСЕХ игроков и необратимо. Продолжить?`)) return;
-      try { const r = await API.post('/api/admin/wipe-groups', { what }); UI.toast('🧹 Очищено: ' + (r.cleared || []).join(', ')); }
-      catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-    document.getElementById('wipe-alliances').onclick = () => wipe('alliances', 'Обнулить ВСЕ альянсы?');
-    document.getElementById('wipe-legions').onclick = () => wipe('legions', 'Удалить ВСЕ легионы и логи боёв?');
-    document.getElementById('wipe-all').onclick = () => wipe('all', 'Стереть ВСЕ альянсы и легионы?');
-
-    // Сброс отдельного параметра (у всех или у одного)
-    document.getElementById('rp-go').onclick = async () => {
-      const param = document.getElementById('rp-param').value;
-      const userId = document.getElementById('rp-userid').value.trim();
-      const scope = userId ? `у игрока ${userId}` : 'у ВСЕХ игроков';
-      if (!confirm(`Сбросить «${param}» ${scope}?\n\nЭто необратимо. Продолжить?`)) return;
-      try {
-        const r = await API.post('/api/admin/reset-param', userId ? { param, userId } : { param });
-        UI.toast(`♻️ «${param}» сброшен (${r.count})`);
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-    document.getElementById('rm-all').onclick = async () => {
-      if (!confirm('Сбросить ВСЕ миссии у ВСЕХ игроков?\n\nНеобратимо. Продолжить?')) return;
-      try { const r = await API.post('/api/admin/reset-missions', {}); UI.toast(`📋 Миссии сброшены у ${r.count} игроков`); }
-      catch (e) { UI.toast('⛔ ' + e.message); }
-    };
     const evVal = (id) => (document.getElementById(id) || {}).value || '';
     document.getElementById('ev-start').onclick = async () => {
       try {
@@ -208,6 +236,16 @@ const Admin = {
       try { await API.post('/api/admin/event/stop'); UI.toast('🛑 Событие остановлено'); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
+    document.getElementById('evd-apply').onclick = async () => {
+      try {
+        const r = await API.post('/api/admin/event/drops', {
+          dropChance: evVal('evd-chance'),
+          addGoldPool: evVal('evd-pool'),
+          dropMin: evVal('evd-min'), dropMax: evVal('evd-max'),
+        });
+        UI.toast(`🔧 Дроп обновлён: шанс ${r.dropChance}%, ${r.dropMin}–${r.dropMax}, пул 🪙 ${UI.fmtNum(r.goldPoolLeft)}`);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
     document.getElementById('se-end').onclick = async () => {
       if (!confirm('Завершить сезон, наградить топ-3 и обнулить рейтинги?')) return;
       try {
@@ -219,10 +257,6 @@ const Admin = {
         UI.toast('🏁 Сезон завершён. Победители: ' + (r.winners || []).length);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
-    document.getElementById('ad-search').onclick = () => Admin.loadPlayers();
-    document.getElementById('ad-q').onkeydown = e => { if(e.key==='Enter') Admin.loadPlayers(); };
-    document.getElementById('grant-all-go').onclick = () => Admin.submitGrantAll();
-    Admin.loadPlayers();
   },
 
   _grantFields(prefix) {

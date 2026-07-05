@@ -263,6 +263,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/event/attack', act((req, n) => worldEvent.attack(req.user, n)));
   app.add('POST', '/api/admin/event/start', act((req, n) => worldEvent.adminStart(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/event/stop',  act((req, n) => worldEvent.adminStop(req.user, n)), { admin: true });
+  app.add('POST', '/api/admin/event/drops', act((req, n) => worldEvent.adminSetDrops(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
 
   // ---------- Легион: казна, постройки, кланвойны ----------

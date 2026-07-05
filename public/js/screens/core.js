@@ -218,7 +218,7 @@ App.screens.home = async (c) => {
     ['war', '🎯', 'Война'],
     ['legion', '🛡', 'Легион'],
     ['missions', '📋', 'Спецоперации'],
-    ['daily', '🎯', 'Ежедневка'],
+    ['hq', '🎖', 'Поручения штаба'],
     ['production', '🏭', 'Производство' + (prodLocked ? ` 🔒` : '')],
     ['units', '🚜', 'Техника'],
     ['buildings', '🏗', 'Постройки'],
@@ -229,20 +229,15 @@ App.screens.home = async (c) => {
   // профиля. Событие — во вкладке «Война» (бои). Ежедневный вход — авто.
   const small = [
     ['profile', '👤', 'Профиль', ''],
-    ['skills', '📈', 'Навыки', m.skillPoints > 0 ? `<span class="badge">+${m.skillPoints}</span>` : ''],
     ['alliance', '🤝', 'Альянс', ''],
     ['fame/alltime/level', '🏆', 'Зал славы', ''],
     ['chat', '💬', 'Общение', ''],
     ['mail', '✉', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
-    ['notifications', '🔔', 'Уведомления', m.notifUnread > 0 ? `<span class="badge">${m.notifUnread}</span>` : ''],
     ['trophies', '🎁', 'Трофеи', ''],
-    ['dailytasks', '📋', 'Ежедневные задания', ''],
     ['season', '🏆', 'Сезон', ''],
     ['referral', '🎁', 'Пригласить друга', ''],
     ['bank', '🏦', 'Банк', ''],
     ['hospital', '🏥', 'Госпиталь', ''],
-    ['shop', '💎', 'Магазин золота', ''],
-    ['support', '🛟', 'Поддержка', m.supportUnread > 0 ? `<span class="badge">${m.supportUnread}</span>` : ''],
     ['settings', '⚙', 'Настройки', ''],
   ];
 
@@ -300,14 +295,41 @@ App.screens.home = async (c) => {
   }
 };
 
+// ---------- ПОРУЧЕНИЯ ШТАБА (хаб: ежедневные задания + контракты) ----------
+App.screens.hq = async (c) => {
+  await App.refreshMe();
+  // Сводка по обоим разделам для бейджей
+  let dailyBadge = '', contractBadge = '';
+  try {
+    const d = await API.get('/api/daily');
+    const left = d.total - d.doneCount;
+    dailyBadge = (d.allDone && !d.bonusClaimed)
+      ? '<span class="badge green">бонус готов</span>'
+      : (left > 0 ? `<span class="badge">${left} осталось</span>` : '');
+  } catch (e) {}
+  try {
+    const ct = await API.get('/api/contracts');
+    const ready = (ct.contracts || []).filter((x) => x.done && !x.claimed).length;
+    if (ready > 0) contractBadge = `<span class="badge green">${ready} к выдаче</span>`;
+  } catch (e) {}
+
+  c.innerHTML = `
+    <div class="title">🎖 Поручения штаба</div>
+    <p class="muted small" style="margin:-4px 4px 12px">Задания от командования: ежедневные цели и боевые контракты. Выполняйте их — получайте награды.</p>
+    <div class="menu-grid">
+      <div class="menu-btn" onclick="App.go('daily')"><span class="ic">🎯</span>Ежедневные задания ${dailyBadge}</div>
+      <div class="menu-btn" onclick="App.go('dailytasks')"><span class="ic">📑</span>Контракты ${contractBadge}</div>
+    </div>`;
+};
+
 // ---------- ПРОФИЛЬ (свой или чужой: #profile/ид) ----------
-// ---------- Ежедневные задания (контракты) ----------
+// ---------- Контракты (боевые задания от штаба) ----------
 App.screens.dailytasks = async (c) => {
   await App.refreshMe();
   const d = await API.get('/api/contracts');
   c.innerHTML = `
-    <div class="title">📋 Ежедневные задания</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Задания от штаба. Обновляются каждый день в 00:00 МСК. Выполняйте и забирайте награду.</p>
+    <div class="title">📑 Контракты</div>
+    <p class="muted small" style="margin:-4px 4px 10px">Боевые задания от штаба. Обновляются каждый день в 00:00 МСК. Выполняйте и забирайте награду.</p>
     ${d.contracts.length ? d.contracts.map((ct) => `
       <div class="card">
         <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
@@ -464,6 +486,7 @@ App.screens.profile = async (c, param) => {
     <div class="card">
       <div class="title" style="margin-top:0">Разделы профиля</div>
       <div class="menu-grid">
+        <div class="menu-btn small-row" onclick="App.go('skills')"><span class="ic">📈</span>Навыки ${App.me.skillPoints > 0 ? `<span class="badge">+${App.me.skillPoints}</span>` : ''}</div>
         <div class="menu-btn small-row" onclick="App.go('ach')"><span class="ic">🎖</span>Достижения</div>
         <div class="menu-btn small-row" onclick="App.go('titles')"><span class="ic">🏅</span>Титулы</div>
         <div class="menu-btn small-row" onclick="App.go('cosmetics')"><span class="ic">🎨</span>Внешний вид</div>
@@ -673,27 +696,32 @@ App.screens.bank = async (c, param) => {
     </div>`;
 
   if (tab === 'gold') {
-    const { packages } = await API.get('/api/bank/gold-packages');
+    const data = await API.get('/api/payments/packages');
+    const { orders } = await API.get('/api/payments/orders');
     c.innerHTML = `
       <div class="title">Банк · Покупка золота</div>
       ${tabs}
-      <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. Курс: <b>1 золото = 1 рубль</b>. На крупных пакетах — бонусное золото.</p></div>
-      ${packages.map((p) => `
+      <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. На крупных пакетах — бонусное золото.</p></div>
+      ${!data.enabled ? `<div class="card center"><p class="muted">${UI.esc(data.note || 'Онлайн-оплата скоро будет доступна.')}</p></div>` : ''}
+      ${data.packages.map((p) => `
         <div class="card">
-          <div class="list-row" style="border:none;padding:0">
-            <div class="grow">
-              <div class="name"><span class="ic-gold"></span> ${UI.fmtNum(p.total)} золота${p.bonus > 0 ? ` <span class="badge green">+${p.bonusPct}%</span>` : ''}</div>
-              <div class="muted small">${UI.fmtNum(p.gold)}${p.bonus > 0 ? ` + ${UI.fmtNum(p.bonus)} бонус` : ''}</div>
-            </div>
-            <button class="btn btn-orange btn-inline" data-pack="${p.id}">${UI.fmtNum(p.priceRub)} ₽</button>
-          </div>
+          <div class="name">${UI.esc(p.label)} ${p.bonus ? `<span class="badge" style="background:var(--green)">${p.bonus}</span>` : ''}</div>
+          <div class="kv mt"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(p.gold)} золота</span><span class="v gold">${p.priceRub} ₽</span></div>
+          <button class="btn btn-orange mt" data-buy-pkg="${p.id}" style="width:100%">Купить</button>
         </div>`).join('')}
-      <div class="card"><p class="muted small center">💳 Приём оплаты скоро будет подключён.</p></div>`;
-    c.querySelectorAll('[data-pack]').forEach((btn) => {
+      ${orders.length ? `
+        <div class="card">
+          <div class="name">🧾 История заказов</div>
+          ${orders.map((o) => `
+            <div class="kv"><span class="k">🪙 ${UI.fmtNum(o.gold)} · ${o.priceRub} ₽</span>
+              <span class="v">${o.status === 'paid' ? '✅ оплачено' : o.status === 'pending' ? '⏳ ожидает' : '❌ ' + o.status}</span></div>`).join('')}
+        </div>` : ''}`;
+    c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          const r = await API.post('/api/bank/buy-gold', { packId: btn.dataset.pack });
-          UI.toast('💳 ' + (r.message || 'Пакет зарезервирован'));
+          const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
+          if (r.payUrl) { window.location.href = r.payUrl; }
+          else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });
@@ -941,36 +969,8 @@ App.screens.support = async (c, param) => {
 
 // ---------- МАГАЗИН ЗОЛОТА (заготовка платёжной системы) ----------
 App.screens.shop = async (c) => {
-  await App.refreshMe();
-  const data = await API.get('/api/payments/packages');
-  const { orders } = await API.get('/api/payments/orders');
-
-  c.innerHTML = `
-    <div class="title">💎 Магазин золота</div>
-    ${!data.enabled ? `<div class="card center"><p class="muted">${UI.esc(data.note || 'Скоро')}</p></div>` : ''}
-    ${data.packages.map((p) => `
-      <div class="card">
-        <div class="name">${UI.esc(p.label)} ${p.bonus ? `<span class="badge" style="background:var(--green)">${p.bonus}</span>` : ''}</div>
-        <div class="kv mt"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(p.gold)} золота</span><span class="v gold">${p.priceRub} ₽</span></div>
-        <button class="btn btn-orange mt" data-buy-pkg="${p.id}" style="width:100%">Купить</button>
-      </div>`).join('')}
-    ${orders.length ? `
-      <div class="card">
-        <div class="name">🧾 История заказов</div>
-        ${orders.map((o) => `
-          <div class="kv"><span class="k">🪙 ${UI.fmtNum(o.gold)} · ${o.priceRub} ₽</span>
-            <span class="v">${o.status === 'paid' ? '✅ оплачено' : o.status === 'pending' ? '⏳ ожидает' : '❌ ' + o.status}</span></div>`).join('')}
-      </div>` : ''}`;
-
-  c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
-    btn.onclick = async () => {
-      try {
-        const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
-        if (r.payUrl) { window.location.href = r.payUrl; }
-        else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-  });
+  // «Магазин золота» переехал в Банк → Купить золото
+  App.go('bank/gold');
 };
 
 // ========== НОВЫЕ СИСТЕМЫ ==========

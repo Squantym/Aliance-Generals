@@ -5,6 +5,37 @@
 // с этапами по 3 шага и кнопкой «Выполнить шаг».
 // ===================================================================
 
+// Предложить купить восстановление ресурса за золото (чёрный рынок).
+// kind: 'ammo' | 'energy' | 'health'. Возвращает true, если куплено.
+async function _offerRestore(kind) {
+  const map = {
+    ammo:   { item: 'ammo',   label: 'боеприпасы', icon: '🎯' },
+    energy: { item: 'energy', label: 'энергия',    icon: '⚡' },
+    health: { item: 'medkit', label: 'здоровье',   icon: '❤️' },
+  };
+  const cfg = map[kind];
+  if (!cfg) return false;
+  // Актуальная цена (с учётом скидок) из чёрного рынка
+  let price = null;
+  try {
+    const data = await API.get('/api/market/items');
+    const it = (data.buffs || []).find((x) => x.id === cfg.item);
+    if (it) price = it.gold;
+  } catch (e) {}
+  const priceTxt = price != null ? `🪙 ${price}` : 'золото';
+  const ok = await UI.confirm(
+    `У вас закончились ресурсы: ${cfg.label}!\n\nВосстановить полностью с чёрного рынка за ${priceTxt}?`,
+    { title: `${cfg.icon} Пополнить ресурсы`, icon: cfg.icon, okText: `Купить за ${priceTxt}`, cancelText: 'Отмена' }
+  );
+  if (!ok) return false;
+  try {
+    await API.post('/api/market/buy', { itemId: cfg.item });
+    await App.refreshMe();
+    UI.toast(`${cfg.icon} Ресурс восстановлен!`);
+    return true;
+  } catch (e) { UI.toast('⛔ ' + e.message); return false; }
+}
+
 // ---------- ВОЙНА ----------
 App.screens.war = async (c) => {
   await App.refreshMe();
@@ -176,7 +207,14 @@ App.screens.war = async (c) => {
       App.rerender();
       // Прокручиваем наверх к окну боя, чтобы игрок видел результат атаки
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+    } catch (e) {
+      // Нет боеприпасов — предложить восстановление за золото и повторить атаку
+      if (/боеприпас/i.test(e.message)) {
+        if (await _offerRestore('ammo')) return attackTarget(targetId);
+        return;
+      }
+      UI.toast('⛔ ' + e.message);
+    }
   }
 
   async function doFatality(choice) {
@@ -344,11 +382,23 @@ async function renderConflictDetail(c, confId) {
   c.querySelectorAll('[data-start]').forEach((btn) => {
     btn.onclick = async () => {
       const [opIdx, stepIdx] = btn.dataset.start.split('-').map(Number);
-      try {
+      const runStep = async () => {
         await API.post('/api/missions/start', { confId, opIdx, stepIdx });
         await App.refreshMe();
         App.rerender();
-      } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+      try {
+        await runStep();
+      } catch (e) {
+        // Нет энергии — предложить восстановление за золото и повторить запуск
+        if (/энерги/i.test(e.message)) {
+          if (await _offerRestore('energy')) {
+            try { await runStep(); } catch (e2) { UI.toast('⛔ ' + e2.message); }
+          }
+          return;
+        }
+        UI.toast('⛔ ' + e.message);
+      }
     };
   });
   const boostBtn = document.getElementById('m-boost');
