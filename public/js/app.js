@@ -198,8 +198,23 @@ const App = {
       win.dataset.done = '1';   // бой завершён — прекращаем автополлинг окна
       return;
     }
-    App._renderBattleContent(win, battle);
-    win.dataset.rendered = '1';
+    try {
+      App._renderBattleContent(win, battle);
+      win.dataset.rendered = '1';
+    } catch (e) {
+      console.error('Ошибка отрисовки боя:', e);
+      // Никогда не оставляем пустой полноэкранный оверлей (это и был «чёрный
+      // экран»). Если окно ещё не отрисовано — показываем заглушку с кнопкой,
+      // следующий poll попробует снова.
+      if (!win.dataset.rendered) {
+        win.innerHTML = '<div style="padding:48px 16px;text-align:center;color:var(--text)">'
+          + '<p style="font-size:40px;margin:0">⚔️</p>'
+          + '<p class="mt">Загрузка боя…</p>'
+          + '<button class="btn btn-orange mt" onclick="App._renderBattleWindow()">Обновить</button>'
+          + '<button class="btn btn-inline mt" style="margin-left:8px" onclick="App._closeBattleWindow()">Закрыть</button>'
+          + '</div>';
+      }
+    }
   },
 
   _closeBattleWindow() {
@@ -213,6 +228,7 @@ const App = {
   _bwResourcesRow(b) {
     const me = b.me;
     if (!me || me.direction === null) return '';
+    const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
     const dirData = (b.directions||[]).find(x => x.dir === me.direction);
     if (!dirData) return '';
     const allies = (dirData.allies||[]).filter(a => a.alive);
@@ -505,7 +521,7 @@ const App = {
         const readyMark = c.ready ? '<span style="color:var(--green)">✅</span>' : '<span class="muted">⏳</span>';
         const dirInfo = showDir && c.direction ? ` <span class="muted">→ ${c.dirName||('Напр.'+c.direction)}</span>` : '';
         return `<div style="padding:5px 0;font-size:13px;border-bottom:1px solid var(--border-dim)">
-          ${readyMark} ${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}${dirInfo}
+          ${readyMark} ${ROLE_ICON[c.role]||'?'} ${UI.esc(c.name)}${c.online?' <span style="color:var(--green)" title="В сети">●</span>':''}${dirInfo}
         </div>`;
       };
       html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
@@ -580,7 +596,7 @@ const App = {
               ${aliveAllies.map(a => `
                 <div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
                   <div style="display:flex;align-items:center;gap:6px">
-                    <span>${ROLE_ICON[a.role]||'?'}</span><b>${UI.esc(a.name)}</b>
+                    <span>${ROLE_ICON[a.role]||'?'}</span><b>${UI.esc(a.name)}</b>${a.online?' <span style="color:var(--green)" title="В сети">●</span>':''}
                     <span class="muted small">${a.roleName}</span> ${statusBadge(a)}
                   </div>
                   ${hpBar(a.hp, a.maxHp, '#0a8')}
@@ -600,7 +616,7 @@ const App = {
               ${aliveEn.map(en => `
                 <div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
                   <div style="display:flex;align-items:center;gap:6px">
-                    <span>${ROLE_ICON[en.role]||'?'}</span><b>${UI.esc(en.name)}</b>
+                    <span>${ROLE_ICON[en.role]||'?'}</span><b>${UI.esc(en.name)}</b>${en.online?' <span style="color:var(--green)" title="В сети">●</span>':''}
                     <span class="muted small">${en.roleName}</span> ${statusBadge(en)}
                   </div>
                   ${hpBar(en.hp, en.maxHp, '#c22')}
@@ -819,7 +835,12 @@ const App = {
       secs--;
       if (secs < 0) secs = 0;
       timerEl.textContent = UI.fmtTimer(secs);
-      if (secs <= 0) clearInterval(t);
+      if (secs <= 0) {
+        clearInterval(t);
+        // Таймер подготовки истёк — не ждём следующий 4-сек poll, сразу
+        // запрашиваем состояние (сервер лениво переведёт prep→active).
+        if (isPrep) setTimeout(() => App._renderBattleWindow(), 300);
+      }
     }, 1000);
   },
 

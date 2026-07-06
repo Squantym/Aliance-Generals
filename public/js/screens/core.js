@@ -430,7 +430,7 @@ App.screens.profile = async (c, param) => {
       <div class="list-row">
         <div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">${p.online ? '🟢' : '⚪'}</div>
         <div class="grow">
-          <div class="name" style="font-size:17px">${p.flag} ${UI.esc(p.name)}</div>
+          <div class="name" style="font-size:17px">${p.flag} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
           ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}
           <div class="muted small">Звание: <b>${UI.esc(p.rank)}</b> · Ур. ${p.level} · Рейтинг ${UI.fmtNum(p.rating)}</div>
           ${p.countryName ? `<div class="muted small">${p.flag} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}

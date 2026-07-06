@@ -857,6 +857,62 @@ function finalizeBattle(battle: Battle, all: any, users: any, winningSide: strin
 // Единый тик всех боёв (вызывается из resolveWars каждые 30 сек)
 // Проходит по коллекции battles, двигает фазы prep→active→done.
 // ───────────────────────────────────────────────────────────────────
+// Продвинуть ОДИН бой по времени: prep→active по таймеру и завершение
+// активной фазы по истечении времени. НЕ трогает DoT-эффекты (они тикают
+// на 30-сек цикле фонового тика, чтобы урон не ускорялся от частых опросов).
+// Возвращает true, если фаза изменилась (нужно сохранить).
+// Вызывается и из общего тика, и ЛЕНИВО из battleState — чтобы фаза менялась
+// сразу при опросе клиента, а не ждала до 30 сек фонового тика (из-за этого
+// после 00:00 бой «не пускал» и висел чёрный экран).
+function advancePhase(battle: Battle, all: any, users: any): boolean {
+  if (!battle || battle.phase === 'done') return false;
+
+  // Завершение по истечении активной фазы
+  if (battle.phase === 'active' && now() >= (battle.activeEndsAt || 0)) {
+    const { scores } = calcActivityScores(battle);
+    const winningSide = (scores.A || 0) >= (scores.B || 0) ? 'A' : 'B';
+    finalizeBattle(battle, all, users, winningSide, 'time');
+    return true;
+  }
+
+  // Фаза prep → active по таймеру
+  if (battle.phase === 'prep' && now() >= battle.prepEndsAt) {
+    // Игрок, выбравший роль, считается подготовившимся. Если он не нажал
+    // «Готов» или не выбрал направление — проставляем автоматически.
+    for (const [uid, c] of Object.entries(battle.combatants)) {
+      if (!c.direction) {
+        const counts = [1, 2, 3].map((d) => ({
+          d, n: Object.values(battle.combatants).filter((x) => x.side === c.side && x.direction === d).length,
+        }));
+        counts.sort((a, b) => a.n - b.n);
+        c.direction = counts[0].d as any;
+      }
+      if (!c.ready) { c.ready = true; c.readyAt = now(); }
+    }
+
+    const sideA = Object.values(battle.combatants).filter(c => c.side === 'A');
+    const sideB = Object.values(battle.combatants).filter(c => c.side === 'B');
+    if (sideA.length === 0 || sideB.length === 0) {
+      const winner = sideA.length > 0 ? 'A' : 'B';
+      finalizeBattle(battle, all, users, winner, 'no_show');
+      return true;
+    }
+
+    battle.phase = 'active';
+    battle.activeStartAt = now();
+    battle.activeEndsAt  = now() + BATTLE_MS;
+
+    for (const c of Object.values(battle.combatants)) {
+      notif.push(c.userId, 'legion_battle_active',
+        `⚔️ Бой начался! Атакуйте врагов на «${DIR_NAMES[(c.direction || 1)-1]}».`,
+        { activeEndsAt: battle.activeEndsAt });
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function tickAllBattles(all: any, users: any): void {
   const allBattles = battles();
   let changed = false;
@@ -864,58 +920,12 @@ function tickAllBattles(all: any, users: any): void {
   for (const battle of Object.values(allBattles)) {
     if (!battle || battle.phase === 'done') continue;
 
-    // Завершение по истечении 1 часа активной фазы
-    if (battle.phase === 'active' && now() >= (battle.activeEndsAt || 0)) {
-      const { scores } = calcActivityScores(battle);
-      const winningSide = (scores.A || 0) >= (scores.B || 0) ? 'A' : 'B';
-      finalizeBattle(battle, all, users, winningSide, 'time');
-      changed = true;
-      continue;
-    }
+    // Переходы фаз по времени (prep→active, завершение active)
+    if (advancePhase(battle, all, users)) { changed = true; continue; }
 
-    // DoT-эффекты в активном бою
+    // DoT-эффекты в активном бою — только на фоновом 30-сек цикле
     if (battle.phase === 'active') {
       tickEffects(battle);
-      changed = true;
-      continue;
-    }
-
-    // Фаза prep → active по таймеру
-    if (battle.phase === 'prep' && now() >= battle.prepEndsAt) {
-      // Игрок, выбравший роль, считается подготовившимся. Если он не нажал
-      // «Готов» или не выбрал направление — проставляем автоматически, чтобы
-      // не выкидывать тех, кто реально зашёл в подготовку и выбрал роль.
-      for (const [uid, c] of Object.entries(battle.combatants)) {
-        if (!c.direction) {
-          // Назначаем направление с наименьшим числом союзников (балансировка)
-          const counts = [1, 2, 3].map((d) => ({
-            d, n: Object.values(battle.combatants).filter((x) => x.side === c.side && x.direction === d).length,
-          }));
-          counts.sort((a, b) => a.n - b.n);
-          c.direction = counts[0].d as any;
-        }
-        if (!c.ready) { c.ready = true; c.readyAt = now(); }
-      }
-
-      const sideA = Object.values(battle.combatants).filter(c => c.side === 'A');
-      const sideB = Object.values(battle.combatants).filter(c => c.side === 'B');
-
-      if (sideA.length === 0 || sideB.length === 0) {
-        const winner = sideA.length > 0 ? 'A' : 'B';
-        finalizeBattle(battle, all, users, winner, 'no_show');
-        changed = true;
-        continue;
-      }
-
-      battle.phase = 'active';
-      battle.activeStartAt = now();
-      battle.activeEndsAt  = now() + BATTLE_MS;
-
-      for (const c of Object.values(battle.combatants)) {
-        notif.push(c.userId, 'legion_battle_active',
-          `⚔️ Бой начался! Атакуйте врагов на «${DIR_NAMES[(c.direction || 1)-1]}».`,
-          { activeEndsAt: battle.activeEndsAt });
-      }
       changed = true;
     }
   }
@@ -929,6 +939,12 @@ function tickAllBattles(all: any, users: any): void {
 function battleState(user: User): any {
   const { battle, legion: l } = resolveBattle(user);
   if (!battle) return { battle: null };
+
+  // ЛЕНИВЫЙ переход фазы: не ждём фоновый 30-сек тик. Как только клиент
+  // опросил состояние после истечения таймера подготовки — сразу переводим
+  // prep→active (или завершаем истёкшую активную фазу). Иначе после 00:00
+  // клиент до 30 сек видел «застывший» экран.
+  if (advancePhase(battle, legions(), allUsers())) db.save('battles');
 
   const mySide = l.id === battle.legionA ? 'A' : 'B';
   const me = battle.combatants[user.id] || null;
@@ -947,11 +963,15 @@ function battleState(user: User): any {
     });
   }
 
-  const allCombatants = Object.values(battle.combatants).map(c => ({
-    userId: c.userId, name: c.name, side: c.side, role: c.role,
-    ready: c.ready, hp: c.hp, maxHp: c.maxHp, direction: c.direction,
-    alive: c.alive, dirName: c.direction ? DIR_NAMES[(c.direction || 1)-1] : null,
-  }));
+  const allCombatants = Object.values(battle.combatants).map(c => {
+    let online = false;
+    try { const usr = player.users()[c.userId]; if (usr) online = Date.now() - (usr.lastSeen || 0) < 5 * 60 * 1000; } catch (e) {}
+    return {
+      userId: c.userId, name: c.name, side: c.side, role: c.role,
+      ready: c.ready, hp: c.hp, maxHp: c.maxHp, direction: c.direction,
+      alive: c.alive, dirName: c.direction ? DIR_NAMES[(c.direction || 1)-1] : null, online,
+    };
+  });
 
   const myCDs = me ? {
     action: Math.max(0, Math.ceil((me.lastActionAt + ACTION_CD_MS - t) / 1000)),
@@ -1019,15 +1039,19 @@ function serializeCombatant(c: Combatant, t: number, isSelf: boolean): any {
   const fx = (type) => (c.statusEffects || []).filter(e => e.type === type && e.expiresAt > t);
   // Боеприпасы и энергия берём из ресурсов игрока (для ряда ресурсов в бою)
   let ammo: number | null = null, energy: number | null = null;
+  let online = false;
   try {
     const usr = player.users()[c.userId];
     if (usr && usr.res) { ammo = Math.floor(usr.res.am.cur); energy = Math.floor(usr.res.en.cur); }
+    // Онлайн — активность за последние 5 минут (как в списке целей и профиле).
+    // В легион-бою ботов нет, все бойцы — реальные игроки.
+    if (usr) online = Date.now() - (usr.lastSeen || 0) < 5 * 60 * 1000;
   } catch (e) {}
   return {
     userId: c.userId, name: c.name,
     role: c.role, roleName: ROLES[c.role] ? ROLES[c.role].label : c.role,
     hp: c.hp, maxHp: c.maxHp, shield: c.shield || 0,
-    ammo, energy,
+    ammo, energy, online,
     alive: c.alive, ready: c.ready, direction: c.direction,
     dirName: c.direction ? DIR_NAMES[(c.direction || 1)-1] : null,
     stunned:    fx('stun').length    > 0 ? Math.ceil((fx('stun')[0].expiresAt    - t) / 1000) : 0,

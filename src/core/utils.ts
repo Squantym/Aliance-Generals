@@ -61,9 +61,21 @@ function hashPassword(password: string | number, salt: string): string {
   return crypto.scryptSync(String(password), salt, 32).toString('hex');
 }
 
+// Проверка пароля в КОНСТАНТНОЕ время (защита от тайминг-атак на сравнение
+// хэшей). Обычный `a !== b` по строкам завершается на первом различии, и по
+// времени ответа теоретически можно восстанавливать хэш побайтно. scryptSync
+// сам по себе медленный, но сравнение результата должно быть постоянным.
+function verifyPassword(password: string | number, salt: string, expectedHex: string): boolean {
+  const got = crypto.scryptSync(String(password), salt, 32);
+  let exp: Buffer;
+  try { exp = Buffer.from(String(expectedHex || ''), 'hex'); } catch (e) { return false; }
+  if (exp.length !== got.length) return false; // разной длины — точно не совпадает
+  return crypto.timingSafeEqual(got, exp);
+}
+
 // Форматирование числа с разделителями для текстов уведомлений
 function fmt(n: number): string {
   return Math.round(n).toLocaleString('ru-RU');
 }
 
-export = { ApiError, uid, rnd, pick, shuffle, clamp, toInt, hashPassword, fmt };
+export = { ApiError, uid, rnd, pick, shuffle, clamp, toInt, hashPassword, verifyPassword, fmt };

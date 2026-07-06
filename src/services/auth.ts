@@ -207,7 +207,7 @@ function login(loginName: string, password: string, ip: string) {
   // БАГ 11: единое сообщение — не раскрывать существование пользователя
   const WRONG_CREDS = 'Неверный позывной или пароль';
   if (!found) throw new u.ApiError(WRONG_CREDS);
-  if (u.hashPassword(password, found.salt) !== found.passHash) throw new u.ApiError(WRONG_CREDS);
+  if (!u.verifyPassword(password, found.salt, found.passHash)) throw new u.ApiError(WRONG_CREDS);
   if (!found.emailVerified) {
     throw new u.ApiError(`Подтвердите почту — письмо отправлено при регистрации. Не пришло? Нажмите «Отправить повторно».`);
   }
