@@ -124,6 +124,17 @@ function skip(user: User): string {
   return targetId;
 }
 
+// Игрок ушёл с окна сейфа (закрыл/свернул/сменил экран) — молча снимаем
+// незавершённое предложение. В отличие от skip, бой НЕ начинается: окно
+// показывается ДО боя и ничего ещё не потрачено (боеприпас не списан,
+// суточный лимит попыток тратится только на реальный ввод кода). Просто
+// разблокируем возможность атаковать. Безопасно вызывать, даже если сейфа нет.
+function cancel(user: User): boolean {
+  if (!user.pendingBankHack) return false;
+  user.pendingBankHack = null;
+  return true;
+}
+
 // Попытка ввода кода. Возвращает { targetId, result } — result идёт
 // клиенту как есть, targetId — вызывающему роуту (чтобы продолжить бой,
 // если взлом завершился любым исходом).
@@ -179,7 +190,7 @@ function guess(user: User, guessRaw: string, notices: Notices): { targetId: stri
     return { targetId, finished: true, result: { code: p.code, bulls, cows, cracked: false, outOfTries: true } };
   }
 
-  return { targetId, finished: false, result: { bulls, cows, triesLeft: p.triesLeft, cracked: false } };
+  return { targetId, finished: false, result: { bulls, cows, triesLeft: p.triesLeft, cracked: false, history: p.history } };
 }
 
-export = { tryOffer, skip, guess, generateCode, evaluateGuess, ensureDay };
+export = { tryOffer, skip, cancel, guess, generateCode, evaluateGuess, ensureDay };

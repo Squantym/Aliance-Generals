@@ -52,7 +52,7 @@ function bankHackCardHtml(enc) {
       </div>
       <p class="muted small center mt">Осталось попыток разгадать код: <b>${enc.triesLeft}</b> / ${enc.maxTries}. 🎯 — цифра на своём месте, 🔵 — цифра есть, но не там.</p>
       ${historyHtml ? `<div class="mt">${historyHtml}</div>` : ''}
-      <button class="btn mt" id="bh-skip" style="width:100%">⚔️ Продолжить бой без взлома</button>
+      <button class="btn btn-inline mt" id="bh-cancel" style="width:100%;opacity:.65">✖ Не взламывать (закрыть)</button>
     </div>`;
 }
 
@@ -81,6 +81,27 @@ function mineDefuseCardHtml(enc) {
 App.screens.war = async (c) => {
   await App.refreshMe();
   const m = App.me;
+
+  // Восстановление окна сейфа: если сервер помнит незавершённый взлом, а
+  // клиент потерял карточку (обновление страницы, возврат на экран) —
+  // пересоздаём её из состояния игрока, чтобы окно всегда можно было открыть.
+  if (!App._warEncounter && m.pendingBankHack) {
+    App._warEncounter = { type: 'bank_hack', encounter: 'bank_hack', ...m.pendingBankHack };
+  }
+
+  // Уход с экрана войны с открытым сейфом = отказ от сейфа. Молча снимаем
+  // блокировку атаки на сервере, иначе игрок «застрянет»: атаковать нельзя,
+  // а вернуться в окно неоткуда. _tear вызывается роутером при следующей
+  // навигации; для смены под-вкладок войны (rerender) хэш остаётся #war —
+  // тогда сейф НЕ отменяем.
+  App._tear = () => {
+    const next = ((location.hash || '').slice(1).split('/')[0]) || 'home';
+    if (next !== 'war' && App._warEncounter && App._warEncounter.type === 'bank_hack') {
+      App._warEncounter = null;
+      if (App.me) App.me.pendingBankHack = null;
+      API.post('/api/war/bank-hack/cancel').catch(() => {});
+    }
+  };
 
   // Баннер мирового события (активного или запланированного с таймером)
   let eventBanner = '';
@@ -178,9 +199,11 @@ App.screens.war = async (c) => {
 
   const warTab = App._warTab || 'targets';
 
-  // Окно «встречи»: сейф банка или мина — перекрывает обычный результат
-  // боя, пока игрок не примет решение (аналогично окну фаталити).
+  // Окно «встречи». Мина срабатывает ДО боя — прячет результат, пока игрок
+  // не разберётся с проводом. Сейф выпадает ПОСЛЕ боя — показываем его ВМЕСТЕ
+  // с результатом боя и окном фаталити (бой уже прошёл).
   const enc = App._warEncounter;
+  const preCombat = enc && enc.type === 'mine_defuse'; // только мина прячет итог боя
   const encounterHtml = enc
     ? (enc.type === 'bank_hack' ? bankHackCardHtml(enc) : mineDefuseCardHtml(enc))
     : '';
@@ -189,8 +212,8 @@ App.screens.war = async (c) => {
     <div class="title">Война</div>
     ${eventBanner}
     ${encounterHtml}
-    ${!enc ? fatalityHtml : ''}
-    ${!enc ? resultHtml : ''}
+    ${!preCombat ? fatalityHtml : ''}
+    ${!preCombat ? resultHtml : ''}
     <div class="tabs">
       <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">🎯 Цели</div>
       <div class="tab ${warTab === 'sanctions' ? 'active' : ''}" data-wartab="sanctions">💰 Санкции</div>
@@ -262,7 +285,6 @@ App.screens.war = async (c) => {
   function wireBankHackHandlers() {
     const guessBtn = document.getElementById('bh-guess');
     const input = document.getElementById('bh-code');
-    const skipBtn = document.getElementById('bh-skip');
     if (guessBtn && input) {
       const submit = () => {
         const code = input.value.trim();
@@ -274,7 +296,8 @@ App.screens.war = async (c) => {
       input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
       input.focus();
     }
-    if (skipBtn) skipBtn.onclick = () => { if (confirm('Отказаться от взлома и продолжить бой?')) bankHackSkip(); };
+    const cancelBtn = document.getElementById('bh-cancel');
+    if (cancelBtn) cancelBtn.onclick = () => bankHackCancel();
   }
   const refreshBtn = document.getElementById('war-refresh');
   if (refreshBtn) refreshBtn.onclick = () => { App._lastBattle = null; App.rerender(); };
@@ -304,26 +327,17 @@ App.screens.war = async (c) => {
     }
   }
 
-  // Разбираем ответ атаки: обычный бой ИЛИ окно взлома банка/мины.
-  // r.bankHack, если есть, — это ИТОГ уже завершённого взлома (пришёл
-  // вместе с продолжением атаки) — просто уведомляем о нём тостом.
+  // Разбираем ответ атаки. Мина — окно ДО боя (результата ещё нет). Иначе бой
+  // прошёл: сохраняем результат и, если ПОСЛЕ боя выпал сейф, показываем его
+  // поверх итога боя.
   function handleAttackOutcome(r) {
-    if (r.bankHack) {
-      const bh = r.bankHack;
-      if (bh.alarmed) UI.toast('🚨 Код верный, но сработала сигнализация — взлом сорван!');
-      else if (bh.stolen > 0) UI.toast(`🔓 Сейф взломан! Похищено 🪙 из банка: $${UI.fmtNum(bh.stolen)}`);
-      else if (bh.outOfTries) UI.toast('⛔ Попытки закончились — код сейфа не разгадан.');
-    }
-    if (r.encounter === 'bank_hack') {
-      App._warEncounter = { type: 'bank_hack', ...r };
-      App._lastBattle = null;
-    } else if (r.encounter === 'mine_defuse') {
+    if (r.encounter === 'mine_defuse') {
       App._warEncounter = { type: 'mine_defuse', wires: r.wires, canSacrifice: r.canSacrifice };
       App._lastBattle = null;
-    } else {
-      App._warEncounter = null;
-      App._lastBattle = r;
+      return;
     }
+    App._lastBattle = r;
+    App._warEncounter = (r.encounter === 'bank_hack') ? { type: 'bank_hack', ...r } : null;
   }
 
   // ---------- Взлом банка: ввод кода ----------
@@ -337,19 +351,35 @@ App.screens.war = async (c) => {
         renderBankHackCard();
         return;
       }
-      handleAttackOutcome(r);
+      // Взлом завершён. Бой уже прошёл при атаке — результат боя (_lastBattle)
+      // сохраняем, просто закрываем окно сейфа и уведомляем об итоге.
+      if (r.bankHack) {
+        const bh = r.bankHack;
+        if (bh.alarmed) UI.toast(`🚨 Код ${bh.code} верный, но сработала сигнализация — взлом сорван!`);
+        else if (bh.stolen > 0) UI.toast(`🔓 Сейф взломан! Похищено 🪙 из банка: $${UI.fmtNum(bh.stolen)}`);
+        else if (bh.outOfTries) UI.toast(`⛔ Попытки закончились. Код сейфа был: ${bh.code}`);
+      }
+      App._warEncounter = null;
       await App.refreshMe();
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
   }
 
   async function bankHackSkip() {
-    try {
-      const r = await API.post('/api/war/bank-hack/skip');
-      handleAttackOutcome(r);
-      await App.refreshMe();
-      App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+    App._warEncounter = null;
+    if (App.me) App.me.pendingBankHack = null;
+    try { await API.post('/api/war/bank-hack/skip'); } catch (e) {}
+    await App.refreshMe();
+    App.rerender();
+  }
+
+  // Отмена сейфа без боя — просто закрываем окно и снимаем блокировку атаки.
+  async function bankHackCancel() {
+    App._warEncounter = null;
+    if (App.me) App.me.pendingBankHack = null;
+    try { await API.post('/api/war/bank-hack/cancel'); } catch (e) {}
+    await App.refreshMe();
+    App.rerender();
   }
 
   // ---------- Разминирование: выбор провода ----------

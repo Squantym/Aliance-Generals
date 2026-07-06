@@ -114,7 +114,8 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/war/opponents', (req) => battle.opponents(req.user));
   app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n)));
   app.add('POST', '/api/war/bank-hack/guess', act((req, n) => battle.bankHackGuess(req.user, String(req.body.code || ''), n)));
-  app.add('POST', '/api/war/bank-hack/skip',  act((req, n) => battle.bankHackSkip(req.user, n)));
+  app.add('POST', '/api/war/bank-hack/skip',  act((req, n) => battle.bankHackSkip(req.user)));
+  app.add('POST', '/api/war/bank-hack/cancel', act((req, n) => battle.bankHackCancel(req.user)));
   app.add('POST', '/api/war/mine-defuse',     act((req, n) => battle.mineDefuse(req.user, req.body.wireIndex, n)));
   app.add('POST', '/api/war/mine-sacrifice',  act((req, n) => battle.mineSacrifice(req.user, n)));
   app.add('GET',  '/api/saboteurs', (req) => require('./services/saboteurs').view(req.user));
@@ -334,6 +335,7 @@ function registerRoutes(app: any) {
   // ---------- Администратор ----------
   app.add('GET', '/api/admin/players', (req) => admin.listPlayers(req.query.q), { admin: true });
   app.add('GET', '/api/admin/player-view/:id', (req) => admin.viewAsPlayer(req.user, req.params.id), { admin: true });
+  app.add('GET', '/api/admin/player-snapshot/:id', (req) => admin.playerSnapshot(req.user, req.params.id), { admin: true });
   app.add('GET', '/api/admin/groups/:kind', (req) => require('./services/groups').listAllAdmin(req.params.kind), { admin: true });
   app.add('GET', '/api/admin/groups/:kind/:id', (req) => require('./services/groups').viewDetailAdmin(req.params.kind, req.params.id), { admin: true });
   app.add('POST', '/api/admin/legion/deposit', act((req, n) => require('./services/legion').adminDeposit(req.user, req.body.legionId, req.body.amount, n)), { admin: true });

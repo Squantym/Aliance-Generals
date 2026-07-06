@@ -68,6 +68,130 @@ function viewAsPlayer(adminUser: User, targetId: string) {
   };
 }
 
+// ── АДМИН: ПОЛНЫЙ СНИМОК игрока (характеристики + всё имущество) ──────
+// Плоская, читаемая для админки сводка: основное, ресурсы, навыки,
+// мощь, боевая статистика, армия, постройки, секретки, трофеи,
+// диверсанты, ракеты, альянс/легион. Только просмотр (не «его глазами»).
+const SKILL_LABELS: Record<string, string> = {
+  energy: '⚡ Энергия', health: '❤️ Здоровье', ammo: '🔫 Боеприпасы',
+  cruelty: '💀 Жестокость', agility: '🏃 Ловкость',
+};
+const SAB_LABELS: Record<string, string> = {
+  ground: '🪖 Наземные', sea: '🚢 Морские', air: '✈️ Воздушные',
+  secret: '🕵️ Секретные', building: '🏗 Построечные', suicide: '💀 Смертники',
+};
+
+function playerSnapshot(adminUser: User, targetId: string) {
+  const t = player.users()[targetId];
+  if (!t) throw new u.ApiError('Игрок не найден');
+  player.refresh(t);
+
+  const mx = player.maxima(t);
+  const atk = player.totalPower(t, 'atk');
+  const def = player.totalPower(t, 'def');
+  const country = config.COUNTRY_BY_ID[t.country];
+
+  // Навыки с русскими подписями
+  const skills = Object.keys(SKILL_LABELS).map((k) => ({
+    id: k, name: SKILL_LABELS[k], level: (t.skills as any)[k] || 0,
+  }));
+
+  // Армия: разворачиваем units { unitId: { 0,1,2 } } в плоский список
+  const army: any[] = [];
+  let armyTotal = 0;
+  for (const [unitId, mkMap] of Object.entries(t.units || {})) {
+    const cu = config.UNIT_BY_ID[unitId];
+    if (!cu) continue;
+    for (let mk = 0; mk <= 2; mk++) {
+      const count = (mkMap && (mkMap as any)[mk]) || 0;
+      if (count <= 0) continue;
+      army.push({
+        name: cu.name + (mk ? ` Mk${mk}` : ''),
+        type: config.UNIT_TYPE_NAMES[cu.type], count,
+      });
+      armyTotal += count;
+    }
+  }
+  army.sort((a, b) => b.count - a.count);
+
+  // Постройки
+  const buildingsList: any[] = [];
+  for (const [id, count] of Object.entries(t.buildings || {})) {
+    const b = config.BUILDING_BY_ID[id];
+    if (b && count) buildingsList.push({ name: b.name, count, kind: b.kind });
+  }
+
+  // Секретные разработки (+ супероружие)
+  const secretList: any[] = [];
+  for (const d of config.SECRET_DEVS) {
+    const count = (t.secretDevs || {})[d.id] || 0;
+    if (count > 0) secretList.push({ name: d.name, count });
+  }
+  if (t.superSecret > 0) secretList.push({ name: config.SUPER_DEV.name, count: t.superSecret });
+
+  // Трофеи (только прокачанные)
+  const trophyList: any[] = [];
+  for (const tr of config.TROPHIES) {
+    const lvl = (t.trophies || {})[tr.id] || 0;
+    if (lvl > 0) trophyList.push({ name: tr.name, level: lvl, maxLevel: config.TROPHY_MAX_LEVEL });
+  }
+
+  // Диверсанты: наличие / лимит / работает по каждому виду
+  const sb = require('./saboteurs');
+  sb.ensure(t);
+  const sabList = ['ground', 'sea', 'air', 'secret', 'building'].map((k) => ({
+    id: k, name: SAB_LABELS[k],
+    count: t.saboteurs![k as 'ground'], limit: t.saboteurLimits![k as 'ground'],
+    active: Math.min(t.saboteurs![k as 'ground'], t.saboteurLimits![k as 'ground']),
+  }));
+  const suicideCount = t.saboteurs!.suicide || 0;
+
+  // Ракеты (силосы)
+  const silosBuilt = (t.silos || []).length;
+
+  const alliance = player.allianceInfo(t);
+  const legion = player.legionInfo(t);
+
+  return {
+    main: {
+      id: t.id, name: t.name, flag: player.flag(t),
+      country: country ? country.name : t.country,
+      status: t.status || '',
+      level: t.level, xp: t.xp, xpNext: config.xpToNext(t.level),
+      rank: player.rank(t.level), rating: player.rating(t),
+      isAdmin: !!t.isAdmin, banned: !!t.banned, banReason: t.banReason || '',
+      createdAt: t.createdAt, lastSeen: t.lastSeen || t.createdAt,
+      online: (Date.now() - (t.lastSeen || 0)) < 5 * 60 * 1000,
+    },
+    resources: {
+      dollars: t.dollars, gold: t.gold, bank: t.bank,
+      tokens: t.tokens, skillPoints: t.skillPoints,
+      earsTrophy: t.ears, earsCurrent: t.earsCurrent, earsMax: config.EARS.MAX,
+      landmines: t.landmines || 0,
+      hp: { cur: t.res.hp.cur, max: mx.hp },
+      en: { cur: t.res.en.cur, max: mx.en },
+      am: { cur: t.res.am.cur, max: mx.am },
+    },
+    skills,
+    power: {
+      atk: atk.power, def: def.power,
+      capacity: player.capacity(t), armyTotal,
+    },
+    battle: { ...t.battle },
+    army, buildings: buildingsList, secretDevs: secretList, trophies: trophyList,
+    saboteurs: { types: sabList, suicide: suicideCount, suicideLimit: config.SABOTEURS.suicide.fixedLimit },
+    silos: silosBuilt,
+    // Личный альянс — просто счётчик приглашённых членов (имени нет).
+    allianceMembers: (alliance && alliance.members) || 0,
+    legion: legion ? { name: legion.name, members: legion.members, rankName: legion.rankName } : null,
+    extra: {
+      loginStreak: t.loginStreak || 0,
+      refCount: t.refCount || 0,
+      seasonRating: t.seasonRating || 0,
+    },
+  };
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Применить набор ресурсов к одному игроку
 // Возвращает строку что выдали (для лога)
@@ -443,5 +567,5 @@ export = {
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
   listLogs, setBan, resetAccount, resetParam, resetMissions, wipeGroups,
-  viewAsPlayer,
+  viewAsPlayer, playerSnapshot,
 };

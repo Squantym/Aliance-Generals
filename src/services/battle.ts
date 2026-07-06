@@ -346,14 +346,9 @@ function attack(user: User, targetId: string, notices: Notices) {
     }
   }
 
-  // ----- Взлом банка: шанс окна ДО боя (только реальные игроки, только в войне) -----
-  // Ничего не тратится, если окно открылось — игрок ещё может передумать
-  // и просто продолжить бой (см. bankHack.skip через отдельный роут).
-  if (!isBot) {
-    const offer = bankHack.tryOffer(user, target);
-    if (offer) return offer;
-  }
-
+  // Сейф банка больше НЕ предлагается до боя — он выпадает с низким шансом
+  // ПОСЛЕ резолва боя (см. конец resolveCombatCore). Так атака не блокируется
+  // окном заранее, а сейф ощущается как случайный трофей во время рейда.
   return proceedToCombat(user, target, isBot, targetId, notices);
 }
 
@@ -401,26 +396,27 @@ function proceedToCombat(user: User, target: any, isBot: boolean, targetId: stri
   return resolveCombatCore(user, target, isBot, aArmy, notices);
 }
 
-// ---------- РЕЗУЛЬТАТ ВЗЛОМА БАНКА: продолжить путём ввода кода ----------
+// ---------- РЕЗУЛЬТАТ ВЗЛОМА БАНКА: ввод кода ----------
+// Бой уже прошёл при атаке (сейф выпадает ПОСЛЕ боя) — здесь только
+// мини-игра «быки/коровы» и её итог. Повторно бой не запускаем.
 function bankHackGuess(user: User, code: string, notices: Notices) {
-  const { targetId, finished, result } = bankHack.guess(user, code, notices);
+  const { finished, result } = bankHack.guess(user, code, notices);
   if (!finished) return { encounter: 'bank_hack', ...result };
-  // Взлом завершён (успех/провал/тревога/кончились попытки) — продолжаем
-  // атаку тем же способом, что и обычную (мина/бой)
-  const target = player.users()[targetId];
-  if (!target) return { bankHack: result, aborted: true };
-  player.refresh(target);
-  const battleResult = proceedToCombat(user, target, false, targetId, notices);
-  return { bankHack: result, ...battleResult };
+  return { bankHack: result, safeResolved: true };
 }
 
-// ---------- ОТКАЗ ОТ ВЗЛОМА: сразу продолжаем бой ----------
-function bankHackSkip(user: User, notices: Notices) {
-  const targetId = bankHack.skip(user);
-  const target = player.users()[targetId];
-  if (!target) throw new u.ApiError('Цель ушла из зоны видимости.');
-  player.refresh(target);
-  return proceedToCombat(user, target, false, targetId, notices);
+// ---------- ЗАКРЫТЬ СЕЙФ БЕЗ ВЗЛОМА ----------
+// Бой уже прошёл — «пропустить» и «отменить» теперь равнозначны: просто
+// снимаем окно сейфа. Оставлены оба роута ради обратной совместимости.
+function bankHackSkip(user: User) {
+  bankHack.cancel(user);
+  return { skipped: true };
+}
+
+// Игрок ушёл с окна сейфа — снимаем окно. Бой уже прошёл, ничего не теряем.
+function bankHackCancel(user: User) {
+  const cancelled = bankHack.cancel(user);
+  return { cancelled };
 }
 
 // ---------- РАЗМИНИРОВАНИЕ: выбор провода ----------
@@ -762,7 +758,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
         .filter(Boolean)
     : [];
 
-  return {
+  const result: any = {
     win, crit, dodge,
     dealt, received, loot, xp,
     targetId: target.id, targetName: target.name, targetLevel, isBot,
@@ -773,6 +769,18 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     myLosses, enemyLosses,
     fatality, fatalityDodged,
   };
+
+  // ----- Сейф банка: низкий шанс ПОСЛЕ боя -----
+  // Только реальные игроки (у ботов нет банка), трофей «Медвежатник» ≥ 1,
+  // у жертвы есть деньги в банке. Не наслаиваем сейф на нерешённое фаталити —
+  // одно окно решения за раз. tryOffer сам ставит pendingBankHack и вернёт
+  // { encounter:'bank_hack', ... } с параметрами окна для клиента.
+  if (!isBot && !user.pendingFatality) {
+    const offer = bankHack.tryOffer(user, target);
+    if (offer) Object.assign(result, offer);
+  }
+
+  return result;
 }
 
 // ---------- Фаталити: «ухо» или «жетон» ----------
@@ -913,5 +921,5 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
 
 export = {
   opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits,
-  bankHackGuess, bankHackSkip, mineDefuse, mineSacrifice,
+  bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice,
 };

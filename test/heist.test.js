@@ -52,8 +52,9 @@ eq('частичное совпадение', JSON.stringify(bankHack.evaluateGu
 eq('полный промах', JSON.stringify(bankHack.evaluateGuess('1234', '5678')), JSON.stringify({ bulls: 0, cows: 0 }));
 
 console.log('\n[2] Юнит: конфиг-таблицы взлома банка (0..10 уровень)');
-eq('offerChance ур.0 = 1%', c.BANK_HACK.offerChancePct(0), 1);
-eq('offerChance ур.10 = 10%', c.BANK_HACK.offerChancePct(10), 10);
+eq('offerChance ур.0 = 0% (без трофея не предлагается)', c.BANK_HACK.offerChancePct(0), 0);
+eq('offerChance ур.1 = 1% (первый уровень трофея)', c.BANK_HACK.offerChancePct(1), 1);
+eq('offerChance ур.10 = 9.1% (низкий шанс)', Math.round(c.BANK_HACK.offerChancePct(10) * 10) / 10, 9.1);
 eq('successChance ур.0 = 0%', c.BANK_HACK.successChancePct[0], 0);
 eq('successChance ур.1 = 20%', c.BANK_HACK.successChancePct[1], 20);
 eq('successChance ур.10 = 70%', c.BANK_HACK.successChancePct[10], 70);

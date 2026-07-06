@@ -210,6 +210,7 @@ const Admin = {
   // ── Вкладка: События (мировой босс + рейтинговый сезон) ────────
   async renderEvents(c) {
     let season = null; try { season = await API.get('/api/season'); } catch (e) {}
+    let ev = null; try { ev = await API.get('/api/event'); } catch (e) {}
     const rw = (season && season.rewards) || [{ gold: 500, tokens: 3 }, { gold: 300, tokens: 2 }, { gold: 150, tokens: 1 }];
     const fmtLeft = (ms) => {
       if (!ms || ms <= 0) return '—';
@@ -247,6 +248,15 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> За атаку: до</label><input type="number" id="evd-max" placeholder="10"></div>
         </div>
         <button class="btn btn-orange mt" id="evd-apply" style="width:100%">🔧 Применить к текущему событию</button>
+        <hr class="hr">
+        <div class="name" style="font-size:14px"><span class="ic-health"></span> Здоровье ТЕКУЩЕГО босса</div>
+        ${ev && ev.active ? `
+          <p class="muted small">Сейчас: <b>${UI.fmtNum(ev.hp)}</b> / ${UI.fmtNum(ev.maxHp)} HP (${ev.hpPct}%). Установите новое значение — рейтинг и награды сохранятся. Ставка 0 «добьёт» босса.</p>
+          <div class="field-row mt">
+            <input type="number" id="ev-sethp" min="0" max="${ev.maxHp}" placeholder="${ev.hp}" value="${ev.hp}" style="flex:1">
+            <button class="btn btn-orange btn-inline" id="ev-sethp-apply">❤️ Установить HP</button>
+          </div>
+        ` : `<p class="muted small">Нет активного события. HP можно регулировать только у запущенного босса.</p>`}
       </div>
       <div class="card" style="margin-top:16px;border-color:var(--gold)">
         <div class="name">🏆 Рейтинговый сезон (недельный)</div>
@@ -288,6 +298,15 @@ const Admin = {
           dropMin: evVal('evd-min'), dropMax: evVal('evd-max'),
         });
         UI.toast(`🔧 Дроп обновлён: шанс ${r.dropChance}%, ${r.dropMin}–${r.dropMax}, пул 🪙 ${UI.fmtNum(r.goldPoolLeft)}`);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    const setHpBtn = document.getElementById('ev-sethp-apply');
+    if (setHpBtn) setHpBtn.onclick = async () => {
+      try {
+        const hp = evVal('ev-sethp');
+        const r = await API.post('/api/admin/event/hp', { hp });
+        UI.toast(`❤️ HP босса: ${UI.fmtNum(r.hp)} / ${UI.fmtNum(r.maxHp)} (${r.hpPct}%)`);
+        Admin.renderTab();  // перерисовать, чтобы обновить текущее значение
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     document.getElementById('se-save').onclick = async () => {
@@ -366,6 +385,7 @@ const Admin = {
               <td style="padding:8px;text-align:right;font-size:12px">${p.earsCurrent ?? p.ears}</td>
               <td style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
               <td style="padding:8px;white-space:nowrap">
+                <button class="btn btn-inline" data-view="${p.id}" title="Досье игрока">👁</button>
                 <button class="btn btn-orange btn-inline" data-pick="${p.id}">Выдать</button>
                 <button class="btn btn-inline" data-log="${p.id}" data-log-name="${UI.esc(p.name)}">📋</button>
                 ${!p.isAdmin ? `<button class="btn btn-inline" data-ban="${p.id}" data-banned="${p.banned ? '1' : '0'}" data-name="${UI.esc(p.name)}">${p.banned ? '✅ разбан' : '🚫 бан'}</button>
@@ -376,6 +396,9 @@ const Admin = {
         </table>
       </div>`;
 
+      box.querySelectorAll('[data-view]').forEach(btn => {
+        btn.onclick = () => Admin.showPlayerDetail(btn.dataset.view);
+      });
       box.querySelectorAll('[data-pick]').forEach(btn => {
         const p = players.find(x => x.id === btn.dataset.pick);
         btn.onclick = () => Admin.renderGrantForm(p);
@@ -422,6 +445,121 @@ const Admin = {
     } catch(e) {
       box.innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>`;
     }
+  },
+
+  // ── Досье игрока: полный снимок характеристик и имущества (только чтение) ──
+  async showPlayerDetail(id) {
+    const old = document.getElementById('pd-modal');
+    if (old) old.remove();
+    const m = document.createElement('div');
+    m.id = 'pd-modal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10004;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+    m.onclick = (e) => { if (e.target === m) m.remove(); };
+    m.innerHTML = `<div style="background:var(--card);border:2px solid var(--orange);border-radius:14px;max-width:520px;width:100%;padding:18px;margin:auto"><div class="loading">Загрузка досье…</div></div>`;
+    document.body.appendChild(m);
+    const inner = m.firstElementChild;
+
+    let s;
+    try {
+      s = await API.get('/api/admin/player-snapshot/' + encodeURIComponent(id));
+    } catch (e) {
+      inner.innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>
+        <button class="btn btn-orange mt" style="width:100%" onclick="document.getElementById('pd-modal').remove()">Закрыть</button>`;
+      return;
+    }
+
+    const fmtDate = (ts) => { try { return new Date(ts).toLocaleString('ru-RU'); } catch (e) { return '—'; } };
+    const kv = (k, v) => `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+    const section = (title, body) => `<hr class="hr"><div class="name" style="font-size:14px;margin-bottom:6px">${title}</div>${body}`;
+    const listOrEmpty = (arr, fn) => arr && arr.length ? arr.map(fn).join('') : '<p class="muted small">— пусто —</p>';
+
+    // Основное
+    const mainHtml =
+      kv('ID', `<span class="muted small">${UI.esc(s.main.id)}</span>`) +
+      kv('Страна', UI.esc(s.main.country)) +
+      kv('Уровень / XP', `${s.main.level} · ${UI.fmtNum(s.main.xp)}/${UI.fmtNum(s.main.xpNext)}`) +
+      kv('Звание', UI.esc(s.main.rank)) +
+      kv('Рейтинг', UI.fmtNum(s.main.rating)) +
+      (s.main.status ? kv('Статус', UI.esc(s.main.status)) : '') +
+      kv('Регистрация', `<span class="small">${fmtDate(s.main.createdAt)}</span>`) +
+      kv('Был в сети', `<span class="small">${s.main.online ? '<span style="color:var(--green)">● сейчас</span>' : fmtDate(s.main.lastSeen)}</span>`) +
+      (s.main.banned ? kv('🚫 Бан', UI.esc(s.main.banReason || 'без причины')) : '');
+
+    // Ресурсы
+    const r = s.resources;
+    const resHtml =
+      kv('<span class="ic-dollar"></span> Доллары', UI.fmtMoney(r.dollars)) +
+      kv('<span class="ic-gold"></span> Золото', UI.fmtNum(r.gold)) +
+      kv('🏦 Банк', UI.fmtMoney(r.bank)) +
+      kv('🎫 Жетоны помилования', UI.fmtNum(r.tokens)) +
+      kv('📈 Очки навыков', UI.fmtNum(r.skillPoints)) +
+      kv('👂 Уши (трофейные)', UI.fmtNum(r.earsTrophy)) +
+      kv('👂 Свои уши', `${r.earsCurrent}/${r.earsMax}`) +
+      kv('💣 Мины (растяжки)', UI.fmtNum(r.landmines)) +
+      kv('❤️ Здоровье', `${UI.fmtNum(r.hp.cur)}/${UI.fmtNum(r.hp.max)}`) +
+      kv('⚡ Энергия', `${UI.fmtNum(r.en.cur)}/${UI.fmtNum(r.en.max)}`) +
+      kv('🔫 Боеприпасы', `${UI.fmtNum(r.am.cur)}/${UI.fmtNum(r.am.max)}`);
+
+    // Навыки
+    const skillsHtml = s.skills.map(sk => kv(sk.name, `ур. ${sk.level}`)).join('');
+
+    // Мощь + бой
+    const b = s.battle;
+    const powerHtml =
+      kv('⚔ Атака', UI.fmtNum(s.power.atk)) +
+      kv('🛡 Защита', UI.fmtNum(s.power.def)) +
+      kv('🎒 Вместимость армии', UI.fmtNum(s.power.capacity)) +
+      kv('🚜 Всего техники', UI.fmtNum(s.power.armyTotal)) +
+      kv('Бои (атак/побед/пораж.)', `${b.attacks} / ${b.wins} / ${b.losses}`) +
+      kv('Защита (побед/пораж.)', `${b.defWins} / ${b.defLosses}`) +
+      kv('☠️ Фаталити', UI.fmtNum(b.fatalities));
+
+    // Армия
+    const armyHtml = listOrEmpty(s.army, x =>
+      kv(`${UI.esc(x.name)} <span class="muted small">(${UI.esc(x.type)})</span>`, `×${UI.fmtNum(x.count)}`));
+
+    // Постройки
+    const buildHtml = listOrEmpty(s.buildings, x =>
+      kv(UI.esc(x.name), `×${UI.fmtNum(x.count)}`));
+
+    // Секретки
+    const secretHtml = listOrEmpty(s.secretDevs, x =>
+      kv(UI.esc(x.name), `×${UI.fmtNum(x.count)}`));
+
+    // Трофеи
+    const trophyHtml = listOrEmpty(s.trophies, x =>
+      kv(UI.esc(x.name), `ур. ${x.level}/${x.maxLevel}`));
+
+    // Диверсанты
+    const sabHtml = s.saboteurs.types.map(x =>
+      kv(x.name, `${UI.fmtNum(x.count)} <span class="muted small">(работает ${UI.fmtNum(x.active)}/${UI.fmtNum(x.limit)})</span>`)).join('') +
+      kv('💀 Смертники', `${s.saboteurs.suicide}/${s.saboteurs.suicideLimit}`);
+
+    // Группы + прочее
+    const groupHtml =
+      kv('🤝 Личный альянс', `${s.allianceMembers} чел.`) +
+      kv('🎖 Легион', s.legion ? `${UI.esc(s.legion.name)} <span class="muted small">(${s.legion.rankName}, ${s.legion.members} чел.)</span>` : '—') +
+      kv('🚀 Ракетные шахты', UI.fmtNum(s.silos)) +
+      kv('🔥 Серия входов', UI.fmtNum(s.extra.loginStreak)) +
+      kv('👥 Рефералов', UI.fmtNum(s.extra.refCount)) +
+      kv('🏆 Рейтинг сезона', UI.fmtNum(s.extra.seasonRating));
+
+    inner.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:18px;font-weight:bold">${s.main.flag} ${UI.esc(s.main.name)}${s.main.isAdmin ? ' <span class="badge">admin</span>' : ''}</div>
+        <button class="btn btn-inline" onclick="document.getElementById('pd-modal').remove()">✖</button>
+      </div>
+      ${mainHtml}
+      ${section('💰 Ресурсы', resHtml)}
+      ${section('📈 Навыки', skillsHtml)}
+      ${section('⚔ Мощь и бои', powerHtml)}
+      ${section('🚜 Техника', armyHtml)}
+      ${section('🏛 Постройки', buildHtml)}
+      ${section('🛸 Секретные разработки', secretHtml)}
+      ${section('🏆 Трофеи', trophyHtml)}
+      ${section('🥷 Диверсанты', sabHtml)}
+      ${section('👥 Группы и прочее', groupHtml)}
+      <button class="btn btn-orange mt" style="width:100%" onclick="document.getElementById('pd-modal').remove()">Закрыть</button>`;
   },
 
   renderGrantForm(p) {
