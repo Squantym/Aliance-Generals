@@ -8,7 +8,7 @@ import config = require('../../config/gameConfig');
 import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
-import social = require('./social');
+import notifications = require('./notifications');
 import notif = require('./notifications');
 import type { User, Notices } from '../types';
 
@@ -311,8 +311,8 @@ function build(user: User, buildingId: string, notices: Notices) {
   for (const memberId of l.members) {
     if (memberId !== user.id) {
       const m = users[memberId];
-      if (m) social.systemMail(m, 'Развитие легиона',
-        `Лидер «${l.name}» прокачал «${b.name}» до уровня ${lvl + 1}.`);
+      if (m) notifications.push(m.id, 'legion_upgrade', 'Развитие легиона',
+        { text: `Лидер «${l.name}» прокачал «${b.name}» до уровня ${lvl + 1}.` });
     }
   }
   return { buildingId: b.id, level: l.buildings[b.id] };
@@ -795,7 +795,7 @@ function resolveWars(): void {
         const m = users[memberId];
         if (!m) continue;
         if (xp > 0) player.addXp(m, xp, []);
-        social.systemMail(m, 'Итог кланвойны', msg);
+        notifications.push(m.id, 'legion_war_result', 'Итог кланвойны', { text: msg });
       }
     };
     notify(winner, `Победа! «${winner.name}» разгромил «${loser.name}». Трофеи: $${u.fmt(loot)} в казну.`, config.LEGION.WAR_XP_WIN);
@@ -851,7 +851,7 @@ function declareWar(user: User, enemyId: string, notices: Notices) {
   const announce = (legion, msg) => {
     for (const memberId of legion.members) {
       const m = users[memberId];
-      if (m) social.systemMail(m, 'Кланвойна!', msg);
+      if (m) notifications.push(m.id, 'legion_war', 'Кланвойна!', { text: msg });
     }
   };
   announce(l, `Ваш легион объявил войну «${enemy.name}». Битва через ${config.LEGION.WAR_PREPARE_HOURS} ч.`);
@@ -959,6 +959,20 @@ function publicView(legionId: string): any {
   };
 }
 
+// ── АДМИН: пополнить казну ЛЮБОГО легиона напрямую (без списания у
+// какого-либо игрока — это «создание» ресурсов администратором, как и
+// admin.grant для личных ресурсов игрока) ──
+function adminDeposit(adminUser: User, legionId: string, amount: number, notices: Notices) {
+  const l = legions()[legionId];
+  if (!l) throw new u.ApiError('Легион не найден');
+  const amt = u.toInt(amount, 0);
+  if (amt <= 0) throw new u.ApiError('Сумма должна быть положительной');
+  l.treasury = (l.treasury || 0) + amt;
+  db.save('legions');
+  notices.push(`💰 Администратор пополнил казну легиона «${l.name}» на $${u.fmt(amt)}.`);
+  return { legionId, treasury: l.treasury };
+}
+
 export = {
   view, deposit, build, declareWar, resolveWars,
   exchangeToReserves, buildBattle, depositResources,
@@ -966,6 +980,7 @@ export = {
   shopBuy, gearPick,
   challengeLegion, acceptChallenge, declineChallenge,
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
+  adminDeposit,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
   setReady:         (...a) => require('./legionBattle').setReady(...a),

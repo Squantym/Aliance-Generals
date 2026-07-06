@@ -36,6 +36,47 @@ async function _offerRestore(kind) {
   } catch (e) { UI.toast('⛔ ' + e.message); return false; }
 }
 
+// ---------- Шаблон карточки взлома банка (сейф + мини-игра быки/коровы) ----------
+function bankHackCardHtml(enc) {
+  const historyHtml = (enc.history || []).slice().reverse().map((h) =>
+    `<div class="kv"><span class="k">${h.guess.split('').join(' ')}</span><span class="v">🎯 ${h.bulls} · 🔵 ${h.cows}</span></div>`
+  ).join('');
+  return `
+    <div class="card" id="bankhack-card" style="border-color:var(--gold)">
+      <div class="result-title" style="color:var(--gold)">🔓 Обнаружен сейф!</div>
+      <p class="center">У игрока <b>${UI.esc(enc.targetName)}</b> в банке лежит <b class="gold"><span class="ic-dollar"></span> ${UI.fmtNum(enc.bankAmount)}</b>.
+      Взломать сейф можно только <b>1 раз в день</b> — используйте попытку с умом!</p>
+      <div class="field-row mt">
+        <input type="text" id="bh-code" placeholder="4 разные цифры" maxlength="4" inputmode="numeric" style="flex:1;text-align:center;font-size:20px;letter-spacing:6px">
+        <button class="btn btn-orange btn-inline" id="bh-guess">Ввести</button>
+      </div>
+      <p class="muted small center mt">Осталось попыток разгадать код: <b>${enc.triesLeft}</b> / ${enc.maxTries}. 🎯 — цифра на своём месте, 🔵 — цифра есть, но не там.</p>
+      ${historyHtml ? `<div class="mt">${historyHtml}</div>` : ''}
+      <button class="btn mt" id="bh-skip" style="width:100%">⚔️ Продолжить бой без взлома</button>
+    </div>`;
+}
+
+// ---------- Шаблон карточки разминирования (провода) ----------
+function mineDefuseCardHtml(enc) {
+  const swatch = (w) => `background:${w.hex};border:2px solid rgba(255,255,255,.25)`;
+  return `
+    <div class="card" id="minedefuse-card" style="border-color:var(--red)">
+      <div class="result-title" style="color:var(--red)">💥 РАСТЯЖКА!</div>
+      <p class="center">Вы наступили на мину. Среди проводов только <b>один</b> цвет встречается в одиночку — остальные идут парами/тройками. Перережьте <b>именно его</b>. Ошибётесь — взрыв. Второго шанса не будет.</p>
+      ${enc.canSacrifice ? `
+        <button class="btn btn-orange mt" id="minedefuse-sacrifice" style="width:100%">💀 Пожертвовать смертником (гарантированное спасение)</button>
+        <p class="center small muted mt">— или рискните и обезвредьте провода сами —</p>
+      ` : ''}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px">
+        ${enc.wires.map((w, i) => `
+          <button class="btn" data-wire="${i}" style="height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+            <span style="display:inline-block;width:22px;height:22px;border-radius:5px;${swatch(w)}"></span>
+            <span class="small">${UI.esc(w.name)}</span>
+          </button>`).join('')}
+      </div>
+    </div>`;
+}
+
 // ---------- ВОЙНА ----------
 App.screens.war = async (c) => {
   await App.refreshMe();
@@ -137,11 +178,19 @@ App.screens.war = async (c) => {
 
   const warTab = App._warTab || 'targets';
 
+  // Окно «встречи»: сейф банка или мина — перекрывает обычный результат
+  // боя, пока игрок не примет решение (аналогично окну фаталити).
+  const enc = App._warEncounter;
+  const encounterHtml = enc
+    ? (enc.type === 'bank_hack' ? bankHackCardHtml(enc) : mineDefuseCardHtml(enc))
+    : '';
+
   c.innerHTML = `
     <div class="title">Война</div>
     ${eventBanner}
-    ${fatalityHtml}
-    ${resultHtml}
+    ${encounterHtml}
+    ${!enc ? fatalityHtml : ''}
+    ${!enc ? resultHtml : ''}
     <div class="tabs">
       <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">🎯 Цели</div>
       <div class="tab ${warTab === 'sanctions' ? 'active' : ''}" data-wartab="sanctions">💰 Санкции</div>
@@ -196,16 +245,49 @@ App.screens.war = async (c) => {
     document.getElementById('fat-ear').onclick = () => doFatality('ear');
     document.getElementById('fat-mercy').onclick = () => doFatality('mercy');
   }
+  if (enc && enc.type === 'bank_hack') wireBankHackHandlers();
+  if (enc && enc.type === 'mine_defuse') {
+    c.querySelectorAll('[data-wire]').forEach((btn) => {
+      btn.onclick = () => {
+        if (!confirm('Перерезать этот провод? Отменить будет нельзя.')) return;
+        mineDefuseWire(Number(btn.dataset.wire));
+      };
+    });
+    const sacrificeBtn = document.getElementById('minedefuse-sacrifice');
+    if (sacrificeBtn) sacrificeBtn.onclick = () => {
+      if (!confirm('Пожертвовать смертником? Он погибнет, но вы гарантированно избежите взрыва.')) return;
+      mineSacrifice();
+    };
+  }
+  function wireBankHackHandlers() {
+    const guessBtn = document.getElementById('bh-guess');
+    const input = document.getElementById('bh-code');
+    const skipBtn = document.getElementById('bh-skip');
+    if (guessBtn && input) {
+      const submit = () => {
+        const code = input.value.trim();
+        if (!/^\d{4}$/.test(code)) { UI.toast('⛔ Введите 4 цифры'); return; }
+        if (new Set(code.split('')).size !== 4) { UI.toast('⛔ Цифры не должны повторяться'); return; }
+        bankHackGuess(code);
+      };
+      guessBtn.onclick = submit;
+      input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+      input.focus();
+    }
+    if (skipBtn) skipBtn.onclick = () => { if (confirm('Отказаться от взлома и продолжить бой?')) bankHackSkip(); };
+  }
   const refreshBtn = document.getElementById('war-refresh');
   if (refreshBtn) refreshBtn.onclick = () => { App._lastBattle = null; App.rerender(); };
 
-  // Выполнить атаку и перерисовать экран с результатом
+  // Выполнить атаку и перерисовать экран с результатом (либо результат
+  // боя, либо «встреча» — окно сейфа или мины, которое перекрывает
+  // обычную панель результата, пока игрок не примет решение)
   async function attackTarget(targetId) {
     try {
-      App._lastBattle = await API.post('/api/war/attack', { targetId });
+      const r = await API.post('/api/war/attack', { targetId });
+      handleAttackOutcome(r);
       await App.refreshMe();
       App.rerender();
-      // Прокручиваем наверх к окну боя, чтобы игрок видел результат атаки
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       // Нет боеприпасов — предложить восстановление за золото и повторить атаку
@@ -213,8 +295,103 @@ App.screens.war = async (c) => {
         if (await _offerRestore('ammo')) return attackTarget(targetId);
         return;
       }
+      // Здоровье слишком низкое для атаки — предложить аптечку с рынка
+      if (/подлечитесь/i.test(e.message)) {
+        if (await _offerRestore('health')) return attackTarget(targetId);
+        return;
+      }
       UI.toast('⛔ ' + e.message);
     }
+  }
+
+  // Разбираем ответ атаки: обычный бой ИЛИ окно взлома банка/мины.
+  // r.bankHack, если есть, — это ИТОГ уже завершённого взлома (пришёл
+  // вместе с продолжением атаки) — просто уведомляем о нём тостом.
+  function handleAttackOutcome(r) {
+    if (r.bankHack) {
+      const bh = r.bankHack;
+      if (bh.alarmed) UI.toast('🚨 Код верный, но сработала сигнализация — взлом сорван!');
+      else if (bh.stolen > 0) UI.toast(`🔓 Сейф взломан! Похищено 🪙 из банка: $${UI.fmtNum(bh.stolen)}`);
+      else if (bh.outOfTries) UI.toast('⛔ Попытки закончились — код сейфа не разгадан.');
+    }
+    if (r.encounter === 'bank_hack') {
+      App._warEncounter = { type: 'bank_hack', ...r };
+      App._lastBattle = null;
+    } else if (r.encounter === 'mine_defuse') {
+      App._warEncounter = { type: 'mine_defuse', wires: r.wires, canSacrifice: r.canSacrifice };
+      App._lastBattle = null;
+    } else {
+      App._warEncounter = null;
+      App._lastBattle = r;
+    }
+  }
+
+  // ---------- Взлом банка: ввод кода ----------
+  async function bankHackGuess(code) {
+    try {
+      const r = await API.post('/api/war/bank-hack/guess', { code });
+      if (r.encounter === 'bank_hack') {
+        // Мини-игра продолжается — обновляем окно (не полный rerender,
+        // чтобы не сбросить фокус на поле ввода)
+        App._warEncounter = { type: 'bank_hack', ...App._warEncounter, ...r };
+        renderBankHackCard();
+        return;
+      }
+      handleAttackOutcome(r);
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
+  async function bankHackSkip() {
+    try {
+      const r = await API.post('/api/war/bank-hack/skip');
+      handleAttackOutcome(r);
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
+  // ---------- Разминирование: выбор провода ----------
+  async function mineDefuseWire(idx) {
+    try {
+      const r = await API.post('/api/war/mine-defuse', { wireIndex: idx });
+      App._warEncounter = null;
+      if (r.exploded) {
+        const lostTechText = (r.lostTech || []).map((x) => `${UI.esc(x.name)} ×${x.count}`).join(', ') || 'без потерь техники';
+        const lostSabText = Object.entries(r.lostSaboteurs || {}).map(([k, v]) => `${k} ×${v}`).join(', ');
+        await UI.confirm(
+          `Провод оказался с сюрпризом — взрыв!\n\nЗдоровье снесено полностью. Уничтожено ${r.techLossPct}% техники, участвовавшей в бою: ${lostTechText}.` +
+          (lostSabText ? `\n\nПогибло диверсантов: ${lostSabText}.` : ''),
+          { title: '💥 ВЗРЫВ', icon: '💥', okText: 'Понятно', cancelText: '' }
+        );
+        App._lastBattle = null;
+      } else {
+        App._lastBattle = r;
+      }
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
+  // ---------- Разминирование: пожертвовать смертником ----------
+  async function mineSacrifice() {
+    try {
+      const r = await API.post('/api/war/mine-sacrifice');
+      App._warEncounter = null;
+      App._lastBattle = r;
+      UI.toast('💀 Смертник пожертвовал собой — вы избежали взрыва!');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
+  // Точечное обновление карточки взлома банка без полного rerender
+  // (иначе при вводе кода сбрасывался бы фокус/значение поля)
+  function renderBankHackCard() {
+    const card = document.getElementById('bankhack-card');
+    if (card) card.outerHTML = bankHackCardHtml(App._warEncounter);
+    wireBankHackHandlers();
   }
 
   async function doFatality(choice) {

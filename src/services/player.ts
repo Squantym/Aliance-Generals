@@ -29,7 +29,11 @@ function trophyDiscountPct(user: User, applyKey: string): number {
 //   - временные эффекты (допинг и т.п.)          — через effMul
 // Эта функция используется и в бою, и в отображении профиля/me —
 // чтобы игрок видел те же числа, с которыми реально пойдёт в бой.
-function totalPower(user: User, mode: string): any {
+// debuffs — опциональный дебафф диверсантов противника: {ground,air,sea,secret,building}
+// (доли 0..1, напр. 0.1 = -10%). Применяется к КАЖДОМУ виду техники
+// отдельно, ДО трофеев/временных эффектов — те продолжают действовать
+// на итоговую (уже уменьшенную) мощь, как и раньше.
+function totalPower(user: User, mode: string, debuffs?: any): any {
   const army = buildArmy(user, mode);
   let trophies;
   try { trophies = require('./trophies'); } catch (e) { trophies = null; }
@@ -37,14 +41,29 @@ function totalPower(user: User, mode: string): any {
   const trophyDef = trophies ? trophies.defBonus(user) : 0;
   const tempMul = effMul(user, mode === 'atk' ? 'atk_pct' : 'def_pct');
 
+  // Мощь техники: если задан дебафф диверсантов — пересобираем из
+  // разбивки по типам (каждый вид уменьшен своим % отдельно), иначе —
+  // как раньше, единым числом army.power.
+  let armyBase = army.power;
+  if (debuffs) {
+    const bt = army.byType;
+    armyBase = Math.round(
+      bt.ground * (1 - Math.min(1, debuffs.ground || 0)) +
+      bt.air    * (1 - Math.min(1, debuffs.air || 0)) +
+      bt.sea    * (1 - Math.min(1, debuffs.sea || 0)) +
+      bt.secret * (1 - Math.min(1, debuffs.secret || 0))
+    );
+  }
+
   // Мощь техники (с бонусом страны по типу + легионом) × трофей × эффекты
-  const armyPow = Math.round(army.power * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
+  const armyPow = Math.round(armyBase * tempMul * (1 + (mode === 'atk' ? trophyAtk : trophyDef)));
 
   // В защите добавляем постройки ОТДЕЛЬНО: трофей на них НЕ действует.
   // Бонус страны (defAll) — действует, т.к. это «государственная» скидка.
   let buildPow = 0;
   if (mode === 'def') {
     buildPow = buildingDef(user) * config.BUILDING_DEF_POWER;
+    if (debuffs && debuffs.building) buildPow = Math.round(buildPow * (1 - Math.min(1, debuffs.building)));
     const country = config.COUNTRY_BY_ID[user.country];
     if (country && country.mod) {
       const mm = country.mod;
@@ -350,11 +369,16 @@ function buildArmy(user: User, mode: string): any {
 
   // Секретные разработки идут в бой ВСЕ ЦЕЛИКОМ (без ограничения cap)
   let power = 0, taken = 0, secretTaken = 0, unitTaken = 0;
+  // Разбивка мощи по типам — нужна для дебаффа диверсантов (каждый вид
+  // диверсантов режет мощь ТОЛЬКО своего типа техники противника).
+  let powerGround = 0, powerAir = 0, powerSea = 0, powerSecret = 0;
   for (const e of secretEntries) {
     e.taken = e.count;
     taken += e.count;
     secretTaken += e.count;
-    power += e.count * (mode === 'atk' ? e.atk : e.def);
+    const p = e.count * (mode === 'atk' ? e.atk : e.def);
+    power += p;
+    powerSecret += p;
   }
 
   // Обычная техника ограничена лимитом альянса (cap)
@@ -363,7 +387,14 @@ function buildArmy(user: User, mode: string): any {
     const t = Math.min(e.count, left);
     e.taken = t;
     left -= t; taken += t; unitTaken += t;
-    power += t * (mode === 'atk' ? e.atk : e.def);
+    const p = t * (mode === 'atk' ? e.atk : e.def);
+    power += p;
+    const cu = config.UNIT_BY_ID[e.unitId];
+    if (cu) {
+      if (cu.type === 'ground') powerGround += p;
+      else if (cu.type === 'air') powerAir += p;
+      else if (cu.type === 'sea') powerSea += p;
+    }
     if (left <= 0) break;
   }
   unitEntries.forEach((e) => { if (e.taken === undefined) e.taken = 0; });
@@ -373,11 +404,19 @@ function buildArmy(user: User, mode: string): any {
   // Клановые бонусы от построек легиона: умножаем итоговую мощь
   const legionAtk = legionBonus(user, 'atk');
   const legionDef = legionBonus(user, 'def');
-  power = Math.round(power * (1 + (mode === 'atk' ? legionAtk : legionDef)));
+  const legionMul = 1 + (mode === 'atk' ? legionAtk : legionDef);
+  power = Math.round(power * legionMul);
+  powerGround = Math.round(powerGround * legionMul);
+  powerAir = Math.round(powerAir * legionMul);
+  powerSea = Math.round(powerSea * legionMul);
+  powerSecret = Math.round(powerSecret * legionMul);
   // taken — общее число (для обратной совместимости), unitTaken/secretTaken —
   // раздельно для корректного отображения «Техники в бою: X / cap»
   // (секретные разработки НЕ входят в cap и не должны путать это число).
-  return { power, taken, unitTaken, secretTaken, cap, entries };
+  return {
+    power, taken, unitTaken, secretTaken, cap, entries,
+    byType: { ground: powerGround, air: powerAir, sea: powerSea, secret: powerSecret },
+  };
 }
 
 // Суммарные очки защиты оборонительных построек
@@ -775,6 +814,18 @@ function mePayload(user: User): any {
     legion: legionInfo(user),
     tutorial: tutorialView(user),
     pendingFatality: user.pendingFatality ? { name: user.pendingFatality.name } : null,
+    // Безопасные сводки незавершённых мини-игр — БЕЗ кода сейфа и БЕЗ
+    // индекса верного провода (иначе игрок мог бы подсмотреть в консоли).
+    pendingBankHack: user.pendingBankHack ? {
+      targetId: user.pendingBankHack.targetId, targetName: user.pendingBankHack.targetName,
+      bankAmount: user.pendingBankHack.bankAmount, digits: user.pendingBankHack.digits,
+      triesLeft: user.pendingBankHack.triesLeft, maxTries: user.pendingBankHack.maxTries,
+      history: user.pendingBankHack.history,
+    } : null,
+    pendingMineDefuse: user.pendingMineDefuse ? {
+      wires: require('./landmines').wiresView(user.pendingMineDefuse.wires),
+    } : null,
+    landmines: user.landmines || 0,
     pendingGifts: user.pendingGifts && user.pendingGifts.length ? user.pendingGifts : [],
     effects: effectsView(user),
     needsVerification: (() => { try { return require('./antibot').needsVerification(user); } catch (e) { return false; } })(),

@@ -205,9 +205,53 @@ export interface User {
   allianceInviteLog?: number[];   // метки времени отправленных заявок (для лимита/час)
   legionId: string | null;
 
+  // Взлом банков (трофей «Медвежатник»): 1 попытка ВЗЛОМА в день —
+  // счётчик увеличивается, когда игрок реально начал вскрывать сейф
+  // (выбрал «Попытаться»), а не когда ему просто предложили окно.
+  lastBankHackDay?: string;      // YYYY-MM-DD дня последней попытки
+  bankHackCountToday?: number;   // сколько попыток взлома уже сделано сегодня (лимит 10)
+  bankHackVictimsToday?: string[]; // id жертв, которых уже пытались взломать сегодня (1 раз на жертву)
+  // Незавершённая попытка взлома (окно ещё открыто у игрока)
+  pendingBankHack?: {
+    targetId: string; targetName: string; bankAmount: number;
+    code: string;                // загаданный 4-значный код (не отдаётся клиенту)
+    digits: number; triesLeft: number; maxTries: number;
+    history: { guess: string; bulls: number; cows: number }[];
+  } | null;
+
+  // Мины (черный рынок, трофей «Растяжка»): запас мин у игрока как
+  // у ЖЕРТВЫ атаки (срабатывают автоматически при атаке на него).
+  // Названо landmines (не mines!), т.к. user.mines уже занято золотыми
+  // шахтами в разделе «Производство» (см. src/services/mines.ts).
+  landmines?: number;            // сколько мин в запасе (макс. 10)
+  // Незавершённая попытка разминирования (нападающий нарвался на мину
+  // и должен выбрать провод, прежде чем бой продолжится/сорвётся)
+  pendingMineDefuse?: {
+    targetId: string; isBot: boolean;
+    wires: string[];              // цвета проводов по порядку (для UI)
+    correctIdx: number;           // индекс безопасного провода (не отдаётся клиенту)
+    techLossPct: number;          // % техники к уничтожению при взрыве (по трофею жертвы)
+    aArmyEntries: any[];          // «замороженная» армия атакующего на момент атаки
+  } | null;
+
   lastIncomeAt: number;
   pendingFatality: PendingFatality | null;
   lastChatAt: number;
+
+  // ── Диверсанты (см. src/services/saboteurs.ts) ──────────────────
+  // Наличие каждого вида (может быть БОЛЬШЕ лимита — тогда излишек не
+  // работает, лежит в запасе, пока не подняли лимит апгрейдом).
+  saboteurs?: {
+    ground: number; sea: number; air: number;
+    secret: number; building: number; suicide: number;
+  };
+  // Личный лимит («сколько работает одновременно») по каждому виду,
+  // КРОМЕ смертников — у них лимит фиксирован (SABOTEURS.suicide.fixedLimit).
+  saboteurLimits?: { ground: number; sea: number; air: number; secret: number; building: number };
+  // Накопительный счётчик уничтоженных ОБЫЧНЫХ диверсантов (наземных/
+  // морских/воздушных) — при пересечении каждого кратного 5 гибнет
+  // 1 секретный и 1 построечный (правило 5:1, см. config.SABOTEURS).
+  saboteurRareLossAccum?: number;
 
   // Необязательные поля, появляющиеся в рантайме
   recentAttacks?: Record<string, number[]>;

@@ -61,6 +61,9 @@ function checkCompleted(user: User): void {
 
 // Уровень разведывательного трофея (для features.spyOn)
 function spyLevel(user: User): number { return levelOf(user, 'satellite'); }
+// Уровень трофея взлома банков («Медвежатник») и мин («Растяжка»)
+function bankHackLevel(user: User): number { return levelOf(user, 'safecracker'); }
+function mineLevel(user: User): number { return levelOf(user, 'tripwire'); }
 
 // Человекочитаемое описание, что рассекречивает спутник-шпион на данном уровне
 function spyUnlockText(lvl: number): string {
@@ -72,6 +75,21 @@ function spyUnlockText(lvl: number): string {
   if (r.secrets != null)   parts.push(`секретки ${Math.round(r.secrets * 100)}%`);
   if (r.live) parts.push('live 3 дня');
   return parts.join(', ');
+}
+
+// Текст для трофея «Медвежатник»: шанс окна / шанс успеха / % кражи
+function bankHackText(lvl: number): string {
+  const off = config.BANK_HACK.offerChancePct(lvl).toFixed(1).replace(/\.0$/, '');
+  const succ = config.BANK_HACK.successChancePct[Math.max(0, Math.min(10, lvl))];
+  const loot = config.BANK_HACK.lootPct[Math.max(0, Math.min(10, lvl))];
+  return `окно ${off}%, успех ${succ}%, кража ${loot}%`;
+}
+
+// Текст для трофея «Растяжка»: шанс срабатывания мины / % урона техникой
+function mineText(lvl: number): string {
+  const trig = config.MINES.triggerChancePct[Math.max(0, Math.min(10, lvl))];
+  const dmg = config.MINES.techLossPct[Math.max(0, Math.min(10, lvl))];
+  return `срабатывание ${trig}%, урон техникой ${dmg}%`;
 }
 
 // Список трофеев для UI
@@ -87,13 +105,18 @@ function list(user: User) {
       const trainMin = config.trophyTrainMinutes(targetLevel, (t as any).timeMul);
       const secLeft = active ? Math.max(0, Math.floor((active.finishesAt - Date.now()) / 1000)) : 0;
       const isSpy = !!(t as any).spy;
+      const isBankHack = !!(t as any).bankHack;
+      const isMine = !!(t as any).mine;
+      const isTextTrophy = isSpy || isBankHack || isMine;
+      const textFor = (lvl: number) => isSpy ? spyUnlockText(lvl) : isBankHack ? bankHackText(lvl) : mineText(lvl);
       return {
         id: t.id, name: t.name, desc: t.desc, level, flavor: !!t.flavor, expensive: !!t.expensive,
-        spy: isSpy,
-        // Для спутника-шпиона процентного бонуса нет — вместо него текст разблокировки.
-        bonusNow:  isSpy ? spyUnlockText(level) : level * t.perLvl,
-        bonusNext: isSpy
-          ? (level < config.TROPHY_MAX_LEVEL ? spyUnlockText(targetLevel) : null)
+        spy: isSpy, bankHack: isBankHack, mine: isMine,
+        // Для «текстовых» трофеев (спутник/медвежатник/растяжка) процентного
+        // бонуса нет — вместо него человекочитаемое описание разблокировки.
+        bonusNow:  isTextTrophy ? textFor(level) : level * t.perLvl,
+        bonusNext: isTextTrophy
+          ? (level < config.TROPHY_MAX_LEVEL ? textFor(targetLevel) : null)
           : (level < config.TROPHY_MAX_LEVEL ? targetLevel * t.perLvl : null),
         baseNextCost: level < config.TROPHY_MAX_LEVEL ? baseNextCost(level, t) : null,
         nextCost:     level < config.TROPHY_MAX_LEVEL ? nextCost(level, t) : null,
@@ -173,5 +196,5 @@ function missionEnergyMul(user: User): number {
 
 export = {
   list, startUpgrade, boostUpgrade, bonusOf, discountPct, checkCompleted,
-  atkBonus, defBonus, critPower, missionEnergyMul, spyLevel,
+  atkBonus, defBonus, critPower, missionEnergyMul, spyLevel, bankHackLevel, mineLevel,
 };

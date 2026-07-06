@@ -7,7 +7,7 @@
 import config = require('../../config/gameConfig');
 import u = require('../core/utils');
 import player = require('./player');
-import social = require('./social');
+import notifications = require('./notifications');
 import type { User, Notices } from '../types';
 
 // Увеличить счётчик и сразу проверить пороги
@@ -32,7 +32,7 @@ function check(user: User, notices?: Notices): void {
       if (gold) player.addGold(user, gold);
       const text = `🏆 Достижение «${a.name}» — этап ${s}/5! Награда: $${u.fmt(dollars)}${gold ? ` и 🪙 ${gold}` : ''}`;
       if (notices) notices.push(text);
-      social.systemMail(user, `Достижение: ${a.name}`, text);
+      notifications.push(user.id, 'achievement', `Достижение: ${a.name}`, { text });
       // Разблокирован новый титул за эту ступень
       const titleName = ((a as any).titles || [])[s - 1];
       if (titleName && notices) notices.push(`🏅 Разблокирован титул «${titleName}»! Выберите его в разделе «Титулы».`);

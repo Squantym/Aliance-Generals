@@ -994,34 +994,49 @@ App.screens.chat = async (c) => {
 
 // ---------- ПОЧТА ----------
 App.screens.mail = async (c, param) => {
+  // Открытая переписка с конкретным собеседником (param = его id)
   if (param && param !== 'new') {
-    const { mail } = await API.get('/api/mail/' + encodeURIComponent(param));
+    const thread = await API.get('/api/mail/' + encodeURIComponent(param));
     await App.refreshMe();
     c.innerHTML = `
-      <div class="title">Письмо</div>
-      <div class="card">
-        <div class="kv"><span class="k">От</span><span class="v name">${UI.esc(mail.fromName)}</span></div>
-        <div class="kv"><span class="k">Тема</span><span class="v">${UI.esc(mail.subject)}</span></div>
-        <div class="kv"><span class="k">Когда</span><span class="v">${UI.fmtDate(mail.at)}</span></div>
-        <hr class="hr">
-        <p style="white-space:pre-wrap">${UI.esc(mail.text)}</p>
+      <div class="title">✉ ${UI.esc(thread.otherName)}</div>
+      <div class="card" id="mail-thread" style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto">
+        ${thread.messages.map((m) => `
+          <div style="align-self:${m.dir === 'out' ? 'flex-end' : 'flex-start'};max-width:80%;background:${m.dir === 'out' ? 'var(--orange-10, rgba(255,150,50,.12))' : 'rgba(255,255,255,.06)'};border-radius:10px;padding:8px 12px">
+            ${m.subject ? `<div class="small" style="opacity:.7;margin-bottom:2px"><b>${UI.esc(m.subject)}</b></div>` : ''}
+            <div style="white-space:pre-wrap">${UI.esc(m.text)}</div>
+            <div class="muted small" style="margin-top:4px;text-align:right">${UI.fmtDate(m.at)}</div>
+          </div>`).join('')}
       </div>
-      <div class="btn-row">
-        <button class="btn" onclick="App.go('mail')">← К списку</button>
-        ${mail.fromId ? `<button class="btn btn-orange" id="ml-reply">Ответить</button>` : ''}
+      <div class="card mt">
+        <textarea id="ml-reply-text" maxlength="2000" placeholder="Ваш ответ..."></textarea>
+        <div class="btn-row mt">
+          <button class="btn" onclick="App.go('mail')">← К переписке</button>
+          <button class="btn btn-orange" id="ml-reply-send">Отправить</button>
+        </div>
       </div>`;
-    const reply = document.getElementById('ml-reply');
-    if (reply) reply.onclick = () => { App._mailTo = mail.fromName; App.go('mail/new'); };
+    // Прокручиваем к последнему сообщению
+    const box = document.getElementById('mail-thread');
+    if (box) box.scrollTop = box.scrollHeight;
+    document.getElementById('ml-reply-send').onclick = async () => {
+      const text = document.getElementById('ml-reply-text').value;
+      if (!text.trim()) { UI.toast('⛔ Пустое письмо'); return; }
+      try {
+        await API.post('/api/mail', { toName: thread.otherName, subject: '', text });
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
     return;
   }
 
+  // Новое письмо (собеседник ещё не выбран из списка)
   if (param === 'new') {
     c.innerHTML = `
       <div class="title">Новое письмо</div>
       <div class="card">
         <label>Кому (позывной)</label>
         <input type="text" id="ml-to" value="${UI.esc(App._mailTo || '')}">
-        <label>Тема</label>
+        <label>Тема (необязательно)</label>
         <input type="text" id="ml-subj" maxlength="80">
         <label>Текст</label>
         <textarea id="ml-text" maxlength="2000"></textarea>
@@ -1033,8 +1048,9 @@ App.screens.mail = async (c, param) => {
     App._mailTo = null;
     document.getElementById('ml-send').onclick = async () => {
       try {
+        const toName = document.getElementById('ml-to').value;
         await API.post('/api/mail', {
-          toName: document.getElementById('ml-to').value,
+          toName,
           subject: document.getElementById('ml-subj').value,
           text: document.getElementById('ml-text').value,
         });
@@ -1044,22 +1060,30 @@ App.screens.mail = async (c, param) => {
     return;
   }
 
-  const { messages } = await API.get('/api/mail');
-  const unreadCount = messages.filter((msg) => !msg.read).length;
+  // Список переписок (тредов) — только письма от игроков, без уведомлений
+  const { threads } = await API.get('/api/mail');
+  const unreadCount = threads.reduce((s, t) => s + (t.unread || 0), 0);
   c.innerHTML = `
     <div class="title">Почта</div>
+    <p class="muted small" style="margin:-4px 4px 10px">Только личные письма от игроков. Системные события (приглашения, ачивки и т.п.) смотрите в 🔔 уведомлениях.</p>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn btn-orange" onclick="App.go('mail/new')" style="flex:1">✍ Написать письмо</button>
       ${unreadCount > 0 ? `<button class="btn btn-inline" id="mail-read-all">✓ Прочитать все (${unreadCount})</button>` : ''}
     </div>
     <div class="card">
-      ${messages.length ? messages.map((msg) => `
-        <div class="list-row" style="cursor:pointer" onclick="App.go('mail/${msg.id}')">
+      ${threads.length ? threads.map((t) => {
+        const last = t.messages[t.messages.length - 1];
+        const preview = (last.text || '').slice(0, 60) + (last.text && last.text.length > 60 ? '…' : '');
+        return `
+        <div class="list-row" style="cursor:pointer" onclick="App.go('mail/${t.otherId}')">
           <div class="grow">
-            <span class="${msg.read ? 'muted' : 'name'}">${msg.read ? '📭' : '📬'} ${UI.esc(msg.fromName)}</span> — ${UI.esc(msg.subject)}
-            <br><span class="muted small">${UI.fmtDate(msg.at)}</span>
+            <span class="${t.unread > 0 ? 'name' : 'muted'}">${t.unread > 0 ? '📬' : '📭'} ${UI.esc(t.otherName)}</span>
+            ${t.unread > 0 ? `<span class="badge">${t.unread}</span>` : ''}
+            <br><span class="muted small">${last.dir === 'out' ? 'Вы: ' : ''}${UI.esc(preview)}</span>
+            <br><span class="muted small">${UI.fmtDate(t.lastAt)}</span>
           </div>
-        </div>`).join('') : '<p class="muted center">Почтовый ящик пуст.</p>'}
+        </div>`;
+      }).join('') : '<p class="muted center">Писем от игроков пока нет. Нажмите «Написать письмо», чтобы начать переписку.</p>'}
     </div>`;
   const readAllBtn = document.getElementById('mail-read-all');
   if (readAllBtn) readAllBtn.onclick = async () => {

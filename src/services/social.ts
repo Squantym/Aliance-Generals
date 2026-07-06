@@ -43,43 +43,69 @@ function chatPost(user: User, text: string) {
   if (w.chat.length > config.CHAT.KEEP) w.chat.splice(0, w.chat.length - config.CHAT.KEEP);
 }
 
-// ---------- ПОЧТА ----------
-// Письмо от системы или другого игрока. fromId=null означает «Генштаб».
-function mailTo(targetUser: User, fromName: string, subject: string, text: string, fromId: string | null = null): void {
-  const box = mailboxOf(targetUser.id);
-  box.push({
-    id: u.uid(10), fromId, fromName,
-    subject: String(subject || '(без темы)').slice(0, 80),
-    text: String(text || '').slice(0, config.MAIL.MAX_LEN),
-    at: Date.now(), read: false,
-  });
+// ---------- ПОЧТА (только письма между игроками, треды по собеседнику) ----------
+// Каждое письмо кладётся ОБЕИМ сторонам: получателю (dir:'in') и
+// отправителю (dir:'out', уже прочитано — сам же написал). Это даёт
+// полноценную историю переписки с каждым конкретным игроком.
+// Системные события (приглашения, ачивки, аукцион и т.п.) сюда больше
+// НЕ попадают — для них есть notifications.ts (колокольчик).
+function pushMailEntry(userId: string, entry: any): void {
+  const box = mailboxOf(userId);
+  box.push(entry);
   if (box.length > config.MAIL.KEEP) box.splice(0, box.length - config.MAIL.KEEP);
+}
+
+// Письмо ТОЛЬКО от реального игрока — сохраняем копию и отправителю
+// (dir:'out'), чтобы у обоих была полная история переписки.
+function mailBetween(fromUser: User, toUser: User, subject: string, text: string): void {
+  const at = Date.now();
+  const s = String(subject || '(без темы)').slice(0, 80);
+  const t = String(text || '').slice(0, config.MAIL.MAX_LEN);
+  pushMailEntry(toUser.id, { id: u.uid(10), dir: 'in', otherId: fromUser.id, otherName: fromUser.name, subject: s, text: t, at, read: false });
+  pushMailEntry(fromUser.id, { id: u.uid(10), dir: 'out', otherId: toUser.id, otherName: toUser.name, subject: s, text: t, at, read: true });
   db.save('mail');
 }
 
-function systemMail(targetUser: User, subject: string, text: string): void {
-  mailTo(targetUser, 'Генштаб', subject, text, null);
-}
-
+// Непрочитанные — только входящие письма от РЕАЛЬНЫХ игроков (otherId
+// задан). Старые системные записи (otherId=null, до перехода на
+// notifications.ts) в счётчик и в список ниже не попадают.
 function unread(user: User): number {
-  return mailboxOf(user.id).filter((m) => !m.read).length;
+  return mailboxOf(user.id).filter((m) => !m.read && m.dir !== 'out' && m.otherId).length;
 }
 
+// Список ТРЕДОВ (переписок) — сгруппировано по собеседнику, последнее
+// сообщение сверху. Легаси-записи без otherId (старые системные письма)
+// отфильтровываются — это и убирает уведомления из почты «задним числом».
 function inbox(user: User) {
-  return {
-    messages: mailboxOf(user.id)
-      .slice()
-      .reverse()
-      .map((m) => ({ id: m.id, fromName: m.fromName, subject: m.subject, at: m.at, read: m.read })),
-  };
+  const box = mailboxOf(user.id).filter((m) => m.otherId); // только реальные переписки
+  const threads = new Map<string, any>();
+  for (const m of box) {
+    let th = threads.get(m.otherId);
+    if (!th) { th = { otherId: m.otherId, otherName: m.otherName, lastAt: 0, unread: 0, messages: [] }; threads.set(m.otherId, th); }
+    th.messages.push({ id: m.id, dir: m.dir, subject: m.subject, text: m.text, at: m.at, read: m.read });
+    if (m.at > th.lastAt) { th.lastAt = m.at; th.otherName = m.otherName; } // имя берём из последнего сообщения (могло смениться)
+    if (m.dir !== 'out' && !m.read) th.unread++;
+  }
+  const list = Array.from(threads.values());
+  list.forEach((th) => th.messages.sort((a: any, b: any) => a.at - b.at));
+  list.sort((a, b) => b.lastAt - a.lastAt);
+  return { threads: list };
 }
 
-function readMail(user: User, mailId: string) {
-  const m = mailboxOf(user.id).find((x) => x.id === mailId);
-  if (!m) throw new u.ApiError('Письмо не найдено');
-  m.read = true;
-  db.save('mail');
-  return { mail: m };
+// Открыть переписку с конкретным собеседником — помечает ВСЕ его
+// входящие письма прочитанными и возвращает полную историю.
+function readThread(user: User, otherId: string) {
+  const box = mailboxOf(user.id);
+  const messages = box.filter((m) => m.otherId === otherId);
+  if (!messages.length) throw new u.ApiError('Переписка не найдена');
+  let changed = false;
+  for (const m of messages) { if (m.dir !== 'out' && !m.read) { m.read = true; changed = true; } }
+  if (changed) db.save('mail');
+  messages.sort((a, b) => a.at - b.at);
+  return {
+    otherId, otherName: messages[messages.length - 1].otherName,
+    messages: messages.map((m) => ({ id: m.id, dir: m.dir, subject: m.subject, text: m.text, at: m.at })),
+  };
 }
 
 function sendMail(user: User, toName: string, subject: string, text: string) {
@@ -87,7 +113,7 @@ function sendMail(user: User, toName: string, subject: string, text: string) {
   if (!target) throw new u.ApiError('Игрок с таким именем не найден');
   if (target.id === user.id) throw new u.ApiError('Письмо самому себе? Лучше веди дневник.');
   if (!String(text || '').trim()) throw new u.ApiError('Пустое письмо');
-  mailTo(target, user.name, subject, text, user.id);
+  mailBetween(user, target, subject, text);
 }
 
 // ---------- ЗАЛ СЛАВЫ ----------
@@ -99,9 +125,9 @@ const fame = fameMod.fame;
 function markAllRead(user: User) {
   const box = mailboxOf(user.id);
   let n = 0;
-  for (const m of box) { if (!m.read) { m.read = true; n++; } }
+  for (const m of box) { if (m.dir !== 'out' && !m.read) { m.read = true; n++; } }
   if (n > 0) db.save('mail');
   return { marked: n };
 }
 
-export = { chatGet, chatPost, mailTo, systemMail, unread, inbox, readMail, markAllRead, sendMail, fame };
+export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, sendMail, fame };

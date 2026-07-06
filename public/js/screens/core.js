@@ -223,6 +223,7 @@ App.screens.home = async (c) => {
     ['units', '🚜', 'Техника'],
     ['buildings', '🏗', 'Постройки'],
     ['market', '💣', 'Чёрный рынок'],
+    ['saboteurs', '🥷', 'Диверсанты'],
     ['club', '🎲', 'Клуб офицеров'],
   ];
   // Прямой доступ ко всем разделам. Достижения и внешний вид — внутри
@@ -1188,8 +1189,8 @@ App.screens.event = async (c) => {
       <div class="kv"><span class="k">🥇🥈🥉 Топ-3 по урону</span><span class="v gold"><span class="ic-gold"></span> ${d.top3.map((x) => UI.fmtNum(x)).join(' / ')}</span></div>
       <div class="kv"><span class="k">💥 Ваш урон / атак</span><span class="v">${UI.fmtNum(d.myDamage)} / ${d.myAttacks}</span></div>
       <div class="kv"><span class="k">👥 Участников</span><span class="v">${d.contributorsCount}</span></div>
-      <button class="btn btn-orange mt" id="event-attack" ${!canAttack ? 'disabled' : ''} style="width:100%">
-        ${canAttack ? '⚔️ Атаковать босса (−1 🎯)' : (App.me.res.am.cur <= 0 ? 'Нет боеприпасов' : 'Здоровье ниже 25')}
+      <button class="btn btn-orange mt" id="event-attack" style="width:100%">
+        ${canAttack ? '⚔️ Атаковать босса (−1 🎯)' : (App.me.res.am.cur <= 0 ? 'Нет боеприпасов — купить?' : 'Здоровье ниже 25 — купить аптечку?')}
       </button>
     </div>
     <div class="card">
@@ -1215,7 +1216,7 @@ App.screens.event = async (c) => {
       <div id="event-log" style="margin-top:6px;max-height:240px;overflow-y:auto">${logHtml}</div>
     </div>`;
   const btn = document.getElementById('event-attack');
-  if (btn && canAttack) btn.onclick = async () => {
+  const doEventAttack = async () => {
     try {
       const r = await API.post('/api/event/attack');
       // Запись в персональный лог атак (у каждого игрока свой)
@@ -1236,8 +1237,20 @@ App.screens.event = async (c) => {
       // Сверху — ТОЛЬКО уведомление о выпавшем золоте
       if (r.goldDrop > 0) UI.toast(`🪙 Выпало золото: ${UI.fmtNum(r.goldDrop)}!`);
       await App.refreshMe(); App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+    } catch (e) {
+      // Нет боеприпасов/здоровья — предложить покупку с рынка и повторить атаку
+      if (/боеприпас/i.test(e.message)) {
+        if (await _offerRestore('ammo')) return doEventAttack();
+        return;
+      }
+      if (/подлечитесь|здоровье/i.test(e.message)) {
+        if (await _offerRestore('health')) return doEventAttack();
+        return;
+      }
+      UI.toast('⛔ ' + e.message);
+    }
   };
+  if (btn) btn.onclick = doEventAttack;
 };
 
 // ---------- Реферальная система ----------

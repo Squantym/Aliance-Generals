@@ -92,6 +92,7 @@ function inviteBot(user: User, notices: Notices) {
   const name = u.pick(botNames) + ' #' + Math.floor(Math.random() * 900 + 100);
   user.allianceRoster!.push({ id: 'bot_' + u.uid(8), name, isBot: true });
   db.save('users');
+  try { require('./seasons').onAllianceRecruit(user); } catch (e) {}
   notices.push(`🤝 Боец «${name}» вступил в ваш альянс! В строю: ${user.allianceMembers}. Заявок осталось: ${limit - used - 1}/час.`);
   return view(user);
 }
@@ -169,10 +170,12 @@ function acceptInvite(user: User, fromId: string, notices: Notices) {
   if (user.allianceMembers! < maxMembers(user)) {
     user.allianceMembers!++;
     user.allianceRoster!.push({ id: inviter.id, name: inviter.name });
+    try { require('./seasons').onAllianceRecruit(user); } catch (e) {}
   }
   if (inviter.allianceMembers! < maxMembers(inviter)) {
     inviter.allianceMembers!++;
     inviter.allianceRoster!.push({ id: user.id, name: user.name });
+    try { require('./seasons').onAllianceRecruit(inviter); } catch (e) {}
   }
 
   list.splice(idx, 1);

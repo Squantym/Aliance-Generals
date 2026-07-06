@@ -8,7 +8,7 @@
 import config = require('../../config/gameConfig');
 import u = require('../core/utils');
 import player = require('./player');
-import social = require('./social');
+import notifications = require('./notifications');
 import type { User, Notices } from '../types';
 
 // event — кодовое имя события: attack, buy_unit, mission_step,
@@ -29,7 +29,7 @@ function notify(user: User, event: string, notices: Notices): void {
     user.tutorial.done = true;
     player.addGold(user, config.TUTORIAL_FINAL_GOLD);
     notices.push(`🏅 Курс молодого бойца пройден! +🪙 ${config.TUTORIAL_FINAL_GOLD} золота из спецрезерва Генштаба.`);
-    social.systemMail(user, 'Спецрезерв Генштаба', config.STORY_EPILOGUE);
+    notifications.push(user.id, 'story_epilogue', 'Спецрезерв Генштаба', { text: config.STORY_EPILOGUE });
   }
 }
 

@@ -246,6 +246,9 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
   applyLoss(midPool, toLoseMid);
   applyLoss(strongPool, toLoseStrong);
 
+  // ----- Уничтожение диверсантов цели (масштаб от мощности, до 200 при 100%) -----
+  const lostSaboteurs = require('./saboteurs').rocketDestroy(target, powerFrac, notices);
+
   // ----- Пересобираем ракету (шахта остаётся, ракета — заново 24ч) -----
   silo.rocket = freshRocket();
 
@@ -275,6 +278,7 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
     buildingsDestroyedCount,
     destroyedBuildings: destroyed,   // { название: количество }
     techLost,                        // { название: количество }
+    lostSaboteurs,                   // { вид: количество } — диверсанты цели
     silo: siloView(silo),
   };
 }

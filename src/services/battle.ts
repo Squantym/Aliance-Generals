@@ -16,6 +16,8 @@ import notifications = require('./notifications');
 import ach = require('./achievements');
 import tutorial = require('./tutorial');
 import trophies = require('./trophies');
+import bankHack = require('./bankHack');
+import landmines = require('./landmines');
 import type { User, Notices } from '../types';
 
 const B = config.BATTLE;
@@ -301,7 +303,10 @@ function removeUnits(victim: any, armyEntries: any[], pctBase: number, crit: boo
 // ---------- ГЛАВНАЯ ФУНКЦИЯ: атака цели ----------
 function attack(user: User, targetId: string, notices: Notices) {
   if (user.pendingFatality) throw new u.ApiError('Сначала решите судьбу поверженного врага (фаталити)!');
-  // Кулдаун атак — 1 секунда (защита от спама)
+  if (user.pendingBankHack) throw new u.ApiError('Сначала решите, что делать с сейфом (взломать или продолжить бой)!');
+  if (user.pendingMineDefuse) throw new u.ApiError('Сначала разберитесь с миной!');
+  // Кулдаун атак — 1 секунда (защита от спама). Считаем его сразу, чтобы
+  // спамить окно взлома банка тоже было нельзя.
   const ATTACK_CD_MS = 1000;
   const nowMs = Date.now();
   if ((user as any).lastAttackAt && nowMs - (user as any).lastAttackAt < ATTACK_CD_MS) {
@@ -311,6 +316,7 @@ function attack(user: User, targetId: string, notices: Notices) {
   if (user.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) {
     throw new u.ApiError(`Здоровье ниже ${config.PLAYER.MIN_HP_TO_FIGHT} — сначала подлечитесь.`);
   }
+  (user as any).lastAttackAt = nowMs;
 
   // Находим цель: бот из кэша или реальный игрок из базы
   let target: any = null, isBot = false;
@@ -340,17 +346,143 @@ function attack(user: User, targetId: string, notices: Notices) {
     }
   }
 
-  // Тратим боеприпас и фиксируем попытку
+  // ----- Взлом банка: шанс окна ДО боя (только реальные игроки, только в войне) -----
+  // Ничего не тратится, если окно открылось — игрок ещё может передумать
+  // и просто продолжить бой (см. bankHack.skip через отдельный роут).
+  if (!isBot) {
+    const offer = bankHack.tryOffer(user, target);
+    if (offer) return offer;
+  }
+
+  return proceedToCombat(user, target, isBot, targetId, notices);
+}
+
+// Тратим боеприпас, фиксируем попытку, проверяем не сработала ли мина
+// жертвы — и только если всё чисто, резолвим сам бой. Вызывается либо
+// сразу из attack() (нет предложения взлома банка), либо из роутов
+// bank-hack/guess и bank-hack/skip (после решения по сейфу).
+function proceedToCombat(user: User, target: any, isBot: boolean, targetId: string, notices: Notices) {
+  if (user.res.am.cur < 1) throw new u.ApiError('Нет боеприпасов. Они восстанавливаются со временем.');
   user.res.am.cur -= 1;
-  (user as any).lastAttackAt = nowMs;
   user.battle.attacks++;
   require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
   try { require('./seasons').onAttack(user); } catch (e) {}
 
-  // ----- Мощь атакующего: армия × эффекты × трофеи -----
+  // Армия, которую нападающий берёт в ЭТОТ бой — считаем один раз здесь,
+  // чтобы то же самое количество техники учитывалось и при возможном
+  // взрыве мины, и при обычном резолве боя.
   const aArmy = player.buildArmy(user, 'atk');
-  const aTotal = player.totalPower(user, 'atk');
+
+  // ----- Мина жертвы (только реальные игроки, только у жертвы, только
+  // если есть хотя бы 1 мина в запасе и трофей «Растяжка» прокачан) -----
+  if (!isBot) {
+    const mineLevel = trophies.mineLevel(target);
+    if ((target.landmines || 0) > 0 && mineLevel > 0 && landmines.rollTrigger(mineLevel)) {
+      target.landmines -= 1;
+      db.markUser(target.id);
+      const { wires, correctIdx } = landmines.generateWires();
+      user.pendingMineDefuse = {
+        targetId, isBot,
+        wires, correctIdx,
+        techLossPct: landmines.techLossPct(mineLevel),
+        aArmyEntries: aArmy.entries,
+      };
+      notices.push('💥 Вы нарвались на растяжку! Обезвредьте провода, пока не поздно.');
+      require('./saboteurs').ensure(user);
+      return {
+        encounter: 'mine_defuse',
+        wires: landmines.wiresView(wires),
+        canSacrifice: (user.saboteurs!.suicide || 0) > 0,
+      };
+    }
+  }
+
+  return resolveCombatCore(user, target, isBot, aArmy, notices);
+}
+
+// ---------- РЕЗУЛЬТАТ ВЗЛОМА БАНКА: продолжить путём ввода кода ----------
+function bankHackGuess(user: User, code: string, notices: Notices) {
+  const { targetId, finished, result } = bankHack.guess(user, code, notices);
+  if (!finished) return { encounter: 'bank_hack', ...result };
+  // Взлом завершён (успех/провал/тревога/кончились попытки) — продолжаем
+  // атаку тем же способом, что и обычную (мина/бой)
+  const target = player.users()[targetId];
+  if (!target) return { bankHack: result, aborted: true };
+  player.refresh(target);
+  const battleResult = proceedToCombat(user, target, false, targetId, notices);
+  return { bankHack: result, ...battleResult };
+}
+
+// ---------- ОТКАЗ ОТ ВЗЛОМА: сразу продолжаем бой ----------
+function bankHackSkip(user: User, notices: Notices) {
+  const targetId = bankHack.skip(user);
+  const target = player.users()[targetId];
+  if (!target) throw new u.ApiError('Цель ушла из зоны видимости.');
+  player.refresh(target);
+  return proceedToCombat(user, target, false, targetId, notices);
+}
+
+// ---------- РАЗМИНИРОВАНИЕ: выбор провода ----------
+function mineDefuse(user: User, wireIndex: number, notices: Notices) {
+  const p = user.pendingMineDefuse;
+  if (!p) throw new u.ApiError('Нет мины, которую нужно обезвредить');
+  const idx = Math.floor(Number(wireIndex));
+  if (!Number.isFinite(idx) || idx < 0 || idx >= p.wires.length) {
+    throw new u.ApiError('Некорректный провод');
+  }
+
+  if (idx === p.correctIdx) {
+    // Обезврежено — бой продолжается как обычно
+    user.pendingMineDefuse = null;
+    const target = player.users()[p.targetId];
+    if (!target) return { mineDefused: true, aborted: true };
+    player.refresh(target);
+    notices.push('✂️ Провод перерезан верно — мина обезврежена!');
+    const battleResult = resolveCombatCore(user, target, p.isBot, { entries: p.aArmyEntries }, notices);
+    return { mineDefused: true, ...battleResult };
+  }
+
+  // Неверный провод — взрыв: 100% здоровья + % техники по трофею жертвы
+  user.res.hp.cur = 0;
+  const lostTech = landmines.destroyExactPct(user, p.aArmyEntries, p.techLossPct);
+  const lostSaboteurs = require('./saboteurs').mineDestroy(user, notices);
+  user.pendingMineDefuse = null;
+  notices.push('💥 Взрыв! Мина уничтожила часть вашей техники и снесла всё здоровье.');
+  return {
+    mineDefused: false, exploded: true,
+    techLossPct: p.techLossPct, lostTech, lostSaboteurs,
+    hp: user.res.hp.cur,
+  };
+}
+
+// ---------- РАЗМИНИРОВАНИЕ: пожертвовать смертником вместо проводов ----------
+// Гарантированно спасает от взрыва: -1 смертник, бой продолжается как обычно.
+function mineSacrifice(user: User, notices: Notices) {
+  const p = user.pendingMineDefuse;
+  if (!p) throw new u.ApiError('Нет мины, которую нужно обезвредить');
+  const sb = require('./saboteurs');
+  sb.ensure(user);
+  if ((user.saboteurs!.suicide || 0) <= 0) throw new u.ApiError('Нет смертников в наличии');
+  user.saboteurs!.suicide -= 1;
+  user.pendingMineDefuse = null;
+  const target = player.users()[p.targetId];
+  if (!target) return { mineDefused: true, sacrificed: true, aborted: true };
+  player.refresh(target);
+  notices.push('💀 Смертник пожертвовал собой — вы избежали взрыва!');
+  const battleResult = resolveCombatCore(user, target, p.isBot, { entries: p.aArmyEntries }, notices);
+  return { mineDefused: true, sacrificed: true, ...battleResult };
+}
+
+// ----- Резолв самого боя: расчёт мощи, победа/поражение, грабёж, фаталити -----
+// aArmy — армия атакующего, УЖЕ посчитанная в proceedToCombat (или взятая
+// из «замороженного» состояния на момент подрыва на мине).
+function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, notices: Notices) {
+  const saboteurs = require('./saboteurs');
+  // Диверсанты жертвы (реального игрока) режут мощь атакующего по типам.
+  // У ботов диверсантов нет (нет экономики) — дебафф не применяется.
+  const debuffOnAttacker = isBot ? undefined : saboteurs.debuffsFor(target);
+  const aTotal = player.totalPower(user, 'atk', debuffOnAttacker);
   let aPow = Math.max(10, aTotal.power);
 
   // ----- Мощь защитника -----
@@ -365,8 +497,11 @@ function attack(user: User, targetId: string, notices: Notices) {
   } else {
     dArmy = player.buildArmy(target, 'def');
     defPoints = player.buildingDef(target);
+    // Диверсанты АТАКУЮЩЕГО режут мощь защитника по типам (действует в
+    // обе стороны боя — не только когда владелец сам атакует).
+    const debuffOnDefender = saboteurs.debuffsFor(user);
     // Используем ту же формулу что и в totalPower: техника + постройки (с бонусом страны), потом трофей и эффекты
-    const dTotal = player.totalPower(target, 'def');
+    const dTotal = player.totalPower(target, 'def', debuffOnDefender);
     dPow = Math.max(10, dTotal.power);
     targetMaxHp = player.maxima(target).hp;
     targetLevel = target.level;
@@ -398,14 +533,6 @@ function attack(user: User, targetId: string, notices: Notices) {
     ? Math.round(dealtBase * B.CRIT_MULT * (1 + critTrophyBonus))
     : dealtBase;
 
-  // Определение победителя ДЕТЕРМИНИРОВАНО: сравниваем эффективную мощь
-  // атаки (с учётом крита) против мощи защиты напрямую, без случайных
-  // бросков. Если у нападающего мощь ниже — он НЕ выигрывает. Крит может
-  // «дожать» победу, усилив атаку, но случайность исход не переворачивает.
-  let effectiveAtk = aPow;
-  if (crit) effectiveAtk *= B.CRIT_MULT * (1 + critTrophyBonus);
-  const win = effectiveAtk >= dPow;
-
   // Полный уворот — обнуляем урон, но не исход боя
   const dealt = dodge ? 0 : dealtCrit;
 
@@ -416,6 +543,16 @@ function attack(user: User, targetId: string, notices: Notices) {
   const botCrit = isBot && Math.random() < botCritChance;
   const received = botCrit ? Math.round(receivedBase * B.CRIT_MULT) : receivedBase;
   user.res.hp.cur = Math.max(1, user.res.hp.cur - received);
+
+  // Определение победителя: СТРОГО по факту нанесённого урона — кто
+  // нанёс больше, тот и выиграл. Раньше исход решался сравнением скрытой
+  // мощи (aPow/dPow), из-за чего игрок мог нанести больше урона по
+  // циферкам и всё равно проиграть — игроки справедливо считали это
+  // багом. При точном равенстве (редкость) исход решает мощь атаки —
+  // как раньше — просто как честный tie-break, не наблюдаемый игроком.
+  let effectiveAtk = aPow;
+  if (crit) effectiveAtk *= B.CRIT_MULT * (1 + critTrophyBonus);
+  const win = dealt !== received ? dealt > received : effectiveAtk >= dPow;
 
   let targetHpAfter;
   if (isBot) {
@@ -573,8 +710,10 @@ function attack(user: User, targetId: string, notices: Notices) {
   }
   if (!targetImmune && fatalityAllowed && fatalityVsOk && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
     // Жестокость даёт ШАНС совершить фаталити (не гарантию): 0.5% за
-    // уровень навыка, максимум 50%.
-    const fatalityChance = Math.min(0.50, user.skills.cruelty * 0.005);
+    // уровень навыка, максимум 50%. Допинг «Ястреб» (crit_bonus) усиливает
+    // не только крит в бою, но и этот шанс — раньше учитывался только в
+    // critChance, из-за чего покупка допинга не ощущалась на фаталити.
+    const fatalityChance = Math.min(0.50, user.skills.cruelty * 0.005 + (player.effMul(user, 'crit_bonus') - 1));
     if (Math.random() < fatalityChance) {
       // Ловкость защитника даёт шанс «ускользнуть» от занесённого клинка:
       // 0.5% за уровень, максимум 50%. Применяется только к реальным игрокам.
@@ -593,6 +732,13 @@ function attack(user: User, targetId: string, notices: Notices) {
   }
 
   tutorial.notify(user, 'attack', notices); // задание «Боевое крещение»
+
+  // Расход диверсантов в обычном бою: у атакующего заметно чаще, чем
+  // у защитника (реального игрока). У ботов диверсантов нет.
+  try {
+    saboteurs.battleAttrition(user, 'attacker');
+    if (!isBot) saboteurs.battleAttrition(target, 'defender');
+  } catch (e) {}
 
   // Цель (живой игрок) тоже изменилась — HP, деньги, потери техники.
   // Помечаем её на точечное сохранение (атакующий сохранится в http.js).
@@ -619,7 +765,7 @@ function attack(user: User, targetId: string, notices: Notices) {
   return {
     win, crit, dodge,
     dealt, received, loot, xp,
-    targetId, targetName: target.name, targetLevel, isBot,
+    targetId: target.id, targetName: target.name, targetLevel, isBot,
     targetHpPct: Math.round((targetHpAfter / targetMaxHp) * 100),
     myArmy: armyBrief(aArmy.entries),
     enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
@@ -765,4 +911,7 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
   return { ok: true, left: true };
 }
 
-export = { opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits };
+export = {
+  opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits,
+  bankHackGuess, bankHackSkip, mineDefuse, mineSacrifice,
+};

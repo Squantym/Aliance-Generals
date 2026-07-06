@@ -9,7 +9,7 @@ import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
 import config = require('../../config/gameConfig');
-import social = require('./social');
+import notifications = require('./notifications');
 import discounts = require('./discounts');
 import type { User, Notices } from '../types';
 
@@ -154,8 +154,8 @@ function apply(user: User, kind: string, groupId: string, notices: Notices) {
 
   const leader = player.users()[g.leaderId];
   if (leader) {
-    social.systemMail(leader, `Заявка в ${def.label.toLowerCase()}`,
-      `Игрок ${user.name} (ур. ${user.level}) хочет вступить в «${g.name}». Решение — за вами.`);
+    notifications.push(leader.id, 'group_join_request', `Заявка в ${def.label.toLowerCase()}`,
+      { text: `Игрок ${user.name} (ур. ${user.level}) хочет вступить в «${g.name}». Решение — за вами.` });
   }
   notices.push(`Заявка в «${g.name}» отправлена. Ждите решения лидера.`);
 }
@@ -175,11 +175,11 @@ function decide(user: User, kind: string, applicantId: string, accept: boolean, 
     g.members.push(applicant.id);
     // Сезон: очки набора получает лидер альянса (не легиона)
     if (kind === 'alliance') { try { require('./seasons').onAllianceRecruit(user); } catch (e) {} }
-    social.systemMail(applicant, 'Добро пожаловать!',
-      `Вы приняты в ${def.label.toLowerCase()} «${g.name}».`);
+    notifications.push(applicant.id, 'group_accepted', 'Добро пожаловать!',
+      { text: `Вы приняты в ${def.label.toLowerCase()} «${g.name}».` });
     notices.push(`${applicant.name} принят. Бойцов: ${g.members.length}.`);
   } else if (applicant) {
-    social.systemMail(applicant, 'Заявка отклонена', `Лидер «${g.name}» отклонил вашу заявку.`);
+    notifications.push(applicant.id, 'group_rejected', 'Заявка отклонена', { text: `Лидер «${g.name}» отклонил вашу заявку.` });
     notices.push('Заявка отклонена.');
   }
   db.save(def.coll);
@@ -292,9 +292,9 @@ function invite(user: User, kind: string, targetId: string, notices: Notices) {
   g.inviteLog.push(Date.now());
   db.save(def.coll);
 
-  social.systemMail(target, `Приглашение в альянс`,
-    `Лидер «${g.name}» (${user.name}) приглашает вас присоединиться к его альянсу. ` +
-    `Откройте раздел «Альянс» и примите или отклоните приглашение.`);
+  notifications.push(target.id, 'alliance_invite', 'Приглашение в альянс',
+    { text: `Лидер «${g.name}» (${user.name}) приглашает вас присоединиться к его альянсу. ` +
+      `Откройте раздел «Альянс» и примите или отклоните приглашение.` });
   notices.push(`Приглашение игроку ${target.name} отправлено. Осталось приглашений: ${limit - used - 1}/час`);
 }
 
@@ -364,8 +364,8 @@ function respondInvite(user: User, kind: string, groupId: string, accept: boolea
       db.save('alliances');
       db.save('users');
 
-      if (leader) social.systemMail(leader, 'Приглашение принято!',
-        `${user.name} принял ваше приглашение. Вы теперь в союзе.`);
+      if (leader) notifications.push(leader.id, 'group_invite_accepted', 'Приглашение принято!',
+        { text: `${user.name} принял ваше приглашение. Вы теперь в союзе.` });
       notices.push(`Вы заключили союз с «${g.name}». У вас свой состав альянса.`);
     } else {
       // Легион — классическое вступление (один легион на игрока)
@@ -373,7 +373,7 @@ function respondInvite(user: User, kind: string, groupId: string, accept: boolea
       user[def.userField] = g.id;
       g.members.push(user.id);
       const leader = player.users()[g.leaderId];
-      if (leader) social.systemMail(leader, 'Пополнение!', `${user.name} принял приглашение в «${g.name}».`);
+      if (leader) notifications.push(leader.id, 'group_new_member', 'Пополнение!', { text: `${user.name} принял приглашение в «${g.name}».` });
       notices.push(`Вы приняли приглашение и вступили в «${g.name}»!`);
     }
   } else {
@@ -411,7 +411,7 @@ function kick(user: User, kind: string, memberId: string, notices: Notices) {
   const member = player.users()[memberId];
   if (member) {
     member[def.userField] = null;
-    social.systemMail(member, 'Исключение из группы', `Вы исключены из «${g.name}».`);
+    notifications.push(member.id, 'group_kicked', 'Исключение из группы', { text: `Вы исключены из «${g.name}».` });
   }
   db.save(def.coll);
   notices.push('Боец исключён.');
@@ -435,7 +435,7 @@ function leave(user: User, kind: string, notices: Notices) {
     } else {
       g.leaderId = g.members[0];
       const heir = player.users()[g.leaderId];
-      if (heir) social.systemMail(heir, 'Вы — новый лидер', `Руководство «${g.name}» переходит к вам.`);
+      if (heir) notifications.push(heir.id, 'group_new_leader', 'Вы — новый лидер', { text: `Руководство «${g.name}» переходит к вам.` });
       notices.push(`Вы покинули «${g.name}». Лидерство передано.`);
     }
   } else {
@@ -444,4 +444,38 @@ function leave(user: User, kind: string, notices: Notices) {
   db.save(def.coll);
 }
 
-export = { view, create, apply, decide, invite, respondInvite, pendingInvites, kick, leave, hireDiplomat, cleanupBotsFromAlliances };
+export = { view, create, apply, decide, invite, respondInvite, pendingInvites, kick, leave, hireDiplomat, cleanupBotsFromAlliances, listAllAdmin, viewDetailAdmin };
+
+// ── АДМИН: список ВСЕХ альянсов/легионов (без ограничения топ-20) ──
+function listAllAdmin(kind: string) {
+  const all = coll(kind);
+  return {
+    groups: Object.values(all)
+      .map((x: any) => ({
+        id: x.id, name: x.name, members: x.members.length,
+        leaderName: (player.users()[x.leaderId] || {}).name || '—',
+        treasury: kind === 'legion' ? (x.treasury || 0) : undefined,
+      }))
+      .sort((a: any, b: any) => b.members - a.members),
+  };
+}
+
+// ── АДМИН: подробный просмотр ЛЮБОЙ группы по id (без членства) ──
+function viewDetailAdmin(kind: string, groupId: string) {
+  const def = defOf(kind);
+  const params = paramsOf(kind);
+  const all = coll(kind);
+  const g = all[groupId];
+  if (!g) throw new u.ApiError('Группа не найдена');
+  return {
+    kind,
+    id: g.id, name: g.name,
+    leaderId: g.leaderId,
+    leaderName: (player.users()[g.leaderId] || {}).name || '—',
+    members: g.members.map((id: string) => memberBrief(id, g)).filter(Boolean).sort((x: any, y: any) => y.rating - x.rating),
+    requests: g.requests.map((id: string) => memberBrief(id, g)).filter(Boolean),
+    treasury: kind === 'legion' ? (g.treasury || 0) : undefined,
+    perMember: params.PER_MEMBER || 0,
+    diplomats: g.diplomats || 0,
+  };
+}

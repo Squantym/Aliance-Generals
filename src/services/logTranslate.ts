@@ -41,6 +41,33 @@ function describe(path: string, body?: any, result?: any): string | null {
   body   = body   || {};
   result = result || {};
   try {
+    // Пути с динамическим :id внутри (не совпадают с switch по строке) —
+    // нормализуем ДО переключателя. /api/group/:kind/* сюда не попадает,
+    // потому что :kind — это буквально 'alliance'/'legion' в реальном
+    // запросе, и там switch матчится по строке напрямую.
+    if (/^\/api\/notifications\/[^/]+\/read$/.test(path)) {
+      return '🔔 Прочитал уведомление';
+    }
+    // Группы (альянс/легион) — общая логика для обоих :kind, чтобы не
+    // дублировать 8 действий × 2 вида группы. targetName берём из body,
+    // если роут его передаёт (сейчас — нет, тогда просто id).
+    const groupMatch = path.match(/^\/api\/group\/(alliance|legion)\/([a-z]+)$/);
+    if (groupMatch) {
+      const kindLabel = groupMatch[1] === 'alliance' ? 'альянс' : 'легион';
+      const action = groupMatch[2];
+      switch (action) {
+        case 'create':   return `⭐ Создал ${kindLabel} «${body.name}»`;
+        case 'apply':    return `📨 Подал заявку в ${kindLabel}`;
+        case 'decide':
+          return body.accept ? `✅ Принял заявку в ${kindLabel} (игрок ${body.userId})` : `❌ Отклонил заявку в ${kindLabel} (игрок ${body.userId})`;
+        case 'invite':   return `📩 Пригласил в ${kindLabel} (игрок ${body.userId})`;
+        case 'diplomat': return `🎖 Нанял дипломата для ${kindLabel === 'альянс' ? 'альянса' : 'легиона'}`;
+        case 'respond':  return body.accept ? `✅ Принял приглашение в ${kindLabel}` : `❌ Отклонил приглашение в ${kindLabel}`;
+        case 'kick':     return `🚫 Исключил из ${kindLabel === 'альянс' ? 'альянса' : 'легиона'} (игрок ${body.userId})`;
+        case 'leave':    return `🚪 Покинул ${kindLabel === 'альянс' ? 'альянс' : 'легион'}`;
+        default: return null;
+      }
+    }
     switch (path) {
       // ── Авторизация ────────────────────────────────────────────
       case '/api/register':
@@ -85,6 +112,16 @@ function describe(path: string, body?: any, result?: any): string | null {
           : '🤝 Фаталити: помиловал (получил жетон)';
       case '/api/ears/restore':
         return `👂 Восстановил ухо${result.cost ? ` за 🪙 ${money(result.cost)}` : ''}`;
+      case '/api/war/mine-defuse':
+        return result.exploded ? '💥 Провалил разминирование — взрыв!' : '✂️ Успешно разминировал растяжку';
+      case '/api/war/mine-sacrifice':
+        return '💀 Пожертвовал смертником, избежав взрыва';
+      case '/api/saboteurs/buy':
+        return `🥷 Купил диверсантов (${body.type}) ×${(body.packs || 1) * 10}`;
+      case '/api/saboteurs/suicide/buy':
+        return `💀 Купил смертников ×${body.qty || 1}`;
+      case '/api/saboteurs/upgrade':
+        return `📈 Повысил лимит диверсантов (${body.type})`;
 
       // ── Миссии (спецоперации) ──────────────────────────────────
       case '/api/missions/start':
@@ -157,15 +194,7 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/referral/apply':    return `🎁 Активировал реферальный код «${body.code}»`;
 
       // ── Альянс / Легион ────────────────────────────────────────
-      case '/api/group/alliance/create': return `⭐ Создал альянс «${body.name}»`;
-      case '/api/group/alliance/invite': return `📩 Пригласил в альянс (${body.targetId})`;
-      case '/api/group/alliance/respond':
-        return body.accept ? '✅ Принял приглашение в альянс' : '❌ Отклонил приглашение в альянс';
-      case '/api/group/alliance/kick':   return `🚫 Исключил из альянса (${body.memberId})`;
-      case '/api/group/alliance/leave':  return '🚪 Покинул альянс';
-      case '/api/group/legion/create':   return `🏛 Создал легион «${body.name}»`;
-      case '/api/group/legion/invite':   return '📩 Отправил приглашение в легион';
-      case '/api/group/legion/leave':    return '🚪 Покинул легион';
+      // ── Альянс / Легион: см. groupMatch выше (regex перехватывает раньше) ──
 
       // ── Легион: казна, постройки, технологии, магазин ──────────
       case '/api/legion/deposit':          return `💰 Внёс в казну легиона: $${money(body.amount)}`;
@@ -204,6 +233,50 @@ function describe(path: string, body?: any, result?: any): string | null {
       // ── Подарки администратора ─────────────────────────────────
       case '/api/admin/claim-gift':
         return '🎁 Забрал подарок администратора';
+
+      // ── Действия АДМИНА (свой аудит-лог) ────────────────────────
+      case '/api/admin/ban':
+        return body.banned ? `🚫 Забанил игрока (${body.userId}): ${body.reason || 'без причины'}` : `✅ Разбанил игрока (${body.userId})`;
+      case '/api/admin/grant':
+        return `🎁 Выдал ресурсы игроку ${body.userId}`;
+      case '/api/admin/grant-all':
+        return '🌍 Выдал ресурсы всем игрокам';
+      case '/api/admin/discount':
+        return (body.pct > 0)
+          ? `🏷 Установил скидку «${body.category}»: ${body.pct}% на ${body.hours} ч.`
+          : `🏷 Снял скидку «${body.category}»`;
+      case '/api/admin/global-buff':
+        return (body.pct > 0)
+          ? `🎉 Включил глобальный бонус «${body.key}»: +${body.pct}% на ${body.hours} ч.`
+          : `🎉 Выключил глобальный бонус «${body.key}»`;
+      case '/api/admin/reset':
+        return `♻️ Полностью обнулил аккаунт игрока ${body.userId}`;
+      case '/api/admin/reset-param':
+        return `♻️ Сбросил параметр «${body.param}»${body.userId ? ` у игрока ${body.userId}` : ' у ВСЕХ игроков'}`;
+      case '/api/admin/reset-missions':
+        return '📋 Сбросил миссии у всех игроков';
+      case '/api/admin/wipe-groups':
+        return `🧹 Очистил группы: ${body.what || 'все'}`;
+      case '/api/admin/fame/reset-snapshot':
+        return '🏆 Сбросил снимок зала славы';
+      case '/api/admin/email/test':
+        return `📧 Отправил тестовое письмо на ${body.to}`;
+      case '/api/admin/support/reply':
+        return `🛟 Ответил в тикет поддержки (${body.ticketId})${body.close ? ' и закрыл его' : ''}`;
+      case '/api/admin/event/start':
+        return `🐉 Запустил босса «${body.name || '?'}» (HP ${body.hp || '?'})`;
+      case '/api/admin/event/stop':
+        return '🛑 Остановил текущее событие-босса';
+      case '/api/admin/event/drops':
+        return '🪙 Изменил настройки дропа золота у босса';
+      case '/api/admin/event/hp':
+        return `❤️ Установил здоровье босса: ${body.hp}`;
+      case '/api/admin/season/config':
+        return '🏆 Изменил награды рейтингового сезона';
+      case '/api/admin/season/end':
+        return '🏁 Принудительно завершил рейтинговую неделю';
+      case '/api/admin/legion/deposit':
+        return `💰 Пополнил казну легиона ${body.legionId} на $${money(body.amount)} (админ)`;
 
       default:
         return null;

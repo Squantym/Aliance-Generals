@@ -113,6 +113,14 @@ function registerRoutes(app: any) {
   // ---------- Война ----------
   app.add('GET', '/api/war/opponents', (req) => battle.opponents(req.user));
   app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n)));
+  app.add('POST', '/api/war/bank-hack/guess', act((req, n) => battle.bankHackGuess(req.user, String(req.body.code || ''), n)));
+  app.add('POST', '/api/war/bank-hack/skip',  act((req, n) => battle.bankHackSkip(req.user, n)));
+  app.add('POST', '/api/war/mine-defuse',     act((req, n) => battle.mineDefuse(req.user, req.body.wireIndex, n)));
+  app.add('POST', '/api/war/mine-sacrifice',  act((req, n) => battle.mineSacrifice(req.user, n)));
+  app.add('GET',  '/api/saboteurs', (req) => require('./services/saboteurs').view(req.user));
+  app.add('POST', '/api/saboteurs/buy',     act((req, n) => require('./services/saboteurs').buyPack(req.user, req.body.type, req.body.packs, n)));
+  app.add('POST', '/api/saboteurs/suicide/buy', act((req, n) => require('./services/saboteurs').buySuicide(req.user, req.body.qty, n)));
+  app.add('POST', '/api/saboteurs/upgrade', act((req, n) => require('./services/saboteurs').upgradeLimit(req.user, req.body.type, n)));
   app.add('GET',  '/api/sanctions', (req) => sanctions.list(req.user));
   app.add('POST', '/api/sanctions/declare', act((req, n) => sanctions.declare(req.user, String(req.body.targetId || ''), req.body.amount, n)));
   app.add('POST', '/api/war/fatality', act((req, n) => battle.fatality(req.user, req.body.choice, n)));
@@ -158,6 +166,8 @@ function registerRoutes(app: any) {
   // ---------- Чёрный рынок ----------
   app.add('GET', '/api/market/items', () => market.itemsList());
   app.add('POST', '/api/market/buy', act((req, n) => market.buyItem(req.user, req.body.itemId, req.body.targetName, n)));
+  app.add('GET', '/api/market/mines', (req) => market.mineInfo(req.user));
+  app.add('POST', '/api/market/mines/buy', act((req, n) => market.buyMines(req.user, req.body.qty, n)));
   app.add('GET', '/api/market/containers', (req) => market.containersView(req.user));
   app.add('POST', '/api/market/open', act((req, n) => market.openContainer(req.user, req.body.tier, n, req.body.qty)));
   app.add('GET', '/api/market/container-history', (req) => market.containerHistory(req.user));
@@ -265,6 +275,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/event/start', act((req, n) => worldEvent.adminStart(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/event/stop',  act((req, n) => worldEvent.adminStop(req.user, n)), { admin: true });
   app.add('POST', '/api/admin/event/drops', act((req, n) => worldEvent.adminSetDrops(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/event/hp', act((req, n) => worldEvent.adminSetHp(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
 
   // ---------- Легион: казна, постройки, кланвойны ----------
@@ -300,7 +311,7 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/chat', (req) => social.chatGet(req.query.after));
   app.add('POST', '/api/chat', act((req) => { social.chatPost(req.user, req.body.text); return { ok: true }; }));
   app.add('GET', '/api/mail', (req) => social.inbox(req.user));
-  app.add('GET', '/api/mail/:id', (req) => social.readMail(req.user, req.params.id));
+  app.add('GET', '/api/mail/:id', (req) => social.readThread(req.user, req.params.id));
   app.add('POST', '/api/mail/read-all', act((req) => social.markAllRead(req.user)));
   app.add('POST', '/api/mail', act((req, n) => {
     social.sendMail(req.user, req.body.toName, req.body.subject, req.body.text);
@@ -322,6 +333,10 @@ function registerRoutes(app: any) {
 
   // ---------- Администратор ----------
   app.add('GET', '/api/admin/players', (req) => admin.listPlayers(req.query.q), { admin: true });
+  app.add('GET', '/api/admin/player-view/:id', (req) => admin.viewAsPlayer(req.user, req.params.id), { admin: true });
+  app.add('GET', '/api/admin/groups/:kind', (req) => require('./services/groups').listAllAdmin(req.params.kind), { admin: true });
+  app.add('GET', '/api/admin/groups/:kind/:id', (req) => require('./services/groups').viewDetailAdmin(req.params.kind, req.params.id), { admin: true });
+  app.add('POST', '/api/admin/legion/deposit', act((req, n) => require('./services/legion').adminDeposit(req.user, req.body.legionId, req.body.amount, n)), { admin: true });
   app.add('POST', '/api/admin/grant',      act((req, n) => admin.grant(req.user, req.body, n)),    { admin: true });
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));

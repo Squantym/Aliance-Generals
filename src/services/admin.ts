@@ -10,6 +10,14 @@ import ach = require('./achievements');
 import discounts = require('./discounts');
 import globalBuffs = require('./globalBuffs');
 import auditLog = require('./auditLog');
+import notifications = require('./notifications');
+import units = require('./units');
+import buildings = require('./buildings');
+import production = require('./production');
+import trophies = require('./trophies');
+import market = require('./market');
+import groups = require('./groups');
+import legion = require('./legion');
 import db = require('../core/db');
 import type { User, Notices } from '../types';
 
@@ -35,6 +43,28 @@ function listPlayers(query: any) {
       .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
       .slice(0, 100)
       .map(brief),
+  };
+}
+
+// ── АДМИН: полный просмотр профиля игрока «его глазами» ───────────
+// Собирает ВСЁ, что видит сам игрок на своих экранах: экономику, армию,
+// постройки, секретные разработки, трофеи, покупки контейнеров и т.д.
+// Переиспользует те же view-функции, что и обычные роуты игрока —
+// просто вызывает их с target вместо req.user.
+function viewAsPlayer(adminUser: User, targetId: string) {
+  const target = player.users()[targetId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  player.refresh(target);
+  return {
+    me: player.mePayload(target),
+    // isOwn=true (viewer === target) — раскрывает армию/постройки/секретки
+    // полностью, как в своём профиле, а не урезанно как для чужого
+    profile: player.publicProfile(target, target),
+    units: units.list(target),
+    buildings: buildings.list(target),
+    production: production.view(target),
+    trophies: trophies.list(target),
+    containerHistory: market.containerHistory(target),
   };
 }
 
@@ -108,7 +138,7 @@ function grant(adminUser: User, body: any, notices: Notices) {
   const mailText = customNote
     ? customNote
     : `Администратор ${adminUser.name} выдал вам: ${granted.join(', ')}.`;
-  social.systemMail(target, customNote ? '🎁 Подарок от администрации' : '📦 Подарок администрации', mailText);
+  notifications.push(target.id, 'admin_gift', customNote ? '🎁 Подарок от администрации' : '📦 Подарок администрации', { text: mailText });
 
   notices.push(`✅ Выдано игроку ${target.name}: ${granted.join(', ')}`);
   return { player: brief(target) };
@@ -134,7 +164,7 @@ function grantAll(adminUser: User, body: any, notices: Notices) {
       const mailText = customNote
         ? customNote
         : `Администратор ${adminUser.name} выдал всем игрокам: ${granted.join(', ')}.`;
-      social.systemMail(target, '🎁 Подарок всем игрокам', mailText);
+      notifications.push(target.id, 'admin_gift', '🎁 Подарок всем игрокам', { text: mailText });
       if (!sampleGranted.length) sampleGranted = granted;
       count++;
     }
@@ -284,6 +314,11 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   target.pendingFatality = null;
   (target as any).lastHospitalHeal = 0;
   (target as any).lastAttackAt = 0;
+  target.landmines = 0; target.pendingMineDefuse = null;
+  target.pendingBankHack = null; target.bankHackCountToday = 0; target.bankHackVictimsToday = [];
+  target.saboteurs = { ground: 0, sea: 0, air: 0, secret: 0, building: 0, suicide: 0 };
+  target.saboteurLimits = { ground: 50, sea: 50, air: 50, secret: 50, building: 50 };
+  target.saboteurRareLossAccum = 0;
 
   require('../core/db').save('users');
   // Уведомляем игрока
@@ -408,4 +443,5 @@ export = {
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
   listLogs, setBan, resetAccount, resetParam, resetMissions, wipeGroups,
+  viewAsPlayer,
 };

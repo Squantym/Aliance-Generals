@@ -330,4 +330,16 @@ function adminSetDrops(adminUser: User, body: any, notices: Notices) {
   return view(adminUser);
 }
 
-export = { view, attack, adminStart, adminStop, adminSetDrops };
+// ── АДМИН: напрямую задать текущее здоровье босса (без перезапуска) ──
+function adminSetHp(adminUser: User, body: any, notices: Notices) {
+  const e = store();
+  activateIfDue(e);
+  if (!e.active) throw new u.ApiError('Нет активного события для настройки');
+  const newHp = u.toInt(body.hp, e.hp);
+  e.hp = Math.max(0, Math.min(e.maxHp, newHp));
+  db.save('world_event');
+  notices.push(`❤️ Здоровье босса установлено: ${u.fmt(e.hp)} / ${u.fmt(e.maxHp)}.`);
+  return view(adminUser);
+}
+
+export = { view, attack, adminStart, adminStop, adminSetDrops, adminSetHp };

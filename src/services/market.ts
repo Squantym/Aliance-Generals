@@ -10,8 +10,9 @@ import config = require('../../config/gameConfig');
 import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
-import social = require('./social');
+import notifications = require('./notifications');
 import discounts = require('./discounts');
+import landmines = require('./landmines');
 import type { User, Notices } from '../types';
 
 // Цена в золоте у предмета рынка с учётом скидки
@@ -32,6 +33,34 @@ function itemsList() {
     debuffs: config.MARKET_ITEMS.filter((i) => i.kind === 'debuff').map(withDiscount),
     discount: discounts.info('market'),
   };
+}
+
+// ---------- Мины («Растяжка») ----------
+function mineInfo(user: User) {
+  const item = config.MARKET_ITEM_BY_ID['landmine'];
+  return {
+    price: marketGold(item), basePrice: item.gold,
+    stock: user.landmines || 0, maxStock: landmines.maxStock(),
+    maxBuyPerOrder: config.MINES.maxBuyPerOrder,
+  };
+}
+
+function buyMines(user: User, qty: number, notices: Notices) {
+  const item = config.MARKET_ITEM_BY_ID['landmine'];
+  // Скидка на золото применяется так же, как и к прочим товарам рынка
+  const unitPrice = marketGold(item);
+  const q = Math.max(1, Math.min(config.MINES.maxBuyPerOrder, Math.floor(qty) || 0));
+  const have = user.landmines || 0;
+  const room = Math.max(0, config.MINES.maxStock - have);
+  if (room <= 0) throw new u.ApiError(`Уже максимум мин в запасе (${config.MINES.maxStock})`);
+  const bought = Math.min(q, room);
+  const cost = bought * unitPrice;
+  if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
+  user.gold -= cost;
+  user.landmines = have + bought;
+  require('./dailyQuests').bump(user, 'marketBought', 1);
+  notices.push(`💣 Куплено мин: ${bought} (за 🪙 ${cost}). В запасе: ${user.landmines}.`);
+  return { bought, cost, stock: user.landmines };
 }
 
 // Накладывает эффект. Если эффект ТАКОГО ЖЕ типа уже есть — НЕ суммирует,
@@ -72,8 +101,8 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     if (target.id === user.id) throw new u.ApiError('Падлянка самому себе? Оригинально, но нет.');
     user.gold -= price;
     pushEffect(target, item, user);
-    social.mailTo(target, 'Чёрный рынок', 'Диверсия!',
-      `Игрок ${user.name} устроил вам «${item.name}»: ${item.desc}`, user.id);
+    notifications.push(target.id, 'debuff_applied', 'Диверсия!',
+      { text: `Игрок ${user.name} устроил вам «${item.name}»: ${item.desc}`, byId: user.id, byName: user.name });
     notices.push(`😈 «${item.name}» применена к игроку ${target.name}.`);
     return { applied: target.name };
   }
@@ -241,8 +270,8 @@ function tick(): void {
       const winner = users[lot.best.userId];
       if (winner) {
         applyCommanderEffect(winner, commander, now);
-        social.systemMail(winner, 'Аукцион выигран!',
-          `${commander.name} поступает в ваше распоряжение на ${config.AUCTION.RENT_HOURS} часа. ${commander.desc}.`);
+        notifications.push(winner.id, 'auction_won', 'Аукцион выигран!',
+          { text: `${commander.name} поступает в ваше распоряжение на ${config.AUCTION.RENT_HOURS} часа. ${commander.desc}.` });
       }
     }
     w.auctions.splice(i, 1);
@@ -324,8 +353,8 @@ function bid(user: User, lotId: string, amount: number, notices: Notices) {
     const prev = player.users()[lot.best.userId];
     if (prev) {
       prev.gold += lot.best.amount;
-      social.systemMail(prev, 'Аукцион: ставку перебили',
-        `Вашу ставку 🪙 ${lot.best.amount} перебил ${user.name}. Золото возвращено.`);
+      notifications.push(prev.id, 'auction_outbid', 'Аукцион: ставку перебили',
+        { text: `Вашу ставку 🪙 ${lot.best.amount} перебил ${user.name}. Золото возвращено.` });
     }
   }
   user.gold -= amount;
@@ -339,4 +368,4 @@ function containerHistory(user: User) {
   return { history: user.containerHistory || [] };
 }
 
-export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick };
+export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines };

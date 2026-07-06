@@ -91,6 +91,11 @@ function newUser(id: string, name: string, email_: string, passHash: string, sal
     legionId: null,
     lastIncomeAt: now,
     pendingFatality: null,
+    pendingBankHack: null, bankHackCountToday: 0, bankHackVictimsToday: [],
+    landmines: 0, pendingMineDefuse: null,
+    saboteurs: { ground: 0, sea: 0, air: 0, secret: 0, building: 0, suicide: 0 },
+    saboteurLimits: { ground: 50, sea: 50, air: 50, secret: 50, building: 50 },
+    saboteurRareLossAccum: 0,
     lastChatAt: 0,
   };
 }

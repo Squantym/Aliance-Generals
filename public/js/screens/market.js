@@ -13,6 +13,7 @@ App.screens.market = async (c, param) => {
   const tabs = [
     ['buffs', '💉 Допинг'],
     ['debuffs', '😈 Падлянки'],
+    ['mines', '💣 Мины'],
     ['containers', '📦 Контейнеры'],
     ['auction', '🔨 Аукцион'],
     ['passport', '🛂 Паспорт'],
@@ -52,6 +53,39 @@ App.screens.market = async (c, param) => {
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });
+    return;
+  }
+
+  // --- Вкладка: мины (трофей «Растяжка») ---
+  if (tab === 'mines') {
+    const info = await API.get('/api/market/mines');
+    const room = Math.max(0, info.maxStock - info.stock);
+    c.innerHTML = `
+      <div class="title">Чёрный рынок</div>
+      ${tabsHtml}
+      <div class="card">
+        <div class="name">💣 Растяжка</div>
+        <p class="muted small">Мина в ваш личный запас. Срабатывает АВТОМАТИЧЕСКИ, если враг атакует вас — шанс срабатывания и урон технике нападающего зависят от трофея «Растяжка» (раздел «Трофеи»). При взрыве нападающий полностью теряет здоровье, если не разминирует растяжку в мини-игре.</p>
+        <div class="kv mt"><span class="k">В запасе</span><span class="v">${info.stock} / ${info.maxStock}</span></div>
+        <div class="kv"><span class="k">Цена за штуку</span><span class="v gold"><span class="ic-gold"></span> ${info.price}</span></div>
+        ${room > 0 ? `
+          <div class="field-row mt">
+            <input type="number" id="mine-qty" min="1" max="${Math.min(5, room)}" value="${Math.min(5, room)}" style="flex:1">
+            <button class="btn btn-orange btn-inline" id="mine-buy">Купить</button>
+          </div>
+          <p class="muted small center mt">До ${Math.min(5, room)} шт. за раз (максимум в запасе — ${info.maxStock}).</p>
+        ` : `<p class="center gold mt">Запас полон ✔</p>`}
+      </div>`;
+    const buyBtn = document.getElementById('mine-buy');
+    if (buyBtn) buyBtn.onclick = async () => {
+      try {
+        const qty = parseInt(document.getElementById('mine-qty').value, 10) || 1;
+        const r = await API.post('/api/market/mines/buy', { qty });
+        UI.toast(`💣 Куплено мин: ${r.bought} за 🪙 ${r.cost}`);
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
     return;
   }
 
