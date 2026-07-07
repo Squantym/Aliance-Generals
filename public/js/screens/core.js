@@ -211,6 +211,32 @@ App.screens.home = async (c) => {
        <button class="btn btn-red mt" onclick="App.go('war')">Решить судьбу →</button></div>`
     : '';
 
+  // Превью последних новостей для раздела внизу главного меню
+  let newsSectionHtml = '';
+  try {
+    const nd = await API.get('/api/news');
+    const latest = (nd.posts || []).slice(0, 3);
+    const rows = latest.length
+      ? latest.map((p) => `
+        <div class="news-home-row" onclick="App.go('newsview/${p.id}')">
+          <span style="font-size:20px">${UI.esc(p.emoji || '📰')}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.pinned ? '📌 ' : ''}${UI.esc(p.title)}</div>
+            <div class="muted small">${p.tag ? UI.esc(p.tag) + ' · ' : ''}${UI.fmtDate(p.createdAt)}</div>
+          </div>
+          <span class="muted">›</span>
+        </div>`).join('')
+      : '<p class="muted small center" style="padding:10px 0">Новостей пока нет</p>';
+    newsSectionHtml = `
+      <div class="card" style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div class="name">📰 Новости</div>
+          <button class="btn btn-inline" style="padding:5px 12px;font-size:12px" onclick="App.go('news')">Все →</button>
+        </div>
+        ${rows}
+      </div>`;
+  } catch (e) { /* новости недоступны — просто не показываем блок */ }
+
   // Главное меню — сетка 2 колонки. В верхнем (главном) блоке — Легион,
   // альянс — в нижнем (вторичном) меню.
   const prodLocked = !m.unlocked.production;
@@ -242,7 +268,7 @@ App.screens.home = async (c) => {
     ['settings', '⚙', 'Настройки', ''],
   ];
 
-  // Вызов легиона — баннер для лидера клана (висит до истечения 5 минут)
+  // Вызов легиона — баннер для лидера клана (висит до истечения таймера вызова)
   let legionChallengeBanner = '';
   try {
     if (m.legionId) {
@@ -282,6 +308,7 @@ App.screens.home = async (c) => {
       <div class="kv"><span class="k">⏱ Выплата через</span><span class="v">${UI.fmtTimer(m.nextPayoutSec)}</span></div>
     </div>
     <button class="btn" style="width:100%;margin-top:8px" onclick="App.go('support')">🛟 Служба поддержки</button>
+    ${newsSectionHtml}
     <p class="center muted small">© generals-game · сделано в учебных целях</p>`;
 
   // Обратный отсчёт таймера вызова на главном экране
@@ -426,6 +453,7 @@ App.screens.profile = async (c, param) => {
 
   c.innerHTML = `
     <div class="title">Личное дело</div>
+    ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="list-row">
         <div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">${p.online ? '🟢' : '⚪'}</div>
@@ -1099,6 +1127,8 @@ App.screens.season = async (c) => {
 
 // ---------- Мировое событие (босс) ----------
 App.screens.event = async (c) => {
+  // Останавливаем прошлый поллинг события (если был)
+  if (App._eventTimer) { clearInterval(App._eventTimer); App._eventTimer = null; }
   await App.refreshMe();
   const d = await API.get('/api/event');
   if (d.scheduled) {
@@ -1177,10 +1207,10 @@ App.screens.event = async (c) => {
       <p class="muted small">Общий враг! Атакуйте босса — тратится боеприпас, как в обычном бою. Бейте сколько хватит патронов и здоровья. За атаки капает золото, а лучшие по урону и добивший получат награду.</p>
       <div style="margin:10px 0">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
-          <span class="muted"><span class="ic-health"></span> Здоровье босса</span><span style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
+          <span class="muted"><span class="ic-health"></span> Здоровье босса</span><span id="boss-hp-text" style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
         </div>
         <div style="height:14px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden">
-          <div style="height:100%;width:${d.hpPct}%;background:linear-gradient(90deg,var(--red),var(--orange));transition:width .4s"></div>
+          <div id="boss-hp-bar" style="height:100%;width:${d.hpPct}%;background:linear-gradient(90deg,var(--red),var(--orange));transition:width .4s"></div>
         </div>
       </div>
       <div class="kv"><span class="k"><span class="ic-gold"></span> Золото за атаку</span><span class="v gold">${dropInfo}</span></div>
@@ -1196,7 +1226,7 @@ App.screens.event = async (c) => {
     <div class="card">
       <div class="name">🏆 Рейтинг по урону</div>
       <p class="muted small">Обновляется по мере атак. Топ-3 получат награду, добивший — бонус за килл.</p>
-      <div style="margin-top:8px">
+      <div style="margin-top:8px" id="boss-ranking">
         ${(d.ranking && d.ranking.length) ? d.ranking.map((r, i) => {
           const me = r.id === App.me.id;
           const place = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.';
@@ -1235,6 +1265,14 @@ App.screens.event = async (c) => {
         else logEl.insertAdjacentHTML('afterbegin', row);
       }
       // Сверху — ТОЛЬКО уведомление о выпавшем золоте
+      if (r.finished) {
+        // Я нанёс последний удар — событие завершено на сервере. Сразу
+        // показываем итоговый экран, не дожидаясь поллинга.
+        if (App._eventTimer) { clearInterval(App._eventTimer); App._eventTimer = null; }
+        UI.toast('🏆 Босс повержен! Последний удар — ваш!');
+        await App.refreshMe(); App.rerender();
+        return;
+      }
       if (r.goldDrop > 0) UI.toast(`🪙 Выпало золото: ${UI.fmtNum(r.goldDrop)}!`);
       await App.refreshMe(); App.rerender();
     } catch (e) {
@@ -1251,6 +1289,29 @@ App.screens.event = async (c) => {
     }
   };
   if (btn) btn.onclick = doEventAttack;
+
+  // Живой поллинг активного события: обновляем HP/рейтинг, а если босс повержен
+  // (кем угодно) или событие остановлено админом — сразу показываем итог, не
+  // заставляя игрока обновлять страницу (раньше окно «зависало»).
+  App._eventTimer = setInterval(async () => {
+    if (location.hash.replace(/^#/, '') !== 'event') { clearInterval(App._eventTimer); App._eventTimer = null; return; }
+    let dd;
+    try { dd = await API.get('/api/event'); } catch (e) { return; }
+    if (!dd.active) { clearInterval(App._eventTimer); App._eventTimer = null; App.rerender(); return; }
+    // Частичное обновление (не сбивая фокус с кнопки атаки)
+    const hpText = document.getElementById('boss-hp-text');
+    const hpBar = document.getElementById('boss-hp-bar');
+    if (hpText) { hpText.textContent = `${UI.fmtNum(dd.hp)} / ${UI.fmtNum(dd.maxHp)} (${dd.hpPct}%)`; hpText.style.color = `var(--${dd.hpPct > 50 ? 'green' : dd.hpPct > 20 ? 'orange' : 'red'})`; }
+    if (hpBar) hpBar.style.width = dd.hpPct + '%';
+    const rankEl = document.getElementById('boss-ranking');
+    if (rankEl && dd.ranking) {
+      rankEl.innerHTML = dd.ranking.length ? dd.ranking.map((r, i) => {
+        const me = r.id === App.me.id;
+        const place = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.';
+        return `<div class="list-row" style="${me ? 'background:rgba(255,180,0,.10);border-radius:8px;padding:4px 6px' : ''}"><div class="grow">${place} <span class="name" onclick="App.go('profile/${r.id}')" style="cursor:pointer">${UI.esc(r.name)}</span>${me ? ' <span class="gold small">(вы)</span>' : ''}</div><div style="text-align:right"><div class="gold small">${UI.fmtNum(r.damage)} урона</div><div class="muted small">${r.attacks} ${r.attacks === 1 ? 'атака' : 'атак'}</div></div></div>`;
+      }).join('') : '<p class="muted center small" style="padding:8px 0">Пока никто не атаковал — станьте первым!</p>';
+    }
+  }, 3000);
 };
 
 // ---------- Реферальная система ----------

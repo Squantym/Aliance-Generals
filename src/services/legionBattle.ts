@@ -34,6 +34,7 @@ const BATTLE_MS   = 60 * 60 * 1000;   // 1 час бой
 const MOVE_CD_MS  = 30 * 1000;        // кулдаун смены направления
 const ACTION_CD_MS = 3 * 1000;        // кулдаун действия
 const ITEM_CD_MS  = 10 * 1000;        // кулдаун предмета
+const DONE_GRACE_MS = 10 * 60 * 1000; // сколько после боя ещё отдаём его итоги клиенту
 const GUARD_SEC   = 15;               // прикрытие 15 сек
 
 // Очки активности за действия
@@ -734,6 +735,17 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
     defense: topItem(sortedByDef[0],  sortedByDef[0]  ? (sortedByDef[0].stats.guards||0) : 0),
   };
 
+  // ── Топ-3 по каждой характеристике (для послебоевого экрана) ──
+  const mkTop3 = (arr: any[], valFn: (x: any) => number) =>
+    arr.filter(x => valFn(x) > 0).slice(0, 3).map(x => ({ name: x.name, side: x.side, value: valFn(x) }));
+  const sortedByKills = [...combatants].sort((a, b) => (b.stats.kills || 0) - (a.stats.kills || 0));
+  const top3 = {
+    damage:  mkTop3(sortedByDmg,   x => x.stats.dmgDealt || 0),
+    healing: mkTop3(sortedByHeal,  x => x.stats.healed   || 0),
+    defense: mkTop3(sortedByDef,   x => x.stats.guards   || 0),
+    kills:   mkTop3(sortedByKills, x => x.stats.kills    || 0),
+  };
+
   // ── Сводка по кланам (обе стороны): участники и суммарные показатели ──
   const sideSummary = (side: string) => {
     const members = combatants.filter(x => x.side === side);
@@ -760,6 +772,7 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
     topGuardian,
     topAssault,
     tops,
+    top3,
     clanResults: { A: sideSummary('A'), B: sideSummary('B') },
   };
 }
@@ -936,15 +949,57 @@ function tickAllBattles(all: any, users: any): void {
 // ───────────────────────────────────────────────────────────────────
 // Состояние боя для клиента
 // ───────────────────────────────────────────────────────────────────
+// Недавно завершённый бой этого игрока (в течение грейс-периода) — чтобы
+// показать послебоевой экран даже после того, как activeBattle обнулён.
+function findRecentDoneBattle(user: User): Battle | null {
+  const all = battles();
+  let best: Battle | null = null;
+  for (const b of Object.values(all)) {
+    if (!b || b.phase !== 'done') continue;
+    if (!b.combatants || !b.combatants[user.id]) continue;
+    if (now() - (b.finishedAt || 0) > DONE_GRACE_MS) continue;
+    if (!best || (b.finishedAt || 0) > (best.finishedAt || 0)) best = b;
+  }
+  return best;
+}
+
+// Компактный послебоевой вид: сторона игрока, победитель, его боец (со
+// статистикой) и полный отчёт (топы, сводки кланов).
+function doneStateView(battle: Battle, user: User): any {
+  const c = battle.combatants[user.id];
+  const mySide = c ? c.side : (battle.legionA === (user.legionId || '') ? 'A' : 'B');
+  return {
+    id: battle.id,
+    phase: 'done',
+    mySide,
+    winningSide: battle.winningSide || null,
+    finishReason: battle.finishReason || null,
+    me: c ? serializeCombatant(c, now(), true) : null,
+    finalReport: battle.finalReport || null,
+  };
+}
+
 function battleState(user: User): any {
   const { battle, legion: l } = resolveBattle(user);
-  if (!battle) return { battle: null };
+
+  // Активного боя нет — но, возможно, бой только что завершился. В finalizeBattle
+  // связь activeBattle обнуляется, поэтому resolveBattle возвращает null. Чтобы
+  // клиент показал итоги (а не завис/выкинул на главную), ищем недавно
+  // завершённый бой этого игрока и отдаём его послебоевой вид.
+  if (!battle) {
+    const done = findRecentDoneBattle(user);
+    if (done) return { battle: doneStateView(done, user) };
+    return { battle: null };
+  }
 
   // ЛЕНИВЫЙ переход фазы: не ждём фоновый 30-сек тик. Как только клиент
   // опросил состояние после истечения таймера подготовки — сразу переводим
   // prep→active (или завершаем истёкшую активную фазу). Иначе после 00:00
   // клиент до 30 сек видел «застывший» экран.
   if (advancePhase(battle, legions(), allUsers())) db.save('battles');
+
+  // Бой мог завершиться прямо в advancePhase (истекло время) — отдаём итоги.
+  if (battle.phase === 'done') return { battle: doneStateView(battle, user) };
 
   const mySide = l.id === battle.legionA ? 'A' : 'B';
   const me = battle.combatants[user.id] || null;
@@ -1051,7 +1106,10 @@ function serializeCombatant(c: Combatant, t: number, isSelf: boolean): any {
     userId: c.userId, name: c.name,
     role: c.role, roleName: ROLES[c.role] ? ROLES[c.role].label : c.role,
     hp: c.hp, maxHp: c.maxHp, shield: c.shield || 0,
-    ammo, energy, online,
+    // Снаряды и энергию видит ТОЛЬКО сам игрок — противник и союзники не знают
+    // твой боезапас/энергию (это стратегическая информация). HP остаётся видимым:
+    // без него нельзя целиться и понимать прогресс боя.
+    ammo: isSelf ? ammo : null, energy: isSelf ? energy : null, online,
     alive: c.alive, ready: c.ready, direction: c.direction,
     dirName: c.direction ? DIR_NAMES[(c.direction || 1)-1] : null,
     stunned:    fx('stun').length    > 0 ? Math.ceil((fx('stun')[0].expiresAt    - t) / 1000) : 0,

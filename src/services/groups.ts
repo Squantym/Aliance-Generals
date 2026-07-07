@@ -444,7 +444,40 @@ function leave(user: User, kind: string, notices: Notices) {
   db.save(def.coll);
 }
 
-export = { view, create, apply, decide, invite, respondInvite, pendingInvites, kick, leave, hireDiplomat, cleanupBotsFromAlliances, listAllAdmin, viewDetailAdmin };
+// ── АДМИН: вступить в ЛЮБУЮ группу без заявки и одобрения лидера ──
+function adminJoin(adminUser: User, kind: string, groupId: string, notices: Notices) {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  const def = defOf(kind);
+  const all = coll(kind);
+  const g = all[groupId];
+  if (!g) throw new u.ApiError(`${def.label} не найден`);
+  g.members = g.members || [];
+  if (g.members.includes(adminUser.id)) throw new u.ApiError('Вы уже в этой группе');
+
+  // Если админ уже в другой группе этого типа — выходим из неё (не бросая лидерство «в воздух»)
+  const prevId = adminUser[def.userField];
+  if (prevId && prevId !== groupId) {
+    const prev = all[prevId];
+    if (prev) {
+      prev.members = (prev.members || []).filter((m: string) => m !== adminUser.id);
+      // Если админ был лидером прежней группы — передаём лидерство первому оставшемуся
+      if (prev.leaderId === adminUser.id && prev.members.length > 0) prev.leaderId = prev.members[0];
+    }
+  }
+
+  adminUser[def.userField] = g.id;
+  g.members.push(adminUser.id);
+  // Снимаем возможную «висящую» заявку админа в любой группе этого типа
+  for (const x of Object.values(all) as any[]) {
+    const i = (x.requests || []).indexOf(adminUser.id);
+    if (i >= 0) x.requests.splice(i, 1);
+  }
+  db.save(def.coll);
+  notices.push(`👑 Вы вступили в «${g.name}» по праву администратора. Бойцов: ${g.members.length}.`);
+  return { id: g.id, name: g.name, members: g.members.length };
+}
+
+export = { view, create, apply, decide, invite, respondInvite, pendingInvites, kick, leave, hireDiplomat, cleanupBotsFromAlliances, listAllAdmin, viewDetailAdmin, adminJoin };
 
 // ── АДМИН: список ВСЕХ альянсов/легионов (без ограничения топ-20) ──
 function listAllAdmin(kind: string) {
@@ -455,6 +488,7 @@ function listAllAdmin(kind: string) {
         id: x.id, name: x.name, members: x.members.length,
         leaderName: (player.users()[x.leaderId] || {}).name || '—',
         treasury: kind === 'legion' ? (x.treasury || 0) : undefined,
+        hasActiveBattle: kind === 'legion' ? !!x.activeBattle : undefined,
       }))
       .sort((a: any, b: any) => b.members - a.members),
   };

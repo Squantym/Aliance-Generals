@@ -200,6 +200,7 @@ console.log('\n[6] Admin: депозит в казну ЛЮБОГО легион
   const lid = leader.legionId;
 
   const adminU = mkUser('u_admin2', 'Админ2');
+  adminU.isAdmin = true;   // adminDeposit теперь требует прав администратора
   usersMap['u_admin2'] = adminU;
   const goldBefore = adminU.gold, dollarsBefore = adminU.dollars;
 

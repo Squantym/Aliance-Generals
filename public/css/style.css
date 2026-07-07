@@ -1892,3 +1892,100 @@ body.theme-cyber .img-frame {
   font-size: 12px; font-weight: 700; color: #e9c75c;
   text-shadow: 0 0 4px rgba(233,199,92,.4);
 }
+
+/* ==================== БОЕВОЕ ОКНО ЛЕГИОНА ==================== */
+/* Оверлей на весь экран, но контент — центрированная колонка (иначе на ПК
+   всё растягивается на всю ширину монитора). Компактные отступы + адаптив. */
+#battle-window { font-size: 13.5px; }
+.bw-inner { max-width: 600px; margin: 0 auto; padding-bottom: 12px; }
+.bw-head {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--bg, #0a0f1a); border-bottom: 2px solid var(--border);
+  padding: 7px 12px;
+}
+.bw-body { padding: 8px 12px; }
+.bw-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.bw-card.tight { padding: 6px 10px; }
+.bw-me-res { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); margin-top: 5px; }
+.bw-me-res b { color: var(--text); }
+/* Направления — компактная сетка чипов */
+.bw-dirs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+.bw-dir {
+  padding: 7px 4px; border-radius: 7px; text-align: center; font-size: 12px;
+  border: 1px solid var(--border); cursor: pointer; background: rgba(255,255,255,.02);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bw-dir.sel { border: 2px solid var(--green); background: rgba(0,150,90,.12); }
+.bw-dir .cnt { display: block; font-size: 11px; margin-top: 2px; }
+/* Строки бойцов (враги/союзники) — плотные */
+.bw-fighter { padding: 7px 0; border-bottom: 1px solid var(--border-dim); }
+.bw-fighter:last-child { border-bottom: none; }
+.bw-fighter-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.bw-fighter-acts { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.bw-fighter-acts .btn { flex: 1; padding: 7px; font-size: 12.5px; min-width: 90px; }
+/* Боевой пояс — приметный, крупные кнопки */
+.bw-belt { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bw-slot {
+  border: 2px solid var(--orange); border-radius: 9px; padding: 8px 6px; text-align: center;
+  background: rgba(255,150,0,.1); display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 0 0 1px rgba(255,150,0,.15) inset;
+}
+.bw-slot .nm { font-size: 12.5px; font-weight: 700; line-height: 1.15; }
+.bw-slot .btn { padding: 8px 4px; font-size: 12.5px; }
+.bw-slot.empty { border: 1px dashed var(--border); background: none; box-shadow: none; min-height: 60px; align-items: center; justify-content: center; }
+.bw-armed-banner {
+  background: rgba(255,200,0,.12); border: 1px solid var(--gold); border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 13px;
+}
+/* Планка ролей/направлений в подготовке — тоже компактнее */
+@media (min-width: 760px) {
+  .bw-inner { max-width: 680px; }
+  #battle-window { font-size: 14px; }
+}
+
+/* ==================== НОВОСТИ ==================== */
+.news-card { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s, background .15s; background:rgba(255,255,255,.015); }
+.news-card:hover { border-color:var(--gold); background:rgba(255,180,0,.04); }
+.news-card-head { display:flex; gap:10px; align-items:flex-start; }
+.news-emoji { font-size:26px; line-height:1; }
+.news-title { font-weight:bold; font-size:15px; line-height:1.25; }
+.news-meta { margin-top:3px; display:flex; align-items:center; flex-wrap:wrap; gap:2px; }
+.news-preview { margin-top:8px; max-height:110px; overflow:hidden; position:relative; -webkit-mask-image:linear-gradient(180deg,#000 60%,transparent); mask-image:linear-gradient(180deg,#000 60%,transparent); font-size:13px; }
+.news-preview p, .news-preview div { margin-top:2px; }
+.news-more { margin-top:6px; color:var(--gold); }
+/* Статья целиком */
+.news-article { border:1px solid var(--border); border-radius:12px; padding:16px 16px 20px; background:rgba(255,255,255,.015); }
+.news-article-head { display:flex; gap:12px; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--border-dim); margin-bottom:12px; }
+.news-article-title { font-weight:bold; font-size:19px; line-height:1.2; }
+.news-article-body { font-size:14px; }
+.news-article-body a { color:var(--gold); text-decoration:underline; }
+.news-article-body mark { background:rgba(255,200,0,.28); color:inherit; padding:0 3px; border-radius:3px; }
+.news-article-body img { box-shadow:0 2px 10px rgba(0,0,0,.4); }
+/* Редактор */
+.news-lbl { display:block; font-size:12px; color:var(--dim); margin-bottom:4px; font-weight:600; }
+.news-lbl.mt { margin-top:10px; }
+.news-input { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:7px; background:var(--bg); color:var(--text); font-size:14px; font-family:inherit; }
+.news-input:focus { outline:none; border-color:var(--gold); }
+textarea.news-input { resize:vertical; line-height:1.4; }
+.news-emoji-row { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+.news-emoji-btn { width:38px; height:38px; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,.02); font-size:19px; cursor:pointer; }
+.news-emoji-btn.sel { border:2px solid var(--gold); background:rgba(255,180,0,.12); }
+.news-emoji-input { width:52px !important; text-align:center; }
+.news-tools { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+.news-add-btn { padding:9px 6px; font-size:13px; text-align:left; }
+.news-block { border:1px solid var(--border); border-radius:9px; padding:10px 12px 12px; margin-bottom:9px; background:rgba(255,255,255,.02); position:relative; }
+.news-block-label { font-size:11px; color:var(--gold); font-weight:700; margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em; }
+.news-block-ctl { position:absolute; top:8px; right:8px; display:flex; gap:3px; }
+.news-mini { width:26px; height:26px; border:1px solid var(--border); border-radius:6px; background:rgba(255,255,255,.03); color:var(--text); cursor:pointer; font-size:12px; line-height:1; }
+.news-mini:disabled { opacity:.3; cursor:default; }
+.news-mini-del { color:var(--red); border-color:rgba(220,60,60,.4); }
+.news-lvl.sel, .news-color.sel { outline:2px solid var(--gold); }
+.news-color { width:26px; height:26px; border:1px solid rgba(255,255,255,.2); border-radius:6px; cursor:pointer; }
+.news-add-btn:active { transform:scale(.97); }
+@media (min-width: 760px) { .news-tools { grid-template-columns:repeat(5,1fr); } }
+
+/* Строки новостей на главной */
+.news-home-row { display:flex; align-items:center; gap:10px; padding:8px 4px; border-top:1px solid var(--border-dim); cursor:pointer; }
+.news-home-row:first-of-type { border-top:none; }
+.news-home-row:hover { background:rgba(255,255,255,.03); border-radius:6px; }

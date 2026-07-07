@@ -601,7 +601,8 @@ function challengeLegion(user: User, enemyId: string, notices: Notices) {
       { challengerName: l.name, challengerId: l.id, expiresAt });
   }
 
-  notices.push(`⚔️ Вызов отправлен легиону «${enemy.name}»! Ожидаем ответа 5 минут.`);
+  const acceptMin = Math.round(config.LEGION.CHALLENGE_ACCEPT_MS / 60000);
+  notices.push(`⚔️ Вызов отправлен легиону «${enemy.name}»! Ожидаем ответа ${acceptMin} минут.`);
   return { expiresAt };
 }
 
@@ -937,7 +938,7 @@ function chatPost(user: User, text: string, notices: Notices) {
 // ===================================================================
 // ПУБЛИЧНЫЙ ПРОСМОТР ЛЕГИОНА (для посторонних)
 // ===================================================================
-function publicView(legionId: string): any {
+function publicView(legionId: string, viewer?: User): any {
   const l = legions()[legionId];
   if (!l) throw new u.ApiError('Легион не найден');
   ensureLegionFields(l);
@@ -948,6 +949,22 @@ function publicView(legionId: string): any {
     return u2 ? { id: u2.id, name: u2.name, flag: player.flag(u2), level: u2.level, rank, rankName: config.LEGION.RANKS[rank] } : null;
   }).filter(Boolean).sort((a, b) => b.rank - a.rank || b.level - a.level);
 
+  // Администратор видит внутренности любого легиона без вступления:
+  // казну, резервы, казначейство, арсенал, постройки, боевые постройки.
+  const isAdminViewer = !!(viewer && viewer.isAdmin);
+  const adminPeek = isAdminViewer ? {
+    treasury: l.treasury || 0,
+    reserves: l.reserves || 0,
+    treasuryEars: l.treasuryEars || 0,
+    treasuryTokens: l.treasuryTokens || 0,
+    ratingPoints: l.ratingPoints || 0,
+    arsenal: config.LEGION_SHOP_ITEMS.map((item: any) => ({ id: item.id, name: item.name, count: (l.arsenal || {})[item.id] || 0 })).filter((x: any) => x.count > 0),
+    buildings: Object.entries(l.buildings || {}).map(([id, count]) => { const b = config.BUILDING_BY_ID[id]; return b && count ? { id, name: b.name, count } : null; }).filter(Boolean),
+    hasActiveBattle: !!l.activeBattle,
+    pendingChallenge: !!l.pendingChallenge,
+    leaderName: (users[l.leaderId] || {}).name || '—',
+  } : null;
+
   return {
     id: l.id, name: l.name,
     legionLevel: l.legionLevel || 1,
@@ -956,21 +973,83 @@ function publicView(legionId: string): any {
     battleStats: l.battleStats || { wins: 0, losses: 0 },
     members,
     memberCount: members.length,
+    isAdminViewer,
+    adminPeek,
   };
 }
 
-// ── АДМИН: пополнить казну ЛЮБОГО легиона напрямую (без списания у
-// какого-либо игрока — это «создание» ресурсов администратором, как и
-// admin.grant для личных ресурсов игрока) ──
-function adminDeposit(adminUser: User, legionId: string, amount: number, notices: Notices) {
+// ── АДМИН: организовать бой между ЛЮБЫМИ двумя легионами (для турниров),
+// минуя вызов/принятие. Создаёт единый объект боя, как acceptChallenge. ──
+function adminStartBattle(adminUser: User, legionAId: string, legionBId: string, notices: Notices): any {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  if (!legionAId || !legionBId || legionAId === legionBId) throw new u.ApiError('Выберите два разных легиона');
+  const all = legions();
+  const A = all[legionAId];
+  const B = all[legionBId];
+  if (!A || !B) throw new u.ApiError('Легион не найден');
+  ensureLegionFields(A); ensureLegionFields(B);
+  if (A.activeBattle || B.activeBattle) throw new u.ApiError('Один из легионов уже в бою');
+  if ((A.members || []).length === 0 || (B.members || []).length === 0) throw new u.ApiError('В легионе нет бойцов');
+
+  const lb = require('./legionBattle');
+  const battleId = u.uid(12);
+  const prepEndsAt = Date.now() + lb.PREP_MS;
+  const battleObj = {
+    id: battleId,
+    legionA: A.id, legionB: B.id,
+    legionAName: A.name, legionBName: B.name,
+    startedAt: Date.now(), prepEndsAt, phase: 'prep',
+    combatants: {}, gear: {}, guardLinks: {}, guardExpiry: {}, log: [],
+    adminTournament: true,   // метка: бой организован администратором
+  };
+  const battles = db.load('battles', {});
+  battles[battleId] = battleObj;
+  db.save('battles');
+
+  A.activeBattle = { battleId, enemyId: B.id };
+  B.activeBattle = { battleId, enemyId: A.id };
+  A.pendingChallenge = null; B.pendingChallenge = null;
+  db.save('legions');
+
+  const users = player.users();
+  const prepMin = Math.round(lb.PREP_MS / 60000);
+  const announce = (legion: any, enemyName: string) => {
+    for (const memberId of legion.members) {
+      const m = users[memberId];
+      if (m) notif.push(m.id, 'legion_battle_start',
+        `⚔️ Турнирный бой! Администратор назначил бой против «${enemyName}». ${prepMin} минут на подготовку!`,
+        { enemyName, prepEndsAt });
+    }
+  };
+  announce(A, B.name);
+  announce(B, A.name);
+
+  notices.push(`✅ Турнирный бой назначен: «${A.name}» против «${B.name}». Подготовка ${prepMin} минут.`);
+  return { battleId, prepEndsAt, legionA: A.name, legionB: B.name };
+}
+
+// ── АДМИН: пополнить казну/резервы/казначейство ЛЮБОГО легиона напрямую
+// (без списания у игрока — «создание» ресурсов админом). resource:
+// 'treasury' ($) | 'reserves' (РЕЗ) | 'ears' (уши) | 'tokens' (жетоны). ──
+function adminDeposit(adminUser: User, legionId: string, amount: number, notices: Notices, resource?: string) {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
   const l = legions()[legionId];
   if (!l) throw new u.ApiError('Легион не найден');
+  ensureLegionFields(l);
   const amt = u.toInt(amount, 0);
   if (amt <= 0) throw new u.ApiError('Сумма должна быть положительной');
-  l.treasury = (l.treasury || 0) + amt;
+  const res = resource || 'treasury';
+  const LABEL: any = { treasury: 'казну ($)', reserves: 'резервы (РЕЗ)', ears: 'уши', tokens: 'жетоны' };
+  switch (res) {
+    case 'treasury': l.treasury = (l.treasury || 0) + amt; break;
+    case 'reserves': l.reserves = (l.reserves || 0) + amt; break;
+    case 'ears':     l.treasuryEars = (l.treasuryEars || 0) + amt; break;
+    case 'tokens':   l.treasuryTokens = (l.treasuryTokens || 0) + amt; break;
+    default: throw new u.ApiError('Неизвестный ресурс');
+  }
   db.save('legions');
-  notices.push(`💰 Администратор пополнил казну легиона «${l.name}» на $${u.fmt(amt)}.`);
-  return { legionId, treasury: l.treasury };
+  notices.push(`💰 Администратор пополнил ${LABEL[res] || res} легиона «${l.name}» на ${u.fmt(amt)}.`);
+  return { legionId, treasury: l.treasury, reserves: l.reserves, treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
 }
 
 export = {
@@ -980,7 +1059,7 @@ export = {
   shopBuy, gearPick,
   challengeLegion, acceptChallenge, declineChallenge,
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
-  adminDeposit,
+  adminDeposit, adminStartBattle,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
   setReady:         (...a) => require('./legionBattle').setReady(...a),

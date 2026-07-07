@@ -47,6 +47,7 @@ const Admin = {
       { id:'players',   label:'👥 Игроки' },
       { id:'tools',     label:'🛠 Инструменты' },
       { id:'events',    label:'🐉 События' },
+      { id:'tournament',label:'⚔️ Турниры' },
       { id:'discounts', label:'🏷 Скидки' },
       { id:'buffs',     label:'🎉 Бонусы' },
       { id:'logs',      label:'📋 Журнал' },
@@ -76,6 +77,7 @@ const Admin = {
     if (Admin.tab === 'players')   return Admin.renderPlayers(c);
     if (Admin.tab === 'tools')     return Admin.renderTools(c);
     if (Admin.tab === 'events')    return Admin.renderEvents(c);
+    if (Admin.tab === 'tournament')return Admin.renderTournament(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
@@ -560,6 +562,49 @@ const Admin = {
       ${section('🥷 Диверсанты', sabHtml)}
       ${section('👥 Группы и прочее', groupHtml)}
       <button class="btn btn-orange mt" style="width:100%" onclick="document.getElementById('pd-modal').remove()">Закрыть</button>`;
+  },
+
+  // ── Вкладка «Турниры»: назначить бой между двумя легионами ──
+  async renderTournament(c) {
+    c.innerHTML = '<p class="muted center">Загрузка легионов…</p>';
+    let data;
+    try { data = await API.get('/api/admin/groups/legion'); }
+    catch (e) { c.innerHTML = '<p class="muted center">Ошибка загрузки: ' + UI.esc(e.message) + '</p>'; return; }
+    const legions = (data.groups || []).filter(l => l.members > 0);
+    if (legions.length < 2) {
+      c.innerHTML = '<div class="card center muted">Нужно минимум два легиона с бойцами для турнирного боя.</div>';
+      return;
+    }
+    const opt = (l) => `<option value="${l.id}"${l.hasActiveBattle ? ' disabled' : ''}>${l.name} (${l.members} 👤${l.hasActiveBattle ? ', в бою' : ''})</option>`;
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">⚔️ Организовать турнирный бой</div>
+        <p class="muted small">Назначьте бой между двумя легионами напрямую (минуя вызов). У легионов будет 10 минут на подготовку, как в обычном бою.</p>
+        <label class="news-lbl mt">🅰️ Легион A</label>
+        <select id="trn-a" class="news-input">${legions.map(opt).join('')}</select>
+        <label class="news-lbl mt">🅱️ Легион B</label>
+        <select id="trn-b" class="news-input">${legions.map(opt).join('')}</select>
+        <button class="btn btn-orange mt" id="trn-start" style="width:100%">⚔️ Начать бой</button>
+        <p class="muted small mt">Легионы, уже участвующие в бою, недоступны для выбора.</p>
+      </div>
+      <div class="card">
+        <div class="name">📋 Все легионы (${legions.length})</div>
+        ${legions.map(l => `<div class="kv"><span class="k">${UI.esc(l.name)} <span class="muted small">· ${UI.esc(l.leaderName)}</span></span><span class="v">${l.members} 👤 ${l.hasActiveBattle ? '<span class="badge orange">в бою</span>' : ''}</span></div>`).join('')}
+      </div>`;
+    const selB = document.getElementById('trn-b');
+    if (legions.length >= 2) selB.selectedIndex = 1;
+    document.getElementById('trn-start').onclick = async () => {
+      const a = document.getElementById('trn-a').value;
+      const b = document.getElementById('trn-b').value;
+      if (a === b) { UI.toast('⛔ Выберите два разных легиона'); return; }
+      const an = legions.find(x => x.id === a), bn = legions.find(x => x.id === b);
+      if (!await UI.confirm(`Начать бой «${an.name}» против «${bn.name}»?`, { title: '⚔️ Турнир', okText: 'Начать бой' })) return;
+      try {
+        const r = await API.post('/api/admin/legion/battle', { legionAId: a, legionBId: b });
+        UI.toast((r.notices && r.notices[0]) || 'Бой назначен!');
+        Admin.renderTab();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
   },
 
   renderGrantForm(p) {

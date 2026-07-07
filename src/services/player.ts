@@ -948,6 +948,10 @@ function publicProfile(target: User, viewer: User): any {
 
   const country = config.COUNTRY_BY_ID[target.country];
   const isOwn = viewer && viewer.id === target.id;
+  // Администратор видит чужой профиль ПОЛНОСТЬЮ (армия/постройки/секретки),
+  // без разведки — как свой. reveal = свой профиль ИЛИ смотрит админ.
+  const isAdminViewer = !!(viewer && viewer.isAdmin);
+  const reveal = isOwn || isAdminViewer;
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,
     level: target.level, rank: rank(target.level), rating: rating(target),
@@ -981,24 +985,26 @@ function publicProfile(target: User, viewer: User): any {
     activeEffects: effectsView(target).map((e) => ({
       name: e.name, desc: e.desc, timeLeft: e.timeLeft,
       hostile: e.hostile,
-      byName: isOwn ? e.byName : null,
+      byName: (isOwn || isAdminViewer) ? e.byName : null,
     })),
-    power:          isOwn ? { atk: atk.power, def: def.power } : null,
-    critChancePct:  isOwn ? Math.round((Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) + (effMul(target, 'crit_bonus') - 1)) * 1000) / 10 : null,
-    dodgeChancePct: isOwn ? Math.round((Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) + (effMul(target, 'dodge_bonus') - 1)) * 1000) / 10 : null,
-    powerStats:     isOwn ? powerStats(target) : null,
+    power:          reveal ? { atk: atk.power, def: def.power } : null,
+    critChancePct:  reveal ? Math.round((Math.min(config.BATTLE.CRIT_MAX_CHANCE, config.BATTLE.CRIT_BASE + target.skills.cruelty * config.BATTLE.CRIT_PER_CRUELTY) + (effMul(target, 'crit_bonus') - 1)) * 1000) / 10 : null,
+    dodgeChancePct: reveal ? Math.round((Math.min(config.BATTLE.DODGE_MAX, target.skills.agility * config.BATTLE.DODGE_PER_AGILITY) + (effMul(target, 'dodge_bonus') - 1)) * 1000) / 10 : null,
+    powerStats:     reveal ? powerStats(target) : null,
     capacity: capacity(target),
     // Техника, постройки и секретки врага СКРЫТЫ от чужих — их можно
-    // увидеть только через шпионаж (разведку). Свои всегда видны.
-    units: isOwn ? unitsList : [],
-    buildings: isOwn ? buildingsList : [],
-    secretDevs: isOwn ? devsList : [],
-    superSecret: isOwn ? target.superSecret : 0,
-    superDevInfo: (isOwn && target.superSecret > 0) ? {
+    // увидеть только через шпионаж (разведку). Свои всегда видны, а
+    // администратору видно всё без разведки (reveal).
+    units: reveal ? unitsList : [],
+    buildings: reveal ? buildingsList : [],
+    secretDevs: reveal ? devsList : [],
+    superSecret: reveal ? target.superSecret : 0,
+    superDevInfo: (reveal && target.superSecret > 0) ? {
       id: config.SUPER_DEV.id, name: config.SUPER_DEV.name,
       count: target.superSecret, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
     } : null,
-    hideArmy: !isOwn,   // флаг для фронта: армия скрыта, нужна разведка
+    hideArmy: !reveal,   // флаг для фронта: армия скрыта, нужна разведка
+    adminView: isAdminViewer && !isOwn,   // админ смотрит чужой профиль (для бейджа)
     // Титул и косметика профиля — видны всем
     activeTitle: (() => { try { return require('./features').activeTitleName(target); } catch (e) { return null; } })(),
     profileFrame: target.profileFrame || null,
