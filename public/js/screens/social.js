@@ -774,13 +774,16 @@ async function renderGroupScreen(c, kind) {
         };
       });
 
-      // Обратный отсчёт таймера вызова
+      // Обратный отсчёт таймера вызова (корректные секунды из данных, не из текста)
       const timerEl = document.getElementById('challenge-timer');
-      if (timerEl) {
-        let secs = parseInt(timerEl.textContent) || 0;
-        const t = setInterval(() => {
+      if (timerEl && L.challenge) {
+        if (App._challengeTimer) { clearInterval(App._challengeTimer); App._challengeTimer = null; }
+        let secs = parseInt(L.challenge.secondsLeft, 10) || 0;
+        timerEl.textContent = UI.fmtTimer(secs);
+        App._challengeTimer = setInterval(() => {
+          if (!document.getElementById('challenge-timer')) { clearInterval(App._challengeTimer); App._challengeTimer = null; return; }
           secs--;
-          if (secs <= 0) { clearInterval(t); timerEl.textContent = '00:00'; return; }
+          if (secs <= 0) { clearInterval(App._challengeTimer); App._challengeTimer = null; timerEl.textContent = '00:00'; return; }
           timerEl.textContent = UI.fmtTimer(secs);
         }, 1000);
       }

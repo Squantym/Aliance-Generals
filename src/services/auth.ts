@@ -274,4 +274,4 @@ function resetPassword(token: string, newPassword: string) {
   return { ok: true };
 }
 
-export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword };
+export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, newUser };

@@ -23,6 +23,7 @@
 
 import config = require('../../config/gameConfig');
 import u = require('../core/utils');
+import db = require('../core/db');
 import player = require('./player');
 import notifications = require('./notifications');
 import discounts = require('./discounts');
@@ -157,6 +158,10 @@ function fuelPower(user: User, siloId: string, amount: number, notices: Notices)
 }
 
 // ---------- Запуск ракеты по цели ----------
+// Глобальная коллекция летящих ракет
+function inFlight(): Record<string, any> { return db.load('rockets', {}); }
+
+// ---------- Запуск ракеты по цели (теперь ракета ЛЕТИТ 10 минут) ----------
 function launch(user: User, siloId: string, targetId: string, notices: Notices) {
   const silo = silos(user).find((s) => s.id === siloId);
   if (!silo) throw new u.ApiError('Шахта не найдена');
@@ -167,13 +172,49 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
 
   const target = player.users()[targetId];
   if (!target) throw new u.ApiError('Цель не найдена');
+
+  // Мощность фиксируется в момент пуска (по текущему заполнению боеприпасов)
+  const powerFrac = Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED);
+  const now = Date.now();
+  const impactAt = now + S.FLIGHT_MS;
+
+  // Ракета покидает шахту — шахта сразу уходит в пересборку (24ч)
+  silo.rocket = freshRocket();
+
+  // Создаём летящую ракету
+  const rocketId = u.uid(12);
+  const rockets = inFlight();
+  rockets[rocketId] = {
+    id: rocketId,
+    attackerId: user.id, attackerName: user.name,
+    targetId: target.id, targetName: target.name,
+    launchedAt: now, impactAt, powerFrac,
+    intercepted: false, interceptedBy: null, resolved: false,
+  };
+  db.save('rockets');
+  db.save('users');
+
+  // Предупреждаем цель (баннер + таймер 10 минут)
+  notifications.push(target.id, 'rocket_incoming',
+    `🚀 По вам запущена ракета! Долёт через 10 минут. Успейте сбить её лазером в разделе «Ракеты», или попросите союзников.`,
+    { attackerName: user.name, attackerId: user.id, rocketId, impactAt });
+
+  notices.push(`🚀 Ракета запущена по «${target.name}»! Мощность ${Math.round(powerFrac * 100)}%. Долёт через 10 минут — цель может попытаться её сбить.`);
+  return {
+    launched: true,
+    targetName: target.name,
+    powerPct: Math.round(powerFrac * 100),
+    impactAt,
+    flightSec: Math.round(S.FLIGHT_MS / 1000),
+    silo: siloView(silo),
+  };
+}
+
+// Применение урона ракеты к цели (техника/здания/диверсанты). Возвращает отчёт.
+function applyRocketDamage(attackerName: string, target: any, powerFrac: number): any {
   player.refresh(target);
 
-  // Урон пропорционален текущей мощности (не обязательно 100%)
-  const powerFrac = Math.min(1, r.powerAmmo / S.POWER_AMMO_NEEDED);
-
-  // ----- Разрушение построек цели: 140-560 единиц при 100% мощности -----
-  // Уничтожаются случайно и защитные, и доходные постройки.
+  // ----- Разрушение построек цели -----
   const buildingEntries: any[] = [];
   for (const [id, count] of Object.entries(target.buildings || {})) {
     const def = config.BUILDING_BY_ID[id];
@@ -197,30 +238,27 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
   }
   const buildingsDestroyedCount = buildingLossTotal - buildingsToDestroy;
 
-  // ----- Уничтожение техники цели (масштаб от мощности) -----
+  // ----- Уничтожение техники цели -----
   const techLossTotal = Math.round((S.TECH_LOSS_MIN + (S.TECH_LOSS_MAX - S.TECH_LOSS_MIN) * powerFrac));
   const weakPct = S.TECH_LOSS_WEAK_PCT_MIN + Math.random() * (S.TECH_LOSS_WEAK_PCT_MAX - S.TECH_LOSS_WEAK_PCT_MIN);
   const strongPct = S.TECH_LOSS_STRONG_PCT_MIN + Math.random() * (S.TECH_LOSS_STRONG_PCT_MAX - S.TECH_LOSS_STRONG_PCT_MIN);
 
-  // Собираем все юниты цели, сортируем по «слабости» (unlock level) —
-  // слабые впереди, мощные сзади
   const unitPool: any[] = [];
   for (const [unitId, mkMapRaw] of Object.entries(target.units || {})) {
     const cu = config.UNIT_BY_ID[unitId];
     if (!cu) continue;
     for (let mk = 0; mk <= 2; mk++) {
-      const cnt = (mkMapRaw && mkMapRaw[mk]) || 0;
+      const cnt = (mkMapRaw && (mkMapRaw as any)[mk]) || 0;
       if (cnt > 0) unitPool.push({ unitId, mk, count: cnt, unlock: cu.unlock, name: cu.name + (mk ? ` Mk${mk}` : '') });
     }
   }
-  unitPool.sort((a, b) => a.unlock - b.unlock); // слабые (низкий unlock) первыми
+  unitPool.sort((a, b) => a.unlock - b.unlock);
 
   const techLost: Record<string, number> = {};
-  let toLoseWeak = Math.round(techLossTotal * weakPct);
-  let toLoseStrong = Math.round(techLossTotal * strongPct);
-  let toLoseMid = Math.max(0, techLossTotal - toLoseWeak - toLoseStrong);
-
-  const applyLoss = (pool, amount) => {
+  const toLoseWeak = Math.round(techLossTotal * weakPct);
+  const toLoseStrong = Math.round(techLossTotal * strongPct);
+  const toLoseMid = Math.max(0, techLossTotal - toLoseWeak - toLoseStrong);
+  const applyLoss = (pool: any[], amount: number) => {
     let left = amount;
     for (const e of pool) {
       if (left <= 0) break;
@@ -234,53 +272,73 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
       techLost[e.name] = (techLost[e.name] || 0) + take;
       if ((m[0] || 0) + (m[1] || 0) + (m[2] || 0) <= 0) delete target.units[e.unitId];
     }
-    return left; // сколько не удалось списать (пул исчерпан)
+    return left;
   };
-
   const thirdLen = Math.ceil(unitPool.length / 3);
-  const weakPool = unitPool.slice(0, thirdLen);
-  const midPool = unitPool.slice(thirdLen, thirdLen * 2);
-  const strongPool = unitPool.slice(thirdLen * 2);
+  applyLoss(unitPool.slice(0, thirdLen), toLoseWeak);
+  applyLoss(unitPool.slice(thirdLen, thirdLen * 2), toLoseMid);
+  applyLoss(unitPool.slice(thirdLen * 2), toLoseStrong);
 
-  applyLoss(weakPool, toLoseWeak);
-  applyLoss(midPool, toLoseMid);
-  applyLoss(strongPool, toLoseStrong);
+  // ----- Диверсанты цели -----
+  const lostSaboteurs = require('./saboteurs').rocketDestroy(target, powerFrac, []);
 
-  // ----- Уничтожение диверсантов цели (масштаб от мощности, до 200 при 100%) -----
-  const lostSaboteurs = require('./saboteurs').rocketDestroy(target, powerFrac, notices);
-
-  // ----- Пересобираем ракету (шахта остаётся, ракета — заново 24ч) -----
-  silo.rocket = freshRocket();
-
-  // ----- Уведомления -----
   const destroyedList = Object.entries(destroyed).map(([n, c]) => `${n} ×${c}`).join(', ');
   const techLostList = Object.entries(techLost).map(([n, c]) => `${n} ×${c}`).join(', ');
-  // Суммарно техники уничтожено
   const techDestroyedCount = (Object.values(techLost) as number[]).reduce((s, c) => s + c, 0);
-  notices.push(
-    `🚀 Ракета запущена по «${target.name}»! Мощность ${Math.round(powerFrac * 100)}%. ` +
-    `Уничтожено техники: ${techDestroyedCount} ед., разрушено зданий: ${buildingsDestroyedCount}.`
-  );
-  notifications.push(target.id, 'rocket_hit', `🚀 ${user.name} нанёс по вам ракетный удар`, {
-    attackerName: user.name, attackerId: user.id, attackerLevel: user.level,
-    powerPct: Math.round(powerFrac * 100),
-    techDestroyedCount, buildingsDestroyedCount,
-    destroyedBuildingsText: destroyedList || null,
-    techLostText: techLostList || null,
-    at: Date.now(),
-  });
 
-  // Возвращаем подробный отчёт для окна разрушений (игрок закроет сам)
   return {
     powerPct: Math.round(powerFrac * 100),
+    attackerName,
     targetName: target.name,
-    techDestroyedCount,
-    buildingsDestroyedCount,
-    destroyedBuildings: destroyed,   // { название: количество }
-    techLost,                        // { название: количество }
-    lostSaboteurs,                   // { вид: количество } — диверсанты цели
-    silo: siloView(silo),
+    techDestroyedCount, buildingsDestroyedCount,
+    destroyedBuildings: destroyed,
+    destroyedBuildingsText: destroyedList || null,
+    techLost, techLostText: techLostList || null,
+    lostSaboteurs,
+    at: Date.now(),
   };
 }
 
-export = { view, build, boost, fuelReady, fuelPower, launch };
+// ---------- Долёт ракет: применяем урон по достижении цели ----------
+// Вызывается на фоновом тике и лениво при заходе на экраны. Сбитые ракеты
+// урон не наносят. Отчёт о попадании кладём цели в pendingRocketHits, чтобы
+// офлайн-цель увидела кастомное окно при следующем заходе.
+function resolveInFlight(): void {
+  const rockets = inFlight();
+  const now = Date.now();
+  let changed = false;
+  const users = player.users();
+  for (const id of Object.keys(rockets)) {
+    const rk = rockets[id];
+    if (rk.resolved) {
+      // чистим старые (через час после разрешения)
+      if (now - (rk.resolvedAt || rk.impactAt) > 3600 * 1000) { delete rockets[id]; changed = true; }
+      continue;
+    }
+    if (rk.intercepted) {
+      rk.resolved = true; rk.resolvedAt = now; changed = true;
+      continue;
+    }
+    if (now >= rk.impactAt) {
+      const target = users[rk.targetId];
+      if (target) {
+        const report = applyRocketDamage(rk.attackerName, target, rk.powerFrac);
+        target.pendingRocketHits = (target.pendingRocketHits || []).concat(report).slice(-10);
+        notifications.push(target.id, 'rocket_hit', `🚀 ${rk.attackerName} нанёс по вам ракетный удар`, report);
+      }
+      rk.resolved = true; rk.resolvedAt = now; changed = true;
+    }
+  }
+  if (changed) { db.save('rockets'); db.save('users'); }
+}
+
+// Закрыть одно окно результата ракетного удара (у цели)
+function dismissRocketHit(user: User): any {
+  if (user.pendingRocketHits && user.pendingRocketHits.length) {
+    user.pendingRocketHits.shift();
+    db.save('users');
+  }
+  return { left: (user.pendingRocketHits || []).length };
+}
+
+export = { view, build, boost, fuelReady, fuelPower, launch, applyRocketDamage, resolveInFlight, dismissRocketHit, inFlight };

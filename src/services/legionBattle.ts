@@ -651,6 +651,9 @@ function useItem(user: User, itemId: string, targetUserId: string, notices: Noti
   }
 
   c.gear.splice(gearIdx, 1);
+  // Синхронизируем «staging»-пояс (battle.gear), который читают некоторые
+  // виды, иначе использованный предмет продолжает висеть в поясе у игрока.
+  if (battle.gear && battle.gear[user.id]) battle.gear[user.id] = c.gear.slice();
   c.lastItemAt = now();
   c.stats.itemsUsed++;
   addActivity(battle, user.id, 'item_used');
@@ -1050,7 +1053,11 @@ function battleState(user: User): any {
   const config = require('../../config/gameConfig');
   const extraSlots = (l.battleBuildings && l.battleBuildings['gear_slots']) || 0;
   const maxSlots = config.LEGION.GEAR_SLOTS_DEFAULT + extraSlots;
-  const myGear = (battle.gear && battle.gear[user.id]) || (me ? me.gear : []) || [];
+  // В активном бою источник истины — пояс бойца (combatant.gear), т.к. он
+  // расходуется при использовании предметов; battle.gear — «staging» подготовки.
+  const myGear = (battle.phase === 'active' && me && me.gear)
+    ? me.gear
+    : ((battle.gear && battle.gear[user.id]) || (me ? me.gear : []) || []);
   // Список предметов, которые ещё можно взять из арсенала легиона
   const arsenal = Object.entries(l.arsenal || {})
     .filter(([, qty]) => (qty as number) > 0)

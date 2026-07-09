@@ -171,10 +171,12 @@ App.screens.production = async (c, param) => {
       <div class="tab ${tab === 'workshops' ? 'active' : ''}" onclick="location.hash='#production/workshops'">🏭 Цехи</div>
       <div class="tab ${tab === 'mines' ? 'active' : ''}" onclick="location.hash='#production/mines'">⛏ Шахты</div>
       <div class="tab ${tab === 'silos' ? 'active' : ''}" onclick="location.hash='#production/silos'">🚀 Ракетные шахты</div>
+      <div class="tab ${tab === 'lasers' ? 'active' : ''}" onclick="location.hash='#production/lasers'">🔦 Лазеры</div>
     </div>`;
 
   if (tab === 'mines') return App._renderMines(c, tabsHtml);
   if (tab === 'silos') return App._renderSilos(c, tabsHtml);
+  if (tab === 'lasers') return App._renderLasers(c, tabsHtml);
 
   const p = await API.get('/api/production');
 
@@ -338,122 +340,144 @@ App._renderMines = async (c, tabsHtml) => {
   }
 
   const statusLabel = (s) => ({
-    building: '🏗 Строится', idle: '⛏ Готова к спуску', descending: '⬇ Шахтёры внизу',
-    extracting: '<span class="ic-gold"></span> Золото добывается', collapsed: '💥 Обрушена',
+    empty: '📍 Участок (пусто)', building: '🏗 Шахта строится', idle: '⛏ Готова к спуску',
+    descending: '⬇ Шахтёры внизу', collapsed: '💥 Обрушена',
   }[s] || s);
+
+  // Маленькое окно с результатом прошлого спуска
+  const resultBox = (mine) => {
+    const r = mine.result;
+    if (!r) return '';
+    let inner;
+    if (r.ruined) {
+      inner = `<p style="color:var(--red)"><b>💥 Спуск сорван террористами.</b></p>
+        <p class="muted small">Золото и деньги за этот спуск потеряны.</p>`;
+    } else {
+      const goldLine = r.found
+        ? (r.extracted
+          ? `<p style="color:var(--gold)"><b>🪙 Найдено ${r.foundGold} золота — добыто! +${r.goldGained}</b></p>`
+          : `<p style="color:var(--orange)">🪙 Найдено ${r.foundGold} золота, но добыть не удалось (шанс был ${r.extractChancePct}%).</p>`)
+        : `<p class="muted">Золото в этот раз не нашли.</p>`;
+      inner = `${goldLine}
+        <p style="color:var(--money)"><span class="ic-dollar"></span> Деньги: +${UI.fmtNum(r.money)}${r.goldGained <= 0 ? ' <span class="muted small">(повышенные)</span>' : ''}</p>
+        ${!r.found || !r.extracted ? `<p class="muted small">Шанс добычи на этом времени: ${r.extractChancePct}%.</p>` : ''}`;
+    }
+    return `<div class="card" style="border-color:var(--gold);margin-top:8px">
+      <div style="font-weight:bold;margin-bottom:4px">📋 Итог спуска (${r.minutes} мин.)</div>
+      ${inner}
+      ${r.collapsed ? '<p class="small mt" style="color:var(--red)">Шахта исчерпана и обрушилась.</p>' : ''}
+      <button class="btn btn-inline mt" data-dismiss="${mine.id}" style="width:100%">Закрыть</button>
+    </div>`;
+  };
 
   const mineCard = (mine) => {
     let body = '';
-    if (mine.status === 'building') {
-      body = `<p class="muted small mt">Строительство завершится через ${UI.fmtTimer(mine.buildRemainingSec)}</p>`;
+    if (mine.status === 'empty') {
+      body = `<p class="muted small mt">Участок готов. Постройте на нём шахту за деньги (стройка 3 суток).</p>
+        <button class="btn btn-orange mt" data-build="${mine.id}" style="width:100%">🏗 Построить шахту: <span class="ic-dollar"></span> ${UI.fmtNum(m.buildDollars)}</button>`;
+    } else if (mine.status === 'building') {
+      body = `<p class="muted small mt">Шахта строится — готовность через ${UI.fmtTimer(mine.buildRemainingSec)}. Запас золота откроется после постройки.</p>`;
     } else if (mine.status === 'collapsed') {
-      const ready = mine.rebuildReadyAt <= Date.now();
-      body = ready
-        ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен — можно восстановить шахту.</p>
-           <p class="muted small mt">Восстановление за игровые деньги (золото тратится только на новые шахты). Стройка 24 часа, запас золота (20–45 <span class="ic-gold"></span>) скрыт до завершения.</p>
-           <button class="btn btn-orange mt" data-rebuild="${mine.id}">🔨 Восстановить шахту: <span class="ic-dollar"></span>${UI.fmtNum(m.nextMineDollars)}</button>`
-        : `<p class="muted small mt">Восстановление участка: ${UI.fmtTimer(Math.max(0, Math.ceil((mine.rebuildReadyAt - Date.now()) / 1000)))}</p>`;
+      body = mine.canRebuild
+        ? `<p class="small mt" style="color:var(--money)">✅ Участок расчищен.</p>
+           <button class="btn btn-orange mt" data-rebuild="${mine.id}" style="width:100%">🔨 Перестроить шахту: <span class="ic-dollar"></span> ${UI.fmtNum(m.buildDollars)}</button>`
+        : `<p class="muted small mt">💥 Обрушена. Расчистка завершится через ${UI.fmtTimer(mine.collapsedRemainingSec)}, затем можно перестроить шахту за деньги.</p>`;
     } else if (mine.status === 'descending') {
-      body = `
-        <p class="muted small mt">Шахтёры вернутся через ${UI.fmtTimer(mine.descent.remainingSec)} (спуск на ${mine.descent.minutes} мин.)</p>
-        ${mine.descent.terroristAttack && !mine.descent.terroristResolved ? `
-          <div class="low-hp-banner" style="margin-top:8px;border-radius:4px" data-fight="${mine.id}">
-            ⚠️ Нападение террористов на шахтёров! Реагируйте за ${UI.fmtTimer(mine.descent.terroristRemainingSec)} — нажмите чтобы устранить угрозу.
-          </div>` : ''}`;
-    } else if (mine.status === 'extracting') {
-      const ready = mine.goldReady.remainingSec <= 0;
-      body = ready
-        ? `<button class="btn btn-orange mt" data-collect="${mine.id}"><span class="ic-gold"></span> Забрать золото: +${mine.goldReady.amount}</button>`
-        : `<p class="muted small mt">Золото будет готово через ${UI.fmtTimer(mine.goldReady.remainingSec)} (+${mine.goldReady.amount} <span class="ic-gold"></span>)</p>`;
+      const d = mine.descent;
+      const terror = d.terror;
+      body = `<p class="muted small mt">${d.timeUp ? 'Время спуска вышло.' : 'Шахтёры вернутся через ' + UI.fmtTimer(d.remainingSec)} (спуск ${d.minutes} мин.)</p>`;
+      if (terror && terror.active) {
+        body += `<div class="low-hp-banner" style="margin-top:8px;border-radius:6px;padding:10px">
+          ⚠️ <b>Нападение террористов!</b> Отбейте атаку за ${UI.fmtTimer(terror.remainingSec)}, иначе спуск и золото пропадут.
+          <button class="btn btn-red mt" data-fight="${mine.id}" style="width:100%">⚔ Отразить атаку</button>
+        </div>`;
+      }
     } else if (mine.status === 'idle') {
       const opts = m.minutesOptions
         .filter((min) => min <= mine.minutesLeftToday)
         .map((min) => `<option value="${min}">${min} мин.</option>`).join('');
-      body = mine.minutesLeftToday > 0 ? `
-        <div class="field-row mt">
+      body = `<p class="muted small mt">Спусков осталось: <b>${mine.descentsLeft}/${mine.maxDescents}</b> · Сегодня доступно: <b>${mine.minutesLeftToday}</b> из ${mine.dailyLimit} мин.</p>`;
+      if (mine.minutesLeftToday > 0 && mine.descentsLeft > 0) {
+        body += `<div class="field-row mt">
           <select id="desc-min-${mine.id}">${opts}</select>
           <button class="btn btn-orange btn-inline" data-descend="${mine.id}">Спуститься</button>
-        </div>
-        <p class="muted small mt">Доступно сегодня: ${mine.minutesLeftToday} мин. из ${90}</p>` :
-        `<p class="muted small mt" style="color:var(--red)">Дневной лимит спуска исчерпан (90 мин). Возвращайтесь завтра.</p>`;
+        </div>`;
+      } else if (mine.descentsLeft <= 0) {
+        body += `<p class="muted small mt" style="color:var(--red)">Спуски закончились — шахта скоро обрушится.</p>`;
+      } else {
+        body += `<p class="muted small mt" style="color:var(--red)">Дневной лимит этой шахты исчерпан (90 мин). Сброс в 00:00 МСК.</p>`;
+      }
     }
+
+    const goldInfo = (mine.goldLeft !== null)
+      ? `Золото: ${mine.goldLeft} / ${mine.goldTotal}`
+      : (mine.status === 'building' ? 'Запас скрыт' : 'Участок');
 
     return `
       <div class="card">
         <div class="list-row" style="border:none;padding:0">
           <div class="grow">
             <div class="name">⛏ Шахта <span class="muted small">№${mine.id.slice(0, 4)}</span></div>
-            <div class="muted small">${statusLabel(mine.status)} · Золото: ${mine.goldLeft} / ${mine.goldTotal}</div>
+            <div class="muted small">${statusLabel(mine.status)} · ${goldInfo}</div>
           </div>
         </div>
         ${body}
+        ${resultBox(mine)}
       </div>`;
   };
 
+  const canBuyPlot = m.plotCount < m.maxPlots;
   c.innerHTML = `
     <div class="title">Производство</div>
     ${tabsHtml}
     <div class="card">
-      <p class="muted small">Шахта при постройке получает случайный запас золота (20-45 <span class="ic-gold"></span>, точное число скрыто до окончания стройки). Спуск шахтёров — от 10 до 90 минут, не более 90 мин. в сутки на шахту. Есть шанс не найти золото, а есть риск нападения террористов — нужно успеть среагировать за 10 минут.</p>
+      <p class="muted small">Сначала купите <b>участок</b> за золото, затем постройте на нём <b>шахту</b> за деньги (3 суток). В шахте 200–300 <span class="ic-gold"></span> и 30 спусков. Спуск 10–90 мин (не более 90 мин/сутки на каждую шахту). Золото не гарантировано (два броска: найти и добыть), но деньги дают всегда. С шансом 50% нападают террористы — отбивайте атаку в бою, иначе спуск сгорит.</p>
     </div>
-    ${m.mines.length === 0 ? '<div class="card center muted">У вас пока нет шахт.</div>' : ''}
+    ${m.mines.length === 0 ? '<div class="card center muted">У вас пока нет участков. Купите первый ниже.</div>' : ''}
     ${m.mines.map(mineCard).join('')}
     <div class="card center">
-      <button class="btn btn-orange" id="mine-build">⛏ Построить шахту: <span class="ic-gold"></span> ${UI.fmtNum(m.nextMineCostGold)} + <span class="ic-dollar"></span>${UI.fmtNum(m.nextMineDollars)}</button>
+      <p class="muted small">Участков: ${m.plotCount} / ${m.maxPlots}</p>
+      ${canBuyPlot
+        ? `<button class="btn btn-orange" id="buy-plot">📍 Купить участок: <span class="ic-gold"></span> ${UI.fmtNum(m.nextPlotGold)}</button>`
+        : '<p class="muted small">Достигнут максимум участков.</p>'}
     </div>`;
 
-  document.getElementById('mine-build').onclick = async () => {
+  const btn = document.getElementById('buy-plot');
+  if (btn) btn.onclick = async () => {
+    try { await API.post('/api/mines/buy-plot'); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  const doPost = (sel, url, body) => c.querySelectorAll(sel).forEach((b) => b.onclick = async () => {
     try {
-      await API.post('/api/mines/build');
-      await App.refreshMe();
+      const payload = body ? body(b) : { mineId: b.dataset[Object.keys(b.dataset)[0]] };
+      const r = await API.post(url, payload);
+      if (r && r.notices && r.notices[0]) UI.toast(r.notices[0]);
+      await App.refreshMe(); App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  doPost('[data-build]', '/api/mines/build', (b) => ({ mineId: b.dataset.build }));
+  doPost('[data-rebuild]', '/api/mines/rebuild', (b) => ({ mineId: b.dataset.rebuild }));
+  doPost('[data-fight]', '/api/mines/fight', (b) => ({ mineId: b.dataset.fight }));
+  doPost('[data-dismiss]', '/api/mines/dismiss', (b) => ({ mineId: b.dataset.dismiss }));
+  c.querySelectorAll('[data-descend]').forEach((b) => b.onclick = async () => {
+    const id = b.dataset.descend;
+    const minutes = document.getElementById('desc-min-' + id).value;
+    try { const r = await API.post('/api/mines/descend', { mineId: id, minutes });
+      if (r && r.notices && r.notices[0]) UI.toast(r.notices[0]);
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
-  };
-  c.querySelectorAll('[data-descend]').forEach((btn) => {
-    btn.onclick = async () => {
-      const id = btn.dataset.descend;
-      const minutes = document.getElementById('desc-min-' + id).value;
-      try {
-        await API.post('/api/mines/descend', { mineId: id, minutes });
-        App.rerender();
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-  });
-  c.querySelectorAll('[data-fight]').forEach((btn) => {
-    btn.onclick = async () => {
-      try {
-        await API.post('/api/mines/fight', { mineId: btn.dataset.fight });
-        UI.toast('⚔ Угроза устранена!');
-        App.rerender();
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-  });
-  c.querySelectorAll('[data-collect]').forEach((btn) => {
-    btn.onclick = async () => {
-      try {
-        const r = await API.post('/api/mines/collect', { mineId: btn.dataset.collect });
-        await App.refreshMe();
-        App.rerender();
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
   });
 
-  // Кнопка «Восстановить шахту» на месте обрушившейся (за игровые деньги)
-  c.querySelectorAll('[data-rebuild]').forEach((btn) => {
-    btn.onclick = async () => {
-      try {
-        await API.post('/api/mines/rebuild', { mineId: btn.dataset.rebuild });
-        await App.refreshMe();
-        App.rerender();
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-  });
-
-  // Автообновление, пока есть активные процессы (спуск, добыча, постройка)
-  const hasActive = m.mines.some((x) => ['building', 'descending', 'extracting'].includes(x.status));
-  if (hasActive) {
-}
+  // Автообновление, пока есть активные процессы (стройка/спуск/расчистка)
+  const hasActive = m.mines.some((x) => ['building', 'descending', 'collapsed'].includes(x.status));
+  if (hasActive && (location.hash || '').indexOf('production') >= 0) {
+    clearTimeout(App._minesTimer);
+    App._minesTimer = setTimeout(() => {
+      if ((location.hash || '').indexOf('production/mines') >= 0 || (location.hash || '').indexOf('production') >= 0) App.rerender();
+    }, 5000);
+  }
 };
+
 
 // ---------- РАКЕТНЫЕ ШАХТЫ (вкладка внутри Производства) ----------
 App._renderSilos = async (c, tabsHtml) => {
@@ -567,7 +591,8 @@ App._renderSilos = async (c, tabsHtml) => {
         if (!found.userId) { UI.toast('⛔ Игрок не найден'); return; }
         if (!await UI.confirm(`Это нанесёт урон постройкам и технике цели «${targetName}».`, {title:'Ракетный удар', icon:'🚀', okText:'Запустить', danger:true})) return;
         const r = await API.post('/api/silos/launch', { siloId: btn.dataset.launch, targetId: found.userId });
-        App._showRocketResult(r);
+        const mins = Math.round((r.flightSec || 600) / 60);
+        UI.toast(`🚀 Ракета запущена по «${r.targetName}» (мощность ${r.powerPct}%)! Летит ${mins} мин — цель может её сбить лазером.`);
         await App.refreshMe();
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -577,4 +602,129 @@ App._renderSilos = async (c, tabsHtml) => {
   const hasActive = s.silos.some((x) => x.building);
   if (hasActive) {
 }
+};
+
+// ---------- ЛАЗЕРЫ (ПВО, вкладка внутри Производства) ----------
+App._renderLasers = async (c, tabsHtml) => {
+  const s = await API.get('/api/lasers');
+
+  if (App.me.level < s.unlockLevel) {
+    c.innerHTML = `
+      <div class="title">Производство</div>
+      ${tabsHtml}
+      <div class="card center">
+        <p style="font-size:40px">🔦🔒</p>
+        <p class="mt">Лазерные комплексы доступны только опытным командирам.</p>
+        <p class="gold mt">Раздел откроется на ${s.unlockLevel} уровне (сейчас: ${App.me.level}).</p>
+      </div>`;
+    return;
+  }
+
+  const laserCard = (laser) => {
+    let body = '';
+    if (laser.busy) {
+      const label = laser.phase === 'cooling' ? '❄️ Охлаждение после выстрела' : '🏗 Постройка';
+      body = `
+        <p class="muted small mt">${label}: готовность через ${UI.fmtTimer(laser.busyRemainingSec)}</p>
+        <button class="btn btn-orange btn-inline mt" data-lboost="${laser.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(laser.boostCostGold)}</button>`;
+    } else {
+      body = `
+        <div class="mt">
+          <p class="small">🔋 Готовность: ${laser.readyEnergy} / ${laser.readyNeeded} энергии ${laser.canFire ? '<span class="gold">✓ можно стрелять</span>' : ''}</p>
+          ${UI.bar(laser.readyEnergy, laser.readyNeeded, 'en')}
+        </div>
+        <div class="mt">
+          <p class="small">🎯 Точность: ${laser.powerPct}% (шанс сбить ракету)</p>
+          ${UI.bar(laser.powerAmmo, laser.powerNeeded, 'am')}
+        </div>
+        <div class="field-row mt">
+          <input type="number" id="lfuel-en-${laser.id}" placeholder="Энергия" min="1" style="width:90px">
+          <button class="btn btn-inline" data-lfuel-ready="${laser.id}">Залить энергию</button>
+        </div>
+        <div class="field-row mt">
+          <input type="number" id="lfuel-am-${laser.id}" placeholder="Боеприпасы" min="1" style="width:90px">
+          <button class="btn btn-inline" data-lfuel-power="${laser.id}">Залить боеприпасы</button>
+        </div>
+        ${laser.canFire
+          ? '<p class="muted small mt center">Готов к перехвату — выберите ракету в списке ниже 👇</p>'
+          : '<p class="muted small mt center">Заполните готовность до 100%, чтобы стрелять</p>'}`;
+    }
+    return `
+      <div class="card">
+        <div class="name">🔦 Лазер ПВО <span class="muted small">№${laser.id.slice(0, 4)}</span></div>
+        ${body}
+      </div>`;
+  };
+
+  // Список летящих ракет для перехвата
+  const readyLasers = s.lasers.filter((l) => l.canFire);
+  const rocketRow = (rk) => `
+    <div class="card" style="${rk.isMe ? 'border-color:var(--red)' : ''}">
+      <div class="list-row" style="border:none;padding:0">
+        <div class="grow">
+          <div class="name">${rk.isMe ? '🚨 Ракета ЛЕТИТ В ВАС' : '🚀 Ракета'} <span class="muted small">${rk.powerPct}% мощности</span></div>
+          <div class="muted small">${UI.esc(rk.attackerName)} → ${UI.esc(rk.targetName)} · долёт через ${UI.fmtTimer(rk.impactRemainingSec)}</div>
+        </div>
+        <button class="btn btn-red btn-inline" data-shoot="${rk.id}" ${readyLasers.length ? '' : 'disabled'}>🔦 Сбить</button>
+      </div>
+    </div>`;
+
+  c.innerHTML = `
+    <div class="title">Производство</div>
+    ${tabsHtml}
+    <div class="card">
+      <p class="muted small">Лазер сбивает летящие ракеты. Заряжается энергией (готовность — нужно 100% для выстрела) и боеприпасами (точность — шанс сбить равен % заполнения). После выстрела лазер обнуляется и охлаждается 24 ч. Можно сбивать ракеты, летящие и по вам, и по другим игрокам.</p>
+    </div>
+
+    <div style="font-weight:bold;margin:12px 4px 6px">🚀 Ракеты в полёте ${s.inFlight.length ? `(${s.inFlight.length})` : ''}</div>
+    ${s.inFlight.length
+      ? (readyLasers.length ? '' : '<p class="muted small" style="margin:0 4px 6px">Нет готового заряженного лазера — зарядите энергию до 100%.</p>') + s.inFlight.map(rocketRow).join('')
+      : '<div class="card center muted">Сейчас ракет в полёте нет.</div>'}
+
+    <div style="font-weight:bold;margin:16px 4px 6px">🔦 Ваши лазеры ${s.lasers.length ? `(${s.lasers.length})` : ''}</div>
+    ${s.lasers.length === 0 ? '<div class="card center muted">У вас пока нет лазеров.</div>' : ''}
+    ${s.lasers.map(laserCard).join('')}
+    <div class="card center">
+      <button class="btn btn-orange" id="laser-build">🔦 Купить лазер: <span class="ic-gold"></span> ${UI.fmtNum(s.nextLaserCostGold)}</button>
+    </div>`;
+
+  document.getElementById('laser-build').onclick = async () => {
+    try { await API.post('/api/lasers/build'); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  c.querySelectorAll('[data-lboost]').forEach((btn) => btn.onclick = async () => {
+    try { await API.post('/api/lasers/boost', { laserId: btn.dataset.lboost }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  c.querySelectorAll('[data-lfuel-ready]').forEach((btn) => btn.onclick = async () => {
+    const id = btn.dataset.lfuelReady;
+    const amount = document.getElementById('lfuel-en-' + id).value;
+    try { await API.post('/api/lasers/fuel-ready', { laserId: id, amount }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  c.querySelectorAll('[data-lfuel-power]').forEach((btn) => btn.onclick = async () => {
+    const id = btn.dataset.lfuelPower;
+    const amount = document.getElementById('lfuel-am-' + id).value;
+    try { await API.post('/api/lasers/fuel-power', { laserId: id, amount }); await App.refreshMe(); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  // Сбить ракету: берём готовый лазер с наибольшей точностью
+  c.querySelectorAll('[data-shoot]').forEach((btn) => btn.onclick = async () => {
+    const best = s.lasers.filter((l) => l.canFire).sort((a, b) => b.powerAmmo - a.powerAmmo)[0];
+    if (!best) { UI.toast('⛔ Нет готового заряженного лазера'); return; }
+    try {
+      const r = await API.post('/api/lasers/intercept', { laserId: best.id, rocketId: btn.dataset.shoot });
+      if (r && r.notices && r.notices[0]) UI.toast(r.notices[0]);
+      await App.refreshMe(); App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+
+  // Автообновление, пока лазеры заняты или есть ракеты в полёте
+  const active = s.lasers.some((l) => l.busy) || s.inFlight.length > 0;
+  if (active && (location.hash || '').indexOf('production') >= 0) {
+    clearTimeout(App._lasersTimer);
+    App._lasersTimer = setTimeout(() => {
+      if ((location.hash || '').indexOf('production') >= 0) App.rerender();
+    }, 5000);
+  }
 };

@@ -63,6 +63,8 @@ function registerRoutes(app: any) {
 
   // ---------- Игрок ----------
   app.add('GET', '/api/me', (req) => {
+    // Долёт летящих ракет — чтобы цель сразу увидела попадание при заходе
+    try { require('./services/silos').resolveInFlight(); } catch (e) {}
     // Ежедневная награда выдаётся автоматически при первом заходе в новый
     // день (00:00 МСК) — без отдельного окна/кнопки.
     const daily = features.claimDailyIfDue(req.user);
@@ -74,6 +76,7 @@ function registerRoutes(app: any) {
       eventActive: worldEvent.view(req.user).active,
       activeTitle: features.activeTitleName(req.user),
       dailyReward: daily ? { streak: daily.streak, message: daily.message } : null,
+      pendingRocketHits: (req.user.pendingRocketHits && req.user.pendingRocketHits.length) ? req.user.pendingRocketHits : null,
     };
   });
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
@@ -150,11 +153,13 @@ function registerRoutes(app: any) {
 
   // ---------- Шахты ----------
   app.add('GET',  '/api/mines',              (req) => mines.view(req.user));
-  app.add('POST', '/api/mines/build',        act((req, n) => mines.build(req.user, n)));
+  app.add('POST', '/api/mines/buy-plot',     act((req, n) => mines.buyPlot(req.user, n)));
+  app.add('POST', '/api/mines/build',        act((req, n) => mines.build(req.user, req.body.mineId, n)));
   app.add('POST', '/api/mines/rebuild',      act((req, n) => mines.rebuild(req.user, req.body.mineId, n)));
   app.add('POST', '/api/mines/descend',      act((req, n) => mines.descend(req.user, req.body.mineId, req.body.minutes, n)));
   app.add('POST', '/api/mines/fight',        act((req, n) => mines.fightTerrorists(req.user, req.body.mineId, n)));
-  app.add('POST', '/api/mines/collect',      act((req, n) => mines.collectGold(req.user, req.body.mineId, n)));
+  app.add('POST', '/api/mines/dismiss',      act((req, n) => mines.dismissResult(req.user, req.body.mineId, n)));
+  app.add('POST', '/api/admin/mines/wipe',   act((req, n) => mines.wipeAllMines(req.user, n)), { admin: true });
 
   // ---------- Ракетные шахты ----------
   app.add('GET',  '/api/silos',              (req) => silos.view(req.user));
@@ -163,6 +168,14 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/silos/fuel-ready',   act((req, n) => silos.fuelReady(req.user, req.body.siloId, req.body.amount, n)));
   app.add('POST', '/api/silos/fuel-power',   act((req, n) => silos.fuelPower(req.user, req.body.siloId, req.body.amount, n)));
   app.add('POST', '/api/silos/launch',       act((req, n) => silos.launch(req.user, req.body.siloId, req.body.targetId, n)));
+  app.add('POST', '/api/rockets/dismiss-hit', (req) => require('./services/silos').dismissRocketHit(req.user));
+  // ---------- Лазеры (ПВО) ----------
+  app.add('GET',  '/api/lasers',             (req) => require('./services/lasers').view(req.user));
+  app.add('POST', '/api/lasers/build',       act((req, n) => require('./services/lasers').buyLaser(req.user, n)));
+  app.add('POST', '/api/lasers/boost',       act((req, n) => require('./services/lasers').boost(req.user, req.body.laserId, n)));
+  app.add('POST', '/api/lasers/fuel-ready',  act((req, n) => require('./services/lasers').fuelReady(req.user, req.body.laserId, req.body.amount, n)));
+  app.add('POST', '/api/lasers/fuel-power',  act((req, n) => require('./services/lasers').fuelPower(req.user, req.body.laserId, req.body.amount, n)));
+  app.add('POST', '/api/lasers/intercept',   act((req, n) => require('./services/lasers').intercept(req.user, req.body.laserId, req.body.rocketId, n)));
 
   // ---------- Чёрный рынок ----------
   app.add('GET', '/api/market/items', () => market.itemsList());

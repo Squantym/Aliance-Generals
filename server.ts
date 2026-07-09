@@ -71,6 +71,7 @@ async function main() {
     try {
       market.tick();
       legion.resolveWars();
+      require('./src/services/silos').resolveInFlight(); // долёт летящих ракет
       fame.resetDailyIfNeeded();
       db.saveAll();
     } catch (e) {

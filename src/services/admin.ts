@@ -395,6 +395,33 @@ function setBan(adminUser: User, body: any, notices: Notices) {
 // ── Полное обнуление аккаунта (игрок начинает заново) ─────────────
 // Сбрасывает все игровые характеристики к стартовым значениям, сохраняя
 // учётные данные (логин, пароль, email, имя, гражданство, статус админа).
+// ── Полный сброс аккаунта: игрок начинает игру заново, БЕЗ ИСКЛЮЧЕНИЙ.
+// Убираем из альянса/легиона (с передачей лидерства/расформированием),
+// чистим глобальные летящие ракеты игрока и пересобираем весь профиль из
+// эталона newUser — сохраняя только идентификацию (логин/почта/роль/бан/
+// реф-код). Любые НЕ перечисленные явно поля прогресса гарантированно
+// удаляются, т.к. объект пересобирается с нуля.
+function leaveGroupForReset(target: User, kind: string): void {
+  const db = require('../core/db');
+  const DEFS: Record<string, { coll: string; field: string }> = {
+    alliance: { coll: 'alliances', field: 'allianceId' },
+    legion: { coll: 'legions', field: 'legionId' },
+  };
+  const def = DEFS[kind];
+  const groupId = (target as any)[def.field];
+  (target as any)[def.field] = null;
+  if (!groupId) return;
+  const all = db.load(def.coll, {});
+  const g = all[groupId];
+  if (!g) return;
+  g.members = (g.members || []).filter((m: string) => m !== target.id);
+  if (g.leaderId === target.id) {
+    if (g.members.length === 0) delete all[groupId];       // никого не осталось — расформировываем
+    else g.leaderId = g.members[0];                        // лидерство — первому оставшемуся
+  }
+  db.save(def.coll);
+}
+
 function resetAccount(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
@@ -402,55 +429,54 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   if (target.isAdmin && target.id !== adminUser.id) {
     throw new u.ApiError('Нельзя обнулить аккаунт другого администратора');
   }
-  const now = Date.now();
+  const db = require('../core/db');
 
-  // Сбрасываем игровой прогресс к стартовым значениям
-  target.level = 1; target.xp = 0;
-  target.dollars = config.PLAYER.START_DOLLARS;
-  target.gold = config.PLAYER.START_GOLD;
-  target.bank = 0;
-  target.skillPoints = 0;
-  target.skills = { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 };
-  target.res = {
-    hp: { cur: config.PLAYER.BASE_HP, t: now },
-    en: { cur: config.PLAYER.BASE_ENERGY, t: now },
-    am: { cur: config.PLAYER.BASE_AMMO, t: now },
-  };
-  target.units = {}; target.workshops = 0; (target as any).modernQueue = [];
-  target.buildings = {};
-  target.secretDevs = {}; target.superSecret = 0;
-  target.ears = 0; target.tokens = 0; target.earsLost = 0;
-  target.earsCurrent = config.EARS.MAX; target.earsLostAt = []; target.earPenaltyUntil = 0;
-  target.earCutters = [null, null]; target.earMessage = null;
-  target.battle = { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 };
-  (target as any).counters = { wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0, level: 1 };
-  (target as any).achStages = {};
-  target.missions = {};
-  target.missionProgress = {};
-  target.missionQueue = [];
-  (target as any).tutorial = { step: 0, done: false };
-  target.effects = [];
-  target.trophies = Object.fromEntries(config.TROPHIES.map((t: any) => [t.id, 0]));
-  target.club = {};
-  target.allianceId = null;
-  target.legionId = null;
-  (target as any).lastIncomeAt = now;
-  target.pendingFatality = null;
-  (target as any).lastHospitalHeal = 0;
-  (target as any).lastAttackAt = 0;
-  target.landmines = 0; target.pendingMineDefuse = null;
-  target.pendingBankHack = null; target.bankHackCountToday = 0; target.bankHackVictimsToday = [];
-  target.saboteurs = { ground: 0, sea: 0, air: 0, secret: 0, building: 0, suicide: 0 };
-  target.saboteurLimits = { ground: 50, sea: 50, air: 50, secret: 50, building: 50 };
-  target.saboteurRareLossAccum = 0;
+  // 1) Выводим игрока из альянса и легиона (чистим состав групп, лидерство)
+  try { leaveGroupForReset(target, 'alliance'); } catch (e) {}
+  try { leaveGroupForReset(target, 'legion'); } catch (e) {}
 
-  require('../core/db').save('users');
+  // 2) Чистим глобальные летящие ракеты, где игрок — атакующий или цель
+  try {
+    const rockets = db.load('rockets', {});
+    let changed = false;
+    for (const rid of Object.keys(rockets)) {
+      const rk = rockets[rid];
+      if (rk.attackerId === target.id || rk.targetId === target.id) { delete rockets[rid]; changed = true; }
+    }
+    if (changed) db.save('rockets');
+  } catch (e) {}
+
+  // 3) Пересобираем весь профиль из эталона нового игрока
+  const fresh: any = require('./auth').newUser(
+    target.id, target.name, target.email, target.passHash, target.salt,
+    target.country, target.isAdmin, target.emailVerified
+  );
+  // Сохраняем то, что относится к ИДЕНТИФИКАЦИИ/аккаунту, а не к прогрессу:
+  fresh.createdAt = target.createdAt;                 // возраст аккаунта
+  fresh.emailVerifyToken = target.emailVerifyToken;   // состояние подтверждения почты
+  fresh.emailVerifySentAt = target.emailVerifySentAt;
+  fresh.resetToken = (target as any).resetToken || null;
+  fresh.resetTokenExp = (target as any).resetTokenExp || 0;
+  fresh.banned = target.banned;                       // сброс не снимает бан
+  fresh.banReason = target.banReason;
+  fresh.bannedAt = target.bannedAt;
+  fresh.refCode = (target as any).refCode;            // личный код-приглашение
+  fresh.referredBy = (target as any).referredBy || null; // кто пригласил (история)
+  if (target.isBot) { fresh.isBot = true; fresh.behavior = (target as any).behavior; }
+  fresh.lastSeen = Date.now();
+
+  // Полностью заменяем содержимое объекта (удаляем ВСЕ старые ключи —
+  // никаких остатков прогресса, даже полей, добавленных в будущем)
+  for (const k of Object.keys(target)) delete (target as any)[k];
+  Object.assign(target, fresh);
+
+  db.save('users');
   // Уведомляем игрока
   try {
     require('./notifications').push(target.id, 'account_reset',
       '⚠️ Ваш аккаунт был обнулён администрацией. Вы начинаете игру заново.', {});
   } catch (e) {}
-  notices.push(`♻️ Аккаунт «${target.name}» полностью обнулён — игрок начинает заново.`);
+  notices.push(`♻️ Аккаунт «${target.name}» полностью обнулён — игрок начинает заново (альянс, шахты, лазеры, постройки, ресурсы — всё сброшено).`);
   return { userId: target.id };
 }
 

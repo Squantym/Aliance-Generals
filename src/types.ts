@@ -268,6 +268,9 @@ export interface User {
   minesBuiltTotal?: number;
   silos?: any[];
   silosBuiltTotal?: number;
+  lasers?: any[];                // лазеры ПВО (см. src/services/lasers.ts)
+  lasersBuiltTotal?: number;
+  pendingRocketHits?: any[];     // отчёты о долетевших ракетах (окно у цели)
   modernProcesses?: any[];
   passport?: { nameChanges: number; countryChanges: number };
   daily?: any;

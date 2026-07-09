@@ -484,46 +484,67 @@ function minUnitPriceAtLevel(level: number): number {
   return candidates[candidates.length - 1].price;
 }
 
+// Цена САМОЙ ДОРОГОЙ доступной на уровне техники (по всем типам) — для шахт:
+// стоимость постройки и денежные награды считаются в «единицах» этой техники.
+function maxUnitPriceAtLevel(level: number): number {
+  let max = 0;
+  for (const x of UNITS) if (x.unlock <= level && x.price > max) max = x.price;
+  return max || UNITS[0].price;
+}
+
 // Модернизация (Производство): Mk1 +30%, Mk2 +60%
 const MK_MULT = [1, 1.3, 1.6];
 const PRODUCTION_UNLOCK_LEVEL = 70;
 const WORKSHOP_BASE_GOLD = 200;
 
-// ---------- ШАХТЫ ----------
-// Раздел «Шахты» в Производстве. Каждая шахта при постройке получает
-// случайный запас золота (20-50 по диапазонам ниже). Спуск шахтёров на
-// 10-90 минут даёт шанс найти золото; если нашли — можно добыть 20% от
-// ПЕРВОНАЧАЛЬНОГО запаса шахты (фиксированная доля, не от остатка).
-// Когда золото заканчивается — шахта обрушивается, нужен 1 день на
-// восстановление участка перед постройкой новой.
+// ---------- ШАХТЫ (новая система) ----------
+// Двухэтапно: (1) участок покупается за ЗОЛОТО (разово, дорожает ×2),
+// (2) на участке строится шахта за ДЕНЬГИ (3 дня). В шахте 200-300 золота
+// и 30 спусков. Спуск 10-90 мин (шаг 10), лимит 90 мин/сутки У КАЖДОЙ шахты
+// (сброс 00:00 МСК). Золото — два независимых броска (найти, затем добыть);
+// деньги дают всегда. Террорист нападает с шансом 50% (реальный бой,
+// тратит ресурсы). Обвал по 30 спускам ИЛИ истощению запаса; расчистка 24ч.
 const MINE = {
-  FIRST_PRICE_GOLD: 100,          // первая шахта стоит 100 золота
-  PRICE_MULT: 2.0,                // каждая следующая в 2 раза дороже (+100%)
-  BUILD_DOLLARS_BASE: 50000,      // базовая цена в долларах (масштабируется с уровнем)
-  BUILD_TIME_MS: 24 * 3600 * 1000, // постройка занимает 1 сутки
-  COLLAPSE_REBUILD_MS: 24 * 3600 * 1000, // после обвала — сутки до новой стройки
+  MAX_PLOTS: 5,                    // до 5 участков/шахт у одного игрока
+  PLOT_FIRST_GOLD: 600,            // первый участок — 600 золота
+  PLOT_MULT: 2.0,                  // каждый следующий участок ×2
 
-  // Диапазоны изначального запаса золота при постройке шахты
-  GOLD_RANGES: [
-    { min: 20, max: 28, chance: 0.50 },
-    { min: 28, max: 37, chance: 0.30 },
-    { min: 37, max: 45, chance: 0.20 },
-  ],
+  BUILD_UNITS: 500,               // стоимость постройки шахты = 500 × цены самой дорогой техники на уровне
+  BUILD_TIME_MS: 3 * 24 * 3600 * 1000, // постройка/перестройка шахты — 3 суток
+  COLLAPSE_CLEAR_MS: 24 * 3600 * 1000, // авто-расчистка после обвала — 24 часа
 
-  EXTRACT_PCT: 0.20,              // за удачный спуск добывается 20% от начального запаса
+  GOLD_MIN: 200, GOLD_MAX: 300,   // запас золота в шахте при постройке
+  MAX_DESCENTS: 30,               // спусков на одну шахту
 
-  DESCENT_MIN_MINUTES: 10,        // минимальное время спуска
-  DESCENT_MAX_MINUTES: 90,        // максимальное время спуска
-  DESCENT_STEP_MINUTES: 10,       // шаг выбора времени
-  DAILY_LIMIT_MINUTES: 90,        // суммарно не больше 90 минут спуска в сутки (UTC)
+  DESCENT_MIN_MINUTES: 10, DESCENT_MAX_MINUTES: 90, DESCENT_STEP_MINUTES: 10,
+  DAILY_LIMIT_MINUTES: 90,        // суммарно 90 мин/сутки НА КАЖДУЮ шахту (МСК)
 
-  NOT_FOUND_CHANCE_MIN: 0.30,     // шанс не найти золото: 30-40%
-  NOT_FOUND_CHANCE_MAX: 0.40,
+  // Таблица по времени спуска: диапазон золота, шанс «найти» и шанс «добыть найденное»
+  DESCENT_TABLE: {
+    10: { goldMin: 1,  goldMax: 5,  find: 0.40, extract: 0.60 },
+    20: { goldMin: 4,  goldMax: 8,  find: 0.50, extract: 0.64 },
+    30: { goldMin: 7,  goldMax: 11, find: 0.60, extract: 0.68 },
+    40: { goldMin: 10, goldMax: 14, find: 0.70, extract: 0.71 },
+    50: { goldMin: 13, goldMax: 17, find: 0.70, extract: 0.75 },
+    60: { goldMin: 16, goldMax: 20, find: 0.70, extract: 0.79 },
+    70: { goldMin: 19, goldMax: 23, find: 1.00, extract: 0.83 },
+    80: { goldMin: 22, goldMax: 26, find: 1.00, extract: 0.86 },
+    90: { goldMin: 25, goldMax: 30, find: 1.00, extract: 0.90 },
+  } as Record<number, { goldMin: number; goldMax: number; find: number; extract: number }>,
 
-  TERRORIST_ATTACK_CHANCE: 0.20,  // 20% шанс нападения террористов на шахтёров
-  TERRORIST_REACT_MS: 10 * 60 * 1000, // 10 минут на реакцию (устранить или потерять смену)
+  MONEY_UNITS_MIN: 1, MONEY_UNITS_MAX: 10,        // деньги за спуск = цена техники × (1..10)
+  MONEY_FAIL_MULT_MIN: 2, MONEY_FAIL_MULT_MAX: 5, // если золото не получено — деньги ×(2..5)
 
-  GOLD_READY_DELAY_MS: 5 * 60 * 1000, // золото добывается в течение 5 минут после удачного спуска
+  TERRORIST_CHANCE: 0.50,          // шанс нападения террориста за спуск
+  TERRORIST_REACT_MS: 10 * 60 * 1000, // 10 минут на реакцию с момента нападения
+  TERRORIST_HP_FRACTION: 0.5,      // HP террориста = половина макс. HP игрока
+  TERRORIST_POW_MIN: 0.5, TERRORIST_POW_MAX: 1.1, // мощь террориста = мощь игрока × (0.5..1.1)
+  TERRORIST_AMMO_COST: 1,          // тратится из текущих запасов
+  TERRORIST_ENERGY_COST: 20,       // тратится из текущих запасов
+  TERRORIST_REWARD_TOKENS_MIN: 1, TERRORIST_REWARD_TOKENS_MAX: 3,   // жетоны за отражение
+  TERRORIST_REWARD_UNITS_MIN: 10, TERRORIST_REWARD_UNITS_MAX: 30,   // деньги за отражение = цена техники × (10..30)
+
+  SCHEMA_V: 2,                     // версия схемы (для авто-сброса старых шахт)
 };
 
 // ---------- РАКЕТНЫЕ ШАХТЫ ----------
@@ -536,6 +557,7 @@ const SILO = {
   PRICE_MULT: 2.0,                // каждая следующая в 2 раза дороже
 
   BUILD_TIME_MS: 24 * 3600 * 1000, // постройка шахты/пересборка ракеты — 24 часа
+  FLIGHT_MS: 10 * 60 * 1000,       // ракета летит до цели 10 минут (можно перехватить лазером)
   BOOST_GOLD: 1000,               // полное ускорение постройки стоит 1000 золота
   // Цена ускорения линейно падает по мере приближения готовности:
   // если осталось 100% времени — полная цена 1000, если осталось 0% — 0.
@@ -555,6 +577,22 @@ const SILO = {
   // Разрушение зданий: 140-560 единиц, и защитные, и доходные
   BUILDING_LOSS_MIN: 140,
   BUILDING_LOSS_MAX: 560,
+};
+
+// ---------- ЛАЗЕРЫ (ПВО) ----------
+// Лазер сбивает летящие ракеты. Покупается за золото (1-й — 300, ×2 каждый
+// следующий), строится 24 ч. Заряжается энергией (готовность) и боеприпасами
+// (точность): выстрел возможен только при энергии на 100%, а шанс сбить =
+// доля заполнения боеприпасов (50% боезапаса → 50% шанс). После выстрела
+// заряд обнуляется и лазер уходит на охлаждение 24 ч.
+const LASER = {
+  FIRST_PRICE_GOLD: 300,           // первый лазер — 300 золота
+  PRICE_MULT: 2.0,                 // каждый следующий ×2
+  BUILD_TIME_MS: 24 * 3600 * 1000, // постройка при покупке — 24 часа
+  COOLDOWN_MS: 24 * 3600 * 1000,   // охлаждение после выстрела — 24 часа
+  BOOST_GOLD: 1000,                // ускорить постройку/охлаждение за золото (линейно к остатку)
+  READY_ENERGY_NEEDED: 3000,       // энергия для готовности (100% — можно стрелять)
+  POWER_AMMO_NEEDED: 1000,         // боеприпасы для точности (шанс сбить = доля заполнения)
 };
 const MK_COST_MULT = [0, 3, 6];
 
@@ -1702,7 +1740,7 @@ const SEASON = {
 export = {
   PLAYER, SKILL_COSTS, REGEN, xpToNext,
   COUNTRIES, COUNTRY_BY_ID, RANKS,
-  UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, minUnitPriceAtLevel, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN, MINE, SILO,
+  UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, minUnitPriceAtLevel, maxUnitPriceAtLevel, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN, MINE, SILO, LASER,
   INCOME_BUILDINGS, DEFENSE_BUILDINGS, BUILDING_BY_ID, BUILDING_PRICE_GROWTH, BUILDING_DEF_POWER, INCOME_PERIOD_MS,
   CONFLICTS, CONFLICT_BY_ID, MISSION_STEP,
   STORY_PROLOGUE, TUTORIAL, TUTORIAL_FINAL_GOLD, STORY_EPILOGUE,

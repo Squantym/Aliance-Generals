@@ -85,6 +85,10 @@ const App = {
       if (App.me.pendingGifts && App.me.pendingGifts.length) {
         App._showGiftPopup(App.me.pendingGifts[0]);
       }
+      // Ракеты, долетевшие за время отсутствия — показываем окна попаданий
+      if (App.me.pendingRocketHits && App.me.pendingRocketHits.length) {
+        App._showRocketHits(App.me.pendingRocketHits);
+      }
       // Открываем боевое окно только если игрок уже участник боя
       if (App.me.legion && !document.getElementById('battle-window')) {
         try {
@@ -206,9 +210,11 @@ const App = {
       const aEl = document.getElementById('bw-cd-action'); if (aEl) aEl.textContent = action + 'с';
       const mEl = document.getElementById('bw-cd-move');   if (mEl) mEl.textContent = move + 'с';
       const iEl = document.getElementById('bw-cd-item');   if (iEl) iEl.textContent = item + 'с';
-      // Кнопки «Применить» предмета — блокируем, пока идёт КД предмета
+      // Кнопки «Применить» предмета — показываем таймер КД и блокируем,
+      // пока идёт кулдаун предмета (как на кнопках атаки).
       document.querySelectorAll('[data-item-cd]').forEach((btn) => {
-        btn.disabled = item > 0; btn.style.opacity = item > 0 ? '.55' : '';
+        if (item > 0) { btn.disabled = true;  btn.textContent = `⏳ ${item}с`; btn.style.opacity = '.55'; }
+        else          { btn.disabled = false; btn.textContent = btn.dataset.itemLabel || 'Применить'; btn.style.opacity = ''; }
       });
     };
     paint();
@@ -359,7 +365,7 @@ const App = {
       if (id) {
         const nm = (META[id] && META[id].name) || id;
         const btn = mode === 'active'
-          ? `<button class="btn btn-orange" data-item="${id}" data-item-cd="1">Применить</button>`
+          ? `<button class="btn btn-orange" data-item="${id}" data-item-cd="1" data-item-label="Применить">Применить</button>`
           : '';
         cells += `<div class="bw-slot ${armed===id?'bw-armed':''}"><div class="nm">${nm}</div>${btn}</div>`;
       } else {
@@ -571,6 +577,24 @@ const App = {
           ${!ready ? '<p class="muted small" style="margin:8px 0 0">После «Готов» выберите направление. В бой попадут только готовые бойцы с направлением.</p>' : ''}
         </div>`;
 
+        // ── Пока НЕ готов — можно сменить роль (выбрать заново) ──
+        if (!ready) {
+          html += `<div style="background:rgba(255,150,0,.06);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+            <p style="margin:0 0 8px;font-weight:bold">Сменить роль:</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button id="bw-join-assault" class="btn ${b.me.role==='assault'?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+                🎯 <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>${b.me.role==='assault'?' ✓':''}
+              </button>
+              <button id="bw-join-guardian" class="btn ${b.me.role==='guardian'?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+                🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона</span>${b.me.role==='guardian'?' ✓':''}
+              </button>
+              <button id="bw-join-medic" class="btn ${b.me.role==='medic'?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+                ➕ <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>${b.me.role==='medic'?' ✓':''}
+              </button>
+            </div>
+          </div>`;
+        }
+
         // ── Боевой пояс: 3 слота, можно взять предметы из арсенала ──
         html += App._gearSlotsHtml(b, 'prep');
 
@@ -610,6 +634,10 @@ const App = {
           ${en.map(c=>renderMember(c, false)).join('')||'<span class="muted small">ожидаем...</span>'}
         </div>
       </div>`;
+
+      // ── Чат в подготовке: можно писать своим и чужим (командный/общий) ──
+      html += '<div style="margin-top:12px"></div>';
+      html += App._bwChatHtml(b);
     }
 
     // ── АКТИВНЫЙ БОЙ ─────────────────────────────────────────────
@@ -619,7 +647,7 @@ const App = {
       const armed = App._bwArmedItem;                 // «взведённый» предмет (id) или null
       const armedMeta = armed ? App._ITEM_META[armed] : null;
 
-      // ── Лог боя (компактный, сворачивается прокруткой) ──
+      // ── Лог боя (компактный, сворачивается прокруткой) — самый верх ──
       if (b.log && b.log.length) {
         html += `<div class="bw-card tight">
           <b style="font-size:12px">📋 Лог боя</b>
@@ -632,24 +660,72 @@ const App = {
         </div>`;
       }
 
-      // ── Мой статус: роль, HP, МОИ ресурсы (видны только мне), КД динамическое ──
-      html += `<div class="bw-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span style="font-size:13px">${ROLE_ICON[me.role]||'?'} <b>Вы — ${me.roleName}</b></span>
-          <span>${statusBadge(me)}</span>
+      // Данные по моему направлению
+      const dirData = me.direction !== null ? b.directions.find(x=>x.dir===me.direction) : null;
+      const aliveAllies = dirData ? (dirData.allies||[]).filter(a=>a.userId!==me.userId && a.alive) : [];
+      const aliveEn = dirData ? (dirData.enemies||[]).filter(e=>e.alive) : [];
+
+      // ── ВРАГИ — сразу после лога (чтобы на телефоне не прокручивать вниз) ──
+      if (dirData && aliveEn.length > 0) {
+        html += `<div class="bw-card" style="border-left:3px solid var(--red)">
+          <div style="color:var(--red);font-weight:bold;font-size:12.5px;margin-bottom:4px">🔴 Враги — ${dirData.name}</div>
+          ${aliveEn.map(en => `
+            <div class="bw-fighter">
+              <div class="bw-fighter-head">
+                <span>${ROLE_ICON[en.role]||'?'}</span><b>${UI.esc(en.name)}</b>${en.online?' <span style="color:var(--green)" title="В сети">●</span>':''}
+                <span class="muted small">${en.roleName}</span> ${statusBadge(en)}
+              </div>
+              ${hpBar(en.hp, en.maxHp, '#c22')}
+              <div class="bw-fighter-acts">
+                <button class="btn btn-red" id="bw-attack-${en.userId}" data-atk="${en.userId}" data-label="🎯 Атаковать">🎯 Атаковать</button>
+                ${armedMeta && armedMeta.kind==='enemy'?`<button class="btn btn-orange" data-apply-item="${en.userId}">✅ ${armedMeta.name} сюда</button>`:''}
+              </div>
+            </div>`).join('')}
+        </div>`;
+      }
+
+      // ── СОЮЗНИКИ, включая САМОГО ИГРОКА, в одном поле ──
+      html += `<div class="bw-card" style="border-left:3px solid var(--green)">
+        <div style="color:var(--green);font-weight:bold;font-size:12.5px;margin-bottom:4px">🟢 Ваш отряд${dirData?` — ${dirData.name}`:''}</div>
+        <div class="bw-fighter" style="background:rgba(0,200,0,.07);border-radius:6px;padding:6px">
+          <div class="bw-fighter-head">
+            <span>${ROLE_ICON[me.role]||'?'}</span><b>Вы — ${me.roleName}</b> ${statusBadge(me)}
+          </div>
+          ${hpBar(me.hp, me.maxHp, '#e33')}
+          <div class="bw-me-res">
+            <span>❤️ <b>${Math.round(me.hp)}/${me.maxHp}</b></span>
+            ${me.ammo!=null?`<span>🔫 <b>${me.ammo}</b></span>`:''}
+            ${me.energy!=null?`<span><span class="ic-energy"></span> <b>${me.energy}</b></span>`:''}
+            ${me.shield>0?`<span>🛡 <b>${me.shield}</b></span>`:''}
+            <span>⏱ действие <b id="bw-cd-action">${myCDs.action||0}с</b></span>
+          </div>
+          <div class="bw-fighter-acts">
+            ${me.role==='medic'?`<button class="btn btn-green" id="bw-heal-self">➕ Лечить себя</button>`:''}
+            ${armedMeta && armedMeta.kind==='ally'?`<button class="btn btn-orange" data-apply-item="${me.userId}">✅ ${armedMeta.name} на себя</button>`:''}
+          </div>
         </div>
-        ${hpBar(me.hp, me.maxHp, '#e33')}
-        <div class="bw-me-res">
-          <span>❤️ <b>${Math.round(me.hp)}/${me.maxHp}</b></span>
-          ${me.ammo!=null?`<span>🔫 <b>${me.ammo}</b></span>`:''}
-          ${me.energy!=null?`<span><span class="ic-energy"></span> <b>${me.energy}</b></span>`:''}
-          ${me.shield>0?`<span>🛡 <b>${me.shield}</b></span>`:''}
-          <span>⏱ действие <b id="bw-cd-action">${myCDs.action||0}с</b></span>
-        </div>
-        ${me.role==='medic'?`<button class="btn btn-green" style="width:100%;padding:7px;margin-top:6px" id="bw-heal-self">➕ Лечить себя</button>`:''}
+        ${aliveAllies.map(a => `
+          <div class="bw-fighter">
+            <div class="bw-fighter-head">
+              <span>${ROLE_ICON[a.role]||'?'}</span><b>${UI.esc(a.name)}</b>${a.online?' <span style="color:var(--green)" title="В сети">●</span>':''}
+              <span class="muted small">${a.roleName}</span> ${statusBadge(a)}
+            </div>
+            ${hpBar(a.hp, a.maxHp, '#0a8')}
+            <div class="bw-fighter-acts">
+              ${me.role==='guardian'?`<button class="btn btn-orange" id="bw-guard-${a.userId}">🛡️ Прикрыть</button>`:''}
+              ${me.role==='medic'?`<button class="btn btn-green" id="bw-heal-${a.userId}">➕ Лечить</button>`:''}
+              ${armedMeta && armedMeta.kind==='ally'?`<button class="btn btn-orange" data-apply-item="${a.userId}">✅ ${armedMeta.name} сюда</button>`:''}
+            </div>
+          </div>`).join('')}
       </div>`;
 
-      // ── Направления — компактные чипы 3 в ряд ──
+      if (me.direction === null) {
+        html += `<p class="muted center small">Выберите направление ниже, чтобы вступить в бой ⬇</p>`;
+      } else if (dirData && !aliveAllies.length && !aliveEn.length) {
+        html += `<p class="muted center small">На «${dirData.name}» больше никого — смените направление ⬇</p>`;
+      }
+
+      // ── Направления — компактные чипы ──
       html += `<div class="bw-dirs">
         ${b.directions.map(d => {
           const sel = me.direction === d.dir;
@@ -662,60 +738,8 @@ const App = {
         }).join('')}
       </div>`;
 
-      // ── Боевой пояс — приметный, сразу применяется (см. _gearSlotsHtml) ──
+      // ── Боевой пояс — сразу применяется (см. _gearSlotsHtml) ──
       html += App._gearSlotsHtml(b, 'active');
-
-      // ── Бойцы на моём направлении ──
-      if (me.direction !== null) {
-        const dirData = b.directions.find(x=>x.dir===me.direction);
-        if (dirData) {
-          const aliveAllies = (dirData.allies||[]).filter(a=>a.userId!==me.userId&&a.alive);
-          const aliveEn = (dirData.enemies||[]).filter(e=>e.alive);
-
-          // Союзники
-          if (aliveAllies.length > 0) {
-            html += `<div class="bw-card" style="border-left:3px solid var(--green)">
-              <div style="color:var(--green);font-weight:bold;font-size:12.5px;margin-bottom:4px">🟢 Союзники — ${dirData.name}</div>
-              ${aliveAllies.map(a => `
-                <div class="bw-fighter">
-                  <div class="bw-fighter-head">
-                    <span>${ROLE_ICON[a.role]||'?'}</span><b>${UI.esc(a.name)}</b>${a.online?' <span style="color:var(--green)" title="В сети">●</span>':''}
-                    <span class="muted small">${a.roleName}</span> ${statusBadge(a)}
-                  </div>
-                  ${hpBar(a.hp, a.maxHp, '#0a8')}
-                  <div class="bw-fighter-acts">
-                    ${me.role==='guardian'?`<button class="btn btn-orange" id="bw-guard-${a.userId}">🛡️ Прикрыть</button>`:''}
-                    ${me.role==='medic'?`<button class="btn btn-green" id="bw-heal-${a.userId}">➕ Лечить</button>`:''}
-                    ${armedMeta && armedMeta.kind==='ally'?`<button class="btn btn-orange" data-apply-item="${a.userId}">✅ ${armedMeta.name} сюда</button>`:''}
-                  </div>
-                </div>`).join('')}
-            </div>`;
-          }
-
-          // Враги
-          if (aliveEn.length > 0) {
-            html += `<div class="bw-card" style="border-left:3px solid var(--red)">
-              <div style="color:var(--red);font-weight:bold;font-size:12.5px;margin-bottom:4px">🔴 Враги — ${dirData.name}</div>
-              ${aliveEn.map(en => `
-                <div class="bw-fighter">
-                  <div class="bw-fighter-head">
-                    <span>${ROLE_ICON[en.role]||'?'}</span><b>${UI.esc(en.name)}</b>${en.online?' <span style="color:var(--green)" title="В сети">●</span>':''}
-                    <span class="muted small">${en.roleName}</span> ${statusBadge(en)}
-                  </div>
-                  ${hpBar(en.hp, en.maxHp, '#c22')}
-                  <div class="bw-fighter-acts">
-                    <button class="btn btn-red" id="bw-attack-${en.userId}" data-atk="${en.userId}" data-label="🎯 Атаковать">🎯 Атаковать</button>
-                    ${armedMeta && armedMeta.kind==='enemy'?`<button class="btn btn-orange" data-apply-item="${en.userId}">✅ ${armedMeta.name} сюда</button>`:''}
-                  </div>
-                </div>`).join('')}
-            </div>`;
-          }
-
-          if (!aliveAllies.length && !aliveEn.length) {
-            html += `<p class="muted center small">На «${dirData.name}» никого — перейдите на другое направление</p>`;
-          }
-        }
-      }
 
       // ── Чат боя (общий + командный) внизу ──
       html += App._bwChatHtml(b);
@@ -1051,11 +1075,17 @@ const App = {
     try {
       const { notifications } = await API.get('/api/notifications');
       const latest = notifications.find((n) => !n.read &&
-        ['attack_lost', 'attack_defended', 'rocket_hit'].includes(n.kind));
+        ['attack_lost', 'attack_defended', 'rocket_incoming', 'mine_terror'].includes(n.kind));
       if (!latest) return;
       if (App._shownNotifIds && App._shownNotifIds.has(latest.id)) return;
       if (!App._shownNotifIds) App._shownNotifIds = new Set();
       App._shownNotifIds.add(latest.id);
+
+      // Нападение террористов на шахту — отдельный баннер с переходом в «Шахты»,
+      // показывается на любом экране (в т.ч. на главном).
+      if (latest.kind === 'mine_terror') { App._showMineTerrorBanner(latest); return; }
+      // Летящая ракета — баннер с переходом к лазерам (сбить за 10 минут).
+      if (latest.kind === 'rocket_incoming') { App._showRocketIncomingBanner(latest); return; }
 
       const onHome = (location.hash || '').slice(1).split('/')[0] === 'home' || !location.hash;
       if (onHome) {
@@ -1126,6 +1156,86 @@ const App = {
     };
     document.body.appendChild(banner);
     setTimeout(() => { if (banner.parentNode) document.body.removeChild(banner); }, 8000);
+  },
+
+  // Баннер летящей ракеты — на любом экране; ведёт к лазерам (сбить за 10 мин).
+  _showRocketIncomingBanner(n) {
+    if (document.getElementById('rocket-incoming-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'rocket-incoming-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#8e2626,#5f1b1b);color:#fff;padding:10px 16px;text-align:center;cursor:pointer;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+    const att = (n.meta && n.meta.attackerName) ? UI.esc(n.meta.attackerName) : 'Противник';
+    banner.innerHTML = `🚀 ${att} запустил по вам ракету! Долёт ~10 мин — нажмите, чтобы сбить её лазером.`;
+    banner.onclick = () => {
+      if (banner.parentNode) document.body.removeChild(banner);
+      API.post(`/api/notifications/${n.id}/read`).catch(() => {});
+      App.go('production/lasers');
+    };
+    document.body.appendChild(banner);
+    setTimeout(() => { if (banner.parentNode) document.body.removeChild(banner); }, 12000);
+  },
+
+  // Окна попаданий ракет по игроку (для офлайн-цели). Показываем по очереди,
+  // каждое — со списком жертв (техника/здания/диверсанты), затем закрываем на сервере.
+  async _showRocketHits(list) {
+    if (!list || !list.length) return;
+    if (document.getElementById('rocket-hit-window')) return;
+    for (const rep of list) {
+      await new Promise((resolve) => {
+        const techRows = Object.entries(rep.techLost || {}).map(([nm, cnt]) =>
+          `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('') || '<p class="muted small">Техника уцелела</p>';
+        const buildRows = Object.entries(rep.destroyedBuildings || {}).map(([nm, cnt]) =>
+          `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('') || '<p class="muted small">Постройки уцелели</p>';
+        const sab = rep.lostSaboteurs && Object.keys(rep.lostSaboteurs).length
+          ? Object.entries(rep.lostSaboteurs).map(([nm, cnt]) => `<div class="kv"><span class="k">🥷 ${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('')
+          : '';
+        const popup = document.createElement('div');
+        popup.id = 'rocket-hit-window';
+        popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px';
+        popup.innerHTML = `
+          <div style="background:var(--card);border:2px solid var(--red);border-radius:12px;max-width:440px;width:100%;padding:20px;max-height:85vh;overflow-y:auto">
+            <div style="font-size:18px;font-weight:bold;text-align:center;margin-bottom:4px">🚀 По вам нанесён ракетный удар!</div>
+            <p class="muted small" style="text-align:center;margin-bottom:14px">От: <b>${UI.esc(rep.attackerName || 'неизвестно')}</b> · Мощность ${rep.powerPct}%</p>
+            <div style="display:flex;gap:10px;margin-bottom:14px">
+              <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
+                <div style="font-size:24px;font-weight:bold;color:var(--red)">${rep.techDestroyedCount || 0}</div>
+                <div class="muted small">единиц техники</div>
+              </div>
+              <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
+                <div style="font-size:24px;font-weight:bold;color:var(--red)">${rep.buildingsDestroyedCount || 0}</div>
+                <div class="muted small">зданий</div>
+              </div>
+            </div>
+            <div style="margin-bottom:10px"><b>🔧 Уничтоженная техника:</b>${techRows}</div>
+            <div style="margin-bottom:10px"><b>🏚 Разрушенные здания:</b>${buildRows}</div>
+            ${sab ? `<div style="margin-bottom:14px"><b>🥷 Погибшие диверсанты:</b>${sab}</div>` : ''}
+            <button class="btn btn-orange" id="rocket-hit-close" style="width:100%">Закрыть</button>
+          </div>`;
+        document.body.appendChild(popup);
+        popup.querySelector('#rocket-hit-close').onclick = async () => {
+          popup.remove();
+          try { await API.post('/api/rockets/dismiss-hit'); } catch (e) {}
+          resolve();
+        };
+      });
+    }
+    App.refreshMe && App.refreshMe();
+  },
+
+  // Баннер нападения террористов на шахту — на любом экране; ведёт в «Шахты».
+  _showMineTerrorBanner(n) {
+    if (document.getElementById('mine-terror-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'mine-terror-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#8e3326,#6b251b);color:#fff;padding:10px 16px;text-align:center;cursor:pointer;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+    banner.innerHTML = '⚠️ На вашу шахту напали террористы — нажмите, чтобы отбить атаку!';
+    banner.onclick = () => {
+      if (banner.parentNode) document.body.removeChild(banner);
+      API.post(`/api/notifications/${n.id}/read`).catch(() => {});
+      App.go('production/mines');
+    };
+    document.body.appendChild(banner);
+    setTimeout(() => { if (banner.parentNode) document.body.removeChild(banner); }, 12000);
   },
 
   // То же самое, но по требованию (после действий)
