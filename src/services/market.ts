@@ -316,10 +316,10 @@ function auctionView() {
 
   return {
     lots: world().auctions.map((lot) => {
-      const c = config.COMMANDERS.find((x: any) => x.id === lot.commanderId) || { name: '?', desc: '' };
+      const c = config.COMMANDERS.find((x: any) => x.id === lot.commanderId) || { id: '?', name: '?', desc: '' };
       return {
         id: lot.id,
-        commander: { name: c.name, desc: c.desc },
+        commander: { id: c.id, name: c.name, desc: c.desc },
         minBid: lot.best ? lot.best.amount + config.AUCTION.BID_STEP : lot.minBid,
         best: lot.best ? { name: lot.best.name, amount: lot.best.amount } : null,
         endsInSec: Math.max(0, Math.ceil((lot.endsAt - now) / 1000)),

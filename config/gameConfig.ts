@@ -868,13 +868,21 @@ function secretAtk(user: any, def: any): number { return Math.round(def.atk * se
 function secretDef(user: any, def: any): number { return Math.round(def.def * secretLevelMul(user)); }
 
 const COMMANDERS = [
-  { id: 'berserk', name: 'Наёмник «Берсерк»',     effect: { type: 'atk_pct',  value: 100 }, desc: '+100% к атаке на 24 часа' },
-  { id: 'fortress', name: 'Наёмник «Бастион»',     effect: { type: 'def_pct',  value: 100 }, desc: '+100% к защите на 24 часа' },
-  { id: 'tycoon',  name: 'Магнат «Кронос»',        effect: { type: 'economy_combo', value: 100 }, desc: 'Содержание техники −100% и доход построек +100% на 24 часа' },
-  { id: 'envoy',   name: 'Дипломат «Вектор»',      effect: { type: 'invite_unlimited', value: 1 }, desc: 'Безлимитные приглашения в альянс (без ограничений в час) на 24 часа' },
-  { id: 'ghost',   name: 'Призрак «Нерушимый»',    effect: { type: 'fatality_immunity', value: 1 }, desc: 'Вам не смогут сделать фаталити в течение 24 часов' },
+  { id: 'berserk', name: 'Беатрис Вэйл',   effect: { type: 'atk_pct',  value: 100 }, desc: '+100% к атаке на 24 часа' },
+  { id: 'fortress', name: 'Гидеон Роук',   effect: { type: 'def_pct',  value: 100 }, desc: '+100% к защите на 24 часа' },
+  { id: 'tycoon',  name: 'Лазар Вэйн',      effect: { type: 'economy_combo', value: 100 }, desc: 'Содержание техники −100% и доход построек +100% на 24 часа' },
+  { id: 'envoy',   name: 'Эйден Роу',       effect: { type: 'invite_unlimited', value: 1 }, desc: 'Дипломат: безлимитные приглашения в альянс (без ограничений в час) на 24 часа' },
+  { id: 'ghost',   name: 'Сайлас Неверн',   effect: { type: 'fatality_immunity', value: 1 }, desc: 'Защита от фаталити: вам не смогут сделать фаталити в течение 24 часов' },
 ];
 const AUCTION = { LOTS: 5, MIN_BID: 500, BID_STEP: 50, RENT_HOURS: 24 };
+
+// ---------- АВАТАРЫ ПРОФИЛЯ ----------
+// Картинки лежат в /img/avatars/<id>.webp. m — мужские, f — женские.
+const AVATARS = {
+  male: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'],
+  female: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6'],
+};
+const AVATAR_IDS = [...AVATARS.male, ...AVATARS.female];
 
 // ---------- КЛУБ ОФИЦЕРОВ ----------
 const RIDDLES = [
@@ -1746,7 +1754,7 @@ export = {
   STORY_PROLOGUE, TUTORIAL, TUTORIAL_FINAL_GOLD, STORY_EPILOGUE,
   MARKET_ITEMS, MARKET_ITEM_BY_ID, CONTAINERS,
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
-  COMMANDERS, AUCTION,
+  COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
   RIDDLES, CLUB,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,

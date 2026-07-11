@@ -268,6 +268,7 @@ function effectsView(user: User): any[] {
         ? effLabel(e.type)
         : `${e.value > 0 ? '+' : ''}${e.value}% (${effLabel(e.type)})`;
       return {
+        id: e.id || null,   // id предмета чёрного рынка — для картинки в профиле
         name: e.name,
         type: e.type,
         value: e.value,
@@ -824,8 +825,10 @@ function mePayload(user: User): any {
     } : null,
     pendingMineDefuse: user.pendingMineDefuse ? {
       wires: require('./landmines').wiresView(user.pendingMineDefuse.wires),
+      canSacrifice: ((user.saboteurs && user.saboteurs.suicide) || 0) > 0,
     } : null,
     landmines: user.landmines || 0,
+    avatar: user.avatar || null,
     pendingGifts: user.pendingGifts && user.pendingGifts.length ? user.pendingGifts : [],
     effects: effectsView(user),
     needsVerification: (() => { try { return require('./antibot').needsVerification(user); } catch (e) { return false; } })(),
@@ -983,6 +986,7 @@ function publicProfile(target: User, viewer: User): any {
     // Активные эффекты видны всем (название + сколько осталось). Имя
     // того, кто наложил подлянку, видит ТОЛЬКО сама жертва (isOwn).
     activeEffects: effectsView(target).map((e) => ({
+      id: e.id,
       name: e.name, desc: e.desc, timeLeft: e.timeLeft,
       hostile: e.hostile,
       byName: (isOwn || isAdminViewer) ? e.byName : null,
@@ -1009,6 +1013,7 @@ function publicProfile(target: User, viewer: User): any {
     activeTitle: (() => { try { return require('./features').activeTitleName(target); } catch (e) { return null; } })(),
     profileFrame: target.profileFrame || null,
     profileBg: target.profileBg || null,
+    avatar: target.avatar || null,
     isOwn,
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,
@@ -1019,6 +1024,15 @@ function publicProfile(target: User, viewer: User): any {
 
 function setStatus(user: User, text: string) {
   user.status = String(text || '').slice(0, 120);
+}
+
+// Установить аватар профиля (только из разрешённого списка)
+function setAvatar(user: User, avatarId: string) {
+  if (avatarId === '' || avatarId === null) { user.avatar = undefined; db.save('users'); return { avatar: null }; }
+  if (!config.AVATAR_IDS.includes(avatarId)) throw new u.ApiError('Неизвестный аватар');
+  user.avatar = avatarId;
+  db.save('users');
+  return { avatar: avatarId };
 }
 
 // Восстановить одно ухо мгновенно за золото (если потеряно хотя бы одно)
@@ -1051,5 +1065,5 @@ export = {
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, rank, flag, findByName,
   bankDeposit, bankWithdraw, reserveForLegion, goldPackages, buyGold,
-  mePayload, publicProfile, setStatus, restoreEar,
+  mePayload, publicProfile, setStatus, setAvatar, restoreEar,
 };

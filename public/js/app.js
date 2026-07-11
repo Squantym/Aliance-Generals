@@ -7,6 +7,55 @@
 // ===================================================================
 
 const App = {
+  // ── Картинки предметов чёрного рынка (допинг/падлянки/мина) ──
+  // Возвращает путь к картинке предмета по его id, либо null (нет картинки).
+  _MARKET_IMG_IDS: ['stim','armor','energy','medkit','ammo','sabotage','diversia','ammo_boost','energy_boost','crit_boost','dodge_boost','bureaucracy','espionage','landmine'],
+  _marketImg(id) { return this._MARKET_IMG_IDS.indexOf(id) >= 0 ? `/img/market/${id}.webp` : null; },
+  // ── Картинки наёмников аукциона ──
+  _MERC_IMG_IDS: ['berserk','fortress','tycoon','envoy','ghost'],
+  _mercImg(id) { return this._MERC_IMG_IDS.indexOf(id) >= 0 ? `/img/mercenaries/${id}.webp` : null; },
+
+  // ── Аватары профиля ──
+  _AVATARS: { male: ['m1','m2','m3','m4','m5','m6'], female: ['f1','f2','f3','f4','f5','f6'] },
+  // Окно выбора аватара: мужские + женские; текущий подсвечен; можно снять.
+  _showAvatarPicker(current) {
+    const old = document.getElementById('avatar-picker');
+    if (old) old.remove();
+    const cell = (id) => `
+      <button class="avatar-cell ${id === current ? 'sel' : ''}" data-avatar="${id}">
+        <img src="/img/avatars/${id}.webp" alt="${id}" loading="lazy">
+      </button>`;
+    const m = document.createElement('div');
+    m.id = 'avatar-picker';
+    m.className = 'game-dialog-overlay';
+    m.innerHTML = `
+      <div class="game-dialog" style="max-width:460px;width:100%;max-height:85vh;overflow-y:auto">
+        <div class="game-dialog-title">📷 Выбор аватара</div>
+        <div class="avatar-group-label">👨 Мужские</div>
+        <div class="avatar-grid">${this._AVATARS.male.map(cell).join('')}</div>
+        <div class="avatar-group-label">👩 Женские</div>
+        <div class="avatar-grid">${this._AVATARS.female.map(cell).join('')}</div>
+        <div class="game-dialog-actions" style="margin-top:14px">
+          ${current ? '<button class="btn" id="avatar-clear">Убрать аватар</button>' : ''}
+          <button class="btn" id="avatar-cancel">Закрыть</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    const pick = async (avatar) => {
+      try {
+        await API.post('/api/avatar', { avatar });
+        if (App.me) App.me.avatar = avatar || null;
+        m.remove();
+        UI.toast(avatar ? '📷 Аватар обновлён' : '📷 Аватар убран');
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    m.querySelectorAll('[data-avatar]').forEach((b) => b.onclick = () => pick(b.dataset.avatar));
+    const clr = m.querySelector('#avatar-clear'); if (clr) clr.onclick = () => pick('');
+    m.querySelector('#avatar-cancel').onclick = () => m.remove();
+    m.onclick = (e) => { if (e.target === m) m.remove(); };
+  },
+
   me: null,        // сводка игрока с сервера (/api/me)
   screens: {},     // имя экрана → функция отрисовки (заполняют файлы screens/*)
   _tear: null,     // функция «уборки» текущего экрана (остановить поллинг чата и т.п.)

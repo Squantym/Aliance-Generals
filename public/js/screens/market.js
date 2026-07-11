@@ -37,7 +37,7 @@ App.screens.market = async (c, param) => {
         </div>` : ''}
       ${items.map((x) => `
         <div class="card">
-          <div class="name">${UI.esc(x.name)}</div>
+          ${App._marketImg(x.id) ? `<img src="${App._marketImg(x.id)}" alt="${UI.esc(x.name)}" class="market-img">` : `<div class="name">${UI.esc(x.name)}</div>`}
           <p class="muted small">${UI.esc(x.desc)}${x.durMin ? ` · действует ${x.durMin >= 60 ? (x.durMin / 60) + ' ч' : x.durMin + ' мин'}` : ''}</p>
           <button class="btn btn-orange mt" data-item="${x.id}">${tab === 'debuffs' ? 'Применить' : 'Купить'} за ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
         </div>`).join('')}`;
@@ -64,7 +64,7 @@ App.screens.market = async (c, param) => {
       <div class="title">Чёрный рынок</div>
       ${tabsHtml}
       <div class="card">
-        <div class="name">💣 Растяжка</div>
+        ${App._marketImg('landmine') ? `<img src="${App._marketImg('landmine')}" alt="Растяжка" class="market-img">` : `<div class="name">💣 Растяжка</div>`}
         <p class="muted small">Мина в ваш личный запас. Срабатывает АВТОМАТИЧЕСКИ, если враг атакует вас — шанс срабатывания и урон технике нападающего зависят от трофея «Растяжка» (раздел «Трофеи»). При взрыве нападающий полностью теряет здоровье, если не разминирует растяжку в мини-игре.</p>
         <div class="kv mt"><span class="k">В запасе</span><span class="v">${info.stock} / ${info.maxStock}</span></div>
         <div class="kv"><span class="k">Цена за штуку</span><span class="v gold"><span class="ic-gold"></span> ${info.price}</span></div>
@@ -231,8 +231,9 @@ App.screens.market = async (c, param) => {
     ${tabsHtml}
     <div class="card"><p class="muted small">Уникальные наёмники сдаются в аренду на ${data.rentHours} часа. Ставки от <span class="ic-gold"></span> ${UI.fmtNum(data.minBid||500)}, шаг <span class="ic-gold"></span> ${data.bidStep||50}. Аукцион закрывается в 23:59 по Москве, эффект начинает действовать с 00:00. Перебитая ставка возвращается.</p></div>
     ${data.lots.map((l) => `
-      <div class="card">
-        <div class="name">⭐ ${UI.esc(l.commander.name)}</div>
+      <div class="card merc-card">
+        ${App._mercImg(l.commander.id) ? `<img src="${App._mercImg(l.commander.id)}" alt="${UI.esc(l.commander.name)}" class="merc-img">` : ''}
+        <div class="name" style="font-size:16px">⭐ ${UI.esc(l.commander.name)}</div>
         <p class="muted small">${UI.esc(l.commander.desc)}</p>
         <div class="kv mt"><span class="k">Лидер</span><span class="v">${l.best ? UI.esc(l.best.name) + ' — <span class="ic-gold"></span> ' + UI.fmtNum(l.best.amount) : '<span class="muted">ставок нет</span>'}</span></div>
         <div class="kv"><span class="k">До закрытия</span><span class="v">${UI.fmtTimer(l.endsInSec)}</span></div>

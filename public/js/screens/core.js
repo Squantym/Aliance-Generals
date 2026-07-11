@@ -456,7 +456,10 @@ App.screens.profile = async (c, param) => {
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="list-row">
-        <div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">${p.online ? '🟢' : '⚪'}</div>
+        <div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''} ${p.avatar ? 'has-photo' : ''}"${p.avatar ? ` style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
+          ${p.avatar ? `<span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>` : (p.online ? '🟢' : '⚪')}
+          ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Сменить аватар">📷</button>' : ''}
+        </div>
         <div class="grow">
           <div class="name" style="font-size:17px">${p.flag} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
           ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}
@@ -496,8 +499,8 @@ App.screens.profile = async (c, param) => {
       ${p.powerStats ? `<button class="btn mt" id="pf-stats-toggle" style="width:100%">📊 Подробная статистика</button>` : ''}` : ''}
       <hr class="hr">
       <div class="kv"><span class="k">Нападения</span><span class="v">${UI.fmtNum(p.battle.attacks)}</span></div>
-      <div class="kv"><span class="k">Победы</span><span class="v">${UI.fmtNum(p.battle.wins)}</span></div>
-      <div class="kv"><span class="k">Поражения</span><span class="v">${UI.fmtNum(p.battle.losses)}</span></div>
+      <div class="kv"><span class="k">Победы</span><span class="v">${UI.fmtNum((p.battle.wins||0) + (p.battle.defWins||0))}</span></div>
+      <div class="kv"><span class="k">Поражения</span><span class="v">${UI.fmtNum((p.battle.losses||0) + (p.battle.defLosses||0))}</span></div>
       <div class="kv"><span class="k">Оборона: отбито / сдано</span><span class="v">${UI.fmtNum(p.battle.defWins)} / ${UI.fmtNum(p.battle.defLosses)}</span></div>
       <hr class="hr">
       <div class="kv"><span class="k">💀 Фаталити</span><span class="v">${UI.fmtNum(p.battle.fatalities)}</span></div>
@@ -525,11 +528,17 @@ App.screens.profile = async (c, param) => {
     ${(p.activeEffects && p.activeEffects.length) ? `
     <div class="card">
       <div class="title" style="margin-top:0">✨ Активные эффекты</div>
-      ${p.activeEffects.map(e => `
-        <div class="kv">
-          <span class="k" style="${e.hostile?'color:var(--red)':''}">${e.hostile?'😈':'💉'} ${UI.esc(e.name)} <span class="muted small">(${UI.esc(e.desc)})</span>${e.byName?` <span class="muted small">— от <b style="color:var(--gold)">${UI.esc(e.byName)}</b></span>`:''}</span>
-          <span class="v">${UI.esc(e.timeLeft)}</span>
-        </div>`).join('')}
+      ${p.activeEffects.map(e => {
+        const img = App._marketImg(e.id);
+        return `
+        <div style="border-bottom:1px solid var(--border-dim);padding:8px 0">
+          ${img ? `<img src="${img}" alt="${UI.esc(e.name)}" class="market-img" style="margin-bottom:6px">` : ''}
+          <div class="kv" style="padding:0">
+            <span class="k" style="${e.hostile?'color:var(--red)':''}">${e.hostile?'😈':'💉'} ${img ? '' : UI.esc(e.name)+' '}<span class="muted small">(${UI.esc(e.desc)})</span>${e.byName?` <span class="muted small">— от <b style="color:var(--gold)">${UI.esc(e.byName)}</b></span>`:''}</span>
+            <span class="v">${UI.esc(e.timeLeft)}</span>
+          </div>
+        </div>`;
+      }).join('')}
     </div>` : ''}
 
     ${p.isOwn && p.powerStats ? `
@@ -581,6 +590,8 @@ App.screens.profile = async (c, param) => {
         App.rerender(); // перерисовать профиль
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
+    const avBtn = document.getElementById('pf-avatar-btn');
+    if (avBtn) avBtn.onclick = () => App._showAvatarPicker(p.avatar);
   }
 
   // Разворачивание/сворачивание подробной статистики мощи

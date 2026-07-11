@@ -177,6 +177,7 @@ export interface User {
   // Кастомизация профиля
   profileFrame?: string;       // id рамки
   profileBg?: string;          // id фона
+  avatar?: string;             // id аватара (m1..m6 / f1..f6)
   ownedCosmetics?: string[];   // купленные косметические id
   // Реферальная система
   refCode?: string;            // личный код-приглашение

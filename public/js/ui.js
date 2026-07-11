@@ -156,14 +156,18 @@ const UI = {
   toast(msg) {
     const box = document.getElementById('toasts');
     if (!box) return;
+    // В ряд не больше 2: при появлении нового старые досрочно убираются
+    while (box.children.length >= 2) box.firstChild.remove();
     const el = document.createElement('div');
     el.className = 'toast';
     el.textContent = msg;
     el.onclick = () => el.remove();
     box.appendChild(el);
-    // Не копим больше пяти тостов одновременно
-    while (box.children.length > 5) box.firstChild.remove();
-    setTimeout(() => el.remove(), 4500);
+    // Появляется и исчезает за ~2 секунды (короткое угасание в конце)
+    setTimeout(() => {
+      el.classList.add('toast-out');
+      setTimeout(() => el.remove(), 200);
+    }, 1800);
   },
 
   // Игровое окно подтверждения (замена браузерного confirm).

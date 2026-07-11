@@ -89,6 +89,23 @@ App.screens.war = async (c) => {
     App._warEncounter = { type: 'bank_hack', encounter: 'bank_hack', ...m.pendingBankHack };
   }
 
+  // Восстановление окна РАСТЯЖКИ: если игрок нарвался на мину и случайно вышел
+  // в главное (или из окна боя/мины), сервер помнит незавершённое
+  // разминирование (pendingMineDefuse блокирует атаки). Пересоздаём карточку,
+  // чтобы игрок обязательно разобрался с миной, прежде чем атаковать других.
+  if (!App._warEncounter && m.pendingMineDefuse) {
+    App._warEncounter = {
+      type: 'mine_defuse', encounter: 'mine_defuse',
+      wires: m.pendingMineDefuse.wires,
+      canSacrifice: m.pendingMineDefuse.canSacrifice,
+    };
+  }
+  // Если сервер уже снял мину (разминирована/взорвалась), а локально осталась
+  // карточка — убираем её, чтобы не «залипала».
+  if (App._warEncounter && App._warEncounter.type === 'mine_defuse' && !m.pendingMineDefuse) {
+    App._warEncounter = null;
+  }
+
   // Уход с экрана войны с открытым сейфом = отказ от сейфа. Молча снимаем
   // блокировку атаки на сервере, иначе игрок «застрянет»: атаковать нельзя,
   // а вернуться в окно неоткуда. _tear вызывается роутером при следующей
