@@ -1882,17 +1882,17 @@ body.theme-cyber .img-frame {
 }
 .pf-avatar.has-photo { background-size: cover; background-position: center; }
 
-/* Маленький аватар-портрет в углу шапки профиля (~в 5 раз меньше прежнего) */
+/* Маленький аватар-портрет в углу шапки профиля. Формат 3:5 — родной для
+   фото (480×800), поэтому cover заполняет рамку целиком: без обрезки и без
+   тёмных полей. Размер 72×120 — крупнее прежнего и соразмерен блоку текста. */
 .pf-avatar-sm {
   position: relative;
-  width: 64px;
-  height: 96px;               /* 4:6 портрет (крупнее, чем 4:5; фото целиком) */
+  width: 72px;
+  height: 120px;              /* 3:5 портрет (родной формат фото) */
   flex-shrink: 0;
   border-radius: 8px;
-  background-size: contain;   /* фото влезает ЦЕЛИКОМ, без обрезки */
-  background-repeat: no-repeat;
+  background-size: cover;     /* фото заполняет рамку целиком, без тёмных краёв */
   background-position: center;
-  background-color: rgba(255,255,255,.03);  /* фон под полями letterbox */
   border: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0,0,0,.4);
 }
@@ -1900,18 +1900,16 @@ body.theme-cyber .img-frame {
   background: rgba(0,0,0,.55); border-radius: 50%; padding: 0 2px; }
 .pf-avatar-sm .pf-avatar-edit { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; font-size: 12px; }
 
-/* Крупный вертикальный аватар-портрет (4:6, фото целиком без обрезки) */
+/* Крупный вертикальный аватар-портрет (родной формат 3:5, cover) */
 .pf-avatar-big {
   position: relative;
   width: 100%;
-  max-width: 300px;
-  aspect-ratio: 4 / 6;
+  max-width: 260px;
+  aspect-ratio: 3 / 5;
   margin: 0 auto 12px;
   border-radius: 14px;
-  background-size: contain;   /* фото влезает ЦЕЛИКОМ, без обрезки */
-  background-repeat: no-repeat;
+  background-size: cover;     /* фото заполняет рамку целиком, без тёмных краёв */
   background-position: center;
-  background-color: rgba(255,255,255,.03);
   border: 2px solid var(--border);
   box-shadow: 0 6px 20px rgba(0,0,0,.45);
 }
@@ -1930,8 +1928,8 @@ body.theme-cyber .img-frame {
 .avatar-group-label { font-weight: 700; color: var(--gold); margin: 10px 0 6px; font-size: 13px; }
 .avatar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .avatar-cell { padding: 0; border: 2px solid var(--border); border-radius: 10px; overflow: hidden;
-  cursor: pointer; background: var(--bg); aspect-ratio: 4 / 6; }
-.avatar-cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  cursor: pointer; background: var(--bg); aspect-ratio: 3 / 5; }
+.avatar-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar-cell.sel { border-color: var(--gold); box-shadow: 0 0 8px rgba(233,199,92,.6); }
 .avatar-cell:hover { border-color: var(--orange); }
 
