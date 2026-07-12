@@ -14,6 +14,82 @@ const App = {
   // ── Картинки наёмников аукциона ──
   _MERC_IMG_IDS: ['berserk','fortress','tycoon','envoy','ghost'],
   _mercImg(id) { return this._MERC_IMG_IDS.indexOf(id) >= 0 ? `/img/mercenaries/${id}.webp` : null; },
+  // ── Флаги стран: эмодзи → картинка ──
+  _FLAG_MAP: { '🇧🇾':'by', '🇩🇪':'de', '🇰🇿':'kz', '🇨🇳':'cn', '🇷🇺':'ru', '🇺🇸':'us', '🇺🇦':'ua' },
+  _flagImg(flag, cls) {
+    const code = this._FLAG_MAP[flag];
+    if (!code) return flag || '';
+    return `<img src="/img/flags/${code}.webp" class="flag-img ${cls || ''}" alt="">`;
+  },
+
+  // ── ФАТАЛИТИ: взятие в плен → фото + выбор → результат → возврат ──
+  // Шаг 1: крупное фото момента + выбор (отрезать ухо / помиловать).
+  async _showFatalityFlow(fat) {
+    const old = document.getElementById('fatality-overlay');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'fatality-overlay';
+    overlay.className = 'fatality-overlay';
+    overlay.innerHTML = `
+      <div class="fatality-modal">
+        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="">
+        <div class="fatality-title" style="color:var(--red)">🪖 Пленный командир</div>
+        <p class="center muted small">Командир <b style="color:var(--fg)">${UI.esc(fat.name)}</b> полностью в вашей власти. Решите его судьбу:</p>
+        <div class="fatality-choices">
+          <button class="fatality-choice cut" data-fat="ear">
+            <img src="/img/fatality/cut.webp" alt="">
+            <span>✂️ Отрезать ухо</span>
+          </button>
+          <button class="fatality-choice pardon" data-fat="mercy">
+            <img src="/img/fatality/pardon.webp" alt="">
+            <span>🎖 Помиловать</span>
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('[data-fat]').forEach((b) => b.onclick = async () => {
+      overlay.querySelectorAll('[data-fat]').forEach((x) => { x.disabled = true; x.style.opacity = '.5'; });
+      const choice = b.dataset.fat;
+      try {
+        const res = await API.post('/api/war/fatality', { choice });
+        App._lastBattle = null;
+        overlay.remove();
+        if (res && res.escaped) {
+          UI.toast('💨 Жертва ускользнула — фаталити сорвалось!');
+          await App.refreshMe(); App.go('war'); return;
+        }
+        App._showFatalityResult(choice, res);
+      } catch (e) {
+        UI.toast('⛔ ' + e.message);
+        overlay.remove(); await App.refreshMe(); App.rerender();
+      }
+    });
+  },
+
+  // Шаг 2: картинка результата + кнопка «Вернуться на поле боя».
+  _showFatalityResult(choice, res) {
+    const isEar = choice === 'ear';
+    const overlay = document.createElement('div');
+    overlay.id = 'fatality-overlay';
+    overlay.className = 'fatality-overlay';
+    overlay.innerHTML = `
+      <div class="fatality-modal">
+        <img src="/img/fatality/${isEar ? 'cut' : 'pardon'}.webp" class="fatality-photo" alt="">
+        <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? '✂️ Ухо отрезано' : '🎖 Враг помилован'}</div>
+        <p class="center muted small">${isEar
+          ? 'Вы отрезали ухо поверженному командиру — трофей жестокости пополнил вашу коллекцию.'
+          : 'Вы проявили милосердие и отпустили командира. Знак чести и жетон милосердия — ваши.'}</p>
+        <button class="btn btn-orange" id="fat-return" style="width:100%;padding:12px;margin-top:10px">🔙 Вернуться на поле боя</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('fat-return').onclick = async () => {
+      overlay.remove();
+      await App.refreshMe();
+      // Если отрезаны ОБА уха одной жертве — предложим оставить послание
+      if (res && res.canLeaveMessage && res.victimId) App._showEarMessagePrompt(res.victimId);
+      App.go('war');
+    };
+  },
 
   // ── Аватары профиля ──
   _AVATARS: { male: ['m1','m2','m3','m4','m5','m6'], female: ['f1','f2','f3','f4','f5','f6'] },
@@ -1050,7 +1126,7 @@ const App = {
           ${peekHtml}
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
           <div style="font-weight:bold;margin-bottom:8px">👥 Состав</div>
-          ${data.members.map(m => `<div class="kv"><span class="k">${m.flag || ''} ${UI.esc(m.name)} <span class="muted small">Ур.${m.level}</span></span><span class="v"><span class="badge ${m.rank >= 4 ? 'green' : m.rank >= 3 ? 'orange' : ''}">${RANKS[m.rank] || 'Новобранец'}</span></span></div>`).join('')}
+          ${data.members.map(m => `<div class="kv"><span class="k">${App._flagImg(m.flag)} ${UI.esc(m.name)} <span class="muted small">Ур.${m.level}</span></span><span class="v"><span class="badge ${m.rank >= 4 ? 'green' : m.rank >= 3 ? 'orange' : ''}">${RANKS[m.rank] || 'Новобранец'}</span></span></div>`).join('')}
         </div>`;
       document.getElementById('legion-public-popup')?.remove();
       document.body.appendChild(popup);

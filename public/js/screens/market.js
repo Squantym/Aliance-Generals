@@ -172,7 +172,7 @@ App.screens.market = async (c, param) => {
   // --- Вкладка: паспорт (смена имени и гражданства) ---
   if (tab === 'passport') {
     const p = await API.get('/api/passport');
-    const flagOf = (id) => (p.countries.find((cc) => cc.id === id) || {}).flag || '';
+    const flagOf = (id) => App._flagImg((p.countries.find((cc) => cc.id === id) || {}).flag, 'big');
     c.innerHTML = `
       <div class="title">Чёрный рынок</div>
       ${tabsHtml}

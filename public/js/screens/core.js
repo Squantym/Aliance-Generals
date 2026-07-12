@@ -65,7 +65,7 @@ App.screens.auth = async (c) => {
     if (!sel) return;
     const ct = countries.find((x) => x.id === sel.value);
     if (!ct) return;
-    document.getElementById('rg-flag').textContent = ct.flag;
+    document.getElementById('rg-flag').innerHTML = App._flagImg(ct.flag, 'big');
     document.getElementById('rg-cname').textContent = ct.name;
     document.getElementById('rg-cbonus').innerHTML = '🎖 ' + UI.esc(ct.desc || ct.bonus || '') + (ct.gold ? ` <span class="gold">(+<span class="ic-gold"></span> ${ct.gold} на старте)</span>` : '');
   };
@@ -455,16 +455,21 @@ App.screens.profile = async (c, param) => {
     <div class="title">Личное дело</div>
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
+      ${p.avatar ? `
+      <div class="pf-avatar-big" style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)">
+        <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
+        ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Сменить аватар">📷</button>' : ''}
+      </div>` : ''}
       <div class="list-row">
-        <div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''} ${p.avatar ? 'has-photo' : ''}"${p.avatar ? ` style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
-          ${p.avatar ? `<span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>` : (p.online ? '🟢' : '⚪')}
-          ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Сменить аватар">📷</button>' : ''}
-        </div>
+        ${!p.avatar ? `<div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">
+          ${p.online ? '🟢' : '⚪'}
+          ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Поставить аватар">📷</button>' : ''}
+        </div>` : ''}
         <div class="grow">
-          <div class="name" style="font-size:17px">${p.flag} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
+          <div class="name" style="font-size:17px">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
           ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}
           <div class="muted small">Звание: <b>${UI.esc(p.rank)}</b> · Ур. ${p.level} · Рейтинг ${UI.fmtNum(p.rating)}</div>
-          ${p.countryName ? `<div class="muted small">${p.flag} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
+          ${p.countryName ? `<div class="muted small">${App._flagImg(p.flag)} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
           <div class="muted small">${(p.alliance && p.alliance.members) ? 'Альянс: <b>' + p.alliance.members + ' бойцов</b>' : 'Без альянса'}</div>
           ${p.legion ? `<div class="muted small">Легион: <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${p.legion.id}')">🏰 ${UI.esc(p.legion.name)}</b> <span style="font-size:10px">(${p.legion.rankName || 'Боец'})</span></div>` : '<div class="muted small">Без легиона</div>'}
         </div>
@@ -1085,7 +1090,7 @@ App.screens.season = async (c) => {
         <div class="name">🏆 Победители прошлой недели</div>
         ${cat.winners.map((w, i) => `
           <div class="list-row">
-            <div class="grow">${['🥇','🥈','🥉'][i] || (i+1)+'.'} <span class="name" onclick="App.go('profile/${w.id}')" style="cursor:pointer">${w.flag} ${UI.esc(w.name)}</span></div>
+            <div class="grow">${['🥇','🥈','🥉'][i] || (i+1)+'.'} <span class="name" onclick="App.go('profile/${w.id}')" style="cursor:pointer">${App._flagImg(w.flag)} ${UI.esc(w.name)}</span></div>
             <span class="gold">${val(cat, w.value)} ${cat.unit}</span>
           </div>`).join('')}
       </div>` : '';
@@ -1102,7 +1107,7 @@ App.screens.season = async (c) => {
         <div class="title" style="margin-top:0">${cat.icon} Топ-20 · ${UI.esc(cat.name)}</div>
         ${cat.top.length ? cat.top.map((p, i) => `
           <div class="list-row" ${p.id === App.me.id ? 'style="background:rgba(255,180,0,.10);border-radius:8px;padding:4px 6px"' : ''}>
-            <div class="grow">${i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1) + '.'} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${p.flag} ${UI.esc(p.name)}</span>${p.id === App.me.id ? ' <span class="gold small">(вы)</span>' : ''}</div>
+            <div class="grow">${i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1) + '.'} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${App._flagImg(p.flag)} ${UI.esc(p.name)}</span>${p.id === App.me.id ? ' <span class="gold small">(вы)</span>' : ''}</div>
             <span class="gold">${val(cat, p.value)}</span>
           </div>`).join('') : '<p class="muted center">Пока пусто — заработайте очки на этой неделе!</p>'}
       </div>`;

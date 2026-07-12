@@ -878,9 +878,17 @@ function fatality(user: User, choice: string, notices: Notices) {
         });
         notices.push(`✂️ Фаталити! Отрезано: ${cutMsg} (трофеев-ушей всего: ${user.ears}).${penaltyNote}${restMsg}`);
       } else {
-        notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
+        // Бот: постоянного состояния ушей у него нет, но трофей «Тесак
+        // мясника» всё равно даёт шанс отрезать СРАЗУ ОБА уха — в коллекцию.
+        const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
+        const doubleCut = Math.random() * 100 < doublePct;
+        if (doubleCut) user.ears++; // второе ухо в коллекцию
+        notices.push(`✂️ Фаталити! ${doubleCut ? 'Отрезаны СРАЗУ ОБА уха' : 'Трофейное ухо'} — в коллекцию (всего: ${user.ears}).`);
       }
     } else {
+      // Жертва-игрок не найдена (редкий случай): та же логика, что для бота.
+      const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
+      if (Math.random() * 100 < doublePct) user.ears++;
       notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
     }
     return { choice, ears: user.ears, tokens: user.tokens, canLeaveMessage, victimId: pf.isBot ? null : pf.targetId };

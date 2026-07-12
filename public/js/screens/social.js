@@ -36,7 +36,7 @@ async function renderGroupScreen(c, kind) {
           challengeBanner = `
             <div class="card" style="border:2px solid var(--red);background:rgba(220,50,50,.08)">
               <div class="name" style="color:var(--red)">⚔️ ВХОДЯЩИЙ ВЫЗОВ НА БОЙ</div>
-              <p class="mt small">Легион <b>${UI.esc(L.challenge.enemyName)}</b> вызывает вас на бой!</p>
+              <p class="mt small">Легион <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${L.challenge.enemyId}')">🏰 ${UI.esc(L.challenge.enemyName)}</b> вызывает вас на бой!</p>
               <div class="kv"><span class="k">Время на решение</span><span class="v" id="challenge-timer">${UI.fmtTimer(L.challenge.secondsLeft)}</span></div>
               ${L.challenge.canAccept ? `
                 <div class="btn-row mt">
@@ -48,7 +48,7 @@ async function renderGroupScreen(c, kind) {
           challengeBanner = `
             <div class="card" style="border:2px solid var(--orange)">
               <div class="name">⏳ Ожидаем ответа</div>
-              <p class="small mt">Вызов отправлен легиону <b>${UI.esc(L.challenge.enemyName)}</b>.</p>
+              <p class="small mt">Вызов отправлен легиону <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${L.challenge.enemyId}')">🏰 ${UI.esc(L.challenge.enemyName)}</b>.</p>
               <div class="kv"><span class="k">Истекает через</span><span class="v" id="challenge-timer">${UI.fmtTimer(L.challenge.secondsLeft)}</span></div>
             </div>`;
         }
@@ -60,7 +60,7 @@ async function renderGroupScreen(c, kind) {
           activeBattleHtml = `
             <div class="card" style="border:2px solid var(--green)">
               <div class="name" style="color:var(--green)">${phaseLabel}</div>
-              <p class="small mt">Ваш легион сражается с <b>${UI.esc(L.activeBattle.enemyName || 'врагом')}</b>.</p>
+              <p class="small mt">Ваш легион сражается с <b${L.activeBattle.enemyId?' style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion(\''+L.activeBattle.enemyId+'\')"':''}>${UI.esc(L.activeBattle.enemyName || 'врагом')}</b>.</p>
               <p class="muted small">Нажмите кнопку, чтобы войти в окно боя, выбрать роль и снарядить пояс. В бою участвуют только те, кто подготовился.</p>
               <button class="btn btn-green mt" id="lg-prepare-battle" style="width:100%">⚔️ Подготовиться к бою</button>
             </div>`;
@@ -250,7 +250,7 @@ async function renderGroupScreen(c, kind) {
               <p class="muted small mt">Победитель получает Резервы из казны врага + рейтинговые очки.</p>
               ${L.targets.length ? L.targets.map(t => `
                 <div class="list-row">
-                  <div class="grow"><span class="name">${UI.esc(t.name)}</span> <span class="muted small">${t.members} бойцов</span></div>
+                  <div class="grow"><span class="name" style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${t.id}')">🏰 ${UI.esc(t.name)}</span> <span class="muted small">${t.members} бойцов</span></div>
                   <button class="btn btn-red btn-inline" data-challenge="${t.id}">⚔️ Вызов</button>
                 </div>`).join('')
               : '<p class="muted center small mt">Нет доступных целей</p>'}
@@ -389,7 +389,7 @@ async function renderGroupScreen(c, kind) {
               ${membersSorted.map(m => `
                 <div class="list-row" style="cursor:pointer" onclick="App.go('profile/${m.id}')">
                   <div class="grow">
-                    <span class="name">${m.flag || ''} ${UI.esc(m.name)}</span>
+                    <span class="name">${App._flagImg(m.flag)} ${UI.esc(m.name)}</span>
                     <span class="muted small"> Ур. ${m.level}</span>
                   </div>
                   <span class="badge ${m.rank >= 4 ? 'green' : m.rank >= 3 ? 'orange' : ''}">${RANKS[m.rank] || 'Новобранец'}</span>
@@ -459,7 +459,7 @@ async function renderGroupScreen(c, kind) {
           <div class="title" style="margin-top:0">Заявки на вступление</div>
           ${g.requests.map((r) => `
             <div class="list-row">
-              <div class="grow"><span class="name" onclick="App.go('profile/${r.id}')" style="cursor:pointer">${r.flag} ${UI.esc(r.name)}</span> <span class="muted small">Ур. ${r.level}</span></div>
+              <div class="grow"><span class="name" onclick="App.go('profile/${r.id}')" style="cursor:pointer">${App._flagImg(r.flag)} ${UI.esc(r.name)}</span> <span class="muted small">Ур. ${r.level}</span></div>
               <button class="btn btn-green btn-inline" data-acc="${r.id}">✔</button>
               <button class="btn btn-red btn-inline" data-rej="${r.id}">✖</button>
             </div>`).join('')}
@@ -470,7 +470,7 @@ async function renderGroupScreen(c, kind) {
         ${g.members.map((mb) => `
           <div class="list-row">
             <div class="grow">
-              <span class="name" onclick="App.go('profile/${mb.id}')" style="cursor:pointer">${mb.flag} ${UI.esc(mb.name)}</span>
+              <span class="name" onclick="App.go('profile/${mb.id}')" style="cursor:pointer">${App._flagImg(mb.flag)} ${UI.esc(mb.name)}</span>
               ${mb.id === g.leaderId ? '<span class="badge green">лидер</span>' : ''}
               <span class="muted small"> Ур. ${mb.level} · Рейтинг ${UI.fmtNum(mb.rating)}</span>
             </div>
@@ -967,7 +967,7 @@ App.screens.chat = async (c) => {
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
         <div class="chat-msg">
-          <span class="who" onclick="App.go('profile/${msg.uid}')">${msg.flag} ${UI.esc(msg.name)}</span>
+          <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
           <span class="muted small">[${msg.level}]</span>
           <span class="at">${UI.fmtDate(msg.at)}</span><br>${UI.esc(msg.text)}
         </div>`).join('')
@@ -1149,7 +1149,7 @@ App.screens.fame = async (c, param) => {
         <div class="list-row" style="${i < 3 ? 'background:rgba(255,215,0,.04)' : ''}">
           <div style="width:32px;text-align:center;font-size:${i < 3 ? '20px' : '14px'}">${i < 3 ? medals[i] : `<span class="muted">${i+1}</span>`}</div>
           <div class="grow">
-            <span class="name" style="cursor:pointer" onclick="App.go('profile/${p.id}')">${p.flag} ${UI.esc(p.name)}</span>
+            <span class="name" style="cursor:pointer" onclick="App.go('profile/${p.id}')">${App._flagImg(p.flag)} ${UI.esc(p.name)}</span>
             <span class="muted small"> Ур. ${p.level}</span>
           </div>
           <div class="v ${cat.fmt === 'money' ? 'money' : 'gold'}">${fmtVal(cat.fmt, p.value)}</div>

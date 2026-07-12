@@ -64,5 +64,21 @@ Math.random = realRandom;
 eq('у жертвы с 1 ухом срезано только оно', V4.earsCurrent, 0);
 eq('в коллекцию +1 (двойной невозможен)', A4.ears, 1);
 
+console.log('\n[5] Против БОТА трофей тоже работает (в коллекцию 2 уха)');
+reset();
+const A5 = mk('a'); A5.trophies = { butcher: 10 }; um['a'] = A5;
+A5.pendingFatality = { targetId: 'bot_x', isBot: true, exp: now + 60000 };
+Math.random = () => 0.1;   // 10 < 60 → двойной отрез
+battle.fatality(A5, 'ear', []);
+Math.random = realRandom;
+eq('против бота: +2 уха в коллекцию', A5.ears, 2);
+reset();
+const A6 = mk('a'); A6.trophies = {}; um['a'] = A6;
+A6.pendingFatality = { targetId: 'bot_x', isBot: true, exp: now + 60000 };
+Math.random = () => 0.1;
+battle.fatality(A6, 'ear', []);
+Math.random = realRandom;
+eq('против бота без трофея: +1 ухо', A6.ears, 1);
+
 Math.random = realRandom;
 console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);

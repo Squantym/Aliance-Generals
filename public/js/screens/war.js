@@ -205,13 +205,9 @@ App.screens.war = async (c) => {
   // Окно фаталити: враг повержен, решаем его судьбу
   const fatalityHtml = m.pendingFatality ? `
     <div class="card fatality-card">
-      <div class="result-title" style="color:var(--red)">💀 ФАТАЛИТИ</div>
-      <p class="center">Враг <b>${UI.esc(m.pendingFatality.name)}</b> повержен в пыль и полностью в вашей власти. Решайте быстро — окно закроется через 3 минуты!</p>
-      <div class="btn-row mt">
-        <button class="btn btn-red" id="fat-ear">✂️ Отрезать ухо</button>
-        <button class="btn btn-green" id="fat-mercy">🎖 Отпустить</button>
-      </div>
-      <p class="muted small mt center">Ухо — трофей жестокости, жетон — знак милосердия. Оба ресурса пригодятся альянсу в будущем.</p>
+      <div class="result-title" style="color:var(--red)">💀 КОМАНДИР ВРАГА ПОВЕРЖЕН</div>
+      <p class="center">Ваш отряд наткнулся на командира врага <b>${UI.esc(m.pendingFatality.name)}</b>. Вы можете взять его в плен и решить его судьбу. Решайте быстро — окно закроется через 3 минуты!</p>
+      <button class="btn btn-red mt" id="fat-capture" style="width:100%;padding:12px">🪖 Взять в плен</button>
     </div>` : '';
 
   const warTab = App._warTab || 'targets';
@@ -282,8 +278,8 @@ App.screens.war = async (c) => {
     if (again) again.onclick = () => attackTarget(b.targetId);
   }
   if (m.pendingFatality) {
-    document.getElementById('fat-ear').onclick = () => doFatality('ear');
-    document.getElementById('fat-mercy').onclick = () => doFatality('mercy');
+    const cap = document.getElementById('fat-capture');
+    if (cap) cap.onclick = () => App._showFatalityFlow(m.pendingFatality);
   }
   if (enc && enc.type === 'bank_hack') wireBankHackHandlers();
   if (enc && enc.type === 'mine_defuse') {
@@ -465,7 +461,7 @@ App.screens.war = async (c) => {
     list.innerHTML = opponents.map((o) => `
       <div class="list-row">
         <div class="grow">
-          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${o.flag} ${UI.esc(o.name)}</span>
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}</span>
           <span class="muted small"> Ур. ${o.level}</span>
           ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
           ${o.online ? '<span class="small" style="color:var(--green)"> ●</span>' : ''}
@@ -488,7 +484,7 @@ App.screens.war = async (c) => {
       list.innerHTML = sanctions.map((s) => `
         <div class="list-row">
           <div class="grow">
-            <span class="name" style="cursor:pointer" onclick="App.go('profile/${s.targetId}')">${s.flag} ${UI.esc(s.targetName)}</span>
+            <span class="name" style="cursor:pointer" onclick="App.go('profile/${s.targetId}')">${App._flagImg(s.flag)} ${UI.esc(s.targetName)}</span>
             <span class="muted small"> Ур. ${s.level} · HP ${s.hpPct}%</span>
             <div class="small" style="color:var(--money)">💰 Награда: <span class="ic-dollar"></span>${UI.fmtNum(s.bounty)}${s.orderCount > 1 ? ` (${s.orderCount} заказов)` : ''}</div>
             ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: <span class="ic-dollar"></span>${UI.fmtNum(s.myOrder)}</div>` : ''}
