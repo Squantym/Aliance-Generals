@@ -36,14 +36,8 @@ const App = {
         <div class="fatality-title" style="color:var(--red)">🪖 Пленный командир</div>
         <p class="center muted small">Командир <b style="color:var(--fg)">${UI.esc(fat.name)}</b> полностью в вашей власти. Решите его судьбу:</p>
         <div class="fatality-choices">
-          <button class="fatality-choice cut" data-fat="ear">
-            <img src="/img/fatality/cut.webp" alt="">
-            <span>✂️ Отрезать ухо</span>
-          </button>
-          <button class="fatality-choice pardon" data-fat="mercy">
-            <img src="/img/fatality/pardon.webp" alt="">
-            <span>🎖 Помиловать</span>
-          </button>
+          <button class="btn btn-red fatality-choice-btn" data-fat="ear">✂️ Отрезать ухо</button>
+          <button class="btn btn-green fatality-choice-btn" data-fat="mercy">🎖 Помиловать</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -56,7 +50,9 @@ const App = {
         overlay.remove();
         if (res && res.escaped) {
           UI.toast('💨 Жертва ускользнула — фаталити сорвалось!');
-          await App.refreshMe(); App.go('war'); return;
+          await App.refreshMe();
+          if ((location.hash||'').indexOf('war')>=0) App.rerender(); else App.go('war');
+          return;
         }
         App._showFatalityResult(choice, res);
       } catch (e) {
@@ -87,7 +83,9 @@ const App = {
       await App.refreshMe();
       // Если отрезаны ОБА уха одной жертве — предложим оставить послание
       if (res && res.canLeaveMessage && res.victimId) App._showEarMessagePrompt(res.victimId);
-      App.go('war');
+      // Возврат на поле боя: если уже на войне — принудительно перерисовываем
+      // (App.go с тем же хешем не вызывает hashchange), иначе переходим.
+      if ((location.hash||'').indexOf('war')>=0) App.rerender(); else App.go('war');
     };
   },
 

@@ -828,7 +828,9 @@ async function renderGroupScreen(c, kind) {
       <div class="title" style="margin-top:0">Крупнейшие ${kind === 'legion' ? 'легионы' : 'альянсы'}</div>
       ${data.top.length ? data.top.map((a) => `
         <div class="list-row">
-          <div class="grow"><span class="name">${UI.esc(a.name)}</span><br><span class="muted small">${a.members} бойцов · лидер: ${UI.esc(a.leaderName)}</span></div>
+          <div class="grow">${kind === 'legion'
+            ? `<span class="name" style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${a.id}')">🏰 ${UI.esc(a.name)}</span>`
+            : `<span class="name">${UI.esc(a.name)}</span>`}<br><span class="muted small">${a.members} бойцов · лидер: ${UI.esc(a.leaderName)}</span></div>
           <button class="btn btn-inline" data-apply="${a.id}">Заявка</button>
         </div>`).join('') : '<p class="muted center">Пока не основано ни одного. Станьте первым!</p>'}
     </div>`;

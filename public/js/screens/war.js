@@ -464,7 +464,9 @@ App.screens.war = async (c) => {
           <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}</span>
           <span class="muted small"> Ур. ${o.level}</span>
           ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
-          ${o.online ? '<span class="small" style="color:var(--green)"> ●</span>' : ''}
+          ${o.isBot
+            ? '<span class="online-dot off" title="Бот / террорист"></span>'
+            : `<span class="online-dot ${o.online ? 'on' : 'off'}" title="${o.online ? 'В сети' : 'Не в сети'}"></span>`}
         </div>
         <button class="btn btn-orange btn-inline" data-target="${o.id}">Атака</button>
       </div>`).join('');

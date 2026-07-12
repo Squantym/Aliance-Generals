@@ -1882,6 +1882,24 @@ body.theme-cyber .img-frame {
 }
 .pf-avatar.has-photo { background-size: cover; background-position: center; }
 
+/* Маленький аватар-портрет в углу шапки профиля (~в 5 раз меньше прежнего) */
+.pf-avatar-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+.pf-avatar-change { font-size: 11px; padding: 4px 8px; white-space: nowrap; }
+.pf-avatar-sm {
+  position: relative;
+  width: 64px;
+  height: 107px;              /* 3:5 портрет */
+  flex-shrink: 0;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+.pf-avatar-sm .pf-online-dot { position: absolute; bottom: 2px; right: 2px; font-size: 12px;
+  background: rgba(0,0,0,.55); border-radius: 50%; padding: 0 2px; }
+.pf-avatar-sm .pf-avatar-edit { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; font-size: 12px; }
+
 /* Крупный вертикальный аватар-портрет (3:5, до 300×500) */
 .pf-avatar-big {
   position: relative;
@@ -1926,6 +1944,12 @@ body.theme-cyber .img-frame {
 .flag-img.big { height: 40px; vertical-align: middle; border-radius: 4px;
   border: 1px solid var(--border); }
 .flag-img.mid { height: 20px; vertical-align: -4px; border-radius: 3px; }
+
+/* Онлайн-точки в списке целей войны (яркие зелёная/красная) */
+.online-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  margin-left: 6px; vertical-align: middle; }
+.online-dot.on  { background: #22e04a; box-shadow: 0 0 6px #22e04a, 0 0 2px #22e04a; }
+.online-dot.off { background: #ff2e2e; box-shadow: 0 0 6px #ff2e2e, 0 0 2px #ff2e2e; }
 
 /* Модалки фаталити (взятие в плен → выбор → результат) */
 .fatality-overlay { position: fixed; inset: 0; z-index: 10005; display: flex;
@@ -2065,8 +2089,14 @@ textarea.news-input { resize:vertical; line-height:1.4; }
   max-width: 240px;
   margin: 0 auto;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  object-fit: contain;
+  background: transparent;
+}
+/* Название предмета под картинкой — ярким цветом, по центру */
+.market-item-name {
+  text-align: center;
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--gold);
+  margin: 6px 0 2px;
 }

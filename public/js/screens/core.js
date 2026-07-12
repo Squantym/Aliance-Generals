@@ -455,16 +455,17 @@ App.screens.profile = async (c, param) => {
     <div class="title">Личное дело</div>
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
-      ${p.avatar ? `
-      <div class="pf-avatar-big" style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)">
-        <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
-        ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Сменить аватар">📷</button>' : ''}
-      </div>` : ''}
       <div class="list-row">
-        ${!p.avatar ? `<div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">
-          ${p.online ? '🟢' : '⚪'}
-          ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Поставить аватар">📷</button>' : ''}
-        </div>` : ''}
+        <div class="pf-avatar-col">
+        ${p.avatar
+          ? `<div class="pf-avatar-sm" style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)">
+              <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
+            </div>`
+          : `<div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">
+              ${p.online ? '🟢' : '⚪'}
+            </div>`}
+        ${own ? `<button class="btn btn-inline pf-avatar-change" id="pf-avatar-btn">📷 ${p.avatar ? 'Сменить' : 'Поставить'}</button>` : ''}
+        </div>
         <div class="grow">
           <div class="name" style="font-size:17px">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
           ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}
@@ -488,6 +489,17 @@ App.screens.profile = async (c, param) => {
       ${!own && App.me.legion && App.me.legion.leaderId === App.me.id && !p.legion
         ? `<button class="btn btn-green mt" id="pf-invite-legion">🛡 Пригласить в легион «${UI.esc(App.me.legion.name)}»</button>` : ''}
     </div>
+
+    ${own ? `
+    <div class="card">
+      <div class="title" style="margin-top:0">Разделы профиля</div>
+      <div class="menu-grid">
+        <div class="menu-btn small-row" onclick="App.go('skills')"><span class="ic">📈</span>Навыки ${App.me.skillPoints > 0 ? `<span class="badge">+${App.me.skillPoints}</span>` : ''}</div>
+        <div class="menu-btn small-row" onclick="App.go('ach')"><span class="ic">🎖</span>Достижения</div>
+        <div class="menu-btn small-row" onclick="App.go('titles')"><span class="ic">🏅</span>Титулы</div>
+        <div class="menu-btn small-row" onclick="App.go('cosmetics')"><span class="ic">🎨</span>Внешний вид</div>
+      </div>
+    </div>` : ''}
 
     <div class="card">
       ${own ? `
@@ -518,17 +530,6 @@ App.screens.profile = async (c, param) => {
       ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile/${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
       ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%">👂 Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
     </div>
-
-    ${own ? `
-    <div class="card">
-      <div class="title" style="margin-top:0">Разделы профиля</div>
-      <div class="menu-grid">
-        <div class="menu-btn small-row" onclick="App.go('skills')"><span class="ic">📈</span>Навыки ${App.me.skillPoints > 0 ? `<span class="badge">+${App.me.skillPoints}</span>` : ''}</div>
-        <div class="menu-btn small-row" onclick="App.go('ach')"><span class="ic">🎖</span>Достижения</div>
-        <div class="menu-btn small-row" onclick="App.go('titles')"><span class="ic">🏅</span>Титулы</div>
-        <div class="menu-btn small-row" onclick="App.go('cosmetics')"><span class="ic">🎨</span>Внешний вид</div>
-      </div>
-    </div>` : ''}
 
     ${(p.activeEffects && p.activeEffects.length) ? `
     <div class="card">

@@ -67,23 +67,35 @@ function buyMines(user: User, qty: number, notices: Notices) {
 // а обновляет (значение + таймер), т.е. повторная покупка просто продлевает.
 // by — игрок, наложивший эффект (для подлянок, чтобы жертва видела автора).
 function pushEffect(target: User, item: any, by?: User): void {
-  const expiresAt = Date.now() + (item.durMin || 0) * 60 * 1000;
-  const existing = target.effects.find((e) => e.type === item.effect.type);
+  const now = Date.now();
+  const addMs = (item.durMin || 0) * 60 * 1000;
+  const DAY_MS = 24 * 3600 * 1000;
+  const hostile = !!by;
+  // Ищем эффект того же типа И той же природы (допинг ≠ падлянка), чтобы
+  // бафф и дебафф одного типа не перезаписывали друг друга.
+  const existing = target.effects.find((e) => e.type === item.effect.type && !!e.hostile === hostile);
   if (existing) {
-    // Обновляем существующий эффект того же типа (без суммирования)
+    // СУММИРУЕМ время: оставшееся + новая длительность.
+    const remaining = Math.max(0, existing.expiresAt - now);
+    let newExpires = now + remaining + addMs;
+    // Падлянки суммируются, но действуют не дольше 24 часов от текущего момента.
+    if (hostile) newExpires = Math.min(newExpires, now + DAY_MS);
     existing.value = item.effect.value;
-    existing.expiresAt = expiresAt;
+    existing.expiresAt = newExpires;
     existing.name = item.name;
+    existing.id = item.id;
     if (by) { existing.byId = by.id; existing.byName = by.name; existing.hostile = true; }
     return;
   }
+  let expiresAt = now + addMs;
+  if (hostile) expiresAt = Math.min(expiresAt, now + DAY_MS);
   target.effects.push({
     id: item.id, name: item.name,
     type: item.effect.type, value: item.effect.value,
     expiresAt,
     byId: by ? by.id : undefined,
     byName: by ? by.name : undefined,
-    hostile: by ? true : false,
+    hostile,
   });
 }
 

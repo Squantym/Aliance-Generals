@@ -36,8 +36,9 @@ App.screens.market = async (c, param) => {
           <input type="text" id="victim-name" placeholder="Кому подложить свинью">
         </div>` : ''}
       ${items.map((x) => `
-        <div class="card">
-          ${App._marketImg(x.id) ? `<img src="${App._marketImg(x.id)}" alt="${UI.esc(x.name)}" class="market-img">` : `<div class="name">${UI.esc(x.name)}</div>`}
+        <div class="card market-item">
+          ${App._marketImg(x.id) ? `<img src="${App._marketImg(x.id)}" alt="${UI.esc(x.name)}" class="market-img">` : ''}
+          <div class="market-item-name">${UI.esc(x.name)}</div>
           <p class="muted small">${UI.esc(x.desc)}${x.durMin ? ` · действует ${x.durMin >= 60 ? (x.durMin / 60) + ' ч' : x.durMin + ' мин'}` : ''}</p>
           <button class="btn btn-orange mt" data-item="${x.id}">${tab === 'debuffs' ? 'Применить' : 'Купить'} за ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
         </div>`).join('')}`;
@@ -64,7 +65,8 @@ App.screens.market = async (c, param) => {
       <div class="title">Чёрный рынок</div>
       ${tabsHtml}
       <div class="card">
-        ${App._marketImg('landmine') ? `<img src="${App._marketImg('landmine')}" alt="Растяжка" class="market-img">` : `<div class="name">💣 Растяжка</div>`}
+        ${App._marketImg('landmine') ? `<img src="${App._marketImg('landmine')}" alt="Растяжка" class="market-img">` : ''}
+        <div class="market-item-name">💣 Растяжка</div>
         <p class="muted small">Мина в ваш личный запас. Срабатывает АВТОМАТИЧЕСКИ, если враг атакует вас — шанс срабатывания и урон технике нападающего зависят от трофея «Растяжка» (раздел «Трофеи»). При взрыве нападающий полностью теряет здоровье, если не разминирует растяжку в мини-игре.</p>
         <div class="kv mt"><span class="k">В запасе</span><span class="v">${info.stock} / ${info.maxStock}</span></div>
         <div class="kv"><span class="k">Цена за штуку</span><span class="v gold"><span class="ic-gold"></span> ${info.price}</span></div>
