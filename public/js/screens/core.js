@@ -456,16 +456,15 @@ App.screens.profile = async (c, param) => {
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="list-row">
-        <div class="pf-avatar-col">
         ${p.avatar
           ? `<div class="pf-avatar-sm" style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)">
               <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
+              ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Сменить аватар">📷</button>' : ''}
             </div>`
           : `<div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">
               ${p.online ? '🟢' : '⚪'}
+              ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Поставить аватар">📷</button>' : ''}
             </div>`}
-        ${own ? `<button class="btn btn-inline pf-avatar-change" id="pf-avatar-btn">📷 ${p.avatar ? 'Сменить' : 'Поставить'}</button>` : ''}
-        </div>
         <div class="grow">
           <div class="name" style="font-size:17px">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
           ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}

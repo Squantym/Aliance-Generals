@@ -1004,6 +1004,44 @@ function battleState(user: User): any {
   // Бой мог завершиться прямо в advancePhase (истекло время) — отдаём итоги.
   if (battle.phase === 'done') return { battle: doneStateView(battle, user) };
 
+  // Сборку полного DTO оборачиваем в try/catch: если из-за неожиданных данных
+  // (битый combatant, отсутствующее поле и т.п.) построение упадёт, эндпоинт
+  // НЕ должен отдавать 500 — иначе клиент ловит сбой и показывает экран
+  // «переподключения» на всю фазу подготовки. Вместо этого отдаём минимально
+  // достаточный безопасный DTO: фаза + таймер + мой боец, чтобы окно боя
+  // открылось и показало подготовку, а не зависло.
+  try {
+    return { battle: buildBattleDTO(user, battle, l) };
+  } catch (e) {
+    console.error('battleState: сбой сборки DTO боя', (e as any) && (e as any).stack ? (e as any).stack : e);
+    const t = now();
+    const meRaw = battle.combatants[user.id] || null;
+    return {
+      battle: {
+        id: battle.id,
+        phase: battle.phase,
+        prepEndsAt: battle.prepEndsAt,
+        prepSecsLeft: Math.max(0, Math.floor(((battle.prepEndsAt || 0) - t) / 1000)),
+        activeEndsAt: battle.activeEndsAt || null,
+        timeLeft: battle.phase === 'active' ? Math.max(0, Math.floor(((battle.activeEndsAt || 0) - t) / 1000)) : null,
+        me: meRaw ? { userId: meRaw.userId, name: meRaw.name, role: meRaw.role,
+          roleName: (ROLES[meRaw.role] && ROLES[meRaw.role].label) || meRaw.role,
+          hp: meRaw.hp, maxHp: meRaw.maxHp, ready: meRaw.ready, direction: meRaw.direction,
+          alive: meRaw.alive } : null,
+        mySide: l.id === battle.legionA ? 'A' : 'B',
+        cooldowns: null, directions: [], allCombatants: [], dirNames: DIR_NAMES,
+        log: [], liveScores: null, finalReport: null,
+        myGear: [], maxSlots: config.LEGION.GEAR_SLOTS_DEFAULT, arsenal: [],
+        teamChat: [], globalChat: [],
+        degraded: true,   // флаг: DTO собран в аварийном режиме
+      },
+    };
+  }
+}
+
+// Полная сборка DTO активного/подготовительного боя (вынесена из battleState,
+// чтобы её можно было безопасно обернуть в try/catch выше).
+function buildBattleDTO(user: User, battle: Battle, l: any): any {
   const mySide = l.id === battle.legionA ? 'A' : 'B';
   const me = battle.combatants[user.id] || null;
   const t  = now();
@@ -1068,32 +1106,30 @@ function battleState(user: User): any {
     .filter(Boolean);
 
   return {
-    battle: {
-      id: battle.id,
-      phase: battle.phase,
-      prepEndsAt: battle.prepEndsAt,
-      prepSecsLeft: Math.max(0, Math.floor((battle.prepEndsAt - t) / 1000)),
-      activeEndsAt: battle.activeEndsAt,
-      timeLeft,
-      finishReason: battle.finishReason || null,
-      winningSide: battle.winningSide || null,
-      me: me ? serializeCombatant(me, t, true) : null,
-      mySide,
-      cooldowns: myCDs,
-      directions,
-      allCombatants,
-      dirNames: DIR_NAMES,
-      log: (battle.log || []).slice(-40),
-      liveScores,
-      finalReport: battle.finalReport || null,
-      // Боевой пояс и арсенал для UI слотов
-      myGear,
-      maxSlots,
-      arsenal,
-      // Чат боя: командный (своя сторона) и общий (все участники)
-      teamChat: (battle.teamChat && battle.teamChat[mySide]) || [],
-      globalChat: battle.globalChat || [],
-    },
+    id: battle.id,
+    phase: battle.phase,
+    prepEndsAt: battle.prepEndsAt,
+    prepSecsLeft: Math.max(0, Math.floor((battle.prepEndsAt - t) / 1000)),
+    activeEndsAt: battle.activeEndsAt,
+    timeLeft,
+    finishReason: battle.finishReason || null,
+    winningSide: battle.winningSide || null,
+    me: me ? serializeCombatant(me, t, true) : null,
+    mySide,
+    cooldowns: myCDs,
+    directions,
+    allCombatants,
+    dirNames: DIR_NAMES,
+    log: (battle.log || []).slice(-40),
+    liveScores,
+    finalReport: battle.finalReport || null,
+    // Боевой пояс и арсенал для UI слотов
+    myGear,
+    maxSlots,
+    arsenal,
+    // Чат боя: командный (своя сторона) и общий (все участники)
+    teamChat: (battle.teamChat && battle.teamChat[mySide]) || [],
+    globalChat: battle.globalChat || [],
   };
 }
 

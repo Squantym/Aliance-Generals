@@ -399,6 +399,24 @@ const App = {
     await App._renderBattleWindow();
   },
 
+  // Полноэкранная информационная заглушка боевого окна. Используется вместо
+  // чёрного пустого оверлея при любых сбоях (сеть, 500, ошибка отрисовки).
+  // ВАЖНО: overlay #battle-window имеет тёмный фон — если оставить его пустым,
+  // игрок видит именно «чёрный экран». Поэтому пустым он не остаётся НИКОГДА.
+  _bwPlaceholder(win, opts) {
+    opts = opts || {};
+    const icon = opts.icon || '⚔️';
+    const title = opts.title || 'Загрузка боя…';
+    const sub = opts.sub ? `<p class="muted small mt">${opts.sub}</p>` : '';
+    win.innerHTML = '<div class="bw-inner" style="padding:48px 16px;text-align:center;color:var(--text)">'
+      + `<p style="font-size:40px;margin:0">${icon}</p>`
+      + `<p class="mt" style="font-weight:bold">${title}</p>`
+      + sub
+      + '<button class="btn btn-orange mt" onclick="App._renderBattleWindow()" style="min-width:140px">🔄 Обновить</button>'
+      + '<button class="btn btn-inline mt" style="margin-left:8px" onclick="App._closeBattleWindow()">Закрыть</button>'
+      + '</div>';
+  },
+
   async _renderBattleWindow() {
     const win = document.getElementById('battle-window');
     if (!win) return;
@@ -407,41 +425,56 @@ const App = {
     try {
       const res = await API.get('/api/legion/battle');
       battle = res.battle;
+      win._bwFails = 0;   // успешный запрос — сбрасываем счётчик сбоев
     } catch (e) {
-      // Сетевой сбой/таймаут — НЕ закрываем окно (иначе игрока выкидывает
-      // из подготовки при любом лаге). Просто пропускаем этот цикл,
-      // следующий poll перерисует окно.
+      // Сетевой сбой/таймаут/500. НЕ закрываем окно (иначе лаг выкидывает из
+      // подготовки). Но и НЕ оставляем чёрный оверлей: если окно ещё ни разу
+      // не отрисовано — показываем заглушку «Переподключение…» с кнопками,
+      // чтобы игрок не залипал на чёрном экране все 10 минут. Автополлинг
+      // (каждые 4 сек) сам восстановит окно, как только сервер ответит.
+      win._bwFails = (win._bwFails || 0) + 1;
+      if (!win.dataset.rendered) {
+        App._bwPlaceholder(win, {
+          icon: '📡', title: 'Переподключение к бою…',
+          sub: 'Не удалось получить состояние боя. Пробуем снова автоматически.',
+        });
+      }
       return;
     }
-    // Бой пропал из ответа сервера — но это может быть кратковременный сбой.
-    // Закрываем только если у нас уже есть отрисованное содержимое и бой
-    // явно завершён; иначе оставляем окно ждать следующего обновления.
+    // Бой пропал из ответа сервера. Если окно ещё пустое (только открыли) —
+    // показываем заглушку «Бой не найден» с кнопкой закрытия (а не чёрный экран
+    // и не тихое закрытие в никуда). Если уже что-то отрисовано — оставляем как
+    // есть: это может быть кратковременный сбой, следующий poll поправит.
     if (!battle) {
-      // Если окно ещё пустое (только открыли) — закрываем, открывать нечего.
-      if (!win.dataset.rendered) { App._closeBattleWindow(); }
+      if (!win.dataset.rendered) {
+        App._bwPlaceholder(win, {
+          icon: '🏳️', title: 'Активный бой не найден',
+          sub: 'Возможно, бой ещё не начался или уже завершён.',
+        });
+      }
       return;
     }
     if (battle.phase === 'done') {
-      App._renderBattleDone(win, battle);
-      win.dataset.rendered = '1';
+      try { App._renderBattleDone(win, battle); win.dataset.rendered = '1'; }
+      catch (e) { console.error('Ошибка отрисовки итогов боя:', e);
+        App._bwPlaceholder(win, { icon: '🏁', title: 'Бой завершён' }); }
       win.dataset.done = '1';   // бой завершён — прекращаем автополлинг окна
       return;
     }
     try {
       App._renderBattleContent(win, battle);
-      win.dataset.rendered = '1';
+      // rendered уже выставлен ВНУТРИ _renderBattleContent (сразу после
+      // установки innerHTML), поэтому ошибка в привязке событий не приводит
+      // к затиранию уже нарисованного боя.
     } catch (e) {
       console.error('Ошибка отрисовки боя:', e);
       // Никогда не оставляем пустой полноэкранный оверлей (это и был «чёрный
-      // экран»). Если окно ещё не отрисовано — показываем заглушку с кнопкой,
-      // следующий poll попробует снова.
+      // экран»). Если окно ещё не отрисовано — показываем заглушку с кнопками.
       if (!win.dataset.rendered) {
-        win.innerHTML = '<div style="padding:48px 16px;text-align:center;color:var(--text)">'
-          + '<p style="font-size:40px;margin:0">⚔️</p>'
-          + '<p class="mt">Загрузка боя…</p>'
-          + '<button class="btn btn-orange mt" onclick="App._renderBattleWindow()">Обновить</button>'
-          + '<button class="btn btn-inline mt" style="margin-left:8px" onclick="App._closeBattleWindow()">Закрыть</button>'
-          + '</div>';
+        App._bwPlaceholder(win, {
+          icon: '⚠️', title: 'Не удалось открыть бой',
+          sub: 'Нажмите «Обновить». Если не помогает — закройте и войдите снова.',
+        });
       }
     }
   },
@@ -876,9 +909,15 @@ const App = {
       </div>`;
 
     win.innerHTML = html;
-    App._bindBattleWindowEvents(win, b);
-    App._startBattleWindowTimer(b);
-    App._startActionCdTicker(b);
+    // Помечаем «отрисовано» СРАЗУ после установки содержимого — до привязки
+    // событий и таймеров. Иначе ошибка в _bindBattleWindowEvents оставляла бы
+    // dataset.rendered пустым, и обёртка-catch затирала бы уже готовый бой
+    // заглушкой на КАЖДОМ 4-сек опросе → «экран с ошибкой не исчезал».
+    win.dataset.rendered = '1';
+    // Привязку и таймеры изолируем: сбой в них не должен рушить весь экран боя.
+    try { App._bindBattleWindowEvents(win, b); } catch (e) { console.error('bindBattleWindowEvents:', e); }
+    try { App._startBattleWindowTimer(b); }     catch (e) { console.error('startBattleWindowTimer:', e); }
+    try { App._startActionCdTicker(b); }        catch (e) { console.error('startActionCdTicker:', e); }
   },
 
   _renderBattleDone(win, b) {
