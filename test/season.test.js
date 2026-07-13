@@ -79,9 +79,17 @@ ok('снапшот победителей есть', !!res.winners);
 const winsWinners = res.winners['wins'];
 eq('в категории побед 3 призёра', winsWinners.length, 3);
 eq('1 место по победам — u2', winsWinners[0].id, 'u2');
-// u2 — топ-1 по победам → +500 золота, +3 жетона (мог быть призёром и в др. категориях)
-ok('u2 получил золото за победу', u2.gold >= goldBefore.u2 + 500);
-ok('u2 получил жетоны', u2.tokens >= 3);
+// u2 — топ-1 по победам → награда приходит ПИСЬМОМ (не начисляется сразу).
+const rewards = require('../dist/src/services/rewards');
+ok('золото НЕ начислено сразу (награда письмом)', u2.gold === goldBefore.u2);
+const u2Letters = rewards.listFor(u2).filter((r) => !r.claimed);
+ok('у u2 есть неполученная награда-письмо', u2Letters.length >= 1);
+const winsLetter = u2Letters.find((r) => (r.reward.gold || 0) >= 500 && (r.reward.tokens || 0) >= 3);
+ok('в письме за победу 500 золота и 3 жетона', !!winsLetter);
+// Забираем — теперь начисляется
+rewards.claim(u2, winsLetter.id, { push: () => {} });
+ok('после «Забрать» золото начислено', u2.gold >= goldBefore.u2 + 500);
+ok('после «Забрать» жетоны начислены', u2.tokens >= 3);
 // Метрики обнулены
 eq('после ролловера wins u2 = 0', u2.weekly.wins, 0);
 eq('после ролловера rating u1 = 0', u1.weekly.rating, 0);

@@ -19,11 +19,29 @@ interface Ticket {
   id: string;
   userId: string;
   userName: string;
+  category: string;   // тема обращения (id из CATEGORIES)
   subject: string;
   status: 'open' | 'answered' | 'closed';
   messages: TicketMessage[];
   createdAt: number;
   updatedAt: number;
+}
+
+// Темы обращений. Единый источник — используется и на бэке (валидация,
+// фильтр в админке), и на фронте (выпадающий список, подразделы админки).
+const CATEGORIES = [
+  { id: 'suggestion', label: 'Предложения по игре', icon: '💡' },
+  { id: 'complaint',  label: 'Жалобы',              icon: '⚠️' },
+  { id: 'bug',        label: 'Ошибки или баги',     icon: '🐞' },
+  { id: 'help',       label: 'Помощь',              icon: '❓' },
+  { id: 'cheater',    label: 'Читеры / нарушители', icon: '🚫' },
+  { id: 'other',      label: 'Другое',              icon: '💬' },
+];
+const CATEGORY_IDS = CATEGORIES.map((c) => c.id);
+const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
+function normCategory(cat: any): string {
+  const c = String(cat || '').trim();
+  return CATEGORY_IDS.includes(c) ? c : 'other';
 }
 
 const MAX_SUBJECT = 80;
@@ -35,7 +53,8 @@ function store(): Record<string, Ticket> {
 }
 
 // ── Игрок: создать обращение ──────────────────────────────────────
-function createTicket(user: User, subject: string, text: string, notices: Notices) {
+function createTicket(user: User, category: string, subject: string, text: string, notices: Notices) {
+  const cat = normCategory(category);
   const subj = String(subject || '').trim().slice(0, MAX_SUBJECT);
   const body = String(text || '').trim().slice(0, MAX_TEXT);
   if (!subj) throw new u.ApiError('Укажите тему обращения');
@@ -54,6 +73,7 @@ function createTicket(user: User, subject: string, text: string, notices: Notice
     id: u.uid(12),
     userId: user.id,
     userName: user.name,
+    category: cat,
     subject: subj,
     status: 'open',
     messages: [{ from: 'user', authorName: user.name, text: body, at: now }],
@@ -90,6 +110,8 @@ function myTickets(user: User) {
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map((t) => ({
       id: t.id,
+      category: t.category || 'other',
+      categoryLabel: CATEGORY_LABEL[t.category || 'other'] || 'Другое',
       subject: t.subject,
       status: t.status,
       messages: t.messages,
@@ -98,6 +120,7 @@ function myTickets(user: User) {
       lastFrom: t.messages.length ? t.messages[t.messages.length - 1].from : 'user',
     }));
   return {
+    categories: CATEGORIES,
     open: mine.filter((t) => t.status !== 'closed'),
     closed: mine.filter((t) => t.status === 'closed'),
   };
@@ -106,18 +129,31 @@ function myTickets(user: User) {
 // ── Админ: список всех тикетов (с фильтром по статусу) ─────────────
 function adminList(query: any) {
   const all = store();
-  const filter = (query && query.status) || 'open';  // open | answered | closed | all
+  const statusFilter = (query && query.status) || 'open';    // open | answered | closed | all
+  const catFilter = (query && query.category) || 'all';      // all | <id темы>
   let list = Object.values(all);
-  if (filter !== 'all') {
-    if (filter === 'open') list = list.filter((t) => t.status !== 'closed');
-    else list = list.filter((t) => t.status === filter);
+  if (statusFilter !== 'all') {
+    if (statusFilter === 'open') list = list.filter((t) => t.status !== 'closed');
+    else list = list.filter((t) => t.status === statusFilter);
   }
+  if (catFilter !== 'all') list = list.filter((t) => (t.category || 'other') === catFilter);
   list.sort((a, b) => b.updatedAt - a.updatedAt);
+
+  // Счётчики открытых обращений по каждой теме — для подразделов админки
+  const byCategory: Record<string, number> = {};
+  for (const c of CATEGORY_IDS) byCategory[c] = 0;
+  for (const t of Object.values(all)) {
+    if (t.status !== 'closed') byCategory[t.category || 'other'] = (byCategory[t.category || 'other'] || 0) + 1;
+  }
+
   return {
+    categories: CATEGORIES,
     tickets: list.map((t) => ({
       id: t.id,
       userId: t.userId,
       userName: t.userName,
+      category: t.category || 'other',
+      categoryLabel: CATEGORY_LABEL[t.category || 'other'] || 'Другое',
       subject: t.subject,
       status: t.status,
       messages: t.messages,
@@ -129,6 +165,7 @@ function adminList(query: any) {
       answered: Object.values(all).filter((t) => t.status === 'answered').length,
       closed: Object.values(all).filter((t) => t.status === 'closed').length,
     },
+    byCategory,
   };
 }
 
@@ -155,4 +192,4 @@ function adminReply(adminUser: User, ticketId: string, text: string, close: bool
   return { ok: true };
 }
 
-export = { createTicket, replyTicket, myTickets, adminList, adminReply };
+export = { createTicket, replyTicket, myTickets, adminList, adminReply, CATEGORIES };

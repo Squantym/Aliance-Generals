@@ -1460,7 +1460,7 @@ const App = {
   renderHeader() {
     const h = document.getElementById('header');
     if (!App.me || !API.token()) {
-      h.innerHTML = `<div class="logo"><span class="star">★</span> ГЕНЕРАЛЫ <span class="star">★</span></div>`;
+      h.innerHTML = `<div class="logo"><span class="star">★</span> АЛЬЯНС ГЕНЕРАЛОВ <span class="star">★</span></div>`;
       return;
     }
     const m = App.me;
@@ -1471,7 +1471,7 @@ const App = {
     // Уровень кликабелен: ведёт в навыки если есть очки, иначе в профиль
     const lvlTarget = m.skillPoints > 0 ? 'skills' : 'profile';
     h.innerHTML = `
-      <div class="logo" onclick="App.go('home')"><span class="star">★</span> ГЕНЕРАЛЫ <span class="star">★</span></div>
+      <div class="logo" onclick="App.go('home')"><span class="star">★</span> АЛЬЯНС ГЕНЕРАЛОВ <span class="star">★</span></div>
       <div class="xp-strip" onclick="App.go('profile')" title="Опыт: ${UI.fmtNum(m.xp)} / ${UI.fmtNum(m.xpNext)}">
         <div class="xp-strip-fill" style="width:${xpPct}%"></div>
         <span class="xp-strip-label">Ур. ${m.level} · ${UI.fmtNum(m.xp)} / ${UI.fmtNum(m.xpNext)} XP</span>

@@ -717,21 +717,31 @@ function buildConflictOperations(conflict: any, conflictIdx: number): any {
       // больше не основной источник опыта, упор смещён на бои.
       const baseXp = 3 + conflictIdx * 32;
       const xp = Math.round((baseXp + opIdx * 3 + stepIdx * 5) / 3);
-      // Уровень, на котором примерно доступен этот шаг (для расчёта денег)
+      // Уровень, на котором примерно доступен этот шаг (уровень доступности миссии)
       const stepLevel = conflict.minLevel + opIdx + stepIdx;
-      // Деньги масштабируются под уровень игрока: примерно стоимость
-      // 1-3 единиц актуальной техники за шаг (больше чем раньше).
-      const money = Math.round(minUnitPriceAtLevel(stepLevel) * (0.5 + opIdx * 0.15 + stepIdx * 0.1));
-      // Требования: сила армии, иногда уровень, иногда наличие техники
+      // Деньги = стоимость N единиц техники НА УРОВНЕ МИССИИ, где N растёт
+      // от 10 (первый шаг первой операции) до 50 (последний шаг последней),
+      // операция весит больше шага. Т.е. чем выше шаг/сложность — тем больше.
+      const opFrac = conflict.ops > 1 ? opIdx / (conflict.ops - 1) : 0;
+      const stepFrac = stepIdx / 2;
+      const nUnits = Math.round(10 + 40 * (opFrac * 0.75 + stepFrac * 0.25)); // 10..50
+      const money = Math.round(minUnitPriceAtLevel(stepLevel) * nUnits);
+      // Ускорение шага: 10 золота за каждый час длительности (мин. 1).
+      const boostGold = Math.max(1, Math.round((timeMin / 60) * 10));
+      // Требования: сила армии, уровень и НАЛИЧИЕ ТЕХНИКИ соответствующего
+      // уровня (нужно владеть N единиц техники, доступной ~на уровне миссии).
       const powerReq = Math.round(50 * Math.pow(1.6, conflictIdx) + opIdx * 30 + stepIdx * 20);
+      const unitReqLevel = Math.max(1, stepLevel - 15);
+      const unitReqCount = 5 + conflictIdx * 3 + opIdx * 2 + stepIdx;
       steps.push({
         idx: stepIdx,
         name: SPEC_OP_STEPS[stepIdx],
         energy, timeMin,
-        xp, money,
+        xp, money, boostGold,
         require: {
           power: powerReq,
           level: stepLevel,
+          units: { minLevel: unitReqLevel, count: unitReqCount },
         },
       });
     }
@@ -921,37 +931,40 @@ const CLUB = {
 // За каждое: опыт + деньги (масштабируются с уровнем игрока).
 // За выполнение ВСЕХ 9 — бонус 100 золота.
 const DAILY_QUESTS = [
-  { id: 'attack',     name: 'Совершить атаки',                   counter: 'attacks',       target: 100, icon: '⚔' },
-  { id: 'win',        name: 'Победить в боях',                   counter: 'wins',          target: 50,  icon: '🏆' },
-  { id: 'mission',    name: 'Выполнить шаги спецоперации',       counter: 'missionStages', target: 30,  icon: '📋' },
-  { id: 'buy_unit',   name: 'Купить единиц техники',             counter: 'unitsBought',   target: 50,  icon: '🚜' },
-  { id: 'build',      name: 'Построить зданий',                  counter: 'buildingsBuilt', target: 20, icon: '🏗' },
-  { id: 'deposit',    name: 'Положить в банк',                   counter: 'bankDeposited', target: 500000, icon: '🏦' },
-  { id: 'club',       name: 'Сыграть в Клубе офицеров',          counter: 'clubPlayed',    target: 10, icon: '🎲' },
-  { id: 'market',     name: 'Купить на чёрном рынке',            counter: 'marketBought',  target: 10, icon: '💣' },
-  { id: 'fatality',   name: 'Совершить фаталити',                counter: 'fatalities',    target: 10, icon: '💀' },
+  { id: 'attack',     name: 'Совершить атаки',                   counter: 'attacks',       target: 150, icon: '⚔' },
+  { id: 'win',        name: 'Победить в боях',                   counter: 'wins',          target: 80,  icon: '🏆' },
+  { id: 'mission',    name: 'Выполнить шаги спецоперации',       counter: 'missionStages', target: 40,  icon: '📋' },
+  { id: 'buy_unit',   name: 'Купить единиц техники',             counter: 'unitsBought',   target: 80,  icon: '🚜' },
+  { id: 'build',      name: 'Построить зданий',                  counter: 'buildingsBuilt', target: 30, icon: '🏗' },
+  { id: 'deposit',    name: 'Положить в банк',                   counter: 'bankDeposited', target: 1000000, icon: '🏦' },
+  { id: 'club',       name: 'Сыграть в Клубе офицеров',          counter: 'clubPlayed',    target: 15, icon: '🎲' },
+  { id: 'market',     name: 'Купить на чёрном рынке',            counter: 'marketBought',  target: 15, icon: '💣' },
+  { id: 'fatality',   name: 'Совершить фаталити',                counter: 'fatalities',    target: 15, icon: '💀' },
 ];
 
-// Требование задания растёт с уровнем игрока: на 1 уровне — базовое
-// значение, на 300 уровне — примерно в 4 раза больше базового
-// (плавный рост, чтобы не становилось невозможным на старте и не было
-// слишком лёгким на поздних уровнях).
+// Требование задания растёт с уровнем игрока: на 1 ур. — базовое значение,
+// на 300 ур. — примерно в 5 раз больше базового (круче прежнего ×4, чтобы
+// поздняя игра оставалась вызовом, но не была невозможной на старте).
 function dailyQuestTarget(baseTarget: number, level: number): number {
-  const growth = 1 + Math.min(3, (level - 1) / 100); // 1x на ур.1 → 4x на ур.300
+  const growth = 1 + Math.min(4, (level - 1) / 75); // 1x на ур.1 → ~5x на ур.300
   return Math.max(baseTarget, Math.round(baseTarget * growth));
 }
 
-// Награда за одно задание (масштабируется с уровнем игрока).
-// Опыт снижен в 15 раз относительно прежней версии — ежедневные задания
-// больше не основной источник опыта, упор на бои и спецоперации.
+// Награда за одно задание (растёт с уровнем). Доллары — по той же формуле-
+// семейству K·level, что и раньше, но K поднят (задания стали сложнее).
+// Опыт остаётся вспомогательным (упор на бои/спецоперации).
 function dailyQuestReward(level: number): any {
   return {
-    xp: Math.max(1, Math.round((50 + level * 5) / 15)),
-    dollars: 5000 * level,
+    xp: Math.max(5, Math.round(level * 1.2)),
+    dollars: 8000 * level,
   };
 }
 
-const DAILY_ALL_BONUS_GOLD = 100;
+// Бонус за выполнение ВСЕХ заданий дня — растёт с уровнем (золото).
+function dailyAllBonusGold(level: number): number {
+  return 100 + Math.floor(level / 2); // ур.1 = 100 🪙 → ур.300 = 250 🪙
+}
+
 // На 10 уровне каждый трофей даёт указанный максимум:
 //   medal/shield = 20%, license = 100%, radar = 50%, sewing = 40%,
 //   hospital/supply/logistics/tax/quarterm/looter = 50%, engineer = 40%.
@@ -991,6 +1004,11 @@ const TROPHY_BOOST_GOLD = 50;
 function trophyTrainMinutes(targetLevel: number, timeMul?: number): number {
   const base = 60 * Math.pow(1.7, Math.max(0, targetLevel - 1));
   return Math.round(base * (timeMul || 1));
+}
+// Стоимость мгновенного ускорения прокачки трофея: 10 золота за КАЖДЫЙ ЧАС
+// полной длительности прокачки (мин. 1). Пример: 240 ч → 2400 золота.
+function trophyBoostGold(targetLevel: number, timeMul?: number): number {
+  return Math.max(1, Math.round((trophyTrainMinutes(targetLevel, timeMul) / 60) * 10));
 }
 // Стоимость прокачки в золоте. expensive-трофеи на 50% дороже.
 // costMul — индивидуальная надбавка (у «Спутника-шпиона» +30% → 1.3).
@@ -1545,13 +1563,25 @@ const TITLE_BY_ID: Record<string, any> = Object.fromEntries(TITLES.map((t) => [t
 
 // Контракты от NPC (ежедневные задания за золото/опыт)
 const CONTRACTS_POOL = [
-  { id: 'c_attack', name: 'Зачистка', desc: 'Соверши {n} атак',          counter: 'attacks',       targets: [3, 5, 8], rewardGold: [12, 18, 25] },
-  { id: 'c_win',    name: 'Триумф',   desc: 'Выиграй {n} боёв',          counter: 'wins',          targets: [2, 4, 6], rewardGold: [15, 22, 30] },
-  { id: 'c_buy',    name: 'Снабжение',desc: 'Купи {n} единиц техники',   counter: 'unitsBought',   targets: [5, 10, 20], rewardGold: [10, 16, 24] },
-  { id: 'c_build',  name: 'Стройка',  desc: 'Построй {n} зданий',        counter: 'buildingsBuilt',targets: [2, 4, 6], rewardGold: [14, 20, 28] },
-  { id: 'c_ear',    name: 'Трофеи',   desc: 'Отрежь {n} ушей',           counter: 'earsCut',       targets: [1, 2, 3], rewardGold: [20, 30, 45] },
+  { id: 'c_attack',  name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks',        targets: [5, 10, 15], rewardGold: [15, 25, 40] },
+  { id: 'c_win',     name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
+  { id: 'c_buy',     name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
+  { id: 'c_build',   name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
+  { id: 'c_ear',     name: 'Трофеи',      desc: 'Отрежь {n} ушей',               counter: 'earsCut',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
+  { id: 'c_mission', name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
+  { id: 'c_fatal',   name: 'Палач',       desc: 'Соверши {n} фаталити',          counter: 'fatalities',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
+  { id: 'c_market',  name: 'Контрабанда', desc: 'Купи {n} на чёрном рынке',      counter: 'marketBought',   targets: [2, 4, 7],   rewardGold: [15, 24, 38] },
 ];
 const CONTRACTS_PER_DAY = 3;
+
+// Контракты тоже усложняются с уровнем: цель растёт (1x→~5x), а награда
+// золотом — умереннее (1x→3x), т.к. золото — премиум-валюта.
+function contractTarget(base: number, level: number): number {
+  return Math.max(base, Math.round(base * (1 + Math.min(4, (level - 1) / 75))));
+}
+function contractReward(baseGold: number, level: number): number {
+  return Math.round(baseGold * (1 + Math.min(2, (level - 1) / 150)));
+}
 
 // Косметика профиля (рамки и фоны за золото)
 const COSMETICS = [
@@ -1756,9 +1786,9 @@ export = {
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
   COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
   RIDDLES, CLUB,
-  TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyTrainMinutes, trophyUpgradeCost,
+  TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,
-  DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, DAILY_ALL_BONUS_GOLD,
+  DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, dailyAllBonusGold,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID,
   LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID,
@@ -1767,6 +1797,6 @@ export = {
   BATTLE, EARS, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
-  LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY,
+  LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget, contractReward,
   COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS,
 };

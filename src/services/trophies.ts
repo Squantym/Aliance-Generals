@@ -121,6 +121,7 @@ function list(user: User) {
         baseNextCost: level < config.TROPHY_MAX_LEVEL ? baseNextCost(level, t) : null,
         nextCost:     level < config.TROPHY_MAX_LEVEL ? nextCost(level, t) : null,
         trainMinutes: level < config.TROPHY_MAX_LEVEL ? trainMin : null,
+        boostGold: level < config.TROPHY_MAX_LEVEL ? config.trophyBoostGold(targetLevel, (t as any).timeMul) : null,
         training: !!active,
         secondsLeft: secLeft,
         totalSec: active ? Math.round((active.finishesAt - active.startedAt) / 1000) : 0,
@@ -161,15 +162,17 @@ function formatMinutes(min: number): string {
   return `${days} сут ${hours} ч`;
 }
 
-// Ускорить прокачку: списываем 50 золота и завершаем мгновенно
+// Ускорить прокачку: 10 золота за каждый час полной длительности, завершаем мгновенно
 function boostUpgrade(user: User, id: string, notices: Notices) {
   const proc = activeFor(user, id);
   if (!proc) throw new u.ApiError('Этот трофей сейчас не прокачивается');
-  if (user.gold < config.TROPHY_BOOST_GOLD) throw new u.ApiError(`Нужно ${config.TROPHY_BOOST_GOLD} золота`);
-  user.gold -= config.TROPHY_BOOST_GOLD;
+  const def = config.TROPHIES.find((t) => t.id === id);
+  const cost = config.trophyBoostGold(proc.level, def ? (def as any).timeMul : undefined);
+  if (user.gold < cost) throw new u.ApiError(`Нужно ${cost} золота`);
+  user.gold -= cost;
   proc.finishesAt = Date.now();
   notices.push('⚡ Прокачка трофея ускорена!');
-  return { ok: true };
+  return { ok: true, cost };
 }
 
 // Совокупный множитель: +N% к атаке от трофея medal (доли единицы)

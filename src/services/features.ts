@@ -173,14 +173,14 @@ function contractsView(user: User) {
       const tier = parseInt(tierStr || '0', 10);
       const def = config.CONTRACTS_POOL.find((c: any) => c.id === baseId);
       if (!def) return null;
-      const target = def.targets[tier];
+      const target = config.contractTarget(def.targets[tier], user.level);
       const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
       const done = current >= target;
       return {
         id: ct.id, name: def.name,
         desc: def.desc.replace('{n}', String(target)),
         current: Math.min(current, target), target,
-        reward: def.rewardGold[tier],
+        reward: config.contractReward(def.rewardGold[tier], user.level),
         done, claimed: !!ct.claimed,
       };
     }).filter(Boolean),
@@ -196,11 +196,11 @@ function claimContract(user: User, contractId: string, notices: Notices) {
   const tier = parseInt(tierStr || '0', 10);
   const def = config.CONTRACTS_POOL.find((c: any) => c.id === baseId);
   if (!def) throw new u.ApiError('Контракт не найден');
-  const target = def.targets[tier];
+  const target = config.contractTarget(def.targets[tier], user.level);
   const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
   if (current < target) throw new u.ApiError('Контракт ещё не выполнен');
 
-  const reward = def.rewardGold[tier];
+  const reward = config.contractReward(def.rewardGold[tier], user.level);
   player.addGold(user, reward);
   ct.claimed = true;
   db.save('users');

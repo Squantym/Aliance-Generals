@@ -37,7 +37,7 @@ async function renderGroupScreen(c, kind) {
             <div class="card" style="border:2px solid var(--red);background:rgba(220,50,50,.08)">
               <div class="name" style="color:var(--red)">⚔️ ВХОДЯЩИЙ ВЫЗОВ НА БОЙ</div>
               <p class="mt small">Легион <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${L.challenge.enemyId}')">🏰 ${UI.esc(L.challenge.enemyName)}</b> вызывает вас на бой!</p>
-              <div class="kv"><span class="k">Время на решение</span><span class="v" id="challenge-timer">${UI.fmtTimer(L.challenge.secondsLeft)}</span></div>
+              <div class="kv"><span class="k">Время на решение</span><span class="v" id="challenge-timer" data-secs="${L.challenge.secondsLeft}">${UI.fmtTimer(L.challenge.secondsLeft)}</span></div>
               ${L.challenge.canAccept ? `
                 <div class="btn-row mt">
                   <button class="btn btn-green" id="lg-accept-challenge">✅ Принять</button>
@@ -49,7 +49,7 @@ async function renderGroupScreen(c, kind) {
             <div class="card" style="border:2px solid var(--orange)">
               <div class="name">⏳ Ожидаем ответа</div>
               <p class="small mt">Вызов отправлен легиону <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${L.challenge.enemyId}')">🏰 ${UI.esc(L.challenge.enemyName)}</b>.</p>
-              <div class="kv"><span class="k">Истекает через</span><span class="v" id="challenge-timer">${UI.fmtTimer(L.challenge.secondsLeft)}</span></div>
+              <div class="kv"><span class="k">Истекает через</span><span class="v" id="challenge-timer" data-secs="${L.challenge.secondsLeft}">${UI.fmtTimer(L.challenge.secondsLeft)}</span></div>
             </div>`;
         }
 
@@ -776,9 +776,12 @@ async function renderGroupScreen(c, kind) {
 
       // Обратный отсчёт таймера вызова (корректные секунды из данных, не из текста)
       const timerEl = document.getElementById('challenge-timer');
-      if (timerEl && L.challenge) {
+      if (timerEl) {
+        // Секунды берём из data-secs элемента: переменная L объявлена в другой
+        // области видимости (в блоке разметки), сюда она не долетает — раньше
+        // это давало «L is not defined» и роняло весь экран легиона при вызове.
         if (App._challengeTimer) { clearInterval(App._challengeTimer); App._challengeTimer = null; }
-        let secs = parseInt(L.challenge.secondsLeft, 10) || 0;
+        let secs = parseInt(timerEl.dataset.secs, 10) || 0;
         timerEl.textContent = UI.fmtTimer(secs);
         App._challengeTimer = setInterval(() => {
           if (!document.getElementById('challenge-timer')) { clearInterval(App._challengeTimer); App._challengeTimer = null; return; }
@@ -1010,7 +1013,10 @@ App.screens.mail = async (c, param) => {
           <div style="align-self:${m.dir === 'out' ? 'flex-end' : 'flex-start'};max-width:80%;background:${m.dir === 'out' ? 'var(--orange-10, rgba(255,150,50,.12))' : 'rgba(255,255,255,.06)'};border-radius:10px;padding:8px 12px">
             ${m.subject ? `<div class="small" style="opacity:.7;margin-bottom:2px"><b>${UI.esc(m.subject)}</b></div>` : ''}
             <div style="white-space:pre-wrap">${UI.esc(m.text)}</div>
-            <div class="muted small" style="margin-top:4px;text-align:right">${UI.fmtDate(m.at)}</div>
+            <div class="muted small" style="margin-top:4px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <span style="cursor:pointer;color:var(--red)" data-del-mail="${m.id}" title="Удалить сообщение">🗑 удалить</span>
+              <span>${UI.fmtDate(m.at)}</span>
+            </div>
           </div>`).join('')}
       </div>
       <div class="card mt">
@@ -1031,6 +1037,19 @@ App.screens.mail = async (c, param) => {
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
+    // Удаление отдельного письма из переписки
+    c.querySelectorAll('[data-del-mail]').forEach((el) => {
+      el.onclick = async () => {
+        if (!await UI.confirm('Удалить это сообщение? Оно исчезнет только у вас.', { title: 'Удаление письма', icon: '🗑', okText: 'Удалить', danger: true })) return;
+        try {
+          await API.post('/api/mail/' + encodeURIComponent(el.dataset.delMail) + '/delete');
+          UI.toast('🗑 Сообщение удалено');
+          // Если это было последнее письмо в переписке — возвращаемся к списку
+          if (thread.messages.length <= 1) App.go('mail');
+          else App.rerender();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
     return;
   }
 
@@ -1068,9 +1087,31 @@ App.screens.mail = async (c, param) => {
   // Список переписок (тредов) — только письма от игроков, без уведомлений
   const { threads } = await API.get('/api/mail');
   const unreadCount = threads.reduce((s, t) => s + (t.unread || 0), 0);
+
+  // Письма от «Система» (награды за рейтинг/сезоны/от администрации)
+  let rewardsData = { rewards: [] };
+  try { rewardsData = await API.get('/api/rewards'); } catch (e) {}
+  const rewardLetters = rewardsData.rewards || [];
+  const pendingRewards = rewardLetters.filter((r) => !r.claimed).length;
+  const systemSection = rewardLetters.length ? `
+    <div class="card">
+      <div class="name">📨 Система${pendingRewards ? ` <span class="badge" style="background:var(--gold);color:#000">${pendingRewards} к получению</span>` : ''}</div>
+      ${rewardLetters.map((r) => `
+        <div class="card" style="margin-top:8px;border-color:${r.claimed ? 'var(--border)' : 'var(--gold)'}">
+          <div style="font-weight:600">${r.claimed ? '✅ ' : '🎁 '}${UI.esc(r.title)}</div>
+          <div class="muted small" style="margin-top:2px">${UI.esc(r.reason)}</div>
+          <div class="gold small mt">Награда: ${r.rewardText.map((x) => UI.esc(x)).join(' · ')}</div>
+          <div class="muted small" style="margin-top:2px">${UI.fmtDate(r.createdAt)} · от «Система»</div>
+          ${r.claimed
+            ? `<div class="btn-row mt"><span class="muted small">Забрано ✓</span><button class="btn btn-inline" data-del-reward="${r.id}" style="color:var(--red)">🗑 Удалить</button></div>`
+            : `<button class="btn btn-orange mt" data-claim-reward="${r.id}" style="width:100%">🎁 Забрать награду</button>`}
+        </div>`).join('')}
+    </div>` : '';
+
   c.innerHTML = `
     <div class="title">Почта</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Только личные письма от игроков. Системные события (приглашения, ачивки и т.п.) смотрите в 🔔 уведомлениях.</p>
+    <p class="muted small" style="margin:-4px 4px 10px">Личные письма от игроков и награды от «Система». Прочие системные события (приглашения, ачивки) — в 🔔 уведомлениях.</p>
+    ${systemSection}
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn btn-orange" onclick="App.go('mail/new')" style="flex:1">✍ Написать письмо</button>
       ${unreadCount > 0 ? `<button class="btn btn-inline" id="mail-read-all">✓ Прочитать все (${unreadCount})</button>` : ''}
@@ -1090,6 +1131,29 @@ App.screens.mail = async (c, param) => {
         </div>`;
       }).join('') : '<p class="muted center">Писем от игроков пока нет. Нажмите «Написать письмо», чтобы начать переписку.</p>'}
     </div>`;
+  // Забрать награду прямо из почты
+  c.querySelectorAll('[data-claim-reward]').forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const res = await API.post('/api/rewards/' + encodeURIComponent(btn.dataset.claimReward) + '/claim');
+        UI.toast('🎁 Получено: ' + ((res.rewardText || []).join(', ') || 'награда'));
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { btn.disabled = false; UI.toast('⛔ ' + e.message); }
+    };
+  });
+  // Удалить забранное письмо-награду
+  c.querySelectorAll('[data-del-reward]').forEach((btn) => {
+    btn.onclick = async () => {
+      if (!await UI.confirm('Удалить это письмо-награду?', { title: 'Удаление', icon: '🗑', okText: 'Удалить', danger: true })) return;
+      try {
+        await API.post('/api/rewards/' + encodeURIComponent(btn.dataset.delReward) + '/delete');
+        UI.toast('🗑 Удалено');
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
   const readAllBtn = document.getElementById('mail-read-all');
   if (readAllBtn) readAllBtn.onclick = async () => {
     try {

@@ -66,7 +66,7 @@ function list(user: User) {
     allDone,
     doneCount,
     total: quests.length,
-    bonusGold: config.DAILY_ALL_BONUS_GOLD,
+    bonusGold: config.dailyAllBonusGold(user.level),
     bonusClaimed: !!d.bonusClaimed,
     resetInHours: hoursUntilReset(),
   };
@@ -102,9 +102,10 @@ function claimBonus(user: User, notices: Notices) {
   const allDone = config.DAILY_QUESTS.every((q) => (d.counters[q.counter] || 0) >= config.dailyQuestTarget(q.target, user.level));
   if (!allDone) throw new u.ApiError('Выполните все задания чтобы получить бонус');
   d.bonusClaimed = true;
-  player.addGold(user, config.DAILY_ALL_BONUS_GOLD);
-  notices.push(`🎉 Все задания выполнены! Бонус: 🪙 ${config.DAILY_ALL_BONUS_GOLD}`);
-  return { gold: config.DAILY_ALL_BONUS_GOLD };
+  const bonus = config.dailyAllBonusGold(user.level);
+  player.addGold(user, bonus);
+  notices.push(`🎉 Все задания выполнены! Бонус: 🪙 ${bonus}`);
+  return { gold: bonus };
 }
 
 export = { bump, list, claim, claimBonus, ensureDaily };

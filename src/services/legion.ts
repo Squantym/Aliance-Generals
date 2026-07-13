@@ -980,16 +980,20 @@ function publicView(legionId: string, viewer?: User): any {
 
 // ── АДМИН: организовать бой между ЛЮБЫМИ двумя легионами (для турниров),
 // минуя вызов/принятие. Создаёт единый объект боя, как acceptChallenge. ──
-function adminStartBattle(adminUser: User, legionAId: string, legionBId: string, notices: Notices): any {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
-  if (!legionAId || !legionBId || legionAId === legionBId) throw new u.ApiError('Выберите два разных легиона');
+// Старт боя БЕЗ проверки прав — для системных нужд (турниры). Не бросает
+// исключений: возвращает {ok:true, battleId, prepEndsAt, legionA, legionB}
+// либо {ok:false, reason:'invalid'|'missing'|'busy'|'empty', aEmpty, bEmpty}.
+function systemStartBattle(legionAId: string, legionBId: string): any {
+  if (!legionAId || !legionBId || legionAId === legionBId) return { ok: false, reason: 'invalid' };
   const all = legions();
   const A = all[legionAId];
   const B = all[legionBId];
-  if (!A || !B) throw new u.ApiError('Легион не найден');
+  if (!A || !B) return { ok: false, reason: 'missing' };
   ensureLegionFields(A); ensureLegionFields(B);
-  if (A.activeBattle || B.activeBattle) throw new u.ApiError('Один из легионов уже в бою');
-  if ((A.members || []).length === 0 || (B.members || []).length === 0) throw new u.ApiError('В легионе нет бойцов');
+  if (A.activeBattle || B.activeBattle) return { ok: false, reason: 'busy' };
+  const aEmpty = (A.members || []).length === 0;
+  const bEmpty = (B.members || []).length === 0;
+  if (aEmpty || bEmpty) return { ok: false, reason: 'empty', aEmpty, bEmpty };
 
   const lb = require('./legionBattle');
   const battleId = u.uid(12);
@@ -1000,7 +1004,7 @@ function adminStartBattle(adminUser: User, legionAId: string, legionBId: string,
     legionAName: A.name, legionBName: B.name,
     startedAt: Date.now(), prepEndsAt, phase: 'prep',
     combatants: {}, gear: {}, guardLinks: {}, guardExpiry: {}, log: [],
-    adminTournament: true,   // метка: бой организован администратором
+    adminTournament: true,   // метка: бой организован администратором/турниром
   };
   const battles = db.load('battles', {});
   battles[battleId] = battleObj;
@@ -1017,15 +1021,39 @@ function adminStartBattle(adminUser: User, legionAId: string, legionBId: string,
     for (const memberId of legion.members) {
       const m = users[memberId];
       if (m) notif.push(m.id, 'legion_battle_start',
-        `⚔️ Турнирный бой! Администратор назначил бой против «${enemyName}». ${prepMin} минут на подготовку!`,
+        `⚔️ Турнирный бой! Назначен бой против «${enemyName}». ${prepMin} минут на подготовку!`,
         { enemyName, prepEndsAt });
     }
   };
   announce(A, B.name);
   announce(B, A.name);
+  return { ok: true, battleId, prepEndsAt, legionA: A.name, legionB: B.name };
+}
 
-  notices.push(`✅ Турнирный бой назначен: «${A.name}» против «${B.name}». Подготовка ${prepMin} минут.`);
-  return { battleId, prepEndsAt, legionA: A.name, legionB: B.name };
+// Результат боя по id: {exists, done, winnerId, winnerName, winningSide, reason}
+function battleResult(battleId: string): any {
+  const b = db.load<any>('battles', {})[battleId];
+  if (!b) return { exists: false, done: false };
+  if (b.phase !== 'done') return { exists: true, done: false };
+  const winnerId = b.winningSide === 'A' ? b.legionA : b.legionB;
+  const winnerName = b.winningSide === 'A' ? b.legionAName : b.legionBName;
+  return { exists: true, done: true, winnerId, winnerName, winningSide: b.winningSide, reason: b.finishReason };
+}
+
+function adminStartBattle(adminUser: User, legionAId: string, legionBId: string, notices: Notices): any {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  const r = systemStartBattle(legionAId, legionBId);
+  if (!r.ok) {
+    const msg = r.reason === 'invalid' ? 'Выберите два разных легиона'
+      : r.reason === 'missing' ? 'Легион не найден'
+      : r.reason === 'busy' ? 'Один из легионов уже в бою'
+      : r.reason === 'empty' ? 'В легионе нет бойцов'
+      : 'Не удалось начать бой';
+    throw new u.ApiError(msg);
+  }
+  const prepMin = Math.round(require('./legionBattle').PREP_MS / 60000);
+  notices.push(`✅ Турнирный бой назначен: «${r.legionA}» против «${r.legionB}». Подготовка ${prepMin} минут.`);
+  return r;
 }
 
 // ── АДМИН: пополнить казну/резервы/казначейство ЛЮБОГО легиона напрямую
@@ -1059,7 +1087,7 @@ export = {
   shopBuy, gearPick,
   challengeLegion, acceptChallenge, declineChallenge,
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
-  adminDeposit, adminStartBattle,
+  adminDeposit, adminStartBattle, systemStartBattle, battleResult,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
   setReady:         (...a) => require('./legionBattle').setReady(...a),

@@ -88,12 +88,15 @@ function awardAndSnapshot(s: any, all: User[], finishingWeek: string) {
     winners[cat.id] = ranked.map((x) => ({ id: x.p.id, name: x.p.name, flag: player.flag(x.p), value: x.v }));
     ranked.forEach((x, i) => {
       const rw = rewards[i] || { gold: 0, tokens: 0 };
-      player.addGold(x.p, rw.gold || 0);
-      x.p.tokens = (x.p.tokens || 0) + (rw.tokens || 0);
-      try {
-        require('./notifications').push(x.p.id, 'season_reward',
-          `🏆 Итоги недели! ${i + 1} место в категории «${cat.name}». Награда: 🪙 ${rw.gold}, 🎖 ${rw.tokens}`, {});
-      } catch (e) {}
+      const place = i + 1;
+      const medal = place === 1 ? '🥇' : place === 2 ? '🥈' : '🥉';
+      // Награда приходит письмом от «Система» с кнопкой «Забрать» —
+      // начисляется только при получении (в почте или на главном экране).
+      require('./rewards').grant(x.p.id, {
+        title: `${medal} Итоги недели — ${place} место`,
+        reason: `${place} место в категории «${cat.name}» за прошедшую неделю.`,
+        reward: { gold: rw.gold || 0, tokens: rw.tokens || 0 },
+      });
     });
   }
   s.lastWinners = winners;

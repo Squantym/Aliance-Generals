@@ -470,8 +470,8 @@ App.screens.trophies = async (c) => {
     ${UI.saleBanner(data.discount)}
     <div class="card"><p class="muted small">
       Уникальные предметы с прокачкой до ${data.maxLevel} уровня. Время прокачки
-      растёт с уровнем (у некоторых трофеев — дольше). Можно ускорить за
-      <span class="ic-gold"></span> ${data.boostGoldCost} (мгновенно). Помеченные
+      растёт с уровнем (у некоторых трофеев — дольше). Ускорение стоит
+      10 <span class="ic-gold"></span> за каждый час прокачки (мгновенно). Помеченные
       «🔧 в разработке» эффекты — декоративные.</p>
     </div>
     ${data.trophies.map((t) => `
@@ -489,7 +489,7 @@ App.screens.trophies = async (c) => {
               'xp',
               t.secondsLeft > 0 ? '⏳ Прокачка: ' + UI.fmtTimer(t.secondsLeft) : 'Готово, обновите страницу'
             )}</div>
-            <button class="btn mt" data-tboost="${t.id}">⚡ Ускорить за <span class="ic-gold"></span> ${data.boostGoldCost}</button>`
+            <button class="btn mt" data-tboost="${t.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(t.boostGold)}</button>`
           : (t.nextCost !== null
               ? `<p class="small mt">${t.spy ? 'Станет раскрывать' : 'Будущий бонус'}: <b>${bonusStr(t, t.bonusNext)}</b></p>
                  <button class="btn btn-orange mt" data-tstart="${t.id}">Прокачать до ур. ${t.level + 1} за ${UI.priceWithSale(t.baseNextCost, t.nextCost, '<span class="ic-gold"></span>', UI.fmtNum)}</button>

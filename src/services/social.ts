@@ -130,4 +130,15 @@ function markAllRead(user: User) {
   return { marked: n };
 }
 
-export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, sendMail, fame };
+// Удалить ОДНО письмо из ящика игрока (по id записи). Удаляется только из
+// ящика этого игрока — у собеседника его копия остаётся.
+function deleteMail(user: User, messageId: string) {
+  const box = mailboxOf(user.id);
+  const idx = box.findIndex((m) => m.id === messageId);
+  if (idx === -1) throw new u.ApiError('Письмо не найдено');
+  box.splice(idx, 1);
+  db.save('mail');
+  return { ok: true, deleted: messageId };
+}
+
+export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, deleteMail, sendMail, fame };

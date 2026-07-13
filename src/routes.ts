@@ -73,6 +73,7 @@ function registerRoutes(app: any) {
       mailUnread: social.unread(req.user),
       notifUnread: notifications.unreadCount(req.user),
       supportUnread: support.myTickets(req.user).open.filter((t: any) => t.status === 'answered' || t.lastFrom === 'admin').length,
+      rewardsUnclaimed: require('./services/rewards').pendingCount(req.user),
       eventActive: worldEvent.view(req.user).active,
       activeTitle: features.activeTitleName(req.user),
       dailyReward: daily ? { streak: daily.streak, message: daily.message } : null,
@@ -338,6 +339,7 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/mail', (req) => social.inbox(req.user));
   app.add('GET', '/api/mail/:id', (req) => social.readThread(req.user, req.params.id));
   app.add('POST', '/api/mail/read-all', act((req) => social.markAllRead(req.user)));
+  app.add('POST', '/api/mail/:id/delete', act((req) => social.deleteMail(req.user, req.params.id)));
   app.add('POST', '/api/mail', act((req, n) => {
     social.sendMail(req.user, req.body.toName, req.body.subject, req.body.text);
     n.push('✉ Письмо отправлено.');
@@ -364,8 +366,15 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/admin/groups/:kind/:id', (req) => require('./services/groups').viewDetailAdmin(req.params.kind, req.params.id), { admin: true });
   app.add('POST', '/api/admin/legion/deposit', act((req, n) => require('./services/legion').adminDeposit(req.user, req.body.legionId, req.body.amount, n, req.body.resource)), { admin: true });
   app.add('POST', '/api/admin/legion/battle', act((req, n) => require('./services/legion').adminStartBattle(req.user, req.body.legionAId, req.body.legionBId, n)), { admin: true });
+  // Турниры легионов
+  app.add('GET',  '/api/admin/tournaments',        () => require('./services/tournaments').list(), { admin: true });
+  app.add('GET',  '/api/admin/tournaments/legions', () => require('./services/tournaments').legionOptions(), { admin: true });
+  app.add('GET',  '/api/admin/tournaments/:id',    (req) => require('./services/tournaments').view(req.params.id), { admin: true });
+  app.add('POST', '/api/admin/tournaments/create', act((req, n) => require('./services/tournaments').create(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/tournaments/:id/cancel', act((req, n) => require('./services/tournaments').cancel(req.user, req.params.id, n)), { admin: true });
   app.add('POST', '/api/admin/grant',      act((req, n) => admin.grant(req.user, req.body, n)),    { admin: true });
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/rewards/grant', act((req, n) => require('./services/rewards').adminGrant(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));
   app.add('GET',  '/api/admin/discounts', () => admin.discountCategories(), { admin: true });
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
@@ -383,8 +392,14 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/wipe-groups', act((req, n) => admin.wipeGroups(req.user, req.body, n)), { admin: true });
   // Служба поддержки — пользователь
   app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));
-  app.add('POST', '/api/support/create', act((req, n) => support.createTicket(req.user, req.body.subject, req.body.text, n)));
+  app.add('POST', '/api/support/create', act((req, n) => support.createTicket(req.user, req.body.category, req.body.subject, req.body.text, n)));
   app.add('POST', '/api/support/reply',  act((req, n) => support.replyTicket(req.user, req.body.ticketId, req.body.text, n)));
+
+  // Награды-письма от «Система» (сезоны, администрация)
+  const rewards = require('./services/rewards');
+  app.add('GET',  '/api/rewards',            (req) => ({ rewards: rewards.listFor(req.user), pending: rewards.pendingCount(req.user) }));
+  app.add('POST', '/api/rewards/:id/claim',  act((req, n) => rewards.claim(req.user, req.params.id, n)));
+  app.add('POST', '/api/rewards/:id/delete', act((req) => rewards.remove(req.user, req.params.id)));
   // Служба поддержки — администратор
   app.add('GET',  '/api/admin/support',       (req) => support.adminList(req.query), { admin: true });
   app.add('POST', '/api/admin/support/reply', act((req, n) => support.adminReply(req.user, req.body.ticketId, req.body.text, !!req.body.close, n)), { admin: true });

@@ -566,45 +566,195 @@ const Admin = {
 
   // ── Вкладка «Турниры»: назначить бой между двумя легионами ──
   async renderTournament(c) {
-    c.innerHTML = '<p class="muted center">Загрузка легионов…</p>';
-    let data;
-    try { data = await API.get('/api/admin/groups/legion'); }
-    catch (e) { c.innerHTML = '<p class="muted center">Ошибка загрузки: ' + UI.esc(e.message) + '</p>'; return; }
-    const legions = (data.groups || []).filter(l => l.members > 0);
-    if (legions.length < 2) {
-      c.innerHTML = '<div class="card center muted">Нужно минимум два легиона с бойцами для турнирного боя.</div>';
-      return;
-    }
-    const opt = (l) => `<option value="${l.id}"${l.hasActiveBattle ? ' disabled' : ''}>${l.name} (${l.members} 👤${l.hasActiveBattle ? ', в бою' : ''})</option>`;
-    c.innerHTML = `
-      <div class="card">
-        <div class="name">⚔️ Организовать турнирный бой</div>
-        <p class="muted small">Назначьте бой между двумя легионами напрямую (минуя вызов). У легионов будет 10 минут на подготовку, как в обычном бою.</p>
-        <label class="news-lbl mt">🅰️ Легион A</label>
-        <select id="trn-a" class="news-input">${legions.map(opt).join('')}</select>
-        <label class="news-lbl mt">🅱️ Легион B</label>
-        <select id="trn-b" class="news-input">${legions.map(opt).join('')}</select>
-        <button class="btn btn-orange mt" id="trn-start" style="width:100%">⚔️ Начать бой</button>
-        <p class="muted small mt">Легионы, уже участвующие в бою, недоступны для выбора.</p>
-      </div>
-      <div class="card">
-        <div class="name">📋 Все легионы (${legions.length})</div>
-        ${legions.map(l => `<div class="kv"><span class="k">${UI.esc(l.name)} <span class="muted small">· ${UI.esc(l.leaderName)}</span></span><span class="v">${l.members} 👤 ${l.hasActiveBattle ? '<span class="badge orange">в бою</span>' : ''}</span></div>`).join('')}
+    Admin._trnMode = Admin._trnMode || 'quick';
+    c.innerHTML = '<p class="muted center">Загрузка…</p>';
+    let legData, listData;
+    try {
+      legData = await API.get('/api/admin/tournaments/legions');
+      listData = await API.get('/api/admin/tournaments');
+    } catch (e) { c.innerHTML = '<p class="muted center">Ошибка загрузки: ' + UI.esc(e.message) + '</p>'; return; }
+    const legions = (legData.legions || []);
+    const withFighters = legions.filter(l => l.members > 0);
+    const opt = (l) => `<option value="${l.id}">${UI.esc(l.name)} (${l.members} 👤)</option>`;
+    const prizeFields = (pre) => `
+      <div class="muted small mt">🏆 Приз чемпиону (каждому бойцу победившего легиона, письмом «Забрать»):</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
+        <div><label style="font-size:11px;color:var(--dim)">🪙 Золото</label><input type="number" id="${pre}-pgold" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">💵 Доллары</label><input type="number" id="${pre}-pdollars" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="${pre}-ptokens" placeholder="0"></div>
       </div>`;
-    const selB = document.getElementById('trn-b');
-    if (legions.length >= 2) selB.selectedIndex = 1;
-    document.getElementById('trn-start').onclick = async () => {
-      const a = document.getElementById('trn-a').value;
-      const b = document.getElementById('trn-b').value;
-      if (a === b) { UI.toast('⛔ Выберите два разных легиона'); return; }
-      const an = legions.find(x => x.id === a), bn = legions.find(x => x.id === b);
-      if (!await UI.confirm(`Начать бой «${an.name}» против «${bn.name}»?`, { title: '⚔️ Турнир', okText: 'Начать бой' })) return;
+
+    // Подвкладки режимов
+    const modeBtn = (id, label) => `<button class="btn btn-inline ${Admin._trnMode===id?'btn-orange':''}" data-trn-mode="${id}">${label}</button>`;
+    let form = '';
+    if (Admin._trnMode === 'quick') {
+      form = withFighters.length < 2
+        ? '<div class="card center muted">Нужно минимум два легиона с бойцами.</div>'
+        : `<div class="card">
+            <div class="name">⚡ Быстрый бой (сейчас)</div>
+            <p class="muted small">Назначить бой двух легионов немедленно. 10 минут на подготовку, как в обычном бою.</p>
+            <label class="news-lbl mt">🅰️ Легион A</label>
+            <select id="q-a" class="news-input">${withFighters.map(opt).join('')}</select>
+            <label class="news-lbl mt">🅱️ Легион B</label>
+            <select id="q-b" class="news-input">${withFighters.map(opt).join('')}</select>
+            <button class="btn btn-orange mt" id="q-go" style="width:100%">⚔️ Начать бой</button>
+          </div>`;
+    } else if (Admin._trnMode === 'sched') {
+      form = withFighters.length < 2
+        ? '<div class="card center muted">Нужно минимум два легиона с бойцами.</div>'
+        : `<div class="card">
+            <div class="name">📅 Турнир по расписанию</div>
+            <p class="muted small">Задайте матчи «легион vs легион» с временем. Система сама запустит каждый бой в назначенный срок.</p>
+            <input type="text" id="s-name" placeholder="Название турнира" maxlength="80" style="width:100%;box-sizing:border-box;margin-top:6px">
+            <div id="s-matches" style="margin-top:8px"></div>
+            <button class="btn btn-inline mt" id="s-add">➕ Добавить матч</button>
+            ${prizeFields('s')}
+            <button class="btn btn-orange mt" id="s-go" style="width:100%">✅ Создать турнир</button>
+          </div>`;
+    } else {
+      form = withFighters.length < 2
+        ? '<div class="card center muted">Нужно минимум два легиона с бойцами.</div>'
+        : `<div class="card">
+            <div class="name">🏆 Автосетка (олимпийка)</div>
+            <p class="muted small">Отметьте легионы. Система сама с равным интервалом запустит раунды и будет продвигать победителей, пока не останется чемпион.</p>
+            <input type="text" id="b-name" placeholder="Название турнира" maxlength="80" style="width:100%;box-sizing:border-box;margin-top:6px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+              <div><label style="font-size:11px;color:var(--dim)">⏱ Интервал раундов (мин)</label><input type="number" id="b-interval" value="30" min="1"></div>
+              <div><label style="font-size:11px;color:var(--dim)">🕐 Старт (пусто = сейчас)</label><input type="datetime-local" id="b-start"></div>
+            </div>
+            <div class="muted small mt">Участники:</div>
+            <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px;margin-top:4px">
+              ${withFighters.map(l => `<label style="display:flex;align-items:center;gap:8px;padding:4px 2px"><input type="checkbox" class="b-leg" value="${l.id}"> ${UI.esc(l.name)} <span class="muted small">(${l.members} 👤)</span></label>`).join('')}
+            </div>
+            ${prizeFields('b')}
+            <button class="btn btn-orange mt" id="b-go" style="width:100%">🏆 Создать автотурнир</button>
+          </div>`;
+    }
+
+    // Список турниров
+    const statusBadge = (s) => s === 'running' ? '<span class="badge orange">идёт</span>'
+      : s === 'finished' ? '<span class="badge green">завершён</span>' : '<span class="badge">отменён</span>';
+    const typeLabel = (t) => t === 'bracket' ? '🏆 сетка' : '📅 расписание';
+    const listHtml = (listData.tournaments || []).length
+      ? listData.tournaments.map(t => `
+        <div class="card">
+          <div class="name" style="display:flex;justify-content:space-between;gap:8px">
+            <span>${UI.esc(t.name)}</span> ${statusBadge(t.status)}
+          </div>
+          <div class="muted small mt">${typeLabel(t.type)}${t.type==='bracket'?` · ${t.participantCount} легионов · раундов: ${t.roundCount}`:` · матчей: ${t.matchCount}`}${t.championName?` · 🏆 ${UI.esc(t.championName)}`:''}</div>
+          <div class="btn-row mt">
+            <button class="btn btn-inline" data-trn-view="${t.id}">🔍 Подробнее</button>
+            ${t.status==='running'?`<button class="btn btn-inline" data-trn-cancel="${t.id}" style="color:var(--red)">🚫 Отменить</button>`:''}
+          </div>
+          <div id="trn-detail-${t.id}"></div>
+        </div>`).join('')
+      : '<p class="muted center">Турниров пока нет.</p>';
+
+    c.innerHTML = `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${modeBtn('quick','⚡ Быстрый бой')}${modeBtn('sched','📅 Расписание')}${modeBtn('bracket','🏆 Автосетка')}
+      </div>
+      ${form}
+      <div class="title" style="margin-top:14px">Турниры</div>
+      ${listHtml}`;
+
+    // Переключение режимов
+    c.querySelectorAll('[data-trn-mode]').forEach(b => b.onclick = () => { Admin._trnMode = b.dataset.trnMode; Admin.renderTournament(c); });
+
+    // Быстрый бой
+    if (Admin._trnMode === 'quick' && withFighters.length >= 2) {
+      const selB = document.getElementById('q-b'); if (selB) selB.selectedIndex = 1;
+      document.getElementById('q-go').onclick = async () => {
+        const a = document.getElementById('q-a').value, b = document.getElementById('q-b').value;
+        if (a === b) { UI.toast('⛔ Выберите два разных легиона'); return; }
+        try { await API.post('/api/admin/legion/battle', { legionAId: a, legionBId: b }); UI.toast('⚔️ Бой назначен'); Admin.renderTournament(c); }
+        catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    }
+
+    // Расписание: динамические матчи
+    if (Admin._trnMode === 'sched' && withFighters.length >= 2) {
+      const box = document.getElementById('s-matches');
+      const addRow = () => {
+        const row = document.createElement('div');
+        row.className = 'trn-match-row';
+        row.style = 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:end;margin-bottom:6px';
+        row.innerHTML = `
+          <div><label style="font-size:10px;color:var(--dim)">A</label><select class="tm-a news-input">${withFighters.map(opt).join('')}</select></div>
+          <div><label style="font-size:10px;color:var(--dim)">B</label><select class="tm-b news-input">${withFighters.map(opt).join('')}</select></div>
+          <div><label style="font-size:10px;color:var(--dim)">Старт</label><input type="datetime-local" class="tm-t"></div>
+          <button class="btn btn-inline tm-del" style="color:var(--red)">✕</button>`;
+        box.appendChild(row);
+        const sb = row.querySelector('.tm-b'); if (sb.options.length > 1) sb.selectedIndex = 1;
+        row.querySelector('.tm-del').onclick = () => row.remove();
+      };
+      addRow();
+      document.getElementById('s-add').onclick = addRow;
+      document.getElementById('s-go').onclick = async () => {
+        const iv = id => (document.getElementById(id) || {}).value || '';
+        const matches = [];
+        box.querySelectorAll('.trn-match-row').forEach(r => {
+          const a = r.querySelector('.tm-a').value, b = r.querySelector('.tm-b').value, tv = r.querySelector('.tm-t').value;
+          if (a && b && a !== b) matches.push({ legionAId: a, legionBId: b, startAt: tv ? new Date(tv).getTime() : Date.now() });
+        });
+        if (!matches.length) { UI.toast('⛔ Добавьте хотя бы один корректный матч'); return; }
+        try {
+          await API.post('/api/admin/tournaments/create', {
+            type: 'scheduled', name: iv('s-name') || 'Турнир', matches,
+            prizeGold: iv('s-pgold'), prizeDollars: iv('s-pdollars'), prizeTokens: iv('s-ptokens'),
+          });
+          UI.toast('✅ Турнир создан'); Admin.renderTournament(c);
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    }
+
+    // Автосетка
+    if (Admin._trnMode === 'bracket' && withFighters.length >= 2) {
+      document.getElementById('b-go').onclick = async () => {
+        const iv = id => (document.getElementById(id) || {}).value || '';
+        const legionIds = Array.from(c.querySelectorAll('.b-leg:checked')).map(x => x.value);
+        if (legionIds.length < 2) { UI.toast('⛔ Отметьте минимум 2 легиона'); return; }
+        const st = iv('b-start');
+        try {
+          await API.post('/api/admin/tournaments/create', {
+            type: 'bracket', name: iv('b-name') || 'Автотурнир', legionIds,
+            intervalMinutes: iv('b-interval') || 30, firstStartAt: st ? new Date(st).getTime() : Date.now(),
+            prizeGold: iv('b-pgold'), prizeDollars: iv('b-pdollars'), prizeTokens: iv('b-ptokens'),
+          });
+          UI.toast('🏆 Автотурнир создан'); Admin.renderTournament(c);
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    }
+
+    // Список: отмена + подробности
+    c.querySelectorAll('[data-trn-cancel]').forEach(b => b.onclick = async () => {
+      if (!await UI.confirm('Отменить турнир? Идущие бои завершатся сами.', { title: 'Отмена турнира', okText: 'Отменить', danger: true })) return;
+      try { await API.post('/api/admin/tournaments/' + b.dataset.trnCancel + '/cancel'); UI.toast('🚫 Отменён'); Admin.renderTournament(c); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    });
+    c.querySelectorAll('[data-trn-view]').forEach(b => b.onclick = async () => {
+      const box = document.getElementById('trn-detail-' + b.dataset.trnView);
+      if (box.innerHTML) { box.innerHTML = ''; return; }
       try {
-        const r = await API.post('/api/admin/legion/battle', { legionAId: a, legionBId: b });
-        UI.toast((r.notices && r.notices[0]) || 'Бой назначен!');
-        Admin.renderTab();
+        const { tournament: t } = await API.get('/api/admin/tournaments/' + b.dataset.trnView);
+        box.innerHTML = Admin._trnDetailHtml(t);
       } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
+    });
+  },
+
+  // Разметка подробностей турнира (матчи/раунды)
+  _trnDetailHtml(t) {
+    const mStatus = (m) => m.status === 'done'
+      ? (m.winnerName ? `✅ победитель: <b>${UI.esc(m.winnerName)}</b>${m.note==='walkover'?' (тех.)':m.note==='bye'?' (бай)':''}` : '⚪ без результата')
+      : m.status === 'live' ? '⚔️ идёт бой' : '⏳ ожидает';
+    const matchRow = (m) => `<div class="kv"><span class="k">${UI.esc(m.legionAName)} — ${m.legionBName ? UI.esc(m.legionBName) : '<i>бай</i>'}</span><span class="v small">${mStatus(m)}</span></div>`;
+    if (t.type === 'scheduled') {
+      return `<div class="card" style="margin-top:8px;background:rgba(255,255,255,.02)">${(t.matches || []).map(matchRow).join('')}</div>`;
+    }
+    return `<div class="card" style="margin-top:8px;background:rgba(255,255,255,.02)">
+      ${(t.rounds || []).map(r => `<div class="muted small" style="margin-top:6px"><b>Раунд ${r.n}</b>${r.startedAt ? '' : ' (ожидает старта)'}</div>${r.matches.map(matchRow).join('')}`).join('')}
+      ${t.championName ? `<div class="gold mt">🏆 Чемпион: <b>${UI.esc(t.championName)}</b></div>` : ''}
+    </div>`;
   },
 
   renderGrantForm(p) {
@@ -631,11 +781,29 @@ const Admin = {
         <label style="font-size:11px;color:var(--dim)"><span class="ic-mail"></span> Сообщение игроку (необязательно)</label>
         <textarea id="g-note" placeholder="Текст сообщения от администрации…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>
         <div class="btn-row mt">
-          <button class="btn btn-orange" id="g-go">✅ Выдать</button>
+          <button class="btn btn-orange" id="g-go">✅ Выдать сразу</button>
           <button class="btn btn-inline" id="g-cancel">Отмена</button>
         </div>
+        <hr class="hr">
+        <div class="muted small">🎁 Или отправить наградой-письмом (игрок заберёт сам на главном экране или в почте — начислятся 💵 доллары, 🪙 золото, 🎖 жетоны, 👂 уши, 📈 очки, ✨ опыт из полей выше):</div>
+        <input type="text" id="g-rw-title" placeholder="Заголовок письма (напр. «Награда за турнир»)" maxlength="120" style="width:100%;box-sizing:border-box;margin-top:6px">
+        <input type="text" id="g-rw-reason" placeholder="За что награда (напр. «Победа в турнире легионов»)" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:6px">
+        <button class="btn mt" id="g-rw-go" style="width:100%;border-color:var(--gold);color:var(--gold)">🎁 Отправить наградой (письмом)</button>
       </div>`;
     document.getElementById('g-cancel').onclick = () => { box.innerHTML = ''; };
+    const gv = id => (document.getElementById(id) || {}).value || '';
+    document.getElementById('g-rw-go').onclick = async () => {
+      try {
+        await API.post('/api/admin/rewards/grant', {
+          userId: p.id,
+          title: gv('g-rw-title'), reason: gv('g-rw-reason'),
+          dollars: gv('g-dollars'), gold: gv('g-gold'), xp: gv('g-xp'),
+          skillPoints: gv('g-skill'), ears: gv('g-ears'), tokens: gv('g-tokens'),
+        });
+        UI.toast(`🎁 Награда-письмо отправлена игроку ${p.name}`);
+        box.innerHTML = '';
+      } catch(e) { UI.toast('⛔ ' + e.message); }
+    };
     document.getElementById('g-go').onclick = async () => {
       const v = id => (document.getElementById(id) || {}).value || '';
       try {
@@ -668,27 +836,44 @@ const Admin = {
   // ── Окно ответов на обращения игроков ──
   async renderSupport(c) {
     Admin._supStatus = Admin._supStatus || 'open';
-    c.innerHTML = `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+    Admin._supCat = Admin._supCat || 'all';
+    c.innerHTML = '<div class="loading">Загрузка…</div>';
+    let data;
+    try {
+      data = await API.get('/api/admin/support?status=' + Admin._supStatus + '&category=' + Admin._supCat);
+    } catch (e) {
+      c.innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>`;
+      return;
+    }
+    const cats = data.categories || [];
+    const byCat = data.byCategory || {};
+    const totalOpen = Object.values(byCat).reduce((a, b) => a + b, 0);
+
+    // Строка фильтра по статусу
+    const statusRow = `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
         <button class="btn btn-inline ${Admin._supStatus==='open'?'btn-orange':''}" data-sup-f="open">Открытые</button>
         <button class="btn btn-inline ${Admin._supStatus==='answered'?'btn-orange':''}" data-sup-f="answered">Отвеченные</button>
         <button class="btn btn-inline ${Admin._supStatus==='closed'?'btn-orange':''}" data-sup-f="closed">Закрытые</button>
         <button class="btn btn-inline ${Admin._supStatus==='all'?'btn-orange':''}" data-sup-f="all">Все</button>
-      </div>
-      <div id="sup-list"><div class="loading">Загрузка…</div></div>`;
-    c.querySelectorAll('[data-sup-f]').forEach(b => {
-      b.onclick = () => { Admin._supStatus = b.dataset.supF; Admin.renderSupport(c); };
-    });
-    try {
-      const data = await API.get('/api/admin/support?status=' + Admin._supStatus);
-      const box = document.getElementById('sup-list');
-      if (!data.tickets.length) { box.innerHTML = '<p class="muted center">Обращений нет.</p>'; return; }
-      box.innerHTML = data.tickets.map(t => `
+      </div>`;
+    // Подразделы по темам (со счётчиками открытых)
+    const catRow = `
+      <div class="muted small" style="margin:2px 0 4px">Подразделы по темам:</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn btn-inline ${Admin._supCat==='all'?'btn-orange':''}" data-sup-cat="all">📋 Все${totalOpen?` (${totalOpen})`:''}</button>
+        ${cats.map(cat => `<button class="btn btn-inline ${Admin._supCat===cat.id?'btn-orange':''}" data-sup-cat="${cat.id}">${cat.icon} ${UI.esc(cat.label)}${byCat[cat.id]?` (${byCat[cat.id]})`:''}</button>`).join('')}
+      </div>`;
+
+    const listHtml = !data.tickets.length
+      ? '<p class="muted center">Обращений нет.</p>'
+      : data.tickets.map(t => `
         <div class="card">
           <div class="name" style="display:flex;justify-content:space-between;gap:8px">
             <span>${UI.esc(t.subject)}</span>
             <span class="muted small">${UI.esc(t.userName)} · ${t.status}</span>
           </div>
+          <div class="muted small" style="margin-top:2px">Тема: ${UI.esc(t.categoryLabel || 'Другое')}</div>
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto">
             ${t.messages.map(m => `
               <div style="padding:7px 9px;border-radius:8px;background:${m.from==='admin'?'rgba(60,180,90,.1)':'rgba(255,255,255,.03)'};border:1px solid ${m.from==='admin'?'var(--green)':'var(--border)'}">
@@ -703,23 +888,29 @@ const Admin = {
               <button class="btn btn-inline" data-ans-close="${t.id}">Ответить и закрыть</button>
             </div>` : '<p class="muted small mt">Обращение закрыто.</p>'}
         </div>`).join('');
-      box.querySelectorAll('[data-ans]').forEach(btn => {
-        btn.onclick = async () => {
-          const txt = (document.getElementById('ans-'+btn.dataset.ans)||{}).value||'';
-          try { await API.post('/api/admin/support/reply', { ticketId: btn.dataset.ans, text: txt, close: false }); Admin.renderSupport(c); }
-          catch(e){ UI.toast('⛔ '+e.message); }
-        };
-      });
-      box.querySelectorAll('[data-ans-close]').forEach(btn => {
-        btn.onclick = async () => {
-          const txt = (document.getElementById('ans-'+btn.dataset.ansClose)||{}).value||'';
-          try { await API.post('/api/admin/support/reply', { ticketId: btn.dataset.ansClose, text: txt, close: true }); Admin.renderSupport(c); }
-          catch(e){ UI.toast('⛔ '+e.message); }
-        };
-      });
-    } catch(e) {
-      document.getElementById('sup-list').innerHTML = `<p class="center" style="color:var(--red)">${UI.esc(e.message)}</p>`;
-    }
+
+    c.innerHTML = statusRow + catRow + `<div id="sup-list">${listHtml}</div>`;
+
+    c.querySelectorAll('[data-sup-f]').forEach(b => {
+      b.onclick = () => { Admin._supStatus = b.dataset.supF; Admin.renderSupport(c); };
+    });
+    c.querySelectorAll('[data-sup-cat]').forEach(b => {
+      b.onclick = () => { Admin._supCat = b.dataset.supCat; Admin.renderSupport(c); };
+    });
+    c.querySelectorAll('[data-ans]').forEach(btn => {
+      btn.onclick = async () => {
+        const txt = (document.getElementById('ans-'+btn.dataset.ans)||{}).value||'';
+        try { await API.post('/api/admin/support/reply', { ticketId: btn.dataset.ans, text: txt, close: false }); Admin.renderSupport(c); }
+        catch(e){ UI.toast('⛔ '+e.message); }
+      };
+    });
+    c.querySelectorAll('[data-ans-close]').forEach(btn => {
+      btn.onclick = async () => {
+        const txt = (document.getElementById('ans-'+btn.dataset.ansClose)||{}).value||'';
+        try { await API.post('/api/admin/support/reply', { ticketId: btn.dataset.ansClose, text: txt, close: true }); Admin.renderSupport(c); }
+        catch(e){ UI.toast('⛔ '+e.message); }
+      };
+    });
   },
   renderLogs(c) {
     c.innerHTML = `

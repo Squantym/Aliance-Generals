@@ -58,7 +58,27 @@ function meetsRequirements(user: User, step: any): { ok: boolean; reason?: strin
   if (atkPower < step.require.power) {
     return { ok: false, reason: `Нужна мощь атаки от ${u.fmt(step.require.power)} (у вас ${u.fmt(atkPower)})` };
   }
+  // Требование к технике по уровню: нужно владеть N единицами техники,
+  // доступной примерно на уровне миссии (тир не ниже require.units.minLevel).
+  const ur = step.require.units;
+  if (ur && ur.count > 0) {
+    const owned = ownedUnitsAtLevel(user, ur.minLevel);
+    if (owned < ur.count) {
+      return { ok: false, reason: `Нужно ${ur.count} ед. техники уровня от ${ur.minLevel} (у вас ${owned})` };
+    }
+  }
   return { ok: true };
+}
+
+// Сколько всего единиц техники (всех Mk) с уровнем разблокировки >= minLevel
+function ownedUnitsAtLevel(user: User, minLevel: number): number {
+  let n = 0;
+  for (const [unitId, mkMap] of Object.entries(user.units || {})) {
+    const def = config.UNIT_BY_ID[unitId];
+    if (!def || (def.unlock || 0) < minLevel) continue;
+    for (const cnt of Object.values(mkMap as any)) n += Number(cnt) || 0;
+  }
+  return n;
 }
 
 // Проверка ресурсов и активного слота
@@ -162,6 +182,7 @@ function activeView(proc: any) {
     totalSec: step.timeMin * 60,
     secondsLeft: secLeft,
     canBoost: secLeft > 0,
+    boostGold: proc.boostGold || config.MISSION_STEP.BOOST_GOLD_COST,
   };
 }
 
@@ -181,7 +202,7 @@ function detail(user: User, confId: string) {
       steps: op.steps.map((s) => ({
         idx: s.idx, name: s.name,
         energy: s.energy, timeMin: s.timeMin,
-        xp: s.xp, money: s.money,
+        xp: s.xp, money: s.money, boostGold: s.boostGold,
         require: s.require,
       })),
     })),
@@ -218,6 +239,7 @@ function startStep(user: User, confId: string, opIdx: number, stepIdx: number, n
     energy: finalEnergy,
     xp: step.xp,
     money: step.money,
+    boostGold: step.boostGold,
     startedAt: now,
     finishesAt: now + Math.round(step.timeMin * 60 * 1000 * slowMul),
   };
@@ -234,12 +256,12 @@ function boostStep(user: User, processId: string, notices: Notices) {
   const proc = user.missionQueue.find((p) => p.id === processId);
   if (!proc) throw new u.ApiError('Активный шаг не найден');
   if (proc.finishesAt <= Date.now()) throw new u.ApiError('Шаг уже завершён');
-  const cost = config.MISSION_STEP.BOOST_GOLD_COST;
+  const cost = proc.boostGold || config.MISSION_STEP.BOOST_GOLD_COST;
   if (user.gold < cost) throw new u.ApiError(`Нужно ${cost} золота`);
   user.gold -= cost;
   proc.finishesAt = Date.now();
   notices.push('⚡ Шаг операции ускорен!');
-  return { ok: true };
+  return { ok: true, cost };
 }
 
 export = { list, detail, startStep, boostStep, checkCompleted };

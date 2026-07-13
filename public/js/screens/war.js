@@ -520,7 +520,7 @@ App.screens.missions = async (c, param) => {
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
           a.secondsLeft > 0 ? 'Осталось: ' + UI.fmtTimer(a.secondsLeft) : 'Готово'
         )}</div>
-        ${a.canBoost ? `<button class="btn mt" id="m-boost" data-pid="${a.id}">⚡ Ускорить за <span class="ic-gold"></span> ${data.boostGoldCost}</button>` : ''}
+        ${a.canBoost ? `<button class="btn mt" id="m-boost" data-pid="${a.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(a.boostGold || data.boostGoldCost)}</button>` : ''}
       </div>`;
   }
 
@@ -594,7 +594,7 @@ async function renderConflictDetail(c, confId) {
              <div class="kv mt"><span class="k"><span class="ic-energy"></span> Энергия</span><span class="v">${nextStep.energy}</span></div>
              <div class="kv"><span class="k">⏱ Время</span><span class="v">${nextStep.timeMin} мин</span></div>
              <div class="kv"><span class="k">Награда</span><span class="v">${nextStep.xp} опыта, <span class="ic-dollar"></span>${UI.fmtMoney(nextStep.money)}</span></div>
-             <div class="kv"><span class="k">Требования</span><span class="v small">мощь ${UI.fmtNum(nextStep.require.power)}, ур. ${nextStep.require.level}</span></div>
+             <div class="kv"><span class="k">Требования</span><span class="v small">мощь ${UI.fmtNum(nextStep.require.power)}, ур. ${nextStep.require.level}${nextStep.require.units ? `, ${nextStep.require.units.count} ед. техники ур. ${nextStep.require.units.minLevel}+` : ''}</span></div>
              <button class="btn btn-orange mt" data-start="${op.idx}-${nextStep.idx}" ${conf.activeStep || conf.locked ? 'disabled' : ''}>Начать шаг</button>
              ${conf.activeStep ? '<p class="muted small center mt">Сначала завершите текущий активный шаг</p>' : ''}`}
       </div>`;

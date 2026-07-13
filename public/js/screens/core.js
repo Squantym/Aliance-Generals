@@ -211,6 +211,28 @@ App.screens.home = async (c) => {
        <button class="btn btn-red mt" onclick="App.go('war')">Решить судьбу →</button></div>`
     : '';
 
+  // Награды от «Система» (сезоны, администрация) — забрать можно тут или в почте
+  let rewardsBanner = '';
+  let rewardsList = [];
+  try {
+    const rd = await API.get('/api/rewards');
+    rewardsList = (rd.rewards || []).filter((r) => !r.claimed);
+    if (rewardsList.length) {
+      rewardsBanner = `
+        <div class="card" style="border:2px solid var(--gold);background:rgba(233,199,92,.08)">
+          <div class="name gold">🎁 Награды (${rewardsList.length})</div>
+          <p class="muted small">Письма от «Система». Заберите — награда зачислится сразу.</p>
+          ${rewardsList.map((r) => `
+            <div class="card" style="margin-top:8px">
+              <div style="font-weight:600">${UI.esc(r.title)}</div>
+              <div class="muted small" style="margin-top:2px">${UI.esc(r.reason)}</div>
+              <div class="gold small mt">Награда: ${r.rewardText.map((x) => UI.esc(x)).join(' · ')}</div>
+              <button class="btn btn-orange mt" data-claim-reward="${r.id}" style="width:100%">🎁 Забрать</button>
+            </div>`).join('')}
+        </div>`;
+    }
+  } catch (e) {}
+
   // Превью последних новостей для раздела внизу главного меню
   let newsSectionHtml = '';
   try {
@@ -288,6 +310,7 @@ App.screens.home = async (c) => {
 
   c.innerHTML = `
     ${legionChallengeBanner}
+    ${rewardsBanner}
     ${fatalityHtml}
     ${majorHtml}
     <div class="menu-grid">
@@ -308,8 +331,7 @@ App.screens.home = async (c) => {
       <div class="kv"><span class="k">⏱ Выплата через</span><span class="v">${UI.fmtTimer(m.nextPayoutSec)}</span></div>
     </div>
     <button class="btn" style="width:100%;margin-top:8px" onclick="App.go('support')">🛟 Служба поддержки</button>
-    ${newsSectionHtml}
-    <p class="center muted small">© generals-game · сделано в учебных целях</p>`;
+    ${newsSectionHtml}`;
 
   // Обратный отсчёт таймера вызова на главном экране
   const lcgTimer = document.getElementById('lcg-timer');
@@ -321,6 +343,19 @@ App.screens.home = async (c) => {
       lcgTimer.textContent = UI.fmtTimer(secs);
     }, 1000);
   }
+
+  // Забрать награду-письмо прямо на главном экране
+  c.querySelectorAll('[data-claim-reward]').forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const res = await API.post('/api/rewards/' + encodeURIComponent(btn.dataset.claimReward) + '/claim');
+        UI.toast('🎁 Получено: ' + ((res.rewardText || []).join(', ') || 'награда'));
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { btn.disabled = false; UI.toast('⛔ ' + e.message); }
+    };
+  });
 };
 
 // ---------- ПОРУЧЕНИЯ ШТАБА (хаб: ежедневные задания + контракты) ----------
@@ -952,6 +987,7 @@ App.screens.support = async (c, param) => {
       <div class="name" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <span>${UI.esc(t.subject)}</span> ${statusBadge(t.status)}
       </div>
+      ${t.categoryLabel ? `<div class="muted small" style="margin-top:2px">Тема: ${UI.esc(t.categoryLabel)}</div>` : ''}
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
         ${t.messages.map((m) => `
           <div style="padding:8px 10px;border-radius:8px;background:${m.from === 'admin' ? 'rgba(60,180,90,.1)' : 'rgba(255,255,255,.03)'};border:1px solid ${m.from === 'admin' ? 'var(--green)' : 'var(--border)'}">
@@ -968,11 +1004,15 @@ App.screens.support = async (c, param) => {
 
   let body;
   if (tab === 'new') {
+    const catOptions = (data.categories || []).map((cat) =>
+      `<option value="${cat.id}">${cat.icon} ${UI.esc(cat.label)}</option>`).join('');
     body = `
       <div class="card">
         <div class="name">📝 Новое обращение</div>
-        <p class="muted small">Опишите проблему — администрация ответит здесь же.</p>
-        <input type="text" id="sup-subject" maxlength="80" placeholder="Тема обращения" class="mt" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
+        <p class="muted small">Выберите тему и опишите вопрос — администрация ответит здесь же.</p>
+        <label class="small muted mt" style="display:block">Тема</label>
+        <select id="sup-category" class="mt" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">${catOptions}</select>
+        <input type="text" id="sup-subject" maxlength="80" placeholder="Кратко: суть обращения" class="mt" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
         <textarea id="sup-text" maxlength="2000" rows="5" placeholder="Опишите ситуацию и проблему подробно..." class="mt" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
         <button class="btn btn-orange mt" id="sup-send" style="width:100%">Отправить обращение</button>
       </div>`;
@@ -995,7 +1035,7 @@ App.screens.support = async (c, param) => {
   const R = (id) => document.getElementById(id);
   if (R('sup-send')) R('sup-send').onclick = async () => {
     try {
-      await API.post('/api/support/create', { subject: R('sup-subject').value, text: R('sup-text').value });
+      await API.post('/api/support/create', { category: R('sup-category') ? R('sup-category').value : 'other', subject: R('sup-subject').value, text: R('sup-text').value });
       UI.toast('✅ Обращение отправлено');
       App.go('support/open');
     } catch (e) { UI.toast('⛔ ' + e.message); }
