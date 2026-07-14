@@ -264,18 +264,20 @@ async function renderGroupScreen(c, kind) {
           }
 
           if (L.war) {
-            html += `<div class="card">
-              <div class="name">🔴 Кланвойна (авто)</div>
+            html += `<div class="card" style="border-color:var(--orange)">
+              <div class="name">⚔️ Назначенный бой</div>
               <p class="small mt">Противник: <b>${UI.esc(L.war.enemyName)}</b></p>
-              <div class="kv mt"><span class="k">Битва через</span><span class="v">${UI.fmtTimer(L.war.secondsLeft)}</span></div>
+              <div class="kv mt"><span class="k">Начало через</span><span class="v">${UI.fmtTimer(L.war.secondsLeft)}</span></div>
+              <p class="muted small mt">Когда время придёт — начнётся бой с 10-минутной подготовкой. Заходите, готовьтесь и участвуйте!</p>
             </div>`;
           } else if (L.canDeclareWar) {
             html += `<div class="card">
-              <div class="name">🔴 Авто-война (через 1 час)</div>
+              <div class="name">⚔️ Назначить бой (через 1 час)</div>
+              <p class="muted small mt">Назначьте бой на через час. За 10 минут до начала откроется подготовка — бойцы обоих легионов смогут подготовиться и сразиться лично (без автобоя).</p>
               ${L.targets.map(t => `
                 <div class="list-row">
                   <div class="grow">${UI.esc(t.name)} <span class="muted small">${t.members} чел.</span></div>
-                  <button class="btn btn-red btn-inline" data-war="${t.id}">Война</button>
+                  <button class="btn btn-red btn-inline" data-war="${t.id}">Назначить</button>
                 </div>`).join('')}
             </div>`;
           }

@@ -766,43 +766,33 @@ function resolveWars(): void {
   const all  = legions();
   const users = player.users();
 
-  // Старые войны
+  // Назначенные бои легиона: по истечении срока запускаем ИНТЕРАКТИВНЫЙ бой
+  // (10-минутная подготовка, игроки участвуют). Автобой по сравнению мощи убран.
   const processed = new Set();
   for (const l of Object.values(all)) {
     if (!l.war || processed.has(l.id)) continue;
     if (l.war.role !== 'attacker') continue;
-    if (l.war.battleAt > now) continue;
+    if (l.war.battleAt > now) continue;   // время ещё не пришло
 
     const enemy = all[l.war.enemyId];
     if (!enemy) { l.war = null; continue; }
     processed.add(l.id);
     processed.add(enemy.id);
 
-    const aPow = legionWarPower(l)    * (0.9 + Math.random() * 0.2);
-    const dPow = legionWarPower(enemy) * (0.9 + Math.random() * 0.2);
-    const aWin = aPow >= dPow;
+    // Если один из легионов уже участвует в другом бою — подождём следующего
+    // тика (войну не сбрасываем).
+    if (l.activeBattle || enemy.activeBattle) continue;
 
-    const winner = aWin ? l : enemy;
-    const loser  = aWin ? enemy : l;
-    const loot = Math.floor((loser.treasury || 0) * config.LEGION.WAR_LOOT_PCT);
-    loser.treasury  = (loser.treasury  || 0) - loot;
-    winner.treasury = (winner.treasury || 0) + loot;
-
-    const notify = (legion, msg, xp) => {
-      for (const memberId of legion.members) {
-        const m = users[memberId];
-        if (!m) continue;
-        if (xp > 0) player.addXp(m, xp, []);
-        notifications.push(m.id, 'legion_war_result', 'Итог кланвойны', { text: msg });
-      }
-    };
-    notify(winner, `Победа! «${winner.name}» разгромил «${loser.name}». Трофеи: $${u.fmt(loot)} в казну.`, config.LEGION.WAR_XP_WIN);
-    notify(loser,  `Поражение. «${loser.name}» уступил «${winner.name}». Утрачено: $${u.fmt(loot)}.`, config.LEGION.WAR_XP_LOSS);
-
-    const h = { at: now, enemyId: enemy.id, won: aWin, loot: aWin ? loot : -loot };
-    l.warHistory     = (l.warHistory     || []).concat(h).slice(-20);
-    enemy.warHistory = (enemy.warHistory || []).concat({ ...h, enemyId: l.id, won: !aWin, loot: aWin ? -loot : loot }).slice(-20);
-    l.war = null; enemy.war = null;
+    const r = systemStartBattle(l.id, enemy.id);
+    if (r.ok) {
+      // Бой начался — подготовка 10 минут, дальше игроки сражаются сами.
+      l.war = null; enemy.war = null;
+    } else if (r.reason === 'busy') {
+      // занят — повторим на следующем тике
+    } else {
+      // нет бойцов / легион пропал — отменяем назначенный бой
+      l.war = null; enemy.war = null;
+    }
   }
 
   // Новые бои легиона: единый тик по коллекции battles
@@ -843,17 +833,17 @@ function declareWar(user: User, enemyId: string, notices: Notices) {
   l.war = { enemyId: enemy.id, role: 'attacker', battleAt };
   enemy.war = { enemyId: l.id, role: 'defender', battleAt };
   db.save('legions');
-  notices.push(`⚔ Война объявлена! Битва через ${config.LEGION.WAR_PREPARE_HOURS} ч.`);
+  notices.push(`⚔ Бой назначен! Через ${config.LEGION.WAR_PREPARE_HOURS} ч начнётся бой с 10-минутной подготовкой — участвуйте!`);
 
   const users = player.users();
   const announce = (legion, msg) => {
     for (const memberId of legion.members) {
       const m = users[memberId];
-      if (m) notifications.push(m.id, 'legion_war', 'Кланвойна!', { text: msg });
+      if (m) notifications.push(m.id, 'legion_war', 'Назначен бой легиона!', { text: msg });
     }
   };
-  announce(l, `Ваш легион объявил войну «${enemy.name}». Битва через ${config.LEGION.WAR_PREPARE_HOURS} ч.`);
-  announce(enemy, `«${l.name}» объявил вам войну! Битва через ${config.LEGION.WAR_PREPARE_HOURS} ч.`);
+  announce(l, `Ваш легион назначил бой против «${enemy.name}». Через ${config.LEGION.WAR_PREPARE_HOURS} ч — подготовка и бой, участвуйте!`);
+  announce(enemy, `«${l.name}» назначил вам бой! Через ${config.LEGION.WAR_PREPARE_HOURS} ч — подготовка и бой, участвуйте!`);
   return { battleAt };
 }
 
@@ -1018,7 +1008,7 @@ function systemStartBattle(legionAId: string, legionBId: string): any {
     for (const memberId of legion.members) {
       const m = users[memberId];
       if (m) notif.push(m.id, 'legion_battle_start',
-        `⚔️ Турнирный бой! Назначен бой против «${enemyName}». ${prepMin} минут на подготовку!`,
+        `⚔️ Бой легиона! Назначен бой против «${enemyName}». ${prepMin} минут на подготовку — участвуйте!`,
         { enemyName, prepEndsAt });
     }
   };
