@@ -253,9 +253,17 @@ function applyCommanderEffect(winner: User, commander: any, now: number): void {
   const expiresAt = now + config.AUCTION.RENT_HOURS * 3600 * 1000;
   const eff = commander.effect;
   const pushOne = (type: string, value: number) => {
+    const id = 'cmd_' + commander.id + '_' + type;
     const ex = winner.effects.find((e) => e.type === type);
-    if (ex) { ex.value = value; ex.expiresAt = expiresAt; ex.name = commander.name; }
-    else winner.effects.push({ id: 'cmd_' + commander.id + '_' + type, name: commander.name, type, value, expiresAt });
+    if (ex) {
+      // Перезаписываем как эффект наёмника: id обязательно cmd_... (иначе
+      // владелец не отобразится в списке holders аукциона и в профиле).
+      ex.value = value; ex.expiresAt = expiresAt; ex.name = commander.name;
+      ex.id = id; (ex as any).commanderId = commander.id; (ex as any).merc = true;
+    } else {
+      winner.effects.push({ id, name: commander.name, type, value, expiresAt,
+        commanderId: commander.id, merc: true } as any);
+    }
   };
   if (eff.type === 'economy_combo') {
     // Содержание −100% и доход +100%
@@ -380,4 +388,4 @@ function containerHistory(user: User) {
   return { history: user.containerHistory || [] };
 }
 
-export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines };
+export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect };

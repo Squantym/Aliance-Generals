@@ -269,6 +269,8 @@ function effectsView(user: User): any[] {
         : `${e.value > 0 ? '+' : ''}${e.value}% (${effLabel(e.type)})`;
       return {
         id: e.id || null,   // id предмета чёрного рынка — для картинки в профиле
+        commanderId: (e as any).commanderId || null,  // id наёмника (для портрета)
+        merc: !!(e as any).merc,                       // эффект наёмника, не допинг
         name: e.name,
         type: e.type,
         value: e.value,
@@ -987,6 +989,7 @@ function publicProfile(target: User, viewer: User): any {
     // того, кто наложил подлянку, видит ТОЛЬКО сама жертва (isOwn).
     activeEffects: effectsView(target).map((e) => ({
       id: e.id,
+      commanderId: e.commanderId, merc: e.merc,
       name: e.name, desc: e.desc, timeLeft: e.timeLeft,
       hostile: e.hostile,
       byName: (isOwn || isAdminViewer) ? e.byName : null,

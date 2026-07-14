@@ -485,6 +485,29 @@ const App = {
     App._battleWindow = null;
   },
 
+  // Раскраска строки лога боя: имя союзника — ярко-зелёным, имя врага —
+  // красным, урон (числа) — красным, остальной текст — по теме (бело/чёрный).
+  _colorizeLog(text, b) {
+    let s = UI.esc(text || '');
+    s = s.replace(/(\d+)\s*урона/g, '<span style="color:#ff4d4d;font-weight:700">$1 урона</span>');
+    s = s.replace(/КРИТ/g, '<span style="color:#ff4d4d;font-weight:800">КРИТ</span>');
+    const mySide = b.mySide;
+    const names = (b.allCombatants || [])
+      .filter(c => c.name)
+      .map(c => ({ e: UI.esc(c.name), ally: c.side === mySide }))
+      .sort((a, z) => z.e.length - a.e.length);
+    if (names.length) {
+      const seen = new Set();
+      const uniq = names.filter(n => (seen.has(n.e) ? false : (seen.add(n.e), true)));
+      const re = new RegExp('(' + uniq.map(n => n.e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
+      s = s.replace(re, (m) => {
+        const n = uniq.find(x => x.e === m);
+        return n ? `<span style="color:${n.ally ? '#2ecc40' : '#ff4d4d'};font-weight:700">${m}</span>` : m;
+      });
+    }
+    return s;
+  },
+
   // Чат боя: общий и командный (вкладки), внизу окна
   _bwChatHtml(b) {
     const mode = App._bwChatMode || 'team';
@@ -721,6 +744,32 @@ const App = {
         </div>`;
       } else {
         const ready = b.me.ready;
+        // ── Верхняя панель: текущие HP/энергия/боеприпасы + восстановление ──
+        if (b.myStats) {
+          const s = b.myStats;
+          html += `
+            <div class="bw-restore">
+              <div class="bw-res-row">
+                <div class="bw-res"><span class="bw-res-ic">❤️</span><span class="bw-res-v">${s.hp}/${s.maxHp}</span><span class="bw-res-l">HP</span></div>
+                <div class="bw-res"><span class="bw-res-ic">⚡</span><span class="bw-res-v">${s.energy}/${s.maxEnergy}</span><span class="bw-res-l">Энергия</span></div>
+                <div class="bw-res"><span class="bw-res-ic">🔫</span><span class="bw-res-v">${s.ammo}/${s.maxAmmo}</span><span class="bw-res-l">Боеприпасы</span></div>
+              </div>
+              <button id="bw-restore" class="btn btn-orange" style="width:100%;margin-top:8px">💉 Восстановить всё за <span class="ic-gold"></span> ${s.restoreCost}</button>
+            </div>
+            <div class="bw-stats">
+              <div class="bw-stats-title">📊 Ваши характеристики в бою</div>
+              <div class="bw-stats-grid">
+                <div><span>⚔ Атака</span><b>${UI.fmtNum(s.atk)}</b></div>
+                <div><span>🛡 Защита</span><b>${UI.fmtNum(s.def)}</b></div>
+                <div><span>💥 Крит</span><b>${s.critPct}%</b></div>
+                <div><span>🌀 Уворот</span><b>${s.dodgePct}%</b></div>
+                <div><span>🔫 Боеприпасы</span><b>${s.ammo}/${s.maxAmmo}</b></div>
+                <div><span>❤️ HP</span><b>${s.hp}/${s.maxHp}</b></div>
+                <div><span>⚡ Энергия</span><b>${s.energy}/${s.maxEnergy}</b></div>
+              </div>
+              <p class="muted small" style="margin:6px 0 0">Атака и защита — с учётом бонусов построек легиона.</p>
+            </div>`;
+        }
         // Блок роли + кнопка Готов/Не готов
         html += `<div style="background:${ready?'rgba(0,200,0,.08)':'rgba(255,150,0,.1)'};border:1px solid var(--${ready?'green':'orange'});border-radius:8px;padding:12px;margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -807,10 +856,9 @@ const App = {
       if (b.log && b.log.length) {
         html += `<div class="bw-card tight">
           <b style="font-size:12px">📋 Лог боя</b>
-          <div style="max-height:96px;overflow-y:auto;margin-top:4px">
+          <div class="bw-log" style="max-height:120px;overflow-y:auto;margin-top:4px">
           ${b.log.slice().reverse().map(e=>{
-            const col=e.kind==='crit'?'#f55':e.kind==='heal'?'#0b8':e.kind==='item'?'#fa0':'var(--dim)';
-            return `<div style="color:${col};font-size:11px;padding:1px 0">${UI.esc(e.text)}</div>`;
+            return `<div class="bw-log-line" style="font-size:11px;padding:2px 0">${App._colorizeLog(e.text, b)}</div>`;
           }).join('')}
           </div>
         </div>`;
@@ -933,12 +981,14 @@ const App = {
     const myDetail = (r && b.me && r.playerDetails) ? r.playerDetails[b.me.userId] : null;
     const myStats = myDetail ? myDetail.stats : (b.me ? b.me.stats : null);
     const myBlock = myStats ? `
-      <div class="bw-card">
-        <p style="font-weight:bold;margin:0 0 6px">📈 Ваши результаты</p>
-        <div class="kv"><span class="k">🎯 Нанесено урона</span><span class="v">${UI.fmtNum(myStats.dmgDealt||0)}</span></div>
-        <div class="kv"><span class="k">➕ Вылечено</span><span class="v">${UI.fmtNum(myStats.healed||0)}</span></div>
-        <div class="kv"><span class="k">🛡️ Прикрытий</span><span class="v">${myStats.guards||0}</span></div>
-        <div class="kv"><span class="k">💀 Убийств</span><span class="v">${myStats.kills||0}</span></div>
+      <div class="bw-result-section">
+        <p class="bw-result-h">📈 Ваши результаты</p>
+        <div class="bw-result-tiles">
+          <div class="bw-tile"><span class="bw-tile-v">${UI.fmtNum(myStats.dmgDealt||0)}</span><span class="bw-tile-l">🎯 Урон</span></div>
+          <div class="bw-tile"><span class="bw-tile-v">${UI.fmtNum(myStats.healed||0)}</span><span class="bw-tile-l">➕ Лечение</span></div>
+          <div class="bw-tile"><span class="bw-tile-v">${myStats.guards||0}</span><span class="bw-tile-l">🛡️ Прикрытий</span></div>
+          <div class="bw-tile"><span class="bw-tile-v">${myStats.kills||0}</span><span class="bw-tile-l">💀 Убийств</span></div>
+        </div>
       </div>` : '';
 
     // Топ-3 по характеристике
@@ -974,25 +1024,23 @@ const App = {
     const cr = r ? r.clanResults : null;
 
     win.innerHTML = `
-      <div class="bw-inner" style="padding-top:20px">
-        <div style="text-align:center">
-          <div style="font-size:44px;margin-bottom:6px">${won ? '🏆' : '💀'}</div>
-          <div style="font-size:20px;font-weight:bold;color:var(--${won?'green':'red'});margin-bottom:6px">
-            ${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}
-          </div>
-          ${r ? `<div style="display:flex;justify-content:space-around;margin:10px 0 14px;font-size:17px">
-            <span style="color:var(--green)">🟢 ${UI.fmtNum(scores[mySide]||0)}</span>
-            <span>vs</span>
-            <span style="color:var(--red)">🔴 ${UI.fmtNum(scores[mySide==='A'?'B':'A']||0)}</span>
+      <div class="bw-inner" style="padding-top:0">
+        <div class="bw-result-hero ${won ? 'win' : 'loss'}">
+          <div class="bw-result-emoji">${won ? '🏆' : '💀'}</div>
+          <div class="bw-result-title">${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</div>
+          ${r ? `<div class="bw-result-score">
+            <span style="color:#2ecc40">🟢 ${UI.fmtNum(scores[mySide]||0)}</span>
+            <span class="bw-result-vs">vs</span>
+            <span style="color:#ff4d4d">🔴 ${UI.fmtNum(scores[mySide==='A'?'B':'A']||0)}</span>
           </div>` : ''}
         </div>
-        <div class="bw-body" style="padding-top:0">
+        <div class="bw-body" style="padding-top:12px">
           ${myBlock}
           ${top3Block}
           ${cr ? `<p style="font-weight:bold;margin:4px 0 8px">📊 Результаты кланов</p>
           ${clanBlock(cr[mySide], true)}
           ${clanBlock(cr[mySide==='A'?'B':'A'], false)}` : ''}
-          <button class="btn btn-orange" style="width:100%;padding:13px;margin-top:8px" id="bw-close">← Вернуться в легион</button>
+          <button class="btn btn-orange" style="width:100%;padding:14px;margin-top:8px" id="bw-close">← Вернуться в легион</button>
         </div>
       </div>`;
 
@@ -1028,6 +1076,14 @@ const App = {
     if (readyBtn) {
       const newReady = !(b.me && b.me.ready);
       readyBtn.onclick = () => api('/api/legion/battle/ready', { ready: newReady });
+    }
+
+    // Восстановление ресурсов в подготовке (за стоимость допинга)
+    const restoreBtn = win.querySelector('#bw-restore');
+    if (restoreBtn) {
+      restoreBtn.onclick = () => api('/api/legion/battle/restore', {}, (r) => {
+        UI.toast(`💉 Восстановлено за 🪙 ${r.cost}`);
+      });
     }
 
     // Направления

@@ -205,7 +205,7 @@ console.log('\n[6] Admin: депозит в казну ЛЮБОГО легион
   const goldBefore = adminU.gold, dollarsBefore = adminU.dollars;
 
   const r = legion.adminDeposit(adminU, lid, 50000, notices);
-  eq('казна легиона пополнена на 50000', r.treasury, 50000);
+  eq('резервы легиона пополнены на 50000 (валюта клана — РЕЗ)', r.reserves, 50000);
   eq('у админа НЕ списаны собственные доллары', adminU.dollars, dollarsBefore);
   eq('у админа НЕ списано золото', adminU.gold, goldBefore);
 

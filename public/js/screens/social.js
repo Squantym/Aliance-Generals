@@ -73,8 +73,8 @@ async function renderGroupScreen(c, kind) {
             <div class="muted small">${UI.esc(b.desc)}</div>
             <div class="kv mt"><span class="k">Бонус</span><span class="v">+${b.bonusNow}%</span></div>
             ${b.nextPrice !== null
-              ? `<div class="kv"><span class="k">След. ур. +${b.bonusNext}%</span><span class="v money"><span class="ic-dollar"></span>${UI.fmtMoney(b.nextPrice)}</span></div>
-                 ${L.isLeader ? `<button class="btn btn-orange mt" data-build="${b.id}">Улучшить из казны</button>`
+              ? `<div class="kv"><span class="k">След. ур. +${b.bonusNext}%</span><span class="v gold">${UI.fmtNum(b.nextPrice)} РЕЗ</span></div>
+                 ${L.isLeader ? `<button class="btn btn-orange mt" data-build="${b.id}">Улучшить за РЕЗ</button>`
                               : '<p class="muted small mt center">Только лидер</p>'}`
               : '<p class="gold center mt small">Макс. уровень ✔</p>'}
           </div>`).join('');
@@ -83,7 +83,7 @@ async function renderGroupScreen(c, kind) {
           const c = b.nextCost;
           let resStr = '';
           if (c) {
-            resStr = `<span class="ic-dollar"></span>${UI.fmtMoney(c.dollars)} из казны`;
+            resStr = `${UI.fmtNum(c.reserves)} РЕЗ`;
             if (c.ears)   resStr += ` + ${c.ears} 👂`;
             if (c.tokens) resStr += ` + ${c.tokens} 🎖`;
           }
@@ -316,16 +316,9 @@ async function renderGroupScreen(c, kind) {
           </div>
           <div class="card">
             <div class="name">💰 Казна легиона</div>
-            <div class="kv mt"><span class="k">Доллары в казне</span><span class="v money"><span class="ic-dollar"></span>${UI.fmtMoney(L.treasury)}</span></div>
             <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L.reserves || 0)} РЕЗ</span></div>
             <div class="kv"><span class="k">Рейтинг клана</span><span class="v">${UI.fmtNum(L.ratingPoints)} очк.</span></div>
-            <p class="muted small mt">Обмен <span class="ic-dollar"></span> → Резервы находится в разделе <b>Банк → Резерв</b>.</p>
-            <hr class="hr">
-            <label class="small">Внести деньги в казну (<span class="ic-dollar"></span>):</label>
-            <div class="field-row mt">
-              <input type="number" id="lg-dep" min="1" placeholder="Сумма $">
-              <button class="btn btn-orange btn-inline" id="lg-dep-go">Внести</button>
-            </div>
+            <p class="muted small mt">Валюта клана — только <b>РЕЗ</b>. Резервы пополняются обменом <span class="ic-dollar"></span> → РЕЗ в разделе <b>Банк → Резерв</b>. Все клановые постройки, боевые постройки и технологии оплачиваются резервами.</p>
           </div>
           <div class="card">
             <div class="name">🗄 Казначейство ресурсов</div>
@@ -378,7 +371,6 @@ async function renderGroupScreen(c, kind) {
               <div class="kv"><span class="k">Бойцов</span><span class="v">${L2.members} / ${L2.memberLimit || '?'}</span></div>
               <div class="kv"><span class="k">Победы</span><span class="v" style="color:var(--green)">${(L2.battleStats || {}).wins || 0}</span></div>
               <div class="kv"><span class="k">Поражения</span><span class="v" style="color:var(--red)">${(L2.battleStats || {}).losses || 0}</span></div>
-              <div class="kv"><span class="k">Казна</span><span class="v money"><span class="ic-dollar"></span>${UI.fmtMoney(L2.treasury)}</span></div>
               <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L2.reserves || 0)} РЕЗ</span></div>
               <div class="kv"><span class="k">Уши 👂</span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
               <div class="kv"><span class="k">Жетоны 🎖</span><span class="v">${UI.fmtNum(L2.treasuryTokens || 0)}</span></div>
@@ -646,13 +638,6 @@ async function renderGroupScreen(c, kind) {
           } catch(e) { UI.toast('⛔ ' + e.message); }
         };
       });
-
-      // Внести в казну
-      const depBtn = document.getElementById('lg-dep-go');
-      if (depBtn) depBtn.onclick = async () => {
-        try { await API.post('/api/legion/deposit', { amount: document.getElementById('lg-dep').value }); App.rerender(); }
-        catch (e) { UI.toast('⛔ ' + e.message); }
-      };
 
       // Обмен $ → Резервы (из вкладки Постройки)
       const exchBtn = document.getElementById('lg-exch-go');
@@ -1060,8 +1045,6 @@ App.screens.mail = async (c, param) => {
       <div class="card">
         <label>Кому (позывной)</label>
         <input type="text" id="ml-to" value="${UI.esc(App._mailTo || '')}">
-        <label>Тема (необязательно)</label>
-        <input type="text" id="ml-subj" maxlength="80">
         <label>Текст</label>
         <textarea id="ml-text" maxlength="2000"></textarea>
         <div class="btn-row mt">
@@ -1075,7 +1058,7 @@ App.screens.mail = async (c, param) => {
         const toName = document.getElementById('ml-to').value;
         await API.post('/api/mail', {
           toName,
-          subject: document.getElementById('ml-subj').value,
+          subject: '',
           text: document.getElementById('ml-text').value,
         });
         App.go('mail');

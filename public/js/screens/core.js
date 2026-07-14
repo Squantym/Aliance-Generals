@@ -569,12 +569,16 @@ App.screens.profile = async (c, param) => {
     <div class="card">
       <div class="title" style="margin-top:0">✨ Активные эффекты</div>
       ${p.activeEffects.map(e => {
-        const img = App._marketImg(e.id);
+        const isMerc = !!(e.merc && e.commanderId);
+        const img = isMerc ? App._mercImg(e.commanderId) : App._marketImg(e.id);
+        const icon = e.hostile ? '😈' : isMerc ? '⭐' : '💉';
+        // Имя показываем всегда для наёмника; для допинга — если нет картинки
+        const showName = isMerc || !img;
         return `
         <div style="border-bottom:1px solid var(--border-dim);padding:8px 0">
-          ${img ? `<img src="${img}" alt="${UI.esc(e.name)}" class="market-img" style="margin-bottom:6px">` : ''}
+          ${img ? `<img src="${img}" alt="${UI.esc(e.name)}" class="pf-effect-img">` : ''}
           <div class="kv" style="padding:0">
-            <span class="k" style="${e.hostile?'color:var(--red)':''}">${e.hostile?'😈':'💉'} ${img ? '' : UI.esc(e.name)+' '}<span class="muted small">(${UI.esc(e.desc)})</span>${e.byName?` <span class="muted small">— от <b style="color:var(--gold)">${UI.esc(e.byName)}</b></span>`:''}</span>
+            <span class="k" style="${e.hostile?'color:var(--red)':''}">${icon} ${showName ? UI.esc(e.name)+' ' : ''}<span class="muted small">(${UI.esc(e.desc)})</span>${e.byName?` <span class="muted small">— от <b style="color:var(--gold)">${UI.esc(e.byName)}</b></span>`:''}</span>
             <span class="v">${UI.esc(e.timeLeft)}</span>
           </div>
         </div>`;
@@ -683,11 +687,9 @@ App.screens.profile = async (c, param) => {
 
     const btnMsg = document.getElementById('pf-msg');
     if (btnMsg) btnMsg.onclick = async () => {
-      const subject = await UI.prompt('', {title:'Письмо игроку ' + p.name, icon:'<span class="ic-mail"></span>', value:'Привет, ' + p.name, placeholder:'Тема письма', okText:'Далее'});
-      if (subject === null) return;
-      const text = await UI.prompt('', {title:'Текст письма', icon:'<span class="ic-mail"></span>', placeholder:'Ваше сообщение...', multiline:true, maxLength:500, okText:'Отправить'});
-      if (!text) return;
-      API.post('/api/mail', { toName: p.name, subject, text })
+      const text = await UI.prompt('', {title:'Письмо игроку ' + p.name, icon:'<span class="ic-mail"></span>', placeholder:'Ваше сообщение...', multiline:true, maxLength:500, okText:'Отправить'});
+      if (!text || !text.trim()) return;
+      API.post('/api/mail', { toName: p.name, subject: '', text })
         .then(() => UI.toast('✉ Сообщение отправлено игроку ' + p.name))
         .catch((e) => UI.toast('⛔ ' + e.message));
     };

@@ -45,8 +45,8 @@ lm.lB = { id: 'lB', name: 'Браво', leaderId: 'viewer', members: ['viewer'],
 target.legionId = 'lA'; viewer.legionId = 'lB';
 const peekA = legion.publicView('lA', admin);
 ok('админ видит adminPeek', !!peekA.adminPeek);
-eq('adminPeek.treasury', peekA.adminPeek.treasury, 5000);
-eq('adminPeek.reserves', peekA.adminPeek.reserves, 200);
+eq('adminPeek.treasury мигрирован в 0 (валюта клана — РЕЗ)', peekA.adminPeek.treasury, 0);
+eq('adminPeek.reserves = 200 + 5000/1000', peekA.adminPeek.reserves, 205);
 ok('adminPeek.arsenal заполнен', peekA.adminPeek.arsenal.length === 1);
 eq('обычный не видит adminPeek', legion.publicView('lA', viewer).adminPeek, null);
 
@@ -58,16 +58,16 @@ thr('не-админ не может adminJoin', () => groups.adminJoin(viewer, 
 thr('повторное вступление отклонено', () => groups.adminJoin(admin, 'legion', 'lA', []));
 
 console.log('\n[4] Легион: админ-вклад разных ресурсов');
-legion.adminDeposit(admin, 'lB', 10000, [], 'treasury');
 legion.adminDeposit(admin, 'lB', 500, [], 'reserves');
+legion.adminDeposit(admin, 'lB', 300, [], 'reserves');
 legion.adminDeposit(admin, 'lB', 7, [], 'ears');
 legion.adminDeposit(admin, 'lB', 4, [], 'tokens');
-eq('казна пополнена', lm.lB.treasury, 10000);
-eq('резервы пополнены', lm.lB.reserves, 500);
+eq('резервы пополнены (500+300)', lm.lB.reserves, 800);
 eq('уши пополнены', lm.lB.treasuryEars, 7);
 eq('жетоны пополнены', lm.lB.treasuryTokens, 4);
-thr('не-админ не может вложить', () => legion.adminDeposit(viewer, 'lB', 100, [], 'treasury'));
-thr('отрицательная сумма отклонена', () => legion.adminDeposit(admin, 'lB', -5, [], 'treasury'));
+thr('внесение долларов в казну отклонено (валюта — РЕЗ)', () => legion.adminDeposit(admin, 'lB', 100, [], 'treasury'));
+thr('не-админ не может вложить', () => legion.adminDeposit(viewer, 'lB', 100, [], 'reserves'));
+thr('отрицательная сумма отклонена', () => legion.adminDeposit(admin, 'lB', -5, [], 'reserves'));
 
 console.log('\n[5] Турнир: бой между двумя легионами');
 const battle = legion.adminStartBattle(admin, 'lA', 'lB', []);

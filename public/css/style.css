@@ -1999,6 +1999,49 @@ body.theme-cyber .img-frame {
 .bw-card.tight { padding: 6px 10px; }
 .bw-me-res { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); margin-top: 5px; }
 .bw-me-res b { color: var(--text); }
+
+/* Верхняя панель восстановления: HP / энергия / боеприпасы + кнопка */
+.bw-restore { border: 1px solid var(--gold); border-radius: 10px; padding: 10px; margin-bottom: 10px;
+  background: rgba(233,199,92,.06); }
+.bw-res-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bw-res { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 4px; border-radius: 8px; background: rgba(255,255,255,.04); }
+.bw-res-ic { font-size: 20px; line-height: 1; }
+.bw-res-v { font-weight: 800; font-size: 14px; color: var(--text); }
+.bw-res-l { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+/* Характеристики игрока в подготовке */
+.bw-stats { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.bw-stats-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+.bw-stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; }
+.bw-stats-grid > div { display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12.5px; border-bottom: 1px solid var(--border-dim); padding: 3px 0; }
+.bw-stats-grid > div span { color: var(--dim); }
+.bw-stats-grid > div b { color: var(--text); font-weight: 800; }
+/* Лог боя: базовый цвет по теме (бело/чёрный), спаны имён/урона красят сами себя */
+.bw-log-line { color: var(--text); }
+/* Компактные кнопки боевого пояса/арсенала в бою */
+.bw-belt .bw-slot { padding: 6px 4px; min-height: 0; }
+.bw-belt .bw-slot .nm { font-size: 11px; line-height: 1.1; }
+.bw-belt .bw-slot .btn { padding: 5px 4px; font-size: 11px; margin-top: 4px; }
+.bw-belt .bw-slot.empty { min-height: 46px; }
+.bw-belt .bw-slot.empty .btn { font-size: 11px; padding: 4px; }
+/* Экран итогов боя */
+.bw-result-hero { text-align: center; padding: 26px 16px 20px; border-radius: 0 0 16px 16px; margin-bottom: 4px; }
+.bw-result-hero.win  { background: linear-gradient(160deg, rgba(46,204,64,.22), rgba(46,204,64,.04)); box-shadow: inset 0 -1px 0 rgba(46,204,64,.4); }
+.bw-result-hero.loss { background: linear-gradient(160deg, rgba(255,77,77,.20), rgba(255,77,77,.04)); box-shadow: inset 0 -1px 0 rgba(255,77,77,.4); }
+.bw-result-emoji { font-size: 52px; line-height: 1; filter: drop-shadow(0 3px 6px rgba(0,0,0,.4)); }
+.bw-result-title { font-size: 24px; font-weight: 900; letter-spacing: .06em; margin-top: 6px; }
+.bw-result-hero.win  .bw-result-title { color: #2ecc40; text-shadow: 0 0 16px rgba(46,204,64,.5); }
+.bw-result-hero.loss .bw-result-title { color: #ff4d4d; text-shadow: 0 0 16px rgba(255,77,77,.5); }
+.bw-result-score { display: flex; justify-content: center; gap: 18px; align-items: baseline; margin-top: 12px; font-size: 20px; font-weight: 800; }
+.bw-result-vs { color: var(--dim); font-size: 13px; font-weight: 600; }
+.bw-result-section { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.bw-result-h { font-weight: 800; margin: 0 0 8px; font-size: 14px; }
+.bw-result-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.bw-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 4px;
+  border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid var(--border-dim); }
+.bw-tile-v { font-weight: 900; font-size: 17px; color: var(--text); }
+.bw-tile-l { font-size: 10px; color: var(--dim); text-align: center; }
 /* Направления — компактная сетка чипов */
 .bw-dirs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
 .bw-dir {
@@ -2090,5 +2133,16 @@ textarea.news-input { resize:vertical; line-height:1.4; }
   margin: 0 auto;
   aspect-ratio: 16 / 9;
   object-fit: contain;
+  background: transparent;
+}
+/* Картинки эффектов/наёмников/подлянок в ПРОФИЛЕ — маленькие, 150×150 */
+.pf-effect-img {
+  display: block;
+  width: 150px;
+  height: 150px;
+  max-width: 100%;
+  object-fit: contain;
+  margin: 0 auto 6px;
+  border-radius: 8px;
   background: transparent;
 }

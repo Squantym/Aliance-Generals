@@ -19,6 +19,13 @@ function legionOf(user: User): any { return user.legionId ? legions()[user.legio
 // Убедиться, что у легиона есть все новые поля
 function ensureLegionFields(l: any): void {
   if (!l.reserves)           l.reserves = 0;
+  // Миграция: доллары клановой казны больше не используются — валюта клана
+  // строго РЕЗ. Разово конвертируем накопленные доллары в РЕЗ по курсу обмена,
+  // чтобы внесённые ранее средства не пропали.
+  if ((l.treasury || 0) > 0) {
+    l.reserves += Math.floor(l.treasury / config.LEGION.RESERVE_EXCHANGE_RATE);
+    l.treasury = 0;
+  }
   if (!l.battleBuildings)    l.battleBuildings = {};
   if (!l.techs)              l.techs = {};
   if (!l.techQueue)          l.techQueue = null;
@@ -44,10 +51,12 @@ function nextBuildingPrice(building: any, level: number): number {
 
 // ---------- Цена постройки/улучшения боевой постройки ($) ----------
 function battleBuildingCost(b: any, currentLevel: number): any {
-  // currentLevel=0 → строим первый раз (dollarCost)
-  // currentLevel>0 → улучшаем (dollarCost × priceGrowth^currentLevel)
+  // currentLevel=0 → строим первый раз; >0 → улучшаем.
+  // Стоимость постройки — в РЕЗервах (перевод из старого долларового ценника
+  // по курсу обмена: валюта клана строго РЕЗ). Уши/жетоны — из казначейства.
   const growth = b.priceGrowth || 2;
   const dollars = Math.round(b.dollarCost * Math.pow(growth, currentLevel));
+  const reserves = Math.max(1, Math.ceil(dollars / config.LEGION.RESERVE_EXCHANGE_RATE));
 
   let ears = 0, tokens = 0;
   // Уши/жетоны требуются только при улучшении (currentLevel > 0)
@@ -59,7 +68,12 @@ function battleBuildingCost(b: any, currentLevel: number): any {
       tokens = Math.round(b.tokenBase * Math.pow(b.tokenGrowth, currentLevel - 1));
     }
   }
-  return { dollars, ears, tokens };
+  return { reserves, ears, tokens };
+}
+
+// Цена старой постройки в РЕЗервах (перевод из долларового ценника по курсу).
+function buildingReserveCost(building: any, level: number): number {
+  return Math.max(1, Math.ceil(nextBuildingPrice(building, level) / config.LEGION.RESERVE_EXCHANGE_RATE));
 }
 
 // ---------- Время изучения технологии (мс) ----------
@@ -103,7 +117,7 @@ function view(user: User): any {
       maxLevel: config.LEGION.MAX_BUILDING_LEVEL,
       bonusNow: lvl * b.perLvl,
       bonusNext: lvl < config.LEGION.MAX_BUILDING_LEVEL ? (lvl + 1) * b.perLvl : null,
-      nextPrice: lvl < config.LEGION.MAX_BUILDING_LEVEL ? nextBuildingPrice(b, lvl) : null,
+      nextPrice: lvl < config.LEGION.MAX_BUILDING_LEVEL ? buildingReserveCost(b, lvl) : null,
     };
   });
 
@@ -213,7 +227,6 @@ function view(user: User): any {
     mine: {
       id: l.id, name: l.name, leaderId: l.leaderId, isLeader,
       members: l.members.length,
-      treasury: l.treasury || 0,
       reserves: l.reserves,
       treasuryEars:   l.treasuryEars   || 0,
       treasuryTokens: l.treasuryTokens || 0,
@@ -251,22 +264,6 @@ function view(user: User): any {
 }
 
 // ===================================================================
-// КАЗНА: пополнение
-// ===================================================================
-function deposit(user: User, amount: number, notices: Notices) {
-  const l = legionOf(user);
-  if (!l) throw new u.ApiError('Вы не состоите в легионе');
-  amount = u.toInt(amount, 0);
-  if (amount <= 0) throw new u.ApiError('Сумма должна быть положительной');
-  if (user.dollars < amount) throw new u.ApiError('Не хватает денег');
-  user.dollars -= amount;
-  l.treasury = (l.treasury || 0) + amount;
-  db.save('legions');
-  notices.push(`Внесено в казну легиона: $${u.fmt(amount)}.`);
-  return { treasury: l.treasury };
-}
-
-// ===================================================================
 // ОБМЕН ДОЛЛАРОВ НА КЛАНМАРКИ (Резервные марки)
 // 1 000 $ = 1 РЕЗ. Обменивает из личного кошелька в казну легиона.
 // ===================================================================
@@ -299,9 +296,9 @@ function build(user: User, buildingId: string, notices: Notices) {
   if (!b) throw new u.ApiError('Неизвестная постройка');
   const lvl = (l.buildings || {})[b.id] || 0;
   if (lvl >= config.LEGION.MAX_BUILDING_LEVEL) throw new u.ApiError('Достигнут максимальный уровень');
-  const cost = nextBuildingPrice(b, lvl);
-  if ((l.treasury || 0) < cost) throw new u.ApiError(`В казне не хватает (нужно $${u.fmt(cost)})`);
-  l.treasury -= cost;
+  const cost = buildingReserveCost(b, lvl);
+  if ((l.reserves || 0) < cost) throw new u.ApiError(`Не хватает РЕЗ (нужно ${u.fmt(cost)} РЕЗ, есть ${u.fmt(l.reserves || 0)})`);
+  l.reserves -= cost;
   l.buildings = l.buildings || {};
   l.buildings[b.id] = lvl + 1;
   db.save('legions');
@@ -334,8 +331,8 @@ function buildBattle(user: User, buildingId: string, notices: Notices) {
 
   const cost = battleBuildingCost(b, lvl);
 
-  if ((l.treasury || 0) < cost.dollars) {
-    throw new u.ApiError(`Не хватает денег в казне (нужно $${u.fmt(cost.dollars)}, есть $${u.fmt(l.treasury || 0)})`);
+  if ((l.reserves || 0) < cost.reserves) {
+    throw new u.ApiError(`Не хватает РЕЗ (нужно ${u.fmt(cost.reserves)} РЕЗ, есть ${u.fmt(l.reserves || 0)})`);
   }
   if (cost.ears > 0 && (l.treasuryEars || 0) < cost.ears) {
     throw new u.ApiError(`В казначействе не хватает ушей (нужно ${cost.ears}, есть ${l.treasuryEars || 0})`);
@@ -344,7 +341,7 @@ function buildBattle(user: User, buildingId: string, notices: Notices) {
     throw new u.ApiError(`В казначействе не хватает жетонов (нужно ${cost.tokens}, есть ${l.treasuryTokens || 0})`);
   }
 
-  l.treasury = (l.treasury || 0) - cost.dollars;
+  l.reserves = (l.reserves || 0) - cost.reserves;
   if (cost.ears > 0)   l.treasuryEars   -= cost.ears;
   if (cost.tokens > 0) l.treasuryTokens -= cost.tokens;
 
@@ -1066,22 +1063,21 @@ function adminDeposit(adminUser: User, legionId: string, amount: number, notices
   ensureLegionFields(l);
   const amt = u.toInt(amount, 0);
   if (amt <= 0) throw new u.ApiError('Сумма должна быть положительной');
-  const res = resource || 'treasury';
-  const LABEL: any = { treasury: 'казну ($)', reserves: 'резервы (РЕЗ)', ears: 'уши', tokens: 'жетоны' };
+  const res = resource || 'reserves';
+  const LABEL: any = { reserves: 'резервы (РЕЗ)', ears: 'уши', tokens: 'жетоны' };
   switch (res) {
-    case 'treasury': l.treasury = (l.treasury || 0) + amt; break;
     case 'reserves': l.reserves = (l.reserves || 0) + amt; break;
     case 'ears':     l.treasuryEars = (l.treasuryEars || 0) + amt; break;
     case 'tokens':   l.treasuryTokens = (l.treasuryTokens || 0) + amt; break;
-    default: throw new u.ApiError('Неизвестный ресурс');
+    default: throw new u.ApiError('Неизвестный ресурс (валюта клана — только РЕЗ, уши, жетоны)');
   }
   db.save('legions');
   notices.push(`💰 Администратор пополнил ${LABEL[res] || res} легиона «${l.name}» на ${u.fmt(amt)}.`);
-  return { legionId, treasury: l.treasury, reserves: l.reserves, treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
+  return { legionId, reserves: l.reserves, treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
 }
 
 export = {
-  view, deposit, build, declareWar, resolveWars,
+  view, build, declareWar, resolveWars,
   exchangeToReserves, buildBattle, depositResources,
   startTech, resolveTechQueue,
   shopBuy, gearPick,
@@ -1097,5 +1093,6 @@ export = {
   guard:            (...a) => require('./legionBattle').guard(...a),
   useItem:          (...a) => require('./legionBattle').useItem(...a),
   leaveBattle:      (...a) => require('./legionBattle').leaveBattle(...a),
+  restoreForBattle: (...a) => require('./legionBattle').restoreForBattle(...a),
   sendChat:         (...a) => require('./legionBattle').sendChat(...a),
 };

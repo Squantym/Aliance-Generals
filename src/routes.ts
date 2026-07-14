@@ -297,7 +297,6 @@ function registerRoutes(app: any) {
   // ---------- Легион: казна, постройки, кланвойны ----------
   app.add('GET',  '/api/legion',                   (req) => legion.view(req.user));
   app.add('GET',  '/api/legion/battle',             (req) => legion.battleState(req.user));
-  app.add('POST', '/api/legion/deposit',           act((req, n) => legion.deposit(req.user, req.body.amount, n)));
   app.add('POST', '/api/legion/deposit-resources', act((req, n) => legion.depositResources(req.user, req.body.ears, req.body.tokens, req.body.useAdmin, n)));
   app.add('POST', '/api/legion/exchange',          act((req, n) => legion.exchangeToReserves(req.user, req.body.dollars, n)));
   app.add('POST', '/api/legion/build',             act((req, n) => legion.build(req.user, req.body.buildingId, n)));
@@ -332,6 +331,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/legion/battle/guard',      act((req, n) => legion.guard(req.user, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/item',       act((req, n) => legion.useItem(req.user, req.body.itemId, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/leave',      act((req, n) => legion.leaveBattle(req.user, n)));
+  app.add('POST', '/api/legion/battle/restore',    act((req, n) => legion.restoreForBattle(req.user, n)));
 
   // ---------- Чат, почта, зал славы, достижения ----------
   app.add('GET', '/api/chat', (req) => social.chatGet(req.query.after));

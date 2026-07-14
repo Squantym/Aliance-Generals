@@ -27,7 +27,7 @@ import type { User, Notices, Battle, Combatant } from '../types';
 // Константы
 // ───────────────────────────────────────────────────────────────────
 const DIRECTIONS = 5;
-const DIR_NAMES  = ['Северный фронт', 'Восточный рубеж', 'Западный плацдарм', 'Южный редут', 'Центральная высота'];
+const DIR_NAMES  = ['Гъадакьи', 'Улабахе', 'Бекъдахе', 'Асали', 'Кӏаречӏ'];
 const MAX_PER_DIR = 5;
 const PREP_MS     = 10 * 60 * 1000;   // 10 мин подготовки
 const BATTLE_MS   = 60 * 60 * 1000;   // 1 час бой
@@ -1115,6 +1115,7 @@ function buildBattleDTO(user: User, battle: Battle, l: any): any {
     finishReason: battle.finishReason || null,
     winningSide: battle.winningSide || null,
     me: me ? serializeCombatant(me, t, true) : null,
+    myStats: (() => { try { return (battle.phase === 'prep' && me) ? prepStats(user, me) : null; } catch (e) { return null; } })(),
     mySide,
     cooldowns: myCDs,
     directions,
@@ -1164,6 +1165,56 @@ function serializeCombatant(c: Combatant, t: number, isSelf: boolean): any {
     gear:       isSelf ? (c.gear || []) : undefined,
     stats:      isSelf ? c.stats : undefined,
   };
+}
+
+// ── Характеристики игрока для фазы подготовки (с бонусами построек легиона) ──
+// atk/def берутся из totalPower (в нём уже учтены клановые постройки легиона),
+// крит — от жестокости, уворот — от ловкости, плюс бонусы допинга/наёмников.
+function prepStats(user: User, c?: Combatant): any {
+  player.refresh(user);
+  const roleAtk = c ? c.roleMul.atk : 1;
+  const roleDef = c ? c.roleMul.def : 1;
+  const atk = Math.round(player.totalPower(user, 'atk').power * roleAtk);
+  const def = Math.round(player.totalPower(user, 'def').power * roleDef);
+  const critPct  = Math.round((Math.min(0.50, 0.05 + user.skills.cruelty * 0.005) + (player.effMul(user, 'crit_bonus') - 1)) * 1000) / 10;
+  const dodgePct = Math.round((Math.min(config.BATTLE.DODGE_MAX, user.skills.agility * config.BATTLE.DODGE_PER_AGILITY) + (player.effMul(user, 'dodge_bonus') - 1)) * 1000) / 10;
+  const mx = player.maxima(user);
+  return {
+    atk, def, critPct, dodgePct,
+    hp: Math.floor(user.res.hp.cur),  maxHp: Math.floor(mx.hp),
+    energy: Math.floor(user.res.en.cur), maxEnergy: Math.floor(mx.en),
+    ammo: Math.floor(user.res.am.cur), maxAmmo: Math.floor(mx.am),
+    restoreCost: restoreCost(),
+  };
+}
+
+// Цена полного восстановления HP+энергии+боеприпасов = сумма цен допинг-
+// восстановителей чёрного рынка (аптечка + энергетик + цинк боеприпасов).
+function restoreCost(): number {
+  const byId: any = config.MARKET_ITEM_BY_ID;
+  const g = (id: string) => (byId[id] ? byId[id].gold : 0);
+  return g('medkit') + g('energy') + g('ammo');
+}
+
+// Восстановить HP/энергию/боеприпасы до максимума за стоимость допинга (только в prep)
+function restoreForBattle(user: User, notices: Notices) {
+  const { battle } = resolveBattle(user);
+  if (!battle) throw new u.ApiError('Нет активного боя');
+  if (battle.phase !== 'prep') throw new u.ApiError('Восстановить можно только во время подготовки');
+  player.refresh(user);
+  const cost = restoreCost();
+  if ((user.gold || 0) < cost) throw new u.ApiError(`Нужно ${cost} золота для восстановления`);
+  user.gold -= cost;
+  const mx = player.maxima(user);
+  const t = now();
+  user.res.hp.cur = mx.hp; user.res.hp.t = t;
+  user.res.en.cur = mx.en; user.res.en.t = t;
+  user.res.am.cur = mx.am; user.res.am.t = t;
+  const c = battle.combatants[user.id];
+  if (c) { c.hp = c.maxHp; }
+  db.save('users'); db.save('battles');
+  notices.push(`💉 Ресурсы восстановлены до максимума за 🪙 ${cost}.`);
+  return { ok: true, cost, hp: mx.hp, energy: mx.en, ammo: mx.am };
 }
 
 // ── Выйти из боя (добровольно) ────────────────────────────────────
@@ -1216,7 +1267,7 @@ function sendChat(user: User, scope: string, text: string, notices: Notices) {
 }
 
 export = {
-  joinBattle, setReady, chooseDirection, attack, heal, guard, useItem, leaveBattle,
+  joinBattle, setReady, chooseDirection, attack, heal, guard, useItem, leaveBattle, restoreForBattle,
   battleState, tickEffects, tickAllBattles, sendChat,
   ROLES, DIRECTIONS, DIR_NAMES, MAX_PER_DIR, PREP_MS, BATTLE_MS,
   ensureLegionGlory, addGlory, calcLegionLevel, GLORY_THRESHOLDS,
