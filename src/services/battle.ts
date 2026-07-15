@@ -508,47 +508,55 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   const critBase = Math.min(B.CRIT_MAX_CHANCE, B.CRIT_BASE + user.skills.cruelty * B.CRIT_PER_CRUELTY);
   const critChance = critBase + player.effMul(user, 'crit_bonus') - 1; // effMul=1.2 → +0.2
   const crit = Math.random() < critChance;
-  // Ловкость даёт ШАНС НА ПОЛНЫЙ УВОРОТ (не просто снижение урона):
-  // 0.5% за уровень, максимум 50%. Допинг «Призрак» добавляет сверх лимита.
-  const dodgeBase = isBot ? 0 : Math.min(B.DODGE_MAX, target.skills.agility * B.DODGE_PER_AGILITY);
-  const dodgeChance = isBot ? 0 : dodgeBase + player.effMul(target, 'dodge_bonus') - 1;
-  const dodge = Math.random() < dodgeChance;
+  // Ловкость даёт ШАНС НА ПОЛНЫЙ УВОРОТ (обнуление урона). Теперь уворот
+  // работает у ОБЕИХ сторон: и у цели (от атаки), и у самого атакующего
+  // (от ответного урона). Допинг «Призрак» добавляет сверх лимита.
+  const targetDodgeChance = isBot ? 0 : Math.min(B.DODGE_MAX, target.skills.agility * B.DODGE_PER_AGILITY) + player.effMul(target, 'dodge_bonus') - 1;
+  const targetDodge = Math.random() < targetDodgeChance;
+  const attackerDodgeChance = Math.min(B.DODGE_MAX, user.skills.agility * B.DODGE_PER_AGILITY) + player.effMul(user, 'dodge_bonus') - 1;
+  const attackerDodge = Math.random() < attackerDodgeChance;
 
   // Базовый урон (БЕЗ крита) по пороговой формуле — соотносим обычную
   // атаку (без множителя крита) с защитой противника
   const { dealt: dealtBase } = resolveDamage(aPow, dPow);
 
-  // Крит явно умножает ИТОГОВЫЙ урон (не подмешивается в пороговую
-  // формулу до клампа): база ×2.0, трофей «Лицензия на убийство» на
-  // максимуме добавляет ещё ×2.0 сверху (итог ×6.0 на максимуме —
-  // см. config.BATTLE.CRIT_MULT и trophies.critPower).
-  //   Пример без трофея: 30 урона -> крит 30×2 = 60
-  //   Пример с трофеем макс.: 60 + (60×2) = 180
   const critTrophyBonus = trophies.critPower(user); // 0..2.0 (0%-200%)
   const dealtCrit = crit
     ? Math.round(dealtBase * B.CRIT_MULT * (1 + critTrophyBonus))
     : dealtBase;
 
-  // Полный уворот — обнуляем урон, но не исход боя
-  const dealt = dodge ? 0 : dealtCrit;
+  // Полный уворот ЦЕЛИ — обнуляем нанесённый урон (влияет только на HP/грабёж)
+  let dealt = targetDodge ? 0 : dealtCrit;
 
-  // Урон, получаемый АТАКУЮЩИМ от защитника (та же формула в обратную
-  // сторону — у бота тоже есть шанс крита, см. ниже)
+  // Урон, получаемый АТАКУЮЩИМ. Полный уворот АТАКУЮЩЕГО тоже обнуляет его.
   const { dealt: receivedBase } = resolveDamage(dPow, aPow);
   const botCritChance = isBot ? Math.min(0.30, 0.05 + (target.level || 1) * 0.002) : 0;
   const botCrit = isBot && Math.random() < botCritChance;
-  const received = botCrit ? Math.round(receivedBase * B.CRIT_MULT) : receivedBase;
+  let received = attackerDodge ? 0 : (botCrit ? Math.round(receivedBase * B.CRIT_MULT) : receivedBase);
+
+  // ЧИСЛОВОЙ АПСЕТ: с шансом 5–10% сильнейший наносит МЕНЬШЕ урона, чем
+  // получает (для непредсказуемости). Исход боя это НЕ меняет — победа всё
+  // равно по мощи. Порог случайно выбирается в диапазоне 5–10% на каждый бой.
+  const upsetChance = B.DAMAGE_UPSET_MIN + Math.random() * (B.DAMAGE_UPSET_MAX - B.DAMAGE_UPSET_MIN);
+  if (Math.random() < upsetChance && dealt > 0 && received > 0) {
+    const factor = 0.5 + Math.random() * 0.4; // 50–90% от урона противника
+    if (aPow >= dPow) {
+      // атакующий сильнее → занижаем ЕГО урон ниже полученного
+      if (dealt >= received) dealt = Math.max(1, Math.round(received * factor));
+    } else {
+      // цель сильнее → занижаем ЕЁ урон (received) ниже нанесённого
+      if (received >= dealt) received = Math.max(1, Math.round(dealt * factor));
+    }
+  }
   user.res.hp.cur = Math.max(1, user.res.hp.cur - received);
 
-  // Определение победителя: СТРОГО по факту нанесённого урона — кто
-  // нанёс больше, тот и выиграл. Раньше исход решался сравнением скрытой
-  // мощи (aPow/dPow), из-за чего игрок мог нанести больше урона по
-  // циферкам и всё равно проиграть — игроки справедливо считали это
-  // багом. При точном равенстве (редкость) исход решает мощь атаки —
-  // как раньше — просто как честный tie-break, не наблюдаемый игроком.
+  // ИСХОД боя решает МОЩЬ, а не уворот и не числа урона: кто сильнее (атака
+  // против защиты) — тот и побеждает. Уворот, крит и числовой апсет влияют
+  // только на числа урона/грабёж/HP, но НЕ переворачивают исход. Если игрок
+  // сильнее — он выигрывает в любом случае. При равенстве — победа атакующему.
+  const win = aPow >= dPow;
   let effectiveAtk = aPow;
   if (crit) effectiveAtk *= B.CRIT_MULT * (1 + critTrophyBonus);
-  const win = dealt !== received ? dealt > received : effectiveAtk >= dPow;
 
   let targetHpAfter;
   if (isBot) {
@@ -759,7 +767,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     : [];
 
   const result: any = {
-    win, crit, dodge,
+    win, crit, dodge: targetDodge, attackerDodge,
     dealt, received, loot, xp,
     targetId: target.id, targetName: target.name, targetLevel, isBot,
     targetHpPct: Math.round((targetHpAfter / targetMaxHp) * 100),

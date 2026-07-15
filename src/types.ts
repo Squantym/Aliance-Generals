@@ -358,7 +358,7 @@ export interface Combatant {
   roleMul: { atk: number; def: number; dmgReduce: number };
   hp: number;
   maxHp: number;
-  shield: number;
+
   direction: number | null;
   ready: boolean;
   readyAt: number;

@@ -95,24 +95,36 @@ ok('с баффом частота фаталити заметно выше (25-
 ok('бафф РЕАЛЬНО повышает шанс фаталити (buff > noBuff)', resBuff.rate > resNoBuff.rate * 1.5);
 
 // ===================================================================
-console.log('\n[2] Победа строго по фактическому урону: dealt>received ⇒ win, и наоборот');
+console.log('\n[2] Исход боя — по МОЩИ (сильнейший побеждает), уворот НЕ переворачивает');
 {
-  let checked = 0, violations = 0, ties = 0;
-  for (let i = 0; i < 3000; i++) {
-    const lvl = 15 + (i % 10);
-    const a = mkUser('u_dmg_a', 'А', { level: lvl, units: { ground_1: [5 + (i % 50), 0, 0] } });
-    const b = mkUser('u_dmg_b', 'Б', { level: lvl, units: { ground_1: [5 + ((i * 7) % 50), 0, 0] } });
-    usersMap['u_dmg_a'] = a; usersMap['u_dmg_b'] = b;
-    a.res.am.cur = 9999; a.res.hp.cur = 100; a.lastAttackAt = 0;
-    b.res.hp.cur = 100;
-    const r = battle.attack(a, b.id, notices);
-    checked++;
-    if (r.dealt === r.received) { ties++; continue; }
-    const expectedWin = r.dealt > r.received;
-    if (r.win !== expectedWin) violations++;
+  let strongWins = 0, weakWins = 0, tgtDodges = 0, atkDodges = 0;
+  for (let i = 0; i < 400; i++) {
+    const strong = mkUser('u_str', 'Сильный', { level: 30, units: { ground_1: [400, 0, 0] } });
+    const weak   = mkUser('u_wk', 'Слабый', { level: 30, units: { ground_1: [1, 0, 0] } });
+    weak.skills.agility = 100;
+    usersMap['u_str'] = strong; usersMap['u_wk'] = weak;
+    strong.res.am.cur = 9999; strong.res.hp.cur = 100; strong.lastAttackAt = 0;
+    weak.res.hp.cur = 100;
+    const r = battle.attack(strong, weak.id, notices);
+    if (r.win) strongWins++;
+    if (r.dodge) tgtDodges++;
   }
-  console.log(`  проверено боёв: ${checked}, ничьих по урону (tie-break): ${ties}, нарушений инварианта: ${violations}`);
-  eq('НИ ОДНОГО нарушения "больше урона -> победа" (кроме точных ничьих)', violations, 0);
+  eq('сильный побеждает во ВСЕХ боях (уворот цели не переворачивает)', strongWins, 400);
+  ok('цель периодически уворачивалась (не влияет на исход)', tgtDodges > 0);
+
+  for (let i = 0; i < 400; i++) {
+    const weak   = mkUser('u_wk2', 'Слабый', { level: 30, units: { ground_1: [1, 0, 0] } });
+    const strong = mkUser('u_str2', 'Сильный', { level: 30, units: { ground_1: [400, 0, 0] } });
+    weak.skills.agility = 100;
+    usersMap['u_wk2'] = weak; usersMap['u_str2'] = strong;
+    weak.res.am.cur = 9999; weak.res.hp.cur = 100; weak.lastAttackAt = 0;
+    strong.res.hp.cur = 100;
+    const r = battle.attack(weak, strong.id, notices);
+    if (r.win) weakWins++;
+    if (r.attackerDodge) atkDodges++;
+  }
+  eq('слабый проигрывает во ВСЕХ боях (свой уворот не спасает)', weakWins, 0);
+  ok('атакующий сам уворачивался (уворот доступен нападающему)', atkDodges > 0);
 }
 
 // ===================================================================

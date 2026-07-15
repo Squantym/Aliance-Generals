@@ -309,7 +309,6 @@ const App = {
     hydrogen_bomb:   { name: '💣 Водородная бомба', kind: 'aoe'   },
     uranium_ammo:    { name: '☢️ Урановые БП',      kind: 'self'  },
     dome:            { name: '🔵 Купол',            kind: 'self'  },
-    kevlar:          { name: '🦺 Бронеплиты',        kind: 'self'  },
     reflect_shield:  { name: '🪞 Отраж. щит',        kind: 'self'  },
     medkit:          { name: '🩹 Аптечка',          kind: 'ally'  },
   },
@@ -698,7 +697,6 @@ const App = {
       c.onFire    ? `<span style="color:var(--orange);font-size:11px">🔥</span>` : '',
       c.immune    ? `<span style="color:var(--green);font-size:11px">🔵${c.immune}с</span>` : '',
       c.reflecting? `<span style="color:var(--green);font-size:11px">🪞</span>` : '',
-      c.shield > 0? `<span style="font-size:11px">🛡${c.shield}</span>` : '',
     ].filter(Boolean).join(' ');
 
     // Шапка с таймером — всегда видна
@@ -900,7 +898,6 @@ const App = {
             <span>❤️ <b>${Math.round(me.hp)}/${me.maxHp}</b></span>
             ${me.ammo!=null?`<span>🔫 <b>${me.ammo}</b></span>`:''}
             ${me.energy!=null?`<span><span class="ic-energy"></span> <b>${me.energy}</b></span>`:''}
-            ${me.shield>0?`<span>🛡 <b>${me.shield}</b></span>`:''}
             <span>⏱ действие <b id="bw-cd-action">${myCDs.action||0}с</b></span>
           </div>
           <div class="bw-fighter-acts">

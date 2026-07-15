@@ -1428,14 +1428,6 @@ const LEGION_SHOP_ITEMS = [
     effect: { type: 'immunity', duration: 30 },
   },
   {
-    id: 'kevlar',
-    category: 'support',
-    name: '🦺 Кевларовые бронеплиты',
-    desc: 'Восстанавливает 50–100% щита защитника. Только для роли «Защитник».',
-    tokenCost: 2,
-    effect: { type: 'restore_shield', minPct: 50, maxPct: 100 },
-  },
-  {
     id: 'reflect_shield',
     category: 'support',
     name: '🪞 Отражающий щит',
@@ -1463,6 +1455,10 @@ const BATTLE = {
   XP_LOSS_MIN: 1, XP_LOSS_MAX: 2,
   CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.005, CRIT_MAX_CHANCE: 0.50, CRIT_MULT: 2.0,
   DODGE_PER_AGILITY: 0.005, DODGE_MAX: 0.50,
+  // Шанс «числового апсета»: сильнейший наносит меньше урона, чем получает
+  // (для непредсказуемости). Исход боя всё равно по мощи — сильнейший
+  // побеждает. Порог случаен в диапазоне 5–10% на каждый бой.
+  DAMAGE_UPSET_MIN: 0.05, DAMAGE_UPSET_MAX: 0.10,
   LOOT_PCT: 0.07,            // снижено с 10% до 7% — фарм невыгоден
   DEF_LOOT_SOFT: 1200,
   DEF_LOSS_SOFT: 1500,

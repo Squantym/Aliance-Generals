@@ -165,16 +165,10 @@ function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId:
     return { actual: 0, shieldAbsorbed: 0 };
   }
 
-  let dmg = rawDmg;
-  let shieldAbsorbed = 0;
-
-  // Щит защитника
-  if (c.role === 'guardian' && (c.shield || 0) > 0) {
-    const absorbed = Math.min(c.shield, dmg);
-    c.shield -= absorbed;
-    dmg -= absorbed;
-    shieldAbsorbed = absorbed;
-  }
+  // Защитник (guardian) больше НЕ имеет щита — только HP (+ пассивное
+  // снижение урона роли). Весь урон идёт напрямую в HP.
+  const dmg = rawDmg;
+  const shieldAbsorbed = 0;
 
   const actual = Math.min(dmg, c.hp);
   c.hp = Math.max(0, c.hp - dmg);
@@ -235,7 +229,6 @@ function joinBattle(user: User, roleId: string, notices: Notices) {
   const role = ROLES[roleId];
   const side = l.id === battle.legionA ? 'A' : 'B';
   const mx   = player.maxima(user);
-  const shieldVal = roleId === 'guardian' ? Math.floor(user.res.en.cur) : 0;
 
   // Если уже в бою — позволяем сменить роль (пока не нажал «Готов»)
   const existing = battle.combatants[user.id];
@@ -251,7 +244,6 @@ function joinBattle(user: User, roleId: string, notices: Notices) {
     roleMul: { atk: role.atkMul, def: role.defMul, dmgReduce: role.dmgReduce },
     hp: Math.floor(user.res.hp.cur),
     maxHp: mx.hp,
-    shield: shieldVal,
     direction: null,
     ready: false,          // НЕ готов по умолчанию — нужно нажать «Готов»
     readyAt: 0,
@@ -382,7 +374,6 @@ function attack(user: User, targetUserId: string, notices: Notices) {
   addActivity(battle, user.id, 'attack_hit');
 
   let msg = `⚔️ ${user.name} → ${tc.name} [${DIR_NAMES[(c.direction || 1)-1]}]: ${actual} урона`;
-  if (shieldAbsorbed > 0) msg += ` (щит −${shieldAbsorbed})`;
   if (crit) msg += ' 💥 КРИТ!';
 
   if (tc.hp <= 0) {
@@ -628,15 +619,6 @@ function useItem(user: User, itemId: string, targetUserId: string, notices: Noti
       c.statusEffects = c.statusEffects || [];
       c.statusEffects.push({ type: 'immunity', expiresAt: now() + ieff.duration * 1000 });
       resultMsg = `🔵 ${user.name}: Защитный купол! Иммунитет ${ieff.duration} сек`;
-      break;
-
-    case 'restore_shield':
-      if (c.role !== 'guardian') throw new u.ApiError('Только для Защитника');
-      const maxShield = user.res.en.cur;
-      const pct2 = u.rnd(ieff.minPct, ieff.maxPct);
-      const restored = Math.round(maxShield * pct2 / 100);
-      c.shield = Math.min(maxShield, (c.shield || 0) + restored);
-      resultMsg = `🦺 ${user.name}: Бронеплиты! Щит +${restored} (${pct2}%)`;
       break;
 
     case 'reflect':
@@ -1149,7 +1131,7 @@ function serializeCombatant(c: Combatant, t: number, isSelf: boolean): any {
   return {
     userId: c.userId, name: c.name,
     role: c.role, roleName: ROLES[c.role] ? ROLES[c.role].label : c.role,
-    hp: c.hp, maxHp: c.maxHp, shield: c.shield || 0,
+    hp: c.hp, maxHp: c.maxHp,
     // Снаряды и энергию видит ТОЛЬКО сам игрок — противник и союзники не знают
     // твой боезапас/энергию (это стратегическая информация). HP остаётся видимым:
     // без него нельзя целиться и понимать прогресс боя.

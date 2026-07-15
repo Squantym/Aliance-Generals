@@ -191,7 +191,6 @@ async function renderGroupScreen(c, kind) {
           // Вспомогательные (за жетоны)
           { id:'medkit',          name:'🩹 Аптечка',                desc:'Лечит 20–50% макс. HP. Можно применять на союзника.', tokenCost:3 },
           { id:'dome',            name:'🔵 Защитный купол',         desc:'Полный иммунитет к урону на 30 сек.',                tokenCost:2 },
-          { id:'kevlar',          name:'🦺 Кевларовые бронеплиты',  desc:'Восстанавливает 50–100% щита. Только Защитник.',     tokenCost:2 },
           { id:'reflect_shield',  name:'🪞 Отражающий щит',         desc:'Следующий удар по вам отражается на врага.',         tokenCost:3 },
         ];
         const shopTab = `

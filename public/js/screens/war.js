@@ -155,7 +155,8 @@ App.screens.war = async (c) => {
   if (b) {
     const marks = [
       b.crit ? '💥 Критический удар!' : '',
-      b.dodge ? '🌀 Враг увернулся' : '',
+      b.dodge ? '🌀 Враг увернулся (урон 0)' : '',
+      b.attackerDodge ? '🌀 Вы увернулись от ответного урона' : '',
     ].filter(Boolean).join(' · ');
     resultHtml = `
       <div class="card">
