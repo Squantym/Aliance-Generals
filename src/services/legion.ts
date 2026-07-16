@@ -36,6 +36,9 @@ function ensureLegionFields(l: any): void {
   if (!l.battleHistory)      l.battleHistory = [];
   if (!l.treasuryEars)       l.treasuryEars   = 0;
   if (!l.treasuryTokens)     l.treasuryTokens = 0;
+  // Вклады в казначейство: накопительный рейтинг по игрокам и лента истории
+  if (!l.contributions)      l.contributions = {};
+  if (!l.treasuryHistory)    l.treasuryHistory = [];
   if (!l.memberRanks)        l.memberRanks = {};
   if (!l.battleStats)        l.battleStats = { wins: 0, losses: 0 };
   if (!l.chat)               l.chat = [];
@@ -50,26 +53,12 @@ function nextBuildingPrice(building: any, level: number): number {
 }
 
 // ---------- Цена постройки/улучшения боевой постройки ($) ----------
+// Цена следующего уровня боевой постройки. Все цифры (РЕЗ/уши/жетоны)
+// задаются в конфиге двумя точками — за 1-й и за последний уровень.
 function battleBuildingCost(b: any, currentLevel: number): any {
-  // currentLevel=0 → строим первый раз; >0 → улучшаем.
-  // Стоимость постройки — в РЕЗервах (перевод из старого долларового ценника
-  // по курсу обмена: валюта клана строго РЕЗ). Уши/жетоны — из казначейства.
-  const growth = b.priceGrowth || 2;
-  const dollars = Math.round(b.dollarCost * Math.pow(growth, currentLevel));
-  const reserves = Math.max(1, Math.ceil(dollars / config.LEGION.RESERVE_EXCHANGE_RATE));
-
-  let ears = 0, tokens = 0;
-  // Уши/жетоны требуются только при улучшении (currentLevel > 0)
-  if (currentLevel > 0) {
-    if (b.resource === 'ear' || b.resource === 'both') {
-      ears = Math.round(b.earBase * Math.pow(b.earGrowth, currentLevel - 1));
-    }
-    if (b.resource === 'token' || b.resource === 'both') {
-      tokens = Math.round(b.tokenBase * Math.pow(b.tokenGrowth, currentLevel - 1));
-    }
-  }
-  return { reserves, ears, tokens };
+  return config.battleBuildingCostAt(b, currentLevel + 1);
 }
+
 
 // Цена старой постройки в РЕЗервах (перевод из долларового ценника по курсу).
 function buildingReserveCost(building: any, level: number): number {
@@ -125,12 +114,17 @@ function view(user: User): any {
   const battleBuildings = config.LEGION_BATTLE_BUILDINGS.map((b) => {
     const lvl = (l.battleBuildings || {})[b.id] || 0;
     const cost = lvl < b.maxLevel ? battleBuildingCost(b, lvl) : null;
+    // Требуемый уровень легиона для СЛЕДУЮЩЕГО уровня постройки
+    const reqLegion = lvl < b.maxLevel ? config.battleBuildingLegionReq(b, lvl + 1) : null;
     return {
       id: b.id, name: b.name, desc: b.desc, level: lvl,
       maxLevel: b.maxLevel, apply: b.apply, perLvl: b.perLvl,
-      bonusNow: lvl * b.perLvl, resource: b.resource,
+      bonusNow: lvl * b.perLvl,
       bonusNext: lvl < b.maxLevel ? (lvl + 1) * b.perLvl : null,
       nextCost: cost,
+      reqLegionLevel: reqLegion,
+      legionLevel: l.legionLevel || 1,
+      locked: reqLegion !== null && (l.legionLevel || 1) < reqLegion,
     };
   });
 
@@ -230,6 +224,11 @@ function view(user: User): any {
       reserves: l.reserves,
       treasuryEars:   l.treasuryEars   || 0,
       treasuryTokens: l.treasuryTokens || 0,
+      // Рейтинг вкладов участников и лента истории пополнений казны
+      contributions: contributionsView(l),
+      treasuryHistory: (l.treasuryHistory || []).slice(0, 30).map((h: any) => ({
+        at: h.at, name: h.name, ears: h.ears || 0, tokens: h.tokens || 0, reserves: h.reserves || 0,
+      })),
       ratingPoints: l.ratingPoints,
       gloryPoints:  l.gloryPoints  || 0,
       gloryEarned:  l.gloryEarned  || 0,
@@ -280,6 +279,7 @@ function exchangeToReserves(user: User, dollars: number, notices: Notices) {
   const km = amt / config.LEGION.RESERVE_EXCHANGE_RATE;
   user.dollars -= amt;
   l.reserves += km;
+  recordContribution(l, user.name, user.id, { reserves: km });
   db.save('legions');
   notices.push(`💱 Обменяно: $${u.fmt(amt)} → ${u.fmt(km)} РЕЗ. В казне легиона: ${u.fmt(l.reserves)} РЕЗ.`);
   return { reserves: l.reserves };
@@ -328,6 +328,12 @@ function buildBattle(user: User, buildingId: string, notices: Notices) {
   if (!b) throw new u.ApiError('Неизвестная боевая постройка');
   const lvl = (l.battleBuildings || {})[b.id] || 0;
   if (lvl >= b.maxLevel) throw new u.ApiError('Достигнут максимальный уровень');
+
+  // Уровень легиона гейтит уровень постройки
+  const reqLegion = config.battleBuildingLegionReq(b, lvl + 1);
+  if ((l.legionLevel || 1) < reqLegion) {
+    throw new u.ApiError(`Нужен ${reqLegion}-й уровень легиона (сейчас ${l.legionLevel || 1})`);
+  }
 
   const cost = battleBuildingCost(b, lvl);
 
@@ -448,6 +454,50 @@ function resolveTechQueue(): void {
 // ===================================================================
 // КАЗНАЧЕЙСТВО: лидер или любой участник вносит уши/жетоны в казну клана
 // ===================================================================
+// ── Учёт вкладов в казначейство ───────────────────────────────────
+// Пишем и накопительный рейтинг по игроку, и ленту истории («кто и сколько
+// внёс»). Валюты не смешиваем: уши, жетоны и РЕЗ считаются отдельно —
+// они не взаимозаменяемы, поэтому единого «очка вклада» намеренно нет.
+const TREASURY_HISTORY_MAX = 100;
+
+function recordContribution(l: any, name: string, userId: string | null,
+                            add: { ears?: number; tokens?: number; reserves?: number }): void {
+  ensureLegionFields(l);
+  const ears     = Math.max(0, Math.floor(add.ears     || 0));
+  const tokens   = Math.max(0, Math.floor(add.tokens   || 0));
+  const reserves = Math.max(0, Math.floor(add.reserves || 0));
+  if (!ears && !tokens && !reserves) return;
+
+  // Накопительный рейтинг (только для реальных игроков)
+  if (userId) {
+    const cur = l.contributions[userId] || { name, ears: 0, tokens: 0, reserves: 0, at: 0 };
+    cur.name = name;                       // имя могло смениться
+    cur.ears     += ears;
+    cur.tokens   += tokens;
+    cur.reserves += reserves;
+    cur.at = Date.now();
+    l.contributions[userId] = cur;
+  }
+
+  // Лента истории (новые записи в начале)
+  l.treasuryHistory.unshift({ at: Date.now(), userId: userId || null, name, ears, tokens, reserves });
+  if (l.treasuryHistory.length > TREASURY_HISTORY_MAX) {
+    l.treasuryHistory.length = TREASURY_HISTORY_MAX;
+  }
+}
+
+// Рейтинг вкладов: массив, отсортированный по ушам → жетонам → РЕЗ
+function contributionsView(l: any): any[] {
+  ensureLegionFields(l);
+  return Object.entries(l.contributions || {})
+    .map(([userId, v]: any) => ({
+      userId, name: v.name,
+      ears: v.ears || 0, tokens: v.tokens || 0, reserves: v.reserves || 0,
+    }))
+    .filter(x => x.ears > 0 || x.tokens > 0 || x.reserves > 0)
+    .sort((a, b) => (b.ears - a.ears) || (b.tokens - a.tokens) || (b.reserves - a.reserves));
+}
+
 function depositResources(user: User, ears: number, tokens: number, useAdmin: boolean, notices: Notices) {
   const l = legionOf(user);
   if (!l) throw new u.ApiError('Вы не состоите в легионе');
@@ -469,6 +519,11 @@ function depositResources(user: User, ears: number, tokens: number, useAdmin: bo
     if (ears   > 0) { user.ears   = (user.ears||0)   - ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.tokens = (user.tokens||0) - tokens; l.treasuryTokens += tokens; }
   }
+
+  // Внесённое из АДМИНСКИХ ресурсов в рейтинг вкладов не засчитываем
+  // (интерфейс прямо говорит: «не учитываются в статистике»), иначе рейтинг
+  // легко надуть подарками. В историю запись всё равно попадает.
+  recordContribution(l, user.name, useAdmin ? null : user.id, { ears, tokens });
 
   db.save('legions');
   db.save('users');
@@ -508,12 +563,22 @@ function shopBuy(user: User, itemId: string, qty: number, notices: Notices) {
   if (totalEars   > 0) l.treasuryEars   -= totalEars;
   if (totalTokens > 0) l.treasuryTokens -= totalTokens;
 
-  l.arsenal[itemId] = (l.arsenal[itemId] || 0) + qty;
+  // «Узел снабжения»: с шансом +5% за уровень покупка удваивается
+  // (цена та же). Максимум 50% на 10-м уровне.
+  const supplyDef = config.LEGION_BATTLE_BUILDING_BY_ID['supply'];
+  const supplyLvl = (l.battleBuildings || {})['supply'] || 0;
+  const doubleChance = Math.min(1, supplyLvl * ((supplyDef && supplyDef.perLvl) || 5) / 100);
+  const doubled = doubleChance > 0 && Math.random() < doubleChance;
+  const gained = doubled ? qty * 2 : qty;
+
+  l.arsenal[itemId] = (l.arsenal[itemId] || 0) + gained;
   db.save('legions');
 
   const costStr = totalEars > 0 ? `${totalEars} 👂 из казны` : `${totalTokens} 🎖 из казны`;
-  notices.push(`🛒 Куплено: ${item.name} ×${qty} за ${costStr} → арсенал легиона.`);
-  return { itemId, count: l.arsenal[itemId], treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
+  notices.push(`🛒 Куплено: ${item.name} ×${gained} за ${costStr} → арсенал легиона.`);
+  if (doubled) notices.push(`🚛 Узел снабжения сработал: партия удвоена (×${qty} → ×${gained})!`);
+  return { itemId, count: l.arsenal[itemId], doubled, gained,
+           treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
 }
 
 // ===================================================================
@@ -702,64 +767,6 @@ function declineChallenge(user: User, notices: Notices) {
 // ===================================================================
 // ЗАВЕРШИТЬ БОЙ ЛЕГИОНА (вызывается тикером или вручную)
 // Упрощённый расчёт: суммарная мощь + бонусы боевых построек.
-// ===================================================================
-function resolveActiveBattle(l: any, all: any, users: any): void {
-  if (!l.activeBattle || l.activeBattle.phase === 'done') return;
-  const enemy = all[l.activeBattle.enemyId];
-  if (!enemy) { l.activeBattle = null; return; }
-
-  // Мощь с учётом боевых построек легиона
-  function battlePower(legion) {
-    let pow = legionWarPower(legion);
-    const atkBonus = ((legion.battleBuildings || {})['warcmd'] || 0) * 0.05;
-    const defBonus = ((legion.battleBuildings || {})['fortress'] || 0) * 0.05;
-    return pow * (1 + atkBonus) * (1 + defBonus);
-  }
-
-  const myPow  = battlePower(l)    * (0.9 + Math.random() * 0.2);
-  const enPow  = battlePower(enemy) * (0.9 + Math.random() * 0.2);
-  const myWin  = myPow >= enPow;
-
-  const winner = myWin ? l : enemy;
-  const loser  = myWin ? enemy : l;
-
-  const loot = Math.floor((loser.reserves || 0) * 0.20); // 20% кланмарок победителю
-  loser.reserves  = Math.max(0, (loser.reserves || 0) - loot);
-  winner.reserves = (winner.reserves || 0) + loot + config.LEGION.BATTLE_LOOT_RESERVES;
-
-  // Очки рейтинга
-  winner.ratingPoints = (winner.ratingPoints || 0) + 10;
-  loser.ratingPoints  = Math.max(0, (loser.ratingPoints || 0) - 3);
-
-  const now = Date.now();
-  const histEntry = (won, enemyId, lootVal) => ({ at: now, enemyId, won, loot: lootVal });
-  l.battleHistory     = (l.battleHistory || []).concat(histEntry(myWin, enemy.id, myWin ? loot : -loot)).slice(-20);
-  enemy.battleHistory = (enemy.battleHistory || []).concat(histEntry(!myWin, l.id, !myWin ? loot : -loot)).slice(-20);
-
-  const msgW = `🏆 ПОБЕДА в бою легионов! Захвачено ${u.fmt(loot)} РЕЗ + ${config.LEGION.BATTLE_LOOT_RESERVES} РЕЗ.`;
-  const msgL = `💀 ПОРАЖЕНИЕ в бою легионов. Потеряно ${u.fmt(loot)} РЕЗ.`;
-
-  for (const memberId of winner.members) {
-    const m = users[memberId];
-    if (m) {
-      player.addXp(m, config.LEGION.BATTLE_XP_WIN, []);
-      notif.push(m.id, 'legion_battle_result', msgW, { won: true });
-    }
-  }
-  for (const memberId of loser.members) {
-    const m = users[memberId];
-    if (m) {
-      player.addXp(m, config.LEGION.BATTLE_XP_LOSS, []);
-      notif.push(m.id, 'legion_battle_result', msgL, { won: false });
-    }
-  }
-
-  l.activeBattle    = null;
-  enemy.activeBattle = null;
-}
-
-// ===================================================================
-// СТАРАЯ СИСТЕМА ВОЙН (автоматическая, через час)
 // ===================================================================
 function resolveWars(): void {
   const now = Date.now();
@@ -1061,6 +1068,13 @@ function adminDeposit(adminUser: User, legionId: string, amount: number, notices
     case 'tokens':   l.treasuryTokens = (l.treasuryTokens || 0) + amt; break;
     default: throw new u.ApiError('Неизвестный ресурс (валюта клана — только РЕЗ, уши, жетоны)');
   }
+  // В историю пишем, но в рейтинг игроков НЕ засчитываем: это начисление
+  // администрации, а не вклад участника (userId = null).
+  recordContribution(l, 'Администрация', null, {
+    reserves: res === 'reserves' ? amt : 0,
+    ears:     res === 'ears'     ? amt : 0,
+    tokens:   res === 'tokens'   ? amt : 0,
+  });
   db.save('legions');
   notices.push(`💰 Администратор пополнил ${LABEL[res] || res} легиона «${l.name}» на ${u.fmt(amt)}.`);
   return { legionId, reserves: l.reserves, treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };

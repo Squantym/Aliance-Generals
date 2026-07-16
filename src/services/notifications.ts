@@ -40,6 +40,11 @@ function push(targetUserId: string, kind: string, title: string, payload?: Recor
   });
   if (box.length > MAX_PER_USER) box.splice(0, box.length - MAX_PER_USER);
   db.save('notifications');
+
+  // Дублируем важные события push-уведомлением на телефон (если игрок
+  // подписан). Внутри — фильтр по типу события; ошибки глушатся, чтобы
+  // проблемы с push-сервисом не ломали игровое действие.
+  try { require('./push').onNotification(targetUserId, kind, title, payload || {}); } catch (e) {}
 }
 
 function unreadCount(user: UserLike): number {

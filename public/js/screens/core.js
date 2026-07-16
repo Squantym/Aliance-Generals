@@ -211,6 +211,28 @@ App.screens.home = async (c) => {
        <button class="btn btn-red mt" onclick="App.go('war')">Решить судьбу →</button></div>`
     : '';
 
+  // Предложение установить игру на телефон (PWA)
+  const installBanner = App.canInstall() ? `
+    <div class="card" style="border-color:var(--green);background:rgba(158,194,91,.06)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div class="name" style="margin:0">📲 Установить игру</div>
+        <span class="muted small" style="cursor:pointer" onclick="App.hideInstall()">✕</span>
+      </div>
+      <p class="muted small" style="margin:4px 0 8px">Иконка на рабочем столе, запуск на весь экран без адресной строки.</p>
+      <button class="btn btn-orange" style="width:100%" onclick="App.installApp()">Установить</button>
+    </div>` : '';
+
+  // Предложение включить push-уведомления (нападения, бои легиона)
+  const pushBanner = App.canEnablePush() ? `
+    <div class="card" style="border-color:var(--en)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div class="name" style="margin:0">🔔 Уведомления</div>
+        <span class="muted small" style="cursor:pointer" onclick="App.hidePush()">✕</span>
+      </div>
+      <p class="muted small" style="margin:4px 0 8px">Сообщим, когда на вас напали, начался бой легиона или перебили вашу ставку.</p>
+      <button class="btn" style="width:100%" onclick="App.enablePush()">Включить уведомления</button>
+    </div>` : '';
+
   // Награды от «Система» (сезоны, администрация) — забрать можно тут или в почте
   let rewardsBanner = '';
   let rewardsList = [];
@@ -310,6 +332,8 @@ App.screens.home = async (c) => {
 
   c.innerHTML = `
     ${legionChallengeBanner}
+    ${installBanner}
+    ${pushBanner}
     ${rewardsBanner}
     ${fatalityHtml}
     ${majorHtml}

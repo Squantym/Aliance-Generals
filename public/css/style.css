@@ -2000,21 +2000,66 @@ body.theme-cyber .img-frame {
 .bw-me-res { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); margin-top: 5px; }
 .bw-me-res b { color: var(--text); }
 
-/* Верхняя панель восстановления: HP / энергия / боеприпасы + кнопка */
-.bw-restore { border: 1px solid var(--gold); border-radius: 10px; padding: 10px; margin-bottom: 10px;
-  background: rgba(233,199,92,.06); }
-.bw-res-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.bw-res { display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 8px 4px; border-radius: 8px; background: rgba(255,255,255,.04); }
-.bw-res-ic { font-size: 20px; line-height: 1; }
-.bw-res-v { font-weight: 800; font-size: 14px; color: var(--text); }
-.bw-res-l { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
-/* Характеристики игрока в подготовке */
-.bw-stats { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
-.bw-stats-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
-.bw-stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; }
+.bb-locked { opacity: .6; }
+.bb-locked .name { color: var(--dim); }
+
+/* Панель разведки в подготовке */
+.bw-intel { border-color: var(--en) !important; }
+.bw-intel-line { font-size: 12px; margin-top: 4px; }
+.bw-intel-names { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.bw-intel-chip { font-size: 10.5px; padding: 2px 6px; border-radius: 10px;
+  background: rgba(255,255,255,.06); border: 1px solid var(--border-dim); }
+.bw-intel-block { margin-top: 6px; border-top: 1px solid var(--border-dim); padding-top: 4px; }
+.bw-intel-h { font-size: 10px; color: var(--dim); text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: 3px; }
+.bw-intel-dir, .bw-intel-stat { display: flex; align-items: baseline; gap: 6px;
+  font-size: 11.5px; padding: 2px 0; }
+.bw-intel-dir .grow, .bw-intel-stat .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Рейтинг вкладов в казну легиона и лента истории */
+.contrib-head { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--dim);
+  text-transform: uppercase; letter-spacing: .04em; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.contrib-head > span:not(.grow) { width: 52px; text-align: right; }
+.contrib-row { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 0;
+  border-bottom: 1px solid var(--border-dim); }
+.contrib-row.first { font-weight: 800; }
+.contrib-pos { width: 20px; flex-shrink: 0; }
+.contrib-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contrib-v { width: 52px; text-align: right; color: var(--text); font-weight: 700; }
+.hist-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; padding: 5px 0;
+  border-bottom: 1px solid var(--border-dim); }
+.hist-row .grow { overflow: hidden; text-overflow: ellipsis; }
+
+/* Компактные блоки фазы подготовки */
+.bw-prep-box { background: rgba(255,150,0,.08); border: 1px solid var(--orange);
+  border-radius: 8px; padding: 7px 8px; margin-bottom: 6px; }
+.bw-prep-box.ok  { background: rgba(0,200,0,.07); border-color: var(--green); }
+.bw-prep-box.dim { background: rgba(255,150,0,.04); border-color: var(--border); }
+.bw-prep-h { margin: 0 0 5px; font-size: 11.5px; font-weight: 700; }
+.bw-prep-row { display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 5px; font-size: 12.5px; }
+.bw-roles { display: flex; flex-direction: column; gap: 4px; }
+.bw-role-btn { width: 100%; padding: 7px 9px; text-align: left; font-size: 12px; min-height: 0; line-height: 1.25; }
+.bw-role-btn .small { font-size: 10px; }
+.bw-ready-btn { width: 100%; padding: 8px; font-size: 12.5px; min-height: 0; }
+
+/* Ресурсы в подготовке: компактные плитки с полоской и кнопкой восстановления */
+.bw-restore { border: 1px solid var(--border); border-radius: 8px; padding: 7px; margin-bottom: 6px; }
+.bw-res-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bw-res { padding: 5px 4px; border-radius: 6px; background: rgba(255,255,255,.03); text-align: center; }
+.bw-res-top { display: flex; align-items: baseline; justify-content: center; gap: 3px; font-size: 12px; }
+.bw-res-top b { color: var(--text); font-size: 13px; font-weight: 800; }
+.bw-res-max { color: var(--dim); font-size: 10px; }
+.bw-res-bar { height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); margin: 3px 0 2px; overflow: hidden; }
+.bw-res-bar i { display: block; height: 100%; }
+.bw-res-l { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .03em; }
+.bw-res-full { font-size: 9px; color: var(--green); margin-top: 3px; }
+.bw-res-btn { width: 100%; margin-top: 3px; padding: 3px 2px; font-size: 10px; min-height: 0; line-height: 1.3; }
+/* Характеристики игрока в подготовке — компактно, 2 колонки */
+.bw-stats { border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; margin-bottom: 6px; }
+.bw-stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 10px; }
 .bw-stats-grid > div { display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 12.5px; border-bottom: 1px solid var(--border-dim); padding: 3px 0; }
+  font-size: 11.5px; padding: 2px 0; }
 .bw-stats-grid > div span { color: var(--dim); }
 .bw-stats-grid > div b { color: var(--text); font-weight: 800; }
 /* Лог боя: базовый цвет по теме (бело/чёрный), спаны имён/урона красят сами себя */
@@ -2042,6 +2087,20 @@ body.theme-cyber .img-frame {
   border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid var(--border-dim); }
 .bw-tile-v { font-weight: 900; font-size: 17px; color: var(--text); }
 .bw-tile-l { font-size: 10px; color: var(--dim); text-align: center; }
+/* Топ-3 боя: каждая номинация — отдельная карточка со своим цветом */
+.bw-top-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.bw-top-card { border: 1px solid var(--border); border-left: 3px solid var(--top-c);
+  border-radius: 8px; padding: 7px 8px; background: rgba(255,255,255,.02); }
+.bw-top-h { font-size: 11.5px; font-weight: 800; color: var(--top-c);
+  display: flex; align-items: center; gap: 5px; margin-bottom: 4px;
+  text-transform: uppercase; letter-spacing: .03em; }
+.bw-top-row { display: flex; align-items: baseline; gap: 5px; font-size: 11.5px; padding: 2px 0; }
+.bw-top-row.first { font-weight: 800; }
+.bw-top-row + .bw-top-row { border-top: 1px solid var(--border-dim); }
+.bw-top-pos { width: 15px; flex-shrink: 0; }
+.bw-top-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.bw-top-val { color: var(--text); font-weight: 800; margin-left: auto; }
+@media (max-width: 420px) { .bw-top-grid { grid-template-columns: 1fr; } }
 /* Направления — компактная сетка чипов */
 .bw-dirs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
 .bw-dir {
@@ -2050,6 +2109,9 @@ body.theme-cyber .img-frame {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .bw-dir.sel { border: 2px solid var(--green); background: rgba(0,150,90,.12); }
+/* Плитка направления во время кулдауна перехода */
+.bw-dir.cd { opacity: .5; cursor: default; }
+.bw-dir-cd { display: block; font-size: 10px; color: var(--orange); font-weight: 700; margin-top: 2px; }
 .bw-dir .cnt { display: block; font-size: 11px; margin-top: 2px; }
 /* Строки бойцов (враги/союзники) — плотные */
 .bw-fighter { padding: 7px 0; border-bottom: 1px solid var(--border-dim); }

@@ -1,0 +1,57 @@
+{
+  "id": "/",
+  "name": "Альянс Генералов",
+  "short_name": "Генералы",
+  "description": "Военная текстовая стратегия: командуй армией, строй легион, побеждай в боях.",
+  "lang": "ru",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0a0d08",
+  "theme_color": "#0a0d08",
+  "categories": ["games", "strategy"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/img/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/img/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/img/pwa/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Война",
+      "short_name": "Война",
+      "url": "/#war",
+      "icons": [{ "src": "/img/pwa/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Легион",
+      "short_name": "Легион",
+      "url": "/#legion",
+      "icons": [{ "src": "/img/pwa/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Почта",
+      "short_name": "Почта",
+      "url": "/#mail",
+      "icons": [{ "src": "/img/pwa/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

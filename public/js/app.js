@@ -143,9 +143,149 @@ const App = {
     document.body.className = 'theme-' + t;
   },
 
+  // ── PWA: регистрация service worker и установка на телефон ──────
+  _deferredInstall: null,
+
+  // Игра уже запущена как установленное приложение?
+  isStandalone() {
+    // Аккуратно: если matchMedia недоступен (старый вебвью, тесты) —
+    // это не повод ронять рендер главного экрана.
+    try {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+    } catch (e) {}
+    return window.navigator && window.navigator.standalone === true;
+  },
+
+  isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  },
+
+  // Можно ли предложить установку (Android/десктоп — по событию браузера,
+  // iOS — вручную через «Поделиться», там события нет)
+  canInstall() {
+    if (App.isStandalone()) return false;
+    if (localStorage.getItem('pwa_hide') === '1') return false;
+    return !!App._deferredInstall || App.isIOS();
+  },
+
+  _initPwa() {
+    // Браузер сообщает, что игру можно установить
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      App._deferredInstall = e;
+      if ((location.hash || '').indexOf('home') >= 0 || !location.hash) App.rerender();
+    });
+    window.addEventListener('appinstalled', () => {
+      App._deferredInstall = null;
+      UI.toast('✅ Игра установлена');
+    });
+
+    if (!('serviceWorker' in navigator)) return;
+    // SW работает только по HTTPS (и на localhost при разработке)
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => { /* не критично для игры */ });
+    });
+  },
+
+  // Запуск установки: Android/десктоп — системное окно, iOS — инструкция
+  async installApp() {
+    if (App._deferredInstall) {
+      const e = App._deferredInstall;
+      App._deferredInstall = null;
+      e.prompt();
+      try { await e.userChoice; } catch (err) {}
+      App.rerender();
+      return;
+    }
+    if (App.isIOS()) {
+      await UI.confirm(
+        'Откройте меню «Поделиться» внизу браузера и выберите «На экран «Домой»» — игра появится отдельной иконкой и будет открываться на весь экран.',
+        { title: 'Установка на iPhone', icon: '📲', okText: 'Понятно' }
+      );
+    }
+  },
+
+  hideInstall() {
+    localStorage.setItem('pwa_hide', '1');
+    App.rerender();
+  },
+
+  // ── Push-уведомления на телефон ─────────────────────────────────
+  pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  },
+
+  // Стоит ли предлагать включить уведомления
+  canEnablePush() {
+    if (!App.pushSupported()) return false;
+    if (localStorage.getItem('push_hide') === '1') return false;
+    if (Notification.permission !== 'default') return false;   // уже решил (разрешил/запретил)
+    // На iOS push работает только в установленной на «Домой» игре
+    if (App.isIOS() && !App.isStandalone()) return false;
+    return true;
+  },
+
+  // VAPID-ключ приходит в base64url — Push API требует Uint8Array
+  _urlB64ToBytes(base64) {
+    const pad = '='.repeat((4 - (base64.length % 4)) % 4);
+    const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(b64);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  },
+
+  async enablePush() {
+    if (!App.pushSupported()) { UI.toast('⛔ Браузер не поддерживает уведомления'); return; }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        UI.toast(perm === 'denied' ? '🔕 Уведомления запрещены в настройках браузера' : '🔕 Уведомления не включены');
+        App.rerender();
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const { key } = await API.get('/api/push/key');
+      if (!key) { UI.toast('⛔ Уведомления пока не настроены на сервере'); return; }
+
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: App._urlB64ToBytes(key),
+        });
+      }
+      await API.post('/api/push/subscribe', { subscription: sub.toJSON() });
+      UI.toast('🔔 Уведомления включены');
+      App.rerender();
+    } catch (e) {
+      UI.toast('⛔ Не удалось включить уведомления');
+    }
+  },
+
+  async disablePush() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await API.post('/api/push/unsubscribe', { endpoint: sub.endpoint });
+        await sub.unsubscribe();
+      }
+      UI.toast('🔕 Уведомления выключены');
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  },
+
+  hidePush() {
+    localStorage.setItem('push_hide', '1');
+    App.rerender();
+  },
+
   async init() {
     App.setTheme(App.theme()); // применить сохранённую тему сразу
     window.addEventListener('hashchange', () => App.route());
+    App._initPwa();            // service worker + предложение установить игру
 
     // Если токен есть — пробуем сразу получить состояние игрока
     if (API.token()) {
@@ -332,6 +472,18 @@ const App = {
       const aEl = document.getElementById('bw-cd-action'); if (aEl) aEl.textContent = action + 'с';
       const mEl = document.getElementById('bw-cd-move');   if (mEl) mEl.textContent = move + 'с';
       const iEl = document.getElementById('bw-cd-item');   if (iEl) iEl.textContent = item + 'с';
+      // Отсчёт до возможности перейти на другое направление — прямо на плитках
+      document.querySelectorAll('[data-dir-cd]').forEach((el) => {
+        const tile = el.closest('.bw-dir');
+        if (move > 0) {
+          el.hidden = false;
+          el.textContent = `⏳ ${move}с`;
+          if (tile) tile.classList.add('cd');
+        } else {
+          el.hidden = true;
+          if (tile) tile.classList.remove('cd');
+        }
+      });
       // Кнопки «Применить» предмета — показываем таймер КД и блокируем,
       // пока идёт кулдаун предмета (как на кнопках атаки).
       document.querySelectorAll('[data-item-cd]').forEach((btn) => {
@@ -564,14 +716,76 @@ const App = {
     }
 
     const hint = mode === 'active'
-      ? '<p class="muted small" style="margin:6px 0 0">Тап «Применить»: по себе/направлению — сразу, по врагу/союзнику — выберите цель.</p>'
+      ? '<p class="muted small" style="margin:6px 0 0">Нажмите на предмет: по себе/направлению — применится сразу, по врагу/союзнику — выберите цель.</p>'
       : (mode === 'prep' && arsenal.length ? '<p class="muted small" style="margin:6px 0 0">Нажмите «Взять», чтобы выбрать предмет из арсенала легиона.</p>'
         : (mode === 'prep' && !arsenal.length && gear.length === 0 ? '<p class="muted small" style="margin:6px 0 0">Арсенал легиона пуст. Лидер может закупить предметы в разделе легиона.</p>' : ''));
 
     return `${banner}<div class="bw-card" style="border-color:var(--orange)">
-      <b style="color:var(--orange)">🎒 Боевой пояс (${gear.length}/${maxSlots})</b>
+      <b style="color:var(--orange)">🎒 Арсенал (${gear.length}/${maxSlots})</b>
       <div class="bw-belt" style="margin-top:8px">${cells}</div>
       ${hint}
+    </div>`;
+  },
+
+  // Панель разведки в подготовке: показывает ровно то, что открыл
+  // «Разведывательный центр» легиона (уровни накопительные).
+  _bwIntelHtml(b) {
+    if (!b.intelActive) return '';
+    const lvl = b.intelLevel || 0;
+    const foes = (b.allCombatants || []).filter(c => c.side !== b.mySide);
+
+    if (lvl < 1) {
+      return `<div class="bw-card tight bw-intel">
+        <b style="font-size:12px">🔭 Разведка</b>
+        <p class="muted small" style="margin:4px 0 0">Данных о противнике нет. Постройте «Разведывательный центр», чтобы видеть, кто зашёл в бой, ещё до его начала.</p>
+      </div>`;
+    }
+
+    let inner = `<div class="bw-intel-line">👁 Зашли в бой: <b>${foes.length}</b> ${lvl >= 2 ? '' : '<span class="muted small">(направления скрыты — нужен ур. 2)</span>'}</div>`;
+
+    if (lvl >= 1) {
+      inner += `<div class="bw-intel-names">${foes.map(f => `<span class="bw-intel-chip">${UI.esc(f.name || '???')}</span>`).join('')}</div>`;
+    }
+
+    if (lvl >= 2) {
+      // Роли по направлениям — ИКОНКАМИ, без привязки имён (так задумано)
+      const byDir = {};
+      foes.forEach(f => { if (f.direction) (byDir[f.direction] = byDir[f.direction] || []).push(f.roleIcon || '❔'); });
+      const rows = (b.dirNames || []).map((nm, i) => {
+        const icons = byDir[i + 1] || [];
+        return `<div class="bw-intel-dir"><span class="grow">${nm}</span><span>${icons.length ? icons.join(' ') : '—'}</span></div>`;
+      }).join('');
+      inner += `<div class="bw-intel-block"><div class="bw-intel-h">📍 Расстановка врага</div>${rows}</div>`;
+    }
+
+    if (lvl >= 3) {
+      const rows = foes.filter(f => f.stats).map(f => `
+        <div class="bw-intel-stat">
+          <span class="grow">${f.roleIcon || ''} ${UI.esc(f.name || '')}</span>
+          <span class="muted small">≈${UI.fmtNum(f.stats.atk)} ⚔ / ≈${UI.fmtNum(f.stats.def)} 🛡 / ${f.stats.critPct}% 💥 / ${f.stats.dodgePct}% 🌀</span>
+        </div>`).join('');
+      if (rows) inner += `<div class="bw-intel-block"><div class="bw-intel-h">📊 Примерные характеристики</div>${rows}</div>`;
+    }
+
+    if (lvl >= 4) {
+      const rows = foes.map(f => {
+        const g = f.gear || [];
+        return `<div class="bw-intel-stat"><span class="grow">${UI.esc(f.name || '')}</span>
+          <span class="muted small">${g.length ? g.map(x => UI.esc(x.name)).join(', ') : 'пусто'}</span></div>`;
+      }).join('');
+      inner += `<div class="bw-intel-block"><div class="bw-intel-h">🎒 Арсенал врага</div>${rows}</div>`;
+    }
+
+    if (lvl >= 5 && b.enemyBuildings) {
+      const rows = b.enemyBuildings.map(x => `
+        <div class="bw-intel-stat"><span class="grow">${UI.esc(x.name)}</span>
+          <span class="${x.level ? 'gold' : 'muted'} small">ур. ${x.level}/${x.maxLevel}</span></div>`).join('');
+      inner += `<div class="bw-intel-block"><div class="bw-intel-h">🏗 Постройки «${UI.esc(b.enemyLegionName || 'врага')}»</div>${rows}</div>`;
+    }
+
+    return `<div class="bw-card tight bw-intel">
+      <b style="font-size:12px">🔭 Разведка <span class="muted small">(ур. ${lvl}/5)</span></b>
+      ${inner}
     </div>`;
   },
 
@@ -726,80 +940,94 @@ const App = {
     // ── ФАЗА ПОДГОТОВКИ ──────────────────────────────────────────
     if (b.phase === 'prep') {
       if (!b.me) {
-        html += `<div style="background:rgba(255,150,0,.1);border:1px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:12px">
-          <p style="margin:0 0 10px">Выберите роль — все роли умеют атаковать:</p>
-          <div style="display:flex;flex-direction:column;gap:10px">
-            <button id="bw-join-assault" class="btn btn-orange" style="width:100%;padding:14px;text-align:left">
+        html += `<div class="bw-prep-box">
+          <p class="bw-prep-h">Выберите роль — все роли умеют атаковать:</p>
+          <div class="bw-roles">
+            <button id="bw-join-assault" class="btn btn-orange bw-role-btn">
               🎯 <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>
             </button>
-            <button id="bw-join-guardian" class="btn btn-orange" style="width:100%;padding:14px;text-align:left">
+            <button id="bw-join-guardian" class="btn btn-orange bw-role-btn">
               🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона, прикрытие</span>
             </button>
-            <button id="bw-join-medic" class="btn btn-orange" style="width:100%;padding:14px;text-align:left">
+            <button id="bw-join-medic" class="btn btn-orange bw-role-btn">
               ➕ <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>
             </button>
           </div>
         </div>`;
       } else {
         const ready = b.me.ready;
-        // ── Верхняя панель: текущие HP/энергия/боеприпасы + восстановление ──
+        // ── Ресурсы: компактно, кнопка восстановления под каждым
+        //    (и только если ресурс НЕ полный)
         if (b.myStats) {
           const s = b.myStats;
+          const resCell = (icon, cur, max, label, kind, cost) => {
+            const full = cur >= max;
+            const pct = max > 0 ? Math.round((cur / max) * 100) : 0;
+            const color = pct > 60 ? 'var(--green)' : pct > 25 ? 'var(--am)' : 'var(--red)';
+            return `
+              <div class="bw-res">
+                <div class="bw-res-top"><span>${icon}</span><b>${cur}</b><span class="bw-res-max">/${max}</span></div>
+                <div class="bw-res-bar"><i style="width:${pct}%;background:${color}"></i></div>
+                <div class="bw-res-l">${label}</div>
+                ${full
+                  ? '<div class="bw-res-full">полный</div>'
+                  : `<button class="btn bw-res-btn" data-restore="${kind}">＋ <span class="ic-gold"></span> ${cost}</button>`}
+              </div>`;
+          };
           html += `
             <div class="bw-restore">
               <div class="bw-res-row">
-                <div class="bw-res"><span class="bw-res-ic">❤️</span><span class="bw-res-v">${s.hp}/${s.maxHp}</span><span class="bw-res-l">HP</span></div>
-                <div class="bw-res"><span class="bw-res-ic">⚡</span><span class="bw-res-v">${s.energy}/${s.maxEnergy}</span><span class="bw-res-l">Энергия</span></div>
-                <div class="bw-res"><span class="bw-res-ic">🔫</span><span class="bw-res-v">${s.ammo}/${s.maxAmmo}</span><span class="bw-res-l">Боеприпасы</span></div>
+                ${resCell('❤️', s.hp, s.maxHp, 'HP', 'hp', s.costs.hp)}
+                ${resCell('⚡', s.energy, s.maxEnergy, 'Энергия', 'energy', s.costs.energy)}
+                ${resCell('🔫', s.ammo, s.maxAmmo, 'Патроны', 'ammo', s.costs.ammo)}
               </div>
-              <button id="bw-restore" class="btn btn-orange" style="width:100%;margin-top:8px">💉 Восстановить всё за <span class="ic-gold"></span> ${s.restoreCost}</button>
             </div>
             <div class="bw-stats">
-              <div class="bw-stats-title">📊 Ваши характеристики в бою</div>
               <div class="bw-stats-grid">
                 <div><span>⚔ Атака</span><b>${UI.fmtNum(s.atk)}</b></div>
                 <div><span>🛡 Защита</span><b>${UI.fmtNum(s.def)}</b></div>
                 <div><span>💥 Крит</span><b>${s.critPct}%</b></div>
                 <div><span>🌀 Уворот</span><b>${s.dodgePct}%</b></div>
-                <div><span>🔫 Боеприпасы</span><b>${s.ammo}/${s.maxAmmo}</b></div>
-                <div><span>❤️ HP</span><b>${s.hp}/${s.maxHp}</b></div>
-                <div><span>⚡ Энергия</span><b>${s.energy}/${s.maxEnergy}</b></div>
+                ${b.me.role === 'medic' ? `<div><span>➕ Крит-лечение</span><b>${s.critHealPct}%</b></div>` : ''}
               </div>
-              <p class="muted small" style="margin:6px 0 0">Атака и защита — с учётом бонусов построек легиона.</p>
+              <p class="muted small" style="margin:5px 0 0;font-size:10px">Атака и защита — с бонусами построек легиона.</p>
             </div>`;
         }
         // Блок роли + кнопка Готов/Не готов
-        html += `<div style="background:${ready?'rgba(0,200,0,.08)':'rgba(255,150,0,.1)'};border:1px solid var(--${ready?'green':'orange'});border-radius:8px;padding:12px;margin-bottom:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        html += `<div class="bw-prep-box ${ready?'ok':''}">
+          <div class="bw-prep-row">
             <b>${ROLE_ICON[b.me.role]} ${b.me.roleName}</b>
             <span style="color:var(--${ready?'green':'orange'})">${ready ? '✅ Готов' : '⏳ Не готов'}</span>
           </div>
-          <button id="bw-ready" class="btn ${ready?'btn-inline':'btn-green'}" style="width:100%;padding:12px">
+          <button id="bw-ready" class="btn ${ready?'btn-inline':'btn-green'} bw-ready-btn">
             ${ready ? '❌ Не готов (сменить роль)' : '✅ Готов к бою'}
           </button>
-          ${!ready ? '<p class="muted small" style="margin:8px 0 0">После «Готов» выберите направление. В бой попадут только готовые бойцы с направлением.</p>' : ''}
+          ${!ready ? '<p class="muted small" style="margin:5px 0 0;font-size:10px">После «Готов» выберите направление. В бой попадут только готовые бойцы с направлением.</p>' : ''}
         </div>`;
 
         // ── Пока НЕ готов — можно сменить роль (выбрать заново) ──
         if (!ready) {
-          html += `<div style="background:rgba(255,150,0,.06);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
-            <p style="margin:0 0 8px;font-weight:bold">Сменить роль:</p>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <button id="bw-join-assault" class="btn ${b.me.role==='assault'?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+          html += `<div class="bw-prep-box dim">
+            <p class="bw-prep-h">Сменить роль:</p>
+            <div class="bw-roles">
+              <button id="bw-join-assault" class="btn ${b.me.role==='assault'?'btn-green':'btn-inline'} bw-role-btn">
                 🎯 <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>${b.me.role==='assault'?' ✓':''}
               </button>
-              <button id="bw-join-guardian" class="btn ${b.me.role==='guardian'?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+              <button id="bw-join-guardian" class="btn ${b.me.role==='guardian'?'btn-green':'btn-inline'} bw-role-btn">
                 🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона</span>${b.me.role==='guardian'?' ✓':''}
               </button>
-              <button id="bw-join-medic" class="btn ${b.me.role==='medic'?'btn-green':'btn-inline'}" style="width:100%;padding:12px;text-align:left">
+              <button id="bw-join-medic" class="btn ${b.me.role==='medic'?'btn-green':'btn-inline'} bw-role-btn">
                 ➕ <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>${b.me.role==='medic'?' ✓':''}
               </button>
             </div>
           </div>`;
         }
 
-        // ── Боевой пояс: 3 слота, можно взять предметы из арсенала ──
+        // ── Арсенал: слоты (базово 2, +1 за уровень «Центра снаряжения») ──
         html += App._gearSlotsHtml(b, 'prep');
+
+        // ── Разведка: что открыл «Разведывательный центр» легиона ──
+        html += App._bwIntelHtml(b);
 
         // Выбор направления — только если готов
         if (ready) {
@@ -899,6 +1127,7 @@ const App = {
             ${me.ammo!=null?`<span>🔫 <b>${me.ammo}</b></span>`:''}
             ${me.energy!=null?`<span><span class="ic-energy"></span> <b>${me.energy}</b></span>`:''}
             <span>⏱ действие <b id="bw-cd-action">${myCDs.action||0}с</b></span>
+            <span>🧭 переход <b id="bw-cd-move">${myCDs.move||0}с</b></span>
           </div>
           <div class="bw-fighter-acts">
             ${me.role==='medic'?`<button class="btn btn-green" id="bw-heal-self">➕ Лечить себя</button>`:''}
@@ -935,11 +1164,12 @@ const App = {
           return `<div class="bw-dir ${sel?'sel':''}" id="bw-dir-${d.dir}">
             ${sel?'📍':''} <b>${d.name}</b>
             <span class="cnt">🟢${al} 🔴${en2}</span>
+            ${sel ? '' : `<span class="bw-dir-cd" data-dir-cd hidden></span>`}
           </div>`;
         }).join('')}
       </div>`;
 
-      // ── Боевой пояс — сразу применяется (см. _gearSlotsHtml) ──
+      // ── Арсенал бойца (внизу, под списком бойцов) ──
       html += App._gearSlotsHtml(b, 'active');
 
       // ── Чат боя (общий + командный) внизу ──
@@ -972,7 +1202,6 @@ const App = {
     const r = b.finalReport;
     const scores = r ? r.activityScores : {};
     const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
-    const sideDot = (s) => s === mySide ? '🟢' : '🔴';
 
     // Мои личные результаты
     const myDetail = (r && b.me && r.playerDetails) ? r.playerDetails[b.me.userId] : null;
@@ -988,21 +1217,28 @@ const App = {
         </div>
       </div>` : '';
 
-    // Топ-3 по характеристике
+    // Топ-3 по характеристике — каждая номинация отдельной карточкой
     const top3 = r ? r.top3 : null;
-    const top3List = (arr, fmt) => (arr && arr.length)
-      ? arr.map((x, i) => `<div class="kv"><span class="k">${['🥇','🥈','🥉'][i]||''} ${sideDot(x.side)} ${UI.esc(x.name)}</span><span class="v">${fmt(x.value)}</span></div>`).join('')
-      : '<div class="muted small" style="padding:2px 0">—</div>';
+    const MEDAL = ['🥇', '🥈', '🥉'];
+    const topCard = (icon, title, arr, color, fmt) => (arr && arr.length) ? `
+      <div class="bw-top-card" style="--top-c:${color}">
+        <div class="bw-top-h"><span>${icon}</span>${title}</div>
+        ${arr.map((x, i) => `
+          <div class="bw-top-row ${i === 0 ? 'first' : ''}">
+            <span class="bw-top-pos">${MEDAL[i] || ''}</span>
+            <span class="bw-top-name" style="color:${x.side === mySide ? '#2ecc40' : '#ff4d4d'}">${UI.esc(x.name)}</span>
+            <span class="bw-top-val">${fmt(x.value)}</span>
+          </div>`).join('')}
+      </div>` : '';
     const top3Block = top3 ? `
-      <div class="bw-card" style="border-color:var(--gold)">
-        <p style="font-weight:bold;margin:0 0 6px;color:var(--gold)">🏅 Топ-3 боя</p>
-        <div style="font-size:12.5px;font-weight:bold;margin:6px 0 2px">🎯 Урон</div>
-        ${top3List(top3.damage,  (v)=>UI.fmtNum(v))}
-        <div style="font-size:12.5px;font-weight:bold;margin:8px 0 2px">➕ Лечение</div>
-        ${top3List(top3.healing, (v)=>UI.fmtNum(v))}
-        <div style="font-size:12.5px;font-weight:bold;margin:8px 0 2px">🛡️ Защита (прикрытий)</div>
-        ${top3List(top3.defense, (v)=>String(v))}
-        ${(top3.kills && top3.kills.length) ? `<div style="font-size:12.5px;font-weight:bold;margin:8px 0 2px">💀 Убийства</div>${top3List(top3.kills, (v)=>String(v))}` : ''}
+      <div class="bw-result-section" style="border-color:var(--gold)">
+        <p class="bw-result-h" style="color:var(--gold)">🏅 Топ-3 боя</p>
+        <div class="bw-top-grid">
+          ${topCard('🎯', 'Урон', top3.damage, 'var(--red)', (v) => UI.fmtNum(v))}
+          ${topCard('➕', 'Лечение', top3.healing, 'var(--green)', (v) => UI.fmtNum(v))}
+          ${topCard('🛡️', 'Прикрытия', top3.defense, 'var(--en)', (v) => String(v))}
+          ${topCard('💀', 'Убийства', top3.kills, 'var(--gold)', (v) => String(v))}
+        </div>
       </div>` : '';
 
     // Клановая сводка одной стороны
@@ -1075,18 +1311,24 @@ const App = {
       readyBtn.onclick = () => api('/api/legion/battle/ready', { ready: newReady });
     }
 
-    // Восстановление ресурсов в подготовке (за стоимость допинга)
-    const restoreBtn = win.querySelector('#bw-restore');
-    if (restoreBtn) {
-      restoreBtn.onclick = () => api('/api/legion/battle/restore', {}, (r) => {
-        UI.toast(`💉 Восстановлено за 🪙 ${r.cost}`);
-      });
-    }
+    // Восстановление ресурсов в подготовке — отдельно по каждому
+    win.querySelectorAll('[data-restore]').forEach((btn) => {
+      btn.onclick = () => api('/api/legion/battle/restore', { kind: btn.dataset.restore });
+    });
 
-    // Направления
+    // Направления. Во время кулдауна перехода не шлём запрос впустую —
+    // сообщаем, сколько осталось (сервер всё равно отклонил бы).
     for (let d = 1; d <= 5; d++) {
       const btn = win.querySelector('#bw-dir-'+d);
-      if (btn) btn.onclick = () => api('/api/legion/battle/direction', { direction: d });
+      if (!btn) continue;
+      btn.onclick = () => {
+        if (btn.classList.contains('cd')) {
+          const left = (btn.querySelector('[data-dir-cd]') || {}).textContent || '';
+          UI.toast('🧭 Переход недоступен: ' + left.replace('⏳ ', 'ещё '));
+          return;
+        }
+        api('/api/legion/battle/direction', { direction: d });
+      };
     }
 
     // Кнопки «Взять» в пустых слотах боевого пояса (фаза подготовки)

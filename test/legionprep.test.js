@@ -34,27 +34,32 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  ok('есть атака/защита', typeof ms.atk==='number' && typeof ms.def==='number');
  ok('есть крит% и уворот%', typeof ms.critPct==='number' && typeof ms.dodgePct==='number');
  ok('есть HP/энергия/боеприпасы с максимумами', ms.maxHp>0 && ms.maxEnergy>0 && ms.maxAmmo>0);
- ok('есть стоимость восстановления', ms.restoreCost>0);
+ ok('есть цены восстановления по каждому ресурсу', ms.costs && ms.costs.hp>0 && ms.costs.energy>0 && ms.costs.ammo>0);
  // Проверим направления в DTO
  ok('направление Гъадакьи в DTO', JSON.stringify(mine).includes('Гъадакьи'));
  ok('направление Кӏаречӏ в DTO', JSON.stringify(mine).includes('Кӏаречӏ'));
 
  console.log('\n[3] Стоимость восстановления = сумме допинг-восстановителей');
- const expCost = c.MARKET_ITEM_BY_ID.medkit.gold + c.MARKET_ITEM_BY_ID.energy.gold + c.MARKET_ITEM_BY_ID.ammo.gold;
- eq('restoreCost = medkit+energy+ammo', ms.restoreCost, expCost);
+ eq('цена HP = аптечка', ms.costs.hp, c.MARKET_ITEM_BY_ID.medkit.gold);
+ eq('цена энергии = энергетик', ms.costs.energy, c.MARKET_ITEM_BY_ID.energy.gold);
+ eq('цена патронов = цинк', ms.costs.ammo, c.MARKET_ITEM_BY_ID.ammo.gold);
 
  console.log('\n[4] Восстановление тратит золото и наполняет ресурсы');
  // Потратим ресурсы и золото дадим
- const mx=player.maxima(u1); u1.res.hp.cur=1; u1.res.en.cur=1; u1.res.am.cur=1; u1.gold=expCost+100; db.save('users');
- const rr=legion.restoreForBattle(u1,N());
- eq('списано золото', u1.gold, 100);
+ const mx=player.maxima(u1); u1.res.hp.cur=1; u1.res.en.cur=1; u1.res.am.cur=1;
+ const total=ms.costs.hp+ms.costs.energy+ms.costs.ammo;
+ u1.gold=total+100; db.save('users');
+ legion.restoreForBattle(u1,'hp',N());
+ legion.restoreForBattle(u1,'energy',N());
+ legion.restoreForBattle(u1,'ammo',N());
+ eq('списано золото за три ресурса по отдельности', u1.gold, 100);
  eq('HP восстановлено', Math.floor(u1.res.hp.cur), Math.floor(mx.hp));
  eq('энергия восстановлена', Math.floor(u1.res.en.cur), Math.floor(mx.en));
  eq('боеприпасы восстановлены', Math.floor(u1.res.am.cur), Math.floor(mx.am));
 
  console.log('\n[5] Без золота восстановление отклонено');
  u1.res.hp.cur=1; u1.gold=0; db.save('users');
- let threw=false; try{ legion.restoreForBattle(u1,N()); }catch(e){ threw=true; }
+ let threw=false; try{ legion.restoreForBattle(u1,'hp',N()); }catch(e){ threw=true; }
  ok('нет золота → ошибка', threw);
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);

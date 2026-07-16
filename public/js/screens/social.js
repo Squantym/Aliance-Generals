@@ -89,14 +89,23 @@ async function renderGroupScreen(c, kind) {
           }
           const isBuilt = b.level > 0;
           const btnLabel = !isBuilt ? '🏗 Построить' : `⬆️ Улучшить до ур.${b.level + 1}`;
+          // Единицы бонуса зависят от постройки
+          const unit = b.apply === 'member_limit' ? ' чел.'
+                     : b.apply === 'gear_slots'   ? ' слот.'
+                     : b.apply === 'war_speed'    ? ' сек.'
+                     : b.apply === 'war_intel'    ? ' ур.'
+                     : '%';
           return `
-            <div class="card">
+            <div class="card${b.locked ? ' bb-locked' : ''}">
               <div class="name">${UI.esc(b.name)} <span class="muted">ур. ${b.level}/${b.maxLevel}</span></div>
               <div class="muted small">${UI.esc(b.desc)}</div>
-              <div class="kv mt"><span class="k">Бонус</span><span class="v">${b.bonusNow}${b.apply === 'gear_slots' || b.apply === 'member_limit' ? (b.apply === 'member_limit' ? ' чел.' : ' слот.') : '%'}</span></div>
+              <div class="kv mt"><span class="k">Бонус</span><span class="v">${b.bonusNow}${unit}</span></div>
               ${c ? `<div class="kv"><span class="k">Цена</span><span class="v">${resStr}</span></div>
-                     ${L.isLeader ? `<button class="btn btn-orange mt" data-btbld="${b.id}">${btnLabel}</button>`
-                                  : '<p class="muted small mt center">Только лидер</p>'}`
+                     <div class="kv"><span class="k">Нужен уровень легиона</span><span class="v ${b.locked ? 'red' : 'gold'}">${b.reqLegionLevel} <span class="muted small">(у вас ${b.legionLevel})</span></span></div>
+                     ${b.locked
+                        ? `<p class="muted small mt center">🔒 Нужен ${b.reqLegionLevel}-й уровень легиона</p>`
+                        : (L.isLeader ? `<button class="btn btn-orange mt" data-btbld="${b.id}">${btnLabel}</button>`
+                                      : '<p class="muted small mt center">Только лидер</p>')}`
                 : '<p class="gold center mt small">Макс. уровень ✔</p>'}
             </div>`;
         }).join('');
@@ -342,6 +351,38 @@ async function renderGroupScreen(c, kind) {
               <input type="number" min="1" placeholder="Адм. жетонов 🎖" id="dep-adm-tokens">
               <button class="btn btn-orange btn-inline" id="dep-adm-res-go">Внести в казну</button>
             </div>` : ''}
+          </div>
+
+          <div class="card">
+            <div class="name">🏆 Рейтинг вкладов</div>
+            ${(L.contributions && L.contributions.length) ? `
+            <div class="contrib-head">
+              <span class="grow">Игрок</span><span>👂</span><span>🎖</span><span>РЕЗ</span>
+            </div>
+            ${L.contributions.map((x, i) => `
+              <div class="contrib-row ${i === 0 ? 'first' : ''}">
+                <span class="contrib-pos">${['🥇','🥈','🥉'][i] || (i + 1)}</span>
+                <span class="grow contrib-name">${UI.esc(x.name)}</span>
+                <span class="contrib-v">${x.ears ? UI.fmtNum(x.ears) : '—'}</span>
+                <span class="contrib-v">${x.tokens ? UI.fmtNum(x.tokens) : '—'}</span>
+                <span class="contrib-v">${x.reserves ? UI.fmtNum(x.reserves) : '—'}</span>
+              </div>`).join('')}
+            <p class="muted small mt">Считается только внесённое из своих трофеев — ресурсы от администрации в рейтинг не идут.</p>
+            ` : '<p class="muted small">Пока никто ничего не вносил в казну.</p>'}
+          </div>
+
+          <div class="card">
+            <div class="name">📜 История казны</div>
+            ${(L.treasuryHistory && L.treasuryHistory.length) ? L.treasuryHistory.map(h => {
+              const parts = [];
+              if (h.ears)     parts.push(`<b class="gold">${UI.fmtNum(h.ears)}</b> 👂`);
+              if (h.tokens)   parts.push(`<b class="gold">${UI.fmtNum(h.tokens)}</b> 🎖`);
+              if (h.reserves) parts.push(`<b class="gold">${UI.fmtNum(h.reserves)}</b> РЕЗ`);
+              return `<div class="hist-row">
+                <span class="grow"><b>${UI.esc(h.name)}</b> вложил в казну ${parts.join(' + ')}</span>
+                <span class="muted small">${UI.fmtAgo(h.at)}</span>
+              </div>`;
+            }).join('') : '<p class="muted small">Пополнений пока не было.</p>'}
           </div>`;
 
         // ── Навигация по вкладкам ─────────────────────────────────────

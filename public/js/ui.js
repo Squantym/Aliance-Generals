@@ -152,6 +152,20 @@ const UI = {
     return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   },
 
+  // Сколько времени прошло: «5 мин назад», «3 ч назад», «2 дн назад».
+  // Для старых записей (больше недели) показываем обычную дату.
+  fmtAgo(ts) {
+    const sec = Math.floor((Date.now() - ts) / 1000);
+    if (sec < 60)     return 'только что';
+    const min = Math.floor(sec / 60);
+    if (min < 60)     return `${min} мин назад`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24)     return `${hrs} ч назад`;
+    const days = Math.floor(hrs / 24);
+    if (days <= 7)    return `${days} дн назад`;
+    return UI.fmtDate(ts);
+  },
+
   // Всплывающее уведомление внизу экрана
   toast(msg) {
     const box = document.getElementById('toasts');

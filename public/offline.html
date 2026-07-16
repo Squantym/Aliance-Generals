@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" content="#0a0d08">
+  <title>Нет связи — Альянс Генералов</title>
+  <style>
+    :root {
+      --bg: #0a0d08; --panel: #141a0f; --border: #2c3a1d;
+      --text: #cdd9b4; --dim: #7e8b64; --gold: #e9c75c; --green: #9ec25b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+      text-align: center;
+    }
+    .box { max-width: 380px; width: 100%; }
+    .star { font-size: 46px; color: var(--gold); text-shadow: 0 0 18px rgba(233,199,92,.35); }
+    .logo {
+      font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+      font-size: clamp(15px, 5vw, 20px); color: #b9cb78; margin: 6px 0 20px;
+      white-space: nowrap;
+    }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px 16px;
+    }
+    h1 { font-size: 17px; margin: 0 0 8px; color: var(--green); }
+    p { margin: 0 0 14px; color: var(--dim); font-size: 13.5px; line-height: 1.5; }
+    button {
+      width: 100%; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer;
+      color: #1a1a1a; background: linear-gradient(180deg, #c07a16, #8e5a0d);
+      border: none; border-radius: 8px;
+    }
+    button:active { opacity: .85; }
+    .hint { margin-top: 12px; font-size: 11.5px; color: var(--dim); }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="star">★</div>
+    <div class="logo">Альянс Генералов</div>
+    <div class="card">
+      <h1>Связь со штабом потеряна</h1>
+      <p>Проверьте интернет-соединение. Игра идёт на сервере, поэтому без сети боевые действия недоступны.</p>
+      <button id="retry">Попробовать снова</button>
+      <div class="hint">Соединение восстановится — страница откроется сама.</div>
+    </div>
+  </div>
+  <script>
+    document.getElementById('retry').onclick = function () { location.replace('/'); };
+    // Как только сеть вернулась — сразу уходим в игру
+    window.addEventListener('online', function () { location.replace('/'); });
+  </script>
+</body>
+</html>

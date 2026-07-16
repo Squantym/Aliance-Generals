@@ -66,7 +66,15 @@ const MIME: Record<string, string> = {
 // Принцип: чем дольше кеш — тем меньше трафика. Файлы с хэшем в URL
 // (?v=хэш) можно кешировать на ГОД как immutable: при изменении файла
 // меняется хэш → меняется URL → браузер скачивает новую версию сам.
-function cacheControlFor(ext: string, hasHashParam: boolean): string {
+// Служебные файлы PWA. Их НЕЛЬЗЯ кешировать надолго:
+//  • /sw.js — сам воркер. Закешируется на сутки → игроки залипнут на старой
+//    версии клиента, и починить это удалённо будет тяжело.
+//  • /sw-config.json — аварийный выключатель воркера, должен долетать сразу.
+//  • /manifest.json — правки иконок/названия должны подхватываться.
+const PWA_NO_CACHE = ['/sw.js', '/sw-config.json', '/manifest.json'];
+
+function cacheControlFor(ext: string, hasHashParam: boolean, relPath?: string): string {
+  if (relPath && PWA_NO_CACHE.includes(relPath)) return 'no-cache';
   if (['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.gif', '.avif'].includes(ext)) {
     return 'public, max-age=31536000, immutable'; // 1 год
   }
@@ -213,7 +221,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, {
       'ETag': etag,
-      'Cache-Control': cacheControlFor(ext, hasHashParam),
+      'Cache-Control': cacheControlFor(ext, hasHashParam, rel),
     });
     res.end();
     return;
@@ -237,7 +245,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
 
   const headers: Headers = {
     'Content-Type': contentType,
-    'Cache-Control': cacheControlFor(ext, hasHashParam),
+    'Cache-Control': cacheControlFor(ext, hasHashParam, rel),
     'ETag': etag,
     'Vary': 'Accept-Encoding',
     'Content-Length': cached.buf.length,

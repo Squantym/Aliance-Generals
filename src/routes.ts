@@ -331,7 +331,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/legion/battle/guard',      act((req, n) => legion.guard(req.user, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/item',       act((req, n) => legion.useItem(req.user, req.body.itemId, req.body.targetId, n)));
   app.add('POST', '/api/legion/battle/leave',      act((req, n) => legion.leaveBattle(req.user, n)));
-  app.add('POST', '/api/legion/battle/restore',    act((req, n) => legion.restoreForBattle(req.user, n)));
+  app.add('POST', '/api/legion/battle/restore',    act((req, n) => legion.restoreForBattle(req.user, req.body.kind, n)));
 
   // ---------- Чат, почта, зал славы, достижения ----------
   app.add('GET', '/api/chat', (req) => social.chatGet(req.query.after));
@@ -394,6 +394,15 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));
   app.add('POST', '/api/support/create', act((req, n) => support.createTicket(req.user, req.body.category, req.body.subject, req.body.text, n)));
   app.add('POST', '/api/support/reply',  act((req, n) => support.replyTicket(req.user, req.body.ticketId, req.body.text, n)));
+
+  // Push-уведомления на телефон
+  const push = require('./services/push');
+  app.add('GET',  '/api/push/key',         () => ({ key: push.getPublicKey() }));
+  app.add('GET',  '/api/push/status',      (req) => ({ devices: push.deviceCount(req.user) }));
+  app.add('POST', '/api/push/subscribe',   act((req) => push.subscribe(req.user, req.body.subscription)));
+  app.add('POST', '/api/push/unsubscribe', act((req) => push.unsubscribe(req.user, req.body.endpoint)));
+  app.add('GET',  '/api/admin/push/stats', () => push.adminStats(), { admin: true });
+  app.add('POST', '/api/admin/push/broadcast', act((req, n) => push.broadcast(req.user, req.body.title, req.body.body, n)), { admin: true });
 
   // Награды-письма от «Система» (сезоны, администрация)
   const rewards = require('./services/rewards');

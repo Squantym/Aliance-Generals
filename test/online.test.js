@@ -57,7 +57,8 @@ function mkCombatant(userId, name, side, lastSeen) {
 }
 
 // Легионы A и B со ссылкой на общий бой
-legionsMap['lA'] = { id: 'lA', name: 'Альфа', activeBattle: { battleId: 'B1' }, arsenal: {}, battleBuildings: {} };
+// Врагов в подготовке видно только с «Разведцентром» (ур.2+ — ещё и направления)
+legionsMap['lA'] = { id: 'lA', name: 'Альфа', activeBattle: { battleId: 'B1' }, arsenal: {}, battleBuildings: { intel: 2 } };
 legionsMap['lB'] = { id: 'lB', name: 'Браво', activeBattle: { battleId: 'B1' }, arsenal: {}, battleBuildings: {} };
 
 // Бойцы: наблюдатель (онлайн, сторона A), союзник (офлайн, A), враг (онлайн, B), враг (офлайн, B)

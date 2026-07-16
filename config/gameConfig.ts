@@ -978,6 +978,9 @@ const TROPHIES = [
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
   { id: 'sewing',    name: 'Набор полевого хирурга',      desc: 'Шанс мгновенно восстановить отрезанное ухо +6% за уровень (макс. 60%).', perLvl: 6, apply: 'ear_restore' },
+  // Крит-лечение медика в бою легиона. Раньше шанс ошибочно зависел от
+  // ЛОВКОСТИ (стат уворота) — теперь у него собственный трофей.
+  { id: 'red_cross', name: 'Орден «Красный крест»',       desc: 'Шанс критического лечения в бою легиона +4.5% за уровень (база 5%, на макс. уровне — 50%). Крит-лечение восстанавливает союзнику 100–330 HP вместо 20–40. Работает только для роли «Медик».', perLvl: 4.5, apply: 'crit_heal', expensive: true },
   { id: 'butcher',   name: 'Тесак мясника',               desc: 'Шанс отрезать СРАЗУ ОБА уха при фаталити +6% за уровень (макс. 60%).', perLvl: 6, apply: 'double_ear', expensive: true },
   { id: 'hospital',  name: 'Полевой госпиталь',           desc: '−5% к цене лечения в госпитале за уровень (макс. 50%).', perLvl: 5, apply: 'hospital' },
   { id: 'supply',    name: 'Снабженческие линии',         desc: '−5% к содержанию техники за уровень (макс. 50%).',     perLvl: 5,   apply: 'upkeep' },
@@ -1102,7 +1105,7 @@ const LEGION = {
   TECH_DAYS_GROWTH: 1.5,
 
   // ---------- Арсенал ----------
-  GEAR_SLOTS_DEFAULT: 3,
+  GEAR_SLOTS_DEFAULT: 2,   // базово 2 слота; «Центр снаряжения» добавляет до +3
 
   // ---------- Состав легиона ----------
   BASE_MEMBER_LIMIT: 10,                 // базовый лимит участников
@@ -1121,112 +1124,124 @@ const LEGION = {
 // Улучшения требуют уши (ear) или жетоны (token) из казначейства.
 // dollarCost — цена первой постройки; каждый следующий уровень: ×priceGrowth долларов.
 // ===================================================================
+// ===================================================================
+// БОЕВЫЕ ПОСТРОЙКИ ЛЕГИОНА
+//
+// Цена задаётся ДВУМЯ точками: сколько стоит 1-й уровень и сколько —
+// последний. Промежуточные считаются геометрической прогрессией
+// (см. battleBuildingCostAt). Так ценник читается сразу, без домножений.
+//
+// legionReq[i] — какой уровень ЛЕГИОНА нужен, чтобы взять (i+1)-й уровень
+// постройки.
+// ===================================================================
 const LEGION_BATTLE_BUILDINGS = [
   {
     id: 'warcmd',
     name: '⚔️ Штаб наступления',
-    desc: 'Атака в боях легиона +5% за уровень (макс. +25%).',
-    maxLevel: 5,
-    dollarCost: 500_000_000_000,   // $500 млрд за постройку (ур.1)
-    priceGrowth: 2.5,
-    resource: 'ear',
-    earBase: 60,
-    earGrowth: 1.5,
-    apply: 'war_atk',
+    desc: 'Атака в боях легиона +5% за уровень (макс. +50%).',
+    maxLevel: 10,
     perLvl: 5,
+    apply: 'war_atk',
+    legionReq: [1, 1, 1, 2, 2, 3, 3, 4, 4, 5],
+    cost: { reserves: [1_000_000_000, 5_000_000_000_000], ears: [500, 30_000] },
   },
   {
     id: 'fortress',
     name: '🛡️ Бастион',
-    desc: 'Защита в боях легиона +5% за уровень (макс. +25%).',
-    maxLevel: 5,
-    dollarCost: 500_000_000_000,
-    priceGrowth: 2.5,
-    resource: 'ear',
-    earBase: 60,
-    earGrowth: 1.5,
-    apply: 'war_def_battle',
+    desc: 'Защита в боях легиона +5% за уровень (макс. +50%).',
+    maxLevel: 10,
     perLvl: 5,
+    apply: 'war_def_battle',
+    legionReq: [1, 1, 1, 2, 2, 3, 3, 4, 4, 5],
+    cost: { reserves: [1_000_000_000, 5_000_000_000_000], tokens: [500, 30_000] },
   },
   {
     id: 'speedlab',
     name: '⚡ Лаборатория быстродействия',
-    desc: 'Сокращает время действий в боях легиона на 10% за уровень (макс. −50%).',
+    desc: 'Сокращает паузу между действиями в бою легиона на 0.5 сек за уровень: 3.5 сек → 1 сек на макс. уровне.',
     maxLevel: 5,
-    dollarCost: 750_000_000_000,
-    priceGrowth: 2.5,
-    resource: 'token',
-    tokenBase: 80,
-    tokenGrowth: 1.5,
+    perLvl: 0.5,                 // секунд за уровень
     apply: 'war_speed',
-    perLvl: 10,
+    legionReq: [1, 2, 3, 4, 5],
+    cost: { reserves: [700_000_000, 3_000_000_000_000], ears: [1_000, 15_000], tokens: [1_000, 15_000] },
   },
   {
     id: 'gear_slots',
-    name: '🎒 Расширенный боевой пояс',
-    desc: '+1 слот для вспомогательного предмета в бою (макс. +3 слота, итого 5).',
+    name: '🎒 Центр снаряжения',
+    desc: '+1 слот арсенала в бою за уровень (базово 2 слота, максимум 5).',
     maxLevel: 3,
-    dollarCost: 600_000_000_000,
-    priceGrowth: 3,
-    resource: 'token',
-    tokenBase: 50,
-    tokenGrowth: 2,
-    apply: 'gear_slots',
     perLvl: 1,
+    apply: 'gear_slots',
+    legionReq: [1, 3, 5],
+    cost: { reserves: [100_000_000, 1_000_000_000_000], ears: [1_500, 10_000], tokens: [1_500, 10_000] },
   },
   {
     id: 'medcorps',
     name: '🏥 Военно-медицинский корпус',
-    desc: 'Восстановление HP участника в ходе боя легиона ускоряется на 8% за уровень.',
+    desc: '+10% к скорости восстановления HP, энергии и боеприпасов за уровень. Действует ТОЛЬКО во время боя легиона.',
     maxLevel: 5,
-    dollarCost: 450_000_000_000,
-    priceGrowth: 2.5,
-    resource: 'token',
-    tokenBase: 70,
-    tokenGrowth: 1.5,
-    apply: 'war_heal_speed',
-    perLvl: 8,
+    perLvl: 10,
+    apply: 'war_regen',
+    legionReq: [1, 2, 3, 4, 5],
+    cost: { reserves: [850_000_000_000, 4_500_000_000_000], ears: [3_000, 12_000], tokens: [3_000, 12_000] },
   },
   {
     id: 'intel',
     name: '🔭 Разведывательный центр',
-    desc: 'Перед боем легиона открывает состав армии и снаряжение противников.',
-    maxLevel: 3,
-    dollarCost: 1_000_000_000_000,
-    priceGrowth: 3,
-    resource: 'both',
-    earBase: 50,  earGrowth: 2,
-    tokenBase: 50, tokenGrowth: 2,
-    apply: 'war_intel',
+    desc: 'Открывает данные о противнике на этапе подготовки. Ур.1 — список зашедших в бой; ур.2 — их роли по направлениям; ур.3 — примерные характеристики; ур.4 — взятые предметы арсенала; ур.5 — постройки вражеского легиона.',
+    maxLevel: 5,
     perLvl: 1,
+    apply: 'war_intel',
+    legionReq: [1, 2, 3, 4, 5],
+    cost: { reserves: [500_000_000_000, 5_000_000_000_000], tokens: [1_000, 16_000] },
   },
   {
     id: 'supply',
     name: '🚛 Узел снабжения',
-    desc: 'Пополняет арсенал клана: +5% к запасу каждого предмета за уровень.',
-    maxLevel: 5,
-    dollarCost: 350_000_000_000,
-    priceGrowth: 2,
-    resource: 'token',
-    tokenBase: 60,
-    tokenGrowth: 1.5,
-    apply: 'arsenal_cap',
+    desc: 'Шанс +5% за уровень получить вдвое больше предметов при покупке в магазине легиона (макс. 50%).',
+    maxLevel: 10,
     perLvl: 5,
+    apply: 'shop_double',
+    legionReq: [1, 1, 2, 3, 3, 4, 5, 5, 6, 7],
+    cost: { reserves: [300_000_000_000, 5_600_000_000_000], ears: [700, 20_000], tokens: [700, 20_000] },
   },
   {
     id: 'barracks',
     name: '🏟️ Казармы',
-    desc: '+5 участников в легионе за уровень (макс. +40, итого 50 бойцов).',
-    maxLevel: 8,
-    dollarCost: 200_000_000_000,
-    priceGrowth: 2,
-    resource: 'token',
-    tokenBase: 40,
-    tokenGrowth: 1.5,
-    apply: 'member_limit',
+    desc: '+5 участников в легионе за уровень (макс. +50).',
+    maxLevel: 10,
     perLvl: 5,
+    apply: 'member_limit',
+    legionReq: [1, 1, 1, 2, 2, 3, 3, 4, 4, 5],
+    cost: { reserves: [470_000_000_000, 10_000_000_000_000], ears: [500, 30_000], tokens: [500, 30_000] },
   },
 ];
+
+// Цена КОНКРЕТНОГО уровня постройки (level = 1..maxLevel).
+// Между первой и последней точкой — геометрическая прогрессия, результат
+// округляется до 3 значащих цифр, чтобы ценник читался.
+function roundSig(x, digits = 3) {
+  if (!x) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(x)) - (digits - 1));
+  return Math.round(x / mag) * mag;
+}
+function battleBuildingCostAt(b, level) {
+  const lerp = (pair) => {
+    if (!pair) return 0;
+    const [a, z] = pair;
+    if (b.maxLevel <= 1) return Math.round(z);
+    const t = (level - 1) / (b.maxLevel - 1);
+    return roundSig(a * Math.pow(z / a, t));
+  };
+  const c = b.cost || {};
+  return { reserves: lerp(c.reserves), ears: lerp(c.ears), tokens: lerp(c.tokens) };
+}
+// Требуемый уровень легиона для уровня постройки (level = 1..maxLevel)
+function battleBuildingLegionReq(b, level) {
+  const arr = b.legionReq || [];
+  return arr[Math.max(0, Math.min(arr.length - 1, level - 1))] || 1;
+}
+
 const LEGION_BATTLE_BUILDING_BY_ID = Object.fromEntries(LEGION_BATTLE_BUILDINGS.map(b => [b.id, b]));
 
 // ===================================================================
@@ -1454,6 +1469,9 @@ const BATTLE = {
   XP_WIN_MIN: 4,  XP_WIN_MAX: 7,
   XP_LOSS_MIN: 1, XP_LOSS_MAX: 2,
   CRIT_BASE: 0.05, CRIT_PER_CRUELTY: 0.005, CRIT_MAX_CHANCE: 0.50, CRIT_MULT: 2.0,
+  // Крит-лечение медика в бою легиона: базовый шанс без трофея. Сверху
+  // добавляется трофей «Орден «Красный крест»» (+4.5%/ур.) → максимум 50%.
+  CRIT_HEAL_BASE: 0.05, CRIT_HEAL_MAX: 0.50,
   DODGE_PER_AGILITY: 0.005, DODGE_MAX: 0.50,
   // Шанс «числового апсета»: сильнейший наносит меньше урона, чем получает
   // (для непредсказуемости). Исход боя всё равно по мощи — сильнейший
@@ -1787,7 +1805,7 @@ export = {
   DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, dailyAllBonusGold,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID,
-  LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID,
+  LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID, battleBuildingCostAt, battleBuildingLegionReq,
   LEGION_TECHS, LEGION_TECH_BY_ID,
   LEGION_SHOP_ITEMS, LEGION_SHOP_ITEM_BY_ID,
   BATTLE, EARS, BOT_NAMES,

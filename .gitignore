@@ -3,3 +3,26 @@ dist/
 data/
 *.log
 .DS_Store
+
+# Секреты — НИКОГДА не коммитить (пароль MongoDB, ключи VAPID и т.п.)
+.env
+.env.*
+!.env.example
+
+# Android: ключ подписи и артефакты сборки
+android/android.keystore
+android/*.keystore
+android/*.jks
+android/twa-manifest.json
+android/app-release-signed.apk
+android/*.apk
+android/*.aab
+android/build/
+android/app/build/
+android/.gradle/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/store_icon.png
+android/app/src/main/res/

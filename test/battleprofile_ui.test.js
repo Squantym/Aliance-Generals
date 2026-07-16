@@ -26,14 +26,14 @@ let passed=0; const ok=(n,c)=>{assert.ok(c,'❌ '+n);passed++;console.log('  ✅
  console.log('\n[2] Окно боя (подготовка): панель восстановления + характеристики');
  const b={ phase:'prep', mySide:'A', prepSecsLeft:300, allCombatants:[],
    me:{ userId:'x', role:'assault', roleName:'Штурмовик', ready:true, hp:50, maxHp:100, ammo:10, energy:20, direction:null, gear:[], stats:{} },
-   myStats:{ atk:12345, def:9876, critPct:15.5, dodgePct:8.0, hp:50, maxHp:100, energy:20, maxEnergy:40, ammo:10, maxAmmo:30, restoreCost:67 },
+   myStats:{ atk:12345, def:9876, critPct:15.5, dodgePct:8.0, hp:50, maxHp:100, energy:20, maxEnergy:40, ammo:10, maxAmmo:30, costs:{hp:22,energy:20,ammo:25} },
    directions:[{dir:1,name:'Гъадакьи',allies:[]},{dir:5,name:'Кӏаречӏ',allies:[]}],
    arsenal:[], myGear:[], maxSlots:3, log:[] };
  const win=document.createElement('div'); win.id='battle-window'; document.body.appendChild(win);
  let err=null; try{ App._renderBattleContent(win,b); }catch(e){ err=e; }
  ok('render без ошибок', !err); if(err) console.log('   '+(err.stack||err).split('\n').slice(0,2).join(' | '));
- ok('панель восстановления есть', /bw-restore/.test(win.innerHTML));
- ok('кнопка восстановления с ценой 67', /bw-restore["'][\s\S]*67|Восстановить всё[\s\S]*67/.test(win.innerHTML) || (win.querySelector('#bw-restore')&&/67/.test(win.querySelector('#bw-restore').textContent)));
+ ok('панель ресурсов есть', /bw-res-row/.test(win.innerHTML));
+ ok('кнопки восстановления под каждым неполным ресурсом', win.querySelectorAll('[data-restore]').length===3);
  ok('блок характеристик есть', /bw-stats/.test(win.innerHTML));
  ok('показаны характеристики (атака/крит/уворот)', /Атака/.test(win.innerHTML) && /15\.5/.test(win.innerHTML) && /Уворот/.test(win.innerHTML));
  ok('направления переименованы', /Гъадакьи/.test(win.innerHTML) && /Кӏаречӏ/.test(win.innerHTML));

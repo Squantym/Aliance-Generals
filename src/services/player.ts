@@ -21,6 +21,24 @@ function trophyDiscountPct(user: User, applyKey: string): number {
   catch (e) { return 0; }
 }
 
+// Множитель скорости восстановления от «Военно-медицинского корпуса» легиона.
+// Работает ТОЛЬКО пока игрок реально участвует в активном бою легиона
+// (фаза prep/active и он в списке бойцов). Вне боя всегда 1.
+function medcorpsRegenMul(user: User): number {
+  try {
+    if (!user.legionId) return 1;
+    const l = require('../core/db').load('legions', {})[user.legionId];
+    if (!l || !l.activeBattle || !l.battleBuildings) return 1;
+    const lvl = l.battleBuildings['medcorps'] || 0;
+    if (lvl <= 0) return 1;
+    const battle = require('../core/db').load('battles', {})[l.activeBattle.battleId];
+    if (!battle || battle.phase === 'done') return 1;
+    if (!battle.combatants || !battle.combatants[user.id]) return 1;   // не участвует
+    const def = config.LEGION_BATTLE_BUILDING_BY_ID['medcorps'];
+    return 1 + lvl * ((def && def.perLvl) || 10) / 100;
+  } catch (e) { return 1; }
+}
+
 // Итоговая мощь атаки/защиты с учётом ВСЕХ модификаторов:
 //   - страна (typeMul, atkAll, defAll, defType)  — уже в buildArmy
 //   - модернизация Mk1/Mk2                       — уже в buildArmy
@@ -513,16 +531,20 @@ function syncSuper(user: User, notices: Notices): any {
 function refresh(user: User): void {
   const now = Date.now();
   const mx = maxima(user);
-  applyRegen(user.res.hp, mx.hp, config.REGEN.hp, now);
+  // «Военно-медицинский корпус» легиона ускоряет восстановление ВСЕХ ресурсов,
+  // но СТРОГО пока игрок находится в активном бою легиона (вне боя — не даёт
+  // ничего). Делим интервал на множитель: +10% за уровень.
+  const med = medcorpsRegenMul(user);
+  applyRegen(user.res.hp, mx.hp, Math.max(5, Math.round(config.REGEN.hp / med)), now);
   // Трофей «Логистика» снижает интервал регенерации энергии,
   // допинг «Адреналин-Х» дополнительно ускоряет (делим интервал на множитель)
   const enInterval = Math.max(5, Math.round(
-    config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100) / effMul(user, 'energy_regen_pct')
+    config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100) / effMul(user, 'energy_regen_pct') / med
   ));
   applyRegen(user.res.en, mx.en, enInterval, now, config.REGEN.EN_PER_TICK);
   // Трофей «Боевая логистика» + допинг «Конвой» ускоряют боеприпасы
   const amInterval = Math.max(15, Math.round(
-    config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct')
+    config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct') / med
   ));
   applyRegen(user.res.am, mx.am, amInterval, now);
 

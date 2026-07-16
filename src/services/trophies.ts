@@ -190,6 +190,15 @@ function critPower(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'license');
   return (levelOf(user, 'license') * (def ? def.perLvl : 0)) / 100;
 }
+// Шанс КРИТИЧЕСКОГО ЛЕЧЕНИЯ медика в бою легиона. Собственный трофей
+// «Орден «Красный крест»»: база 5% + 4.5% за уровень → 50% на максимуме.
+// (Раньше шанс брался от ловкости — стата уворота, что не имело смысла.)
+function critHealChance(user: User): number {
+  const def = config.TROPHIES.find((t) => t.id === 'red_cross');
+  const pct = levelOf(user, 'red_cross') * (def ? def.perLvl : 0);
+  return Math.min(config.BATTLE.CRIT_HEAL_MAX, config.BATTLE.CRIT_HEAL_BASE + pct / 100);
+}
+
 // Множитель энергии на миссиях от radar (меньше = выгоднее)
 function missionEnergyMul(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'radar');
@@ -199,5 +208,5 @@ function missionEnergyMul(user: User): number {
 
 export = {
   list, startUpgrade, boostUpgrade, bonusOf, discountPct, checkCompleted,
-  atkBonus, defBonus, critPower, missionEnergyMul, spyLevel, bankHackLevel, mineLevel,
+  atkBonus, defBonus, critPower, critHealChance, missionEnergyMul, spyLevel, bankHackLevel, mineLevel,
 };

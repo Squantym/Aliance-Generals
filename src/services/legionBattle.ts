@@ -20,6 +20,7 @@ import config = require('../../config/gameConfig');
 import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
+import trophies = require('./trophies');
 import notif = require('./notifications');
 import type { User, Notices, Battle, Combatant } from '../types';
 
@@ -32,7 +33,7 @@ const MAX_PER_DIR = 5;
 const PREP_MS     = 10 * 60 * 1000;   // 10 мин подготовки
 const BATTLE_MS   = 60 * 60 * 1000;   // 1 час бой
 const MOVE_CD_MS  = 30 * 1000;        // кулдаун смены направления
-const ACTION_CD_MS = 3 * 1000;        // кулдаун действия
+const ACTION_CD_BASE_SEC = 3.5;       // база паузы между действиями (сек)
 const ITEM_CD_MS  = 10 * 1000;        // кулдаун предмета
 const DONE_GRACE_MS = 10 * 60 * 1000; // сколько после боя ещё отдаём его итоги клиенту
 const GUARD_SEC   = 15;               // прикрытие 15 сек
@@ -129,16 +130,48 @@ function addActivity(battle: Battle, userId: string, type: string, amount?: numb
 // ───────────────────────────────────────────────────────────────────
 // Урон: щит, иммунитет, отражение, прикрытие
 // ───────────────────────────────────────────────────────────────────
+
+// ── Бонусы БОЕВЫХ построек легиона ────────────────────────────────
+// Раньше эти постройки не влияли на бой вообще: warcmd/fortress читались
+// только в мёртвом коде автобоя, а speedlab/medcorps/intel/supply не
+// читались нигде. Теперь всё подключено здесь.
+function bbLevel(legionId: string | null | undefined, id: string): number {
+  if (!legionId) return 0;
+  const l = legions()[legionId];
+  if (!l || !l.battleBuildings) return 0;
+  return l.battleBuildings[id] || 0;
+}
+
+// Множитель атаки/защиты от построек: +5% за уровень
+function bbPowerMul(legionId: string | null | undefined, kind: 'atk' | 'def'): number {
+  const id = kind === 'atk' ? 'warcmd' : 'fortress';
+  const def = config.LEGION_BATTLE_BUILDING_BY_ID[id];
+  return 1 + bbLevel(legionId, id) * ((def && def.perLvl) || 5) / 100;
+}
+
+// Пауза между действиями: база 3.5 сек, «Лаборатория быстродействия»
+// снимает по 0.5 сек за уровень → 1 сек на 5-м уровне.
+function actionCdMs(legionId: string | null | undefined): number {
+  const def = config.LEGION_BATTLE_BUILDING_BY_ID['speedlab'];
+  const perLvl = (def && def.perLvl) || 0.5;
+  const lvl = bbLevel(legionId, 'speedlab');
+  const sec = Math.max(1, ACTION_CD_BASE_SEC - lvl * perLvl);
+  return Math.round(sec * 1000);
+}
+
 function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId: string): any {
   const c = battle.combatants[targetId];
-  if (!c || c.hp <= 0) return { actual: 0, shieldAbsorbed: 0 };
+  if (!c || c.hp <= 0) return { actual: 0, shieldAbsorbed: 0, hitId: targetId };
 
-  // Прикрытие защитником
+  // Прикрытие защитником: урон уходит на него. Возвращаем guardedBy, чтобы
+  // вызывающий код honestly написал в лог, КТО принял удар на себя, и начислил
+  // статистику получения урона правильному бойцу.
   const guardianId = (battle.guardLinks || {})[targetId];
   if (guardianId) {
     const g = battle.combatants[guardianId];
     if (g && g.hp > 0 && now() < ((battle.guardExpiry || {})[guardianId] || 0)) {
-      return applyDamage(battle, guardianId, rawDmg, sourceId);
+      const res = applyDamage(battle, guardianId, rawDmg, sourceId);
+      return { ...res, guardedBy: g.name, guardedFor: c.name };
     } else {
       delete (battle.guardLinks || {})[targetId];
     }
@@ -148,7 +181,7 @@ function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId:
   const immune = (c.statusEffects || []).find(e => e.type === 'immunity' && e.expiresAt > now());
   if (immune) {
     log(battle, `🔵 ${c.name} под куполом — урон поглощён`, 'info');
-    return { actual: 0, shieldAbsorbed: 0, immune: true };
+    return { actual: 0, shieldAbsorbed: 0, immune: true, hitId: targetId };
   }
 
   // Отражающий щит
@@ -160,9 +193,10 @@ function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId:
     if (enemies.length > 0) {
       const victim = enemies[Math.floor(Math.random() * enemies.length)];
       log(battle, `🪞 ${c.name} отразил удар → ${victim.name}`, 'info');
-      return applyDamage(battle, victim.userId, rawDmg, sourceId);
+      const res = applyDamage(battle, victim.userId, rawDmg, sourceId);
+      return { ...res, reflectedBy: c.name };
     }
-    return { actual: 0, shieldAbsorbed: 0 };
+    return { actual: 0, shieldAbsorbed: 0, hitId: targetId };
   }
 
   // Защитник (guardian) больше НЕ имеет щита — только HP (+ пассивное
@@ -176,15 +210,29 @@ function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId:
   // Очки активности — штраф за получение урона
   if (actual > 0) addActivity(battle, targetId, 'damage_taken');
 
-  return { actual, shieldAbsorbed };
+  return { actual, shieldAbsorbed, hitId: targetId };
 }
 
 // ───────────────────────────────────────────────────────────────────
 // Расчёт урона между двумя бойцами
 // ───────────────────────────────────────────────────────────────────
-function calcDamage(attacker: Combatant, defender: Combatant, aUser: User, dUser: User): any {
-  const aAtk = player.totalPower(aUser, 'atk').power * attacker.roleMul.atk;
-  const dDef = player.totalPower(dUser, 'def').power * defender.roleMul.def;
+function calcDamage(attacker: Combatant, defender: Combatant, aUser: User, dUser: User, opts?: { allowDodge?: boolean }): any {
+  // Бонусы боевых построек легиона: «Штаб наступления» усиливает атаку,
+  // «Бастион» — защиту (+5% за уровень).
+  const aAtk = player.totalPower(aUser, 'atk').power * attacker.roleMul.atk
+    * bbPowerMul(aUser.legionId, 'atk');
+  const dDef = player.totalPower(dUser, 'def').power * defender.roleMul.def
+    * bbPowerMul(dUser.legionId, 'def');
+
+  // УВОРОТ защищающегося — как в обычном бою: 0.5% за ловкость, потолок 50%,
+  // допинг «Призрак» добавляет сверх лимита (итого максимум 70%).
+  // Уворот обнуляет урон целиком.
+  const allowDodge = !opts || opts.allowDodge !== false;
+  if (allowDodge) {
+    const dodgeChance = Math.min(config.BATTLE.DODGE_MAX, dUser.skills.agility * config.BATTLE.DODGE_PER_AGILITY)
+      + (player.effMul(dUser, 'dodge_bonus') - 1);
+    if (Math.random() < dodgeChance) return { dmg: 0, crit: false, dodged: true };
+  }
 
   const ratio = dDef / Math.max(1, aAtk);
   let dmg;
@@ -201,17 +249,22 @@ function calcDamage(attacker: Combatant, defender: Combatant, aUser: User, dUser
   const boost = (attacker.statusEffects || []).find(e => e.type === 'dmg_boost' && e.expiresAt > now());
   if (boost) dmg = Math.round(dmg * (1 + (boost as any).bonus / 100));
 
-  // Крит
   // Крит (допинг «Ястреб» добавляет сверх лимита 50%)
   const critChance = Math.min(0.50, 0.05 + aUser.skills.cruelty * 0.005) + (player.effMul(aUser, 'crit_bonus') - 1);
   const crit = Math.random() < critChance;
-  if (crit) dmg = Math.round(dmg * 2.0);
+  if (crit) {
+    // Как в обычном бою: база ×2, плюс трофей «Лицензия на убийство»
+    // (на максимуме +200% → итог ×6 от базового урона). Раньше трофей
+    // здесь не учитывался вовсе — крит упирался в 45×2 = 90.
+    const critTrophyBonus = trophies.critPower(aUser);   // 0..2.0
+    dmg = Math.round(dmg * config.BATTLE.CRIT_MULT * (1 + critTrophyBonus));
+  }
   dmg = u.clamp(dmg, 1, 200);
 
   // Снижение урона для защитника
   dmg = Math.round(dmg * (1 - defender.roleMul.dmgReduce));
 
-  return { dmg, crit };
+  return { dmg, crit, dodged: false };
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -341,7 +394,7 @@ function attack(user: User, targetUserId: string, notices: Notices) {
   if (!c || !c.alive || c.hp <= 0) throw new u.ApiError('Вы выбыли из боя');
   if (c.direction === null) throw new u.ApiError('Сначала выберите направление');
 
-  const cdLeft = Math.ceil((c.lastActionAt + ACTION_CD_MS - now()) / 1000);
+  const cdLeft = Math.ceil((c.lastActionAt + actionCdMs(user.legionId) - now()) / 1000);
   if (cdLeft > 0) throw new u.ApiError(`Подождите ещё ${cdLeft} сек`);
 
   const stunned = (c.statusEffects || []).find(e => e.type === 'stun' && e.expiresAt > now());
@@ -361,27 +414,35 @@ function attack(user: User, targetUserId: string, notices: Notices) {
   const targetUser = users[targetUserId];
   if (!targetUser) throw new u.ApiError('Игрок не найден');
 
-  const { dmg, crit } = calcDamage(c, tc, user, targetUser);
-  const { actual, shieldAbsorbed } = applyDamage(battle, targetUserId, dmg, user.id);
+  const { dmg, crit, dodged } = calcDamage(c, tc, user, targetUser);
+  const res = applyDamage(battle, targetUserId, dmg, user.id);
+  const { actual, guardedBy } = res;
+  // Урон мог уйти не в цель: её прикрыл защитник или сработало отражение.
+  // Статистику и гибель считаем по тому, кто РЕАЛЬНО получил удар.
+  const hit = battle.combatants[res.hitId] || tc;
 
   // Списываем 1 боеприпас
   user.res.am.cur = Math.max(0, user.res.am.cur - 1);
 
   c.lastActionAt = now();
   c.stats.dmgDealt += actual;
-  tc.stats.dmgTaken += actual;
+  hit.stats.dmgTaken += actual;
 
   addActivity(battle, user.id, 'attack_hit');
 
-  let msg = `⚔️ ${user.name} → ${tc.name} [${DIR_NAMES[(c.direction || 1)-1]}]: ${actual} урона`;
+  let msg = dodged
+    ? `⚔️ ${user.name} → ${tc.name} [${DIR_NAMES[(c.direction || 1)-1]}]: 🌀 ПРОМАХ — ${tc.name} увернулся!`
+    : `⚔️ ${user.name} → ${tc.name} [${DIR_NAMES[(c.direction || 1)-1]}]: ${actual} урона`;
   if (crit) msg += ' 💥 КРИТ!';
+  // Честно показываем перенаправление урона на защитника
+  if (!dodged && guardedBy) msg += ` 🛡️ ${guardedBy} прикрыл ${res.guardedFor} — урон принял на себя!`;
 
-  if (tc.hp <= 0) {
-    tc.alive = false;
+  if (hit.hp <= 0 && hit.alive) {
+    hit.alive = false;
     c.stats.kills++;
     addActivity(battle, user.id, 'kill');
-    msg += ` 💀 ${tc.name} ВЫБЫЛ!`;
-    const deadUser = users[targetUserId];
+    msg += ` 💀 ${hit.name} ВЫБЫЛ!`;
+    const deadUser = users[hit.userId];
     if (deadUser) deadUser.res.hp.cur = 1;
   }
 
@@ -407,7 +468,7 @@ function heal(user: User, targetUserId: string, notices: Notices) {
   if (c.role !== 'medic') throw new u.ApiError('Только медики могут лечить');
   if (c.direction === null) throw new u.ApiError('Сначала выберите направление');
 
-  const cdLeft = Math.ceil((c.lastActionAt + ACTION_CD_MS - now()) / 1000);
+  const cdLeft = Math.ceil((c.lastActionAt + actionCdMs(user.legionId) - now()) / 1000);
   if (cdLeft > 0) throw new u.ApiError(`Подождите ещё ${cdLeft} сек`);
 
   const stunned = (c.statusEffects || []).find(e => e.type === 'stun' && e.expiresAt > now());
@@ -424,8 +485,9 @@ function heal(user: User, targetUserId: string, notices: Notices) {
   const blocked = (tc.statusEffects || []).find(e => e.type === 'no_heal' && e.expiresAt > now());
   if (blocked) throw new u.ApiError(`Лечение цели заблокировано (${Math.ceil((blocked.expiresAt - now()) / 1000)} сек)`);
 
-  const critHealChance = Math.min(0.50, user.skills.agility * 0.005 * 0.5);
-  const critHeal = Math.random() < critHealChance;
+  // Шанс крит-лечения даёт СВОЙ трофей «Орден «Красный крест»» (база 5%,
+  // максимум 50%). Раньше он ошибочно зависел от ловкости — стата уворота.
+  const critHeal = Math.random() < trophies.critHealChance(user);
   const healAmt = critHeal ? u.rnd(100, 330) : u.rnd(20, 40);
 
   const before = tc.hp;
@@ -465,7 +527,7 @@ function guard(user: User, targetUserId: string, notices: Notices) {
   if (c.role !== 'guardian') throw new u.ApiError('Только защитники могут прикрывать');
   if (targetUserId === user.id) throw new u.ApiError('Нельзя прикрывать себя');
 
-  const cdLeft = Math.ceil((c.lastActionAt + ACTION_CD_MS - now()) / 1000);
+  const cdLeft = Math.ceil((c.lastActionAt + actionCdMs(user.legionId) - now()) / 1000);
   if (cdLeft > 0) throw new u.ApiError(`Подождите ещё ${cdLeft} сек`);
 
   const tc = findCombatant(battle, targetUserId);
@@ -546,13 +608,20 @@ function useItem(user: User, itemId: string, targetUserId: string, notices: Noti
       // на множитель предмета. Если у цели сильная броня и обычный удар
       // слабый, граната тоже будет слабее. crit при этом не применяем
       // (это разовый предмет, а не серия атак).
-      const base = calcDamage(c, tc, user, tUser);
+      const base = calcDamage(c, tc, user, tUser, { allowDodge: false });
       const mult = ieff.pct / 100;            // pct=1000 → ×10
       const dmg = Math.round(base.dmg * mult);
-      const { actual } = applyDamage(battle, targetUserId, dmg, user.id);
+      const gres = applyDamage(battle, targetUserId, dmg, user.id);
+      const actual = gres.actual;
+      const ghit = battle.combatants[gres.hitId] || tc;
       c.stats.dmgDealt += actual;
-      if (tc.hp <= 0) { tc.alive = false; c.stats.kills++; addActivity(battle, user.id, 'kill'); }
+      ghit.stats.dmgTaken += actual;
       resultMsg = `🔴 ${user.name}: Граната → ${tc.name}: ${actual} урона!`;
+      if (gres.guardedBy) resultMsg += ` 🛡️ ${gres.guardedBy} прикрыл ${gres.guardedFor} — урон принял на себя!`;
+      if (ghit.hp <= 0 && ghit.alive) {
+        ghit.alive = false; c.stats.kills++; addActivity(battle, user.id, 'kill');
+        resultMsg += ` 💀 ${ghit.name} ВЫБЫЛ!`;
+      }
       break;
     }
 
@@ -964,6 +1033,66 @@ function doneStateView(battle: Battle, user: User): any {
   };
 }
 
+
+// ── РАЗВЕДЫВАТЕЛЬНЫЙ ЦЕНТР: что видно о противнике в подготовке ────
+// Уровни накопительные:
+//   0 — ничего (даже факт захода в бой)
+//   1 — список зашедших в бой
+//   2 — + направления и роли (иконками, без имён)
+//   3 — + примерные характеристики (с бонусами построек легиона)
+//   4 — + взятые предметы арсенала
+//   5 — + постройки вражеского легиона
+// Всё это действует ТОЛЬКО в фазе подготовки: в активном бою и так все
+// друг друга видят.
+const ROLE_ICONS: Record<string, string> = { assault: '🎯', guardian: '🛡️', medic: '➕' };
+
+// Округление «примерных» характеристик до 2 значащих цифр
+function approxNum(x: number): number {
+  if (!x) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(x))) - 1);
+  return Math.round(x / mag) * mag;
+}
+
+function prepEnemyView(c: Combatant, intel: number, users: any, battle: Battle): any {
+  const v: any = { userId: c.userId, side: c.side, alive: c.alive };
+  if (intel >= 1) {
+    v.name = c.name;
+    // Раз уж разведка показывает, кто зашёл в бой — показываем и онлайн:
+    // это часть той же информации «кто реально будет драться».
+    try {
+      const usr = users[c.userId];
+      v.online = !!usr && Date.now() - (usr.lastSeen || 0) < 5 * 60 * 1000;
+    } catch (e) { v.online = false; }
+  }
+  if (intel >= 2) {
+    v.role = c.role;
+    v.roleIcon = ROLE_ICONS[c.role] || '❔';
+    v.roleName = (ROLES[c.role] || {}).label || '';
+    v.direction = c.direction;
+    v.dirName = c.direction ? DIR_NAMES[c.direction - 1] : null;
+  }
+  if (intel >= 3) {
+    try {
+      const eu = users[c.userId];
+      if (eu) {
+        const st = prepStats(eu, c);
+        v.stats = {
+          atk: approxNum(st.atk), def: approxNum(st.def),
+          critPct: st.critPct, dodgePct: st.dodgePct,
+          hp: c.hp, maxHp: c.maxHp,
+        };
+      }
+    } catch (e) {}
+  }
+  if (intel >= 4) {
+    v.gear = ((battle.gear && battle.gear[c.userId]) || c.gear || []).map((id: string) => {
+      const item = config.LEGION_SHOP_ITEM_BY_ID[id];
+      return { itemId: id, name: item ? item.name : id };
+    });
+  }
+  return v;
+}
+
 function battleState(user: User): any {
   const { battle, legion: l } = resolveBattle(user);
 
@@ -1028,22 +1157,41 @@ function buildBattleDTO(user: User, battle: Battle, l: any): any {
   const me = battle.combatants[user.id] || null;
   const t  = now();
 
+  // Уровень разведки своего легиона (гейтит данные о враге в подготовке)
+  const isPrep = battle.phase === 'prep';
+  const intel = bbLevel(user.legionId, 'intel');
+  const allUsersMap = allUsers();
+
   const directions: any[] = [];
   for (let d = 1; d <= DIRECTIONS; d++) {
     const allies  = Object.values(battle.combatants).filter(c => c.side === mySide && c.direction === d);
     const enemies = Object.values(battle.combatants).filter(c => c.side !== mySide && c.direction === d);
+    // В подготовке позиции врага видны только с «Разведцентра» ур.2+
+    const enemyView = isPrep
+      ? (intel >= 2 ? enemies.map(c => prepEnemyView(c, intel, allUsersMap, battle)) : [])
+      : enemies.map(c => serializeCombatant(c, t, false));
     directions.push({
       dir: d,
       name: DIR_NAMES[d-1],
       allies:  allies.map(c  => serializeCombatant(c, t, c.userId === user.id)),
-      enemies: enemies.map(c => serializeCombatant(c, t, false)),
+      enemies: enemyView,
       allySlots: MAX_PER_DIR - allies.filter(c => c.alive).length,
     });
   }
 
-  const allCombatants = Object.values(battle.combatants).map(c => {
+  const allCombatants = Object.values(battle.combatants)
+    // В подготовке без «Разведцентра» врагов не видно вообще — узнаем только
+    // когда начнётся бой. Ур.1 открывает список зашедших.
+    .filter(c => !isPrep || c.side === mySide || intel >= 1)
+    .map(c => {
     let online = false;
     try { const usr = player.users()[c.userId]; if (usr) online = Date.now() - (usr.lastSeen || 0) < 5 * 60 * 1000; } catch (e) {}
+    // Врагу в подготовке отдаём только то, что разрешено уровнем разведки
+    if (isPrep && c.side !== mySide) {
+      const v: any = prepEnemyView(c, intel, allUsersMap, battle);
+      v.online = online;
+      return v;
+    }
     return {
       userId: c.userId, name: c.name, side: c.side, role: c.role,
       ready: c.ready, hp: c.hp, maxHp: c.maxHp, direction: c.direction,
@@ -1052,7 +1200,7 @@ function buildBattleDTO(user: User, battle: Battle, l: any): any {
   });
 
   const myCDs = me ? {
-    action: Math.max(0, Math.ceil((me.lastActionAt + ACTION_CD_MS - t) / 1000)),
+    action: Math.max(0, Math.ceil((me.lastActionAt + actionCdMs(user.legionId) - t) / 1000)),
     move:   Math.max(0, Math.ceil((me.lastMoveAt   + MOVE_CD_MS   - t) / 1000)),
     item:   Math.max(0, Math.ceil(((me.lastItemAt||0) + ITEM_CD_MS  - t) / 1000)),
   } : null;
@@ -1103,6 +1251,18 @@ function buildBattleDTO(user: User, battle: Battle, l: any): any {
     directions,
     allCombatants,
     dirNames: DIR_NAMES,
+    // Разведка: уровень своего «Разведцентра» и что он открыл
+    intelLevel: intel,
+    intelActive: isPrep,
+    enemyLegionName: (legions()[mySide === 'A' ? battle.legionB : battle.legionA] || {}).name || null,
+    enemyBuildings: (isPrep && intel >= 5) ? (() => {
+      const el = legions()[mySide === 'A' ? battle.legionB : battle.legionA];
+      if (!el) return null;
+      return config.LEGION_BATTLE_BUILDINGS.map((b: any) => ({
+        id: b.id, name: b.name, maxLevel: b.maxLevel,
+        level: (el.battleBuildings || {})[b.id] || 0,
+      }));
+    })() : null,
     log: (battle.log || []).slice(-40),
     liveScores,
     finalReport: battle.finalReport || null,
@@ -1160,43 +1320,57 @@ function prepStats(user: User, c?: Combatant): any {
   const def = Math.round(player.totalPower(user, 'def').power * roleDef);
   const critPct  = Math.round((Math.min(0.50, 0.05 + user.skills.cruelty * 0.005) + (player.effMul(user, 'crit_bonus') - 1)) * 1000) / 10;
   const dodgePct = Math.round((Math.min(config.BATTLE.DODGE_MAX, user.skills.agility * config.BATTLE.DODGE_PER_AGILITY) + (player.effMul(user, 'dodge_bonus') - 1)) * 1000) / 10;
+  // Шанс крит-лечения — только для медика (у остальных ролей лечения нет)
+  const critHealPct = Math.round(trophies.critHealChance(user) * 1000) / 10;
   const mx = player.maxima(user);
   return {
-    atk, def, critPct, dodgePct,
+    atk, def, critPct, dodgePct, critHealPct,
     hp: Math.floor(user.res.hp.cur),  maxHp: Math.floor(mx.hp),
     energy: Math.floor(user.res.en.cur), maxEnergy: Math.floor(mx.en),
     ammo: Math.floor(user.res.am.cur), maxAmmo: Math.floor(mx.am),
-    restoreCost: restoreCost(),
+    // Цена восстановления каждого ресурса по отдельности = цена
+    // соответствующего допинга на чёрном рынке.
+    costs: restoreCosts(),
   };
 }
 
-// Цена полного восстановления HP+энергии+боеприпасов = сумма цен допинг-
-// восстановителей чёрного рынка (аптечка + энергетик + цинк боеприпасов).
-function restoreCost(): number {
+// Цены восстановления по ресурсам: аптечка / энергетик / цинк боеприпасов
+function restoreCosts(): { hp: number; energy: number; ammo: number } {
   const byId: any = config.MARKET_ITEM_BY_ID;
   const g = (id: string) => (byId[id] ? byId[id].gold : 0);
-  return g('medkit') + g('energy') + g('ammo');
+  return { hp: g('medkit'), energy: g('energy'), ammo: g('ammo') };
 }
 
-// Восстановить HP/энергию/боеприпасы до максимума за стоимость допинга (только в prep)
-function restoreForBattle(user: User, notices: Notices) {
+// Восстановить ОДИН ресурс до максимума за цену соответствующего допинга.
+// kind: 'hp' | 'energy' | 'ammo'. Только в фазе подготовки.
+function restoreForBattle(user: User, kind: string, notices: Notices) {
   const { battle } = resolveBattle(user);
   if (!battle) throw new u.ApiError('Нет активного боя');
   if (battle.phase !== 'prep') throw new u.ApiError('Восстановить можно только во время подготовки');
   player.refresh(user);
-  const cost = restoreCost();
-  if ((user.gold || 0) < cost) throw new u.ApiError(`Нужно ${cost} золота для восстановления`);
-  user.gold -= cost;
+
+  const costs = restoreCosts();
   const mx = player.maxima(user);
-  const t = now();
-  user.res.hp.cur = mx.hp; user.res.hp.t = t;
-  user.res.en.cur = mx.en; user.res.en.t = t;
-  user.res.am.cur = mx.am; user.res.am.t = t;
-  const c = battle.combatants[user.id];
-  if (c) { c.hp = c.maxHp; }
+  const MAP: Record<string, { res: any; max: number; cost: number; label: string }> = {
+    hp:     { res: user.res.hp, max: mx.hp, cost: costs.hp,     label: '❤️ Здоровье' },
+    energy: { res: user.res.en, max: mx.en, cost: costs.energy, label: '⚡ Энергия' },
+    ammo:   { res: user.res.am, max: mx.am, cost: costs.ammo,   label: '🔫 Боеприпасы' },
+  };
+  const item = MAP[String(kind)];
+  if (!item) throw new u.ApiError('Неизвестный ресурс');
+  if (Math.floor(item.res.cur) >= Math.floor(item.max)) throw new u.ApiError('Этот ресурс уже полный');
+  if ((user.gold || 0) < item.cost) throw new u.ApiError(`Нужно ${item.cost} золота`);
+
+  user.gold -= item.cost;
+  item.res.cur = item.max;
+  item.res.t = now();
+  if (kind === 'hp') {
+    const c = battle.combatants[user.id];
+    if (c) c.hp = c.maxHp;
+  }
   db.save('users'); db.save('battles');
-  notices.push(`💉 Ресурсы восстановлены до максимума за 🪙 ${cost}.`);
-  return { ok: true, cost, hp: mx.hp, energy: mx.en, ammo: mx.am };
+  notices.push(`${item.label} восстановлено за 🪙 ${item.cost}.`);
+  return { ok: true, cost: item.cost, kind };
 }
 
 // ── Выйти из боя (добровольно) ────────────────────────────────────
