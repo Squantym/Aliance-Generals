@@ -86,13 +86,34 @@ const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
    const icon=await get('/img/pwa/icon-512.png');
    eq('иконка отдаётся', icon.status,200);
 
+   // Путь с точкой — многие статик-сервера его режут. Без этого файла
+   // в APK сверху будет видна адресная строка браузера.
+   const al=await get('/.well-known/assetlinks.json');
+   eq('/.well-known/assetlinks.json отдаётся (нужен для APK)', al.status,200);
+   ok('assetlinks — валидный JSON нужного формата', (()=>{ try{ const j=JSON.parse(al.body); return Array.isArray(j) && j[0].target.namespace==='android_app'; }catch(e){ return false; } })());
+
    const trav=await get('/../package.json');
    ok('обход каталога вверх не работает (безопасность)', trav.status===403 || trav.status===404);
  } finally { srv.kill('SIGKILL'); }
 
- console.log('\n[5] Секреты не утекут в git');
+ console.log('\n[5] Android: файлы для сборки APK');
+ ok('скрипт сборки на месте', fs.existsSync(__dirname+'/../android/make-apk.sh'));
+ ok('скрипт исполняемый', (fs.statSync(__dirname+'/../android/make-apk.sh').mode & 0o111) !== 0);
+ ok('шаблон конфига TWA на месте', fs.existsSync(__dirname+'/../android/twa-manifest.template.json'));
+ ok('инструкция на месте', fs.existsSync(__dirname+'/../android/README.md'));
+ const twa=JSON.parse(fs.readFileSync(__dirname+'/../android/twa-manifest.template.json','utf8'));
+ const al2=JSON.parse(fs.readFileSync(__dirname+'/../public/.well-known/assetlinks.json','utf8'));
+ eq('пуши в APK включены', twa.enableNotifications, true);
+ eq('packageId APK совпадает с assetlinks (иначе будет адресная строка)', twa.packageId, al2[0].target.package_name);
+ eq('цвет темы APK совпадает с манифестом', twa.themeColor, m.theme_color);
+ eq('ярлыки APK совпадают с манифестом', twa.shortcuts.map(x=>x.url).join(), m.shortcuts.map(x=>x.url).join());
+ ok('в шаблоне остались плейсхолдеры домена (подставляются при сборке)', /ЗАМЕНИ_НА_ДОМЕН/.test(fs.readFileSync(__dirname+'/../android/twa-manifest.template.json','utf8')));
+
+ console.log('\n[6] Секреты не утекут в git');
  const gi=fs.readFileSync(__dirname+'/../.gitignore','utf8');
  ok('.env в .gitignore (утёкший пароль MongoDB)', /^\.env$/m.test(gi));
+ ok('ключ подписи APK в .gitignore', /android\.keystore/.test(gi));
+ ok('APK не коммитим', /android\/\*\.apk/.test(gi));
  ok('.env.example остаётся в репозитории', /!\.env\.example/.test(gi));
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
