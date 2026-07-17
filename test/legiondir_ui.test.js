@@ -70,23 +70,43 @@ const active=(moveCd)=>({
    if(url==='/api/legion') return { mine: legFx };
    return {};
  };
- App._legionTab='treasury';
+ // Рейтинг вкладов теперь на ОТДЕЛЬНОЙ странице (вкладка contrib) и
+ // тянется своим запросом /api/legion/contributions
+ API.get=async(url)=>{
+   if(url==='/api/group/legion') return groupFx;
+   if(url==='/api/legion') return { mine: legFx };
+   if(url==='/api/legion/contributions') return {
+     legionName:'Браво', weekStart:Date.now(),
+     all:[ {userId:'x',name:'Жертва',ears:3000,tokens:10,reserves:5,left:false},
+           {userId:'g',name:'Ушедший',ears:1052,tokens:0,reserves:0,left:true} ],
+     week:[ {userId:'x',name:'Жертва',ears:500,tokens:0,reserves:0,left:false} ],
+     history:[] };
+   return {};
+ };
  const c2=document.getElementById('content');
+ App._legionTab='treasury';
  let err=null; try{ await App.screens.legion(c2); }catch(e){ err=e; }
- if(err) console.log('    ОШИБКА: '+String(err.stack||err).split('\n').slice(0,2).join(' | '));
- ok('вкладка казны отрисовалась', !err);
- ok('есть рейтинг вкладов', /Рейтинг вкладов/.test(c2.innerHTML));
- eq('строк рейтинга — 2', c2.querySelectorAll('.contrib-row').length, 2);
- eq('лидер выделен', c2.querySelectorAll('.contrib-row.first').length, 1);
- ok('лидер — тот, кто внёс больше', /🥇[\s\S]{0,80}Жертва/.test(c2.innerHTML));
- ok('есть история казны', /История казны/.test(c2.innerHTML));
- ok('формулировка «вложил в казну»', /вложил в казну/.test(c2.innerHTML));
- // fmtNum разделяет разряды НЕРАЗРЫВНЫМ пробелом (U+00A0), а не обычным
- { const hist=[...c2.querySelectorAll('.hist-row')].map(x=>x.textContent).join(' ~ ');
-   console.log('     разметка истории: '+JSON.stringify(hist.slice(0,160)));
-   ok('в истории видно 1052 уха', /1[\s\u00A0]?052/.test(hist) && /👂/.test(hist)); }
- ok('время показано как «назад»', /назад/.test(c2.innerHTML));
- ok('сказано, что админские ресурсы в рейтинг не идут', /от администрации в рейтинг не идут/.test(c2.innerHTML));
+ if(err) console.log('    ОШИБКА: '+String(err.stack||err).split('\n')[0]);
+ ok('казна отрисовалась', !err);
+ ok('рейтинг вынесен в отдельную кнопку', !!c2.querySelector('[data-legtab="contrib"]'));
+ ok('таблицы рейтинга в казне больше нет', c2.querySelectorAll('.contrib-row').length===0);
+
+ console.log('\n[5] Страница рейтинга вкладов: общий / недельный');
+ App._legionTab='contrib'; App._contribPeriod='all';
+ err=null; try{ await App.screens.legion(c2); }catch(e){ err=e; }
+ ok('страница рейтинга отрисовалась', !err);
+ await App._loadContrib();
+ ok('строк рейтинга — 2', c2.querySelectorAll('.contrib-row').length===2);
+ ok('лидер выделен', c2.querySelectorAll('.contrib-row.first').length===1);
+ ok('вклад ушедшего сохранён и помечен', /Ушедший[\s\S]{0,60}\(вышел\)/.test(c2.innerHTML));
+ ok('иконки валют в шапке', !!c2.querySelector('.contrib-head .ic-ear') && !!c2.querySelector('.contrib-head .ic-token') && !!c2.querySelector('.contrib-head .ic-reserve'));
+ ok('есть переключатели общий/недельный', c2.querySelectorAll('[data-contrib]').length===2);
+
+ App._contribPeriod='week';
+ err=null; try{ await App.screens.legion(c2); }catch(e){ err=e; }
+ await App._loadContrib();
+ ok('в недельном — только вносивший на этой неделе', c2.querySelectorAll('.contrib-row').length===1);
+ ok('сказано про обнуление недели', /обнуляется каждый понедельник/.test(c2.innerHTML));
 
  console.log('\n[5] UI.fmtAgo');
  eq('минуты', UI.fmtAgo(Date.now()-5*60000), '5 мин назад');

@@ -297,6 +297,7 @@ function registerRoutes(app: any) {
   // ---------- Легион: казна, постройки, кланвойны ----------
   app.add('GET',  '/api/legion',                   (req) => legion.view(req.user));
   app.add('GET',  '/api/legion/battle',             (req) => legion.battleState(req.user));
+  app.add('GET',  '/api/legion/contributions', (req) => legion.contributions(req.user));
   app.add('POST', '/api/legion/deposit-resources', act((req, n) => legion.depositResources(req.user, req.body.ears, req.body.tokens, req.body.useAdmin, n)));
   app.add('POST', '/api/legion/exchange',          act((req, n) => legion.exchangeToReserves(req.user, req.body.dollars, n)));
   app.add('POST', '/api/legion/build',             act((req, n) => legion.build(req.user, req.body.buildingId, n)));

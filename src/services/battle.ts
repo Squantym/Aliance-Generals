@@ -535,8 +535,9 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   let received = attackerDodge ? 0 : (botCrit ? Math.round(receivedBase * B.CRIT_MULT) : receivedBase);
 
   // ЧИСЛОВОЙ АПСЕТ: с шансом 5–10% сильнейший наносит МЕНЬШЕ урона, чем
-  // получает (для непредсказуемости). Исход боя это НЕ меняет — победа всё
-  // равно по мощи. Порог случайно выбирается в диапазоне 5–10% на каждый бой.
+  // получает — и, поскольку исход решает урон, он этот бой ПРОИГРЫВАЕТ.
+  // Это и есть задуманная непредсказуемость: изредка фаворит падает.
+  // Порог случайно выбирается в диапазоне 5–10% на каждый бой.
   const upsetChance = B.DAMAGE_UPSET_MIN + Math.random() * (B.DAMAGE_UPSET_MAX - B.DAMAGE_UPSET_MIN);
   if (Math.random() < upsetChance && dealt > 0 && received > 0) {
     const factor = 0.5 + Math.random() * 0.4; // 50–90% от урона противника
@@ -550,13 +551,14 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   }
   user.res.hp.cur = Math.max(1, user.res.hp.cur - received);
 
-  // ИСХОД боя решает МОЩЬ, а не уворот и не числа урона: кто сильнее (атака
-  // против защиты) — тот и побеждает. Уворот, крит и числовой апсет влияют
-  // только на числа урона/грабёж/HP, но НЕ переворачивают исход. Если игрок
-  // сильнее — он выигрывает в любом случае. При равенстве — победа атакующему.
-  const win = aPow >= dPow;
-  let effectiveAtk = aPow;
-  if (crit) effectiveAtk *= B.CRIT_MULT * (1 + critTrophyBonus);
+  // ИСХОД боя решает УРОН: побеждает тот, кто нанёс больше. Это значит:
+  //  • крит слабого игрока может перевернуть бой — если он критом нанёс
+  //    больше, чем получил, он выигрывает (так и задумано);
+  //  • числовой апсет (5–10%) занижает урон сильнейшего ниже полученного —
+  //    и тогда сильнейший честно проигрывает;
+  //  • при равенстве урона (например, оба увернулись и дошли до 0)
+  //    исход решает мощь — иначе исход был бы неопределён.
+  const win = dealt !== received ? dealt > received : aPow >= dPow;
 
   let targetHpAfter;
   if (isBot) {

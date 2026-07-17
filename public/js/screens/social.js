@@ -73,7 +73,7 @@ async function renderGroupScreen(c, kind) {
             <div class="muted small">${UI.esc(b.desc)}</div>
             <div class="kv mt"><span class="k">Бонус</span><span class="v">+${b.bonusNow}%</span></div>
             ${b.nextPrice !== null
-              ? `<div class="kv"><span class="k">След. ур. +${b.bonusNext}%</span><span class="v gold">${UI.fmtNum(b.nextPrice)} РЕЗ</span></div>
+              ? `<div class="kv"><span class="k">След. ур. +${b.bonusNext}%</span><span class="v gold">${UI.fmtNum(b.nextPrice)} <span class="ic-reserve"></span> РЕЗ</span></div>
                  ${L.isLeader ? `<button class="btn btn-orange mt" data-build="${b.id}">Улучшить за РЕЗ</button>`
                               : '<p class="muted small mt center">Только лидер</p>'}`
               : '<p class="gold center mt small">Макс. уровень ✔</p>'}
@@ -83,9 +83,9 @@ async function renderGroupScreen(c, kind) {
           const c = b.nextCost;
           let resStr = '';
           if (c) {
-            resStr = `${UI.fmtNum(c.reserves)} РЕЗ`;
-            if (c.ears)   resStr += ` + ${c.ears} 👂`;
-            if (c.tokens) resStr += ` + ${c.tokens} 🎖`;
+            resStr = `${UI.fmtNum(c.reserves)} <span class="ic-reserve"></span> РЕЗ`;
+            if (c.ears)   resStr += ` + ${c.ears} <span class="ic-ear"></span>`;
+            if (c.tokens) resStr += ` + ${c.tokens} <span class="ic-token"></span>`;
           }
           const isBuilt = b.level > 0;
           const btnLabel = !isBuilt ? '🏗 Построить' : `⬆️ Улучшить до ур.${b.level + 1}`;
@@ -97,6 +97,7 @@ async function renderGroupScreen(c, kind) {
                      : '%';
           return `
             <div class="card${b.locked ? ' bb-locked' : ''}">
+              <img class="bb-img" src="/img/legion/buildings/${b.id}.webp" alt="" loading="lazy">
               <div class="name">${UI.esc(b.name)} <span class="muted">ур. ${b.level}/${b.maxLevel}</span></div>
               <div class="muted small">${UI.esc(b.desc)}</div>
               <div class="kv mt"><span class="k">Бонус</span><span class="v">${b.bonusNow}${unit}</span></div>
@@ -112,7 +113,7 @@ async function renderGroupScreen(c, kind) {
 
         const buildingsTab = `
           <div class="card">
-            <p class="muted small">Постройки — эндгейм контент. Цена высокая: <span class="ic-dollar"></span>500 млрд и выше из казны легиона. Для улучшений потребуются уши 👂 и жетоны 🎖 из казначейства.</p>
+            <p class="muted small">Постройки — эндгейм контент. Цена высокая: <span class="ic-dollar"></span>500 млрд и выше из казны легиона. Для улучшений потребуются уши <span class="ic-ear"></span> и жетоны <span class="ic-token"></span> из казначейства.</p>
           </div>
           <div class="name mt" style="padding:0 16px">⚔️ Боевые постройки и казармы</div>
           ${btBldHtml}`;
@@ -138,7 +139,7 @@ async function renderGroupScreen(c, kind) {
               } else if (t.level >= t.maxLevel) {
                 statusHtml = '<p class="gold small mt center">Макс. уровень ✔</p>';
               } else if (nd) {
-                let reqStr = `${UI.fmtNum(nd.priceReserves)} РЕЗ + ${nd.earReq} 👂`;
+                let reqStr = `${UI.fmtNum(nd.priceReserves)} <span class="ic-reserve"></span> РЕЗ + ${nd.earReq} <span class="ic-ear"></span>`;
                 if (nd.gloryReq > 0) reqStr += ` · Слава: ${nd.gloryReq} ⭐`;
                 statusHtml = `
                   <div class="kv mt"><span class="k">Цена ур.${t.level+1}</span><span class="v">${reqStr}</span></div>
@@ -178,10 +179,15 @@ async function renderGroupScreen(c, kind) {
             html += `<div class="card"><p class="muted center small">Арсенал пуст. Лидер клана закупает предметы в Магазине.</p></div>`;
           } else {
             html += L.arsenal.filter(i => i.count > 0).map(i => `
-              <div class="card">
-                <div class="name">${UI.esc(i.name)} <span class="muted small">×${i.count}</span></div>
-                <div class="muted small">${UI.esc(i.desc)}</div>
-                ${L.activeBattle ? `<button class="btn btn-orange mt" data-gear="${i.id}">🎒 Взять в пояс</button>`
+              <div class="card item-card">
+                <div class="item-row">
+                  ${App.itemImg(i.id, 44)}
+                  <div class="grow">
+                    <div class="name">${UI.esc(i.name)} <span class="muted small">×${i.count}</span></div>
+                    <div class="muted small">${UI.esc(i.desc)}</div>
+                  </div>
+                </div>
+                ${L.activeBattle ? `<button class="btn btn-orange mt" data-gear="${i.id}">🎒 Взять в арсенал</button>`
                                  : '<p class="muted small mt">Доступно во время боя легиона</p>'}
               </div>`).join('');
           }
@@ -204,16 +210,21 @@ async function renderGroupScreen(c, kind) {
         ];
         const shopTab = `
           <div class="card">
-            <p class="muted small">Боевые предметы покупаются за 👂 уши, вспомогательные — за 🎖 жетоны. Покупает лидер, используют все.</p>
-            <p class="muted small mt">Боевые: <b>👂 уши</b> &nbsp;·&nbsp; Вспомогательные: <b>🎖 жетоны</b></p>
+            <p class="muted small">Боевые предметы покупаются за <span class="ic-ear"></span> уши, вспомогательные — за <span class="ic-token"></span> жетоны. Покупает лидер, используют все.</p>
+            <p class="muted small mt">Боевые: <b><span class="ic-ear"></span> уши</b> &nbsp;·&nbsp; Вспомогательные: <b><span class="ic-token"></span> жетоны</b></p>
           </div>
           ${shopItems.map(i => {
-            const costIcon = i.earCost ? `${i.earCost} 👂` : `${i.tokenCost} 🎖`;
+            const costIcon = i.earCost ? `${i.earCost} <span class="ic-ear"></span>` : `${i.tokenCost} <span class="ic-token"></span>`;
             const category = i.earCost ? 'Боевой' : 'Вспомог.';
             return `
-            <div class="card">
-              <div class="name">${UI.esc(i.name)} <span class="muted small">${category}</span></div>
-              <div class="muted small">${UI.esc(i.desc)}</div>
+            <div class="card item-card">
+              <div class="item-row">
+                ${App.itemImg(i.id, 44)}
+                <div class="grow">
+                  <div class="name">${UI.esc(i.name)} <span class="muted small">${category}</span></div>
+                  <div class="muted small">${UI.esc(i.desc)}</div>
+                </div>
+              </div>
               <div class="kv mt"><span class="k">Цена</span><span class="v">${costIcon}</span></div>
               ${L.isLeader ? `
                 <div class="field-row mt">
@@ -291,23 +302,13 @@ async function renderGroupScreen(c, kind) {
           }
 
           if (L.battleHistory && L.battleHistory.length) {
+            // Компактные строки: свой легион — исход — враг, справа резервы.
+            // В окне только 5 последних, остальное — на отдельной странице.
             html += `<div class="card"><div class="name">📜 История боёв легиона</div>
-              ${L.battleHistory.map(h => {
-                const d = new Date(h.at);
-                const dateStr = d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-                return `
-                <div style="border:1px solid var(--${h.won?'green':'red'});border-radius:8px;padding:10px;margin-top:8px">
-                  <div style="display:flex;justify-content:space-between;align-items:center">
-                    <b style="color:var(--${h.won?'green':'red'})">${h.won?'🏆 Победа':'💀 Поражение'}</b>
-                    <span class="muted small">${dateStr}</span>
-                  </div>
-                  <div class="kv mt"><span class="k">Противник</span><span class="v">${UI.esc(h.enemyName||'легион')}</span></div>
-                  <div class="kv"><span class="k">${h.loot>=0?'Получено':'Потеряно'} ресурсов</span><span class="v ${h.loot>=0?'green':'red'}">${h.loot>=0?'+':''}${UI.fmtNum(h.loot)}</span></div>
-                  ${h.gloryGain!=null||h.gloryLoss!=null?`<div class="kv"><span class="k">Слава</span><span class="v ${h.won?'green':'red'}">${h.won?'+'+(h.gloryGain||0):'−'+(h.gloryLoss||0)} ⭐</span></div>`:''}
-                  ${h.myDamage!=null?`<div class="kv"><span class="k">Урон сторон</span><span class="v">🟢 ${UI.fmtNum(h.myDamage||0)} vs 🔴 ${UI.fmtNum(h.enemyDamage||0)}</span></div>`:''}
-                  ${h.myParticipants!=null?`<div class="kv"><span class="k">Участников</span><span class="v">🟢 ${h.myParticipants||0} vs 🔴 ${h.enemyParticipants||0}</span></div>`:''}
-                </div>`;
-              }).join('')}
+              ${L.battleHistory.slice(0, 5).map((h, i) => App._battleHistRow(h, i)).join('')}
+              ${L.battleHistory.length > 5
+                ? `<button class="btn btn-inline mt" style="width:100%" data-legtab="history">📜 История боёв (${L.battleHistory.length})</button>`
+                : ''}
             </div>`;
           }
           return html;
@@ -326,57 +327,45 @@ async function renderGroupScreen(c, kind) {
           </div>
           <div class="card">
             <div class="name">💰 Казна легиона</div>
-            <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L.reserves || 0)} РЕЗ</span></div>
+            <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L.reserves || 0)} <span class="ic-reserve"></span> РЕЗ</span></div>
             <div class="kv"><span class="k">Рейтинг клана</span><span class="v">${UI.fmtNum(L.ratingPoints)} очк.</span></div>
             <p class="muted small mt">Валюта клана — только <b>РЕЗ</b>. Резервы пополняются обменом <span class="ic-dollar"></span> → РЕЗ в разделе <b>Банк → Резерв</b>. Все клановые постройки, боевые постройки и технологии оплачиваются резервами.</p>
           </div>
           <div class="card">
             <div class="name">🗄 Казначейство ресурсов</div>
             <p class="muted small">Уши и жетоны используются для улучшения построек легиона.</p>
-            <div class="kv mt"><span class="k">Уши 👂</span><span class="v">${UI.fmtNum(L.treasuryEars || 0)}</span></div>
-            <div class="kv"><span class="k">Жетоны 🎖</span><span class="v">${UI.fmtNum(L.treasuryTokens || 0)}</span></div>
-            <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.ears || 0)} 👂, ${UI.fmtNum(App.me.tokens || 0)} 🎖):</p>
+            <div class="kv mt"><span class="k">Уши <span class="ic-ear"></span></span><span class="v">${UI.fmtNum(L.treasuryEars || 0)}</span></div>
+            <div class="kv"><span class="k">Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(L.treasuryTokens || 0)}</span></div>
+            <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.ears || 0)} <span class="ic-ear"></span>, ${UI.fmtNum(App.me.tokens || 0)} <span class="ic-token"></span>):</p>
             <div class="field-row mt">
-              <input type="number" min="1" placeholder="Ушей 👂" id="dep-ears">
-              <input type="number" min="1" placeholder="Жетонов 🎖" id="dep-tokens">
+              <input type="number" min="1" placeholder="Ушей" id="dep-ears">
+              <input type="number" min="1" placeholder="Жетонов" id="dep-tokens">
               <button class="btn btn-orange btn-inline" id="dep-res-go">Внести</button>
             </div>
             ${(App.me.adminEars || 0) > 0 || (App.me.adminTokens || 0) > 0 ? `
             <hr class="hr">
             <p class="muted small">Ресурсы от администратора (не учитываются в статистике, но можно внести в казну):</p>
-            <div class="kv mt"><span class="k">Адм. Уши 👂</span><span class="v">${UI.fmtNum(App.me.adminEars || 0)}</span></div>
-            <div class="kv"><span class="k">Адм. Жетоны 🎖</span><span class="v">${UI.fmtNum(App.me.adminTokens || 0)}</span></div>
+            <div class="kv mt"><span class="k">Адм. Уши <span class="ic-ear"></span></span><span class="v">${UI.fmtNum(App.me.adminEars || 0)}</span></div>
+            <div class="kv"><span class="k">Адм. Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(App.me.adminTokens || 0)}</span></div>
             <div class="field-row mt">
-              <input type="number" min="1" placeholder="Адм. ушей 👂" id="dep-adm-ears">
-              <input type="number" min="1" placeholder="Адм. жетонов 🎖" id="dep-adm-tokens">
+              <input type="number" min="1" placeholder="Адм. ушей" id="dep-adm-ears">
+              <input type="number" min="1" placeholder="Адм. жетонов" id="dep-adm-tokens">
               <button class="btn btn-orange btn-inline" id="dep-adm-res-go">Внести в казну</button>
             </div>` : ''}
           </div>
 
           <div class="card">
             <div class="name">🏆 Рейтинг вкладов</div>
-            ${(L.contributions && L.contributions.length) ? `
-            <div class="contrib-head">
-              <span class="grow">Игрок</span><span>👂</span><span>🎖</span><span>РЕЗ</span>
-            </div>
-            ${L.contributions.map((x, i) => `
-              <div class="contrib-row ${i === 0 ? 'first' : ''}">
-                <span class="contrib-pos">${['🥇','🥈','🥉'][i] || (i + 1)}</span>
-                <span class="grow contrib-name">${UI.esc(x.name)}</span>
-                <span class="contrib-v">${x.ears ? UI.fmtNum(x.ears) : '—'}</span>
-                <span class="contrib-v">${x.tokens ? UI.fmtNum(x.tokens) : '—'}</span>
-                <span class="contrib-v">${x.reserves ? UI.fmtNum(x.reserves) : '—'}</span>
-              </div>`).join('')}
-            <p class="muted small mt">Считается только внесённое из своих трофеев — ресурсы от администрации в рейтинг не идут.</p>
-            ` : '<p class="muted small">Пока никто ничего не вносил в казну.</p>'}
+            <p class="muted small">Кто и сколько внёс в казну — за всё время и за неделю.</p>
+            <button class="btn btn-orange mt" style="width:100%" data-legtab="contrib">🏆 Открыть рейтинг вкладов</button>
           </div>
 
           <div class="card">
             <div class="name">📜 История казны</div>
             ${(L.treasuryHistory && L.treasuryHistory.length) ? L.treasuryHistory.map(h => {
               const parts = [];
-              if (h.ears)     parts.push(`<b class="gold">${UI.fmtNum(h.ears)}</b> 👂`);
-              if (h.tokens)   parts.push(`<b class="gold">${UI.fmtNum(h.tokens)}</b> 🎖`);
+              if (h.ears)     parts.push(`<b class="gold">${UI.fmtNum(h.ears)}</b> <span class="ic-ear"></span>`);
+              if (h.tokens)   parts.push(`<b class="gold">${UI.fmtNum(h.tokens)}</b> <span class="ic-token"></span>`);
               if (h.reserves) parts.push(`<b class="gold">${UI.fmtNum(h.reserves)}</b> РЕЗ`);
               return `<div class="hist-row">
                 <span class="grow"><b>${UI.esc(h.name)}</b> вложил в казну ${parts.join(' + ')}</span>
@@ -386,6 +375,31 @@ async function renderGroupScreen(c, kind) {
           </div>`;
 
         // ── Навигация по вкладкам ─────────────────────────────────────
+
+        // ── Вкладка: История боёв (последние 20, старые перезаписываются) ──
+        const historyTab = (() => {
+          const list = L.battleHistory || [];
+          if (!list.length) return '<div class="card"><p class="muted center small">Боёв ещё не было.</p></div>';
+          return `<div class="card">
+            <div class="name">📜 История боёв легиона <span class="muted small">(последние ${list.length} из 20)</span></div>
+            ${list.map((h, i) => App._battleHistRow(h, i)).join('')}
+            <p class="muted small mt">Хранятся 20 последних боёв — новые перезаписывают старые.</p>
+          </div>`;
+        })();
+
+        // ── Вкладка: Рейтинг вкладов (общий / недельный) ──
+        const contribTab = (() => {
+          const period = App._contribPeriod || 'all';
+          return `<div class="card">
+            <div class="name">🏆 Рейтинг вкладов</div>
+            <div class="tab-nav" style="display:flex;gap:6px;margin:8px 0">
+              <button class="btn btn-inline ${period === 'all' ? 'btn-orange' : ''}" data-contrib="all">Общий</button>
+              <button class="btn btn-inline ${period === 'week' ? 'btn-orange' : ''}" data-contrib="week">Недельный</button>
+            </div>
+            <div id="contrib-box"><div class="loading">Загрузка…</div></div>
+          </div>`;
+        })();
+
         const tabs = [
           { id: 'base',        label: '🏰 База' },
           { id: 'buildings',   label: '🏗 Постройки' },
@@ -413,9 +427,9 @@ async function renderGroupScreen(c, kind) {
               <div class="kv"><span class="k">Бойцов</span><span class="v">${L2.members} / ${L2.memberLimit || '?'}</span></div>
               <div class="kv"><span class="k">Победы</span><span class="v" style="color:var(--green)">${(L2.battleStats || {}).wins || 0}</span></div>
               <div class="kv"><span class="k">Поражения</span><span class="v" style="color:var(--red)">${(L2.battleStats || {}).losses || 0}</span></div>
-              <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L2.reserves || 0)} РЕЗ</span></div>
-              <div class="kv"><span class="k">Уши 👂</span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
-              <div class="kv"><span class="k">Жетоны 🎖</span><span class="v">${UI.fmtNum(L2.treasuryTokens || 0)}</span></div>
+              <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L2.reserves || 0)} <span class="ic-reserve"></span> РЕЗ</span></div>
+              <div class="kv"><span class="k">Уши <span class="ic-ear"></span></span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
+              <div class="kv"><span class="k">Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(L2.treasuryTokens || 0)}</span></div>
               <div class="kv mt"><span class="k">Ваше звание</span><span class="v gold">${L2.myRankName || 'Новобранец'}</span></div>
             </div>
             <div class="card">
@@ -456,6 +470,7 @@ async function renderGroupScreen(c, kind) {
           base: buildBaseTab(L),
           buildings: buildingsTab, techs: techsTab, arsenal: arsenalTab,
           shop: shopTab, war: warTab, treasury: treasuryTab,
+          history: historyTab, contrib: contribTab,
           chat: `<div class="card" id="legion-chat-box"><div class="loading">Загрузка чата…</div></div>
             <div class="card"><div class="field-row">
               <input type="text" id="lg-chat-input" placeholder="Сообщение…" maxlength="300" style="flex:1">
@@ -644,6 +659,23 @@ async function renderGroupScreen(c, kind) {
           App.rerender();
           // Загружаем чат после рендера
           if (btn.dataset.legtab === 'chat') setTimeout(() => App._loadLegionChat(), 50);
+          // Рейтинг вкладов тянем отдельным запросом
+          if (btn.dataset.legtab === 'contrib') setTimeout(() => App._loadContrib(), 50);
+        };
+      });
+
+      // Переключение разделов рейтинга: общий / недельный
+      c.querySelectorAll('[data-contrib]').forEach(btn => {
+        btn.onclick = () => { App._contribPeriod = btn.dataset.contrib; App.rerender(); setTimeout(() => App._loadContrib(), 50); };
+      });
+
+      // «Подробнее» в истории боёв — раскрывает краткую статистику
+      c.querySelectorAll('[data-bh]').forEach(btn => {
+        btn.onclick = () => {
+          const box = document.getElementById('bh-det-' + btn.dataset.bh);
+          if (!box) return;
+          box.hidden = !box.hidden;
+          btn.textContent = box.hidden ? 'Подробнее' : 'Свернуть';
         };
       });
 
@@ -1248,7 +1280,7 @@ App.screens.fame = async (c, param) => {
     : '<p class="muted center" style="padding:20px">Пока никто не попал в топ</p>';
 
   c.innerHTML = `
-    <div class="title">🎖️ Зал славы</div>
+    <div class="title"><span class="ic-token"></span>️ Зал славы</div>
     ${sectionTabs}
     ${catTabs}
     ${dailyInfo}
@@ -1320,7 +1352,7 @@ App.screens.notifications = async (c) => {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt">✂️ Совершил фаталити и отрезал вам ${p.doubleCut ? '<b style="color:var(--red)">оба уха одним ударом</b>' : 'ухо'}.${p.restored ? ' <span style="color:var(--green)">Но вы мгновенно восстановили ухо полевым хирургом! 🩹</span>' : ''}</p>`;
+        <p class="small mt">✂️ Совершил фаталити и отрезал вам ${p.doubleCut ? '<b style="color:var(--red)">оба уха одним ударом</b>' : 'ухо'} <span class="ic-ear"></span>.${p.restored ? ' <span style="color:var(--green)">Но вы мгновенно восстановили ухо полевым хирургом! 🩹</span>' : ''}</p>`;
     } else if (n.kind === 'fatality_escape') {
       body = `
         <div class="kv"><span class="k">Кто пытался</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
@@ -1330,7 +1362,7 @@ App.screens.notifications = async (c) => {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt" style="color:var(--money)">🎖 Мог совершить фаталити, но помиловал вас.</p>`;
+        <p class="small mt" style="color:var(--money)"><span class="ic-token"></span> Мог совершить фаталити, но помиловал вас.</p>`;
     } else {
       body = `<p class="muted small mt">${when}</p>`;
     }

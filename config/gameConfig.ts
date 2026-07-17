@@ -967,7 +967,8 @@ function dailyAllBonusGold(level: number): number {
 
 // На 10 уровне каждый трофей даёт указанный максимум:
 //   medal/shield = 20%, license = 100%, radar = 50%, sewing = 40%,
-//   hospital/supply/logistics/tax/quarterm/looter = 50%, engineer = 40%.
+//   hospital/supply/tax/quarterm/looter = 50%, engineer = 40%,
+//   logistics/ammo_logi/medunit = 75% (скорость восстановления ресурсов).
 // Помеченные expensive — стоят в прокачке на 50% дороже.
 // Прокачка требует времени, которое растёт ×1.7 за уровень: 1 ур. = 1 ч,
 // 5 ур. ≈ 8 ч, 8 ур. ≈ 1.7 сут, 10 ур. ≈ 4.8 сут (близко к неделе).
@@ -984,8 +985,11 @@ const TROPHIES = [
   { id: 'butcher',   name: 'Тесак мясника',               desc: 'Шанс отрезать СРАЗУ ОБА уха при фаталити +6% за уровень (макс. 60%).', perLvl: 6, apply: 'double_ear', expensive: true },
   { id: 'hospital',  name: 'Полевой госпиталь',           desc: '−5% к цене лечения в госпитале за уровень (макс. 50%).', perLvl: 5, apply: 'hospital' },
   { id: 'supply',    name: 'Снабженческие линии',         desc: '−5% к содержанию техники за уровень (макс. 50%).',     perLvl: 5,   apply: 'upkeep' },
-  { id: 'logistics', name: 'Логистика',                   desc: '−5% к времени регенерации энергии за уровень (макс. 50%).', perLvl: 5, apply: 'regen_en' },
-  { id: 'ammo_logi', name: 'Боевая логистика',            desc: '−5% к времени восстановления боеприпасов за уровень (макс. 50%).', perLvl: 5, apply: 'regen_am' },
+  // Трофеи скорости восстановления: −7.5% времени за уровень → на 10-м
+  // уровне ресурс восстанавливается на 75% быстрее (интервал ×0.25).
+  { id: 'logistics', name: 'Логистика',                   desc: 'Энергия восстанавливается быстрее: −7.5% времени за уровень (на макс. уровне — на 75% быстрее).', perLvl: 7.5, apply: 'regen_en' },
+  { id: 'ammo_logi', name: 'Боевая логистика',            desc: 'Боеприпасы восстанавливаются быстрее: −7.5% времени за уровень (на макс. уровне — на 75% быстрее).', perLvl: 7.5, apply: 'regen_am' },
+  { id: 'medunit',   name: 'Полевая реанимация',          desc: 'HP восстанавливается быстрее: −7.5% времени за уровень (на макс. уровне — на 75% быстрее).', perLvl: 7.5, apply: 'regen_hp' },
   { id: 'engineer',  name: 'Военинженер',                 desc: '−4% к времени модернизации в цехах за уровень (макс. 40%).', perLvl: 4, apply: 'modern_time' },
   { id: 'tax',       name: 'Налоговая льгота',            desc: '−5% к комиссии банка за уровень (макс. 50%).',         perLvl: 5,   apply: 'bank_fee' },
   { id: 'quarterm',  name: 'Армейский квартирмейстер',    desc: '+5% к доходу построек за уровень (макс. 50%).',        perLvl: 5,   apply: 'income',  expensive: true },
@@ -1213,7 +1217,7 @@ const LEGION_BATTLE_BUILDINGS = [
     perLvl: 5,
     apply: 'member_limit',
     legionReq: [1, 1, 1, 2, 2, 3, 3, 4, 4, 5],
-    cost: { reserves: [470_000_000_000, 10_000_000_000_000], ears: [500, 30_000], tokens: [500, 30_000] },
+    cost: { reserves: [470_000_000_000, 10_000_000_000_000], tokens: [500, 25_000] },
   },
 ];
 

@@ -9,7 +9,9 @@ App.screens.auth = async (c) => {
   const { countries } = await API.get('/api/countries');
 
   const countryOptions = countries.map((x) =>
-    `<option value="${x.id}">${x.flag} ${UI.esc(x.name)} — ${UI.esc(x.bonus)}${x.gold ? ` (<span class="ic-gold"></span> ${x.gold})` : ''}</option>`
+    // ВНИМАНИЕ: в выпадающем списке отрисовывается только текст, HTML-теги
+    // игнорируются. Поэтому здесь эмодзи, а не иконка-класс ic-gold.
+    `<option value="${x.id}">${x.flag} ${UI.esc(x.name)} — ${UI.esc(x.bonus)}${x.gold ? ` (🪙 ${x.gold})` : ''}</option>`
   ).join('');
 
   c.innerHTML = `
@@ -579,14 +581,14 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">Оборона: отбито / сдано</span><span class="v">${UI.fmtNum(p.battle.defWins)} / ${UI.fmtNum(p.battle.defLosses)}</span></div>
       <hr class="hr">
       <div class="kv"><span class="k">💀 Фаталити</span><span class="v">${UI.fmtNum(p.battle.fatalities)}</span></div>
-      <div class="kv"><span class="k">👂 Отрезанные уши (трофеи)</span><span class="v">${UI.fmtNum(p.ears)}</span></div>
+      <div class="kv"><span class="k"><span class="ic-ear"></span> Отрезанные уши (трофеи)</span><span class="v">${UI.fmtNum(p.ears)}</span></div>
       <div class="kv"><span class="k">🏷 Жетоны милосердия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
       <div class="kv"><span class="k">Потеряно своих ушей</span><span class="v">${UI.fmtNum(p.earsLost)}</span></div>
       <div class="kv"><span class="k">Свои уши сейчас</span><span class="v">${p.earsCurrent} / ${p.earsMax}${p.earPenaltyActive ? ' <span style="color:var(--red)">⚠ штраф −10%</span>' : ''}</span></div>
       ${p.earCutInfo && p.earCutInfo.left ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Левое ухо у</span><span class="v"><a href="#" onclick="App.go('profile/${p.earCutInfo.left.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.left.name)}</a></span></div>` : ''}
       ${p.earCutInfo && p.earCutInfo.right ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Правое ухо у</span><span class="v"><a href="#" onclick="App.go('profile/${p.earCutInfo.right.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.right.name)}</a></span></div>` : ''}
       ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile/${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
-      ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%">👂 Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
+      ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%"><span class="ic-ear"></span> Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
     </div>
 
     ${(p.activeEffects && p.activeEffects.length) ? `
@@ -797,7 +799,7 @@ App.screens.bank = async (c, param) => {
   const tabs = `
     <div class="tabs">
       <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">🏦 Хранилище</div>
-      <div class="tab ${tab === 'reserve' ? 'active' : ''}" onclick="location.hash='#bank/reserve'">💱 Резерв</div>
+      <div class="tab ${tab === 'reserve' ? 'active' : ''}" onclick="location.hash='#bank/reserve'"><span class="ic-reserve"></span> Резерв</div>
       <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'"><span class="ic-gold"></span> Купить золото</div>
     </div>`;
 
@@ -840,8 +842,8 @@ App.screens.bank = async (c, param) => {
       <div class="title">Банк · Резерв</div>
       ${tabs}
       <div class="card">
-        <p class="muted small">Конвертируй доллары в Резервы для казны легиона.</p>
-        <div class="kv mt"><span class="k">Курс</span><span class="v">1 000 <span class="ic-dollar"></span> = 1 Резерв</span></div>
+        <p class="muted small">Конвертируй доллары в <span class="ic-reserve"></span> РЕЗ для казны легиона.</p>
+        <div class="kv mt"><span class="k">Курс</span><span class="v">1 000 <span class="ic-dollar"></span> = 1 <span class="ic-reserve"></span> РЕЗ</span></div>
         ${legionName
           ? `<div class="kv"><span class="k">Ваш легион</span><span class="v">${UI.esc(legionName)}</span></div>`
           : '<p class="muted small mt" style="color:var(--red)">⛔ Вы не состоите в легионе</p>'}
@@ -853,7 +855,7 @@ App.screens.bank = async (c, param) => {
           <input type="number" id="res-amt" min="1000" step="1000" placeholder="мин. 1 000 $">
           <button class="btn btn-orange btn-inline" id="res-go">Зарезервировать</button>
         </div>
-        <p class="muted small mt">Деньги списываются из ваших наличных и поступают в казну легиона как Резервы.</p>
+        <p class="muted small mt">Деньги списываются из ваших наличных и поступают в казну легиона как <span class="ic-reserve"></span> РЕЗ.</p>
       </div>` : ''}`;
     if (legionName) {
       document.getElementById('res-go').onclick = async () => {
@@ -1166,7 +1168,7 @@ App.screens.season = async (c) => {
         <div class="kv"><span class="k">⏳ До конца недели</span><span class="v gold" id="season-timer">${fmtLeft(d.endsAt - Date.now())}</span></div>
         <div class="kv"><span class="k">${cat.icon} Ваш результат</span><span class="v">${val(cat, cat.myValue)} ${cat.unit}</span></div>
         <div class="kv"><span class="k">📍 Ваше место</span><span class="v">${cat.myRank ? '#' + cat.myRank : '—'}</span></div>
-        <p class="muted small mt">Топ-3 в конце недели (вс 23:59 МСК) получают: 🥇 <span class="ic-gold"></span>${rw[0]?.gold}/🎖${rw[0]?.tokens} · 🥈 <span class="ic-gold"></span>${rw[1]?.gold}/🎖${rw[1]?.tokens} · 🥉 <span class="ic-gold"></span>${rw[2]?.gold}/🎖${rw[2]?.tokens}. Затем метрики обнуляются.</p>
+        <p class="muted small mt">Топ-3 в конце недели (вс 23:59 МСК) получают: 🥇 <span class="ic-gold"></span>${rw[0]?.gold}/<span class="ic-token"></span>${rw[0]?.tokens} · 🥈 <span class="ic-gold"></span>${rw[1]?.gold}/<span class="ic-token"></span>${rw[1]?.tokens} · 🥉 <span class="ic-gold"></span>${rw[2]?.gold}/<span class="ic-token"></span>${rw[2]?.tokens}. Затем метрики обнуляются.</p>
       </div>
       ${winnersHtml}
       <div class="card">
@@ -1412,7 +1414,7 @@ App.screens.referral = async (c) => {
       <div class="kv"><span class="k">Заработано с покупок друзей</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.refEarnings)}</span></div>
       <hr class="hr">
       <div class="kv"><span class="k">🎁 Другу за ввод кода</span><span class="v"><span class="ic-gold"></span> ${d.inviteeGold}</span></div>
-      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v"><span class="ic-gold"></span> ${d.level50Reward} + 🎖 ${d.level50Tokens}</span></div>
+      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v"><span class="ic-gold"></span> ${d.level50Reward} + <span class="ic-token"></span> ${d.level50Tokens}</span></div>
       <div class="kv"><span class="k">💰 Вам с покупок друга</span><span class="v">${d.purchaseSharePct}% золотом</span></div>
     </div>
     ${d.canApply ? `

@@ -377,6 +377,8 @@ export interface CombatantStats {
   healed: number;
   kills: number;
   guards: number;
+  /** Урон, принятый на себя ИМЕННО за прикрытие союзников (для «лучшего защитника») */
+  guardedDmg: number;
   itemsUsed: number;
 }
 

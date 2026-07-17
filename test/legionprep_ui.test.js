@@ -44,23 +44,50 @@ const prep=(hp,maxHp,en,maxEn,am,maxAm)=>({
  ok('блоки подготовки используют компактный класс', /bw-prep-box/.test(win.innerHTML));
  ok('уворот показан (70%)', /70%/.test(win.innerHTML));
 
- console.log('\n[5] Результаты боя: топы отдельными карточками');
- const done={ phase:'done', mySide:'A', winningSide:'B', me:{userId:'x',stats:{dmgDealt:18492,healed:0,guards:9,kills:0}},
+ console.log('\n[5] Результаты боя: «лучшие» одной колонкой, данные врага скрыты');
+ const done={ phase:'done', mySide:'A', winningSide:'B',
+   me:{userId:'x',stats:{dmgDealt:18492,healed:0,guards:9,kills:0}},
    finalReport:{ activityScores:{A:649,B:1537},
      playerDetails:{ x:{stats:{dmgDealt:18492,healed:0,guards:9,kills:0}} },
-     top3:{ damage:[{name:'Сармат',side:'A',value:18492},{name:'Melvin',side:'B',value:4880},{name:'DagMed',side:'B',value:2658}],
-            healing:[{name:'DagMed',side:'B',value:14842},{name:'Melvin',side:'B',value:860}],
-            defense:[{name:'Combat',side:'B',value:254},{name:'Сармат',side:'A',value:9}],
-            kills:[{name:'Combat',side:'B',value:1}] },
-     clanResults:{} } };
+     bestPerRole:[
+       {role:'assault', label:'Лучший боец', unit:'урона', name:'Сармат', value:18492},
+       {role:'guardian',label:'Лучший защитник', unit:'урона принял', name:'Стена', value:254},
+       {role:'medic',   label:'Лучший медик', unit:'HP вылечил', name:'ДагМед', value:14842},
+     ],
+     clanResults:{
+       A:{ side:'A', name:'Альфа', memberCount:3, totalDamage:18492, totalHealed:14842, totalKills:1,
+           members:[{name:'Сармат',role:'assault',dmgDealt:18492,healed:0,guards:0,guardedDmg:0,kills:1}] },
+       B:{ side:'B', name:'Браво', memberCount:2, hidden:true } } } };
  App._renderBattleDone(win, done);
- ok('карточек топов — 4 (урон/лечение/прикрытия/убийства)', win.querySelectorAll('.bw-top-card').length===4);
- ok('заголовок «Топ-3 боя» есть', /Топ-3 боя/.test(win.innerHTML));
- ok('первое место выделено', win.querySelectorAll('.bw-top-row.first').length===4);
- ok('союзник зелёный', /#2ecc40[^>]*>Сармат/.test(win.innerHTML));
- ok('враг красный', /#ff4d4d[^>]*>Melvin/.test(win.innerHTML));
- ok('свои результаты плитками', win.querySelectorAll('.bw-tile').length===4);
+ ok('«лучшие» одной колонкой', win.querySelectorAll('.bw-best-col').length===1);
+ ok('ровно 3 строки — по одной на роль', win.querySelectorAll('.bw-best-row').length===3);
+ ok('старых карточек топ-3 больше нет', win.querySelectorAll('.bw-top-card').length===0);
+ ok('лучший боец подписан', /Лучший боец[\s\S]{0,120}Сармат/.test(win.innerHTML));
+ ok('у защитника метрика «принял»', /Лучший защитник[\s\S]{0,160}принял/.test(win.innerHTML));
+ ok('у медика метрика «HP вылечил»', /Лучший медик[\s\S]{0,160}HP вылечил/.test(win.innerHTML));
+ ok('иконки ролей картинками', /img\/legion\/roles\/guardian\.webp/.test(win.innerHTML));
+ ok('свой легион показан целиком', /Альфа[\s\S]{0,400}Суммарный урон/.test(win.innerHTML));
+ ok('данные врага скрыты', /Данные вражеского легиона недоступны/.test(win.innerHTML));
+ ok('у врага нет суммарного урона', !/Браво[\s\S]{0,200}Суммарный урон/.test(win.innerHTML));
  ok('баннер поражения', /ПОРАЖЕНИЕ/.test(win.innerHTML));
+
+ console.log('\n[6] История боёв: компактные карточки');
+ const h={ at:Date.now()-3600000, myName:'Альфа', enemyName:'Браво', won:true, loot:1250,
+   gloryGain:12, gloryLoss:0, myDamage:18492, myParticipants:3,
+   best:[{role:'medic',label:'Лучший медик',unit:'HP вылечил',name:'ДагМед',value:14842}] };
+ const box=document.createElement('div'); box.innerHTML=App._battleHistRow(h,0);
+ ok('строка помечена победой', box.querySelector('.bh-row.win'));
+ ok('свой легион зелёный', box.querySelector('.bh-side.ally').textContent.includes('Альфа'));
+ ok('вражеский легион красный', box.querySelector('.bh-side.foe').textContent.includes('Браво'));
+ ok('надпись «Победа»', box.querySelector('.bh-res').textContent.trim()==='Победа');
+ ok('резервы с иконкой', box.querySelector('.bh-loot .ic-reserve'));
+ ok('кнопка «Подробнее» есть', box.querySelector('[data-bh]').textContent.includes('Подробнее'));
+ ok('детали скрыты по умолчанию', box.querySelector('.bh-det').hidden===true);
+ ok('в деталях есть лучшие', /Лучший медик/.test(box.innerHTML));
+ const loss=document.createElement('div');
+ loss.innerHTML=App._battleHistRow(Object.assign({},h,{won:false,loot:-800}),1);
+ ok('поражение красным', loss.querySelector('.bh-res.loss').textContent.trim()==='Поражение');
+ ok('потеря резервов со знаком минус', /−\s?800|−800/.test(loss.querySelector('.bh-loot').textContent));
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

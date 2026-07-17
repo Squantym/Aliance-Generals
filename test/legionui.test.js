@@ -64,18 +64,23 @@ eq('activeBattle обнулён', !!lm['lA'].activeBattle, false);
 const done2 = lb.battleState(um['u_v']).battle;
 ok('итоги всё ещё отдаются', done2 && done2.phase === 'done' && !!done2.finalReport);
 
-console.log('\n[4] Топ-3 по характеристикам в отчёте');
+console.log('\n[4] Отчёт игроку: данные врага скрыты, «лучшие» — только свои');
 const r = done2.finalReport;
-ok('есть top3', !!r.top3);
-ok('топ урона отсортирован по убыванию', r.top3.damage[0].value >= r.top3.damage[r.top3.damage.length - 1].value);
-eq('лидер урона — u_v (300)', r.top3.damage[0].name, 'u_v');
-eq('значение топ-урона', r.top3.damage[0].value, 300);
-eq('лидер лечения — u_a2 (400)', r.top3.healing[0].name, 'u_a2');
-eq('лидер защиты — u_e2 (8 прикрытий)', r.top3.defense[0].name, 'u_e2');
-ok('топ-3 не длиннее 3', r.top3.damage.length <= 3 && r.top3.healing.length <= 3 && r.top3.defense.length <= 3);
-ok('в топе урона только с уроном > 0', r.top3.damage.every(x => x.value > 0));
-ok('есть топ убийств', Array.isArray(r.top3.kills));
-eq('лидер убийств — u_v (2)', r.top3.kills[0].name, 'u_v');
+const mySide = done2.mySide;
+const foeSide = mySide === 'A' ? 'B' : 'A';
+ok('свой клан виден целиком', !!r.clanResults[mySide] && Array.isArray(r.clanResults[mySide].members));
+ok('вражеский клан помечен скрытым', r.clanResults[foeSide] && r.clanResults[foeSide].hidden === true);
+eq('у врага нет списка бойцов', r.clanResults[foeSide].members, undefined);
+eq('у врага не виден суммарный урон', r.clanResults[foeSide].totalDamage, undefined);
+ok('название вражеского легиона всё же видно', !!r.clanResults[foeSide].name);
+ok('«лучшие» — массив (одна колонка)', Array.isArray(r.bestPerRole));
+ok('не больше одного на роль (максимум 3)', r.bestPerRole.length <= 3);
+ok('у каждого есть роль, имя и значение', r.bestPerRole.every(x => x.role && x.name && typeof x.value === 'number'));
+ok('роли не повторяются', new Set(r.bestPerRole.map(x => x.role)).size === r.bestPerRole.length);
+ok('все «лучшие» — из своего клана', r.bestPerRole.every(x =>
+  (r.clanResults[mySide].members || []).some(m => m.name === x.name)));
+ok('только значения > 0 попадают в «лучших»', r.bestPerRole.every(x => x.value > 0));
+ok('общий top3 игроку больше не отдаётся (в нём были данные врага)', r.top3 === undefined);
 
 console.log('\n[5] Грейс-период истёк → итоги больше не отдаются');
 bm['B1'].finishedAt = now - (11 * 60 * 1000); // 11 минут назад (грейс 10 мин)

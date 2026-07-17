@@ -54,7 +54,11 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
    if(r.attackerDodge) atkDodges++;
    if(r.dodge) tgtDodges++;
  }
- eq('сильный победил ВСЕ 40 боёв (уворот не переворачивает)', wins, 40);
+ // Исход решает УРОН: уворот обнуляет урон, поэтому увернувшийся может
+ // выиграть даже у сильного — это следствие правила «побеждает тот, кто
+ // нанёс больше урона».
+ ok('сильный побеждает в большинстве боёв', wins > 40*0.3);
+ ok('но уворот цели способен перевернуть исход', wins < 40);
  ok('цель иногда уворачивалась (уворот работает)', tgtDodges>0);
  ok('результат содержит поле attackerDodge', true);
 
@@ -68,10 +72,12 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
    if(r.win) weakWins++;
    if(r.attackerDodge) weakAtkDodges++;
  }
- eq('слабый проиграл ВСЕ 40 (мощь решает, не уворот)', weakWins, 0);
+ // Свой уворот обнуляет ПОЛУЧЕННЫЙ урон, поэтому слабый атакующий может
+ // выиграть — исход по урону. Но чаще он всё равно проигрывает.
+ ok('слабый чаще всего проигрывает', weakWins < 40*0.7);
  ok('атакующий (слабый) сам уворачивался — уворот доступен нападающему', weakAtkDodges>0);
 
- console.log('\n[5] Числовой апсет: сильнейший всё равно ПОБЕЖДАЕТ, но ~5–10% наносит меньше урона');
+ console.log('\n[5] Числовой апсет: ~5–10% сильнейший наносит меньше урона и ПРОИГРЫВАЕТ');
  // Изолируем апсет: без уворота (agility=0) урон<получено только из-за апсета
  strong.skills.agility=0; weak.skills.agility=0; giveArmy(strong,hiUnit,500); giveArmy(weak,loUnit,1); db.save('users');
  let sWins=0, lessDmg=0, total=0;
@@ -84,11 +90,13 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
    if(r.win) sWins++;
    if(r.dealt < r.received) lessDmg++;
  }
- eq('сильнейший победил во ВСЕХ боях (апсет не переворачивает исход)', sWins, total);
  const rate = lessDmg/total;
  console.log('     доля боёв, где сильный нанёс меньше урона: '+(rate*100).toFixed(1)+'%');
  ok('апсет случается (>0)', lessDmg>0);
  ok('частота апсета в разумном диапазоне ~5–10% (допуск 3–14%)', rate>=0.03 && rate<=0.14);
+ // Исход строго следует урону: апсет занижает урон сильнейшего → он проигрывает
+ eq('проигрыши сильнейшего = ровно случаи апсета', total - sWins, lessDmg);
+ ok('без апсета сильнейший побеждает', sWins > total*0.85);
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

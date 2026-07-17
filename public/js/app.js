@@ -37,7 +37,7 @@ const App = {
         <p class="center muted small">Командир <b style="color:var(--fg)">${UI.esc(fat.name)}</b> полностью в вашей власти. Решите его судьбу:</p>
         <div class="fatality-choices">
           <button class="btn btn-red fatality-choice-btn" data-fat="ear">✂️ Отрезать ухо</button>
-          <button class="btn btn-green fatality-choice-btn" data-fat="mercy">🎖 Помиловать</button>
+          <button class="btn btn-green fatality-choice-btn" data-fat="mercy"><span class="ic-token"></span> Помиловать</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -71,10 +71,15 @@ const App = {
     overlay.innerHTML = `
       <div class="fatality-modal">
         <img src="/img/fatality/${isEar ? 'cut' : 'pardon'}.webp" class="fatality-photo" alt="">
-        <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? '✂️ Ухо отрезано' : '🎖 Враг помилован'}</div>
+        <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? '<span class="ic-ear"></span> Ухо отрезано' : '<span class="ic-token"></span> Враг помилован'}</div>
         <p class="center muted small">${isEar
           ? 'Вы отрезали ухо поверженному командиру — трофей жестокости пополнил вашу коллекцию.'
           : 'Вы проявили милосердие и отпустили командира. Знак чести и жетон милосердия — ваши.'}</p>
+        ${(res && (res.ears != null || res.tokens != null)) ? `
+          <div class="fat-loot">
+            ${res.ears   != null ? `<span><span class="ic-ear"></span> ${UI.fmtNum(res.ears)}</span>` : ''}
+            ${res.tokens != null ? `<span><span class="ic-token"></span> ${UI.fmtNum(res.tokens)}</span>` : ''}
+          </div>` : ''}
         <button class="btn btn-orange" id="fat-return" style="width:100%;padding:12px;margin-top:10px">🔙 Вернуться на поле боя</button>
       </div>`;
     document.body.appendChild(overlay);
@@ -441,6 +446,17 @@ const App = {
 
   // Метаданные предметов боевого пояса: как их применять.
   // kind: 'enemy' (по врагу) | 'ally' (по союзнику/себе) | 'self' (на себя) | 'aoe' (по направлению)
+  // ── Картинки легиона (роли / предметы арсенала / постройки) ──────
+  // Файлы лежат в /img/legion/{roles,arsenal,buildings}/<id>.webp
+  roleImg(role, size = 22) {
+    if (!role) return '';
+    return `<img class="ic-role" src="/img/legion/roles/${role}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+  },
+  itemImg(itemId, size = 40) {
+    if (!itemId) return '';
+    return `<img class="ic-item" src="/img/legion/arsenal/${itemId}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+  },
+
   _ITEM_META: {
     gas_grenade:     { name: '💨 Газовая шашка',  kind: 'enemy' },
     flashbang:       { name: '💥 Светошумовая',    kind: 'enemy' },
@@ -640,8 +656,11 @@ const App = {
   // красным, урон (числа) — красным, остальной текст — по теме (бело/чёрный).
   _colorizeLog(text, b) {
     let s = UI.esc(text || '');
-    s = s.replace(/(\d+)\s*урона/g, '<span style="color:#ff4d4d;font-weight:700">$1 урона</span>');
-    s = s.replace(/КРИТ/g, '<span style="color:#ff4d4d;font-weight:800">КРИТ</span>');
+    // Цифры урона — ЖЁЛТЫМ
+    s = s.replace(/(\d+)\s*урона/g, '<span style="color:#e9c75c;font-weight:800">$1 урона</span>');
+    // Крит — красное слово «Крит» ПОЗАДИ урона (в тексте лога он идёт как «💥 КРИТ!»)
+    s = s.replace(/💥\s*КРИТ!?/g, '<span style="color:#ff4d4d;font-weight:800">Крит</span>');
+    s = s.replace(/КРИТ/g, '<span style="color:#ff4d4d;font-weight:800">Крит</span>');
     const mySide = b.mySide;
     const names = (b.allCombatants || [])
       .filter(c => c.name)
@@ -697,7 +716,7 @@ const App = {
         const btn = mode === 'active'
           ? `<button class="btn btn-orange" data-item="${id}" data-item-cd="1" data-item-label="Применить">Применить</button>`
           : '';
-        cells += `<div class="bw-slot ${armed===id?'bw-armed':''}"><div class="nm">${nm}</div>${btn}</div>`;
+        cells += `<div class="bw-slot ${armed===id?'bw-armed':''}">${App.itemImg(id, 38)}<div class="nm">${nm}</div>${btn}</div>`;
       } else {
         const plus = mode === 'prep' && arsenal.length
           ? `<button class="btn btn-inline" id="bw-gear-add-${i}" style="width:100%;height:100%;border-style:dashed">➕ Взять</button>`
@@ -727,6 +746,73 @@ const App = {
     </div>`;
   },
 
+  // Загрузка рейтинга вкладов (общий / недельный) отдельным запросом.
+  // Вклады ушедших из легиона сохраняются — помечаем их «вышел».
+  async _loadContrib() {
+    const box = document.getElementById('contrib-box');
+    if (!box) return;
+    const period = App._contribPeriod || 'all';
+    let d;
+    try { d = await API.get('/api/legion/contributions'); }
+    catch (e) { box.innerHTML = '<p class="muted small">Не удалось загрузить рейтинг.</p>'; return; }
+    const rows = (period === 'week' ? d.week : d.all) || [];
+    if (!rows.length) {
+      box.innerHTML = `<p class="muted small">${period === 'week' ? 'На этой неделе никто ничего не вносил.' : 'Пока никто ничего не вносил в казну.'}</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="contrib-head">
+        <span style="width:20px"></span><span class="grow">Игрок</span>
+        <span class="contrib-v"><span class="ic-ear"></span></span>
+        <span class="contrib-v"><span class="ic-token"></span></span>
+        <span class="contrib-v"><span class="ic-reserve"></span></span>
+      </div>
+      ${rows.map((x, i) => `
+        <div class="contrib-row ${i === 0 ? 'first' : ''}">
+          <span class="contrib-pos">${['🥇','🥈','🥉'][i] || (i + 1)}</span>
+          <span class="grow contrib-name">${UI.esc(x.name)}${x.left ? ' <span class="muted small">(вышел)</span>' : ''}</span>
+          <span class="contrib-v">${x.ears ? UI.fmtNum(x.ears) : '—'}</span>
+          <span class="contrib-v">${x.tokens ? UI.fmtNum(x.tokens) : '—'}</span>
+          <span class="contrib-v">${x.reserves ? UI.fmtNum(x.reserves) : '—'}</span>
+        </div>`).join('')}
+      <p class="muted small mt">${period === 'week'
+        ? 'Недельный рейтинг обнуляется каждый понедельник.'
+        : 'Общий рейтинг — за всё время. Вклад остаётся, даже если игрок вышел из легиона.'}
+        Ресурсы от администрации не засчитываются.</p>`;
+  },
+
+  // Компактная строка истории боя легиона:
+  //   [свой легион] — Победа/Поражение — [вражеский], справа резервы жёлтым,
+  //   ниже кнопка «Подробнее» и дата окончания боя.
+  _battleHistRow(h, i) {
+    const d = new Date(h.at);
+    const dateStr = d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const lootStr = (h.loot >= 0 ? '+' : '−') + UI.fmtNum(Math.abs(h.loot || 0));
+    return `
+      <div class="bh-row ${h.won ? 'win' : 'loss'}">
+        <div class="bh-top">
+          <span class="bh-side ally">${UI.esc(h.myName || 'Ваш легион')}</span>
+          <span class="bh-res ${h.won ? 'win' : 'loss'}">${h.won ? 'Победа' : 'Поражение'}</span>
+          <span class="bh-side foe">${UI.esc(h.enemyName || 'легион')}</span>
+          <span class="bh-loot">${lootStr} <span class="ic-reserve"></span></span>
+        </div>
+        <div class="bh-bot">
+          <button class="btn btn-inline bh-more" data-bh="${i}">Подробнее</button>
+          <span class="muted small">${dateStr}</span>
+        </div>
+        <div class="bh-det" id="bh-det-${i}" hidden>
+          <div class="kv"><span class="k">Слава</span><span class="v ${h.won ? 'green' : 'red'}">${h.won ? '+' + (h.gloryGain || 0) : '−' + (h.gloryLoss || 0)} ⭐</span></div>
+          <div class="kv"><span class="k">${h.loot >= 0 ? 'Получено' : 'Потеряно'} резервов</span><span class="v gold">${lootStr} <span class="ic-reserve"></span></span></div>
+          <div class="kv"><span class="k">Урон вашего легиона</span><span class="v">${UI.fmtNum(h.myDamage || 0)}</span></div>
+          <div class="kv"><span class="k">Участников с вашей стороны</span><span class="v">${h.myParticipants || 0}</span></div>
+          ${(h.best && h.best.length) ? `
+            <div class="bh-best-h">🏅 Лучшие бойцы</div>
+            ${h.best.map(x => `<div class="bh-best">${App.roleImg(x.role, 18)} <span class="grow">${UI.esc(x.label)}: <b>${UI.esc(x.name)}</b></span><span class="gold">${UI.fmtNum(x.value)} <span class="muted small">${UI.esc(x.unit)}</span></span></div>`).join('')}
+          ` : '<p class="muted small" style="margin:6px 0 0">Подробности по этому бою не сохранились.</p>'}
+        </div>
+      </div>`;
+  },
+
   // Панель разведки в подготовке: показывает ровно то, что открыл
   // «Разведывательный центр» легиона (уровни накопительные).
   _bwIntelHtml(b) {
@@ -750,7 +836,7 @@ const App = {
     if (lvl >= 2) {
       // Роли по направлениям — ИКОНКАМИ, без привязки имён (так задумано)
       const byDir = {};
-      foes.forEach(f => { if (f.direction) (byDir[f.direction] = byDir[f.direction] || []).push(f.roleIcon || '❔'); });
+      foes.forEach(f => { if (f.direction) (byDir[f.direction] = byDir[f.direction] || []).push(App.roleImg(f.role, 20) || '❔'); });
       const rows = (b.dirNames || []).map((nm, i) => {
         const icons = byDir[i + 1] || [];
         return `<div class="bw-intel-dir"><span class="grow">${nm}</span><span>${icons.length ? icons.join(' ') : '—'}</span></div>`;
@@ -761,7 +847,7 @@ const App = {
     if (lvl >= 3) {
       const rows = foes.filter(f => f.stats).map(f => `
         <div class="bw-intel-stat">
-          <span class="grow">${f.roleIcon || ''} ${UI.esc(f.name || '')}</span>
+          <span class="grow">${App.roleImg(f.role, 18)} ${UI.esc(f.name || '')}</span>
           <span class="muted small">≈${UI.fmtNum(f.stats.atk)} ⚔ / ≈${UI.fmtNum(f.stats.def)} 🛡 / ${f.stats.critPct}% 💥 / ${f.stats.dodgePct}% 🌀</span>
         </div>`).join('');
       if (rows) inner += `<div class="bw-intel-block"><div class="bw-intel-h">📊 Примерные характеристики</div>${rows}</div>`;
@@ -870,9 +956,12 @@ const App = {
         <div style="font-size:16px;font-weight:bold;margin-bottom:12px">🎒 Выберите предмет из арсенала</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${arsenal.map(it => `
-            <button class="btn btn-inline gear-pick-btn" data-item="${it.itemId}" style="width:100%;padding:12px;text-align:left">
-              <b>${UI.esc(it.name)}</b> <span class="muted small">×${it.qty}</span>
-              ${it.desc?`<br><span class="muted small">${UI.esc(it.desc)}</span>`:''}
+            <button class="btn btn-inline gear-pick-btn item-row" data-item="${it.itemId}" style="width:100%;padding:10px;text-align:left">
+              ${App.itemImg(it.itemId, 40)}
+              <span class="grow">
+                <b>${UI.esc(it.name)}</b> <span class="muted small">×${it.qty}</span>
+                ${it.desc?`<br><span class="muted small">${UI.esc(it.desc)}</span>`:''}
+              </span>
             </button>`).join('')}
         </div>
         <button class="btn btn-inline" id="gear-pick-cancel" style="width:100%;padding:10px;margin-top:12px">Отмена</button>
@@ -896,7 +985,7 @@ const App = {
   },
 
   _renderBattleContent(win, b) {
-    const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
+    const ROLE_ICON = { assault: App.roleImg('assault'), guardian: App.roleImg('guardian'), medic: App.roleImg('medic') };
 
     const hpBar = (hp, maxHp, color) => {
       const pct = Math.round(hp / Math.max(1, maxHp) * 100);
@@ -944,13 +1033,13 @@ const App = {
           <p class="bw-prep-h">Выберите роль — все роли умеют атаковать:</p>
           <div class="bw-roles">
             <button id="bw-join-assault" class="btn btn-orange bw-role-btn">
-              🎯 <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>
+              ${App.roleImg('assault', 20)} <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>
             </button>
             <button id="bw-join-guardian" class="btn btn-orange bw-role-btn">
-              🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона, прикрытие</span>
+              ${App.roleImg('guardian', 20)} <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона, прикрытие</span>
             </button>
             <button id="bw-join-medic" class="btn btn-orange bw-role-btn">
-              ➕ <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>
+              ${App.roleImg('medic', 20)} <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>
             </button>
           </div>
         </div>`;
@@ -1011,13 +1100,13 @@ const App = {
             <p class="bw-prep-h">Сменить роль:</p>
             <div class="bw-roles">
               <button id="bw-join-assault" class="btn ${b.me.role==='assault'?'btn-green':'btn-inline'} bw-role-btn">
-                🎯 <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>${b.me.role==='assault'?' ✓':''}
+                ${App.roleImg('assault', 20)} <b>Штурмовик</b> <span class="muted small">— +20% атаки</span>${b.me.role==='assault'?' ✓':''}
               </button>
               <button id="bw-join-guardian" class="btn ${b.me.role==='guardian'?'btn-green':'btn-inline'} bw-role-btn">
-                🛡️ <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона</span>${b.me.role==='guardian'?' ✓':''}
+                ${App.roleImg('guardian', 20)} <b>Защитник</b> <span class="muted small">— +20% защиты, −20% урона</span>${b.me.role==='guardian'?' ✓':''}
               </button>
               <button id="bw-join-medic" class="btn ${b.me.role==='medic'?'btn-green':'btn-inline'} bw-role-btn">
-                ➕ <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>${b.me.role==='medic'?' ✓':''}
+                ${App.roleImg('medic', 20)} <b>Медик</b> <span class="muted small">— лечение союзников + атака</span>${b.me.role==='medic'?' ✓':''}
               </button>
             </div>
           </div>`;
@@ -1201,7 +1290,7 @@ const App = {
     const won = b.winningSide === mySide;
     const r = b.finalReport;
     const scores = r ? r.activityScores : {};
-    const ROLE_ICON = { assault: '🎯', guardian: '🛡️', medic: '➕' };
+    const ROLE_ICON = { assault: App.roleImg('assault'), guardian: App.roleImg('guardian'), medic: App.roleImg('medic') };
 
     // Мои личные результаты
     const myDetail = (r && b.me && r.playerDetails) ? r.playerDetails[b.me.userId] : null;
@@ -1218,41 +1307,51 @@ const App = {
       </div>` : '';
 
     // Топ-3 по характеристике — каждая номинация отдельной карточкой
-    const top3 = r ? r.top3 : null;
-    const MEDAL = ['🥇', '🥈', '🥉'];
-    const topCard = (icon, title, arr, color, fmt) => (arr && arr.length) ? `
-      <div class="bw-top-card" style="--top-c:${color}">
-        <div class="bw-top-h"><span>${icon}</span>${title}</div>
-        ${arr.map((x, i) => `
-          <div class="bw-top-row ${i === 0 ? 'first' : ''}">
-            <span class="bw-top-pos">${MEDAL[i] || ''}</span>
-            <span class="bw-top-name" style="color:${x.side === mySide ? '#2ecc40' : '#ff4d4d'}">${UI.esc(x.name)}</span>
-            <span class="bw-top-val">${fmt(x.value)}</span>
-          </div>`).join('')}
-      </div>` : '';
-    const top3Block = top3 ? `
+    // «Лучшие боя» — ОДНА колонка, по одному игроку на каждую роль.
+    // Считается по реально сделанному: боец — нанесённый урон, защитник —
+    // урон, принятый за прикрытие, медик — вылеченные HP.
+    // Показываем только СВОЮ сторону: данные врага недоступны.
+    const best = (r && r.bestPerRole) || [];
+    const MEDAL = { assault: '🥇', guardian: '🥈', medic: '🥉' };
+    const ROLE_C = { assault: 'var(--red)', guardian: 'var(--en)', medic: 'var(--green)' };
+    const top3Block = best.length ? `
       <div class="bw-result-section" style="border-color:var(--gold)">
-        <p class="bw-result-h" style="color:var(--gold)">🏅 Топ-3 боя</p>
-        <div class="bw-top-grid">
-          ${topCard('🎯', 'Урон', top3.damage, 'var(--red)', (v) => UI.fmtNum(v))}
-          ${topCard('➕', 'Лечение', top3.healing, 'var(--green)', (v) => UI.fmtNum(v))}
-          ${topCard('🛡️', 'Прикрытия', top3.defense, 'var(--en)', (v) => String(v))}
-          ${topCard('💀', 'Убийства', top3.kills, 'var(--gold)', (v) => String(v))}
+        <p class="bw-result-h" style="color:var(--gold)">🏅 Лучшие бойцы легиона</p>
+        <div class="bw-best-col">
+          ${best.map((x) => `
+            <div class="bw-best-row" style="--top-c:${ROLE_C[x.role] || 'var(--gold)'}">
+              ${App.roleImg(x.role, 26)}
+              <span class="bw-best-t">
+                <b style="color:${ROLE_C[x.role] || 'var(--gold)'}">${x.label}</b>
+                <span class="bw-best-n">${UI.esc(x.name)}</span>
+              </span>
+              <span class="bw-best-v">${UI.fmtNum(x.value)} <span class="muted small">${x.unit}</span></span>
+            </div>`).join('')}
         </div>
       </div>` : '';
 
     // Клановая сводка одной стороны
-    const clanBlock = (cr, isMine) => cr ? `
-      <div class="bw-card" style="border-color:var(--${isMine?'green':'red'})">
-        <div style="font-weight:bold;color:var(--${isMine?'green':'red'});margin-bottom:6px">${isMine?'🟢':'🔴'} ${UI.esc(cr.name||'Легион')} ${isMine?'(ваш)':''}</div>
+    const clanBlock = (cr, isMine) => {
+      if (!cr) return '';
+      // Данные вражеского легиона игрокам недоступны — только название и состав
+      if (cr.hidden) return `
+        <div class="bw-card" style="border-color:var(--red)">
+          <div style="font-weight:bold;color:var(--red);margin-bottom:6px">🔴 ${UI.esc(cr.name||'Легион')}</div>
+          <div class="kv"><span class="k">Участников</span><span class="v">${cr.memberCount}</span></div>
+          <p class="muted small" style="margin:6px 0 0">🔒 Данные вражеского легиона недоступны.</p>
+        </div>`;
+      return `
+      <div class="bw-card" style="border-color:var(--green)">
+        <div style="font-weight:bold;color:var(--green);margin-bottom:6px">🟢 ${UI.esc(cr.name||'Легион')} (ваш)</div>
         <div class="kv"><span class="k">Участников</span><span class="v">${cr.memberCount}</span></div>
         <div class="kv"><span class="k">Суммарный урон</span><span class="v">${UI.fmtNum(cr.totalDamage)}</span></div>
         <div class="kv"><span class="k">Суммарное лечение</span><span class="v">${UI.fmtNum(cr.totalHealed)}</span></div>
         <div class="kv"><span class="k">Убийств</span><span class="v">${cr.totalKills}</span></div>
         <div style="margin-top:6px">
-          ${(cr.members||[]).map(m => `<div style="font-size:12px;padding:3px 0;border-top:1px solid var(--border-dim)">${ROLE_ICON[m.role]||''} ${UI.esc(m.name)} — <span class="muted">🎯${UI.fmtNum(m.dmgDealt)} ➕${UI.fmtNum(m.healed)} 🛡️${m.guards}</span></div>`).join('')}
+          ${(cr.members||[]).map(m => `<div class="bw-clan-m">${App.roleImg(m.role, 18)} ${UI.esc(m.name)} — <span class="muted">${UI.fmtNum(m.dmgDealt)} урона · ${UI.fmtNum(m.healed)} HP · ${UI.fmtNum(m.guardedDmg||0)} принял</span></div>`).join('')}
         </div>
-      </div>` : '';
+      </div>`;
+    };
 
     const cr = r ? r.clanResults : null;
 
@@ -1436,8 +1535,8 @@ const App = {
           <hr style="border:none;border-top:1px solid var(--gold);margin:12px 0">
           <div style="font-weight:bold;margin-bottom:8px;color:var(--gold)">👑 Обзор администратора</div>
           <div class="kv"><span class="k">💰 Казна</span><span class="v gold">$${UI.fmtNum(peek.treasury)}</span></div>
-          <div class="kv"><span class="k">🔷 Резервы</span><span class="v">${UI.fmtNum(peek.reserves)} РЕЗ</span></div>
-          <div class="kv"><span class="k">👂 Уши / 🎫 Жетоны казны</span><span class="v">${peek.treasuryEars} / ${peek.treasuryTokens}</span></div>
+          <div class="kv"><span class="k">🔷 Резервы</span><span class="v">${UI.fmtNum(peek.reserves)} <span class="ic-reserve"></span> РЕЗ</span></div>
+          <div class="kv"><span class="k"><span class="ic-ear"></span> Уши / <span class="ic-token"></span> Жетоны казны</span><span class="v">${peek.treasuryEars} / ${peek.treasuryTokens}</span></div>
           <div class="kv"><span class="k">Лидер</span><span class="v">${UI.esc(peek.leaderName)}</span></div>
           <div class="kv"><span class="k">В бою сейчас</span><span class="v">${peek.hasActiveBattle ? '⚔️ да' : 'нет'}</span></div>
           ${peek.arsenal.length ? `<div style="margin-top:6px;font-size:12px"><b>Арсенал:</b> ${peek.arsenal.map(a => `${UI.esc(a.name)}×${a.count}`).join(', ')}</div>` : ''}
@@ -1478,7 +1577,7 @@ const App = {
 
   // Диалог админ-вклада ресурсов в легион
   async _adminInvestLegion(legionId, legionName) {
-    const RES = [['treasury', '💰 Казна ($)'], ['reserves', '🔷 Резервы (РЕЗ)'], ['ears', '👂 Уши'], ['tokens', '🎫 Жетоны']];
+    const RES = [['treasury', '💰 Казна ($)'], ['reserves', '🔷 Резервы (РЕЗ)'], ['ears', '<span class="ic-ear"></span> Уши'], ['tokens', '<span class="ic-token"></span> Жетоны']];
     const pop = document.createElement('div');
     pop.id = 'lgadmin-invest-pop';
     pop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';

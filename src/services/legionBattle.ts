@@ -171,6 +171,10 @@ function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId:
     const g = battle.combatants[guardianId];
     if (g && g.hp > 0 && now() < ((battle.guardExpiry || {})[guardianId] || 0)) {
       const res = applyDamage(battle, guardianId, rawDmg, sourceId);
+      // Отдельно копим урон, принятый ИМЕННО за прикрытие союзника —
+      // по нему считается «лучший защитник» боя.
+      g.stats = g.stats || ({} as any);
+      g.stats.guardedDmg = (g.stats.guardedDmg || 0) + (res.actual || 0);
       return { ...res, guardedBy: g.name, guardedFor: c.name };
     } else {
       delete (battle.guardLinks || {})[targetId];
@@ -217,8 +221,9 @@ function applyDamage(battle: Battle, targetId: string, rawDmg: number, sourceId:
 // Расчёт урона между двумя бойцами
 // ───────────────────────────────────────────────────────────────────
 function calcDamage(attacker: Combatant, defender: Combatant, aUser: User, dUser: User, opts?: { allowDodge?: boolean }): any {
-  // Бонусы боевых построек легиона: «Штаб наступления» усиливает атаку,
-  // «Бастион» — защиту (+5% за уровень).
+  // Бонусы боевых построек легиона идут в МОЩЬ: «Штаб наступления» — в атаку,
+  // «Бастион» — в защиту (+5% за уровень). Мощь затем проходит через пороговую
+  // формулу урона, поэтому прирост урона не линеен множителю.
   const aAtk = player.totalPower(aUser, 'atk').power * attacker.roleMul.atk
     * bbPowerMul(aUser.legionId, 'atk');
   const dDef = player.totalPower(dUser, 'def').power * defender.roleMul.def
@@ -306,7 +311,7 @@ function joinBattle(user: User, roleId: string, notices: Notices) {
     gear: ((battle.gear || {})[user.id]) || [],
     statusEffects: [],
     alive: true,
-    stats: { dmgDealt: 0, dmgTaken: 0, healed: 0, kills: 0, guards: 0, itemsUsed: 0 },
+    stats: { dmgDealt: 0, dmgTaken: 0, healed: 0, kills: 0, guards: 0, guardedDmg: 0, itemsUsed: 0 },
   };
 
   log(battle, `${user.name} выбрал роль «${role.label}»`, 'prep');
@@ -765,14 +770,18 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
   const { scores, details } = calcActivityScores(battle);
   const combatants: any[] = Object.values(details);
 
-  // Топ по ролям (из обоих кланов)
+  // Метрика «лучшего» для каждой роли — по РЕАЛЬНО сделанному:
+  //   медик    — сколько HP суммарно вылечил союзникам
+  //   защитник — сколько урона принял на себя, прикрывая союзников
+  //   боец     — сколько урона нанёс
+  const roleMetric = (x: any): number => {
+    if (x.role === 'medic')    return x.stats.healed     || 0;
+    if (x.role === 'guardian') return x.stats.guardedDmg || 0;
+    return x.stats.dmgDealt || 0;
+  };
   const byRole = (role: string) => (combatants as any[])
     .filter(x => x.role === role)
-    .sort((a, b) => {
-      if (role === 'medic')    return b.stats.healed   - a.stats.healed;
-      if (role === 'guardian') return b.stats.guards   - a.stats.guards;
-      return b.stats.dmgDealt - a.stats.dmgDealt;
-    });
+    .sort((a, b) => roleMetric(b) - roleMetric(a));
 
   const topMedic    = byRole('medic')[0]    || null;
   const topGuardian = byRole('guardian')[0] || null;
@@ -800,6 +809,19 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
     kills:   mkTop3(sortedByKills, x => x.stats.kills    || 0),
   };
 
+  // ── «Лучшие боя» по одному на каждую роль, ОТДЕЛЬНО для каждой стороны.
+  // Игроку показываем только его сторону: данные врага недоступны.
+  const roleLabel: Record<string, string> = { assault: 'Лучший боец', guardian: 'Лучший защитник', medic: 'Лучший медик' };
+  const roleUnit: Record<string, string>  = { assault: 'урона', guardian: 'урона принял', medic: 'HP вылечил' };
+  const bestBySide = (side: string) => ['assault', 'guardian', 'medic'].map((role) => {
+    const best = (combatants as any[])
+      .filter(x => x.role === role && x.side === side)
+      .sort((a, b) => roleMetric(b) - roleMetric(a))[0];
+    if (!best || roleMetric(best) <= 0) return null;
+    return { role, label: roleLabel[role], unit: roleUnit[role], name: best.name, value: roleMetric(best) };
+  }).filter(Boolean);
+  const bestPerRole = { A: bestBySide('A'), B: bestBySide('B') };
+
   // ── Сводка по кланам (обе стороны): участники и суммарные показатели ──
   const sideSummary = (side: string) => {
     const members = combatants.filter(x => x.side === side);
@@ -813,7 +835,7 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
       members: members.map(x => ({
         name: x.name, role: x.role,
         dmgDealt: x.stats.dmgDealt || 0, healed: x.stats.healed || 0,
-        guards: x.stats.guards || 0, kills: x.stats.kills || 0,
+        guards: x.stats.guards || 0, guardedDmg: x.stats.guardedDmg || 0, kills: x.stats.kills || 0,
       })),
     };
   };
@@ -827,6 +849,7 @@ function buildFinalReport(battle: Battle, winningSide: string): any {
     topAssault,
     tops,
     top3,
+    bestPerRole,
     clanResults: { A: sideSummary('A'), B: sideSummary('B') },
   };
 }
@@ -901,14 +924,17 @@ function finalizeBattle(battle: Battle, all: any, users: any, winningSide: strin
   const crB = report.clanResults ? report.clanResults.B : null;
   const histA = {
     at: now(), enemyId: loser.id === legionA.id ? legionB.id : loser.id,
-    enemyName: legionB.name,
+    enemyName: legionB.name, myName: legionA.name,
     won: winner === legionA, loot, gloryGain, gloryLoss,
+    // «Лучшие» своей стороны — для окна «Подробнее» в истории
+    best: (report.bestPerRole || {}).A || [],
     myDamage: crA ? crA.totalDamage : 0, enemyDamage: crB ? crB.totalDamage : 0,
     myParticipants: crA ? crA.memberCount : 0, enemyParticipants: crB ? crB.memberCount : 0,
   };
   const histB = {
-    at: now(), enemyId: legionA.id, enemyName: legionA.name,
+    at: now(), enemyId: legionA.id, enemyName: legionA.name, myName: legionB.name,
     won: winner === legionB, loot, gloryGain, gloryLoss,
+    best: (report.bestPerRole || {}).B || [],
     myDamage: crB ? crB.totalDamage : 0, enemyDamage: crA ? crA.totalDamage : 0,
     myParticipants: crB ? crB.memberCount : 0, enemyParticipants: crA ? crA.memberCount : 0,
   };
@@ -1029,7 +1055,7 @@ function doneStateView(battle: Battle, user: User): any {
     winningSide: battle.winningSide || null,
     finishReason: battle.finishReason || null,
     me: c ? serializeCombatant(c, now(), true) : null,
-    finalReport: battle.finalReport || null,
+    finalReport: reportForSide(battle.finalReport, mySide),
   };
 }
 
@@ -1091,6 +1117,30 @@ function prepEnemyView(c: Combatant, intel: number, users: any, battle: Battle):
     });
   }
   return v;
+}
+
+
+// Отчёт, каким его видит КОНКРЕТНЫЙ игрок: данные противника скрыты —
+// союзники получают информацию только о своей стороне (урон и состав
+// вражеского легиона недоступны). Общий исход боя виден всем.
+function reportForSide(report: any, mySide: string): any {
+  if (!report) return null;
+  const enemySide = mySide === 'A' ? 'B' : 'A';
+  const cr = report.clanResults || {};
+  const mine = cr[mySide] || null;
+  const foe = cr[enemySide] || null;
+  return {
+    winningSide: report.winningSide,
+    activityScores: report.activityScores,
+    // Свои игроки — целиком; вражеские — только имя легиона и число бойцов
+    clanResults: {
+      [mySide]: mine,
+      [enemySide]: foe ? { side: foe.side, name: foe.name, memberCount: foe.memberCount, hidden: true } : null,
+    },
+    // «Лучшие» — только среди своих
+    bestPerRole: (report.bestPerRole || {})[mySide] || [],
+    playerDetails: report.playerDetails,
+  };
 }
 
 function battleState(user: User): any {
@@ -1265,7 +1315,7 @@ function buildBattleDTO(user: User, battle: Battle, l: any): any {
     })() : null,
     log: (battle.log || []).slice(-40),
     liveScores,
-    finalReport: battle.finalReport || null,
+    finalReport: reportForSide(battle.finalReport, mySide),
     // Боевой пояс и арсенал для UI слотов
     myGear,
     maxSlots,

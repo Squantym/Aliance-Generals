@@ -33,7 +33,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
    medcorps: {max:5,  l1:[8.5e11,3000,3000],     lN:[4.5e12,12000,12000]},
    intel:    {max:5,  l1:[5e11,0,1000],          lN:[5e12,0,16000]},
    supply:   {max:10, l1:[3e11,700,700],         lN:[5.6e12,20000,20000]},
-   barracks: {max:10, l1:[4.7e11,500,500],       lN:[1e13,30000,30000]},
+   barracks: {max:10, l1:[4.7e11,0,500],         lN:[1e13,0,25000]},
  };
  for (const [id,sp] of Object.entries(SPEC)) {
    const b=c.LEGION_BATTLE_BUILDING_BY_ID[id];
@@ -85,8 +85,11 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  const d0=avg(2500);
  legs['LA'].battleBuildings={warcmd:10}; db.save('legions');
  const d10=avg(2500);
- console.log(`     средний урон: без штаба ${d0.toFixed(1)} → со штабом ур.10 ${d10.toFixed(1)}`);
- ok('со Штабом урон заметно выше', d10 > d0*1.10);
+ const growth = d10/d0 - 1;
+ console.log(`     средний урон: без штаба ${d0.toFixed(1)} → со штабом ур.10 ${d10.toFixed(1)} (рост ${(growth*100).toFixed(1)}%)`);
+ // Бонус идёт в МОЩЬ, а мощь проходит через пороговую формулу урона —
+ // поэтому прирост урона не равен множителю мощи.
+ ok('Штаб ур.10 заметно усиливает урон через мощь', growth > 0.10);
 
  console.log('\n[5] Бастион РЕАЛЬНО усиливает защиту цели');
  legs['LA'].battleBuildings={}; legs['LB'].battleBuildings={fortress:10}; db.save('legions');

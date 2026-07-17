@@ -43,7 +43,7 @@ let passed=0; const ok=(n,c)=>{assert.ok(c,'❌ '+n);passed++;console.log('  ✅
  const colored=App._colorizeLog('Друг → Враг: 45 урона 💥 КРИТ!', b2);
  ok('имя союзника зелёное', /#2ecc40[^>]*>Друг/.test(colored));
  ok('имя врага красное', /#ff4d4d[^>]*>Враг/.test(colored));
- ok('урон красный', /#ff4d4d[^>]*>45 урона/.test(colored));
+ ok('урон жёлтый', /#e9c75c[^>]*>\d+ урона/.test(colored));
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

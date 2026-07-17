@@ -39,6 +39,7 @@ function ensureLegionFields(l: any): void {
   // Вклады в казначейство: накопительный рейтинг по игрокам и лента истории
   if (!l.contributions)      l.contributions = {};
   if (!l.treasuryHistory)    l.treasuryHistory = [];
+  if (!l.contribWeekStart)   l.contribWeekStart = 0;
   if (!l.memberRanks)        l.memberRanks = {};
   if (!l.battleStats)        l.battleStats = { wins: 0, losses: 0 };
   if (!l.chat)               l.chat = [];
@@ -249,7 +250,9 @@ function view(user: User): any {
       memberLimit: memberLimit(l),
       battleStats: l.battleStats || { wins: 0, losses: 0 },
       targets,
-      battleHistory: (l.battleHistory || []).slice(-10).reverse(),
+      // Храним 20 последних (старые перезаписываются). Во вкладке легиона
+      // фронт показывает 5, остальное — на отдельной странице истории.
+      battleHistory: (l.battleHistory || []).slice(-20).reverse(),
       membersWithRanks: (() => {
         const users = player.users();
         return (l.members || []).map(id => {
@@ -468,13 +471,22 @@ function recordContribution(l: any, name: string, userId: string | null,
   const reserves = Math.max(0, Math.floor(add.reserves || 0));
   if (!ears && !tokens && !reserves) return;
 
-  // Накопительный рейтинг (только для реальных игроков)
+  // Накопительный рейтинг (только для реальных игроков). Записи НЕ удаляются
+  // при выходе игрока из легиона — вклад остаётся в истории клана навсегда.
   if (userId) {
-    const cur = l.contributions[userId] || { name, ears: 0, tokens: 0, reserves: 0, at: 0 };
+    rollWeekIfNeeded(l);
+    const cur = l.contributions[userId] || {
+      name, ears: 0, tokens: 0, reserves: 0, at: 0,
+      wEars: 0, wTokens: 0, wReserves: 0,
+    };
     cur.name = name;                       // имя могло смениться
     cur.ears     += ears;
     cur.tokens   += tokens;
     cur.reserves += reserves;
+    // Недельный срез (сбрасывается раз в неделю, см. rollWeekIfNeeded)
+    cur.wEars     = (cur.wEars     || 0) + ears;
+    cur.wTokens   = (cur.wTokens   || 0) + tokens;
+    cur.wReserves = (cur.wReserves || 0) + reserves;
     cur.at = Date.now();
     l.contributions[userId] = cur;
   }
@@ -486,16 +498,61 @@ function recordContribution(l: any, name: string, userId: string | null,
   }
 }
 
-// Рейтинг вкладов: массив, отсортированный по ушам → жетонам → РЕЗ
-function contributionsView(l: any): any[] {
+// Начало текущей ISO-недели (понедельник 00:00 по времени сервера)
+function weekStart(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  const dow = (d.getDay() + 6) % 7;        // 0 = понедельник
+  d.setDate(d.getDate() - dow);
+  return d.getTime();
+}
+
+// Сброс НЕДЕЛЬНОГО среза вкладов при наступлении новой недели.
+// Общий рейтинг при этом не трогаем — он за всё время.
+function rollWeekIfNeeded(l: any): void {
+  const cur = weekStart(Date.now());
+  if (l.contribWeekStart === cur) return;
+  l.contribWeekStart = cur;
+  for (const v of Object.values(l.contributions || {}) as any[]) {
+    v.wEars = 0; v.wTokens = 0; v.wReserves = 0;
+  }
+}
+
+// Рейтинг вкладов. period: 'all' — за всё время, 'week' — за текущую неделю.
+// Сортировка: уши → жетоны → РЕЗ (валюты не смешиваем, единого «очка» нет).
+function contributionsView(l: any, period: 'all' | 'week' = 'all'): any[] {
   ensureLegionFields(l);
+  rollWeekIfNeeded(l);
+  const wk = period === 'week';
   return Object.entries(l.contributions || {})
     .map(([userId, v]: any) => ({
       userId, name: v.name,
-      ears: v.ears || 0, tokens: v.tokens || 0, reserves: v.reserves || 0,
+      ears:     wk ? (v.wEars     || 0) : (v.ears     || 0),
+      tokens:   wk ? (v.wTokens   || 0) : (v.tokens   || 0),
+      reserves: wk ? (v.wReserves || 0) : (v.reserves || 0),
+      // Числится ли игрок ещё в легионе (вклад ушедших сохраняется)
+      left: !(l.members || []).includes(userId),
     }))
     .filter(x => x.ears > 0 || x.tokens > 0 || x.reserves > 0)
     .sort((a, b) => (b.ears - a.ears) || (b.tokens - a.tokens) || (b.reserves - a.reserves));
+}
+
+// Отдельная страница рейтинга вкладов: оба раздела сразу
+function contributions(user: User) {
+  const l = legionOf(user);
+  if (!l) throw new u.ApiError('Вы не состоите в легионе');
+  ensureLegionFields(l);
+  rollWeekIfNeeded(l);
+  db.save('legions');
+  return {
+    legionName: l.name,
+    weekStart: l.contribWeekStart,
+    all: contributionsView(l, 'all'),
+    week: contributionsView(l, 'week'),
+    history: (l.treasuryHistory || []).slice(0, 30).map((h: any) => ({
+      at: h.at, name: h.name, ears: h.ears || 0, tokens: h.tokens || 0, reserves: h.reserves || 0,
+    })),
+  };
 }
 
 function depositResources(user: User, ears: number, tokens: number, useAdmin: boolean, notices: Notices) {
@@ -1081,7 +1138,7 @@ function adminDeposit(adminUser: User, legionId: string, amount: number, notices
 }
 
 export = {
-  view, build, declareWar, resolveWars,
+  view, build, declareWar, resolveWars, contributions,
   exchangeToReserves, buildBattle, depositResources,
   startTech, resolveTechQueue,
   shopBuy, gearPick,

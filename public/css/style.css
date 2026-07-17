@@ -287,7 +287,8 @@ label { display: block; margin: 8px 0 4px; color: var(--dim); font-size: 13px; }
    увеличением); при необходимости переопределяется через font-size
    родителя — .ic-* масштабируется вместе с ним (width/height в em).
    =================================================================== */
-.ic-gold, .ic-dollar, .ic-health, .ic-energy, .ic-ammo, .ic-mail, .ic-bell {
+.ic-gold, .ic-dollar, .ic-health, .ic-energy, .ic-ammo, .ic-mail, .ic-bell,
+.ic-ear, .ic-token, .ic-reserve {
   display: inline-block;
   width: 1.15em;
   height: 1.15em;
@@ -303,6 +304,10 @@ label { display: block; margin: 8px 0 4px; color: var(--dim); font-size: 13px; }
 .ic-ammo   { background-image: url('/img/icons/ammo.webp'); }
 .ic-mail   { background-image: url('/img/icons/mail.webp'); }
 .ic-bell   { background-image: url('/img/icons/bell.webp'); }
+/* Валюты легиона: ухо (👂), жетон (🎖) и резерв (РЕЗ) */
+.ic-ear     { background-image: url('/img/icons/ear.webp'); }
+.ic-token   { background-image: url('/img/icons/token.webp'); }
+.ic-reserve { background-image: url('/img/icons/reserve.webp'); }
 
 /* В темах (кибер/пустыня/нуар/аврора) золото раньше меняло цвет через
    текстовый ::before — с реальной картинкой цвет темы вместо этого
@@ -2002,6 +2007,59 @@ body.theme-cyber .img-frame {
 
 .bb-locked { opacity: .6; }
 .bb-locked .name { color: var(--dim); }
+
+
+/* ── Картинки легиона: роли, предметы арсенала, постройки ────────── */
+/* Иконки ролей — маленькие, выравниваются по тексту */
+.ic-role { vertical-align: -4px; object-fit: contain; flex-shrink: 0; }
+/* Предметы арсенала */
+.ic-item { object-fit: contain; flex-shrink: 0;
+  border: 1px solid #000; border-radius: 6px; background: rgba(0,0,0,.25); }
+.item-row { display: flex; align-items: center; gap: 10px; }
+.item-row .grow { min-width: 0; }
+.item-card .name { margin: 0; }
+/* Картинка постройки: небольшая, в тонкой чёрной рамке */
+.bb-img { display: block; width: 100%; max-width: 320px; aspect-ratio: 16 / 9;
+  object-fit: cover; border: 1px solid #000; border-radius: 6px;
+  margin: 0 auto 8px; background: #000; }
+/* Предмет в слоте арсенала боя */
+.bw-slot .ic-item { margin: 0 auto 2px; display: block; }
+
+
+/* ── Послебоевое окно: «лучшие» одной колонкой ─────────────────── */
+.bw-best-col { display: flex; flex-direction: column; gap: 6px; }
+.bw-best-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px;
+  border: 1px solid var(--border); border-left: 3px solid var(--top-c);
+  border-radius: 8px; background: rgba(255,255,255,.02); }
+.bw-best-t { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.bw-best-t b { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.bw-best-n { font-size: 12.5px; font-weight: 700; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.bw-best-v { font-weight: 800; font-size: 12.5px; white-space: nowrap; }
+.bw-clan-m { font-size: 12px; padding: 3px 0; border-top: 1px solid var(--border-dim); }
+
+/* ── История боёв: компактные карточки ─────────────────────────── */
+.bh-row { border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; margin-top: 7px; }
+.bh-row.win  { border-left: 3px solid var(--green); }
+.bh-row.loss { border-left: 3px solid var(--red); }
+.bh-top { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.bh-side { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; max-width: 30%; }
+.bh-side.ally { color: #2ecc40; }
+.bh-side.foe  { color: #ff4d4d; }
+.bh-res { font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.bh-res.win  { color: #2ecc40; }
+.bh-res.loss { color: #ff4d4d; }
+.bh-loot { margin-left: auto; color: #e9c75c; font-weight: 800; white-space: nowrap; }
+.bh-bot { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; gap: 8px; }
+.bh-more { padding: 3px 10px; font-size: 11px; min-height: 0; }
+.bh-det { margin-top: 6px; border-top: 1px solid var(--border-dim); padding-top: 5px; }
+.bh-best-h { font-size: 10px; color: var(--dim); text-transform: uppercase;
+  letter-spacing: .04em; margin: 6px 0 3px; }
+.bh-best { display: flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 2px 0; }
+.bh-best .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.fat-loot { display: flex; justify-content: center; gap: 14px; margin-top: 8px;
+  font-weight: 800; font-size: 15px; color: var(--gold); }
 
 /* Панель разведки в подготовке */
 .bw-intel { border-color: var(--en) !important; }

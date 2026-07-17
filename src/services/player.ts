@@ -535,7 +535,11 @@ function refresh(user: User): void {
   // но СТРОГО пока игрок находится в активном бою легиона (вне боя — не даёт
   // ничего). Делим интервал на множитель: +10% за уровень.
   const med = medcorpsRegenMul(user);
-  applyRegen(user.res.hp, mx.hp, Math.max(5, Math.round(config.REGEN.hp / med)), now);
+  // Трофей «Полевая реанимация» ускоряет восстановление HP
+  const hpInterval = Math.max(5, Math.round(
+    config.REGEN.hp * (1 - trophyDiscountPct(user, 'regen_hp') / 100) / med
+  ));
+  applyRegen(user.res.hp, mx.hp, hpInterval, now);
   // Трофей «Логистика» снижает интервал регенерации энергии,
   // допинг «Адреналин-Х» дополнительно ускоряет (делим интервал на множитель)
   const enInterval = Math.max(5, Math.round(
