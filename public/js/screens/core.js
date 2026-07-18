@@ -286,32 +286,33 @@ App.screens.home = async (c) => {
   // Главное меню — сетка 2 колонки. В верхнем (главном) блоке — Легион,
   // альянс — в нижнем (вторичном) меню.
   const prodLocked = !m.unlocked.production;
+  // Иконки меню — картинки из /img/menu/<id>.webp (см. App.menuImg)
   const big = [
-    ['war', '🎯', 'Война'],
-    ['legion', '🛡', 'Легион'],
-    ['missions', '📋', 'Спецоперации'],
-    ['hq', '🎖', 'Поручения штаба'],
-    ['production', '🏭', 'Производство' + (prodLocked ? ` 🔒` : '')],
-    ['units', '🚜', 'Техника'],
-    ['buildings', '🏗', 'Постройки'],
-    ['market', '💣', 'Чёрный рынок'],
-    ['saboteurs', '🥷', 'Диверсанты'],
-    ['club', '🎲', 'Клуб офицеров'],
+    ['war', 'war', 'Война'],
+    ['legion', 'legion', 'Легион'],
+    ['missions', 'missions', 'Спецоперации'],
+    ['hq', 'hq', 'Поручения штаба'],
+    ['production', 'production', 'Производство' + (prodLocked ? ` 🔒` : '')],
+    ['units', 'units', 'Техника'],
+    ['buildings', 'buildings', 'Постройки'],
+    ['market', 'market', 'Чёрный рынок'],
+    ['saboteurs', 'saboteurs', 'Диверсанты'],
+    ['club', 'club', 'Клуб офицеров'],
   ];
   // Прямой доступ ко всем разделам. Достижения и внешний вид — внутри
   // профиля. Событие — во вкладке «Война» (бои). Ежедневный вход — авто.
   const small = [
-    ['profile', '👤', 'Профиль', ''],
-    ['alliance', '🤝', 'Альянс', ''],
-    ['fame/alltime/level', '🏆', 'Зал славы', ''],
-    ['chat', '💬', 'Общение', ''],
-    ['mail', '<span class="ic-mail"></span>', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
-    ['trophies', '🎁', 'Трофеи', ''],
-    ['season', '🏆', 'Сезон', ''],
-    ['referral', '🎁', 'Пригласить друга', ''],
-    ['bank', '🏦', 'Банк', ''],
-    ['hospital', '🏥', 'Госпиталь', ''],
-    ['settings', '⚙', 'Настройки', ''],
+    ['profile', 'profile', 'Профиль', ''],
+    ['alliance', 'alliance', 'Альянс', ''],
+    ['fame/alltime/level', 'fame', 'Зал славы', ''],
+    ['chat', 'chat', 'Общение', ''],
+    ['mail', 'mail', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
+    ['trophies', 'trophies', 'Трофеи', ''],
+    ['season', 'season', 'Сезон', ''],
+    ['referral', 'referral', 'Пригласить друга', ''],
+    ['bank', 'bank', 'Банк', ''],
+    ['hospital', 'hospital', 'Госпиталь', ''],
+    ['settings', 'settings', 'Настройки', ''],
   ];
 
   // Вызов легиона — баннер для лидера клана (висит до истечения таймера вызова)
@@ -341,11 +342,11 @@ App.screens.home = async (c) => {
     ${majorHtml}
     <div class="menu-grid">
       ${big.map(([id, ic, label]) =>
-        `<div class="menu-btn" onclick="App.go('${id}')"><span class="ic">${ic}</span>${label}</div>`).join('')}
+        `<div class="menu-btn" onclick="App.go('${id}')">${App.menuImg(ic, 40)}${label}</div>`).join('')}
     </div>
     <div class="menu-grid">
       ${small.map(([id, ic, label, badge]) =>
-        `<div class="menu-btn small-row" onclick="App.go('${id}')"><span class="ic">${ic}</span>${label}${badge}</div>`).join('')}
+        `<div class="menu-btn small-row" onclick="App.go('${id}')">${App.menuImg(ic, 28)}${label}${badge}</div>`).join('')}
     </div>
     <div class="card">
       <div class="kv"><span class="k">⚔ Мощь атаки</span><span class="v">${UI.fmtNum(m.power.atk)}</span></div>

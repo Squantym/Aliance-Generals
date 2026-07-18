@@ -783,15 +783,30 @@ function buyGold(user: User, packId: string) {
 function resView(user: User) {
   const now = Date.now();
   const mx = maxima(user);
-  const one = (r, max, sec) => ({
+  // ВАЖНО: время до следующего тика должно считаться по ЭФФЕКТИВНОМУ интервалу
+  // (с учётом трофеев регенерации, допингов и медкорпуса), иначе игрок видит
+  // базовые 3 минуты и думает, что трофей не работает, хотя энергия копится
+  // быстрее. Здесь пересчитываем те же интервалы, что и в refresh().
+  const med = medcorpsRegenMul(user);
+  const hpSec = Math.max(5, Math.round(
+    config.REGEN.hp * (1 - trophyDiscountPct(user, 'regen_hp') / 100) / med
+  ));
+  const enSec = Math.max(5, Math.round(
+    config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100) / effMul(user, 'energy_regen_pct') / med
+  ));
+  const amSec = Math.max(15, Math.round(
+    config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct') / med
+  ));
+  const one = (r, max, sec, perTick = 1) => ({
     cur: r.cur, max,
     regenSec: sec,
+    perTick,
     toNextSec: r.cur >= max ? 0 : Math.max(0, Math.ceil((r.t + sec * 1000 - now) / 1000)),
   });
   return {
-    hp: one(user.res.hp, mx.hp, config.REGEN.hp),
-    en: one(user.res.en, mx.en, config.REGEN.en),
-    am: one(user.res.am, mx.am, config.REGEN.am),
+    hp: one(user.res.hp, mx.hp, hpSec),
+    en: one(user.res.en, mx.en, enSec, config.REGEN.EN_PER_TICK),
+    am: one(user.res.am, mx.am, amSec),
   };
 }
 

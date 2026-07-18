@@ -403,7 +403,8 @@ App.screens.war = async (c) => {
       App._warEncounter = null;
       if (r.exploded) {
         const lostTechText = (r.lostTech || []).map((x) => `${UI.esc(x.name)} ×${x.count}`).join(', ') || 'без потерь техники';
-        const lostSabText = Object.entries(r.lostSaboteurs || {}).map(([k, v]) => `${k} ×${v}`).join(', ');
+        const SAB_RU = { ground: 'наземные', sea: 'морские', air: 'воздушные', secret: 'секретные', building: 'построечные', suicide: 'смертники' };
+        const lostSabText = Object.entries(r.lostSaboteurs || {}).map(([k, v]) => `${SAB_RU[k] || k} ×${v}`).join(', ');
         await UI.confirm(
           `Провод оказался с сюрпризом — взрыв!\n\nЗдоровье снесено полностью. Уничтожено ${r.techLossPct}% техники, участвовавшей в бою: ${lostTechText}.` +
           (lostSabText ? `\n\nПогибло диверсантов: ${lostSabText}.` : ''),
@@ -484,19 +485,48 @@ App.screens.war = async (c) => {
     if (!sanctions.length) {
       list.innerHTML = '<p class="muted center" style="padding:20px">Активных санкций нет. Объявите санкцию через профиль любого игрока.</p>';
     } else {
-      list.innerHTML = sanctions.map((s) => `
+      list.innerHTML = sanctions.map((s, i) => `
         <div class="list-row">
           <div class="grow">
             <span class="name" style="cursor:pointer" onclick="App.go('profile/${s.targetId}')">${App._flagImg(s.flag)} ${UI.esc(s.targetName)}</span>
             <span class="muted small"> Ур. ${s.level} · HP ${s.hpPct}%</span>
-            <div class="small" style="color:var(--money)">💰 Награда: <span class="ic-dollar"></span>${UI.fmtNum(s.bounty)}${s.orderCount > 1 ? ` (${s.orderCount} заказов)` : ''}</div>
+            <div class="small" style="color:var(--money)">💰 Награда: <span class="ic-dollar"></span>${UI.fmtNum(s.bounty)}${s.orderCount > 1
+              ? ` · <span class="sanc-toggle" data-sanc-orders="${s.targetId}" data-idx="${i}" style="cursor:pointer;text-decoration:underline">${s.orderCount} заказчиков ▾</span>`
+              : ` <span class="muted">(1 заказчик)</span>`}</div>
             ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: <span class="ic-dollar"></span>${UI.fmtNum(s.myOrder)}</div>` : ''}
+            <div class="sanc-orders" id="sanc-orders-${i}" hidden></div>
           </div>
           <button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>
         </div>`).join('');
 
       list.querySelectorAll('[data-sanction-target]').forEach((btn) => {
         btn.onclick = () => attackTarget(btn.dataset.sanctionTarget);
+      });
+
+      // Раскрытие разбивки: кто сколько заплатил в общий банк
+      list.querySelectorAll('[data-sanc-orders]').forEach((el) => {
+        el.onclick = async () => {
+          const box = document.getElementById('sanc-orders-' + el.dataset.idx);
+          if (!box) return;
+          if (!box.hidden) { box.hidden = true; el.innerHTML = el.innerHTML.replace('▴', '▾'); return; }
+          box.innerHTML = '<div class="muted small">Загрузка…</div>';
+          box.hidden = false;
+          el.innerHTML = el.innerHTML.replace('▾', '▴');
+          try {
+            const d = await API.get('/api/sanctions/' + encodeURIComponent(el.dataset.sancOrders) + '/orders');
+            box.innerHTML = `
+              <div class="sanc-breakdown">
+                <div class="sanc-b-head">Из чего складывается награда <span class="ic-dollar"></span>${UI.fmtNum(d.bounty)}:</div>
+                ${d.orders.map((o) => `
+                  <div class="sanc-b-row${o.isMe ? ' me' : ''}">
+                    <span class="grow">${UI.esc(o.byName)}${o.isMe ? ' <span class="muted">(вы)</span>' : ''}${o.count > 1 ? ` <span class="muted small">×${o.count}</span>` : ''}</span>
+                    <span class="sanc-b-amt"><span class="ic-dollar"></span>${UI.fmtNum(o.amount)} <span class="muted small">${o.pct}%</span></span>
+                  </div>`).join('')}
+              </div>`;
+          } catch (e) {
+            box.innerHTML = '<div class="muted small">Не удалось загрузить разбивку.</div>';
+          }
+        };
       });
     }
   }
@@ -515,7 +545,7 @@ App.screens.missions = async (c, param) => {
   if (data.active) {
     const a = data.active;
     activeBlock = `
-      <div class="card fatality-card">
+      <div class="card fatality-card" id="mission-active">
         <div class="name">⏳ Идёт шаг: ${UI.esc(a.confName)}</div>
         <div class="muted small mt">${UI.esc(a.opName)} · ${UI.esc(a.stepName)}</div>
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
@@ -541,9 +571,31 @@ App.screens.missions = async (c, param) => {
   const boostBtn = document.getElementById('m-boost');
   if (boostBtn) {
     boostBtn.onclick = async () => {
-      try { await API.post('/api/missions/boost', { processId: boostBtn.dataset.pid }); App.rerender(); }
+      try { await API.post('/api/missions/boost', { processId: boostBtn.dataset.pid }); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
+  }
+
+  // Живой таймер активного шага в списке конфликтов (аналогично detail-виду)
+  if (App._missionTimer) { clearInterval(App._missionTimer); App._missionTimer = null; }
+  if (data.active) {
+    let secs = data.active.secondsLeft;
+    const total = data.active.totalSec || 1;
+    App._missionTimer = setInterval(async () => {
+      if ((location.hash || '').indexOf('missions') < 0) { clearInterval(App._missionTimer); App._missionTimer = null; return; }
+      secs--;
+      const barLabel = document.querySelector('#mission-active .txt');
+      const barFill = document.querySelector('#mission-active .fill');
+      if (secs > 0) {
+        if (barLabel) barLabel.textContent = 'Осталось: ' + UI.fmtTimer(secs);
+        if (barFill) barFill.style.width = Math.min(100, Math.round((total - secs) / total * 100)) + '%';
+      } else {
+        clearInterval(App._missionTimer); App._missionTimer = null;
+        if (barLabel) barLabel.textContent = 'Готово!';
+        await App.refreshMe();
+        App.rerender();
+      }
+    }, 1000);
   }
 
   // Авто-обновление пока идёт активный шаг
@@ -564,7 +616,7 @@ async function renderConflictDetail(c, confId) {
   if (conf.activeStep) {
     const a = conf.activeStep;
     activeBlock = `
-      <div class="card fatality-card">
+      <div class="card fatality-card" id="mission-active">
         <div class="name">⏳ ${UI.esc(a.opName)} · ${UI.esc(a.stepName)}</div>
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
           a.secondsLeft > 0 ? 'Осталось: ' + UI.fmtTimer(a.secondsLeft) : 'Готово'
@@ -627,11 +679,39 @@ async function renderConflictDetail(c, confId) {
   const boostBtn = document.getElementById('m-boost');
   if (boostBtn) {
     boostBtn.onclick = async () => {
-      try { await API.post('/api/missions/boost', { processId: boostBtn.dataset.pid }); App.rerender(); }
+      try { await API.post('/api/missions/boost', { processId: boostBtn.dataset.pid }); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
   }
 
+  // Живой таймер активного шага: раньше этот блок был ПУСТ — из-за чего игрок
+  // видел статичный таймер, а прогресс не двигался, пока экран не переоткроют
+  // вручную. Теперь тикаем каждую секунду, а по завершении шага дёргаем сервер
+  // (refreshMe вызывает checkCompleted → шаг засчитывается) и перерисовываем.
+  if (App._missionTimer) { clearInterval(App._missionTimer); App._missionTimer = null; }
   if (conf.activeStep) {
-}
+    let secs = conf.activeStep.secondsLeft;
+    App._missionTimer = setInterval(async () => {
+      // Ушли с экрана миссий — гасим таймер
+      if ((location.hash || '').indexOf('missions') < 0) {
+        clearInterval(App._missionTimer); App._missionTimer = null; return;
+      }
+      secs--;
+      const barLabel = document.querySelector('#mission-active .txt');
+      const barFill = document.querySelector('#mission-active .fill');
+      if (secs > 0) {
+        if (barLabel) barLabel.textContent = 'Осталось: ' + UI.fmtTimer(secs);
+        if (barFill) {
+          const total = conf.activeStep.totalSec || 1;
+          barFill.style.width = Math.min(100, Math.round((total - secs) / total * 100)) + '%';
+        }
+      } else {
+        // Шаг завершился — засчитываем на сервере и обновляем экран
+        clearInterval(App._missionTimer); App._missionTimer = null;
+        if (barLabel) barLabel.textContent = 'Готово!';
+        await App.refreshMe();          // → player.refresh → missions.checkCompleted
+        App.rerender();                 // прогресс сдвинется: ●●○ → ●●●
+      }
+    }, 1000);
+  }
 }

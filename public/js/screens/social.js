@@ -98,7 +98,7 @@ async function renderGroupScreen(c, kind) {
           return `
             <div class="card${b.locked ? ' bb-locked' : ''}">
               <img class="bb-img" src="/img/legion/buildings/${b.id}.webp" alt="" loading="lazy">
-              <div class="name">${UI.esc(b.name)} <span class="muted">ур. ${b.level}/${b.maxLevel}</span></div>
+              <div class="bb-title">${UI.esc(b.name)} <span class="muted">ур. ${b.level}/${b.maxLevel}</span></div>
               <div class="muted small">${UI.esc(b.desc)}</div>
               <div class="kv mt"><span class="k">Бонус</span><span class="v">${b.bonusNow}${unit}</span></div>
               ${c ? `<div class="kv"><span class="k">Цена</span><span class="v">${resStr}</span></div>

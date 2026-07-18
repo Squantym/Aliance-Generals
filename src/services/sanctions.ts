@@ -75,6 +75,42 @@ function declare(user: User, targetId: string, amount: number | string, notices:
 }
 
 // ── Список активных санкций (для вкладки «Война») ─────────────────
+// ── Детализация: кто заказал цель и сколько заплатил ──────────────
+// Полная сумма банка складывается из вкладов нескольких заказчиков —
+// эта функция раскрывает разбивку. Вклады одного заказчика (если он
+// доставлял несколько раз) суммируются в одну строку.
+function orders(user: User, targetId: string) {
+  const s = store();
+  const entry = s[targetId];
+  if (!entry) return { targetId, targetName: '', bounty: 0, orders: [] };
+  // Сворачиваем несколько ставок одного заказчика в одну строку
+  const byOrderer: Record<string, { byId: string; byName: string; amount: number; count: number; lastAt: number }> = {};
+  for (const o of entry.orders || []) {
+    const k = o.byId;
+    if (!byOrderer[k]) byOrderer[k] = { byId: o.byId, byName: o.byName, amount: 0, count: 0, lastAt: 0 };
+    byOrderer[k].amount += o.amount;
+    byOrderer[k].count += 1;
+    byOrderer[k].lastAt = Math.max(byOrderer[k].lastAt, o.at || 0);
+  }
+  const rows = Object.values(byOrderer)
+    .map(r => ({
+      byName: r.byName,
+      amount: r.amount,
+      count: r.count,                 // сколько раз этот заказчик доплачивал
+      lastAt: r.lastAt,
+      isMe: r.byId === user.id,
+      pct: entry.bounty > 0 ? Math.round((r.amount / entry.bounty) * 100) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+  return {
+    targetId,
+    targetName: entry.targetName || '',
+    bounty: entry.bounty,
+    ordererCount: rows.length,
+    orders: rows,
+  };
+}
+
 function list(user: User) {
   const s = store();
   const players: Record<string, User> = require('./player').users();
@@ -157,4 +193,4 @@ function isOrderer(userId: string, targetId: string): boolean {
   return entry.orders.some((o: any) => o.byId === userId);
 }
 
-export = { declare, list, checkPayout, clearTarget, isOrderer, MIN_BOUNTY, HP_THRESHOLD_PCT };
+export = { declare, list, orders, checkPayout, clearTarget, isOrderer, MIN_BOUNTY, HP_THRESHOLD_PCT };

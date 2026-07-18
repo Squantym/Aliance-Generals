@@ -148,6 +148,10 @@ a:hover { text-decoration: underline; }
 }
 .menu-btn:hover { background: linear-gradient(#232e18, #1a2312); text-decoration: none; }
 .menu-btn .ic { font-size: 20px; }
+/* Картинки-иконки меню: фиксированный размер, чтобы не растягивались */
+.menu-btn img.ic-menu { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.menu-btn.small-row img.ic-menu { width: 28px; height: 28px; }
 .menu-btn.small-row { min-height: 42px; text-transform: none; font-weight: 600; color: var(--text); }
 .menu-btn .badge { margin-left: auto; }
 
@@ -2022,6 +2026,19 @@ body.theme-cyber .img-frame {
 .bb-img { display: block; width: 100%; max-width: 320px; aspect-ratio: 16 / 9;
   object-fit: cover; border: 1px solid #000; border-radius: 6px;
   margin: 0 auto 8px; background: #000; }
+/* Название боевой постройки — под картинкой, по центру */
+.bb-title { text-align: center; font-weight: 800; font-size: 15px;
+  margin: 2px 0 8px; }
+.bb-title .muted { font-weight: 600; font-size: 12px; }
+/* Разбивка заказчиков санкции */
+.sanc-toggle { color: var(--gold); }
+.sanc-breakdown { margin-top: 6px; border-top: 1px solid var(--border-dim); padding-top: 5px; }
+.sanc-b-head { font-size: 10px; color: var(--dim); text-transform: uppercase;
+  letter-spacing: .03em; margin-bottom: 4px; }
+.sanc-b-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 2px 0; }
+.sanc-b-row.me { color: var(--gold); }
+.sanc-b-row .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sanc-b-amt { white-space: nowrap; font-weight: 700; }
 /* Предмет в слоте арсенала боя */
 .bw-slot .ic-item { margin: 0 auto 2px; display: block; }
 
@@ -2060,6 +2077,15 @@ body.theme-cyber .img-frame {
 
 .fat-loot { display: flex; justify-content: center; gap: 14px; margin-top: 8px;
   font-weight: 800; font-size: 15px; color: var(--gold); }
+
+.ic-sab { object-fit: contain; flex-shrink: 0; border-radius: 6px;
+  border: 1px solid #000; background: rgba(0,0,0,.25); vertical-align: middle; }
+/* Вкладка диверсантов с иконкой */
+.sab-tab { display: inline-flex; align-items: center; gap: 5px; }
+.sab-tab img.ic-sab { width: 20px; height: 20px; border: none; background: none; }
+/* Шапка карточки диверсантов */
+.sab-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.sab-head .name { margin: 0; }
 
 /* Панель разведки в подготовке */
 .bw-intel { border-color: var(--en) !important; }

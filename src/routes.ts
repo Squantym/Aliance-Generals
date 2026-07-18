@@ -128,6 +128,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/saboteurs/suicide/buy', act((req, n) => require('./services/saboteurs').buySuicide(req.user, req.body.qty, n)));
   app.add('POST', '/api/saboteurs/upgrade', act((req, n) => require('./services/saboteurs').upgradeLimit(req.user, req.body.type, n)));
   app.add('GET',  '/api/sanctions', (req) => sanctions.list(req.user));
+  app.add('GET',  '/api/sanctions/:id/orders', (req) => sanctions.orders(req.user, req.params.id));
   app.add('POST', '/api/sanctions/declare', act((req, n) => sanctions.declare(req.user, String(req.body.targetId || ''), req.body.amount, n)));
   app.add('POST', '/api/war/fatality', act((req, n) => battle.fatality(req.user, req.body.choice, n)));
   app.add('POST', '/api/war/ear-message', act((req, n) => battle.leaveEarMessage(req.user, String(req.body.victimId || ''), String(req.body.text || ''), n)));

@@ -448,6 +448,15 @@ const App = {
   // kind: 'enemy' (по врагу) | 'ally' (по союзнику/себе) | 'self' (на себя) | 'aoe' (по направлению)
   // ── Картинки легиона (роли / предметы арсенала / постройки) ──────
   // Файлы лежат в /img/legion/{roles,arsenal,buildings}/<id>.webp
+  menuImg(id, size = 40) {
+    if (!id) return '';
+    return `<img class="ic ic-menu" src="/img/menu/${id}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+  },
+  // Иконка типа диверсантов: ground / sea / air / secret / building / suicide
+  sabImg(type, size = 36) {
+    if (!type) return '';
+    return `<img class="ic-sab" src="/img/saboteurs/${type}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+  },
   roleImg(role, size = 22) {
     if (!role) return '';
     return `<img class="ic-role" src="/img/legion/roles/${role}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
@@ -1742,8 +1751,10 @@ const App = {
           `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('') || '<p class="muted small">Техника уцелела</p>';
         const buildRows = Object.entries(rep.destroyedBuildings || {}).map(([nm, cnt]) =>
           `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('') || '<p class="muted small">Постройки уцелели</p>';
+        const SAB_RU = { ground: 'Наземные диверсанты', sea: 'Морские диверсанты', air: 'Воздушные диверсанты',
+          secret: 'Секретные диверсанты', building: 'Диверсанты по постройкам', suicide: 'Смертники' };
         const sab = rep.lostSaboteurs && Object.keys(rep.lostSaboteurs).length
-          ? Object.entries(rep.lostSaboteurs).map(([nm, cnt]) => `<div class="kv"><span class="k">🥷 ${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('')
+          ? Object.entries(rep.lostSaboteurs).map(([type, cnt]) => `<div class="kv"><span class="k">${App.sabImg(type, 22)} ${UI.esc(SAB_RU[type] || type)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('')
           : '';
         const popup = document.createElement('div');
         popup.id = 'rocket-hit-window';
@@ -1764,7 +1775,7 @@ const App = {
             </div>
             <div style="margin-bottom:10px"><b>🔧 Уничтоженная техника:</b>${techRows}</div>
             <div style="margin-bottom:10px"><b>🏚 Разрушенные здания:</b>${buildRows}</div>
-            ${sab ? `<div style="margin-bottom:14px"><b>🥷 Погибшие диверсанты:</b>${sab}</div>` : ''}
+            ${sab ? `<div style="margin-bottom:14px"><b>${App.menuImg('saboteurs', 20)} Погибшие диверсанты:</b>${sab}</div>` : ''}
             <button class="btn btn-orange" id="rocket-hit-close" style="width:100%">Закрыть</button>
           </div>`;
         document.body.appendChild(popup);
