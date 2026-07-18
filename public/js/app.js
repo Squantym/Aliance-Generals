@@ -467,15 +467,15 @@ const App = {
   },
 
   _ITEM_META: {
-    gas_grenade:     { name: '💨 Газовая шашка',  kind: 'enemy' },
-    flashbang:       { name: '💥 Светошумовая',    kind: 'enemy' },
-    assault_grenade: { name: '🔴 Граната',         kind: 'enemy' },
-    napalm:          { name: '🔥 Напалм',          kind: 'aoe'   },
-    hydrogen_bomb:   { name: '💣 Водородная бомба', kind: 'aoe'   },
-    uranium_ammo:    { name: '☢️ Урановые БП',      kind: 'self'  },
-    dome:            { name: '🔵 Купол',            kind: 'self'  },
-    reflect_shield:  { name: '🪞 Отраж. щит',        kind: 'self'  },
-    medkit:          { name: '🩹 Аптечка',          kind: 'ally'  },
+    gas_grenade:     { name: 'Газовая шашка',  kind: 'enemy' },
+    flashbang:       { name: 'Светошумовая',    kind: 'enemy' },
+    assault_grenade: { name: 'Граната',         kind: 'enemy' },
+    napalm:          { name: 'Напалм',          kind: 'aoe'   },
+    hydrogen_bomb:   { name: 'Водородная бомба', kind: 'aoe'   },
+    uranium_ammo:    { name: 'Урановые БП',      kind: 'self'  },
+    dome:            { name: 'Купол',            kind: 'self'  },
+    reflect_shield:  { name: 'Отраж. щит',        kind: 'self'  },
+    medkit:          { name: 'Аптечка',          kind: 'ally'  },
   },
 
   // Тикающий кулдаун действия/предмета: каждую секунду обновляет кнопки атаки
@@ -793,14 +793,14 @@ const App = {
   // Компактная строка истории боя легиона:
   //   [свой легион] — Победа/Поражение — [вражеский], справа резервы жёлтым,
   //   ниже кнопка «Подробнее» и дата окончания боя.
-  _battleHistRow(h, i) {
+  _battleHistRow(h, i, myLegionName) {
     const d = new Date(h.at);
     const dateStr = d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     const lootStr = (h.loot >= 0 ? '+' : '−') + UI.fmtNum(Math.abs(h.loot || 0));
     return `
       <div class="bh-row ${h.won ? 'win' : 'loss'}">
         <div class="bh-top">
-          <span class="bh-side ally">${UI.esc(h.myName || 'Ваш легион')}</span>
+          <span class="bh-side ally">${UI.esc(h.myName || myLegionName || 'Ваш легион')}</span>
           <span class="bh-res ${h.won ? 'win' : 'loss'}">${h.won ? 'Победа' : 'Поражение'}</span>
           <span class="bh-side foe">${UI.esc(h.enemyName || 'легион')}</span>
           <span class="bh-loot">${lootStr} <span class="ic-reserve"></span></span>

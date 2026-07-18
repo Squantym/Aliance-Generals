@@ -546,17 +546,21 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   // получает — и, поскольку исход решает урон, он этот бой ПРОИГРЫВАЕТ.
   // Это и есть задуманная непредсказуемость: изредка фаворит падает.
   // Порог случайно выбирается в диапазоне 5–10% на каждый бой.
-  const upsetChance = B.DAMAGE_UPSET_MIN + Math.random() * (B.DAMAGE_UPSET_MAX - B.DAMAGE_UPSET_MIN);
-  if (Math.random() < upsetChance && dealt > 0 && received > 0) {
-    const factor = 0.5 + Math.random() * 0.4; // 50–90% от урона противника
-    if (aPow >= dPow) {
-      // атакующий сильнее → занижаем ЕГО урон ниже полученного
-      if (dealt >= received) dealt = Math.max(1, Math.round(received * factor));
-    } else {
-      // цель сильнее → занижаем ЕЁ урон (received) ниже нанесённого
-      if (received >= dealt) received = Math.max(1, Math.round(dealt * factor));
-    }
-  }
+  // ЧИСЛОВОЙ АПСЕТ ОТКЛЮЧЁН (по требованию владельца).
+  // Раньше с шансом 5–10% урон сильнейшего резался ниже полученного
+  // (напр. 24 → 2), из-за чего по ОДНОМУ И ТОМУ ЖЕ противнику выходило то 2,
+  // то 27 урона, и фаворит внезапно проигрывал. Теперь урон стабилен в рамках
+  // своей полосы (обычный по resolveDamage / крит ×2+). Чтобы вернуть эффект —
+  // раскомментировать блок ниже.
+  // const upsetChance = B.DAMAGE_UPSET_MIN + Math.random() * (B.DAMAGE_UPSET_MAX - B.DAMAGE_UPSET_MIN);
+  // if (Math.random() < upsetChance && dealt > 0 && received > 0) {
+  //   const factor = 0.5 + Math.random() * 0.4; // 50–90% от урона противника
+  //   if (aPow >= dPow) {
+  //     if (dealt >= received) dealt = Math.max(1, Math.round(received * factor));
+  //   } else {
+  //     if (received >= dealt) received = Math.max(1, Math.round(dealt * factor));
+  //   }
+  // }
   user.res.hp.cur = Math.max(1, user.res.hp.cur - received);
 
   // ИСХОД боя решает УРОН: побеждает тот, кто нанёс больше. Это значит:
@@ -566,7 +570,13 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   //    и тогда сильнейший честно проигрывает;
   //  • при равенстве урона (например, оба увернулись и дошли до 0)
   //    исход решает мощь — иначе исход был бы неопределён.
-  const win = dealt !== received ? dealt > received : aPow >= dPow;
+  // ИСХОД боя. Террористы (боты 💀 из BOT_NAMES, т.е. НЕ «псевдоигроки»)
+  // ВСЕГДА проигрывают игроку — они низкоуровневый фарм, а не вызов.
+  // Псевдоигроки (isPlayerLike) и реальные игроки решаются по урону:
+  // побеждает тот, кто нанёс больше; при равенстве — по мощи.
+  const win = (isBot && !target.isPlayerLike)
+    ? true
+    : (dealt !== received ? dealt > received : aPow >= dPow);
 
   let targetHpAfter;
   if (isBot) {
@@ -589,24 +599,9 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   // ----- Грабёж, опыт, потери техники -----
   let loot = 0;
   const myLosses: any[] = [], enemyLosses: any[] = [];
-  const lootReduce = defPoints / (defPoints + B.DEF_LOOT_SOFT);
+  // Софт-редукция ПОТЕРЬ техники от обороны (грабёж больше не режется обороной:
+  // с реального игрока берётся ровно 5% наличных, см. ветку ниже).
   const lossReduce = defPoints / (defPoints + B.DEF_LOSS_SOFT);
-
-  // Уменьшение грабежа при последовательных атаках на одну цель:
-  // запоминаем атаки на цели за последний час, и каждая следующая атака
-  // даёт меньше денег (×0.5 за каждую предыдущую атаку этого часа).
-  // Это и от ботов, и от живых игроков — фарм одного объекта невыгоден.
-  if (!user.recentAttacks) user.recentAttacks = {};
-  const HOUR_MS = 3600 * 1000;
-  // Чистим старые записи
-  for (const k of Object.keys(user.recentAttacks)) {
-    user.recentAttacks[k] = (user.recentAttacks[k] || []).filter((t) => Date.now() - t < HOUR_MS);
-    if (user.recentAttacks[k].length === 0) delete user.recentAttacks[k];
-  }
-  const targetKey = isBot ? 'bots_pool' : target.id;
-  const recentCount = (user.recentAttacks[targetKey] || []).length;
-  const lootMul = Math.pow(0.5, recentCount); // 1.0, 0.5, 0.25, 0.125, ...
-  user.recentAttacks[targetKey] = (user.recentAttacks[targetKey] || []).concat(Date.now());
 
   if (win) {
     user.battle.wins++;
@@ -654,10 +649,14 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
         }
       }
     } else {
-      // С игрока: 7% от наличных, с учётом уменьшающего множителя
-      // и трофея «Мародёр» (+5% за уровень)
+      // Реальный игрок: строго 5% (LOOT_PCT) от ТЕКУЩИХ наличных на руках.
+      // Деньги в банке (target.bank) НЕ трогаем — банк защищён от обычных атак.
+      // БЕЗ затухания за серию атак (lootMul) и БЕЗ софт-редукции обороны
+      // (lootReduce): каждая атака снимает 5% от остатка наличных, следующая —
+      // 5% от нового (уменьшенного) остатка. Трофей «Мародёр»/эффекты loot_pct
+      // применяются сверху как обычно.
       const looterBonus = 1 + (player.trophyDiscountPct ? player.trophyDiscountPct(user, 'loot') / 100 : 0);
-      loot = Math.floor(target.dollars * B.LOOT_PCT * (1 - lootReduce) * lootMul * player.effMul(user, 'loot_pct') * looterBonus);
+      loot = Math.floor(target.dollars * B.LOOT_PCT * player.effMul(user, 'loot_pct') * looterBonus);
       loot = Math.max(0, Math.min(loot, target.dollars));
       target.dollars -= loot;
       target.battle.defLosses++;

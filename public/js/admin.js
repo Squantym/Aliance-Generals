@@ -48,6 +48,7 @@ const Admin = {
       { id:'tools',     label:'🛠 Инструменты' },
       { id:'events',    label:'🐉 События' },
       { id:'tournament',label:'⚔️ Турниры' },
+      { id:'legions',   label:'🎖 Легионы' },
       { id:'discounts', label:'🏷 Скидки' },
       { id:'buffs',     label:'🎉 Бонусы' },
       { id:'logs',      label:'📋 Журнал' },
@@ -78,6 +79,7 @@ const Admin = {
     if (Admin.tab === 'tools')     return Admin.renderTools(c);
     if (Admin.tab === 'events')    return Admin.renderEvents(c);
     if (Admin.tab === 'tournament')return Admin.renderTournament(c);
+    if (Admin.tab === 'legions')   return Admin.renderLegions(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
@@ -562,6 +564,108 @@ const Admin = {
       ${section('🥷 Диверсанты', sabHtml)}
       ${section('👥 Группы и прочее', groupHtml)}
       <button class="btn btn-orange mt" style="width:100%" onclick="document.getElementById('pd-modal').remove()">Закрыть</button>`;
+  },
+
+  // ── Вкладка «Легионы»: ресурсы, уровень, слава, постройки ──
+  async renderLegions(c) {
+    c.innerHTML = '<p class="muted center">Загрузка…</p>';
+    let data;
+    try { data = await API.get('/api/admin/groups/legion'); }
+    catch (e) { c.innerHTML = '<p class="muted center">Ошибка загрузки легионов.</p>'; return; }
+    const legions = (data.groups || []);
+
+    // Если выбран конкретный легион — показываем редактор
+    if (Admin._legEdit) {
+      return Admin._renderLegionEditor(c, Admin._legEdit);
+    }
+
+    if (!legions.length) {
+      c.innerHTML = '<div class="card"><p class="muted center">Легионов пока нет.</p></div>';
+      return;
+    }
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🎖 Управление легионами</div>
+        <p class="muted small">Выберите легион, чтобы изменить уровень, славу (⭐), ресурсы, рейтинг и постройки.</p>
+      </div>
+      ${legions.map(l => `
+        <div class="card leg-pick" data-leg="${l.id}" style="cursor:pointer">
+          <div class="kv"><span class="k"><b>${UI.esc(l.name)}</b></span><span class="v small muted">${l.members} чел.${l.hasActiveBattle ? ' · ⚔️ бой' : ''}</span></div>
+          <div class="muted small">Лидер: ${UI.esc(l.leaderName || '—')}</div>
+        </div>`).join('')}`;
+
+    c.querySelectorAll('[data-leg]').forEach(el => {
+      el.onclick = () => { Admin._legEdit = el.dataset.leg; Admin.renderLegions(c); };
+    });
+  },
+
+  async _renderLegionEditor(c, legionId) {
+    c.innerHTML = '<p class="muted center">Загрузка…</p>';
+    let s;
+    try { s = await API.get('/api/admin/legion/' + legionId + '/state'); }
+    catch (e) { c.innerHTML = `<p class="muted center">Не удалось загрузить легион. <a href="#" id="leg-back">Назад</a></p>`;
+      const b = document.getElementById('leg-back'); if (b) b.onclick = (ev) => { ev.preventDefault(); Admin._legEdit = null; Admin.renderLegions(c); };
+      return; }
+
+    const numField = (id, label, val, hint) => `
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--dim)">${label}${hint ? ` <span class="muted">${hint}</span>` : ''}</label>
+        <input type="number" id="leg-${id}" value="${val}" min="0" style="width:100%">
+      </div>`;
+
+    c.innerHTML = `
+      <div class="card">
+        <div class="kv"><span class="k"><b>${UI.esc(s.name)}</b></span>
+          <span class="v"><button class="btn btn-inline" id="leg-back">← К списку</button></span></div>
+      </div>
+
+      <div class="card">
+        <div class="name">⭐ Уровень и слава</div>
+        ${numField('level', 'Уровень легиона', s.legionLevel, `(1…${s.maxLevel})`)}
+        ${numField('gloryPoints', 'Слава — баланс ⭐', s.gloryPoints)}
+        ${numField('gloryEarned', 'Слава — заработано ⭐', s.gloryEarned, '(определяет уровень)')}
+        ${numField('ratingPoints', 'Рейтинг клана (очки)', s.ratingPoints)}
+      </div>
+
+      <div class="card">
+        <div class="name">💰 Ресурсы казны</div>
+        ${numField('reserves', 'Резервы (РЕЗ)', s.reserves)}
+        ${numField('ears', 'Уши', s.treasuryEars)}
+        ${numField('tokens', 'Жетоны', s.treasuryTokens)}
+      </div>
+
+      <div class="card">
+        <div class="name">🏗 Боевые постройки</div>
+        <p class="muted small">Уровень 0 — постройка отсутствует.</p>
+        ${s.battleBuildings.map(b => `
+          <div style="margin-bottom:8px">
+            <label style="font-size:11px;color:var(--dim)">${UI.esc(b.name)} <span class="muted">(0…${b.maxLevel})</span></label>
+            <input type="number" class="leg-bld" data-bld="${b.id}" value="${b.level}" min="0" max="${b.maxLevel}" style="width:100%">
+          </div>`).join('')}
+      </div>
+
+      <div class="card">
+        <button class="btn btn-orange" style="width:100%" id="leg-save">💾 Сохранить изменения</button>
+        <p class="muted small mt center">Пустые поля не меняются. Значения задаются абсолютно.</p>
+      </div>`;
+
+    document.getElementById('leg-back').onclick = () => { Admin._legEdit = null; Admin.renderLegions(c); };
+
+    document.getElementById('leg-save').onclick = async () => {
+      const g = (id) => { const el = document.getElementById('leg-' + id); return el ? el.value : ''; };
+      const battleBuildings = {};
+      c.querySelectorAll('.leg-bld').forEach(el => { battleBuildings[el.dataset.bld] = el.value; });
+      const patch = {
+        level: g('level'), gloryPoints: g('gloryPoints'), gloryEarned: g('gloryEarned'),
+        ratingPoints: g('ratingPoints'), reserves: g('reserves'), ears: g('ears'), tokens: g('tokens'),
+        battleBuildings,
+      };
+      try {
+        await API.post('/api/admin/legion/set', { legionId, patch });
+        UI.toast('✅ Легион обновлён');
+        Admin._renderLegionEditor(c, legionId);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
   },
 
   // ── Вкладка «Турниры»: назначить бой между двумя легионами ──

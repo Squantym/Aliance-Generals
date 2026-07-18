@@ -126,6 +126,7 @@ export interface User {
 
   skillPoints: number;
   skills: PlayerSkills;
+  skillResets?: number;   // сколько раз игрок сбрасывал навыки (для цены сброса)
   res: PlayerResources;
 
   units: Record<string, any>; // unitId -> { 0, 1, 2 } по слотам модернизации

@@ -84,8 +84,8 @@ async function renderGroupScreen(c, kind) {
           let resStr = '';
           if (c) {
             resStr = `${UI.fmtNum(c.reserves)} <span class="ic-reserve"></span> РЕЗ`;
-            if (c.ears)   resStr += ` + ${c.ears} <span class="ic-ear"></span>`;
-            if (c.tokens) resStr += ` + ${c.tokens} <span class="ic-token"></span>`;
+            if (c.ears)   resStr += ` ${c.ears} <span class="ic-ear"></span>`;
+            if (c.tokens) resStr += ` ${c.tokens} <span class="ic-token"></span>`;
           }
           const isBuilt = b.level > 0;
           const btnLabel = !isBuilt ? '🏗 Построить' : `⬆️ Улучшить до ур.${b.level + 1}`;
@@ -197,16 +197,16 @@ async function renderGroupScreen(c, kind) {
         // ── Вкладка: Магазин ──────────────────────────────────────────
         const shopItems = [
           // Боевые (за уши)
-          { id:'gas_grenade',     name:'💨 Газовая шашка',         desc:'Запрещает лечение противнику 30 сек.',               earCost:1 },
-          { id:'flashbang',       name:'💥 Светошумовая граната',   desc:'Обездвиживает противника на 20 сек.',                earCost:1 },
-          { id:'assault_grenade', name:'🔴 Наступательная граната', desc:'Наносит 1000% урона от обычной атаки.',              earCost:1 },
-          { id:'napalm',          name:'🔥 Напалм',                 desc:'АОЕ: каждые 3 сек снимает 5% HP в течение 15 сек.', earCost:2 },
-          { id:'uranium_ammo',    name:'☢️ Боеприпасы с ураном',   desc:'+100% урона на 30 сек.',                             earCost:2 },
-          { id:'hydrogen_bomb',   name:'💣 Водородная бомба',       desc:'АОЕ: −20…50% HP всем, игнорируя броню.',            earCost:5 },
+          { id:'gas_grenade',     name:'Газовая шашка',         desc:'Запрещает лечение противнику 30 сек.',               earCost:1 },
+          { id:'flashbang',       name:'Светошумовая граната',   desc:'Обездвиживает противника на 20 сек.',                earCost:1 },
+          { id:'assault_grenade', name:'Наступательная граната', desc:'Наносит 1000% урона от обычной атаки.',              earCost:1 },
+          { id:'napalm',          name:'Напалм',                 desc:'АОЕ: каждые 3 сек снимает 5% HP в течение 15 сек.', earCost:2 },
+          { id:'uranium_ammo',    name:'Боеприпасы с ураном',   desc:'+100% урона на 30 сек.',                             earCost:2 },
+          { id:'hydrogen_bomb',   name:'Водородная бомба',       desc:'АОЕ: −20…50% HP всем, игнорируя броню.',            earCost:5 },
           // Вспомогательные (за жетоны)
-          { id:'medkit',          name:'🩹 Аптечка',                desc:'Лечит 20–50% макс. HP. Можно применять на союзника.', tokenCost:3 },
+          { id:'medkit',          name:'Аптечка',                desc:'Лечит 20–50% макс. HP. Можно применять на союзника.', tokenCost:3 },
           { id:'dome',            name:'🔵 Защитный купол',         desc:'Полный иммунитет к урону на 30 сек.',                tokenCost:2 },
-          { id:'reflect_shield',  name:'🪞 Отражающий щит',         desc:'Следующий удар по вам отражается на врага.',         tokenCost:3 },
+          { id:'reflect_shield',  name:'Отражающий щит',         desc:'Следующий удар по вам отражается на врага.',         tokenCost:3 },
         ];
         const shopTab = `
           <div class="card">
@@ -305,7 +305,7 @@ async function renderGroupScreen(c, kind) {
             // Компактные строки: свой легион — исход — враг, справа резервы.
             // В окне только 5 последних, остальное — на отдельной странице.
             html += `<div class="card"><div class="name">📜 История боёв легиона</div>
-              ${L.battleHistory.slice(0, 5).map((h, i) => App._battleHistRow(h, i)).join('')}
+              ${L.battleHistory.slice(0, 5).map((h, i) => App._battleHistRow(h, i, L.name)).join('')}
               ${L.battleHistory.length > 5
                 ? `<button class="btn btn-inline mt" style="width:100%" data-legtab="history">📜 История боёв (${L.battleHistory.length})</button>`
                 : ''}
@@ -382,7 +382,7 @@ async function renderGroupScreen(c, kind) {
           if (!list.length) return '<div class="card"><p class="muted center small">Боёв ещё не было.</p></div>';
           return `<div class="card">
             <div class="name">📜 История боёв легиона <span class="muted small">(последние ${list.length} из 20)</span></div>
-            ${list.map((h, i) => App._battleHistRow(h, i)).join('')}
+            ${list.map((h, i) => App._battleHistRow(h, i, L.name)).join('')}
             <p class="muted small mt">Хранятся 20 последних боёв — новые перезаписывают старые.</p>
           </div>`;
         })();
@@ -490,7 +490,6 @@ async function renderGroupScreen(c, kind) {
         ${kind === 'alliance' ? `<div class="kv"><span class="k">Бонус техники в бой</span><span class="v gold">+${UI.fmtNum(g.bonusEach)}</span></div>` : ''}
         ${g.maxMembers ? `<p class="muted small mt">Макс. участников = ваш уровень × 10. Поднимите уровень — откроется +10 мест.</p>` : ''}
         <p class="muted small mt">${bonusHint}</p>
-        <button class="btn btn-red mt" id="g-leave">${g.isLeader ? 'Покинуть (лидерство передастся)' : `Покинуть ${label.toLowerCase()}`}</button>
       </div>
 
       ${g.isLeader && kind === 'alliance' ? `
@@ -527,7 +526,11 @@ async function renderGroupScreen(c, kind) {
           </div>`).join('')}
       </div>
 
-      ${legionPanel}`;
+      ${legionPanel}
+
+      <div class="card">
+        <button class="btn btn-red" style="width:100%" id="g-leave">${g.isLeader ? 'Покинуть (лидерство передастся)' : `Покинуть ${label.toLowerCase()}`}</button>
+      </div>`;
 
     document.getElementById('g-leave').onclick = async () => {
       if (!await UI.confirm(`Точно покинуть ${label.toLowerCase()}?`, {title:'Выход', icon:'🚪', okText:'Покинуть', danger:true})) return;
@@ -682,6 +685,14 @@ async function renderGroupScreen(c, kind) {
       // Загрузка чата при открытии вкладки chat
       if ((App._legionTab || 'base') === 'chat') {
         setTimeout(() => App._loadLegionChat(), 50);
+      }
+
+      // Загрузка рейтинга вкладов при открытии вкладки contrib.
+      // Важно вызывать это ЗДЕСЬ (после рендера), а не только по клику: при
+      // rerender() контейнер #contrib-box пересоздаётся с «Загрузка…», и без
+      // повторного вызова рейтинг зависает на надписи «Загрузка…».
+      if ((App._legionTab || 'base') === 'contrib') {
+        setTimeout(() => App._loadContrib(), 50);
       }
 
       // Чат: отправка сообщения

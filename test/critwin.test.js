@@ -1,6 +1,6 @@
 // Правило исхода: побеждает тот, кто нанёс БОЛЬШЕ урона.
 //  • крит слабого игрока переворачивает бой;
-//  • апсет 5–10% топит сильнейшего;
+//  • числовой апсет ОТКЛЮЧЁН — сильнейший больше не «топится» случайно;
 //  • ситуации «нанёс больше, но проиграл» не существует.
 const assert=require('assert');
 process.env.MONGODB_URI='';
@@ -56,17 +56,17 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  ok('криты случались', maxCrit.crits > 0);
  ok('крит приводил к победе', maxCrit.critWins > 0);
 
- console.log('\n[3] Сильный без помех побеждает, кроме апсета 5–10%');
+ console.log('\n[3] Апсет отключён: сильный без помех побеждает ВСЕГДА');
  const strong=run(3000,S,W,{cruelty:0});
  const lossRate=1-strong.wins/strong.n;
  console.log(`     сильный побеждает в ${(strong.wins/strong.n*100).toFixed(1)}% боёв (поражений ${(lossRate*100).toFixed(1)}%)`);
- ok('сильный побеждает в подавляющем большинстве', strong.wins > strong.n*0.85);
- ok('его поражения — это апсет, ~5–10% (допуск 3–14%)', lossRate>=0.03 && lossRate<=0.14);
+ eq('сильный побеждает во ВСЕХ боях (апсета нет)', strong.wins, strong.n);
+ eq('поражений сильнейшего нет', strong.n - strong.wins, 0);
  eq('и у сильного нет «нанёс больше, но проиграл»', strong.moreLost, 0);
 
- console.log('\n[4] Апсет сохранён в конфиге');
- eq('минимум 5%', c.BATTLE.DAMAGE_UPSET_MIN, 0.05);
- eq('максимум 10%', c.BATTLE.DAMAGE_UPSET_MAX, 0.10);
+ console.log('\n[4] Конфиг апсета сохранён (для возможного отката), но в бою НЕ применяется');
+ eq('минимум 5% в конфиге', c.BATTLE.DAMAGE_UPSET_MIN, 0.05);
+ eq('максимум 10% в конфиге', c.BATTLE.DAMAGE_UPSET_MAX, 0.10);
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

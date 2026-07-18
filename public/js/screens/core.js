@@ -762,23 +762,47 @@ App.screens.skills = async (c) => {
     ['agility', '🏃 Ловкость',    '+0.5% к шансу увернуться от атаки и +0.5% ускользнуть от фаталити (макс. 50% каждое).', 1],
   ];
 
+  const caps = m.skillCaps || {};
+  // Есть ли что сбрасывать (хоть один навык вложен) — иначе кнопка сброса не нужна
+  const anySpent = defs.some(([id]) => (m.skills[id] || 0) > 0);
+  const resetCost = m.skillResetCost || 0;
+  const resetLabel = resetCost > 0
+    ? `Сбросить навыки — <span class="gold">${UI.fmtNum(resetCost)}</span> зол.`
+    : `Сбросить навыки — <span class="gold">бесплатно</span>`;
+
   c.innerHTML = `
     <div class="title">Навыки</div>
     <div class="card center">Неиспользовано: <b class="gold">${m.skillPoints}</b> очков навыков
       <p class="muted small mt">+5 очков за каждый уровень и за прохождение конфликтов</p></div>
     ${defs.map(([id, name, desc, plus]) => {
       const cost = m.skillCosts[id];
+      const cap = caps[id];
+      const val = m.skills[id] || 0;
+      const atCap = cap != null && val >= cap;
+      // Значение: при наличии потолка показываем «текущее / потолок»
+      const valHtml = cap != null
+        ? `<span class="gold">${val}</span><span class="muted"> / ${cap}</span>`
+        : `<span class="gold">${val}</span>`;
+      // Кнопка: на потолке — «МАКС» (disabled), иначе покупка (disabled без очков)
+      const btnHtml = atCap
+        ? `<button class="btn btn-inline" disabled>МАКС</button>`
+        : `<button class="btn btn-orange btn-inline" data-skill="${id}" ${m.skillPoints < cost ? 'disabled' : ''}>+${plus} за ${cost} оч.</button>`;
       return `
       <div class="card">
         <div class="list-row" style="border:none;padding:0">
           <div class="grow">
-            <div class="name">${name} — <span class="gold">${m.skills[id]}</span></div>
+            <div class="name">${name} — ${valHtml}</div>
             <div class="muted small">${desc}</div>
           </div>
-          <button class="btn btn-orange btn-inline" data-skill="${id}" ${m.skillPoints < cost ? 'disabled' : ''}>+${plus} за ${cost} оч.</button>
+          ${btnHtml}
         </div>
       </div>`;
-    }).join('')}`;
+    }).join('')}
+    ${anySpent ? `
+    <div class="card center">
+      <button class="btn btn-red" id="skill-reset" style="width:100%">${resetLabel}</button>
+      <p class="muted small mt">Все вложенные очки вернутся — распределишь заново.${resetCost > 0 ? ' Каждый следующий сброс дороже вдвое.' : ' Первый сброс бесплатный.'}</p>
+    </div>` : ''}`;
 
   c.querySelectorAll('[data-skill]').forEach((btn) => {
     btn.onclick = async () => {
@@ -789,6 +813,22 @@ App.screens.skills = async (c) => {
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   });
+
+  const resetBtn = c.querySelector('#skill-reset');
+  if (resetBtn) resetBtn.onclick = async () => {
+    const priceText = resetCost > 0 ? `Это стоит ${UI.fmtNum(resetCost)} золота.` : 'Первый сброс — бесплатно.';
+    const ok = await UI.confirm(
+      `Сбросить все навыки и вернуть очки?\n${priceText}\nСледующий сброс будет дороже.`,
+      { title: 'Сброс навыков', icon: '♻', okText: 'Сбросить', cancelText: 'Отмена', danger: true }
+    );
+    if (!ok) return;
+    try {
+      const r = await API.post('/api/skill/reset', {});
+      await App.refreshMe();
+      App.rerender();
+      UI.toast(`♻ Возвращено ${r.refunded} очков.`);
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
 };
 
 // ---------- БАНК ----------

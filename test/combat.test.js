@@ -77,10 +77,11 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
  ok('слабый чаще всего проигрывает', weakWins < 40*0.7);
  ok('атакующий (слабый) сам уворачивался — уворот доступен нападающему', weakAtkDodges>0);
 
- console.log('\n[5] Числовой апсет: ~5–10% сильнейший наносит меньше урона и ПРОИГРЫВАЕТ');
- // Изолируем апсет: без уворота (agility=0) урон<получено только из-за апсета
+ console.log('\n[5] Апсет ОТКЛЮЧЁН: доминирующий атакующий побеждает ВСЕГДА, урон стабилен');
+ // Без уворота (agility=0) и без апсета урон сильнейшего никогда не «схлопывается»
+ // ниже полученного — он выигрывает каждый бой, а dealt держится в своей полосе.
  strong.skills.agility=0; weak.skills.agility=0; giveArmy(strong,hiUnit,500); giveArmy(weak,loUnit,1); db.save('users');
- let sWins=0, lessDmg=0, total=0;
+ let sWins=0, lessDmg=0, total=0, minDealt=Infinity;
  for(let i=0;i<1500;i++){
    strong.lastAttackAt=0; strong.pendingFatality=null; strong.pendingBankHack=null; strong.pendingMineDefuse=null;
    const mx=player.maxima(strong); strong.res.hp.cur=mx.hp; strong.res.am.cur=mx.am; strong.res.en.cur=mx.en;
@@ -89,14 +90,11 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
    total++;
    if(r.win) sWins++;
    if(r.dealt < r.received) lessDmg++;
+   if(typeof r.dealt==='number') minDealt=Math.min(minDealt, r.dealt);
  }
- const rate = lessDmg/total;
- console.log('     доля боёв, где сильный нанёс меньше урона: '+(rate*100).toFixed(1)+'%');
- ok('апсет случается (>0)', lessDmg>0);
- ok('частота апсета в разумном диапазоне ~5–10% (допуск 3–14%)', rate>=0.03 && rate<=0.14);
- // Исход строго следует урону: апсет занижает урон сильнейшего → он проигрывает
- eq('проигрыши сильнейшего = ровно случаи апсета', total - sWins, lessDmg);
- ok('без апсета сильнейший побеждает', sWins > total*0.85);
+ eq('апсет не срабатывает: dealt<received ни разу', lessDmg, 0);
+ eq('доминирующий побеждает КАЖДЫЙ бой', sWins, total);
+ ok('урон доминирующего стабилен (не схлопывался до ≤5, min='+minDealt+')', minDealt>5);
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

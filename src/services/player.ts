@@ -182,6 +182,12 @@ function addXp(user: User, amount: number, notices: Notices): number {
 function spendSkill(user: User, stat: string): any {
   const cost = config.SKILL_COSTS[stat];
   if (!cost) throw new u.ApiError('Неизвестный навык');
+  // Потолок навыка (жестокость/ловкость). Дальше — бессмысленно (крит/уворот
+  // упираются в 50%), поэтому прокачку блокируем ещё на сервере.
+  const cap = config.SKILL_CAPS[stat];
+  if (cap != null && (user.skills[stat] || 0) >= cap) {
+    throw new u.ApiError(`Навык уже на максимуме (${cap})`);
+  }
   if (user.skillPoints < cost) throw new u.ApiError(`Не хватает очков навыков (нужно ${cost})`);
   user.skillPoints -= cost;
   user.skills[stat]++;
@@ -190,6 +196,42 @@ function spendSkill(user: User, stat: string): any {
   if (stat === 'energy') user.res.en.cur = Math.min(mx.en, user.res.en.cur + config.PLAYER.EN_PER_SKILL);
   if (stat === 'health') user.res.hp.cur = Math.min(mx.hp, user.res.hp.cur + config.PLAYER.HP_PER_SKILL);
   if (stat === 'ammo') user.res.am.cur = Math.min(mx.am, user.res.am.cur + 1);
+}
+
+// Сброс всех навыков. Возвращает все вложенные очки, обнуляет навыки, чтобы
+// игрок мог перераспределить их заново. 1-я попытка бесплатна, далее берётся
+// золото по нарастающей (см. config.skillResetCost).
+function resetSkills(user: User): any {
+  const done = user.skillResets || 0;
+  const cost = config.skillResetCost(done);
+  if (cost > 0 && (user.gold || 0) < cost) {
+    throw new u.ApiError(`Не хватает золота для сброса (нужно ${cost})`);
+  }
+  // Считаем, сколько очков было вложено — вернём их полностью
+  let refund = 0;
+  for (const stat of Object.keys(config.SKILL_COSTS)) {
+    refund += (user.skills[stat] || 0) * config.SKILL_COSTS[stat];
+  }
+  // Нечего возвращать — не даём впустую потратить бесплатную попытку/золото
+  if (refund <= 0) throw new u.ApiError('Навыки ещё не распределены — сбрасывать нечего');
+  if (cost > 0) user.gold -= cost;
+  user.skillPoints += refund;
+  user.skills = { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 };
+  user.skillResets = done + 1;
+  // Здоровье/энергия/боеприпасы обнулились → максимумы упали до базовых.
+  // Зажимаем текущие значения, чтобы cur не превышал новый max.
+  const mx = maxima(user);
+  user.res.hp.cur = Math.min(user.res.hp.cur, mx.hp);
+  user.res.en.cur = Math.min(user.res.en.cur, mx.en);
+  user.res.am.cur = Math.min(user.res.am.cur, mx.am);
+  return {
+    skillPoints: user.skillPoints,
+    skills: { ...user.skills },
+    refunded: refund,
+    cost,
+    skillResets: user.skillResets,
+    nextResetCost: config.skillResetCost(user.skillResets),
+  };
 }
 
 // ---------- Группы (альянс и легион) и вместимость армии ----------
@@ -837,6 +879,8 @@ function mePayload(user: User): any {
     rank: rank(user.level), rating: rating(user),
     dollars: user.dollars, gold: user.gold, bank: user.bank,
     skillPoints: user.skillPoints, skills: { ...user.skills }, skillCosts: config.SKILL_COSTS,
+    skillCaps: config.SKILL_CAPS, skillResets: user.skillResets || 0,
+    skillResetCost: config.skillResetCost(user.skillResets || 0),
     res: resView(user),
     healCost: config.hospitalPrice(user.level),  // для баннера «вылечиться» при HP < 25
     healCooldownLeft: Math.max(0, Math.ceil((((user as any).lastHospitalHeal || 0) + 5 * 60 * 1000 - Date.now()) / 1000)),
@@ -1103,7 +1147,7 @@ function restoreEar(user: User, notices: Notices) {
 }
 
 export = {
-  users, maxima, refresh, addMoney, addBattleLoot, addGold, addXp, xpMul, spendSkill,
+  users, maxima, refresh, addMoney, addBattleLoot, addGold, addXp, xpMul, spendSkill, resetSkills,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,

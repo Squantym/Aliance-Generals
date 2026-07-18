@@ -24,6 +24,24 @@ const PLAYER = {
 // Стоимость одного уровня навыка в очках
 const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 3, agility: 3 };
 
+// Потолки навыков. За ними прокачка бесполезна: крит/фаталити/уворот
+// упираются в 50%. Жестокость — 90 (крит-часть 0.05+0.005·90 = 0.50),
+// ловкость — 100 (уворот 0.005·100 = 0.50). Остальные навыки без потолка
+// (линейный прирост максимумов). Навыки без ключа здесь качаются без ограничений.
+const SKILL_CAPS: Record<string, number> = { cruelty: 90, agility: 100 };
+
+// Сброс навыков: 1-я попытка бесплатна, далее 100 золота, каждая следующая ×2
+// (100 → 200 → 400 → 800 …). Возврат всех вложенных очков полностью.
+const SKILL_RESET = { firstFree: true, baseGold: 100, growth: 2 };
+
+// Цена очередного сброса по числу уже сделанных сбросов (0 = ещё не сбрасывал).
+function skillResetCost(resetsDone: number): number {
+  const done = Math.max(0, Math.floor(resetsDone || 0));
+  if (done === 0 && SKILL_RESET.firstFree) return 0;
+  const paidIdx = SKILL_RESET.firstFree ? done - 1 : done; // ступень платного сброса, 0-based
+  return SKILL_RESET.baseGold * Math.pow(SKILL_RESET.growth, paidIdx);
+}
+
 // Регенерация: секунд на +1 единицу
 const REGEN = { hp: 180, en: 180, am: 180, EN_PER_TICK: 5 };
 
@@ -1384,7 +1402,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'gas_grenade',
     category: 'combat',
-    name: '💨 Газовая шашка',
+    name: 'Газовая шашка',
     desc: 'Бросить на противника: запрещает его лечение на 30 секунд.',
     earCost: 1,
     effect: { type: 'no_heal', duration: 30 },
@@ -1392,7 +1410,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'flashbang',
     category: 'combat',
-    name: '💥 Светошумовая граната',
+    name: 'Светошумовая граната',
     desc: 'Бросить на противника: обездвиживает его на 20 секунд (никаких действий).',
     earCost: 1,
     effect: { type: 'stun', duration: 20 },
@@ -1400,7 +1418,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'assault_grenade',
     category: 'combat',
-    name: '🔴 Наступательная граната',
+    name: 'Наступательная граната',
     desc: 'Наносит 1000% от вашего обычного удара по цели (с учётом её брони).',
     earCost: 1,
     effect: { type: 'damage_pct', pct: 1000 },
@@ -1408,7 +1426,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'napalm',
     category: 'combat',
-    name: '🔥 Напалм',
+    name: 'Напалм',
     desc: 'Действует на всех в направлении: каждые 3 сек снимает 5% HP в течение 15 сек.',
     earCost: 2,
     effect: { type: 'dot_aoe', tickPct: 5, tickInterval: 3, duration: 15 },
@@ -1416,7 +1434,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'uranium_ammo',
     category: 'combat',
-    name: '☢️ Боеприпасы с ураном',
+    name: 'Боеприпасы с ураном',
     desc: 'На 30 секунд наносите на 100% больше урона (с учётом брони).',
     earCost: 2,
     effect: { type: 'dmg_boost', bonus: 100, duration: 30 },
@@ -1424,7 +1442,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'hydrogen_bomb',
     category: 'combat',
-    name: '💣 Водородная бомба',
+    name: 'Водородная бомба',
     desc: 'Всем противникам в направлении: мгновенно −20%…−50% HP, игнорируя броню.',
     earCost: 5,
     effect: { type: 'aoe_true_dmg', minPct: 20, maxPct: 50 },
@@ -1433,7 +1451,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'medkit',
     category: 'support',
-    name: '🩹 Аптечка',
+    name: 'Аптечка',
     desc: 'Лечит от 20% до 50% максимального HP. Применять на себя или союзника.',
     tokenCost: 3,
     effect: { type: 'heal_pct', minPct: 20, maxPct: 50 },
@@ -1441,7 +1459,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'dome',
     category: 'support',
-    name: '🔵 Мобильный защитный купол',
+    name: 'Мобильный защитный купол',
     desc: 'Игрок получает полный иммунитет к урону на 30 секунд.',
     tokenCost: 2,
     effect: { type: 'immunity', duration: 30 },
@@ -1449,7 +1467,7 @@ const LEGION_SHOP_ITEMS = [
   {
     id: 'reflect_shield',
     category: 'support',
-    name: '🪞 Отражающий щит',
+    name: 'Отражающий щит',
     desc: 'Весь входящий урон перенаправляется на случайного противника на вашем направлении. Длится до первого удара.',
     tokenCost: 3,
     effect: { type: 'reflect', duration: 0 },  // duration=0 — до первого удара
@@ -1794,7 +1812,7 @@ const SEASON = {
 };
 
 export = {
-  PLAYER, SKILL_COSTS, REGEN, xpToNext,
+  PLAYER, SKILL_COSTS, SKILL_CAPS, SKILL_RESET, skillResetCost, REGEN, xpToNext,
   COUNTRIES, COUNTRY_BY_ID, RANKS,
   UNITS, UNIT_BY_ID, UNIT_TYPE_NAMES, minUnitPriceAtLevel, maxUnitPriceAtLevel, MK_MULT, PRODUCTION_UNLOCK_LEVEL, WORKSHOP_BASE_GOLD, MK_COST_MULT, MODERN, MINE, SILO, LASER,
   INCOME_BUILDINGS, DEFENSE_BUILDINGS, BUILDING_BY_ID, BUILDING_PRICE_GROWTH, BUILDING_DEF_POWER, INCOME_PERIOD_MS,

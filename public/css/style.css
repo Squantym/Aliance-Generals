@@ -2061,8 +2061,8 @@ body.theme-cyber .img-frame {
 .bh-row.loss { border-left: 3px solid var(--red); }
 .bh-top { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .bh-side { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; max-width: 30%; }
-.bh-side.ally { color: #2ecc40; }
-.bh-side.foe  { color: #ff4d4d; }
+.bh-side.ally { color: var(--text); }
+.bh-side.foe  { color: var(--text); }
 .bh-res { font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
 .bh-res.win  { color: #2ecc40; }
 .bh-res.loss { color: #ff4d4d; }

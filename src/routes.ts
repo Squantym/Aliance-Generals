@@ -91,6 +91,13 @@ function registerRoutes(app: any) {
     tutorial.notify(req.user, 'skill_spent', notices);
     return { skills: req.user.skills, skillPoints: req.user.skillPoints };
   }));
+  app.add('POST', '/api/skill/reset', act((req, n) => {
+    const r = player.resetSkills(req.user);
+    n.push(r.cost > 0
+      ? `♻ Навыки сброшены за ${r.cost} золота. Возвращено ${r.refunded} очков.`
+      : `♻ Навыки сброшены бесплатно. Возвращено ${r.refunded} очков.`);
+    return r;
+  }));
   app.add('GET', '/api/profile/:id', (req) => {
     // Если ID начинается с "bot_" — отдаём профиль бота
     if (String(req.params.id).startsWith('bot_')) {
@@ -367,6 +374,8 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/admin/groups/:kind', (req) => require('./services/groups').listAllAdmin(req.params.kind), { admin: true });
   app.add('GET', '/api/admin/groups/:kind/:id', (req) => require('./services/groups').viewDetailAdmin(req.params.kind, req.params.id), { admin: true });
   app.add('POST', '/api/admin/legion/deposit', act((req, n) => require('./services/legion').adminDeposit(req.user, req.body.legionId, req.body.amount, n, req.body.resource)), { admin: true });
+  app.add('GET',  '/api/admin/legion/:id/state', (req) => require('./services/legion').adminLegionInfo(req.params.id), { admin: true });
+  app.add('POST', '/api/admin/legion/set', act((req, n) => require('./services/legion').adminSetLegion(req.user, req.body.legionId, req.body.patch, n)), { admin: true });
   app.add('POST', '/api/admin/legion/battle', act((req, n) => require('./services/legion').adminStartBattle(req.user, req.body.legionAId, req.body.legionBId, n)), { admin: true });
   // Турниры легионов
   app.add('GET',  '/api/admin/tournaments',        () => require('./services/tournaments').list(), { admin: true });

@@ -1137,6 +1137,112 @@ function adminDeposit(adminUser: User, legionId: string, amount: number, notices
   return { legionId, reserves: l.reserves, treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
 }
 
+// ---------- Полное состояние легиона для админ-панели ----------
+// Отдаёт текущие значения (уровень, слава, ресурсы, рейтинг) и список
+// боевых построек с уровнями — чтобы админка могла заполнить форму.
+function adminLegionInfo(legionId: string): any {
+  const l = legions()[legionId];
+  if (!l) throw new u.ApiError('Легион не найден');
+  ensureLegionFields(l);
+  const lb = require('./legionBattle');
+  lb.ensureLegionGlory(l);
+  const battleBuildings = config.LEGION_BATTLE_BUILDINGS.map((b: any) => ({
+    id: b.id, name: b.name, maxLevel: b.maxLevel,
+    level: (l.battleBuildings || {})[b.id] || 0,
+  }));
+  const buildings = config.LEGION_BUILDINGS.map((b: any) => ({
+    id: b.id, name: b.name,
+    level: (l.buildings || {})[b.id] || 0,
+  }));
+  return {
+    id: l.id, name: l.name,
+    legionLevel:  l.legionLevel  || 1,
+    maxLevel:     lb.GLORY_THRESHOLDS.length,
+    gloryPoints:  l.gloryPoints  || 0,
+    gloryEarned:  l.gloryEarned  || 0,
+    reserves:     l.reserves     || 0,
+    treasuryEars:   l.treasuryEars   || 0,
+    treasuryTokens: l.treasuryTokens || 0,
+    ratingPoints: l.ratingPoints || 0,
+    battleBuildings, buildings,
+  };
+}
+
+// ---------- Установка значений легиона администратором ----------
+// patch может содержать любое подмножество полей. Пустая строка/undefined —
+// поле не трогаем. Значения задаются АБСОЛЮТНО (set, а не +=).
+function adminSetLegion(adminUser: User, legionId: string, patch: any, notices: Notices): any {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  const l = legions()[legionId];
+  if (!l) throw new u.ApiError('Легион не найден');
+  ensureLegionFields(l);
+  const lb = require('./legionBattle');
+  lb.ensureLegionGlory(l);
+  patch = patch || {};
+  const changes: string[] = [];
+  const has = (k: string) => patch[k] !== undefined && patch[k] !== null && patch[k] !== '';
+  const num = (v: any) => Math.max(0, u.toInt(v, 0));
+
+  // Уровень легиона (1..maxLevel). Синхронизируем заработанную славу с порогом,
+  // чтобы «до след. уровня» отображалось корректно и уровень не «откатился».
+  if (has('level')) {
+    const maxLvl = lb.GLORY_THRESHOLDS.length;
+    const lvl = Math.min(maxLvl, Math.max(1, u.toInt(patch.level, 1)));
+    l.legionLevel = lvl;
+    const thr = lb.GLORY_THRESHOLDS[lvl - 1] || 0;
+    if ((l.gloryEarned || 0) < thr) l.gloryEarned = thr;
+    changes.push(`уровень → ${lvl}`);
+  }
+  // Слава (звёзды): баланс и/или заработано
+  if (has('gloryPoints')) {
+    l.gloryPoints = num(patch.gloryPoints);
+    changes.push(`слава-баланс → ${l.gloryPoints}⭐`);
+  }
+  if (has('gloryEarned')) {
+    l.gloryEarned = num(patch.gloryEarned);
+    // Если уровень отдельно не задан — пересчитаем по заработанной славе
+    if (!has('level')) {
+      const nl = lb.calcLegionLevel(l.gloryEarned);
+      if (nl !== (l.legionLevel || 1)) { l.legionLevel = nl; changes.push(`уровень → ${nl}`); }
+    }
+    changes.push(`слава-заработано → ${l.gloryEarned}⭐`);
+  }
+  // Ресурсы (абсолютные значения)
+  if (has('reserves')) { l.reserves = num(patch.reserves); changes.push(`резервы → ${u.fmt(l.reserves)}`); }
+  if (has('ears'))     { l.treasuryEars = num(patch.ears); changes.push(`уши → ${u.fmt(l.treasuryEars)}`); }
+  if (has('tokens'))   { l.treasuryTokens = num(patch.tokens); changes.push(`жетоны → ${u.fmt(l.treasuryTokens)}`); }
+  if (has('ratingPoints')) { l.ratingPoints = num(patch.ratingPoints); changes.push(`рейтинг → ${u.fmt(l.ratingPoints)}`); }
+
+  // Боевые постройки: patch.battleBuildings = { id: level, ... }
+  if (patch.battleBuildings && typeof patch.battleBuildings === 'object') {
+    l.battleBuildings = l.battleBuildings || {};
+    for (const [id, lvl] of Object.entries(patch.battleBuildings)) {
+      if (lvl === undefined || lvl === null || lvl === '') continue;
+      const def = config.LEGION_BATTLE_BUILDINGS.find((b: any) => b.id === id);
+      if (!def) continue;
+      const v = Math.min(def.maxLevel, num(lvl));
+      l.battleBuildings[id] = v;
+      changes.push(`${def.name} → ур.${v}`);
+    }
+  }
+  // Старые клановые постройки: patch.buildings = { id: level, ... }
+  if (patch.buildings && typeof patch.buildings === 'object') {
+    l.buildings = l.buildings || {};
+    for (const [id, lvl] of Object.entries(patch.buildings)) {
+      if (lvl === undefined || lvl === null || lvl === '') continue;
+      const def = config.LEGION_BUILDINGS.find((b: any) => b.id === id);
+      if (!def) continue;
+      l.buildings[id] = num(lvl);
+      changes.push(`${def.name} → ур.${num(lvl)}`);
+    }
+  }
+
+  if (!changes.length) throw new u.ApiError('Нечего менять — не заданы поля');
+  db.save('legions');
+  notices.push(`⚙️ Легион «${l.name}»: ${changes.join(', ')}.`);
+  return adminLegionInfo(legionId);
+}
+
 export = {
   view, build, declareWar, resolveWars, contributions,
   exchangeToReserves, buildBattle, depositResources,
@@ -1144,7 +1250,7 @@ export = {
   shopBuy, gearPick,
   challengeLegion, acceptChallenge, declineChallenge,
   setRank, chatGet, chatPost, publicView, memberLimit, getMemberRank,
-  adminDeposit, adminStartBattle, systemStartBattle, battleResult,
+  adminDeposit, adminStartBattle, adminLegionInfo, adminSetLegion, systemStartBattle, battleResult,
   battleState:      (...a) => require('./legionBattle').battleState(...a),
   joinBattle:       (...a) => require('./legionBattle').joinBattle(...a),
   setReady:         (...a) => require('./legionBattle').setReady(...a),
