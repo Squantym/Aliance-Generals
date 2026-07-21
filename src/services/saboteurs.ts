@@ -144,6 +144,7 @@ function buyPack(user: User, type: LimitedType, packs: number, notices: Notices)
   user.dollars -= totalDollars;
   user.gold -= totalGold;
   user.saboteurs![type] += n * S.packSize;
+  require('./dailyQuests').bump(user, 'saboteursBought', n * S.packSize); // поручение «Тихие люди»
   db.save('users');
   notices.push(`🥷 Куплено ${RU_NAME[type].toLowerCase()}: ${n * S.packSize} шт. (за $${u.fmt(totalDollars)}${totalGold ? ` + 🪙 ${totalGold}` : ''}). В наличии: ${user.saboteurs![type]} (работает: ${active(user, type)}/${user.saboteurLimits![type]}).`);
   return view(user);
@@ -239,9 +240,16 @@ function mineDestroy(user: User, notices: Notices): Record<string, number> {
 
 // ── Уничтожение при ракетном ударе (у ЦЕЛИ, масштаб от мощности) ────
 function rocketDestroy(target: User, powerFrac: number, notices: Notices): Record<string, number> {
-  const count = Math.round(S.rocketDestroyMax * Math.max(0, Math.min(1, powerFrac)));
-  if (count <= 0) return {};
-  return destroyRegular(target, count, notices);
+  const p = Math.max(0, Math.min(1, powerFrac));
+  // Случайный СУММАРНЫЙ бюджет потерь при 100% мощности — 100..150 диверсантов.
+  const totalBudget = Math.round((S.rocketTotalMin + Math.random() * (S.rocketTotalMax - S.rocketTotalMin)) * p);
+  if (totalBudget <= 0) return {};
+  // Правило 5:1 внутри destroyRegular добавляет ~0.4 редких на каждого обычного
+  // (1 секретный + 1 построечный на каждые 5 обычных). Значит суммарно выйдет
+  // ≈ regularBudget·1.4. Чтобы ИТОГО легло в totalBudget (100..150), берём
+  // обычных = totalBudget / 1.4. Редкие теряются реже (в 5 раз).
+  const regularBudget = Math.max(1, Math.round(totalBudget / 1.4));
+  return destroyRegular(target, regularBudget, notices);
 }
 
 export = {

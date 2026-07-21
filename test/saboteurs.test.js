@@ -274,23 +274,25 @@ console.log('\n[11] Выбор смертника: canSacrifice=true при на
 }
 
 // ===================================================================
-console.log('\n[12] Ракета: уничтожает диверсантов ЦЕЛИ, масштаб от мощности (0..200)');
+console.log('\n[12] Ракета: уничтожает диверсантов ЦЕЛИ, случайно ~100..150 всего (масштаб мощностью)');
 {
+  // Только обычные (ground) — тогда суммарные потери = обычные = round(бюджет/1.4)
   const target50 = mkUser('u_rocket50', 'Ракета50', { saboteurs: { ground: 100000, sea: 0, air: 0, secret: 0, building: 0, suicide: 0 }, saboteurLimits: { ground: 300, sea: 50, air: 50, secret: 50, building: 50 } });
   usersMap['u_rocket50'] = target50;
   const before50 = target50.saboteurs.ground;
   saboteurs.rocketDestroy(target50, 0.5, notices);
   const lost50 = before50 - target50.saboteurs.ground;
-  console.log(`  при мощности 50% уничтожено ${lost50} (ожидаем 100)`);
-  eq('при 50% мощности уничтожено ровно 100', lost50, 100);
+  console.log(`  при мощности 50% уничтожено ${lost50} (ожидаем ~36..54)`);
+  ok('при 50% мощности потери в разумном диапазоне (~30..60)', lost50 >= 30 && lost50 <= 60);
 
   const target100 = mkUser('u_rocket100', 'Ракета100', { saboteurs: { ground: 100000, sea: 0, air: 0, secret: 0, building: 0, suicide: 0 }, saboteurLimits: { ground: 300, sea: 50, air: 50, secret: 50, building: 50 } });
   usersMap['u_rocket100'] = target100;
   const before100 = target100.saboteurs.ground;
   saboteurs.rocketDestroy(target100, 1.0, notices);
   const lost100 = before100 - target100.saboteurs.ground;
-  console.log(`  при мощности 100% уничтожено ${lost100} (ожидаем ровно 200)`);
-  eq('при 100% мощности уничтожено ровно 200', lost100, 200);
+  console.log(`  при мощности 100% уничтожено ${lost100} (ожидаем ~71..107)`);
+  ok('при 100% мощности потери в разумном диапазоне (~65..115)', lost100 >= 65 && lost100 <= 115);
+  ok('при 100% теряется больше, чем при 50%', lost100 > lost50);
 }
 
 // ===================================================================

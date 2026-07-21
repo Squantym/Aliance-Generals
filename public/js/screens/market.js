@@ -11,12 +11,12 @@ App.screens.market = async (c, param) => {
   const tab = param || 'buffs'; // buffs | debuffs | containers | auction
 
   const tabs = [
-    ['buffs', '💉 Допинг'],
-    ['debuffs', '😈 Падлянки'],
-    ['mines', '💣 Мины'],
-    ['containers', '📦 Контейнеры'],
-    ['auction', '🔨 Аукцион'],
-    ['passport', '🛂 Паспорт'],
+    ['buffs', App.tabImg('market_doping', 20) + 'Допинг'],
+    ['debuffs', App.tabImg('market_padlyanki', 20) + 'Падлянки'],
+    ['mines', App.tabImg('market_mines', 20) + 'Мины'],
+    ['containers', App.tabImg('market_containers', 20) + 'Контейнеры'],
+    ['auction', App.tabImg('market_auction', 20) + 'Аукцион'],
+    ['passport', App.tabImg('market_passport', 20) + 'Паспорт'],
   ];
   const tabsHtml = `<div class="tabs">${tabs.map(([id, label]) =>
     `<div class="tab ${id === tab ? 'active' : ''}" onclick="location.hash='#market/${id}'">${label}</div>`).join('')}</div>`;
@@ -476,8 +476,13 @@ App.screens.trophies = async (c) => {
     </div>
     ${data.trophies.map((t) => `
       <div class="card">
-        <div class="name">${UI.esc(t.name)} <span class="muted">ур. ${t.level}/${data.maxLevel}</span>${t.flavor ? ' <span class="badge">🔧 в разработке</span>' : ''}${t.spy ? ' <span class="badge">🛰 разведка</span>' : ''}</div>
-        <p class="muted small">${UI.esc(t.desc)}</p>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${App.trophyImg(t.id, 44)}
+          <div class="grow">
+            <div class="name">${UI.esc(t.name)} <span class="muted">ур. ${t.level}/${data.maxLevel}</span>${t.flavor ? ' <span class="badge">🔧 в разработке</span>' : ''}${t.spy ? ' <span class="badge">🛰 разведка</span>' : ''}</div>
+            <p class="muted small">${UI.esc(t.desc)}</p>
+          </div>
+        </div>
         <div class="mt">${UI.bar(t.level, data.maxLevel, 'gold', `${t.level} / ${data.maxLevel}`)}</div>
         ${t.level > 0
           ? `<p class="small mt">${t.spy ? 'Сейчас раскрывает' : 'Текущий бонус'}: <b class="gold">${bonusStr(t, t.bonusNow)}</b></p>`

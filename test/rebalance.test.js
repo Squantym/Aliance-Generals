@@ -6,30 +6,34 @@ let passed=0;
 const ok=(n,cond)=>{assert.ok(cond,'❌ '+n);passed++;console.log('  ✅ '+n);};
 const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;console.log('  ✅ '+n);};
 
-console.log('\n[1] Ежедневные задания: цель растёт с уровнем (~5x к 300)');
-const base=100;
-eq('ур.1 = база', c.dailyQuestTarget(base,1), base);
-ok('ур.150 > базы', c.dailyQuestTarget(base,150) > base*2);
-const at300=c.dailyQuestTarget(base,300);
-ok('ур.300 ≈ 5x базы', at300 >= base*4.9 && at300 <= base*5.1);
-console.log('     цель для базы 100: ур.1='+c.dailyQuestTarget(100,1)+' ур.150='+c.dailyQuestTarget(100,150)+' ур.300='+c.dailyQuestTarget(100,300));
+console.log('\n[1] Ежедневные поручения: цель растёт с уровнем (~8x к 300)');
+const base=100, diff=1;
+eq('ур.1 = база', c.dailyQuestTarget(base,diff,1), base);
+ok('ур.150 > базы', c.dailyQuestTarget(base,diff,150) > base*2);
+const at300=c.dailyQuestTarget(base,diff,300);
+ok('ур.300 ≈ 8x базы', at300 >= base*7.9 && at300 <= base*8.1);
+console.log('     цель базы 100 (diff1): ур.1='+c.dailyQuestTarget(100,1,1)+' ур.150='+c.dailyQuestTarget(100,1,150)+' ур.300='+c.dailyQuestTarget(100,1,300));
 
-console.log('\n[2] Базы заданий подняты (сложнее)');
-const byId=Object.fromEntries(c.DAILY_QUESTS.map(q=>[q.id,q.target]));
-ok('атак стало 150', byId.attack===150);
-ok('побед стало 80', byId.win===80);
-ok('банк стало 1 000 000', byId.deposit===1000000);
+console.log('\n[2] 20 поручений от 6 заказчиков, выбирается 9 в день');
+eq('всего 20 поручений', c.DAILY_QUESTS.length, 20);
+eq('6 заказчиков', Object.keys(c.DAILY_CHARS).length, 6);
+ok('у каждого поручения есть заказчик и описание', c.DAILY_QUESTS.every(q=>q.char && q.flavor && c.DAILY_CHARS[q.char]));
+const pick=c.pickDailyQuests('2026-01-01');
+eq('выбирается ровно 9', pick.length, 9);
+ok('выбор детерминирован в пределах дня', JSON.stringify(pick)===JSON.stringify(c.pickDailyQuests('2026-01-01')));
+ok('другой день — другой набор', JSON.stringify(pick)!==JSON.stringify(c.pickDailyQuests('2026-06-15')));
 
-console.log('\n[3] Награда за задание растёт с уровнем');
-const r1=c.dailyQuestReward(1), r300=c.dailyQuestReward(300);
-ok('доллары ур.300 больше ур.1', r300.dollars > r1.dollars);
-eq('доллары = 8000*level (ур.300)', r300.dollars, 8000*300);
-ok('опыт растёт с уровнем', r300.xp > r1.xp);
-console.log('     награда: ур.1 $'+r1.dollars+'/'+r1.xp+'xp · ур.300 $'+r300.dollars+'/'+r300.xp+'xp');
+console.log('\n[3] Сложность влияет на цель и награду');
+ok('hard-цель больше easy при том же base/level', c.dailyQuestTarget(100,2.4,100) > c.dailyQuestTarget(100,1.0,100));
+const rEasy=c.dailyQuestReward(1.0,100), rHard=c.dailyQuestReward(2.4,100);
+ok('награда hard больше easy', rHard.dollars > rEasy.dollars);
+const r1=c.dailyQuestReward(1,1), r300=c.dailyQuestReward(1,300);
+ok('доллары растут с уровнем', r300.dollars > r1.dollars);
+console.log('     награда diff1: ур.1 $'+r1.dollars+'/'+r1.xp+'xp · ур.300 $'+r300.dollars+'/'+r300.xp+'xp');
 
-console.log('\n[4] Бонус за все задания растёт с уровнем');
-eq('ур.1 бонус = 100', c.dailyAllBonusGold(1), 100);
-eq('ур.300 бонус = 250', c.dailyAllBonusGold(300), 250);
+console.log('\n[4] Бонус за все поручения растёт с уровнем');
+eq('ур.1 бонус = 150', c.dailyAllBonusGold(1), 150);
+eq('ур.300 бонус = 300', c.dailyAllBonusGold(300), 300);
 
 console.log('\n[5] Контракты: пул расширен (8 типов) и цель/награда от уровня');
 eq('в пуле 8 контрактов', c.CONTRACTS_POOL.length, 8);

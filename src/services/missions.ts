@@ -51,8 +51,9 @@ function opsCompleted(user: User, conflict: any): number {
   return n;
 }
 
-// Проверка требований шага
-function meetsRequirements(user: User, step: any): { ok: boolean; reason?: string } {
+// Проверка требований шага.
+// failedUnits=true — провал ИМЕННО по нехватке техники (для окна «купить всё»).
+function meetsRequirements(user: User, step: any): { ok: boolean; reason?: string; failedUnits?: boolean } {
   if (user.level < step.require.level) return { ok: false, reason: `Нужен уровень ${step.require.level}` };
   const atkPower = player.buildArmy(user, 'atk').power;
   if (atkPower < step.require.power) {
@@ -64,10 +65,61 @@ function meetsRequirements(user: User, step: any): { ok: boolean; reason?: strin
   if (ur && ur.count > 0) {
     const owned = ownedUnitsAtLevel(user, ur.minLevel);
     if (owned < ur.count) {
-      return { ok: false, reason: `Нужно ${ur.count} ед. техники уровня от ${ur.minLevel} (у вас ${owned})` };
+      return { ok: false, failedUnits: true, reason: `Нужно ${ur.count} ед. техники уровня от ${ur.minLevel} (у вас ${owned})` };
     }
   }
   return { ok: true };
+}
+
+// Самая дешёвая единица техники, доступная игроку (unlock ≤ уровень) и
+// подходящая под требование операции (unlock ≥ minLevel). Такая почти всегда
+// есть: шаг требует уровень ≥ stepLevel, а minLevel = stepLevel−15 < уровня.
+function pickRequiredUnit(user: User, minLevel: number): any | null {
+  const units = require('./units');
+  const cands = config.UNITS.filter((cu: any) => (cu.unlock || 0) >= minLevel && (cu.unlock || 0) <= user.level);
+  if (!cands.length) return null;
+  cands.sort((a: any, b: any) => units.priceFor(user, a) - units.priceFor(user, b));
+  return cands[0];
+}
+
+// Дефицит техники под требование шага + смета покупки по ЦЕНЕ МАГАЗИНА
+// (с учётом страны и активной АКЦИИ через units.priceFor). null — если
+// требования по технике нет либо оно уже выполнено.
+function unitShortfall(user: User, step: any): any | null {
+  const ur = step.require && step.require.units;
+  if (!ur || ur.count <= 0) return null;
+  const have = ownedUnitsAtLevel(user, ur.minLevel);
+  const deficit = ur.count - have;
+  if (deficit <= 0) return null;
+  const cu = pickRequiredUnit(user, ur.minLevel);
+  if (!cu) return null;
+  const units = require('./units');
+  const discounts = require('./discounts');
+  const unitPrice = units.priceFor(user, cu);       // цена со скидкой/акцией
+  const basePrice = units.basePriceFor(user, cu);   // без акции
+  return {
+    needed: ur.count, have, deficit, minLevel: ur.minLevel,
+    unitId: cu.id, unitName: cu.name,
+    unitPrice, basePrice, totalCost: unitPrice * deficit,
+    discount: discounts.info('unit'),               // {active, pct, ...} — акция
+    canAfford: user.dollars >= unitPrice * deficit,
+  };
+}
+
+// Докупить недостающую технику одним действием (по цене магазина с акцией).
+function buyRequiredUnits(user: User, confId: string, opIdx: number, stepIdx: number, notices: Notices): any {
+  const conf = config.CONFLICT_BY_ID[confId];
+  if (!conf) throw new u.ApiError('Конфликт не найден');
+  const op = (conf as any).operations[opIdx];
+  const step = op && op.steps[stepIdx];
+  if (!step) throw new u.ApiError('Шаг не найден');
+  const short = unitShortfall(user, step);
+  if (!short) throw new u.ApiError('Техники уже достаточно');
+  if (!short.canAfford) throw new u.ApiError(`Не хватает денег: нужно $${u.fmt(short.totalCost)}`);
+  // Покупаем через units.buy — там применяется акция, списание и счётчики
+  require('./units').buy(user, short.unitId, short.deficit, notices);
+  notices.push(`🛒 Докуплено ${short.deficit} ед. «${short.unitName}» для операции.`);
+  return { bought: short.deficit, unitId: short.unitId, spent: short.totalCost };
 }
 
 // Сколько всего единиц техники (всех Mk) с уровнем разблокировки >= minLevel
@@ -97,7 +149,10 @@ function checkCanStart(user: User, conflict: any, op: any, step: any): void {
   const en = user.res.en.cur;
   if (en < step.energy) throw new u.ApiError(`Нужно ⚡ ${step.energy} энергии (у вас ${en})`);
   const req = meetsRequirements(user, step);
-  if (!req.ok) throw new u.ApiError(req.reason || 'Требования не выполнены');
+  // Нехватку техники НЕ считаем фатальной здесь — её обрабатывает окно
+  // «купить всю нужную технику» на уровне startStep. Остальные провалы
+  // (уровень/мощь) — обычная ошибка.
+  if (!req.ok && !req.failedUnits) throw new u.ApiError(req.reason || 'Требования не выполнены');
 }
 
 // Завершение готовых шагов (вызывается из player.refresh ленивым способом)
@@ -110,8 +165,13 @@ function checkCompleted(user: User, notices: Notices): void {
       // Засчитываем шаг
       const p = progress(user, proc.confId);
       p.ops[proc.opIdx] = (p.ops[proc.opIdx] || 0) + 1;
-      // Счётчик для ежедневного задания
+      // Счётчик для ежедневного задания (свой store в dailyQuests)
       require('./dailyQuests').bump(user, 'missionStages', 1);
+      // Глобальный счётчик user.counters.missionStages — его читают КОНТРАКТЫ
+      // («Пройди N шагов спецоперации») и достижения. Инкрементим ПОШАГОВО,
+      // иначе контракт по шагам не двигался бы (раньше счётчик рос только при
+      // ПОЛНОМ прохождении конфликта, bulk-ом — контракты его не видели).
+      ach.bump(user, 'missionStages', 1, notices || []);
       try { require('./seasons').onMissionStep(user); } catch (e) {}
       // Награда за шаг
       player.addXp(user, proc.xp, notices || []);
@@ -132,9 +192,10 @@ function checkCompleted(user: User, notices: Notices): void {
         } else if (notices) {
           notices.push(`✅ Конфликт «${conf.name}» снова пройден (без повторной награды).`);
         }
-        // Обнуляем прогресс для повторного прохождения
+        // Обнуляем прогресс для повторного прохождения.
+        // (missionStages уже засчитан пошагово выше — bulk-инкремент убран,
+        //  чтобы не задваивать счётчик контрактов/достижений.)
         p.ops = {};
-        ach.bump(user, 'missionStages', conf.ops * 3, notices || []);
       }
     } else {
       remaining.push(proc);
@@ -197,7 +258,7 @@ function detail(user: User, confId: string) {
     spReward: conf.spReward, goldReward: conf.goldReward,
     rewardAvailable: !progress(user, conf.id).firstReward,
     operations: (conf as any).operations.map((op: any) => ({
-      idx: op.idx, id: op.id, name: op.name,
+      idx: op.idx, id: op.id, name: op.name, img: op.img || null,
       stepsDone: stepsDone(user, conf.id, op.idx),
       steps: op.steps.map((s) => ({
         idx: s.idx, name: s.name,
@@ -222,6 +283,11 @@ function startStep(user: User, confId: string, opIdx: number, stepIdx: number, n
   if (!step) throw new u.ApiError('Шаг не найден');
 
   checkCanStart(user, conf, op, step);
+
+  // Не хватает техники → не тратим энергию, а возвращаем смету для окна
+  // «купить всю нужную технику по цене магазина» (с учётом акции).
+  const short = unitShortfall(user, step);
+  if (short) return { needUnits: { confId, opIdx, stepIdx, ...short } };
 
   // Расход энергии (с учётом «Радара» — modulates через trophies.missionEnergyMul)
   const trophies = require('./trophies');
@@ -264,4 +330,4 @@ function boostStep(user: User, processId: string, notices: Notices) {
   return { ok: true, cost };
 }
 
-export = { list, detail, startStep, boostStep, checkCompleted };
+export = { list, detail, startStep, boostStep, checkCompleted, buyRequiredUnits };

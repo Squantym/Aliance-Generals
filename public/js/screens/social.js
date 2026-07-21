@@ -401,14 +401,14 @@ async function renderGroupScreen(c, kind) {
         })();
 
         const tabs = [
-          { id: 'base',        label: '🏰 База' },
-          { id: 'buildings',   label: '🏗 Постройки' },
-          { id: 'techs',       label: '🔬 Технологии' },
-          { id: 'arsenal',     label: '🎒 Арсенал' },
-          { id: 'shop',        label: '🛒 Магазин' },
-          { id: 'war',         label: '⚔️ Война' },
-          { id: 'treasury',    label: '💰 Казначейство' },
-          { id: 'chat',        label: '💬 Общение' },
+          { id: 'base',        label: App.tabImg('legion_base', 20) + 'База' },
+          { id: 'buildings',   label: App.tabImg('legion_buildings', 20) + 'Постройки' },
+          { id: 'techs',       label: App.tabImg('legion_tech', 20) + 'Технологии' },
+          { id: 'arsenal',     label: App.tabImg('legion_arsenal', 20) + 'Арсенал' },
+          { id: 'shop',        label: App.tabImg('legion_shop', 20) + 'Магазин' },
+          { id: 'war',         label: App.tabImg('legion_war', 20) + 'Война' },
+          { id: 'treasury',    label: App.tabImg('legion_treasury', 20) + 'Казначейство' },
+          { id: 'chat',        label: App.tabImg('legion_chat', 20) + 'Общение' },
           ...(isLeaderOrVice ? [{ id: 'manage', label: '⚙️ Управление' }] : []),
         ];
         const tabNav = `<div class="tab-nav" style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0">
@@ -1306,23 +1306,56 @@ App.screens.fame = async (c, param) => {
 
 // ---------- ДОСТИЖЕНИЯ ----------
 App.screens.ach = async (c) => {
-  const { achievements } = await API.get('/api/achievements');
+  const data = await API.get('/api/achievements');
+  const achievements = data.achievements;
+  let activeTitle = data.activeTitle;
+
+  const fmtReq = (n) => n >= 1000000 ? (n / 1000000).toFixed(n % 1000000 ? 1 : 0) + 'M'
+    : n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'K' : String(n);
+
   c.innerHTML = `
     <div class="title">Достижения</div>
-    <div class="card"><p class="muted small">У каждой цели 5 этапов. Награды (доллары, а с 3-го этапа и золото) приходят автоматически вместе с письмом из Генштаба.</p></div>
-    ${achievements.map((a) => `
-      <div class="card">
-        <div class="list-row" style="border:none;padding:0">
-          <div class="grow">
-            <div class="name">${UI.esc(a.name)}</div>
-            <div class="muted small">${UI.esc(a.desc)}</div>
+    <div class="card"><p class="muted small">У каждого достижения 5 уровней. Иконка загорается, когда набрано нужное число (над иконкой). Награды приходят автоматически. Кнопкой «Выбрать» можно поставить титул достижения активным.</p></div>
+    ${achievements.map((a) => {
+      const activeStep = (activeTitle && activeTitle.startsWith(a.id + ':')) ? (parseInt(activeTitle.split(':')[1], 10) + 1) : 0;
+      const levels = a.steps.map((req, i) => {
+        const lvl = i + 1;
+        const reached = a.stage >= lvl;
+        return `
+          <div class="ach-lvl">
+            <div class="req ${reached ? 'reached' : ''}">${fmtReq(req)}</div>
+            ${App.achImg(a.id, lvl, 46, !reached)}
+          </div>`;
+      }).join('');
+      const canPick = a.stage > 0;
+      const isActive = activeStep > 0;
+      return `
+        <div class="card">
+          <div class="center"><div class="name">${UI.esc(a.name)}</div>
+            <div class="muted small">${UI.esc(a.desc)}</div></div>
+          <div class="ach-levels">${levels}</div>
+          <div class="center small muted">${a.stage >= 5 ? 'Все уровни пройдены ✔' : `${UI.fmtNum(a.value)} / ${UI.fmtNum(a.next)}`}</div>
+          <div class="center mt">
+            <button class="btn ${isActive ? 'btn-orange' : ''} btn-inline" data-pick="${a.id}" data-stage="${a.stage}" ${canPick ? '' : 'disabled'}>
+              ${isActive ? '✅ Титул выбран' : (canPick ? 'Выбрать титул' : 'Титул недоступен')}
+            </button>
           </div>
-          ${UI.stars(a.stage, 5)}
-        </div>
-        <div class="mt">${a.next !== null
-          ? UI.bar(a.value, a.next, 'xp', `${UI.fmtMoney(a.value)} / ${UI.fmtMoney(a.next)}`)
-          : UI.bar(1, 1, 'gold', 'Все этапы пройдены ✔')}</div>
-      </div>`).join('')}`;
+        </div>`;
+    }).join('')}`;
+
+  c.querySelectorAll('[data-pick]').forEach((btn) => {
+    btn.onclick = async () => {
+      const stage = parseInt(btn.dataset.stage, 10);
+      if (stage <= 0) return;
+      const titleId = btn.dataset.pick + ':' + (stage - 1); // старший разблокированный титул
+      try {
+        await API.post('/api/titles/set', { titleId });
+        activeTitle = titleId;
+        UI.toast('🏅 Титул выбран');
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
 };
 
 // ---------- УВЕДОМЛЕНИЯ (колокольчик) ----------

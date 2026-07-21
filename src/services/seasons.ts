@@ -45,6 +45,13 @@ function freshWeekly(wid: string) {
 
 // Гарантирует актуальный weekly у игрока (сброс, если неделя сменилась)
 function ensureWeek(user: User) {
+  // ВАЖНО: перед любым индивидуальным сбросом weekly сначала прогоняем
+  // ролловер — он наградит топ-3 за завершившуюся неделю по НЕтронутой
+  // статистике ВСЕХ игроков и разом обнулит weekly. Иначе первое действие
+  // игрока после полуночи обнуляло бы его weekly раньше раздачи наград, и
+  // настоящий топ-1 оставался без награды (а её получал тот, кто ещё не
+  // успел сходить). rolloverIfNeeded идемпотентен и дёшев, если неделя та же.
+  rolloverIfNeeded();
   const wid = weekId();
   if (!user.weekly || user.weekly.weekId !== wid) user.weekly = freshWeekly(wid);
   return user.weekly;
@@ -108,16 +115,19 @@ function rolloverIfNeeded(): boolean {
   const s = store();
   const cur = weekId();
   if (s.weekId === cur) return false;
-  if (s.weekId) {
-    // Настоящая смена недели: награждаем топ-3 и обнуляем метрики всех.
-    // (Первая инициализация, когда s.weekId пустой, метрики не трогает —
-    //  устаревшие weekly сбрасываются лениво через ensureWeek.)
+  const finishing = s.weekId;
+  // Помечаем текущую неделю СРАЗУ — до раздачи наград. Это защищает от
+  // повторного входа: если во время awardAndSnapshot что-то снова вызовет
+  // ensureWeek→rolloverIfNeeded, повторной раздачи не будет (s.weekId уже cur).
+  s.weekId = cur;
+  if (finishing) {
+    // Настоящая смена недели: награждаем топ-3 по статистике завершившейся
+    // недели (все weekly ещё нетронуты) и обнуляем метрики всех.
     const all = Object.values(users()).filter((p) => !p.isBot);
-    awardAndSnapshot(s, all, s.weekId);
+    awardAndSnapshot(s, all, finishing);
     for (const p of all) p.weekly = freshWeekly(cur);
     db.save('users');
   }
-  s.weekId = cur;
   db.save('weeklySeason');
   return true;
 }

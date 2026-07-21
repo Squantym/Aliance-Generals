@@ -449,6 +449,7 @@ function mineDefuse(user: User, wireIndex: number, notices: Notices) {
 
   // Неверный провод — взрыв: 100% здоровья + % техники по трофею жертвы
   user.res.hp.cur = 0;
+  ach.bump(user, 'deaths', 1, notices); // достижение «Смертник»: гибель при подрыве на мине
   const lostTech = landmines.destroyExactPct(user, p.aArmyEntries, p.techLossPct);
   const lostSaboteurs = require('./saboteurs').mineDestroy(user, notices);
   user.pendingMineDefuse = null;
@@ -615,6 +616,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     require('./dailyQuests').bump(user, 'wins', 1);
     ach.bump(user, 'wins', 1, notices);
     try { require('./seasons').onWin(user); } catch (e) {}
+    try { require('./tutorial').notify(user, 'win', notices); } catch (e) {} // курс молодого бойца
     // Проверка титулов
     try {
       require('./features').checkTitles(user, notices);
@@ -660,6 +662,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       loot = Math.max(0, Math.min(loot, target.dollars));
       target.dollars -= loot;
       target.battle.defLosses++;
+      ach.bump(target, 'losses', 1, []); // «Битый»: поражение в обороне
       // Потери защитника (только если он реальный игрок), с учётом крита
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce), crit));
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
@@ -674,6 +677,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     try { require('./seasons').onLoot(user, loot); } catch (e) {}
   } else {
     user.battle.losses++;
+    ach.bump(user, 'losses', 1, notices); // «Битый»: поражение в нападении
     if (!isBot) {
       // Личная история против реального противника: +поражение
       if (!user.vsRecord) user.vsRecord = {};
@@ -733,6 +737,8 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       const escapeChance = isBot ? 0 : Math.min(0.50, target.skills.agility * 0.005);
       if (Math.random() < escapeChance) {
         fatalityDodged = true;
+        // Достижение «Неуловимый» — у ЦЕЛИ (реальный игрок ушёл от клинка)
+        ach.bump(target, 'dodgesInFatality', 1, []);
       } else {
         fatality = true;
         user.pendingFatality = {
@@ -775,6 +781,19 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
         .filter(Boolean)
     : [];
 
+  // Сводка ДИВЕРСАНТОВ сторон для окна боя (наравне с техникой). Показываем
+  // работающих (в пределах лимита) по типам — именно они влияют на бой.
+  // У ботов диверсантов нет. Названия/иконки типов формирует фронтенд.
+  const sabBrief = (who: any) => {
+    if (!who || who.isBot || !who.saboteurs) return [];
+    const out: any[] = [];
+    for (const t of ['ground', 'sea', 'air', 'secret', 'building']) {
+      const cnt = saboteurs.active(who, t);
+      if (cnt > 0) out.push({ type: t, count: cnt });
+    }
+    return out;
+  };
+
   const result: any = {
     win, crit, dodge: targetDodge, attackerDodge,
     dealt, received, loot, xp,
@@ -782,6 +801,8 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     targetHpPct: Math.round((targetHpAfter / targetMaxHp) * 100),
     myArmy: armyBrief(aArmy.entries),
     enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
+    mySaboteurs: sabBrief(user),
+    enemySaboteurs: isBot ? [] : sabBrief(target),
     enemyDefenseBuildings: defenseBuildings,
     myLosses, enemyLosses,
     fatality, fatalityDodged,
@@ -839,6 +860,7 @@ function fatality(user: User, choice: string, notices: Notices) {
   if (choice === 'ear') {
     user.ears++;
     ach.bump(user, 'earsCut', 1, notices);
+    require('./dailyQuests').bump(user, 'earsCut', 1); // ежедневное поручение «Коллекция»
     try { require('./seasons').onFatalityEar(user); } catch (e) {}
     let canLeaveMessage = false;  // true, если этот игрок отрезал ОБА уха
     if (!pf.isBot) {
@@ -848,7 +870,7 @@ function fatality(user: User, choice: string, notices: Notices) {
         const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
         const doubleCut = victim.earsCurrent >= 2 && Math.random() * 100 < doublePct;
         const cutsToMake = doubleCut ? 2 : 1;
-        if (doubleCut) user.ears++; // второе ухо тоже в коллекцию
+        if (doubleCut) { user.ears++; require('./dailyQuests').bump(user, 'earsCut', 1); } // второе ухо тоже в коллекцию
 
         if (!victim.earCutters) victim.earCutters = [null, null];
         for (let k = 0; k < cutsToMake; k++) {
@@ -913,6 +935,7 @@ function fatality(user: User, choice: string, notices: Notices) {
 
   // Отпускаем: +1 жетон милосердия
   user.tokens++;
+  ach.bump(user, 'merciesGiven', 1, notices); // достижение «Милосердный»
   try { require('./seasons').onMercy(user); } catch (e) {}
   if (!pf.isBot) {
     const victim = player.users()[pf.targetId];

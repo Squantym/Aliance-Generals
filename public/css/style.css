@@ -193,6 +193,15 @@ a:hover { text-decoration: underline; }
 }
 .tab.active { background: linear-gradient(var(--orange-1), var(--orange-2)); color: #fff; border-color: #5e3c08; }
 
+/* Вкладки диверсантов — крупнее и заметнее (иконки перенесены в карточку) */.sab-tabs { gap: 7px; }
+.sab-tabs .sab-tab {
+  min-width: 104px; padding: 11px 10px; font-size: 13.5px; border-radius: 7px;
+}
+/* Карточка вида диверсанта — крупнее шапка/иконка, но без перебора */
+.sab-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.sab-head .ic-sab { width: 52px; height: 52px; }
+.sab-head .name { font-size: 17px; }
+
 /* ---------- СПИСКИ И СТРОКИ ---------- */
 .list-row {
   display: flex; align-items: center; gap: 8px; padding: 8px 4px;
@@ -277,6 +286,26 @@ label { display: block; margin: 8px 0 4px; color: var(--dim); font-size: 13px; }
   .menu-btn { font-size: 12px; min-height: 48px; }
   body { font-size: 14px; }
 }
+
+/* ===================================================================
+   АДАПТИВ: защита от «выезда» контента за край экрана на телефонах.
+   Длинные числа/слова/значения переносятся, элементы не шире контейнера.
+   =================================================================== */
+html, body { max-width: 100%; overflow-x: hidden; }
+#wrap { overflow-x: hidden; }
+/* Длинные слова/числа/URL переносятся, а не выталкивают строку за экран */
+.card, .kv, .title, .name, .list-row, p, .badge, .tab, .menu-btn, td, th,
+.result-title, summary, label { overflow-wrap: break-word; word-break: normal; }
+/* Строки «ключ — значение»: значение может занять несколько строк, но не
+   выезжает вправо. min-width:0 обязателен, иначе flex-элемент не сжимается. */
+.kv { align-items: flex-start; }
+.kv > * { min-width: 0; }
+.kv .v { text-align: right; overflow-wrap: break-word; }
+/* Поля ввода/кнопки/картинки/таблицы не шире родителя */
+input, select, textarea, button, img, table, pre { max-width: 100%; }
+input, select, textarea { box-sizing: border-box; }
+/* Заголовки и длинные названия не растягивают контейнер */
+.title { overflow-wrap: break-word; }
 
 /* ===================================================================
    ИКОНКА ЗОЛОТА: золотая монета (эмодзи 🪙). Единый значок для шапки
@@ -2292,3 +2321,34 @@ textarea.news-input { resize:vertical; line-height:1.4; }
   border-radius: 8px;
   background: transparent;
 }
+
+/* ============ Ассеты: инструкторы, достижения, трофеи, вкладки ============ */
+.ic-instr { border-radius: 10px; object-fit: cover; border: 1px solid var(--border); background: var(--panel-2); flex-shrink: 0; }
+.ic-trophy { border-radius: 8px; object-fit: contain; vertical-align: middle; }
+.ic-tab { vertical-align: middle; object-fit: contain; margin-right: 4px; }
+/* Достижения: ряд из 5 иконок уровней */
+.ic-ach { border-radius: 8px; object-fit: contain; transition: filter .2s; }
+.ic-ach-dim { filter: grayscale(1) brightness(.45) opacity(.7); } /* не достигнуто — тускло/ч-б */
+.ach-levels { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 8px 0; }
+.ach-lvl { text-align: center; min-width: 54px; }
+.ach-lvl .req { font-size: 11px; font-weight: 700; color: var(--dim); margin-bottom: 2px; }
+.ach-lvl .req.reached { color: var(--money); }
+/* Заголовок заказчика ежедневных поручений */
+.quest-giver { display: flex; align-items: center; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.quest-giver .qg-name { font-weight: 800; font-size: 16px; }
+.quest-giver .qg-role { font-size: 12px; color: var(--dim); }
+.quest-giver .qg-intro { font-size: 12px; color: var(--text); font-style: italic; margin-top: 3px; }
+/* Обучающее окно: портрет генерала */
+.tutor-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.tutor-head .th-name { font-weight: 800; }
+.tutor-head .th-role { font-size: 11px; color: var(--dim); }
+
+/* ============ Баннеры спецопераций ============ */
+.conf-card { overflow: hidden; }
+.conf-banner {
+  display: block; width: calc(100% + 24px); margin: -10px -12px 10px;
+  max-height: 150px; object-fit: cover; object-position: center 30%;
+  border-radius: 8px 8px 0 0;
+}
+.op-banner { max-height: 120px; }
+.conf-locked { filter: grayscale(.8) brightness(.55); }

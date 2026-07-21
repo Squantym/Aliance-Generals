@@ -465,6 +465,26 @@ const App = {
     if (!itemId) return '';
     return `<img class="ic-item" src="/img/legion/arsenal/${itemId}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
   },
+  // Портрет инструктора/заказчика ежедневных поручений и обучения
+  instrImg(charId, size = 56) {
+    if (!charId) return '';
+    return `<img class="ic-instr" src="/img/instructors/${charId}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+  },
+  // Иконка достижения по id и уровню (1..5). dim=true — тусклая (не достигнуто)
+  achImg(achId, level, size = 46, dim = false) {
+    if (!achId) return '';
+    return `<img class="ic-ach${dim ? ' ic-ach-dim' : ''}" src="/img/achievements/${achId}_${level}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+  },
+  // Картинка трофея
+  trophyImg(trophyId, size = 40) {
+    if (!trophyId) return '';
+    return `<img class="ic-trophy" src="/img/trophies/${trophyId}.webp" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.style.display='none'">`;
+  },
+  // Иконка внутренней вкладки меню (по ключу, напр. tech_air, legion_war)
+  tabImg(key, size = 22) {
+    if (!key) return '';
+    return `<img class="ic-tab" src="/img/tabs/${key}.webp" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.style.display='none'">`;
+  },
 
   _ITEM_META: {
     gas_grenade:     { name: 'Газовая шашка',  kind: 'enemy' },

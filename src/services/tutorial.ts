@@ -21,8 +21,10 @@ function notify(user: User, event: string, notices: Notices): void {
   // Награда за выполненное задание
   player.addMoney(user, quest.dollars, true);
   player.addXp(user, quest.xp, notices);
+  if ((quest as any).gold) player.addGold(user, (quest as any).gold); // разовое золото на этом шаге
   user.tutorial.step++;
-  notices.push(`📜 Задание Майора «${quest.title}» выполнено! Награда: $${u.fmt(quest.dollars)} и ${quest.xp} опыта.`);
+  const goldNote = (quest as any).gold ? ` и 🪙 ${(quest as any).gold}` : '';
+  notices.push(`📜 Задание Майора «${quest.title}» выполнено! Награда: $${u.fmt(quest.dollars)}, ${quest.xp} опыта${goldNote}.`);
 
   // Все задания пройдены — финал сюжета и донатная награда
   if (user.tutorial.step >= config.TUTORIAL.length) {

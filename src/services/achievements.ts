@@ -44,13 +44,14 @@ function check(user: User, notices?: Notices): void {
 // Список достижений с прогрессом для экрана «Достижения»
 function list(user: User) {
   return {
+    activeTitle: user.activeTitle || null,
     achievements: config.ACHIEVEMENTS.map((a: any) => {
       const value = a.counter === 'level' ? user.level : ((user.counters as any)[a.counter] || 0);
       const stage = user.achStages[a.id] || 0;
       const next = stage < 5 ? a.steps[stage] : null;
       return {
         id: a.id, name: a.name, desc: a.desc,
-        value, stage, steps: a.steps, next,
+        value, stage, steps: a.steps, titles: a.titles || [], next,
         progress: next ? Math.min(1, value / next) : 1,
       };
     }),

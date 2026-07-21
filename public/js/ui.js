@@ -56,6 +56,25 @@ const UI = {
     </div>`;
   },
 
+  // Ряд ДИВЕРСАНТОВ для окна боя: иконка типа + количество под ней.
+  // sabs: [{type:'ground'|'sea'|'air'|'secret'|'building', count}]
+  sabRow(sabs) {
+    if (!sabs || !sabs.length) return '';
+    const RU = { ground: 'Наземные', sea: 'Морские', air: 'Воздушные', secret: 'Секретные', building: 'Построечные' };
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+      ${sabs.map((x) => `
+        <div style="width:62px;text-align:center" title="${RU[x.type] || x.type}">
+          <div style="height:46px;display:flex;align-items:center;justify-content:center">
+            <img src="/img/saboteurs/${x.type}.webp" loading="lazy"
+              style="max-width:52px;max-height:44px;object-fit:contain"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+            <span style="display:none;font-size:10px;color:var(--dim)">${RU[x.type] || x.type}</span>
+          </div>
+          <div style="font-size:12px;font-weight:bold">×${UI.fmtNum(x.count)}</div>
+        </div>`).join('')}
+    </div>`;
+  },
+
   // Сетка карточек техники/построек: картинка + количество под ней.
   // Название скрыто, по клику открывается модалка с деталями.
   // items: [{id, name, count, ...}], kind: 'units'|'buildings'
@@ -133,7 +152,13 @@ const UI = {
     return n.toLocaleString('ru-RU');
   },
 
-  fmtNum(n) { return Math.round(Number(n) || 0).toLocaleString('ru-RU'); },
+  fmtNum(n) {
+    // toLocaleString('ru-RU') разделяет разряды НЕразрывными пробелами
+    // (U+00A0/U+202F) — из-за них длинные числа не переносятся и вылезают
+    // за край экрана на телефонах. Меняем на обычные пробелы: число
+    // переносится по разрядам ТОЛЬКО когда не помещается в строку.
+    return (Math.round(Number(n) || 0)).toLocaleString('ru-RU').replace(/[\u00A0\u202F]/g, ' ');
+  },
 
   // Секунды → «м:сс» или «ч:мм:сс»
   fmtTimer(sec) {

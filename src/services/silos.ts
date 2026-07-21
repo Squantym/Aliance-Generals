@@ -239,7 +239,11 @@ function applyRocketDamage(attackerName: string, target: any, powerFrac: number)
   const buildingsDestroyedCount = buildingLossTotal - buildingsToDestroy;
 
   // ----- Уничтожение техники цели -----
-  const techLossTotal = Math.round((S.TECH_LOSS_MIN + (S.TECH_LOSS_MAX - S.TECH_LOSS_MIN) * powerFrac));
+  // Техника: СЛУЧАЙНОЕ число [TECH_LOSS_MIN..TECH_LOSS_MAX] при 100% мощности
+  // (при 100% — рандом 400..1000), масштабируется мощностью ракеты.
+  const techLossTotal = Math.round(
+    (S.TECH_LOSS_MIN + Math.random() * (S.TECH_LOSS_MAX - S.TECH_LOSS_MIN)) * powerFrac
+  );
   const weakPct = S.TECH_LOSS_WEAK_PCT_MIN + Math.random() * (S.TECH_LOSS_WEAK_PCT_MAX - S.TECH_LOSS_WEAK_PCT_MIN);
   const strongPct = S.TECH_LOSS_STRONG_PCT_MIN + Math.random() * (S.TECH_LOSS_STRONG_PCT_MAX - S.TECH_LOSS_STRONG_PCT_MIN);
 

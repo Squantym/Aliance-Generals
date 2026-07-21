@@ -280,12 +280,19 @@ function refreshAll(user: User): void {
 
     if (mine.status === 'descending') {
       const t = mine.terror;
-      // Активация нападения + уведомление сверху (один раз)
+      // Активация нападения + уведомление сверху (один раз).
+      // ВАЖНО: шлём уведомление ТОЛЬКО если дедлайн ещё не прошёл — иначе при
+      // позднем (ленивом) заходе игрок видел «отбей за 10 минут», хотя атака
+      // уже провалилась. Если время вышло — просто пометим notified и разрешим
+      // ниже как провал (без вводящего в заблуждение алерта).
       if (t && !t.resolved && now >= t.at && !t.notified) {
         t.notified = true; changed = true;
-        notif.push(user.id, 'mine_terror',
-          `⚠️ На вашу шахту напали террористы! Зайдите в «Шахты» и отбейте атаку за 10 минут, иначе спуск и золото пропадут.`,
-          { mineId: mine.id, deadline: t.deadline });
+        if (now < t.deadline) {
+          const leftMin = Math.max(1, Math.ceil((t.deadline - now) / 60000));
+          notif.push(user.id, 'mine_terror',
+            `⚠️ На вашу шахту напали террористы! Зайдите в «Шахты» и отбейте атаку — осталось ~${leftMin} мин., иначе спуск и золото пропадут.`,
+            { mineId: mine.id, deadline: t.deadline });
+        }
       }
       // Тайм-аут реакции — атака не отбита
       if (t && !t.resolved && now >= t.at && now >= t.deadline && !t.repelled) {
@@ -396,4 +403,18 @@ function wipeAllMines(adminUser: User, notices: Notices) {
   return { affected: n };
 }
 
-export = { view, buyPlot, build, rebuild, descend, fightTerrorists, dismissResult, refreshAll, wipeAllMines };
+// ---------- Фоновый тик мира ----------
+// Обрабатывает шахты игроков, у которых идёт спуск: уведомление о нападении
+// приходит ВОВРЕМЯ (в реальном времени), а не только когда игрок откроет экран.
+// Так же вовремя финализируется спуск и снимается провал по тайм-ауту.
+function tickAll(): void {
+  const users = require('./player').users();
+  for (const id of Object.keys(users)) {
+    const user = users[id];
+    if (!user || user.isBot || !Array.isArray(user.mines) || !user.mines.length) continue;
+    const hasActive = user.mines.some((m: any) => m && (m.status === 'descending' || m.status === 'building'));
+    if (hasActive) { try { refreshAll(user); } catch (e) {} }
+  }
+}
+
+export = { view, buyPlot, build, rebuild, descend, fightTerrorists, dismissResult, refreshAll, tickAll, wipeAllMines };

@@ -89,4 +89,4 @@ function sell(user: User, unitId: string, qty: number) {
   return { unitId, owned: user.units[unitId] || 0, refund };
 }
 
-export = { list, buy, sell };
+export = { list, buy, sell, priceFor, basePriceFor };

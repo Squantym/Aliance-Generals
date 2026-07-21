@@ -585,7 +585,7 @@ const SILO = {
 
   // ---- Разрушения при ПОЛНОЙ (100%) мощности ----
   // Уничтожение техники цели: 300-1000 единиц, случайно слабая и сильная
-  TECH_LOSS_MIN: 300,
+  TECH_LOSS_MIN: 400,
   TECH_LOSS_MAX: 1000,
   TECH_LOSS_WEAK_PCT_MIN: 0.40,   // 40-60% слабой техники
   TECH_LOSS_WEAK_PCT_MAX: 0.60,
@@ -716,6 +716,12 @@ const SPEC_OP_NAMES = [
   'Подавление огневых точек', 'Эвакуация раненых', 'Захват высоты',
   'Минирование путей', 'Контратака', 'Финальный штурм',
 ];
+// Слаги файлов картинок операций (/img/conflicts/{confId}/{slug}.webp),
+// параллельны SPEC_OP_NAMES по индексу.
+const SPEC_OP_SLUGS = [
+  'recon', 'sweep', 'breach', 'hold', 'suppress', 'evac', 'height',
+  'mining', 'counter', 'assault',
+];
 // Названия шагов в каждой спецоперации
 const SPEC_OP_STEPS = ['Подготовка', 'Выполнение', 'Закрепление успеха'];
 
@@ -749,7 +755,11 @@ function buildConflictOperations(conflict: any, conflictIdx: number): any {
       // Требования: сила армии, уровень и НАЛИЧИЕ ТЕХНИКИ соответствующего
       // уровня (нужно владеть N единиц техники, доступной ~на уровне миссии).
       const powerReq = Math.round(50 * Math.pow(1.6, conflictIdx) + opIdx * 30 + stepIdx * 20);
-      const unitReqLevel = Math.max(1, stepLevel - 15);
+      // Требуемый уровень техники ЗАВИСИТ от уровня операции: на низких уровнях
+      // допускаем зазор до 15 (новичку хватает доступной техники), а к высоким
+      // уровням зазор сужается к 0 — нужна техника СООТВЕТСТВУЮЩЕГО уровня.
+      const gap = Math.round(15 * (1 - Math.min(1, stepLevel / 250)));
+      const unitReqLevel = Math.max(1, stepLevel - gap);
       const unitReqCount = 5 + conflictIdx * 3 + opIdx * 2 + stepIdx;
       steps.push({
         idx: stepIdx,
@@ -767,6 +777,7 @@ function buildConflictOperations(conflict: any, conflictIdx: number): any {
       idx: opIdx,
       id: conflict.id + '_' + opIdx,
       name: opName,
+      img: SPEC_OP_SLUGS[opIdx] || null, // слаг картинки /img/conflicts/{confId}/{img}.webp
       steps,
     });
   }
@@ -789,24 +800,55 @@ const STORY_PROLOGUE =
   'Майор Гром: «Здравствуй, солдат! Ты прибыл очень кстати — противник ведёт атаку по всем ' +
   'направлениям. Пройдёшь мой курс молодого бойца — получишь доступ к спецрезерву Генштаба. Бегом по машинам!»';
 
+// «Курс молодого бойца» — сюжетное обучение от Майора. 14 заданий 4-х типов
+// действий (attack/buy_unit/win/build_income/mission_step), которые игрок и так
+// осваивает по мере игры. Бюджет курса: суммарно ≤ 500 золота и ≤ 100 Bn валюты
+// (доллары ниже суммируются в 99.6 Bn; золото по шагам 100 + финал 400 = 500).
 const TUTORIAL = [
-  { event: 'attack',       title: 'Боевое крещение', screen: 'war',
+  { event: 'attack',       title: 'Боевое крещение',     screen: 'war',
     story: 'Видишь вон того гада? Стреляй! Раздел «Война» — твой новый дом.',
-    goal: 'Соверши атаку в разделе «Война»', dollars: 5000, xp: 60 },
-  { event: 'buy_unit',     title: 'Вооружение', screen: 'units',
-    story: 'С голыми руками много не навоюешь. Дуй в «Технику» и бери танк!',
-    goal: 'Купи любую единицу техники', dollars: 6000, xp: 90 },
-  { event: 'mission_step', title: 'Первый дозор', screen: 'missions',
-    story: 'На войне полно ежедневной работы. Ступай в «Миссии» и сходи в дозор.',
-    goal: 'Выполни 1 шаг любой миссии', dollars: 8000, xp: 120 },
-  { event: 'build_income', title: 'Тыл решает', screen: 'buildings',
-    story: 'Армию надо кормить. Построй военные склады — пусть в казну капает копейка.',
-    goal: 'Построй любое доходное здание', dollars: 10000, xp: 150 },
-  { event: 'skill_spent',  title: 'Школа бойца', screen: 'skills',
-    story: 'Растёшь на глазах! Загляни в «Навыки» и вложи очко с умом.',
-    goal: 'Потрать 1 очко навыков', dollars: 12000, xp: 200 },
+    goal: 'Соверши атаку в разделе «Война»', dollars: 300000000, xp: 60 },
+  { event: 'buy_unit',     title: 'Первое железо',       screen: 'units',
+    story: 'С голыми руками много не навоюешь. Дуй в «Технику» и возьми машину.',
+    goal: 'Купи любую единицу техники', dollars: 500000000, xp: 90 },
+  { event: 'win',          title: 'Первая кровь',        screen: 'war',
+    story: 'Атаковать — полдела. Мне нужна ПОБЕДА. Дожми врага в бою.',
+    goal: 'Победи в бою', dollars: 800000000, xp: 130, gold: 20 },
+  { event: 'build_income', title: 'Тыл решает',          screen: 'buildings',
+    story: 'Армию надо кормить. Построй доходное здание — пусть в казну капает.',
+    goal: 'Построй любое доходное здание', dollars: 1200000000, xp: 180 },
+  { event: 'mission_step', title: 'Первый дозор',        screen: 'missions',
+    story: 'На войне полно работы. Ступай в «Миссии» и выполни шаг спецоперации.',
+    goal: 'Выполни 1 шаг спецоперации', dollars: 1800000000, xp: 240 },
+  { event: 'attack',       title: 'Огонь на поражение',  screen: 'war',
+    story: 'Не расслабляйся. Ещё одна атака — держи руку на курке.',
+    goal: 'Соверши ещё одну атаку', dollars: 2500000000, xp: 320 },
+  { event: 'buy_unit',     title: 'Пополнение',          screen: 'units',
+    story: 'Одной машины мало. Наращивай парк — закупи ещё техники.',
+    goal: 'Купи ещё технику', dollars: 3500000000, xp: 420 },
+  { event: 'win',          title: 'Закрепи успех',       screen: 'war',
+    story: 'Победитель не останавливается. Возьми ещё один бой.',
+    goal: 'Победи в ещё одном бою', dollars: 5000000000, xp: 540, gold: 30 },
+  { event: 'build_income', title: 'Экономический фронт', screen: 'buildings',
+    story: 'Деньги — это снаряды. Ещё одно доходное здание не помешает.',
+    goal: 'Построй ещё доходное здание', dollars: 7000000000, xp: 700 },
+  { event: 'mission_step', title: 'Втянуться в службу',  screen: 'missions',
+    story: 'Спецоперации приносят опыт и золото. Продолжай — ещё шаг.',
+    goal: 'Выполни ещё шаг спецоперации', dollars: 9000000000, xp: 900 },
+  { event: 'attack',       title: 'Держать натиск',      screen: 'war',
+    story: 'Инициатива — за нами. Не сбавляй темп, атакуй.',
+    goal: 'Соверши атаку', dollars: 12000000000, xp: 1150 },
+  { event: 'win',          title: 'Рождение ветерана',   screen: 'war',
+    story: 'Ты уже не салага. Докажи — ещё одна чистая победа.',
+    goal: 'Победи в бою', dollars: 15000000000, xp: 1450, gold: 50 },
+  { event: 'buy_unit',     title: 'Готовь кулак',        screen: 'units',
+    story: 'Большая война близко. Собери ударный кулак — докупи технику.',
+    goal: 'Купи технику', dollars: 18000000000, xp: 1800 },
+  { event: 'mission_step', title: 'Экзамен Майора',      screen: 'missions',
+    story: 'Финал курса. Одна спецоперация — и ты полноценный боец. Вперёд!',
+    goal: 'Выполни шаг спецоперации', dollars: 23000000000, xp: 2300 },
 ];
-const TUTORIAL_FINAL_GOLD = 100;
+const TUTORIAL_FINAL_GOLD = 400; // финальный бонус (100 по шагам + 400 = 500 всего)
 const STORY_EPILOGUE =
   'Майор Гром: «Курс молодого бойца сдан! Генштаб выделяет тебе 100 золота из спецрезерва. ' +
   'Дальше — сам: собирай альянс, копи технику и пусть враг запомнит твоё имя!»';
@@ -942,45 +984,128 @@ const CLUB = {
   DUEL_REWARD_MIN: 10, DUEL_REWARD_MAX: 16, DUEL_WINS_NEEDED: 3, DUEL_CD_WIN_MIN: 18, DUEL_CD_FAIL_MIN: 6,
 };
 
-// ---------- ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ----------
-// 9 заданий, обнуляются каждые сутки в 00:00 UTC.
-// Базовые требования (target) увеличены в 10 раз относительно прежней
-// версии, и дополнительно растут с уровнем игрока через questTarget().
-// За каждое: опыт + деньги (масштабируются с уровнем игрока).
-// За выполнение ВСЕХ 9 — бонус 100 золота.
+// ---------- ЕЖЕДНЕВНЫЕ ПОРУЧЕНИЯ ----------
+// Всего 20 поручений от 6 «заказчиков» (генералы/наёмники). Каждый день
+// детерминированно выбираются 9 из 20 (одинаковые для всех игроков в сутках,
+// меняются на следующий день). Требование растёт с уровнем (×1 на 1 ур. →
+// ×8 на 300 ур.). У каждого поручения — своя сложность и текст от заказчика.
+
+// Заказчики поручений (за каждым строго закреплены свои поручения ниже)
+const DAILY_CHARS: Record<string, { name: string; role: string; icon: string; intro: string }> = {
+  volkov:   { name: 'Генерал Волков',      role: 'Командующий фронтом',   icon: '🎖',
+    intro: 'Пока враг дышит — расслабляться рано. Бери оружие и работай, боец.' },
+  morozova: { name: 'Полковник Морозова',  role: 'Начальник тыла',        icon: '🏦',
+    intro: 'Войну выигрывают в тылу. Считай деньги, строй, снабжай — остальное приложится.' },
+  kovac:    { name: 'Майор Ковач',         role: 'Начальник снабжения',   icon: '🔧',
+    intro: 'Без брони и стволов ты просто мишень. Держи ангары полными — это моя забота и твоя.' },
+  gadyuka:  { name: 'Наёмник «Гадюка»',    role: 'Ликвидатор',            icon: '🐍',
+    intro: 'Я не задаю вопросов и не оставляю следов. Плачу за результат — берись, если не брезгливый.' },
+  tesla:    { name: 'Аналитик Тесла',      role: 'Куратор спецопераций',  icon: '📡',
+    intro: 'Мне нужны данные с поля, а не героизм. Выполняй операции точно по протоколу.' },
+  berkut:   { name: 'Инструктор Беркут',   role: 'Полигон и подготовка',  icon: '🎯',
+    intro: 'Полигон не прощает лени. Норматив есть норматив — вперёд, без разговоров.' },
+};
+
+// diff — множитель сложности (влияет на требование и награду): 1 / 1.6 / 2.4.
+// base — базовое требование на 1 уровне; итог = base·diff·рост(level).
 const DAILY_QUESTS = [
-  { id: 'attack',     name: 'Совершить атаки',                   counter: 'attacks',       target: 150, icon: '⚔' },
-  { id: 'win',        name: 'Победить в боях',                   counter: 'wins',          target: 80,  icon: '🏆' },
-  { id: 'mission',    name: 'Выполнить шаги спецоперации',       counter: 'missionStages', target: 40,  icon: '📋' },
-  { id: 'buy_unit',   name: 'Купить единиц техники',             counter: 'unitsBought',   target: 80,  icon: '🚜' },
-  { id: 'build',      name: 'Построить зданий',                  counter: 'buildingsBuilt', target: 30, icon: '🏗' },
-  { id: 'deposit',    name: 'Положить в банк',                   counter: 'bankDeposited', target: 1000000, icon: '🏦' },
-  { id: 'club',       name: 'Сыграть в Клубе офицеров',          counter: 'clubPlayed',    target: 15, icon: '🎲' },
-  { id: 'market',     name: 'Купить на чёрном рынке',            counter: 'marketBought',  target: 15, icon: '💣' },
-  { id: 'fatality',   name: 'Совершить фаталити',                counter: 'fatalities',    target: 15, icon: '💀' },
+  // ── Генерал Волков — прямой бой ────────────────────────────────
+  { id: 'v_scout',   char: 'volkov',   counter: 'attacks',       base: 60,  diff: 1.0, icon: '⚔',
+    name: 'Разведка боем',   flavor: 'Не сиди в окопе, боец. Прощупай оборону — соверши атаки и доложи.' },
+  { id: 'v_hill',    char: 'volkov',   counter: 'wins',          base: 40,  diff: 1.6, icon: '🏆',
+    name: 'Взять высоту',    flavor: 'Высота наша или ничья. Побеждай в боях, пока флаг не будет нашим.' },
+  { id: 'v_blitz',   char: 'volkov',   counter: 'attacks',       base: 150, diff: 2.4, icon: '💥',
+    name: 'Блицкриг',        flavor: 'Темп, темп и ещё раз темп! Обрушь на врага шквал атак без передышки.' },
+  { id: 'v_rout',    char: 'volkov',   counter: 'wins',          base: 80,  diff: 2.4, icon: '🥇',
+    name: 'Разгром',         flavor: 'Мне нужен не размен, а разгром. Гони череду побед — без пощады.' },
+
+  // ── Полковник Морозова — экономика и тыл ───────────────────────
+  { id: 'm_reserve', char: 'morozova', counter: 'bankDeposited', base: 500000,  diff: 1.0, icon: '🏦',
+    name: 'Запас на чёрный день', flavor: 'Армия воюет на деньги, а не на лозунги. Отложи в банк — тыл скажет спасибо.' },
+  { id: 'm_build',   char: 'morozova', counter: 'buildingsBuilt', base: 15,     diff: 1.6, icon: '🏗',
+    name: 'Стройка века',    flavor: 'Пока фронт стреляет, тыл строит. Возведи здания — производство не ждёт.' },
+  { id: 'm_gold',    char: 'morozova', counter: 'bankDeposited', base: 2000000, diff: 2.4, icon: '💰',
+    name: 'Золото Родины',   flavor: 'Крупный резерв — крупная война. Загрузи банк по-настоящему серьёзной суммой.' },
+
+  // ── Майор Ковач — снабжение и техника ──────────────────────────
+  { id: 'k_fresh',   char: 'kovac',    counter: 'unitsBought',   base: 40,  diff: 1.0, icon: '🚜',
+    name: 'Свежее пополнение', flavor: 'Голыми руками не повоюешь. Закупи технику — ангары должны быть полны.' },
+  { id: 'k_smuggle', char: 'kovac',    counter: 'marketBought',  base: 8,   diff: 1.6, icon: '💣',
+    name: 'Контрабанда',     flavor: 'Официально этого разговора не было. Возьми пару позиций на чёрном рынке.' },
+  { id: 'k_rearm',   char: 'kovac',    counter: 'unitsBought',   base: 120, diff: 2.4, icon: '🛠',
+    name: 'Перевооружение',  flavor: 'Старьё на свалку — фронту нужен свежий металл. Массовая закупка техники, майор ждёт.' },
+
+  // ── Наёмник «Гадюка» — грязная работа ──────────────────────────
+  { id: 'g_wet',     char: 'gadyuka',  counter: 'fatalities',    base: 8,   diff: 1.6, icon: '💀',
+    name: 'Мокрое дело',     flavor: 'Плачу за результат, не за попытки. Доведи бои до фаталити — чисто и тихо.' },
+  { id: 'g_collect', char: 'gadyuka',  counter: 'earsCut',       base: 6,   diff: 1.6, icon: '👂',
+    name: 'Коллекция',       flavor: 'У меня хобби, знаешь ли. Принеси ушей — за каждое отдельная благодарность.' },
+  { id: 'g_quiet',   char: 'gadyuka',  counter: 'saboteursBought', base: 30, diff: 1.0, icon: '🥷',
+    name: 'Тихие люди',      flavor: 'Война выигрывается в тени. Набери диверсантов — пусть враг не спит спокойно.' },
+  { id: 'g_reap',    char: 'gadyuka',  counter: 'fatalities',    base: 20,  diff: 2.4, icon: '☠',
+    name: 'Жатва',           flavor: 'Сегодня косим по-крупному. Череда фаталити — и мой заказчик будет доволен.' },
+
+  // ── Аналитик Тесла — спецоперации ──────────────────────────────
+  { id: 't_field',   char: 'tesla',    counter: 'missionStages', base: 20,  diff: 1.0, icon: '📋',
+    name: 'Полевые испытания', flavor: 'Данные важнее славы. Пройди шаги спецопераций — мне нужна статистика с поля.' },
+  { id: 't_storm',   char: 'tesla',    counter: 'missionStages', base: 50,  diff: 2.4, icon: '🌩',
+    name: 'Операция «Гроза»', flavor: 'Запускаем большую программу. Много шагов спецопераций — и не сбавляй темп.' },
+
+  // ── Инструктор Беркут — полигон и досуг ────────────────────────
+  { id: 'b_luck',    char: 'berkut',   counter: 'clubPlayed',    base: 10,  diff: 1.0, icon: '🎲',
+    name: 'Азарт',           flavor: 'Реакция куётся не только в бою. Разомнись в Клубе офицеров — на удачу.' },
+  { id: 'b_march',   char: 'berkut',   counter: 'attacks',       base: 100, diff: 1.6, icon: '🥾',
+    name: 'Марш-бросок',     flavor: 'Норматив по атакам никто не отменял. Вперёд, без нытья — бегом марш!' },
+  { id: 'b_norm',    char: 'berkut',   counter: 'wins',          base: 60,  diff: 1.6, icon: '🎯',
+    name: 'Сдать норматив',  flavor: 'Победа — это навык. Сдай зачёт: нужное число побед, и по-чистому.' },
+  { id: 'b_allin',   char: 'berkut',   counter: 'clubPlayed',    base: 25,  diff: 2.4, icon: '🃏',
+    name: 'Ва-банк',         flavor: 'Для отчаянных: серия партий в Клубе. Кто не рискует — тот стоит в наряде.' },
 ];
+const DAILY_QUEST_BY_ID: Record<string, any> = Object.fromEntries(DAILY_QUESTS.map((q) => [q.id, q]));
+const DAILY_PICK_COUNT = 9; // сколько поручений активно каждый день
 
-// Требование задания растёт с уровнем игрока: на 1 ур. — базовое значение,
-// на 300 ур. — примерно в 5 раз больше базового (круче прежнего ×4, чтобы
-// поздняя игра оставалась вызовом, но не была невозможной на старте).
-function dailyQuestTarget(baseTarget: number, level: number): number {
-  const growth = 1 + Math.min(4, (level - 1) / 75); // 1x на ур.1 → ~5x на ур.300
-  return Math.max(baseTarget, Math.round(baseTarget * growth));
+// Рост требования с уровнем: ×1 на 1 ур. → ×8 на 300 ур.
+function dailyGrowth(level: number): number {
+  return 1 + Math.min(7, (Math.max(1, level) - 1) * 7 / 299);
 }
-
-// Награда за одно задание (растёт с уровнем). Доллары — по той же формуле-
-// семейству K·level, что и раньше, но K поднят (задания стали сложнее).
-// Опыт остаётся вспомогательным (упор на бои/спецоперации).
-function dailyQuestReward(level: number): any {
+// Итоговое требование поручения (с учётом сложности и уровня)
+function dailyQuestTarget(base: number, diff: number, level: number): number {
+  return Math.max(1, Math.round(base * (diff || 1) * dailyGrowth(level)));
+}
+// Награда за поручение: растёт с уровнем и сложностью. Доллары — основной приз,
+// опыт — вспомогательный. Правь коэффициенты свободно.
+function dailyQuestReward(diff: number, level: number): { xp: number; dollars: number } {
+  const d = diff || 1;
   return {
-    xp: Math.max(5, Math.round(level * 1.2)),
-    dollars: 8000 * level,
+    xp: Math.max(5, Math.round(level * 0.8 * d)),
+    dollars: Math.round(6000 * level * d),
   };
 }
-
-// Бонус за выполнение ВСЕХ заданий дня — растёт с уровнем (золото).
+// Бонус за выполнение ВСЕХ активных поручений дня — растёт с уровнем (золото).
 function dailyAllBonusGold(level: number): number {
-  return 100 + Math.floor(level / 2); // ур.1 = 100 🪙 → ур.300 = 250 🪙
+  return 150 + Math.floor(level / 2); // ур.1 = 150 🪙 → ур.300 = 300 🪙
+}
+
+// Детерминированный ГПСЧ от строки-ключа дня (одинаков для всех игроков в сутках)
+function _mulberry32(a: number) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Выбор DAILY_PICK_COUNT поручений на день (стабильно в сутках, меняется назавтра)
+function pickDailyQuests(dayKey: string): string[] {
+  let h = 2166136261;
+  for (let i = 0; i < dayKey.length; i++) { h ^= dayKey.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const rng = _mulberry32(h >>> 0);
+  const ids = DAILY_QUESTS.map((q) => q.id);
+  for (let i = ids.length - 1; i > 0; i--) {           // перемешивание Фишера–Йетса
+    const j = Math.floor(rng() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return ids.slice(0, DAILY_PICK_COUNT);
 }
 
 // На 10 уровне каждый трофей даёт указанный максимум:
@@ -1080,7 +1205,29 @@ const ACHIEVEMENTS = [
   { id: 'oligarch',   name: 'Олигарх',           desc: 'Заработать долларов',       counter: 'moneyEarned',    steps: [1e5, 1e7, 1e9, 1e11, 1e13],
     titles: ['Делец', 'Олигарх', 'Магнат', 'Толстосум', 'Военный король'] },
   { id: 'veteran',    name: 'Ветеран',           desc: 'Достигнуть уровня',         counter: 'level',          steps: [25, 75, 150, 225, 300],
-    titles: ['Сержант', 'Ветеран', 'Офицер', 'Генерал', 'Маршал'] },
+    titles: ['Новичок', 'Ученик', 'Боец', 'Профессионал', 'Мастер'] },
+
+  // ── Новые достижения ───────────────────────────────────────────
+  { id: 'deaths',        name: 'Смертник',            desc: 'Подорваться на минах насмерть', counter: 'deaths',            steps: [1, 10, 50, 250, 1000],
+    titles: ['Подрывник', 'Смертник', 'Ходячий мертвец', 'Неубиваемый', 'Бессмертный'] },
+  { id: 'fatDodges',     name: 'Неуловимый',          desc: 'Уйти от вражеского фаталити',    counter: 'dodgesInFatality',  steps: [1, 10, 50, 250, 1000],
+    titles: ['Везунчик', 'Неуловимый', 'Скользкий', 'Призрак клинка', 'Заговорённый'] },
+  { id: 'mercies',       name: 'Милосердный',         desc: 'Помиловать при фаталити',        counter: 'merciesGiven',      steps: [1, 10, 100, 1000, 10000],
+    titles: ['Благородный', 'Милосердный', 'Даритель пощады', 'Гуманист', 'Ангел-хранитель'] },
+  { id: 'legionWins',    name: 'Легионер',            desc: 'Победить в боях легиона',        counter: 'legionWins',        steps: [1, 10, 50, 250, 1000],
+    titles: ['Новобранец легиона', 'Легионер', 'Ветеран легиона', 'Герой легиона', 'Легенда легиона'] },
+  { id: 'losses',        name: 'Битый',               desc: 'Потерпеть поражений в боях',     counter: 'losses',            steps: [10, 100, 1000, 10000, 100000],
+    titles: ['Побитый', 'Битый', 'Терпила', 'Мальчик для битья', 'Феникс поражений'] },
+  { id: 'sanctionsDone', name: 'Охотник за головами', desc: 'Выполнить санкций',              counter: 'sanctionsCompleted', steps: [1, 10, 50, 250, 1000],
+    titles: ['Наёмник', 'Охотник за головами', 'Ликвидатор', 'Гроза беглецов', 'Палач по контракту'] },
+  { id: 'sanctioned',    name: 'Враг народа',         desc: 'Попасть под санкции',            counter: 'sanctionedTimes',   steps: [1, 10, 50, 250, 1000],
+    titles: ['Подозреваемый', 'Враг народа', 'Изгой', 'Особо опасный', 'Легенда преступного мира'] },
+  { id: 'legionDmg',     name: 'Таран легиона',       desc: 'Нанести урона в боях легиона',   counter: 'legionDamageDealt', steps: [500, 5000, 50000, 500000, 5000000],
+    titles: ['Боец легиона', 'Таран легиона', 'Разрушитель', 'Осадное орудие', 'Кара небесная'] },
+  { id: 'legionShield',  name: 'Щит легиона',         desc: 'Прикрыть союзников от урона',    counter: 'legionDamageCovered', steps: [200, 2000, 20000, 200000, 2000000],
+    titles: ['Прикрытие', 'Щит легиона', 'Живая стена', 'Бастион', 'Несокрушимый'] },
+  { id: 'legionMedic',   name: 'Медик легиона',       desc: 'Вылечить HP союзников',          counter: 'legionHpHealed',    steps: [200, 2000, 20000, 200000, 2000000],
+    titles: ['Санитар', 'Медик легиона', 'Полевой хирург', 'Спаситель', 'Чудотворец'] },
 ];
 const ACH_DOLLARS = [5000, 30000, 180000, 1080000, 6500000];
 const ACH_GOLD =    [0,    0,     5,      15,      40];
@@ -1758,9 +1905,11 @@ const SABOTEURS = {
   // случайное число обычных (наземных/морских/воздушных суммарно) диверсантов
   mineDestroyMin: 10,
   mineDestroyMax: 50,
-  // Уничтожение при ракетном ударе (у ЦЕЛИ удара) — масштабируется от
-  // мощности ракеты (0..1), максимум при 100% мощности
-  rocketDestroyMax: 200,
+  // Уничтожение при ракетном ударе (у ЦЕЛИ удара) — СЛУЧАЙНОЕ суммарное число
+  // диверсантов при 100% мощности (масштабируется мощностью 0..1). Редкие
+  // (секретные/построечные) гибнут реже — по правилу 5:1 внутри destroyRegular.
+  rocketTotalMin: 100,
+  rocketTotalMax: 150,
   // Правило 5:1: на каждые 5 уничтоженных ОБЫЧНЫХ диверсантов (в любом
   // контексте — бой/мина/ракета, накопительно) гибнет 1 секретный и
   // 1 построечный у ТОГО ЖЕ владельца (если они у него есть).
@@ -1824,7 +1973,8 @@ export = {
   RIDDLES, CLUB,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,
-  DAILY_QUESTS, dailyQuestTarget, dailyQuestReward, dailyAllBonusGold,
+  DAILY_QUESTS, DAILY_QUEST_BY_ID, DAILY_CHARS, DAILY_PICK_COUNT,
+  dailyQuestTarget, dailyQuestReward, dailyAllBonusGold, pickDailyQuests, dailyGrowth,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID,
   LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID, battleBuildingCostAt, battleBuildingLegionReq,

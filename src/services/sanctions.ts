@@ -55,6 +55,9 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   const s = store();
   if (!s[targetId]) {
     s[targetId] = { targetId, targetName: target.name, bounty: 0, orders: [], createdAt: Date.now() };
+    // «Враг народа»: цель попала под санкции (считаем только НОВУЮ санкцию,
+    // добор награды к уже висящей — не отдельное попадание)
+    try { require('./achievements').bump(target, 'sanctionedTimes', 1, []); } catch (e) {}
   }
   s[targetId].bounty += amount;
   s[targetId].orders.push({ byId: user.id, byName: user.name, amount, at: Date.now() });
@@ -159,6 +162,7 @@ function checkPayout(hunter: User, target: User, hpAfter: number, maxHp: number,
   const payout = entry.bounty;
   const pl = require('./player');
   pl.addMoney(hunter, payout, true);
+  try { require('./achievements').bump(hunter, 'sanctionsCompleted', 1, notices); } catch (e) {} // «Охотник за головами»
 
   // Снимаем санкцию полностью
   delete s[target.id];

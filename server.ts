@@ -73,6 +73,8 @@ async function main() {
       legion.resolveWars();
       require('./src/services/tournaments').tick(); // авто-старт матчей и продвижение сетки
       require('./src/services/silos').resolveInFlight(); // долёт летящих ракет
+      require('./src/services/seasons').rolloverIfNeeded(); // смена недели: наградить топ-3 ДО любых сбросов
+      require('./src/services/mines').tickAll(); // шахты: уведомления о нападении вовремя + финализация спусков
       fame.resetDailyIfNeeded();
       db.saveAll();
     } catch (e) {

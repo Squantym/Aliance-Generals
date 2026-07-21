@@ -182,27 +182,34 @@ App.screens.home = async (c) => {
   // Блок Майора: сюжетное задание или дежурная фраза
   let majorHtml;
   const t = m.tutorial;
+  // Инструктор задания по его экрану/роли (обучение вводит Генерал Волков)
+  const tutorChar = (screen) => ({
+    war: { id: 'volkov', name: 'Генерал Волков', role: 'Командующий фронтом' },
+    units: { id: 'kovac', name: 'Майор Ковач', role: 'Начальник снабжения' },
+    buildings: { id: 'morozova', name: 'Полковник Морозова', role: 'Начальник тыла' },
+    missions: { id: 'tesla', name: 'Аналитик Тесла', role: 'Куратор спецопераций' },
+  }[screen] || { id: 'volkov', name: 'Генерал Волков', role: 'Командующий фронтом' });
   if (!t.done && t.quest) {
+    const ch = t.step === 0 ? { id: 'volkov', name: 'Генерал Волков', role: 'Командующий фронтом' } : tutorChar(t.quest.screen);
     majorHtml = `
       <div class="card">
-        <div class="major">
-          <div class="face">👨‍✈️</div>
-          <div>
-            ${t.step === 0 ? `<p class="story small">${UI.esc(t.prologue)}</p><hr class="hr">` : ''}
-            <p><b>Майор:</b> ${UI.esc(t.quest.story)}</p>
-            <p class="mt small">📜 Задание ${t.step + 1}/${t.total}: <b>${UI.esc(t.quest.title)}</b><br>
-            <span class="muted">Цель: ${UI.esc(t.quest.goal)}</span><br>
-            <span class="gold">Награда: ${UI.esc(t.quest.reward)}</span></p>
-            <button class="btn btn-orange mt" onclick="App.go('${t.quest.screen}')">Выполнить →</button>
-          </div>
+        <div class="tutor-head">
+          ${App.instrImg(ch.id, 54)}
+          <div><div class="th-name">${ch.name}</div><div class="th-role">${ch.role}</div></div>
         </div>
+        ${t.step === 0 ? `<p class="story small">${UI.esc(t.prologue)}</p><hr class="hr">` : ''}
+        <p><b>${ch.name}:</b> ${UI.esc(t.quest.story)}</p>
+        <p class="mt small">📜 Задание ${t.step + 1}/${t.total}: <b>${UI.esc(t.quest.title)}</b><br>
+        <span class="muted">Цель: ${UI.esc(t.quest.goal)}</span><br>
+        <span class="gold">Награда: ${UI.esc(t.quest.reward)}</span></p>
+        <button class="btn btn-orange mt" onclick="App.go('${t.quest.screen}')">Выполнить →</button>
       </div>`;
   } else {
     majorHtml = `
       <div class="card">
-        <div class="major">
-          <div class="face">👨‍✈️</div>
-          <div><b>Майор:</b> Курс молодого бойца пройден. Дальше — только война, ${UI.esc(m.rank)}. Армия ждёт приказов!</div>
+        <div class="tutor-head">
+          ${App.instrImg('volkov', 48)}
+          <div><b>Генерал Волков:</b> Курс молодого бойца пройден. Дальше — только война, ${UI.esc(m.rank)}. Армия ждёт приказов!</div>
         </div>
       </div>`;
   }
@@ -407,8 +414,8 @@ App.screens.hq = async (c) => {
     <div class="title">🎖 Поручения штаба</div>
     <p class="muted small" style="margin:-4px 4px 12px">Задания от командования: ежедневные цели и боевые контракты. Выполняйте их — получайте награды.</p>
     <div class="menu-grid">
-      <div class="menu-btn" onclick="App.go('daily')"><span class="ic">🎯</span>Ежедневные задания ${dailyBadge}</div>
-      <div class="menu-btn" onclick="App.go('dailytasks')"><span class="ic">📑</span>Контракты ${contractBadge}</div>
+      <div class="menu-btn" onclick="App.go('daily')">${App.tabImg('daily', 26)}Ежедневные задания ${dailyBadge}</div>
+      <div class="menu-btn" onclick="App.go('dailytasks')">${App.tabImg('contracts', 26)}Контракты ${contractBadge}</div>
     </div>`;
 };
 
@@ -555,9 +562,9 @@ App.screens.profile = async (c, param) => {
     <div class="card">
       <div class="title" style="margin-top:0">Разделы профиля</div>
       <div class="menu-grid">
-        <div class="menu-btn small-row" onclick="App.go('skills')"><span class="ic">📈</span>Навыки ${App.me.skillPoints > 0 ? `<span class="badge">+${App.me.skillPoints}</span>` : ''}</div>
-        <div class="menu-btn small-row" onclick="App.go('ach')"><span class="ic">🎖</span>Достижения</div>
-        <div class="menu-btn small-row" onclick="App.go('titles')"><span class="ic">🏅</span>Титулы</div>
+        <div class="menu-btn small-row" onclick="App.go('skills')">${App.tabImg('profile_skills', 24)}Навыки ${App.me.skillPoints > 0 ? `<span class="badge">+${App.me.skillPoints}</span>` : ''}</div>
+        <div class="menu-btn small-row" onclick="App.go('ach')">${App.tabImg('profile_ach', 24)}Достижения</div>
+        <div class="menu-btn small-row" onclick="App.go('titles')">${App.tabImg('profile_titles', 24)}Титулы</div>
         <div class="menu-btn small-row" onclick="App.go('cosmetics')"><span class="ic">🎨</span>Внешний вид</div>
       </div>
     </div>` : ''}
@@ -839,9 +846,9 @@ App.screens.bank = async (c, param) => {
 
   const tabs = `
     <div class="tabs">
-      <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">🏦 Хранилище</div>
+      <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">${App.tabImg('bank_vault', 20)}Хранилище</div>
       <div class="tab ${tab === 'reserve' ? 'active' : ''}" onclick="location.hash='#bank/reserve'"><span class="ic-reserve"></span> Резерв</div>
-      <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'"><span class="ic-gold"></span> Купить золото</div>
+      <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'">${App.tabImg('bank_gold', 20)}Купить золото</div>
     </div>`;
 
   if (tab === 'gold') {
@@ -946,6 +953,8 @@ App.screens.bank = async (c, param) => {
 App.screens.settings = async (c) => {
   await App.refreshMe();
   const current = App.theme();
+  const tab = App._settingsTab || 'app';
+
   const themeBtn = (id, name, desc) => `
     <div class="card">
       <div class="list-row" style="border:none;padding:0">
@@ -959,25 +968,75 @@ App.screens.settings = async (c) => {
       </div>
     </div>`;
 
-  c.innerHTML = `
-    <div class="title">Настройки профиля</div>
-    <div class="card"><p class="muted small">Здесь можно сменить тему оформления игры. Изменения применяются сразу.</p></div>
-    <div class="title" style="font-size:14px">Тема оформления</div>
+  // ── Вкладка «Приложение»: установка иконки на главный экран + уведомления
+  let appTabHtml = '';
+  // Установка на главный экран
+  if (App.isStandalone()) {
+    appTabHtml += `<div class="card"><div class="name">📲 Иконка на главном экране</div>
+      <p class="muted small mt">Игра уже запущена как установленное приложение ✔</p></div>`;
+  } else if (App.canInstall()) {
+    appTabHtml += `<div class="card"><div class="name">📲 Иконка на главном экране</div>
+      <p class="muted small mt">Установите игру отдельной иконкой — будет открываться на весь экран, как приложение.</p>
+      <button class="btn btn-orange mt" id="set-install" style="width:100%">Установить на главный экран</button></div>`;
+  } else {
+    appTabHtml += `<div class="card"><div class="name">📲 Иконка на главном экране</div>
+      <p class="muted small mt">Установка недоступна в этом браузере. Откройте игру в Chrome (Android) или Safari (iPhone), либо воспользуйтесь меню браузера «Установить приложение / На экран Домой».</p></div>`;
+  }
+  // Уведомления
+  if (!App.pushSupported()) {
+    appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
+      <p class="muted small mt">Этот браузер не поддерживает push-уведомления.${App.isIOS() && !App.isStandalone() ? ' На iPhone уведомления работают только после установки игры на главный экран.' : ''}</p></div>`;
+  } else {
+    const perm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
+    if (perm === 'granted') {
+      appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
+        <p class="muted small mt">Уведомления включены — вы получите сигнал об атаках, санкциях и событиях.</p>
+        <button class="btn btn-red mt" id="set-push-off" style="width:100%">🔕 Выключить уведомления</button></div>`;
+    } else if (perm === 'denied') {
+      appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
+        <p class="muted small mt">Уведомления запрещены в настройках браузера. Разрешите их в настройках сайта, чтобы получать сигналы об атаках и событиях.</p></div>`;
+    } else {
+      appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
+        <p class="muted small mt">Включите уведомления, чтобы получать сигналы об атаках на вас, санкциях и важных событиях.</p>
+        <button class="btn btn-orange mt" id="set-push-on" style="width:100%">🔔 Включить уведомления</button></div>`;
+    }
+  }
+
+  // ── Вкладка «Оформление игры»: все темы
+  const themesHtml = `
+    <div class="card"><p class="muted small">Смена темы оформления. Изменения применяются сразу.</p></div>
     ${themeBtn('classic', '🎨 Классическая хаки', 'Тёмная зелень и хаки — стиль оригинальной игры.')}
     ${themeBtn('steel',   '⚙ Военная сталь',    'Тёмный металл с зернистостью и царапинами.')}
     ${themeBtn('cyber',   '⚡ Кибер-война',      'Футуристический HUD: неоновая бирюза, геометрия, glassmorphism.')}
     ${themeBtn('desert',  '☀ Пустынный фронт',   'Жёлтые пески, выгоревший камуфляж и солнечный жар.')}
     ${themeBtn('noir',    '🌑 Полуночный штаб',  'Мягкий чёрно-серый интерфейс без резких цветов — для глаз ночью.')}
-    ${themeBtn('aurora',  '🌅 Аврора',           'Светлый футуристичный интерфейс: белый фон, неоновые акценты, чистая геометрия.')}
-    <hr class="hr">
-    <button class="btn btn-red" id="set-logout">🚪 Выйти из аккаунта</button>`;
+    ${themeBtn('aurora',  '🌅 Аврора',           'Светлый футуристичный интерфейс: белый фон, неоновые акценты, чистая геометрия.')}`;
 
+  c.innerHTML = `
+    <div class="title">Настройки</div>
+    <div class="tabs">
+      <div class="tab ${tab === 'app' ? 'active' : ''}" data-stab="app">Приложение</div>
+      <div class="tab ${tab === 'appearance' ? 'active' : ''}" data-stab="appearance">Оформление игры</div>
+    </div>
+    ${tab === 'app' ? appTabHtml : themesHtml}
+    <hr class="hr">
+    <button class="btn btn-red" id="set-logout" style="width:100%">🚪 Выйти из аккаунта</button>`;
+
+  c.querySelectorAll('[data-stab]').forEach((btn) => {
+    btn.onclick = () => { App._settingsTab = btn.dataset.stab; App.rerender(); };
+  });
   c.querySelectorAll('[data-theme]').forEach((btn) => {
     btn.onclick = () => {
       App.setTheme(btn.dataset.theme);
       App.rerender(); // перерисовать экран, чтобы метка «активна» переехала
     };
   });
+  const instBtn = document.getElementById('set-install');
+  if (instBtn) instBtn.onclick = () => App.installApp();
+  const pushOn = document.getElementById('set-push-on');
+  if (pushOn) pushOn.onclick = () => App.enablePush();
+  const pushOff = document.getElementById('set-push-off');
+  if (pushOff) pushOff.onclick = () => App.disablePush();
   document.getElementById('set-logout').onclick = async () => {
     try { await API.post('/api/logout', { token: API.token() }); } catch (e) {}
     API.setToken(null);
@@ -992,33 +1051,59 @@ App.screens.daily = async (c) => {
   const d = await API.get('/api/daily');
 
   c.innerHTML = `
-    <div class="title">🎯 Ежедневные задания</div>
+    <div class="title">🎯 Поручения штаба</div>
     <div class="card center">
-      <p class="muted small">Выполнено: <b>${d.doneCount} / ${d.total}</b> · Обнуление через ~${d.resetInHours} ч</p>
-      <p class="small mt">Награда за задание: +${UI.fmtNum(d.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(d.reward.dollars)}</p>
+      <p class="muted small">Сегодня активно <b>${d.total}</b> поручений от заказчиков (меняются каждый день). Выполнено: <b>${d.doneCount} / ${d.total}</b> · Обнуление через ~${d.resetInHours} ч</p>
       ${d.allDone && !d.bonusClaimed ? `
-        <button class="btn btn-orange mt" id="daily-bonus">🎉 Забрать бонус: <span class="ic-gold"></span> ${d.bonusGold}</button>
+        <button class="btn btn-orange mt" id="daily-bonus">🎉 Забрать бонус за все: <span class="ic-gold"></span> ${d.bonusGold}</button>
       ` : d.bonusClaimed ? `
-        <p class="small mt" style="color:var(--money)">✅ Бонус <span class="ic-gold"></span> ${d.bonusGold} уже получен сегодня</p>
+        <p class="small mt" style="color:var(--money)">✅ Бонус <span class="ic-gold"></span> ${d.bonusGold} за все поручения уже получен</p>
       ` : `
-        <p class="small mt muted">Выполните все ${d.total} заданий чтобы получить бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
+        <p class="small mt muted">Выполните все ${d.total} поручений дня — бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
       `}
     </div>
-
-    ${d.quests.map((q) => `
-      <div class="card">
-        <div class="list-row" style="border:none;padding:0">
-          <div class="grow">
-            <div class="name">${q.icon} ${UI.esc(q.name)}</div>
-            <div class="mt">${UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)}</div>
-          </div>
-          ${q.claimed
-            ? `<span class="badge green">✅</span>`
-            : q.done
-              ? `<button class="btn btn-orange btn-inline" data-quest="${q.id}">Получить</button>`
-              : `<span class="muted small">в работе</span>`}
-        </div>
-      </div>`).join('')}`;
+    ${(() => {
+      const diffBadge = (df) => df === 'hard'
+        ? '<span class="badge" style="background:var(--red)">сложное</span>'
+        : df === 'medium' ? '<span class="badge" style="background:var(--orange-1)">среднее</span>'
+        : '<span class="badge" style="background:var(--green)">простое</span>';
+      // Группируем поручения по заказчику, сохраняя порядок появления
+      const order = [];
+      const groups = {};
+      d.quests.forEach((q) => { if (!groups[q.char]) { groups[q.char] = []; order.push(q.char); } groups[q.char].push(q); });
+      return order.map((cid) => {
+        const g = groups[cid];
+        const h = g[0];
+        return `
+          <div class="card">
+            <div class="quest-giver">
+              ${App.instrImg(h.char, 58)}
+              <div class="grow">
+                <div class="qg-name">${UI.esc(h.charName)}</div>
+                <div class="qg-role">${h.charIcon} ${UI.esc(h.charRole)}</div>
+                ${h.charIntro ? `<div class="qg-intro">«${UI.esc(h.charIntro)}»</div>` : ''}
+              </div>
+            </div>
+            ${g.map((q) => `
+              <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+                <div class="list-row" style="border:none;padding:0">
+                  <div class="grow">
+                    <div class="name">${q.icon} ${UI.esc(q.name)} ${diffBadge(q.difficulty)}</div>
+                    <div class="muted small" style="font-style:italic;margin:2px 0 4px">«${UI.esc(q.flavor)}»</div>
+                    <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.name)}</b> — ${UI.fmtNum(q.target)} ${q.progress >= q.target ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
+                    ${UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)}
+                    <div class="small mt">Награда: +${UI.fmtNum(q.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(q.reward.dollars)}</div>
+                  </div>
+                  <div style="margin-left:8px">${q.claimed
+                    ? `<span class="badge green">✅</span>`
+                    : q.done
+                      ? `<button class="btn btn-orange btn-inline" data-quest="${q.id}">Получить</button>`
+                      : `<span class="muted small">в работе</span>`}</div>
+                </div>
+              </div>`).join('')}
+          </div>`;
+      }).join('');
+    })()}`;
 
   c.querySelectorAll('[data-quest]').forEach((btn) => {
     btn.onclick = async () => {

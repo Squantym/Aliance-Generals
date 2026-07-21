@@ -36,6 +36,15 @@ function inviteLimit(user: User): number {
   return INVITE_BASE_PER_HOUR + (user.allianceDiplomats || 0);
 }
 
+// Наёмник «Дипломат» (эффект invite_unlimited, напр. Эйден Роу) снимает
+// почасовой лимит заявок на время действия. Работает и на приём ботов,
+// и на приглашение живых игроков — в обход лимита от числа дипломатов.
+function hasUnlimitedInvite(user: User): boolean {
+  return (user.effects || []).some(
+    (e: any) => e.type === 'invite_unlimited' && e.expiresAt > Date.now()
+  );
+}
+
 // Сколько заявок отправлено за последний час (чистит старые записи)
 function invitesUsedThisHour(user: User): number {
   ensure(user);
@@ -83,7 +92,8 @@ function inviteBot(user: User, notices: Notices) {
   }
   const used = invitesUsedThisHour(user);
   const limit = inviteLimit(user);
-  if (used >= limit) {
+  const unlimited = hasUnlimitedInvite(user);
+  if (!unlimited && used >= limit) {
     throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
   }
   logInvite(user);
@@ -93,7 +103,8 @@ function inviteBot(user: User, notices: Notices) {
   user.allianceRoster!.push({ id: 'bot_' + u.uid(8), name, isBot: true });
   db.save('users');
   try { require('./seasons').onAllianceRecruit(user); } catch (e) {}
-  notices.push(`🤝 Боец «${name}» вступил в ваш альянс! В строю: ${user.allianceMembers}. Заявок осталось: ${limit - used - 1}/час.`);
+  const leftMsg = unlimited ? 'без лимита (наёмник-дипломат)' : `${limit - used - 1}/час`;
+  notices.push(`🤝 Боец «${name}» вступил в ваш альянс! В строю: ${user.allianceMembers}. Заявок осталось: ${leftMsg}.`);
   return view(user);
 }
 
@@ -119,7 +130,8 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
   }
   const used = invitesUsedThisHour(user);
   const limit = inviteLimit(user);
-  if (used >= limit) {
+  const unlimited = hasUnlimitedInvite(user);
+  if (!unlimited && used >= limit) {
     throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
   }
   const q = String(targetName || '').trim().toLowerCase();
@@ -143,7 +155,7 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
     require('./notifications').push(target.id, 'alliance_invite',
       `🤝 ${user.name} приглашает вас в свой альянс`, { fromId: user.id, fromName: user.name });
   } catch (e) {}
-  notices.push(`✉️ Приглашение отправлено игроку «${target.name}». Заявок осталось: ${limit - used - 1}/час.`);
+  notices.push(`✉️ Приглашение отправлено игроку «${target.name}». Заявок осталось: ${unlimited ? 'без лимита (наёмник-дипломат)' : `${limit - used - 1}/час`}.`);
   return { ok: true };
 }
 

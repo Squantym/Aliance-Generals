@@ -63,15 +63,16 @@ const fs=require('fs'),path=require('path'); const DATA=path.join(process.cwd(),
  // засчитывается в require.units (его unlock < reqMin).
  const unit=c.UNITS.filter(u=>u.unlock<reqMin).sort((a,b)=>b.unlock-a.unlock)[0];
  usr.units={}; usr.units[unit.id]={0:2000,1:0,2:0};
- let err='';
- try { missions.startStep(usr, conf.id, 0, 0, []); } catch(e){ err=e.message; }
- console.log('     сообщение: '+err);
- ok('старт отклонён из-за нехватки техники нужного уровня', /ед\. техники уровня/.test(err));
+ // Теперь старт не бросает ошибку, а возвращает смету needUnits (окно покупки)
+ const res = missions.startStep(usr, conf.id, 0, 0, []);
+ console.log('     needUnits: '+JSON.stringify(res.needUnits && {deficit:res.needUnits.deficit, unit:res.needUnits.unitId}));
+ ok('старт вернул смету needUnits (нехватка техники)', !!(res && res.needUnits && res.needUnits.deficit > 0));
+ ok('шаг НЕ запущен при нехватке техники', (usr.missionQueue||[]).length === 0);
  // Теперь дадим технику НУЖНОГО уровня — требование по технике должно уйти
  const highUnit=c.UNITS.filter(u=>u.unlock>=reqMin).sort((a,b)=>a.unlock-b.unlock)[0];
  if (highUnit) { usr.units[highUnit.id]={0:conf.operations[0].steps[0].require.units.count+5,1:0,2:0};
-   let err2=''; try { missions.startStep(usr, conf.id, 0, 0, []); } catch(e){ err2=e.message; }
-   ok('после выдачи техники нужного уровня требование по технике снято', !/ед\. техники уровня/.test(err2)); }
+   const res2 = missions.startStep(usr, conf.id, 0, 0, []);
+   ok('после выдачи техники нужного уровня старт проходит без окна покупки', !res2.needUnits && !!res2.processId); }
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

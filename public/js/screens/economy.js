@@ -25,9 +25,9 @@ App.screens.units = async (c, param) => {
   const tab = param || 'ground';
 
   const tabs = [
-    ['ground', '🚜 Наземная'],
-    ['air', '✈ Воздушная'],
-    ['sea', '🚢 Морская'],
+    ['ground', App.tabImg('tech_ground', 22) + 'Наземная'],
+    ['air', App.tabImg('tech_air', 22) + 'Воздушная'],
+    ['sea', App.tabImg('tech_sea', 22) + 'Морская'],
   ];
 
   const items = sortByProgress(data.items.filter((x) => x.type === tab));
@@ -116,8 +116,8 @@ App.screens.buildings = async (c, param) => {
       <div class="kv"><span class="k">Следующая выплата через</span><span class="v">${UI.fmtTimer(t.nextPayoutSec)}</span></div>
     </div>
     <div class="tabs">
-      <div class="tab ${tab === 'income' ? 'active' : ''}" onclick="location.hash='#buildings/income'">💵 Доходные</div>
-      <div class="tab ${tab === 'defense' ? 'active' : ''}" onclick="location.hash='#buildings/defense'">🛡 Оборонительные</div>
+      <div class="tab ${tab === 'income' ? 'active' : ''}" onclick="location.hash='#buildings/income'">${App.tabImg('buildings_income', 22)}Доходные</div>
+      <div class="tab ${tab === 'defense' ? 'active' : ''}" onclick="location.hash='#buildings/defense'">${App.tabImg('buildings_defense', 22)}Оборонительные</div>
     </div>
     ${list.map((x) => `
       <div class="card" ${x.locked ? 'style="opacity:.6"' : ''} style="overflow:hidden">
@@ -168,10 +168,10 @@ App.screens.production = async (c, param) => {
 
   const tabsHtml = `
     <div class="tabs">
-      <div class="tab ${tab === 'workshops' ? 'active' : ''}" onclick="location.hash='#production/workshops'">🏭 Цехи</div>
-      <div class="tab ${tab === 'mines' ? 'active' : ''}" onclick="location.hash='#production/mines'">⛏ Шахты</div>
-      <div class="tab ${tab === 'silos' ? 'active' : ''}" onclick="location.hash='#production/silos'">🚀 Ракетные шахты</div>
-      <div class="tab ${tab === 'lasers' ? 'active' : ''}" onclick="location.hash='#production/lasers'">🔦 Лазеры</div>
+      <div class="tab ${tab === 'workshops' ? 'active' : ''}" onclick="location.hash='#production/workshops'">${App.tabImg('prod_modern', 22)}Цехи</div>
+      <div class="tab ${tab === 'mines' ? 'active' : ''}" onclick="location.hash='#production/mines'">${App.tabImg('prod_mines', 22)}Шахты</div>
+      <div class="tab ${tab === 'silos' ? 'active' : ''}" onclick="location.hash='#production/silos'">${App.tabImg('prod_silos', 22)}Ракетные шахты</div>
+      <div class="tab ${tab === 'lasers' ? 'active' : ''}" onclick="location.hash='#production/lasers'">${App.tabImg('prod_lasers', 22)}Лазеры</div>
     </div>`;
 
   if (tab === 'mines') return App._renderMines(c, tabsHtml);

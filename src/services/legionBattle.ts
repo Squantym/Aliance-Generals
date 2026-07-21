@@ -909,6 +909,16 @@ function finalizeBattle(battle: Battle, all: any, users: any, winningSide: strin
     if (!u2) continue;
     const won = c.side === winningSide;
     player.addXp(u2, won ? config.LEGION.BATTLE_XP_WIN : config.LEGION.BATTLE_XP_LOSS, []);
+    // Достижения боёв легиона: победы, нанесённый урон, урон принятый за
+    // прикрытие союзников, вылеченные HP союзников — по статистике этого боя.
+    try {
+      const ach = require('./achievements');
+      if (won) ach.bump(u2, 'legionWins', 1, []);
+      const st = c.stats || ({} as any);
+      if (st.dmgDealt > 0)   ach.bump(u2, 'legionDamageDealt',   st.dmgDealt, []);
+      if (st.guardedDmg > 0) ach.bump(u2, 'legionDamageCovered', st.guardedDmg, []);
+      if (st.healed > 0)     ach.bump(u2, 'legionHpHealed',      st.healed, []);
+    } catch (e) {}
     notif.push(c.userId, 'legion_battle_result',
       won
         ? `🏆 Победа легиона! +${gloryGain} ⭐ ${wResult.levelUp ? '🎉 Новый уровень легиона!' : ''}`

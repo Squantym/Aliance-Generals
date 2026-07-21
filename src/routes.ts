@@ -144,6 +144,7 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/missions',          (req) => missions.list(req.user));
   app.add('GET',  '/api/missions/:id',      (req) => missions.detail(req.user, req.params.id));
   app.add('POST', '/api/missions/start',    act((req, n) => missions.startStep(req.user, req.body.confId, u.toInt(req.body.opIdx, 0), u.toInt(req.body.stepIdx, 0), n)));
+  app.add('POST', '/api/missions/buy-required', act((req, n) => missions.buyRequiredUnits(req.user, req.body.confId, u.toInt(req.body.opIdx, 0), u.toInt(req.body.stepIdx, 0), n)));
   app.add('POST', '/api/missions/boost',    act((req, n) => missions.boostStep(req.user, req.body.processId, n)));
 
   // ---------- Техника ----------

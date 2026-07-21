@@ -181,9 +181,15 @@ App.screens.war = async (c) => {
           <hr class="hr">
           <p class="small mt"><b>Ваша техника в бою:</b></p>
           ${UI.battleImgRow(b.myArmy, 'units')}` : ''}
+        ${(b.mySaboteurs && b.mySaboteurs.length) ? `
+          <p class="small mt"><b>Ваши диверсанты:</b></p>
+          ${UI.sabRow(b.mySaboteurs)}` : ''}
         ${(b.enemyArmy && b.enemyArmy.length) ? `
           <p class="small mt"><b>Техника врага:</b></p>
           ${UI.battleImgRow(b.enemyArmy, 'units')}` : ''}
+        ${(b.enemySaboteurs && b.enemySaboteurs.length) ? `
+          <p class="small mt"><b>Диверсанты врага:</b></p>
+          ${UI.sabRow(b.enemySaboteurs)}` : ''}
         ${(b.enemyDefenseBuildings && b.enemyDefenseBuildings.length) ? `
           <details class="def-buildings" style="margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:8px">
             <summary style="cursor:pointer;font-weight:bold;list-style:none;display:flex;align-items:center;justify-content:space-between">
@@ -229,7 +235,7 @@ App.screens.war = async (c) => {
     ${!preCombat ? fatalityHtml : ''}
     ${!preCombat ? resultHtml : ''}
     <div class="tabs">
-      <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">🎯 Цели</div>
+      <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">${App.tabImg('war_targets', 20)}Цели</div>
       <div class="tab ${warTab === 'sanctions' ? 'active' : ''}" data-wartab="sanctions">💰 Санкции</div>
       <div class="tab ${warTab === 'event' ? 'active' : ''}" data-wartab="event">🐉 Событие</div>
     </div>
@@ -560,7 +566,8 @@ App.screens.missions = async (c, param) => {
     ${activeBlock}
     <div class="card"><p class="muted small">10 конфликтов в мире. У каждого 7-10 спецопераций по 3 шага. Шаги требуют времени и условий. Награда: 7-10 очков навыков и 30-500 золота за первое полное прохождение конфликта.</p></div>
     ${data.conflicts.map((cf) => `
-      <div class="card" ${cf.locked ? 'style="opacity:.6"' : 'style="cursor:pointer"'} ${!cf.locked ? `onclick="App.go('missions/${cf.id}')"` : ''}>
+      <div class="card conf-card" ${cf.locked ? 'style="opacity:.6"' : 'style="cursor:pointer"'} ${!cf.locked ? `onclick="App.go('missions/${cf.id}')"` : ''}>
+        <img class="conf-banner${cf.locked ? ' conf-locked' : ''}" src="/img/conflicts/${cf.id}.webp" alt="" loading="lazy" onerror="this.style.display='none'">
         <div class="name">${UI.esc(cf.name)}${cf.completed > 0 ? ` <span class="badge green">пройден ×${cf.completed}</span>` : ''}${cf.rewardAvailable && !cf.locked ? ' <span class="badge">⭐ ' + cf.spReward + ' + <span class="ic-gold"></span> ' + cf.goldReward + '</span>' : ''}</div>
         ${cf.locked
           ? `<p class="muted small mt">🔒 Откроется на ${cf.minLevel} уровне</p>`
@@ -639,7 +646,8 @@ async function renderConflictDetail(c, confId) {
       const nextStep = doneSteps < 3 ? op.steps[doneSteps] : null;
       const fullyDone = doneSteps >= 3;
       return `
-      <div class="card" ${fullyDone ? 'style="opacity:.7"' : ''}>
+      <div class="card conf-card" ${fullyDone ? 'style="opacity:.7"' : ''}>
+        ${op.img ? `<img class="conf-banner op-banner${fullyDone ? ' conf-locked' : ''}" src="/img/conflicts/${conf.id}/${op.img}.webp" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         <div class="name">${fullyDone ? '✅ ' : ''}${UI.esc(op.name)} <span class="muted">${stepDots(doneSteps)}</span></div>
         ${fullyDone
           ? '<p class="muted small mt">Спецоперация завершена</p>'
@@ -658,9 +666,29 @@ async function renderConflictDetail(c, confId) {
     btn.onclick = async () => {
       const [opIdx, stepIdx] = btn.dataset.start.split('-').map(Number);
       const runStep = async () => {
-        await API.post('/api/missions/start', { confId, opIdx, stepIdx });
+        const r = await API.post('/api/missions/start', { confId, opIdx, stepIdx });
+        // Не хватает техники — предлагаем докупить всё разом по цене магазина
+        if (r && r.needUnits) { await _offerBuyUnits(r.needUnits); return; }
         await App.refreshMe();
         App.rerender();
+      };
+      // Окно покупки недостающей техники (цена магазина с учётом акции)
+      const _offerBuyUnits = async (s) => {
+        const disc = s.discount && s.discount.pct
+          ? ` <span class="gold">(акция −${s.discount.pct}%)</span>` : '';
+        const afford = s.canAfford ? '' : `<br><span style="color:var(--red)">Не хватает денег на счету.</span>`;
+        const ok = await UI.confirm(
+          `Для операции нужно ещё <b>${s.deficit}</b> ед. техники (${UI.esc(s.unitName)}, ур. ${s.minLevel}+).<br>` +
+          `Купить всё разом за <b class="money">$${UI.fmtNum(s.totalCost)}</b>${disc} — по цене магазина?${afford}`,
+          { title: '🛒 Не хватает техники', icon: '🚜', okText: s.canAfford ? 'Купить всё' : 'Купить всё (не хватает $)', cancelText: 'Отмена' }
+        );
+        if (!ok) return;
+        try {
+          await API.post('/api/missions/buy-required', { confId, opIdx, stepIdx });
+          await App.refreshMe();
+          // Техника куплена — сразу пробуем запустить шаг снова
+          await runStep();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
       };
       try {
         await runStep();
