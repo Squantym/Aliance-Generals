@@ -109,6 +109,10 @@ function view(user: User) {
   return {
     active: true,
     name: e.name,
+    image: e.image || null,          // фото босса (URL или путь /img/...)
+    taunt: pickTaunt(e),             // реплика под фото
+    counterMin: config.WORLD_EVENT.COUNTER_MIN,
+    counterMax: config.WORLD_EVENT.COUNTER_MAX,
     hp: Math.max(0, e.hp),
     maxHp: e.maxHp,
     hpPct: Math.max(0, Math.round((e.hp / e.maxHp) * 100)),
@@ -149,6 +153,14 @@ function attack(user: User, notices: Notices) {
   // Урон по боссу (как в обычном бою, с критом/трофеем)
   const { dmg, crit } = playerDamage(user);
   e.hp = Math.max(0, e.hp - dmg);
+
+  // ── ОТВЕТНЫЙ УДАР БОССА ──────────────────────────────────────────
+  // Босс бьёт в ответ на 3..15 HP. Крит здесь НЕ применяется — это
+  // фиксированный диапазон (см. WORLD_EVENT.COUNTER_MIN/MAX).
+  const W = config.WORLD_EVENT;
+  const counterDmg = u.rnd(W.COUNTER_MIN, W.COUNTER_MAX);
+  user.res.hp.cur = Math.max(1, user.res.hp.cur - counterDmg);
+
   if (!e.contributors) e.contributors = {};
   if (!e.attacks) e.attacks = {};
   e.contributors[user.id] = (e.contributors[user.id] || 0) + dmg;
@@ -181,7 +193,16 @@ function attack(user: User, notices: Notices) {
   // Уведомления по атаке формирует клиент: урон/крит/добивание идут в
   // персональный лог внизу окна босса, а всплывающим уведомлением
   // показывается только выпавшее золото (чтобы не перекрывать окно).
-  return { ...view(user), dealtDamage: dmg, crit, goldDrop, finished, killReward };
+  return { ...view(user), dealtDamage: dmg, crit, goldDrop, finished, killReward,
+    counterDamage: counterDmg, myHp: user.res.hp.cur, taunt: pickTaunt(e) };
+}
+
+// Реплика босса: своя (заданная админом) либо случайная из конфига
+function pickTaunt(e: any): string {
+  if (e && e.taunt) return String(e.taunt);
+  const list = config.WORLD_EVENT.taunts || [];
+  if (!list.length) return '';
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 // ── Завершение события: награды топ-3 + сохранение статистики ─────
@@ -223,6 +244,16 @@ function finishEvent(e: any, killer: User): void {
 }
 
 // ── АДМИН: запустить событие ──────────────────────────────────────
+// Безопасная ссылка на фото босса: либо внутренний путь /img/..., либо
+// внешний http(s)-адрес. Всё прочее (javascript:, data: и т.п.) отбрасываем.
+function sanitizeImage(raw: any): string {
+  const s = String(raw || '').trim().slice(0, 500);
+  if (!s) return '';
+  if (/^\/(img|images|uploads)\//i.test(s)) return s;
+  if (/^https?:\/\//i.test(s)) return s;
+  return '';
+}
+
 function adminStart(adminUser: User, body: any, notices: Notices) {
   const e = store();
   if (e.active || (e.startsAt && e.startsAt > Date.now())) {
@@ -241,12 +272,16 @@ function adminStart(adminUser: User, body: any, notices: Notices) {
   const reward2 = Math.max(0, u.toInt(body.reward2, 0));
   const reward3 = Math.max(0, u.toInt(body.reward3, 0));
   const delayMin = Math.max(0, u.toInt(body.delayMin, 0));
+  // Фото босса (URL http(s):// или путь внутри сайта /img/...) и своя реплика
+  const image = sanitizeImage(body.image);
+  const taunt = String(body.taunt || '').slice(0, 200).trim();
   const now = Date.now();
 
   const ne: any = {
     active: delayMin === 0,
     startsAt: now + delayMin * 60 * 1000,
     name, hp, maxHp: hp,
+    image, taunt,
     goldPool, dropMin, dropMax, dropChance,
     killReward, reward1, reward2, reward3,
     contributors: {}, attacks: {}, names: {},
@@ -342,4 +377,28 @@ function adminSetHp(adminUser: User, body: any, notices: Notices) {
   return view(adminUser);
 }
 
-export = { view, attack, adminStart, adminStop, adminSetDrops, adminSetHp };
+// ── АДМИН: сменить фото и реплику у уже запущенного босса ────────
+// Пустая строка в поле = очистить (фото убрать / вернуть случайные фразы).
+function adminSetLook(adminUser: User, body: any, notices: Notices) {
+  const e = store();
+  if (!e.name) throw new u.ApiError('Событие не создано');
+  const changes: string[] = [];
+  if (body.image !== undefined) {
+    const img = sanitizeImage(body.image);
+    if (String(body.image || '').trim() && !img) {
+      throw new u.ApiError('Ссылка на фото должна начинаться с /img/ или http(s)://');
+    }
+    e.image = img;
+    changes.push(img ? 'фото обновлено' : 'фото убрано');
+  }
+  if (body.taunt !== undefined) {
+    e.taunt = String(body.taunt || '').slice(0, 200).trim();
+    changes.push(e.taunt ? 'своя фраза задана' : 'фразы снова случайные');
+  }
+  if (!changes.length) throw new u.ApiError('Нечего менять');
+  db.save('world_event');
+  notices.push(`🐉 Босс «${e.name}»: ${changes.join(', ')}.`);
+  return view(adminUser);
+}
+
+export = { view, attack, adminStart, adminStop, adminSetDrops, adminSetHp, adminSetLook };

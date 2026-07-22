@@ -1315,39 +1315,42 @@ App.screens.ach = async (c) => {
 
   c.innerHTML = `
     <div class="title">Достижения</div>
-    <div class="card"><p class="muted small">У каждого достижения 5 уровней. Иконка загорается, когда набрано нужное число (над иконкой). Награды приходят автоматически. Кнопкой «Выбрать» можно поставить титул достижения активным.</p></div>
+    <div class="card">
+      <p class="muted small">У каждого достижения 5 уровней, и у каждого уровня — свой титул. Иконка загорается, когда набрано нужное число (указано над ней). Любой открытый титул можно сделать активным кнопкой «Выбрать».</p>
+      ${activeTitle ? `<div class="center mt"><button class="btn btn-inline" id="title-clear">Снять активный титул</button></div>` : ''}
+    </div>
     ${achievements.map((a) => {
-      const activeStep = (activeTitle && activeTitle.startsWith(a.id + ':')) ? (parseInt(activeTitle.split(':')[1], 10) + 1) : 0;
       const levels = a.steps.map((req, i) => {
         const lvl = i + 1;
         const reached = a.stage >= lvl;
+        const titleId = a.id + ':' + i;
+        const isActive = activeTitle === titleId;
+        const titleName = (a.titles && a.titles[i]) ? a.titles[i] : `${a.name} ${lvl}`;
         return `
-          <div class="ach-lvl">
+          <div class="ach-lvl${isActive ? ' ach-lvl-active' : ''}">
             <div class="req ${reached ? 'reached' : ''}">${fmtReq(req)}</div>
             ${App.achImg(a.id, lvl, 46, !reached)}
+            <div class="ach-title ${reached ? '' : 'locked'}">${UI.esc(titleName)}</div>
+            <button class="btn btn-inline ach-pick ${isActive ? 'btn-orange' : ''}"
+              data-title="${titleId}" ${reached ? '' : 'disabled'}>
+              ${isActive ? '✅ Активен' : (reached ? 'Выбрать' : '🔒')}
+            </button>
           </div>`;
       }).join('');
-      const canPick = a.stage > 0;
-      const isActive = activeStep > 0;
       return `
         <div class="card">
           <div class="center"><div class="name">${UI.esc(a.name)}</div>
             <div class="muted small">${UI.esc(a.desc)}</div></div>
           <div class="ach-levels">${levels}</div>
           <div class="center small muted">${a.stage >= 5 ? 'Все уровни пройдены ✔' : `${UI.fmtNum(a.value)} / ${UI.fmtNum(a.next)}`}</div>
-          <div class="center mt">
-            <button class="btn ${isActive ? 'btn-orange' : ''} btn-inline" data-pick="${a.id}" data-stage="${a.stage}" ${canPick ? '' : 'disabled'}>
-              ${isActive ? '✅ Титул выбран' : (canPick ? 'Выбрать титул' : 'Титул недоступен')}
-            </button>
-          </div>
         </div>`;
     }).join('')}`;
 
-  c.querySelectorAll('[data-pick]').forEach((btn) => {
+  // Выбор конкретного титула (любого открытого уровня)
+  c.querySelectorAll('[data-title]').forEach((btn) => {
     btn.onclick = async () => {
-      const stage = parseInt(btn.dataset.stage, 10);
-      if (stage <= 0) return;
-      const titleId = btn.dataset.pick + ':' + (stage - 1); // старший разблокированный титул
+      const titleId = btn.dataset.title;
+      if (activeTitle === titleId) return; // уже активен
       try {
         await API.post('/api/titles/set', { titleId });
         activeTitle = titleId;
@@ -1356,6 +1359,15 @@ App.screens.ach = async (c) => {
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   });
+  const clearBtn = document.getElementById('title-clear');
+  if (clearBtn) clearBtn.onclick = async () => {
+    try {
+      await API.post('/api/titles/set', { titleId: '' });
+      activeTitle = null;
+      UI.toast('Титул снят');
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
 };
 
 // ---------- УВЕДОМЛЕНИЯ (колокольчик) ----------

@@ -1411,7 +1411,10 @@ App.screens.event = async (c) => {
   c.innerHTML = `
     <div class="title">🐉 ${UI.esc(d.name)}</div>
     <div class="card">
+      ${d.image ? `<img class="boss-photo" src="${UI.esc(d.image)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+      <div class="boss-say" id="boss-say">${d.taunt ? '«' + UI.esc(d.taunt) + '»' : '<span class="muted">Босс молчит… пока.</span>'}</div>
       <p class="muted small">Общий враг! Атакуйте босса — тратится боеприпас, как в обычном бою. Бейте сколько хватит патронов и здоровья. За атаки капает золото, а лучшие по урону и добивший получат награду.</p>
+      <p class="muted small">⚠️ Босс бьёт в ответ: ${d.counterMin ?? 3}–${d.counterMax ?? 15} <span class="ic-health"></span> за каждую вашу атаку.</p>
       <div style="margin:10px 0">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
           <span class="muted"><span class="ic-health"></span> Здоровье босса</span><span id="boss-hp-text" style="font-weight:bold;color:var(--${d.hpPct > 50 ? 'green' : d.hpPct > 20 ? 'orange' : 'red'})">${UI.fmtNum(d.hp)} / ${UI.fmtNum(d.maxHp)} (${d.hpPct}%)</span>
@@ -1456,10 +1459,16 @@ App.screens.event = async (c) => {
   const doEventAttack = async () => {
     try {
       const r = await API.post('/api/event/attack');
+      // Ответный удар босса — дописываем к строке лога
+      const back = r.counterDamage > 0
+        ? ` · <span style="color:var(--red)">−${r.counterDamage} <span class="ic-health"></span></span>` : '';
       // Запись в персональный лог атак (у каждого игрока свой)
       const text = r.finished
         ? `🏆 <b>Добивание!</b> Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''} — босс повержен${r.killReward > 0 ? `, награда <span class="ic-gold"></span>${r.killReward}` : ''}`
-        : `💥 Урон <b>${UI.fmtNum(r.dealtDamage)}</b>${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''}${r.goldDrop > 0 ? ` · выпало <span class="ic-gold"></span>${r.goldDrop}` : ''}`;
+        : `💥 Урон <b>${UI.fmtNum(r.dealtDamage)}</b>${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''}${back}${r.goldDrop > 0 ? ` · выпало <span class="ic-gold"></span>${r.goldDrop}` : ''}`;
+      // Босс огрызается новой фразой сразу после удара
+      const sayEl = document.getElementById('boss-say');
+      if (sayEl && r.taunt) sayEl.innerHTML = '«' + UI.esc(r.taunt) + '»';
       const entry = { time: new Date().toLocaleTimeString('ru-RU'), text };
       if (!App._eventLog) App._eventLog = [];
       App._eventLog.unshift(entry);

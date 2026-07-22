@@ -238,6 +238,14 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)">🥉 Топ-3 по урону</label><input type="number" id="ev-r3" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">⏰ Отложить старт (мин, 0=сразу)</label><input type="number" id="ev-delay" placeholder="0"></div>
         </div>
+        <div style="margin-top:8px">
+          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса — ссылка (/img/... или https://...)</label>
+          <input type="text" id="ev-image" placeholder="/img/bosses/armada.webp">
+        </div>
+        <div style="margin-top:8px">
+          <label style="font-size:11px;color:var(--dim)">💬 Своя фраза босса (пусто = случайные из 40 заготовок)</label>
+          <input type="text" id="ev-taunt" maxlength="200" placeholder="Это всё, на что ты способен, салага?">
+        </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-orange" id="ev-start" style="flex:1">🐉 Запустить</button>
           <button class="btn btn-red btn-inline" id="ev-stop">🛑 Остановить</button>
@@ -252,6 +260,20 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> За атаку: до</label><input type="number" id="evd-max" placeholder="10"></div>
         </div>
         <button class="btn btn-orange mt" id="evd-apply" style="width:100%">🔧 Применить к текущему событию</button>
+        <hr class="hr">
+        <div class="name" style="font-size:14px">🖼 Фото и фраза ТЕКУЩЕГО босса</div>
+        <p class="muted small">Меняются на лету, без перезапуска. Пустое фото — убрать картинку; пустая фраза — вернуть случайные реплики.</p>
+        ${ev && ev.image ? `<img src="${UI.esc(ev.image)}" alt="" style="max-width:100%;border-radius:8px;margin:8px 0" onerror="this.style.display='none'">` : ''}
+        ${ev && ev.taunt ? `<p class="small" style="font-style:italic">Сейчас: «${UI.esc(ev.taunt)}»</p>` : ''}
+        <div style="margin-top:8px">
+          <label style="font-size:11px;color:var(--dim)">🖼 Ссылка на фото</label>
+          <input type="text" id="evl-image" placeholder="/img/bosses/armada.webp" value="${ev && ev.image ? UI.esc(ev.image) : ''}">
+        </div>
+        <div style="margin-top:8px">
+          <label style="font-size:11px;color:var(--dim)">💬 Фраза босса</label>
+          <input type="text" id="evl-taunt" maxlength="200" placeholder="пусто = случайные фразы" value="${ev && ev.taunt ? UI.esc(ev.taunt) : ''}">
+        </div>
+        <button class="btn btn-orange mt" id="evl-apply" style="width:100%">🖼 Обновить фото и фразу</button>
         <hr class="hr">
         <div class="name" style="font-size:14px"><span class="ic-health"></span> Здоровье ТЕКУЩЕГО босса</div>
         ${ev && ev.active ? `
@@ -285,8 +307,21 @@ const Admin = {
           killReward: evVal('ev-kill'),
           reward1: evVal('ev-r1'), reward2: evVal('ev-r2'), reward3: evVal('ev-r3'),
           delayMin: evVal('ev-delay'),
+          image: (document.getElementById('ev-image') || {}).value || '',
+          taunt: (document.getElementById('ev-taunt') || {}).value || '',
         });
         UI.toast('🐉 Событие запущено');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    const lookBtn = document.getElementById('evl-apply');
+    if (lookBtn) lookBtn.onclick = async () => {
+      try {
+        await API.post('/api/admin/event/look', {
+          image: (document.getElementById('evl-image') || {}).value || '',
+          taunt: (document.getElementById('evl-taunt') || {}).value || '',
+        });
+        UI.toast('🖼 Фото и фраза босса обновлены');
+        Admin.renderTab();
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     document.getElementById('ev-stop').onclick = async () => {
@@ -364,8 +399,8 @@ const Admin = {
     try {
       const { players } = await API.get('/api/admin/players?q=' + encodeURIComponent(q));
       if (!players.length) { box.innerHTML = '<p class="muted center">Никого не найдено.</p>'; return; }
-      box.innerHTML = `<div class="card" style="padding:0">
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
+      box.innerHTML = `<div class="card adm-players-wrap" style="padding:0">
+        <table class="adm-players" style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="border-bottom:1px solid var(--border)">
             <th style="padding:8px;text-align:left">Игрок</th>
             <th style="padding:8px;text-align:right"><span class="ic-dollar"></span></th>
@@ -377,18 +412,18 @@ const Admin = {
           <tbody>
           ${players.map(p => `
             <tr style="border-bottom:1px solid var(--border-dim);${!p.online?'opacity:.65':''}">
-              <td style="padding:8px">
+              <td class="adm-p-name" style="padding:8px">
                 <span style="font-weight:bold">${p.flag} ${UI.esc(p.name)}</span>
                 ${p.isAdmin ? ' <span class="badge">admin</span>' : ''}
                 ${p.banned ? ' <span class="badge" style="background:var(--red)">🚫 бан</span>' : ''}
                 ${p.online ? ' <span style="color:var(--green);font-size:10px">● онлайн</span>' : ''}
                 <br><span class="muted small">Ур.${p.level} · ID: ${p.id}</span>
               </td>
-              <td style="padding:8px;text-align:right;font-size:12px">${UI.fmtMoney(p.dollars)}</td>
-              <td style="padding:8px;text-align:right;font-size:12px">${UI.fmtNum(p.gold)}</td>
-              <td style="padding:8px;text-align:right;font-size:12px">${p.earsCurrent ?? p.ears}</td>
-              <td style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
-              <td style="padding:8px;white-space:nowrap">
+              <td class="adm-stat" data-l="💵" style="padding:8px;text-align:right;font-size:12px">${UI.fmtMoney(p.dollars)}</td>
+              <td class="adm-stat" data-l="🪙" style="padding:8px;text-align:right;font-size:12px">${UI.fmtNum(p.gold)}</td>
+              <td class="adm-stat" data-l="👂" style="padding:8px;text-align:right;font-size:12px">${p.earsCurrent ?? p.ears}</td>
+              <td class="adm-stat" data-l="🎖" style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
+              <td class="adm-acts" style="padding:8px;white-space:nowrap">
                 <button class="btn btn-inline" data-view="${p.id}" title="Досье игрока">👁</button>
                 <button class="btn btn-orange btn-inline" data-pick="${p.id}">Выдать</button>
                 <button class="btn btn-inline" data-log="${p.id}" data-log-name="${UI.esc(p.name)}">📋</button>
@@ -1091,7 +1126,7 @@ const Admin = {
       };
 
       box.innerHTML = `
-        <div class="card" style="padding:0;overflow-x:auto">
+        <div class="card adm-log-wrap" style="padding:0;overflow-x:auto">
           <div style="padding:8px 12px;color:var(--dim);font-size:12px">${filtered.length} записей</div>
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead>
