@@ -199,7 +199,7 @@ a:hover { text-decoration: underline; }
 }
 /* Карточка вида диверсанта — крупнее шапка/иконка, но без перебора */
 .sab-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.sab-head .ic-sab { width: 52px; height: 52px; }
+.sab-head .ic-sab { width: 156px; height: 156px; }  /* ×3 от прежних 52px */
 .sab-head .name { font-size: 17px; }
 
 /* ---------- СПИСКИ И СТРОКИ ---------- */
@@ -2430,9 +2430,20 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 }
 
 /* ==================== Босс: фото и реплика ==================== */
+/* Единое КВАДРАТНОЕ поле фото босса: 600x600, на узких экранах сжимается,
+   но остаётся квадратом. Картинка любого размера вписывается по центру. */
 .boss-photo {
-  display: block; width: calc(100% + 24px); margin: -10px -12px 0;
-  height: auto; border-radius: 8px 8px 0 0;
+  display: block; width: 600px; max-width: 100%;
+  aspect-ratio: 1 / 1; height: auto;
+  object-fit: cover; object-position: center;
+  margin: 0 auto 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--panel-2);
+}
+/* Превью в админке — та же квадратная рамка, но компактнее */
+.boss-photo-preview {
+  display: block; width: 220px; max-width: 100%;
+  aspect-ratio: 1 / 1; height: auto; object-fit: cover;
+  margin: 8px auto; border-radius: 10px; border: 1px solid var(--border);
 }
 /* Небольшое поле под фото, где босс «говорит» */
 .boss-say {

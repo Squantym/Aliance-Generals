@@ -123,6 +123,12 @@ function list(user: User) {
     const target = players[entry.targetId];
     if (!target) continue;
     const pl = require('./player');
+    // Уникальные имена заказчиков (кто объявил охоту). Для одного заказчика
+    // показываем имя прямо в списке, для нескольких — раскрывающийся список.
+    const uniqNames: string[] = [];
+    for (const o of entry.orders || []) {
+      if (o.byName && !uniqNames.includes(o.byName)) uniqNames.push(o.byName);
+    }
     result.push({
       targetId: entry.targetId,
       targetName: entry.targetName || target.name,
@@ -130,6 +136,8 @@ function list(user: User) {
       level: target.level,
       bounty: entry.bounty,
       orderCount: entry.orders.length,
+      ordererCount: uniqNames.length,          // сколько РАЗНЫХ заказчиков
+      ordererNames: uniqNames.slice(0, 3),     // первые имена для подписи
       myOrder: entry.orders.filter(o => o.byId === user.id).reduce((s2, o) => s2 + o.amount, 0),
       hpPct: target.res ? Math.round((target.res.hp.cur / require('./player').maxima(target).hp) * 100) : 100,
     });

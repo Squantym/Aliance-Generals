@@ -1412,7 +1412,12 @@ App.screens.event = async (c) => {
     <div class="title">🐉 ${UI.esc(d.name)}</div>
     <div class="card">
       ${d.image ? `<img class="boss-photo" src="${UI.esc(d.image)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
-      <div class="boss-say" id="boss-say">${d.taunt ? '«' + UI.esc(d.taunt) + '»' : '<span class="muted">Босс молчит… пока.</span>'}</div>
+      <div class="boss-say" id="boss-say">${(() => {
+        // Сброс запомненной реплики при смене босса
+        if (App._bossTauntFor !== d.name) { App._bossTaunt = null; App._bossTauntFor = d.name; }
+        const say = App._bossTaunt || d.taunt;
+        return say ? '«' + UI.esc(say) + '»' : '<span class="muted">Босс молчит… пока.</span>';
+      })()}</div>
       <p class="muted small">Общий враг! Атакуйте босса — тратится боеприпас, как в обычном бою. Бейте сколько хватит патронов и здоровья. За атаки капает золото, а лучшие по урону и добивший получат награду.</p>
       <p class="muted small">⚠️ Босс бьёт в ответ: ${d.counterMin ?? 3}–${d.counterMax ?? 15} <span class="ic-health"></span> за каждую вашу атаку.</p>
       <div style="margin:10px 0">
@@ -1466,9 +1471,15 @@ App.screens.event = async (c) => {
       const text = r.finished
         ? `🏆 <b>Добивание!</b> Урон ${UI.fmtNum(r.dealtDamage)}${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''} — босс повержен${r.killReward > 0 ? `, награда <span class="ic-gold"></span>${r.killReward}` : ''}`
         : `💥 Урон <b>${UI.fmtNum(r.dealtDamage)}</b>${r.crit ? ' <span class="gold">🔥КРИТ</span>' : ''}${back}${r.goldDrop > 0 ? ` · выпало <span class="ic-gold"></span>${r.goldDrop}` : ''}`;
-      // Босс огрызается новой фразой сразу после удара
-      const sayEl = document.getElementById('boss-say');
-      if (sayEl && r.taunt) sayEl.innerHTML = '«' + UI.esc(r.taunt) + '»';
+      // Босс огрызается новой фразой сразу после удара. Запоминаем её в
+      // App._bossTaunt, иначе следующий rerender() запросит /api/event и
+      // подставит ДРУГУЮ случайную фразу — визуально это выглядело как
+      // «две фразы подряд перебивают друг друга».
+      if (r.taunt) {
+        App._bossTaunt = r.taunt;
+        const sayEl = document.getElementById('boss-say');
+        if (sayEl) sayEl.innerHTML = '«' + UI.esc(r.taunt) + '»';
+      }
       const entry = { time: new Date().toLocaleTimeString('ru-RU'), text };
       if (!App._eventLog) App._eventLog = [];
       App._eventLog.unshift(entry);

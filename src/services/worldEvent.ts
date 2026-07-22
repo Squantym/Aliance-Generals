@@ -90,16 +90,20 @@ function view(user: User) {
   activateIfDue(e);
   ensureDropConfig(e);   // чиним «нулевой» дроп у старых событий
 
-  // Запланированное событие — таймер до старта
+  // Запланированное событие — таймер до старта (фото и реплику отдаём тоже,
+  // иначе админка не покажет превью, а игрок не увидит босса до старта)
   if (!e.active && e.startsAt && e.startsAt > Date.now() && e.name && e.hp > 0) {
     return { active: false, scheduled: true, name: e.name,
+      image: e.image || null, taunt: pickTaunt(e),
       startsInSec: Math.max(0, Math.round((e.startsAt - Date.now()) / 1000)) };
   }
 
-  // Нет активного события — показываем итоги прошлого (если есть)
+  // Нет активного события — показываем итоги прошлого (если есть).
+  // Фото/фразу всё равно возвращаем: админ настраивает их до запуска.
   if (!e.active) {
-    if (e.lastResult) return { active: false, scheduled: false, lastResult: e.lastResult };
-    return { active: false, scheduled: false };
+    if (e.lastResult) return { active: false, scheduled: false, lastResult: e.lastResult,
+      image: e.image || null, taunt: e.taunt || '' };
+    return { active: false, scheduled: false, image: e.image || null, taunt: e.taunt || '' };
   }
 
   const myDamage = (e.contributors || {})[user.id] || 0;
@@ -244,13 +248,19 @@ function finishEvent(e: any, killer: User): void {
 }
 
 // ── АДМИН: запустить событие ──────────────────────────────────────
-// Безопасная ссылка на фото босса: либо внутренний путь /img/..., либо
-// внешний http(s)-адрес. Всё прочее (javascript:, data: и т.п.) отбрасываем.
+// Безопасная ссылка на фото босса: внутренний путь /img/..., внешний
+// http(s)-адрес, либо адрес без схемы (example.com/boss.png → https://...).
+// Всё прочее (javascript:, data: и т.п.) отбрасываем.
 function sanitizeImage(raw: any): string {
-  const s = String(raw || '').trim().slice(0, 500);
+  let s = String(raw || '').trim().slice(0, 500);
   if (!s) return '';
+  // Явно опасные схемы — сразу отказ
+  if (/^\s*(javascript|data|vbscript|file|blob)\s*:/i.test(s)) return '';
   if (/^\/(img|images|uploads)\//i.test(s)) return s;
   if (/^https?:\/\//i.test(s)) return s;
+  // Ссылка без схемы: //cdn.site/x.png или cdn.site/x.png → добавим https://
+  if (/^\/\//.test(s)) return 'https:' + s;
+  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(s)) return 'https://' + s;
   return '';
 }
 
@@ -274,6 +284,9 @@ function adminStart(adminUser: User, body: any, notices: Notices) {
   const delayMin = Math.max(0, u.toInt(body.delayMin, 0));
   // Фото босса (URL http(s):// или путь внутри сайта /img/...) и своя реплика
   const image = sanitizeImage(body.image);
+  if (String(body.image || '').trim() && !image) {
+    throw new u.ApiError('Ссылка на фото некорректна. Нужен путь /img/... или адрес http(s)://');
+  }
   const taunt = String(body.taunt || '').slice(0, 200).trim();
   const now = Date.now();
 

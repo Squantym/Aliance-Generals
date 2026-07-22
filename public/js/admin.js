@@ -239,7 +239,7 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)">⏰ Отложить старт (мин, 0=сразу)</label><input type="number" id="ev-delay" placeholder="0"></div>
         </div>
         <div style="margin-top:8px">
-          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса — ссылка (/img/... или https://...)</label>
+          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса — ссылка (/img/... или https://...). Показывается квадратом 600×600</label>
           <input type="text" id="ev-image" placeholder="/img/bosses/armada.webp">
         </div>
         <div style="margin-top:8px">
@@ -263,10 +263,10 @@ const Admin = {
         <hr class="hr">
         <div class="name" style="font-size:14px">🖼 Фото и фраза ТЕКУЩЕГО босса</div>
         <p class="muted small">Меняются на лету, без перезапуска. Пустое фото — убрать картинку; пустая фраза — вернуть случайные реплики.</p>
-        ${ev && ev.image ? `<img src="${UI.esc(ev.image)}" alt="" style="max-width:100%;border-radius:8px;margin:8px 0" onerror="this.style.display='none'">` : ''}
+        ${ev && ev.image ? `<img class="boss-photo-preview" src="${UI.esc(ev.image)}" alt="" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<p class=&quot;small&quot; style=&quot;color:var(--red)&quot;>⚠ Картинка не загрузилась: сайт может блокировать вставку по ссылке. Положите файл в /public/img/bosses/ и укажите /img/bosses/имя.webp</p>')">` : ''}
         ${ev && ev.taunt ? `<p class="small" style="font-style:italic">Сейчас: «${UI.esc(ev.taunt)}»</p>` : ''}
         <div style="margin-top:8px">
-          <label style="font-size:11px;color:var(--dim)">🖼 Ссылка на фото</label>
+          <label style="font-size:11px;color:var(--dim)">🖼 Ссылка на фото (квадрат 600×600; лучше свой файл в /img/bosses/)</label>
           <input type="text" id="evl-image" placeholder="/img/bosses/armada.webp" value="${ev && ev.image ? UI.esc(ev.image) : ''}">
         </div>
         <div style="margin-top:8px">

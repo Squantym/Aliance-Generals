@@ -59,6 +59,34 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   throws('data: отклонён', () => we.adminSetLook(admin, { image: 'data:text/html,<script>' }, []));
   throws('пустой patch отклонён', () => we.adminSetLook(admin, {}, []));
 
+  console.log('\n[5.1] ФИКС: ссылки без схемы принимаются');
+  we.adminSetLook(admin, { image: 'example.com/boss.png' }, []);
+  eq('домен без схемы → https://', we.view(admin).image, 'https://example.com/boss.png');
+  we.adminSetLook(admin, { image: '//cdn.site.com/b.jpg' }, []);
+  eq('протокол-относительная → https://', we.view(admin).image, 'https://cdn.site.com/b.jpg');
+
+  console.log('\n[5.2] ФИКС: фото видно и у НЕактивного/запланированного босса');
+  we.adminStop(admin, []);
+  we.adminStart(admin, { name: 'Отложенный', hp: 1000, image: '/img/bosses/x.webp', delayMin: 10 }, []);
+  const sv = we.view(admin);
+  ok('босс запланирован', sv.scheduled === true);
+  eq('фото отдаётся до старта', sv.image, '/img/bosses/x.webp');
+  ok('реплика отдаётся до старта', typeof sv.taunt === 'string' && sv.taunt.length > 0);
+
+  console.log('\n[5.3] ФИКС: битая ссылка при старте не глотается молча');
+  we.adminStop(admin, []);
+  throws('старт с некорректной ссылкой отклонён', () => we.adminStart(admin, { name: 'X', hp: 100, image: 'ерунда без домена' }, []));
+
+  console.log('\n[5.4] Фото показывается квадратом 600×600');
+  const css = fs.readFileSync(path.join(process.cwd(), 'public/css/style.css'), 'utf8');
+  ok('ширина поля 600px', /\.boss-photo \{[^}]*width: 600px/.test(css));
+  ok('квадратная пропорция', /\.boss-photo \{[^}]*aspect-ratio: 1 \/ 1/.test(css));
+  ok('картинка вписывается (object-fit: cover)', /\.boss-photo \{[^}]*object-fit: cover/.test(css));
+  ok('на узком экране не вылезает', /\.boss-photo \{[^}]*max-width: 100%/.test(css));
+
+  // Возвращаем активного босса для дальнейших проверок
+  we.adminStart(admin, { name: 'Тест-босс', hp: 1000000 }, []);
+
   console.log('\n[6] Ответный урон босса: 3..15 за атаку, БЕЗ крита');
   admin.level = 100;
   const hi = c.UNITS[Math.min(18, c.UNITS.length - 1)];

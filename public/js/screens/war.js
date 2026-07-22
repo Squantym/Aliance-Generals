@@ -496,9 +496,10 @@ App.screens.war = async (c) => {
           <div class="grow">
             <span class="name" style="cursor:pointer" onclick="App.go('profile/${s.targetId}')">${App._flagImg(s.flag)} ${UI.esc(s.targetName)}</span>
             <span class="muted small"> Ур. ${s.level} · HP ${s.hpPct}%</span>
-            <div class="small" style="color:var(--money)">💰 Награда: <span class="ic-dollar"></span>${UI.fmtNum(s.bounty)}${s.orderCount > 1
-              ? ` · <span class="sanc-toggle" data-sanc-orders="${s.targetId}" data-idx="${i}" style="cursor:pointer;text-decoration:underline">${s.orderCount} заказчиков ▾</span>`
-              : ` <span class="muted">(1 заказчик)</span>`}</div>
+            <div class="small" style="color:var(--money)">💰 Награда: <span class="ic-dollar"></span>${UI.fmtNum(s.bounty)}</div>
+            <div class="small">🎯 Охоту объявил${(s.ordererCount || 1) > 1
+              ? `и: <span class="sanc-toggle" data-sanc-orders="${s.targetId}" data-idx="${i}" style="cursor:pointer;text-decoration:underline;color:var(--orange-1)">${s.ordererCount} заказчика ▾</span>`
+              : `: <b>${UI.esc((s.ordererNames && s.ordererNames[0]) || '—')}</b>`}</div>
             ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: <span class="ic-dollar"></span>${UI.fmtNum(s.myOrder)}</div>` : ''}
             <div class="sanc-orders" id="sanc-orders-${i}" hidden></div>
           </div>

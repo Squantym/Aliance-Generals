@@ -61,16 +61,16 @@ const UI = {
   sabRow(sabs) {
     if (!sabs || !sabs.length) return '';
     const RU = { ground: 'Наземные', sea: 'Морские', air: 'Воздушные', secret: 'Секретные', building: 'Построечные' };
-    return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+    return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
       ${sabs.map((x) => `
-        <div style="width:62px;text-align:center" title="${RU[x.type] || x.type}">
-          <div style="height:46px;display:flex;align-items:center;justify-content:center">
+        <div style="width:42px;text-align:center" title="${RU[x.type] || x.type}">
+          <div style="height:28px;display:flex;align-items:center;justify-content:center">
             <img src="/img/saboteurs/${x.type}.webp" loading="lazy"
-              style="max-width:52px;max-height:44px;object-fit:contain"
+              style="max-width:26px;max-height:26px;object-fit:contain"
               onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
-            <span style="display:none;font-size:10px;color:var(--dim)">${RU[x.type] || x.type}</span>
+            <span style="display:none;font-size:9px;color:var(--dim)">${RU[x.type] || x.type}</span>
           </div>
-          <div style="font-size:12px;font-weight:bold">×${UI.fmtNum(x.count)}</div>
+          <div style="font-size:11px;font-weight:bold">×${UI.fmtNum(x.count)}</div>
         </div>`).join('')}
     </div>`;
   },

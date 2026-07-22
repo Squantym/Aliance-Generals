@@ -33,7 +33,7 @@ App.screens.saboteurs = async (c, param) => {
     const s = data.suicide;
     box.innerHTML = `
       <div class="card">
-        <div class="sab-head">${App.sabImg('suicide', 52)}<div class="name">Смертники</div></div>
+        <div class="sab-head">${App.sabImg('suicide', 156)}<div class="name">Смертники</div></div>
         <p class="muted small">Не снижают мощь врага. Если вы наступите на растяжку — можно пожертвовать смертником вместо игры в провода и гарантированно избежать взрыва (−1 смертник за подрыв). Лимит фиксирован, апгрейда нет.</p>
         <div class="kv mt"><span class="k">В наличии</span><span class="v">${s.count} / ${s.limit}</span></div>
         <div class="kv"><span class="k">Цена за штуку</span><span class="v gold"><span class="ic-gold"></span> ${s.priceGold}</span></div>
@@ -63,7 +63,7 @@ App.screens.saboteurs = async (c, param) => {
   }[tab];
   box.innerHTML = `
     <div class="card">
-      <div class="sab-head">${App.sabImg(tab, 52)}<div class="name">${UI.esc(t.name)}</div></div>
+      <div class="sab-head">${App.sabImg(tab, 156)}<div class="name">${UI.esc(t.name)}</div></div>
       <p class="muted small">Каждый работающий диверсант снижает мощь ${targetLabel} противника на 0.1% (100 шт. = −10%). Работает только количество В ПРЕДЕЛАХ лимита — излишек в запасе бездействует.</p>
       <div class="kv mt"><span class="k">В наличии</span><span class="v">${UI.fmtNum(t.count)}</span></div>
       <div class="kv"><span class="k">Лимит (работает)</span><span class="v">${UI.fmtNum(t.active)} / ${UI.fmtNum(t.limit)}</span></div>

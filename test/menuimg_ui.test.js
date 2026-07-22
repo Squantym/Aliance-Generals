@@ -46,8 +46,8 @@ let passed=0; const ok=(n,c)=>{assert.ok(c,'❌ '+n);passed++;console.log('  ✅
  console.log('\n[4] Экран диверсантов: иконки вкладок и шапок');
  const sabSrc=fs.readFileSync(path.join(ROOT,'public/js/screens/saboteurs.js'),'utf8');
  ok('вкладки БЕЗ иконок (иконки перенесены в карточку)', !/App\.sabImg\(id/.test(sabSrc) && /">\$\{label\}<\/div>/.test(sabSrc));
- ok('шапка обычного типа с иконкой 52', /App\.sabImg\(tab, 52\)/.test(sabSrc));
- ok('шапка смертников с иконкой 52', /App\.sabImg\('suicide', 52\)/.test(sabSrc));
+ ok('шапка обычного типа с иконкой 156 (×3)', /App\.sabImg\(tab, 156\)/.test(sabSrc));
+ ok('шапка смертников с иконкой 156 (×3)', /App\.sabImg\('suicide', 156\)/.test(sabSrc));
  ok('заголовок экрана — иконка меню', /App\.menuImg\('saboteurs', 26\)/.test(sabSrc));
  ok('эмодзи 🥷 в заголовке убрано', !/<div class="title">🥷 Диверсанты/.test(sabSrc));
 
