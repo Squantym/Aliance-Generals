@@ -2430,10 +2430,10 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 }
 
 /* ==================== Босс: фото и реплика ==================== */
-/* Единое КВАДРАТНОЕ поле фото босса: 600x600, на узких экранах сжимается,
+/* Единое КВАДРАТНОЕ поле фото босса: 300x300, на узких экранах сжимается,
    но остаётся квадратом. Картинка любого размера вписывается по центру. */
 .boss-photo {
-  display: block; width: 600px; max-width: 100%;
+  display: block; width: 300px; max-width: 100%;
   aspect-ratio: 1 / 1; height: auto;
   object-fit: cover; object-position: center;
   margin: 0 auto 10px; border-radius: 10px;

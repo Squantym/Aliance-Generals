@@ -414,4 +414,29 @@ function adminSetLook(adminUser: User, body: any, notices: Notices) {
   return view(adminUser);
 }
 
-export = { view, attack, adminStart, adminStop, adminSetDrops, adminSetHp, adminSetLook };
+// ── АДМИН: какие файлы фото РЕАЛЬНО видит сервер ─────────────────
+// Показывает содержимое public/img/bosses/ — так админ выбирает картинку
+// из списка вместо ручного ввода пути и сразу видит, доехал ли файл до
+// сервера (если список пуст — файл не задеплоен, а не «ссылка кривая»).
+function adminListImages(): any {
+  const fs = require('fs');
+  const p = require('path');
+  const dir = p.join(process.cwd(), 'public', 'img', 'bosses');
+  let files: string[] = [];
+  let exists = false;
+  try {
+    exists = fs.existsSync(dir);
+    if (exists) {
+      files = fs.readdirSync(dir)
+        .filter((f: string) => /\.(webp|png|jpe?g|gif|avif|svg)$/i.test(f))
+        .sort();
+    }
+  } catch (e) { /* каталога нет или нет прав */ }
+  return {
+    dir: 'public/img/bosses',
+    exists,
+    files: files.map((f) => ({ name: f, url: '/img/bosses/' + f })),
+  };
+}
+
+export = { view, attack, adminStart, adminStop, adminSetDrops, adminSetHp, adminSetLook, adminListImages };

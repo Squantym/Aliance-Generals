@@ -152,6 +152,12 @@ function sendJson(res: http.ServerResponse, status: number, obj: any, acceptEnco
 //   4. Immutable cache на год для версионированных файлов
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPath: string, query?: string): void {
   let rel = urlPath === '/' ? '/index.html' : urlPath;
+  // Браузер кодирует не-ASCII символы в пути (кириллица, пробелы):
+  // «/img/bosses/Латипко.webp» приходит как «/img/bosses/%D0%9B%D0%B0...».
+  // Без декодирования файл не находится (404). Декодируем ДО сборки пути;
+  // защита от выхода за public/ ниже (normalize + startsWith) остаётся.
+  try { rel = decodeURIComponent(rel); } catch (e) { /* битая %-последовательность — оставляем как есть */ }
+  if (rel.indexOf('\0') !== -1) { res.writeHead(400); res.end('Bad request'); return; }
   if (rel === '/admin') rel = '/admin.html';
   const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }

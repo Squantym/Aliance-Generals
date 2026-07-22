@@ -239,7 +239,7 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)">⏰ Отложить старт (мин, 0=сразу)</label><input type="number" id="ev-delay" placeholder="0"></div>
         </div>
         <div style="margin-top:8px">
-          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса — ссылка (/img/... или https://...). Показывается квадратом 600×600</label>
+          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса — ссылка (/img/... или https://...). Показывается квадратом 300×300</label>
           <input type="text" id="ev-image" placeholder="/img/bosses/armada.webp">
         </div>
         <div style="margin-top:8px">
@@ -266,9 +266,10 @@ const Admin = {
         ${ev && ev.image ? `<img class="boss-photo-preview" src="${UI.esc(ev.image)}" alt="" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<p class=&quot;small&quot; style=&quot;color:var(--red)&quot;>⚠ Картинка не загрузилась: сайт может блокировать вставку по ссылке. Положите файл в /public/img/bosses/ и укажите /img/bosses/имя.webp</p>')">` : ''}
         ${ev && ev.taunt ? `<p class="small" style="font-style:italic">Сейчас: «${UI.esc(ev.taunt)}»</p>` : ''}
         <div style="margin-top:8px">
-          <label style="font-size:11px;color:var(--dim)">🖼 Ссылка на фото (квадрат 600×600; лучше свой файл в /img/bosses/)</label>
-          <input type="text" id="evl-image" placeholder="/img/bosses/armada.webp" value="${ev && ev.image ? UI.esc(ev.image) : ''}">
+          <label style="font-size:11px;color:var(--dim)">🖼 Ссылка на фото (квадрат 300×300; лучше свой файл в /img/bosses/)</label>
+          <input type="text" id="evl-image" placeholder="/img/bosses/latipko.webp" value="${ev && ev.image ? UI.esc(ev.image) : ''}">
         </div>
+        <div id="boss-img-list" style="margin-top:6px"><span class="muted small">Проверяю файлы на сервере…</span></div>
         <div style="margin-top:8px">
           <label style="font-size:11px;color:var(--dim)">💬 Фраза босса</label>
           <input type="text" id="evl-taunt" maxlength="200" placeholder="пусто = случайные фразы" value="${ev && ev.taunt ? UI.esc(ev.taunt) : ''}">
@@ -314,6 +315,36 @@ const Admin = {
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     const lookBtn = document.getElementById('evl-apply');
+    // Показываем, какие файлы РЕАЛЬНО лежат на сервере в /img/bosses/.
+    // Пустой список = файл не задеплоен (а не «ссылка неправильная»).
+    (async () => {
+      const box = document.getElementById('boss-img-list');
+      if (!box) return;
+      try {
+        const d = await API.get('/api/admin/event/images');
+        if (!d.exists) {
+          box.innerHTML = `<span class="small" style="color:var(--red)">⚠ На сервере нет папки <b>${d.dir}</b>. Создайте её и положите туда картинку.</span>`;
+          return;
+        }
+        if (!d.files.length) {
+          box.innerHTML = `<span class="small" style="color:var(--red)">⚠ Папка <b>${d.dir}</b> на сервере ПУСТА. Файл не доехал: закоммитьте его (git add/commit/push) и сделайте git pull на сервере.</span>`;
+          return;
+        }
+        box.innerHTML = `<div class="small muted">Файлы на сервере (нажмите, чтобы подставить):</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+            ${d.files.map(f => `<button class="btn btn-inline boss-img-pick" data-url="${UI.esc(f.url)}" style="font-size:11px">${UI.esc(f.name)}</button>`).join('')}
+          </div>`;
+        box.querySelectorAll('.boss-img-pick').forEach(b => {
+          b.onclick = () => {
+            const inp = document.getElementById('evl-image');
+            if (inp) inp.value = b.dataset.url;
+            UI.toast('Путь подставлен — нажмите «Обновить фото и фразу»');
+          };
+        });
+      } catch (e) {
+        box.innerHTML = '<span class="muted small">Не удалось получить список файлов.</span>';
+      }
+    })();
     if (lookBtn) lookBtn.onclick = async () => {
       try {
         await API.post('/api/admin/event/look', {
