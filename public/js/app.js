@@ -1854,6 +1854,10 @@ const App = {
     if (API.token() && name === 'auth') { location.hash = '#home'; return; }
 
     const screen = App.screens[name] || App.screens.home;
+    // Результат боя показывается ТОЛЬКО пока игрок на экране «Война».
+    // Если он ушёл на главную (или в любой другой раздел) — карточка боя
+    // сбрасывается сразу, и при возврате в «Войну» старое окно не висит.
+    if (name !== 'war') App._lastBattle = null;
     App.renderHeader();
 
     const c = document.getElementById('content');

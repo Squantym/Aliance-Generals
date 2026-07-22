@@ -2345,10 +2345,10 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 
 /* ============ Баннеры спецопераций ============ */
 .conf-card { overflow: hidden; }
+/* Картинка показывается ЦЕЛИКОМ, без обрезки: ширина по карточке,
+   высота — пропорционально (никаких max-height/object-fit:cover). */
 .conf-banner {
   display: block; width: calc(100% + 24px); margin: -10px -12px 10px;
-  max-height: 150px; object-fit: cover; object-position: center 30%;
-  border-radius: 8px 8px 0 0;
+  height: auto; border-radius: 8px 8px 0 0;
 }
-.op-banner { max-height: 120px; }
 .conf-locked { filter: grayscale(.8) brightness(.55); }

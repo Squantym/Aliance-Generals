@@ -715,15 +715,20 @@ function refresh(user: User): void {
 }
 
 // ---------- Рейтинг и звание ----------
+// НАКОПИТЕЛЬНЫЙ рейтинг (переработан). Правила начисления:
+//   победа в бою +1, поражение −1;
+//   отрезал ухо ИЛИ дал жетон (помиловал) +3;
+//   тебе отрезали ухо −3; подорвался на мине −3.
+// У старых игроков поле отсутствует → рейтинг начинается с 0 (обнуление всем).
+// Начисляют боевые события через addRating(); rating() только читает.
 function rating(user: User): number {
-  return Math.round(
-    user.level * 150 +
-    user.battle.wins * 5 +
-    user.battle.defWins * 2 +
-    user.battle.fatalities * 30 +
-    user.counters.missionStages * 10 +
-    user.counters.buildingsBuilt
-  );
+  return user.rating || 0;
+}
+
+// Изменить рейтинг игрока на delta (может быть отрицательной).
+function addRating(user: User, delta: number): void {
+  user.rating = (user.rating || 0) + delta;
+  db.markUser(user.id);
 }
 
 function rank(level: number): string {
@@ -1151,7 +1156,7 @@ export = {
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
-  rating, rank, flag, findByName,
+  rating, addRating, rank, flag, findByName,
   bankDeposit, bankWithdraw, reserveForLegion, goldPackages, buyGold,
   mePayload, publicProfile, setStatus, setAvatar, restoreEar,
 };

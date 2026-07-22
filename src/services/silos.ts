@@ -161,7 +161,7 @@ function fuelPower(user: User, siloId: string, amount: number, notices: Notices)
 // Глобальная коллекция летящих ракет
 function inFlight(): Record<string, any> { return db.load('rockets', {}); }
 
-// ---------- Запуск ракеты по цели (теперь ракета ЛЕТИТ 10 минут) ----------
+// ---------- Запуск ракеты по цели (ракета ЛЕТИТ S.FLIGHT_MS, см. конфиг) ----------
 function launch(user: User, siloId: string, targetId: string, notices: Notices) {
   const silo = silos(user).find((s) => s.id === siloId);
   if (!silo) throw new u.ApiError('Шахта не найдена');
@@ -183,6 +183,7 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
 
   // Создаём летящую ракету
   const rocketId = u.uid(12);
+  const flightMin = Math.round(S.FLIGHT_MS / 60000); // минут долёта (из конфига)
   const rockets = inFlight();
   rockets[rocketId] = {
     id: rocketId,
@@ -194,12 +195,12 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
   db.save('rockets');
   db.save('users');
 
-  // Предупреждаем цель (баннер + таймер 10 минут)
+  // Предупреждаем цель (баннер + таймер долёта из конфига)
   notifications.push(target.id, 'rocket_incoming',
-    `🚀 По вам запущена ракета! Долёт через 10 минут. Успейте сбить её лазером в разделе «Ракеты», или попросите союзников.`,
+    `🚀 По вам запущена ракета! Долёт через ${flightMin} мин. Успейте сбить её лазером в разделе «Ракеты», или попросите союзников.`,
     { attackerName: user.name, attackerId: user.id, rocketId, impactAt });
 
-  notices.push(`🚀 Ракета запущена по «${target.name}»! Мощность ${Math.round(powerFrac * 100)}%. Долёт через 10 минут — цель может попытаться её сбить.`);
+  notices.push(`🚀 Ракета запущена по «${target.name}»! Мощность ${Math.round(powerFrac * 100)}%. Долёт через ${flightMin} мин — цель может попытаться её сбить.`);
   return {
     launched: true,
     targetName: target.name,

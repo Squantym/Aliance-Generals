@@ -189,6 +189,7 @@ export interface User {
   refEarnings?: number;        // сколько золота заработал на покупках рефералов
   // Рейтинговые сезоны
   seasonRating?: number;
+  rating?: number;       // накопительный рейтинг: победы/поражения/уши/жетоны/мины
   seasonId?: string;
   // Еженедельные метрики рейтингового сезона (пн–вс МСК)
   weekly?: {

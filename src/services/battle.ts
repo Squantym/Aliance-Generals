@@ -450,6 +450,7 @@ function mineDefuse(user: User, wireIndex: number, notices: Notices) {
   // Неверный провод — взрыв: 100% здоровья + % техники по трофею жертвы
   user.res.hp.cur = 0;
   ach.bump(user, 'deaths', 1, notices); // достижение «Смертник»: гибель при подрыве на мине
+  player.addRating(user, -3);           // рейтинг: подорвался на мине −3
   const lostTech = landmines.destroyExactPct(user, p.aArmyEntries, p.techLossPct);
   const lostSaboteurs = require('./saboteurs').mineDestroy(user, notices);
   user.pendingMineDefuse = null;
@@ -575,9 +576,21 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   // ВСЕГДА проигрывают игроку — они низкоуровневый фарм, а не вызов.
   // Псевдоигроки (isPlayerLike) и реальные игроки решаются по урону:
   // побеждает тот, кто нанёс больше; при равенстве — по мощи.
+  // ----- ИСХОД БОЯ -----
+  // 1) Террористы (боты 💀, не «псевдоигроки») ВСЕГДА проигрывают игроку.
+  // 2) Если В БОЮ БЫЛ УВОРОТ (любой из сторон) — сравнивать урон нечестно:
+  //    уворот искусственно обнуляет одну из сторон, и слабый, увернувшись,
+  //    «выигрывал» у сильного. В этом случае исход решает РЕАЛЬНАЯ МОЩЬ обеих
+  //    сторон (aPow vs dPow): увернувшийся слабый всё равно проигрывает
+  //    сильному, даже если сам нанёс урон, а получил ноль.
+  // 3) Без уворотов — побеждает тот, кто нанёс БОЛЬШЕ урона; при равенстве
+  //    урона исход также решает мощь.
+  const anyDodge = targetDodge || attackerDodge;
   const win = (isBot && !target.isPlayerLike)
     ? true
-    : (dealt !== received ? dealt > received : aPow >= dPow);
+    : (anyDodge
+        ? aPow >= dPow
+        : (dealt !== received ? dealt > received : aPow >= dPow));
 
   let targetHpAfter;
   if (isBot) {
@@ -606,6 +619,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
 
   if (win) {
     user.battle.wins++;
+    player.addRating(user, 1); // рейтинг: победа +1
     // Личная история против реального противника: +победа
     if (!isBot) {
       if (!user.vsRecord) user.vsRecord = {};
@@ -663,6 +677,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       target.dollars -= loot;
       target.battle.defLosses++;
       ach.bump(target, 'losses', 1, []); // «Битый»: поражение в обороне
+      player.addRating(target, -1);      // рейтинг: поражение −1
       // Потери защитника (только если он реальный игрок), с учётом крита
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce), crit));
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
@@ -678,6 +693,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   } else {
     user.battle.losses++;
     ach.bump(user, 'losses', 1, notices); // «Битый»: поражение в нападении
+    player.addRating(user, -1);           // рейтинг: поражение −1
     if (!isBot) {
       // Личная история против реального противника: +поражение
       if (!user.vsRecord) user.vsRecord = {};
@@ -685,6 +701,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       rec.losses++;
       user.vsRecord[target.id] = rec;
       target.battle.defWins++;
+      player.addRating(target, 1);        // рейтинг: победа в обороне +1
       // Защитник, отразив атаку, тоже несёт минимальные потери
       enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT, false));
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
@@ -861,6 +878,7 @@ function fatality(user: User, choice: string, notices: Notices) {
     user.ears++;
     ach.bump(user, 'earsCut', 1, notices);
     require('./dailyQuests').bump(user, 'earsCut', 1); // ежедневное поручение «Коллекция»
+    player.addRating(user, 3); // рейтинг: отрезал ухо +3
     try { require('./seasons').onFatalityEar(user); } catch (e) {}
     let canLeaveMessage = false;  // true, если этот игрок отрезал ОБА уха
     if (!pf.isBot) {
@@ -880,7 +898,10 @@ function fatality(user: User, choice: string, notices: Notices) {
           const cutIndex = config.EARS.MAX - victim.earsCurrent - 1;
           const slot = Math.max(0, Math.min(config.EARS.MAX - 1, cutIndex));
           victim.earCutters[slot] = { id: user.id, name: user.name };
+          player.addRating(victim, -3); // рейтинг жертвы: тебе отрезали ухо −3
         }
+        // При двойном срезе нападавший получает +3 и за второе ухо
+        if (doubleCut) player.addRating(user, 3);
 
         // Трофей жертвы «Полевой хирург»: шанс мгновенно восстановить ухо.
         // Восстанавливает ОДНО ухо (последнее отрезанное). Если восстановил —
@@ -895,6 +916,7 @@ function fatality(user: User, choice: string, notices: Notices) {
           if (lostNow < 2) victim.earCutters[1] = null;
           if (lostNow < 1) victim.earCutters[0] = null;
           restored = true;
+          player.addRating(victim, 3); // ухо восстановлено — возвращаем рейтинг жертве
         }
 
         // Послание можно оставить только если СЕЙЧАС оба уха отрезаны этим игроком
@@ -936,6 +958,7 @@ function fatality(user: User, choice: string, notices: Notices) {
   // Отпускаем: +1 жетон милосердия
   user.tokens++;
   ach.bump(user, 'merciesGiven', 1, notices); // достижение «Милосердный»
+  player.addRating(user, 3); // рейтинг: жетон (помилование) +3
   try { require('./seasons').onMercy(user); } catch (e) {}
   if (!pf.isBot) {
     const victim = player.users()[pf.targetId];

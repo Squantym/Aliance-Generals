@@ -59,6 +59,27 @@ async function main() {
   // и только потом начинаем принимать запросы.
   await db.init();
 
+  // ---- Разовая миграция: обнуление рейтинга под новую систему ----
+  // Рейтинг стал накопительным (победа +1 / поражение −1 / ухо или жетон +3 /
+  // тебе отрезали ухо −3 / подрыв на мине −3). Старые значения считались по
+  // формуле от уровня и не сопоставимы — обнуляем всем ОДИН раз.
+  try {
+    const meta = db.load<Record<string, any>>('meta', {});
+    if (!meta.ratingResetV2) {
+      const players = db.load<Record<string, any>>('users', {});
+      let n = 0;
+      for (const id of Object.keys(players)) {
+        if (players[id].rating !== 0) { players[id].rating = 0; n++; }
+      }
+      meta.ratingResetV2 = Date.now();
+      db.save('meta');
+      db.save('users'); // полное сохранение (миграция затрагивает всех)
+      console.log(`🔄 Миграция рейтинга: обнулено у ${n} игроков.`);
+    }
+  } catch (e) {
+    console.error('Ошибка миграции рейтинга:', e);
+  }
+
   // Создаём приложение (мини-аналог Express, написанный руками)
   const app = http.createApp();
 
