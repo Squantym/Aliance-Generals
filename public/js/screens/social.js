@@ -497,8 +497,8 @@ async function renderGroupScreen(c, kind) {
           <div class="name">🎩 Дипломаты и приглашения</div>
           <p class="muted small mt">Базовый лимит: 5 приглашений/час. Каждый дипломат добавляет +1 к лимиту.</p>
           <div class="kv"><span class="k">Дипломатов нанято</span><span class="v">${g.diplomats}</span></div>
-          <div class="kv"><span class="k">Лимит приглашений</span><span class="v">${g.invitesUsed} / ${g.inviteLimit} в час</span></div>
-          ${g.invitesUsed >= g.inviteLimit ? `<p class="small mt" style="color:var(--red)">⚠️ Слот восстановится через ~${g.inviteCooldownMin} мин</p>` : ''}
+          <div class="kv"><span class="k">Лимит приглашений</span><span class="v">${g.unlimitedInvite ? '<span class="gold">без лимита</span>' : `${g.invitesUsed} / ${g.inviteLimit} в час`}</span></div>
+          ${g.unlimitedInvite ? `<p class="small mt" style="color:var(--money)">🎖 Наёмник снял почасовой лимит приглашений.</p>` : (g.invitesUsed >= g.inviteLimit ? `<p class="small mt" style="color:var(--red)">⚠️ Слот восстановится через ~${g.inviteCooldownMin} мин</p>` : '')}
           <button class="btn btn-orange mt" id="g-hire-diplomat">Нанять дипломата за <span class="ic-gold"></span> ${UI.fmtNum(g.nextDiplomatCost)}</button>
         </div>` : ''}
 
@@ -943,15 +943,20 @@ async function renderPersonalAlliance(c) {
       <p class="muted small">Альянс — ваша личная команда. Каждый боец в строю даёт <b>+${data.perMember}</b> единиц техники в бой. Приглашайте бойцов и игроков по заявкам.</p>
       <div class="kv mt"><span class="k">Бойцов в альянсе</span><span class="v gold" style="font-size:18px">${data.members} / ${data.maxMembers}</span></div>
       <div class="kv"><span class="k">Бонус техники в бой</span><span class="v gold">+${UI.fmtNum(data.bonusCapacity)}</span></div>
-      <div class="kv"><span class="k">Заявок осталось (в час)</span><span class="v">${data.invitesLeft} / ${data.inviteLimit}</span></div>
+      <div class="kv"><span class="k">Заявок осталось (в час)</span><span class="v">${data.unlimitedInvite ? '<span class="gold">без лимита</span>' : `${data.invitesLeft} / ${data.inviteLimit}`}</span></div>
       <p class="muted small mt">Лимит альянса = ваш уровень × 10. Лимит заявок в час = 5 + дипломаты.</p>
+      ${data.unlimitedInvite ? `<p class="small mt" style="color:var(--money)">🎖 Наёмник «${UI.esc(data.unlimitedName || 'дипломат')}» снял почасовой лимит заявок — приглашайте без ограничений, пока он в строю.</p>` : ''}
     </div>
 
     <div class="card">
       <div class="name">🪖 Пригласить бойца</div>
-      <p class="muted small">Пригласите бойца в свой альянс. Расходует одну заявку из часового лимита.</p>
-      <button class="btn btn-orange mt" id="al-invite-bot" ${data.members >= data.maxMembers || data.invitesLeft <= 0 ? 'disabled' : ''} style="width:100%">
-        ${data.members >= data.maxMembers ? 'Лимит альянса достигнут' : data.invitesLeft <= 0 ? 'Заявки на час исчерпаны' : 'Пригласить бойца (заявка)'}
+      <p class="muted small">Пригласите бойца в свой альянс. ${data.unlimitedInvite ? 'Наёмник снял часовой лимит — заявки не тратятся.' : 'Расходует одну заявку из часового лимита.'}</p>
+      <button class="btn btn-orange mt" id="al-invite-bot" ${data.members >= data.maxMembers || (data.invitesLeft <= 0 && !data.unlimitedInvite) ? 'disabled' : ''} style="width:100%">
+        ${data.members >= data.maxMembers
+          ? 'Лимит альянса достигнут'
+          : (data.invitesLeft <= 0 && !data.unlimitedInvite)
+            ? 'Заявки на час исчерпаны'
+            : (data.unlimitedInvite ? 'Пригласить бойца (без лимита)' : 'Пригласить бойца (заявка)')}
       </button>
     </div>
 

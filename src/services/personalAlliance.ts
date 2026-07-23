@@ -69,6 +69,12 @@ function view(user: User) {
   ensure(user);
   const used = invitesUsedThisHour(user);
   const limit = inviteLimit(user);
+  // Наёмник-дипломат (Эйден Роу) снимает почасовой лимит заявок.
+  // Клиенту это нужно, чтобы НЕ гасить кнопку приглашения при 0 заявок.
+  const unlimited = hasUnlimitedInvite(user);
+  const mercEff = (user.effects || []).find(
+    (e: any) => e.type === 'invite_unlimited' && e.expiresAt > Date.now()
+  );
   return {
     members: user.allianceMembers,
     maxMembers: maxMembers(user),
@@ -80,6 +86,9 @@ function view(user: User) {
     inviteLimit: limit,
     invitesUsed: used,
     invitesLeft: Math.max(0, limit - used),
+    unlimitedInvite: unlimited,                        // безлимит активен?
+    unlimitedName: mercEff ? (mercEff as any).name : null,
+    unlimitedUntil: mercEff ? mercEff.expiresAt : null,
     nextDiplomatCost: nextDiplomatCost(user),
   };
 }
@@ -96,7 +105,9 @@ function inviteBot(user: User, notices: Notices) {
   if (!unlimited && used >= limit) {
     throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
   }
-  logInvite(user);
+  // При активном наёмнике заявка НЕ расходуется: иначе после окончания его
+  // действия игрок мгновенно упрётся в «лимит исчерпан» из-за накопленного лога.
+  if (!unlimited) logInvite(user);
   user.allianceMembers!++;
   const botNames = ['Ветеран', 'Снайпер', 'Сапёр', 'Радист', 'Танкист', 'Десантник', 'Пулемётчик', 'Разведчик', 'Гранатомётчик', 'Медик'];
   const name = u.pick(botNames) + ' #' + Math.floor(Math.random() * 900 + 100);
@@ -147,7 +158,7 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
   if (inv[target.id].some((x: any) => x.fromId === user.id)) {
     throw new u.ApiError('Вы уже приглашали этого игрока');
   }
-  logInvite(user);
+  if (!unlimited) logInvite(user); // с наёмником заявки не расходуются
   inv[target.id].push({ fromId: user.id, fromName: user.name, at: Date.now() });
   db.save('alliance_invites');
   db.save('users');

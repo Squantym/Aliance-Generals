@@ -85,6 +85,10 @@ function view(user: User, kind: string): any {
       inviteLimit: inviteLimit(g),
       invitesUsed: pruneInviteLog(g),
       inviteCooldownMin: inviteCooldownMin(g),
+      // Наёмник (invite_unlimited) снимает почасовой лимит — клиенту нужно,
+      // чтобы не показывать «лимит исчерпан» и не гасить кнопку.
+      unlimitedInvite: (user.effects || []).some(
+        (e: any) => e.type === 'invite_unlimited' && e.expiresAt > Date.now()),
       nextDiplomatCost: diplomatCost(g),
     } : null,
     pendingFor,
