@@ -177,7 +177,7 @@ function contractsView(user: User) {
       const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
       const done = current >= target;
       return {
-        id: ct.id, name: def.name,
+        id: ct.id, name: def.name, route: def.route || null,
         desc: def.desc.replace('{n}', String(target)),
         current: Math.min(current, target), target,
         reward: config.contractReward(def.rewardGold[tier], user.level),

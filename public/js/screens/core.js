@@ -425,16 +425,22 @@ App.screens.dailytasks = async (c) => {
     <div class="title">📑 Контракты</div>
     <p class="muted small" style="margin:-4px 4px 10px">Боевые задания от штаба. Обновляются каждый день в 00:00 МСК. Выполняйте и забирайте награду.</p>
     ${d.contracts.length ? d.contracts.map((ct) => `
-      <div class="card">
+      <div class="card${ct.route && !ct.done ? ' quest-clickable' : ''}" ${ct.route && !ct.done ? `data-goto="${ct.route}"` : ''}>
         <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
         <p class="muted small">${UI.esc(ct.desc)}</p>
         ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
         <div class="kv mt"><span class="k">Награда</span><span class="v gold"><span class="ic-gold"></span> ${ct.reward}</span></div>
+        ${ct.route && !ct.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
         ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? 'Забрать награду' : 'Не выполнено'}</button>` : ''}
       </div>`).join('') : '<div class="card center muted">Заданий нет. Загляните позже.</div>'}`;
-  c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async () => {
+  c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async (ev) => {
+    ev.stopPropagation(); // клик по кнопке не должен уводить на экран выполнения
     try { await API.post('/api/contracts/claim', { contractId: b.dataset.claim }); await App.refreshMe(); App.rerender(); }
     catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+  // Клик по контракту — переход туда, где он выполняется
+  c.querySelectorAll('[data-goto]').forEach((row) => {
+    row.onclick = () => { location.hash = '#' + row.dataset.goto; };
   });
 };
 
@@ -1082,7 +1088,9 @@ App.screens.daily = async (c) => {
               </div>
             </div>
             ${g.map((q) => `
-              <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+              <div class="quest-row${q.route && !q.done ? ' quest-clickable' : ''}"
+                   ${q.route && !q.done ? `data-goto="${q.route}"` : ''}
+                   style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
                 <div class="list-row" style="border:none;padding:0">
                   <div class="grow">
                     <div class="name">${q.icon} ${UI.esc(q.name)} ${diffBadge(q.difficulty)}</div>
@@ -1090,6 +1098,7 @@ App.screens.daily = async (c) => {
                     <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.name)}</b> — ${UI.fmtNum(q.target)} ${q.progress >= q.target ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
                     ${UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)}
                     <div class="small mt">Награда: +${UI.fmtNum(q.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(q.reward.dollars)}</div>
+                    ${q.route && !q.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
                   </div>
                   <div style="margin-left:8px">${q.claimed
                     ? `<span class="badge green">✅</span>`
@@ -1103,13 +1112,18 @@ App.screens.daily = async (c) => {
     })()}`;
 
   c.querySelectorAll('[data-quest]').forEach((btn) => {
-    btn.onclick = async () => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation(); // не перехватывать переходом по заданию
       try {
         await API.post('/api/daily/claim', { questId: btn.dataset.quest });
         await App.refreshMe();
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
+  });
+  // Клик по самому поручению — переход туда, где оно выполняется
+  c.querySelectorAll('[data-goto]').forEach((row) => {
+    row.onclick = () => { location.hash = '#' + row.dataset.goto; };
   });
   const bonusBtn = document.getElementById('daily-bonus');
   if (bonusBtn) bonusBtn.onclick = async () => {

@@ -1,11 +1,11 @@
 // ===================================================================
 // src/services/club.ts — «Клуб офицеров» (развлекательный центр)
-// Пять многоступенчатых мини-игр с наградами 10-20 золота:
+// Пять мини-игр с наградами 8-20 золота:
 //   1) Военный преферанс — добери до 21, не перебрав, против генерала.
 //   2) Сейф штаба — взломай 4-значный код («быки и коровы»).
-//   3) Минное поле — открывай ячейки, забери выигрыш до взрыва.
-//   4) Полоса препятствий — 5 этапов, выбирай риск, копи награду.
-//   5) Штабная партия — тактическая дуэль до 3 побед.
+//   3) Артиллерийская пристрелка — угадай дистанцию (перелёт/недолёт).
+//   4) Военные кости — 5 кубиков и 2 переброса, собери комбинацию.
+//   5) Штабной аукцион — слепые ставки очками влияния против генералов.
 // Состояние каждой игры хранится в user.club.
 // ===================================================================
 
@@ -20,12 +20,11 @@ const C = config.CLUB;
 function clubState(user: User): any {
   if (!user.club) user.club = {};
   const c: any = user.club;
-  if (!c.cd) c.cd = {};           // кулдауны по играм: { pref, safe, mine, run, duel }
+  if (!c.cd) c.cd = {};           // кулдауны по играм: { pref, safe, arty, dice, bids }
   if (c.pref === undefined) c.pref = null;
   if (c.safe === undefined) c.safe = null;
-  if (c.mine === undefined) c.mine = null;
-  if (c.run === undefined) c.run = null;
-  if (c.duel === undefined) c.duel = null;
+  if (c.arty === undefined) c.arty = null;
+  if (c.dice === undefined) c.dice = null;
   return c;
 }
 
@@ -45,9 +44,9 @@ function view(user: User) {
   return {
     pref: prefView(c),
     safe: safeView(c),
-    mine: mineView(c),
-    run:  runView(c),
-    duel: duelView(c),
+    arty: artyView(c),
+    dice: diceView(c),
+    bids: bidsView(c),
   };
 }
 
@@ -196,240 +195,249 @@ function safeTry(user: User, guess: string, notices: Notices) {
   }
   return { result: 'continue', bulls, cows, triesLeft: c.safe.triesLeft };
 }
-
 // ===================================================================
-// 3. МИННОЕ ПОЛЕ — поле из 25 ячеек, 5 мин. Открывай по одной.
-//    За каждую безопасную ячейку растёт награда. Можно «забрать» в любой
-//    момент. Наступил на мину — теряешь всё накопленное.
+// 3. АРТИЛЛЕРИЙСКАЯ ПРИСТРЕЛКА — угадай дистанцию до цели.
+//    Загадано число ARTY_MIN..ARTY_MAX. После каждого выстрела корректировщик
+//    говорит «перелёт» или «недолёт». Чем меньше выстрелов — тем больше приз.
+//    Патроны кончились — цель ушла, награды нет.
 // ===================================================================
-function mineView(c: any) {
-  if (c.mine) {
+function artyView(c: any) {
+  if (c.arty) {
     return {
       state: 'active',
-      cells: C.MINE_CELLS,
-      bombs: C.MINE_BOMBS,
-      opened: c.mine.opened,          // массив индексов открытых безопасных ячеек
-      pot: c.mine.pot,                // накоплено золота
-      safeLeft: C.MINE_CELLS - C.MINE_BOMBS - c.mine.opened.length,
+      min: C.ARTY_MIN, max: C.ARTY_MAX,
+      shotsLeft: c.arty.shotsLeft,
+      history: c.arty.history,        // [{ guess, hint: 'over'|'under' }]
+      nextReward: artyReward(c.arty.shots + 1),
     };
   }
-  const left = cdLeft(c, 'mine');
+  const left = cdLeft(c, 'arty');
   if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return { state: 'ready', cells: C.MINE_CELLS, bombs: C.MINE_BOMBS, rewardMax: C.MINE_REWARD_MAX };
+  return {
+    state: 'ready', min: C.ARTY_MIN, max: C.ARTY_MAX, shots: C.ARTY_SHOTS,
+    rewardMax: artyReward(1), rewardMin: artyReward(C.ARTY_SHOTS),
+  };
 }
 
-function mineStart(user: User) {
-  const c = clubState(user);
-  if (c.mine) return mineView(c);
-  if (cdLeft(c, 'mine') > 0) throw new u.ApiError('Поле ещё разминируют сапёры. Загляните позже.');
-  // Расставляем мины
-  const idx = Array.from({ length: C.MINE_CELLS }, (_, i) => i);
-  u.shuffle(idx);
-  const bombs = idx.slice(0, C.MINE_BOMBS);
-  c.mine = { bombs, opened: [], pot: 0 };
-  return mineView(c);
+// Награда за попадание с N-го выстрела
+function artyReward(shotNo: number): number {
+  return Math.max(C.ARTY_REWARD_MIN, C.ARTY_REWARD_BASE - shotNo * C.ARTY_REWARD_STEP);
 }
 
-function mineOpen(user: User, cell: number | string, notices: Notices) {
+function artyStart(user: User) {
   const c = clubState(user);
-  if (!c.mine) throw new u.ApiError('Сначала выйдите на поле');
+  if (c.arty) return artyView(c);
+  if (cdLeft(c, 'arty') > 0) throw new u.ApiError('Батарея перезаряжается. Загляните позже.');
+  c.arty = {
+    target: u.rnd(C.ARTY_MIN, C.ARTY_MAX),
+    shotsLeft: C.ARTY_SHOTS,
+    shots: 0,
+    history: [] as any[],
+  };
+  return artyView(c);
+}
+
+function artyShoot(user: User, distance: number | string, notices: Notices) {
+  const c = clubState(user);
+  if (!c.arty) throw new u.ApiError('Сначала займите огневую позицию');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  const idx = u.toInt(cell);
-  if (idx < 0 || idx >= C.MINE_CELLS) throw new u.ApiError('Нет такой ячейки');
-  if (c.mine.opened.includes(idx)) throw new u.ApiError('Эта ячейка уже открыта');
 
-  if (c.mine.bombs.includes(idx)) {
-    // Взрыв — теряем накопленное
-    const bombs = c.mine.bombs.slice();
-    c.mine = null;
-    setCd(c, 'mine', C.MINE_CD_MIN);
-    return { result: 'boom', cell: idx, bombs };
+  const guess = u.toInt(distance);
+  if (guess < C.ARTY_MIN || guess > C.ARTY_MAX) {
+    throw new u.ApiError(`Дистанция должна быть от ${C.ARTY_MIN} до ${C.ARTY_MAX}`);
   }
-  // Безопасно — растим награду (шаг растёт по мере прогресса)
-  c.mine.opened.push(idx);
-  const step = C.MINE_STEP_REWARD + Math.floor(c.mine.opened.length / 3);
-  c.mine.pot = Math.min(C.MINE_REWARD_MAX, c.mine.pot + step);
-  const safeLeft = C.MINE_CELLS - C.MINE_BOMBS - c.mine.opened.length;
 
-  if (safeLeft <= 0) {
-    // Открыты все безопасные — максимальный приз и авто-забор
-    const reward = C.MINE_REWARD_MAX;
-    c.mine = null;
+  c.arty.shots++;
+  c.arty.shotsLeft--;
+  const target = c.arty.target;
+
+  if (guess === target) {
+    const reward = artyReward(c.arty.shots);
+    const shots = c.arty.shots;
+    c.arty = null;
     player.addGold(user, reward);
-    setCd(c, 'mine', C.MINE_CD_MIN);
-    notices.push(`💣 Поле полностью разминировано! +🪙 ${reward}`);
-    return { result: 'cleared', reward };
+    setCd(c, 'arty', C.ARTY_CD_WIN_MIN);
+    notices.push(`🎯 Прямое попадание с ${shots}-го выстрела! +🪙 ${reward}`);
+    return { result: 'hit', target, shots, reward };
   }
-  return { result: 'safe', cell: idx, pot: c.mine.pot, safeLeft };
-}
 
-function mineCashout(user: User, notices: Notices) {
-  const c = clubState(user);
-  if (!c.mine) throw new u.ApiError('Нет активной игры');
-  const pot = c.mine.pot;
-  if (pot <= 0) throw new u.ApiError('Сначала откройте хотя бы одну ячейку');
-  c.mine = null;
-  player.addGold(user, pot);
-  setCd(c, 'mine', C.MINE_CD_MIN);
-  notices.push(`💰 Вы вовремя ушли с поля! +🪙 ${pot}`);
-  return { result: 'cashout', reward: pot };
-}
+  const hint = guess > target ? 'over' : 'under';   // перелёт / недолёт
+  c.arty.history.push({ guess, hint });
 
-// ===================================================================
-// 4. ПОЛОСА ПРЕПЯТСТВИЙ — 5 этапов. На каждом выбираешь сложность:
-//    лёгкий (75% пройти, +2🪙), средний (55%, +4🪙), тяжёлый (35%, +7🪙).
-//    Награда копится. Провал на любом этапе — теряешь всё. После 3 этапа
-//    можно «сойти с дистанции» и забрать накопленное.
-// ===================================================================
-const RUN_LEVELS: Record<string, { chance: number; reward: number; label: string }> = {
-  easy:   { chance: 0.75, reward: 2, label: 'Лёгкий' },
-  medium: { chance: 0.55, reward: 4, label: 'Средний' },
-  hard:   { chance: 0.35, reward: 7, label: 'Тяжёлый' },
-};
-
-function runView(c: any) {
-  if (c.run) {
-    return {
-      state: 'active',
-      stage: c.run.stage,           // текущий этап (1..RUN_STAGES)
-      totalStages: C.RUN_STAGES,
-      pot: c.run.pot,
-      canCashout: c.run.stage > 3,  // сойти можно после 3-го этапа
-      levels: RUN_LEVELS,
-    };
-  }
-  const left = cdLeft(c, 'run');
-  if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return { state: 'ready', totalStages: C.RUN_STAGES, rewardMax: C.RUN_REWARD_MAX };
-}
-
-function runStart(user: User) {
-  const c = clubState(user);
-  if (c.run) return runView(c);
-  if (cdLeft(c, 'run') > 0) throw new u.ApiError('Полоса на ремонте после прошлого забега. Загляните позже.');
-  c.run = { stage: 1, pot: 0 };
-  return runView(c);
-}
-
-function runStep(user: User, level: string, notices: Notices) {
-  const c = clubState(user);
-  if (!c.run) throw new u.ApiError('Забег не начат');
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  const lv = RUN_LEVELS[level];
-  if (!lv) throw new u.ApiError('Неизвестная сложность этапа');
-
-  if (Math.random() < lv.chance) {
-    // Этап пройден
-    c.run.pot = Math.min(C.RUN_REWARD_MAX, c.run.pot + lv.reward);
-    c.run.stage++;
-    if (c.run.stage > C.RUN_STAGES) {
-      // Финиш — забираем награду
-      const reward = c.run.pot;
-      c.run = null;
-      player.addGold(user, reward);
-      setCd(c, 'run', C.RUN_CD_WIN_MIN);
-      notices.push(`🏁 Полоса пройдена до конца! +🪙 ${reward}`);
-      return { result: 'finish', reward };
-    }
-    return { result: 'pass', stage: c.run.stage, pot: c.run.pot };
-  }
-  // Провал — теряем всё
-  c.run = null;
-  setCd(c, 'run', C.RUN_CD_FAIL_MIN);
-  return { result: 'fail', level: lv.label };
-}
-
-function runCashout(user: User, notices: Notices) {
-  const c = clubState(user);
-  if (!c.run) throw new u.ApiError('Нет активного забега');
-  if (c.run.stage <= 3) throw new u.ApiError('Сойти с дистанции можно только после 3-го этапа');
-  const reward = c.run.pot;
-  c.run = null;
-  player.addGold(user, reward);
-  setCd(c, 'run', C.RUN_CD_WIN_MIN);
-  notices.push(`🏃 Вы сошли с дистанции с наградой! +🪙 ${reward}`);
-  return { result: 'cashout', reward };
-}
-
-// ===================================================================
-// 5. ШТАБНАЯ ПАРТИЯ — тактическая дуэль до 3 побед (best of 5).
-//    Три рода войск по кругу бьют друг друга:
-//      пехота (infantry) → авиация (air) → танк (tank) → пехота
-//    (пехота бьёт авиацию ПЗРК, авиация бьёт танк, танк давит пехоту).
-//    Игрок выбирает род войск, генерал — свой. Кто наберёт 3 — победил.
-// ===================================================================
-const DUEL_BEATS: Record<string, string> = {
-  infantry: 'air',     // пехота сбивает авиацию
-  air: 'tank',         // авиация уничтожает танк
-  tank: 'infantry',    // танк давит пехоту
-};
-const DUEL_NAMES: Record<string, string> = {
-  infantry: '🪖 Пехота', air: '✈️ Авиация', tank: '🛡 Танк',
-};
-
-function duelView(c: any) {
-  if (c.duel) {
-    return {
-      state: 'active',
-      myWins: c.duel.myWins,
-      foeWins: c.duel.foeWins,
-      needed: C.DUEL_WINS_NEEDED,
-      lastRound: c.duel.lastRound,  // { my, foe, outcome } или null
-      units: DUEL_NAMES,
-    };
-  }
-  const left = cdLeft(c, 'duel');
-  if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return { state: 'ready', needed: C.DUEL_WINS_NEEDED, rewardMin: C.DUEL_REWARD_MIN, rewardMax: C.DUEL_REWARD_MAX, units: DUEL_NAMES };
-}
-
-function duelStart(user: User) {
-  const c = clubState(user);
-  if (c.duel) return duelView(c);
-  if (cdLeft(c, 'duel') > 0) throw new u.ApiError('Генерал анализирует прошлую партию. Загляните позже.');
-  c.duel = { myWins: 0, foeWins: 0, lastRound: null };
-  return duelView(c);
-}
-
-function duelMove(user: User, unit: string, notices: Notices) {
-  const c = clubState(user);
-  if (!c.duel) throw new u.ApiError('Дуэль не начата');
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  if (!DUEL_BEATS[unit]) throw new u.ApiError('Выберите род войск');
-
-  const units = ['infantry', 'air', 'tank'];
-  const foe = u.pick(units);
-  let outcome: string;
-  if (unit === foe) outcome = 'draw';
-  else if (DUEL_BEATS[unit] === foe) { outcome = 'win'; c.duel.myWins++; }
-  else { outcome = 'lose'; c.duel.foeWins++; }
-  c.duel.lastRound = { my: unit, foe, outcome };
-
-  // Проверяем завершение матча
-  if (c.duel.myWins >= C.DUEL_WINS_NEEDED) {
-    const reward = u.rnd(C.DUEL_REWARD_MIN, C.DUEL_REWARD_MAX);
-    c.duel = null;
-    player.addGold(user, reward);
-    setCd(c, 'duel', C.DUEL_CD_WIN_MIN);
-    notices.push(`♟ Партия выиграна! Генерал повержен. +🪙 ${reward}`);
-    return { result: 'match_win', my: unit, foe, outcome, reward };
-  }
-  if (c.duel.foeWins >= C.DUEL_WINS_NEEDED) {
-    c.duel = null;
-    setCd(c, 'duel', C.DUEL_CD_FAIL_MIN);
-    return { result: 'match_lose', my: unit, foe, outcome };
+  if (c.arty.shotsLeft <= 0) {
+    c.arty = null;
+    setCd(c, 'arty', C.ARTY_CD_FAIL_MIN);
+    return { result: 'lost', target };
   }
   return {
-    result: 'round', my: unit, foe, outcome,
-    myWins: c.duel.myWins, foeWins: c.duel.foeWins,
+    result: 'miss', hint, guess,
+    shotsLeft: c.arty.shotsLeft,
+    nextReward: artyReward(c.arty.shots + 1),
   };
+}
+
+// ===================================================================
+// 4. ВОЕННЫЕ КОСТИ — 5 кубиков, до DICE_REROLLS перебросов.
+//    Оставляешь нужные кубики, остальные перебрасываешь. В конце
+//    считается комбинация (от «двух пар» до «полного залпа»).
+// ===================================================================
+function diceCombo(dice: number[]): { id: string; name: string; gold: number } | null {
+  const counts: Record<number, number> = {};
+  for (const d of dice) counts[d] = (counts[d] || 0) + 1;
+  const values = Object.values(counts).sort((a, b) => b - a);
+  const uniq = Object.keys(counts).map(Number).sort((a, b) => a - b);
+  const pay = (id: string) => C.DICE_PAYOUTS.find((p: any) => p.id === id) || null;
+
+  if (values[0] === 5) return pay('five');
+  if (values[0] === 4) return pay('four');
+  if (values[0] === 3 && values[1] === 2) return pay('full');
+  // Стрит: 5 разных подряд (1-5 или 2-6)
+  if (uniq.length === 5 && uniq[4] - uniq[0] === 4) return pay('straight');
+  if (values[0] === 3) return pay('three');
+  if (values[0] === 2 && values[1] === 2) return pay('twopair');
+  return null;
+}
+
+function diceView(c: any) {
+  if (c.dice) {
+    return {
+      state: 'active',
+      dice: c.dice.dice,
+      rerollsLeft: c.dice.rerollsLeft,
+      combo: diceCombo(c.dice.dice),   // текущая комбинация (подсказка игроку)
+      payouts: C.DICE_PAYOUTS,
+    };
+  }
+  const left = cdLeft(c, 'dice');
+  if (left > 0) return { state: 'cooldown', cooldownSec: left };
+  return {
+    state: 'ready', count: C.DICE_COUNT, rerolls: C.DICE_REROLLS,
+    payouts: C.DICE_PAYOUTS,
+    rewardMax: Math.max(...C.DICE_PAYOUTS.map((p: any) => p.gold)),
+    rewardMin: Math.min(...C.DICE_PAYOUTS.map((p: any) => p.gold)),
+  };
+}
+
+function rollDice(n: number): number[] {
+  return Array.from({ length: n }, () => u.rnd(1, 6));
+}
+
+function diceStart(user: User) {
+  const c = clubState(user);
+  if (c.dice) return diceView(c);
+  if (cdLeft(c, 'dice') > 0) throw new u.ApiError('Кости ещё у другого расчёта. Загляните позже.');
+  c.dice = { dice: rollDice(C.DICE_COUNT), rerollsLeft: C.DICE_REROLLS };
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
+  return diceView(c);
+}
+
+// keep — массив индексов кубиков, которые ОСТАВЛЯЕМ; остальные перебрасываются
+function diceReroll(user: User, keep: any, notices: Notices) {
+  const c = clubState(user);
+  if (!c.dice) throw new u.ApiError('Сначала бросьте кости');
+  if (c.dice.rerollsLeft <= 0) throw new u.ApiError('Перебросы кончились — забирайте результат');
+  const keepSet = new Set((Array.isArray(keep) ? keep : []).map((x: any) => u.toInt(x)));
+  c.dice.dice = c.dice.dice.map((d: number, i: number) => (keepSet.has(i) ? d : u.rnd(1, 6)));
+  c.dice.rerollsLeft--;
+  return { result: 'rerolled', dice: c.dice.dice, rerollsLeft: c.dice.rerollsLeft, combo: diceCombo(c.dice.dice) };
+}
+
+function diceFinish(user: User, notices: Notices) {
+  const c = clubState(user);
+  if (!c.dice) throw new u.ApiError('Нет активной игры');
+  const dice = c.dice.dice.slice();
+  const combo = diceCombo(dice);
+  c.dice = null;
+  if (!combo) {
+    setCd(c, 'dice', C.DICE_CD_FAIL_MIN);
+    return { result: 'nothing', dice };
+  }
+  player.addGold(user, combo.gold);
+  setCd(c, 'dice', C.DICE_CD_WIN_MIN);
+  notices.push(`🎲 ${combo.name}! +🪙 ${combo.gold}`);
+  return { result: 'win', dice, combo, reward: combo.gold };
+}
+
+// ===================================================================
+// 5. ШТАБНОЙ АУКЦИОН — слепые ставки против генералов.
+//    У вас BIDS_POINTS очков влияния и BIDS_LOTS лотов. Распределяете
+//    очки между лотами втёмную; соперники делают то же самое. Лот
+//    достаётся тому, кто поставил больше. Ничья — лот уходит казне.
+// ===================================================================
+const BID_LOT_NAMES = ['Партия боеприпасов', 'Трофейная техника', 'Разведданные'];
+
+function bidsView(c: any) {
+  const left = cdLeft(c, 'bids');
+  if (left > 0) return { state: 'cooldown', cooldownSec: left };
+  return {
+    state: 'ready',
+    points: C.BIDS_POINTS,
+    lots: BID_LOT_NAMES.slice(0, C.BIDS_LOTS),
+    rivals: C.BIDS_RIVALS,
+    perLot: C.BIDS_REWARD_PER_LOT,
+    sweepBonus: C.BIDS_SWEEP_BONUS,
+    rewardMax: C.BIDS_LOTS * C.BIDS_REWARD_PER_LOT + C.BIDS_SWEEP_BONUS,
+  };
+}
+
+// Соперник распределяет очки случайно, но осмысленно (не все в один лот)
+function rivalBids(): number[] {
+  const lots = C.BIDS_LOTS;
+  let left = C.BIDS_POINTS;
+  const out: number[] = [];
+  for (let i = 0; i < lots - 1; i++) {
+    // берём случайную долю остатка, чтобы ставки были разнообразными
+    const take = u.rnd(0, Math.max(0, Math.round(left * 0.7)));
+    out.push(take);
+    left -= take;
+  }
+  out.push(left);
+  return out;
+}
+
+function bidsPlay(user: User, bids: any, notices: Notices) {
+  const c = clubState(user);
+  if (cdLeft(c, 'bids') > 0) throw new u.ApiError('Аукцион уже закрыт. Загляните позже.');
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
+
+  const arr = (Array.isArray(bids) ? bids : []).map((x: any) => Math.max(0, u.toInt(x, 0)));
+  if (arr.length !== C.BIDS_LOTS) throw new u.ApiError(`Нужно указать ставку по каждому из ${C.BIDS_LOTS} лотов`);
+  const total = arr.reduce((s, x) => s + x, 0);
+  if (total > C.BIDS_POINTS) throw new u.ApiError(`Всего очков влияния: ${C.BIDS_POINTS}, вы распределили ${total}`);
+
+  // Ставки соперников
+  const rivals: number[][] = [];
+  for (let i = 0; i < C.BIDS_RIVALS; i++) rivals.push(rivalBids());
+
+  const lots: any[] = [];
+  let won = 0;
+  for (let i = 0; i < C.BIDS_LOTS; i++) {
+    const mine = arr[i];
+    const best = Math.max(...rivals.map((r) => r[i]));
+    const win = mine > best;           // строго больше: при равенстве лот уходит казне
+    if (win) won++;
+    lots.push({ name: BID_LOT_NAMES[i], my: mine, rivalBest: best, win });
+  }
+
+  let reward = won * C.BIDS_REWARD_PER_LOT;
+  const sweep = won === C.BIDS_LOTS;
+  if (sweep) reward += C.BIDS_SWEEP_BONUS;
+
+  if (reward > 0) {
+    player.addGold(user, reward);
+    setCd(c, 'bids', C.BIDS_CD_WIN_MIN);
+    notices.push(`💼 Аукцион: выиграно лотов ${won}/${C.BIDS_LOTS}${sweep ? ' (все!)' : ''}. +🪙 ${reward}`);
+  } else {
+    setCd(c, 'bids', C.BIDS_CD_FAIL_MIN);
+  }
+  return { result: reward > 0 ? 'win' : 'lost', lots, won, sweep, reward };
 }
 
 export = {
   view,
   prefStart, prefHit, prefStand,
   safeStart, safeTry,
-  mineStart, mineOpen, mineCashout,
-  runStart, runStep, runCashout,
-  duelStart, duelMove,
+  artyStart, artyShoot,
+  diceStart, diceReroll, diceFinish,
+  bidsPlay,
 };

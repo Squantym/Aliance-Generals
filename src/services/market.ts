@@ -250,7 +250,12 @@ function makeLot(now: number): any {
 // Применяет эффект выигранного наёмника победителю.
 // Некоторые наёмники дают нестандартные эффекты (комбо, флаги).
 function applyCommanderEffect(winner: User, commander: any, now: number): void {
-  const expiresAt = now + config.AUCTION.RENT_HOURS * 3600 * 1000;
+  applyCommanderUntil(winner, commander, now + config.AUCTION.RENT_HOURS * 3600 * 1000);
+}
+
+// Базовая выдача наёмника до указанного момента времени.
+// Используется и аукционом (срок = аренда), и админ-выдачей (срок любой).
+function applyCommanderUntil(winner: User, commander: any, expiresAt: number): void {
   const eff = commander.effect;
   const pushOne = (type: string, value: number) => {
     const id = 'cmd_' + commander.id + '_' + type;
@@ -388,4 +393,107 @@ function containerHistory(user: User) {
   return { history: user.containerHistory || [] };
 }
 
-export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect };
+// ══════════════════════════════════════════════════════════════════
+// АДМИН: выдача наёмников В ОБХОД АУКЦИОНА
+// Аукцион и его логика (лоты, ставки, победители, holders) НЕ трогаются —
+// админская выдача просто вешает игроку тот же эффект наёмника напрямую.
+// «Количество» = число суток аренды (каждое = AUCTION.RENT_HOURS часов).
+// Если наёмник уже активен — срок ПРОДЛЕВАЕТСЯ от текущего окончания.
+// ══════════════════════════════════════════════════════════════════
+
+// Список наёмников для админ-панели (id, имя, что даёт)
+function adminCommandersList(): any {
+  return {
+    rentHours: config.AUCTION.RENT_HOURS,
+    commanders: config.COMMANDERS.map((m: any) => ({
+      id: m.id, name: m.name, desc: m.desc || '',
+      effectType: m.effect.type, effectValue: m.effect.value,
+    })),
+  };
+}
+
+function adminGrantCommander(adminUser: User, body: any, notices: Notices): any {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  const pl = require('./player');
+  const users = pl.users();
+
+  // Цель: по id или по позывному
+  let target: any = body.userId ? users[body.userId] : null;
+  if (!target && body.name) target = pl.findByName(String(body.name));
+  if (!target) throw new u.ApiError('Игрок не найден');
+
+  const commander = config.COMMANDERS.find((m: any) => m.id === body.commanderId);
+  if (!commander) throw new u.ApiError('Наёмник не найден');
+
+  // Количество (суток аренды). Разрешаем сколько угодно, но не 0/минус.
+  const count = Math.max(1, u.toInt(body.count, 1));
+  const addMs = count * config.AUCTION.RENT_HOURS * 3600 * 1000;
+
+  // Если этот наёмник уже активен — продлеваем от текущего окончания
+  const now = Date.now();
+  const existing = (target.effects || []).find(
+    (e: any) => e.commanderId === commander.id && e.expiresAt > now
+  );
+  const base = existing ? existing.expiresAt : now;
+  const expiresAt = base + addMs;
+
+  applyCommanderUntil(target, commander, expiresAt);
+  db.markUser(target.id);
+
+  const untilStr = new Date(expiresAt).toLocaleString('ru-RU');
+  const hours = Math.round((expiresAt - now) / 3600000);
+  notices.push(`🎖 Наёмник «${commander.name}» выдан игроку ${target.name}: ${count} шт. ` +
+    `(${extended(existing)}срок до ${untilStr}, ~${hours} ч).`);
+  return {
+    targetId: target.id, targetName: target.name,
+    commanderId: commander.id, commanderName: commander.name,
+    count, expiresAt, hours, extended: !!existing,
+  };
+}
+
+function extended(existing: any): string { return existing ? 'продлён, ' : ''; }
+
+// Отозвать наёмника у игрока (на случай ошибочной выдачи)
+function adminRevokeCommander(adminUser: User, body: any, notices: Notices): any {
+  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  const pl = require('./player');
+  const users = pl.users();
+  let target: any = body.userId ? users[body.userId] : null;
+  if (!target && body.name) target = pl.findByName(String(body.name));
+  if (!target) throw new u.ApiError('Игрок не найден');
+  const commander = config.COMMANDERS.find((m: any) => m.id === body.commanderId);
+  if (!commander) throw new u.ApiError('Наёмник не найден');
+
+  const before = (target.effects || []).length;
+  target.effects = (target.effects || []).filter((e: any) => e.commanderId !== commander.id);
+  const removed = before - target.effects.length;
+  if (!removed) throw new u.ApiError(`У игрока ${target.name} нет наёмника «${commander.name}»`);
+  db.markUser(target.id);
+  notices.push(`🚫 Наёмник «${commander.name}» отозван у игрока ${target.name}.`);
+  return { targetId: target.id, targetName: target.name, removed };
+}
+
+// Кто из игроков сейчас держит наёмников (для админ-панели)
+function adminCommanderHolders(): any {
+  const pl = require('./player');
+  const users = pl.users();
+  const now = Date.now();
+  const out: any[] = [];
+  for (const id of Object.keys(users)) {
+    const usr = users[id];
+    if (!usr || usr.isBot || !Array.isArray(usr.effects)) continue;
+    for (const e of usr.effects) {
+      if (!e.commanderId || e.expiresAt <= now) continue;
+      if (out.some((x) => x.userId === id && x.commanderId === e.commanderId)) continue;
+      out.push({
+        userId: id, name: usr.name, commanderId: e.commanderId,
+        commanderName: e.name, expiresAt: e.expiresAt,
+        hoursLeft: Math.round((e.expiresAt - now) / 3600000),
+      });
+    }
+  }
+  return { holders: out.sort((a, b) => b.expiresAt - a.expiresAt) };
+}
+
+export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
+  adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders };

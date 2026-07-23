@@ -61,7 +61,7 @@ function list(user: User) {
     const rw = config.dailyQuestReward(q.diff, user.level);
     const ch = config.DAILY_CHARS[q.char] || { name: 'Штаб', role: '', icon: '📌' };
     return {
-      id: q.id, name: q.name, icon: q.icon, flavor: q.flavor,
+      id: q.id, name: q.name, icon: q.icon, flavor: q.flavor, route: q.route || null,
       char: q.char, charName: ch.name, charRole: ch.role, charIcon: ch.icon, charIntro: (ch as any).intro || '',
       diff: q.diff, difficulty: q.diff >= 2.4 ? 'hard' : (q.diff >= 1.6 ? 'medium' : 'easy'),
       target, progress: Math.min(progress, target),

@@ -85,8 +85,12 @@ function debuffsFor(user: User): { ground: number; air: number; sea: number; sec
 // секретных/построечных].
 function packPrice(user: User, type: LimitedType): { dollars: number; gold: number } {
   const cfg = cfgOf(type);
-  const dollars = Math.round(config.minUnitPriceAtLevel(user.level) * cfg.packDollarUnits);
-  return { dollars, gold: cfg.packGoldExtra || 0 };
+  const discounts = require('./discounts');
+  // Акция категории «saboteur» удешевляет и доллары, и золото
+  const dollars = discounts.applyTo('saboteur',
+    Math.round(config.minUnitPriceAtLevel(user.level) * cfg.packDollarUnits));
+  const gold = discounts.applyTo('saboteur', cfg.packGoldExtra || 0);
+  return { dollars, gold };
 }
 
 // Номер следующего шага апгрейда лимита (1-based): сколько шагов по +10
@@ -102,7 +106,13 @@ function nextUpgradeCost(user: User, type: LimitedType): number | null {
   ensure(user);
   const cfg = cfgOf(type);
   if (user.saboteurLimits![type] >= cfg.maxLimit) return null; // уже максимум
-  return S.upgradeCost(cfg.upgradeStepGold, nextUpgradeStep(user, type));
+  const base = S.upgradeCost(cfg.upgradeStepGold, nextUpgradeStep(user, type));
+  return require('./discounts').applyTo('saboteur', base); // акция на диверсантов
+}
+
+// Цена смертника с учётом акции «Диверсанты»
+function suicidePrice(): number {
+  return require('./discounts').applyTo('saboteur', S.suicide.priceGold);
 }
 
 // ── Вид экрана «Диверсанты» ──────────────────────────────────────────
@@ -126,8 +136,9 @@ function view(user: User) {
     suicide: {
       id: 'suicide', name: RU_NAME.suicide,
       count: user.saboteurs!.suicide, limit: S.suicide.fixedLimit, maxLimit: S.suicide.fixedLimit,
-      priceGold: S.suicide.priceGold,
+      priceGold: suicidePrice(),
     },
+    discount: require('./discounts').info('saboteur'), // активная акция (или null)
   };
 }
 
@@ -156,7 +167,7 @@ function buySuicide(user: User, qty: number, notices: Notices) {
   const room = S.suicide.fixedLimit - user.saboteurs!.suicide;
   if (room <= 0) throw new u.ApiError(`Уже максимум смертников (${S.suicide.fixedLimit})`);
   const n = Math.max(1, Math.min(room, Math.floor(qty) || 1));
-  const cost = n * S.suicide.priceGold;
+  const cost = n * suicidePrice();
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   user.gold -= cost;
   user.saboteurs!.suicide += n;

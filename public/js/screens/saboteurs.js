@@ -24,6 +24,7 @@ App.screens.saboteurs = async (c, param) => {
   c.innerHTML = `
     <div class="title">${App.menuImg('saboteurs', 26)} Диверсанты</div>
     <p class="muted small" style="margin:-4px 4px 10px">Диверсанты в наличии сверх лимита не работают — лежат в запасе, пока не поднят лимит. Действуют в ОБЕ стороны боя: и когда вы атакуете, и когда атакуют вас.</p>
+    ${data.discount && data.discount.pct ? `<div class="card center" style="border-color:var(--orange-1)"><b class="gold">🔥 Акция: −${data.discount.pct}% на диверсантов</b><div class="muted small">Пачки, смертники и повышение лимитов — дешевле.</div></div>` : ''}
     ${tabsHtml}
     <div id="sab-body"></div>`;
 

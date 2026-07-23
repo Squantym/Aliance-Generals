@@ -249,6 +249,91 @@ function pushGiftPopup(target: User, grantedList: string[], customNote?: string 
 // ──────────────────────────────────────────────────────────────────
 // Выдача одному игроку
 // ──────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
+// ОТЪЁМ ресурсов у игрока (включая банк)
+// Значения указываются ПОЛОЖИТЕЛЬНЫМИ — сколько списать. Ниже нуля не
+// уходим: если у игрока меньше, снимаем всё, что есть, и пишем сколько.
+// ──────────────────────────────────────────────────────────────────
+function applyTake(target: User, body: any): string[] {
+  player.refresh(target);
+  const taken: string[] = [];
+  const amt = (field: string) => Math.max(0, u.toInt(body[field], 0));
+
+  // Наличные
+  const wantCash = amt('dollars');
+  if (wantCash) {
+    const real = Math.min(wantCash, Math.floor(target.dollars || 0));
+    target.dollars = Math.max(0, Math.floor((target.dollars || 0) - real));
+    taken.push(`$${u.fmt(real)} наличными`);
+  }
+  // Банк — деньги на вкладе (обычные атаки его не трогают, админ может)
+  const wantBank = amt('bank');
+  if (wantBank) {
+    const real = Math.min(wantBank, Math.floor(target.bank || 0));
+    target.bank = Math.max(0, Math.floor((target.bank || 0) - real));
+    taken.push(`$${u.fmt(real)} из банка`);
+  }
+  // Золото
+  const wantGold = amt('gold');
+  if (wantGold) {
+    const real = Math.min(wantGold, Math.floor(target.gold || 0));
+    target.gold = Math.max(0, Math.floor((target.gold || 0) - real));
+    taken.push(`🪙 ${u.fmt(real)}`);
+  }
+  // Очки навыков
+  const wantSp = amt('skillPoints');
+  if (wantSp) {
+    const real = Math.min(wantSp, target.skillPoints || 0);
+    target.skillPoints = Math.max(0, (target.skillPoints || 0) - real);
+    taken.push(`${real} оч. навыков`);
+  }
+  // Уши: сначала админский кошелёк, потом игровой
+  const wantEars = amt('ears');
+  if (wantEars) {
+    let left = wantEars;
+    const fromAdmin = Math.min(left, target.adminEars || 0);
+    target.adminEars = (target.adminEars || 0) - fromAdmin; left -= fromAdmin;
+    const fromReal = Math.min(left, target.ears || 0);
+    target.ears = (target.ears || 0) - fromReal; left -= fromReal;
+    taken.push(`${wantEars - left} 👂`);
+  }
+  // Жетоны: та же схема
+  const wantTok = amt('tokens');
+  if (wantTok) {
+    let left = wantTok;
+    const fromAdmin = Math.min(left, target.adminTokens || 0);
+    target.adminTokens = (target.adminTokens || 0) - fromAdmin; left -= fromAdmin;
+    const fromReal = Math.min(left, target.tokens || 0);
+    target.tokens = (target.tokens || 0) - fromReal; left -= fromReal;
+    taken.push(`${wantTok - left} 🎖`);
+  }
+  // Опыт (уровень не понижаем — только очки опыта текущего уровня)
+  const wantXp = amt('xp');
+  if (wantXp) {
+    const real = Math.min(wantXp, target.xp || 0);
+    target.xp = Math.max(0, (target.xp || 0) - real);
+    taken.push(`${u.fmt(real)} XP`);
+  }
+
+  return taken;
+}
+
+function take(adminUser: User, body: any, notices: Notices) {
+  const target = player.users()[body.userId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+
+  const taken = applyTake(target, body);
+  if (!taken.length) throw new u.ApiError('Не указано, что списывать');
+
+  db.markUser(target.id);
+  const note = String(body.giftNote || '').trim().slice(0, 300);
+  notifications.push(target.id, 'admin_take', '⚠️ Списание администрацией',
+    { text: note || `Администратор ${adminUser.name} списал у вас: ${taken.join(', ')}.` });
+
+  notices.push(`➖ Списано у ${target.name}: ${taken.join(', ')}`);
+  return { player: brief(target) };
+}
+
 function grant(adminUser: User, body: any, notices: Notices) {
   const target = player.users()[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
@@ -589,7 +674,7 @@ function wipeGroups(adminUser: User, body: any, notices: Notices) {
 }
 
 export = {
-  listPlayers, grant, grantAll, claimGift,
+  listPlayers, grant, grantAll, take, claimGift,
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
   listLogs, setBan, resetAccount, resetParam, resetMissions, wipeGroups,

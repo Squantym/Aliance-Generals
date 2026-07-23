@@ -320,82 +320,80 @@ App.screens.club = async (c) => {
       <button class="btn btn-orange mt" id="safe-start">Подойти к сейфу</button>`;
   }
 
-  // ── 3. МИННОЕ ПОЛЕ ────────────────────────────────────────────
-  let mineHtml;
-  const mn = data.mine;
-  if (mn.state === 'active') {
-    const grid = Array.from({ length: mn.cells }, (_, i) => {
-      const opened = mn.opened.includes(i);
-      return `<button class="mine-cell${opened ? ' mine-open' : ''}" data-mine="${i}" ${opened ? 'disabled' : ''}>${opened ? '✅' : '?'}</button>`;
-    }).join('');
-    mineHtml = `
-      <p class="small">Накоплено: <b class="gold" style="font-size:18px"><span class="ic-gold"></span> ${mn.pot}</b> · безопасных ячеек: ${mn.safeLeft}</p>
-      <p class="muted small">Под ${mn.bombs} ячейками — мины. Открывайте по одной, забирайте до взрыва!</p>
-      <div class="mine-grid mt">${grid}</div>
-      <button class="btn btn-orange mt" id="mine-cashout" ${mn.pot <= 0 ? 'disabled' : ''} style="width:100%">💰 Забрать <span class="ic-gold"></span> ${mn.pot}</button>`;
-  } else if (mn.state === 'cooldown') {
-    mineHtml = cdLine(mn.cooldownSec);
-  } else {
-    mineHtml = `
-      <p class="muted small">Поле ${mn.cells} ячеек, ${mn.bombs} мин. Открывайте и копите награду, забирайте вовремя! До <span class="ic-gold"></span> ${mn.rewardMax}.</p>
-      <button class="btn btn-orange mt" id="mine-start">Выйти на поле</button>`;
-  }
-
-  // ── 4. ПОЛОСА ПРЕПЯТСТВИЙ ─────────────────────────────────────
-  let runHtml;
-  const rn = data.run;
-  if (rn.state === 'active') {
-    const lv = rn.levels;
-    runHtml = `
-      <p class="small">Этап <b class="gold">${rn.stage}</b> из ${rn.totalStages} · накоплено: <b class="gold"><span class="ic-gold"></span> ${rn.pot}</b></p>
-      <p class="muted small">Выберите сложность этапа. Провал — потеряете всё накопленное!</p>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-        <button class="btn btn-inline" data-run="easy">🟢 Лёгкий — ${Math.round(lv.easy.chance*100)}% · +<span class="ic-gold"></span> ${lv.easy.reward}</button>
-        <button class="btn btn-inline" data-run="medium">🟡 Средний — ${Math.round(lv.medium.chance*100)}% · +<span class="ic-gold"></span> ${lv.medium.reward}</button>
-        <button class="btn btn-inline" data-run="hard">🔴 Тяжёлый — ${Math.round(lv.hard.chance*100)}% · +<span class="ic-gold"></span> ${lv.hard.reward}</button>
-      </div>
-      ${rn.canCashout ? `<button class="btn btn-orange mt" id="run-cashout" style="width:100%">🏃 Сойти с наградой <span class="ic-gold"></span> ${rn.pot}</button>` : '<p class="muted small center mt">Сойти можно после 3-го этапа</p>'}`;
-  } else if (rn.state === 'cooldown') {
-    runHtml = cdLine(rn.cooldownSec);
-  } else {
-    runHtml = `
-      <p class="muted small">${rn.totalStages} этапов, на каждом выбор риска. Награда копится, провал обнуляет. До <span class="ic-gold"></span> ${rn.rewardMax}.</p>
-      <button class="btn btn-orange mt" id="run-start">На старт</button>`;
-  }
-
-  // ── 5. ШТАБНАЯ ПАРТИЯ ─────────────────────────────────────────
-  let duelHtml;
-  const dl = data.duel;
-  if (dl.state === 'active') {
-    const lr = dl.lastRound;
-    const lrText = lr
-      ? `<p class="small mt">Прошлый ход: вы ${dl.units[lr.my]} · генерал ${dl.units[lr.foe]} → <b class="${lr.outcome==='win'?'gold':lr.outcome==='lose'?'red':''}">${lr.outcome==='win'?'победа':lr.outcome==='lose'?'поражение':'ничья'}</b></p>`
-      : '';
-    duelHtml = `
-      <p class="small">Счёт: вы <b class="gold">${dl.myWins}</b> — <b class="red">${dl.foeWins}</b> генерал (до ${dl.needed} побед)</p>
-      <p class="muted small">🪖 Пехота сбивает ✈️ авиацию · ✈️ авиация бьёт 🛡 танк · 🛡 танк давит 🪖 пехоту.</p>
-      ${lrText}
+  // ── 3. АРТИЛЛЕРИЙСКАЯ ПРИСТРЕЛКА ──────────────────────────────
+  let artyHtml;
+  const ar = data.arty;
+  if (ar.state === 'active') {
+    const hist = (ar.history || []).map((h) =>
+      `<div class="kv"><span class="k">${h.guess} м</span><span class="v">${h.hint === 'over' ? '⬇️ перелёт — бери меньше' : '⬆️ недолёт — бери больше'}</span></div>`).join('');
+    artyHtml = `
+      <p class="small">Дистанция от <b>${ar.min}</b> до <b>${ar.max}</b>. Выстрелов осталось: <b class="gold">${ar.shotsLeft}</b></p>
+      <p class="muted small">За попадание сейчас: <span class="ic-gold"></span> ${ar.nextReward}</p>
+      ${hist ? `<div class="mt">${hist}</div>` : ''}
       <div class="field-row mt">
-        <button class="btn btn-inline" data-duel="infantry">🪖 Пехота</button>
-        <button class="btn btn-inline" data-duel="air">✈️ Авиация</button>
-        <button class="btn btn-inline" data-duel="tank">🛡 Танк</button>
+        <input type="number" id="arty-dist" min="${ar.min}" max="${ar.max}" placeholder="дистанция" style="flex:1">
+        <button class="btn btn-orange btn-inline" id="arty-go">💥 Огонь</button>
       </div>`;
-  } else if (dl.state === 'cooldown') {
-    duelHtml = cdLine(dl.cooldownSec);
+  } else if (ar.state === 'cooldown') {
+    artyHtml = cdLine(ar.cooldownSec);
   } else {
-    duelHtml = `
-      <p class="muted small">Тактическая дуэль до ${dl.needed} побед. Угадывайте ход генерала. Награда <span class="ic-gold"></span> ${dl.rewardMin}–${dl.rewardMax}.</p>
-      <button class="btn btn-orange mt" id="duel-start">Бросить вызов</button>`;
+    artyHtml = `
+      <p class="muted small">Корректировщик подскажет «перелёт» или «недолёт». Угадайте дистанцию (${ar.min}–${ar.max}) за ${ar.shots} выстрелов. Чем быстрее — тем больше приз: <span class="ic-gold"></span> ${ar.rewardMin}–${ar.rewardMax}.</p>
+      <button class="btn btn-orange mt" id="arty-start">Занять позицию</button>`;
   }
+
+  // ── 4. ВОЕННЫЕ КОСТИ ──────────────────────────────────────────
+  let diceHtml;
+  const dc = data.dice;
+  const diceFaces = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+  if (dc.state === 'active') {
+    const cubes = dc.dice.map((d, i) =>
+      `<button class="dice-cube" data-dice="${i}" title="Нажмите, чтобы оставить/перебросить">${diceFaces[d]}</button>`).join('');
+    diceHtml = `
+      <p class="small">Ваш бросок: <span class="muted small">нажмите на кубики, которые ОСТАВИТЬ</span></p>
+      <div class="dice-row mt">${cubes}</div>
+      <p class="small mt">Комбинация: <b class="gold">${dc.combo ? dc.combo.name + ' — ' + dc.combo.gold + ' 🪙' : 'пока ничего'}</b></p>
+      <p class="muted small">Перебросов осталось: <b>${dc.rerollsLeft}</b></p>
+      <div class="field-row mt">
+        <button class="btn btn-inline" id="dice-reroll" ${dc.rerollsLeft <= 0 ? 'disabled' : ''}>🎲 Перебросить</button>
+        <button class="btn btn-orange btn-inline" id="dice-finish">✅ Забрать результат</button>
+      </div>`;
+  } else if (dc.state === 'cooldown') {
+    diceHtml = cdLine(dc.cooldownSec);
+  } else {
+    diceHtml = `
+      <p class="muted small">Бросьте ${dc.count} кубиков и соберите комбинацию за ${dc.rerolls} переброса. Награда <span class="ic-gold"></span> ${dc.rewardMin}–${dc.rewardMax}.</p>
+      <div class="muted small mt">${dc.payouts.map(p => `${p.name} — 🪙 ${p.gold}`).join('<br>')}</div>
+      <button class="btn btn-orange mt" id="dice-start">Бросить кости</button>`;
+  }
+
+  // ── 5. ШТАБНОЙ АУКЦИОН ────────────────────────────────────────
+  let bidsHtml;
+  const bd = data.bids;
+  if (bd.state === 'cooldown') {
+    bidsHtml = cdLine(bd.cooldownSec);
+  } else {
+    bidsHtml = `
+      <p class="muted small">У вас <b class="gold">${bd.points}</b> очков влияния. Распределите их между лотами втёмную — против ${bd.rivals} генералов. Лот забирает тот, кто поставил больше (при равенстве лот уходит казне).</p>
+      <p class="muted small">За лот <span class="ic-gold"></span> ${bd.perLot}, за все сразу +<span class="ic-gold"></span> ${bd.sweepBonus}.</p>
+      ${bd.lots.map((name, i) => `
+        <div class="field-row mt">
+          <span class="grow small">${UI.esc(name)}</span>
+          <input type="number" class="bids-input" data-bid="${i}" min="0" max="${bd.points}" value="0" style="width:80px">
+        </div>`).join('')}
+      <p class="small mt">Распределено: <b id="bids-total">0</b> / ${bd.points}</p>
+      <button class="btn btn-orange mt" id="bids-go" style="width:100%">💼 Сделать ставки</button>`;
+  }
+
 
   c.innerHTML = `
     <div class="title">Клуб офицеров</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Пять игр на удачу и смекалку. Награды от <span class="ic-gold"></span> 10 до 20.</p>
+    <p class="muted small" style="margin:-4px 4px 10px">Пять игр на удачу и смекалку. Награды от <span class="ic-gold"></span> 8 до 20.</p>
     <div class="card"><div class="name">🃏 Военный преферанс</div><div class="mt">${prefHtml}</div></div>
     <div class="card"><div class="name">🗝 Сейф штаба</div><div class="mt">${safeHtml}</div></div>
-    <div class="card"><div class="name">💣 Минное поле</div><div class="mt">${mineHtml}</div></div>
-    <div class="card"><div class="name">🎯 Полоса препятствий</div><div class="mt">${runHtml}</div></div>
-    <div class="card"><div class="name">♟ Штабная партия</div><div class="mt">${duelHtml}</div></div>`;
+    <div class="card"><div class="name">🎯 Артиллерийская пристрелка</div><div class="mt">${artyHtml}</div></div>
+    <div class="card"><div class="name">🎲 Военные кости</div><div class="mt">${diceHtml}</div></div>
+    <div class="card"><div class="name">💼 Штабной аукцион</div><div class="mt">${bidsHtml}</div></div>`;
 
   // ── Обработчики ──
   // Преферанс
@@ -417,35 +415,43 @@ App.screens.club = async (c) => {
     if (r && r.result === 'fail') UI.toast(`🗝 Сейф заблокирован! Код был: ${r.code}`);
     await App.refreshMe(); App.rerender();
   };
-  // Минное поле
-  if (R('mine-start')) R('mine-start').onclick = async () => { if (await post('/api/club/mine/start')) App.rerender(); };
-  if (R('mine-cashout')) R('mine-cashout').onclick = async () => { await post('/api/club/mine/cashout'); await App.refreshMe(); App.rerender(); };
-  c.querySelectorAll('[data-mine]').forEach((btn) => {
-    btn.onclick = async () => {
-      const r = await post('/api/club/mine/open', { cell: btn.dataset.mine });
-      if (r && r.result === 'boom') UI.toast('💥 БУМ! Вы подорвались и потеряли накопленное.');
-      await App.refreshMe(); App.rerender();
-    };
+  // Артиллерия
+  if (R('arty-start')) R('arty-start').onclick = async () => { if (await post('/api/club/arty/start')) App.rerender(); };
+  if (R('arty-go')) R('arty-go').onclick = async () => {
+    const r = await post('/api/club/arty/shoot', { distance: R('arty-dist').value });
+    if (r && r.result === 'hit') UI.toast(`🎯 Попадание с ${r.shots}-го выстрела! +🪙 ${r.reward}`);
+    if (r && r.result === 'lost') UI.toast(`💨 Цель ушла. Дистанция была ${r.target} м.`);
+    await App.refreshMe(); App.rerender();
+  };
+  // Кости: клик по кубику — оставить/перебросить (визуальная отметка)
+  c.querySelectorAll('[data-dice]').forEach((btn) => {
+    btn.onclick = () => btn.classList.toggle('dice-keep');
   });
-  // Полоса
-  if (R('run-start')) R('run-start').onclick = async () => { if (await post('/api/club/run/start')) App.rerender(); };
-  if (R('run-cashout')) R('run-cashout').onclick = async () => { await post('/api/club/run/cashout'); await App.refreshMe(); App.rerender(); };
-  c.querySelectorAll('[data-run]').forEach((btn) => {
-    btn.onclick = async () => {
-      const r = await post('/api/club/run/step', { level: btn.dataset.run });
-      if (r && r.result === 'fail') UI.toast(`🎯 Провал на этапе «${r.level}»! Награда потеряна.`);
-      await App.refreshMe(); App.rerender();
-    };
-  });
-  // Дуэль
-  if (R('duel-start')) R('duel-start').onclick = async () => { if (await post('/api/club/duel/start')) App.rerender(); };
-  c.querySelectorAll('[data-duel]').forEach((btn) => {
-    btn.onclick = async () => {
-      const r = await post('/api/club/duel/move', { unit: btn.dataset.duel });
-      if (r && r.result === 'match_lose') UI.toast('♟ Генерал переиграл вас в этой партии.');
-      await App.refreshMe(); App.rerender();
-    };
-  });
+  if (R('dice-start')) R('dice-start').onclick = async () => { if (await post('/api/club/dice/start')) App.rerender(); };
+  if (R('dice-reroll')) R('dice-reroll').onclick = async () => {
+    const keep = [...c.querySelectorAll('[data-dice].dice-keep')].map((b) => b.dataset.dice);
+    await post('/api/club/dice/reroll', { keep });
+    App.rerender();
+  };
+  if (R('dice-finish')) R('dice-finish').onclick = async () => {
+    const r = await post('/api/club/dice/finish');
+    if (r && r.result === 'nothing') UI.toast('🎲 Комбинация не собралась. В другой раз!');
+    await App.refreshMe(); App.rerender();
+  };
+  // Аукцион: живой счётчик распределённых очков
+  const bidInputs = [...c.querySelectorAll('.bids-input')];
+  const recount = () => {
+    const sum = bidInputs.reduce((s2, el) => s2 + (parseInt(el.value, 10) || 0), 0);
+    if (R('bids-total')) R('bids-total').textContent = sum;
+  };
+  bidInputs.forEach((el) => el.oninput = recount);
+  if (R('bids-go')) R('bids-go').onclick = async () => {
+    const bids = bidInputs.map((el) => parseInt(el.value, 10) || 0);
+    const r = await post('/api/club/bids/play', { bids });
+    if (r && r.result === 'lost') UI.toast('💼 Все лоты ушли генералам. Не в этот раз.');
+    if (r && r.result === 'win') UI.toast(`💼 Выиграно лотов: ${r.won}. +🪙 ${r.reward}`);
+    await App.refreshMe(); App.rerender();
+  };
 };
 
 // ---------- ТРОФЕИ ----------

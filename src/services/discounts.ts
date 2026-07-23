@@ -24,6 +24,7 @@ const CATEGORIES: Record<string, string> = {
   gold:        'Бонус к покупаемому золоту',
   mine:        'Шахты (золотодобыча)',
   silo:        'Ракетные шахты',
+  saboteur:    'Диверсанты (пачки, смертники, лимиты)',
 };
 
 function store(): Record<string, any> { return db.load('discounts', {}); }

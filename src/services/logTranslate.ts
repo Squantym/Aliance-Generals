@@ -147,14 +147,12 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/pref/stand': return '🃏 Клуб (преферанс): остановился';
       case '/api/club/safe/start': return '🔐 Клуб: подошёл к сейфу';
       case '/api/club/safe/try':   return '🔐 Клуб (сейф): попытка кода';
-      case '/api/club/mine/start': return '💣 Клуб: начал «Минёр»';
-      case '/api/club/mine/open':  return '💣 Клуб (минёр): открыл ячейку';
-      case '/api/club/mine/cashout': return '💣 Клуб (минёр): забрал выигрыш';
-      case '/api/club/run/start':  return '🏃 Клуб: начал забег';
-      case '/api/club/run/step':   return '🏃 Клуб (забег): сделал шаг';
-      case '/api/club/run/cashout': return '🏃 Клуб (забег): забрал выигрыш';
-      case '/api/club/duel/start': return '⚔️ Клуб: начал тактическую дуэль';
-      case '/api/club/duel/move':  return '⚔️ Клуб (дуэль): сделал ход';
+      case '/api/club/arty/start': return '🎯 Клуб: занял позицию (пристрелка)';
+      case '/api/club/arty/shoot': return '🎯 Клуб (пристрелка): выстрел';
+      case '/api/club/dice/start':  return '🎲 Клуб: бросил военные кости';
+      case '/api/club/dice/reroll': return '🎲 Клуб (кости): переброс';
+      case '/api/club/dice/finish': return '🎲 Клуб (кости): забрал результат';
+      case '/api/club/bids/play':  return '💼 Клуб: сделал ставки на штабном аукционе';
 
       // ── Трофеи ─────────────────────────────────────────────────
       case '/api/trophies/start':

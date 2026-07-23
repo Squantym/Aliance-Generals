@@ -49,6 +49,7 @@ const Admin = {
       { id:'events',    label:'🐉 События' },
       { id:'tournament',label:'⚔️ Турниры' },
       { id:'legions',   label:'🎖 Легионы' },
+      { id:'mercs',     label:'🥷 Наёмники' },
       { id:'discounts', label:'🏷 Скидки' },
       { id:'buffs',     label:'🎉 Бонусы' },
       { id:'logs',      label:'📋 Журнал' },
@@ -80,6 +81,7 @@ const Admin = {
     if (Admin.tab === 'events')    return Admin.renderEvents(c);
     if (Admin.tab === 'tournament')return Admin.renderTournament(c);
     if (Admin.tab === 'legions')   return Admin.renderLegions(c);
+    if (Admin.tab === 'mercs')     return Admin.renderMercs(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
@@ -408,6 +410,7 @@ const Admin = {
         <div><label style="font-size:11px;color:var(--dim)">📈 Очки навыков</label><input type="number" id="${prefix}-skill" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="${prefix}-ears" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="${prefix}-tokens" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">🏦 В банке (только для списания)</label><input type="number" id="${prefix}-bank" placeholder="0"></div>
       </div>
       <label style="font-size:11px;color:var(--dim);display:block;margin-top:8px"><span class="ic-mail"></span> Сообщение игрокам (необязательно)</label>
       <textarea id="${prefix}-note" placeholder="Текст сообщения от администратора…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>`;
@@ -418,6 +421,7 @@ const Admin = {
     return {
       dollars: v(prefix+'-dollars'), gold: v(prefix+'-gold'), xp: v(prefix+'-xp'),
       skillPoints: v(prefix+'-skill'), ears: v(prefix+'-ears'), tokens: v(prefix+'-tokens'),
+      bank: v(prefix+'-bank'),
       giftNote: v(prefix+'-note'),
     };
   },
@@ -734,6 +738,69 @@ const Admin = {
     };
   },
 
+  // ── Вкладка «Наёмники»: выдача в обход аукциона ──
+  async renderMercs(c) {
+    c.innerHTML = '<p class="muted center">Загрузка…</p>';
+    let d, h;
+    try {
+      d = await API.get('/api/admin/merc/list');
+      h = await API.get('/api/admin/merc/holders');
+    } catch (e) { c.innerHTML = '<p class="muted center">Ошибка загрузки наёмников.</p>'; return; }
+
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🥷 Выдача наёмников</div>
+        <p class="muted small">Выдаёт наёмника напрямую, <b>минуя аукцион</b>. Аукцион для игроков продолжает работать как обычно — ставки, лоты и победители не затрагиваются.</p>
+        <p class="muted small">Количество = число суток аренды (1 шт. = ${d.rentHours} ч). Если наёмник уже активен — срок продлевается.</p>
+      </div>
+
+      <div class="card">
+        <div style="margin-bottom:8px">
+          <label style="font-size:11px;color:var(--dim)">Игрок (позывной)</label>
+          <input type="text" id="mg-name" placeholder="позывной игрока">
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="font-size:11px;color:var(--dim)">Наёмник</label>
+          <select id="mg-merc" style="width:100%">
+            ${d.commanders.map(m => `<option value="${m.id}">${UI.esc(m.name)} — ${UI.esc(m.effectType)}${m.effectValue ? ' ' + m.effectValue : ''}</option>`).join('')}
+          </select>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="font-size:11px;color:var(--dim)">Количество (шт. × ${d.rentHours} ч)</label>
+          <input type="number" id="mg-count" value="1" min="1">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-orange" id="mg-give" style="flex:1">🎖 Выдать</button>
+          <button class="btn btn-red" id="mg-revoke" style="flex:1">🚫 Отозвать</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name" style="font-size:14px">Действующие наёмники у игроков</div>
+        ${h.holders.length ? h.holders.map(x => `
+          <div class="list-row">
+            <div class="grow"><b>${UI.esc(x.name)}</b> — ${UI.esc(x.commanderName || x.commanderId)}</div>
+            <span class="muted small">${x.hoursLeft} ч</span>
+          </div>`).join('') : '<p class="muted small">Сейчас ни у кого нет активных наёмников.</p>'}
+      </div>`;
+
+    const send = async (url, okMsg) => {
+      const name = (document.getElementById('mg-name') || {}).value || '';
+      const commanderId = (document.getElementById('mg-merc') || {}).value;
+      const count = (document.getElementById('mg-count') || {}).value || 1;
+      if (!name.trim()) { UI.toast('⛔ Укажите позывной игрока'); return; }
+      try {
+        const r = await API.post(url, { name: name.trim(), commanderId, count });
+        UI.toast(okMsg(r));
+        Admin.renderMercs(c);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('mg-give').onclick = () =>
+      send('/api/admin/merc/grant', (r) => `🎖 ${r.commanderName} → ${r.targetName} (${r.count} шт., ~${r.hours} ч)`);
+    document.getElementById('mg-revoke').onclick = () =>
+      send('/api/admin/merc/revoke', (r) => `🚫 Наёмник отозван у ${r.targetName}`);
+  },
+
   // ── Вкладка «Турниры»: назначить бой между двумя легионами ──
   async renderTournament(c) {
     Admin._trnMode = Admin._trnMode || 'quick';
@@ -939,6 +1006,7 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)">📈 Очки навыков</label><input type="number" id="g-skill" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="g-ears" placeholder="0"></div>
           <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="g-tokens" placeholder="0"></div>
+          <div><label style="font-size:11px;color:var(--dim)">🏦 В банке <span class="muted">(только списание)</span></label><input type="number" id="g-bank" placeholder="0"></div>
         </div>
         <hr class="hr">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -952,6 +1020,7 @@ const Admin = {
         <textarea id="g-note" placeholder="Текст сообщения от администрации…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>
         <div class="btn-row mt">
           <button class="btn btn-orange" id="g-go">✅ Выдать сразу</button>
+          <button class="btn btn-red" id="g-take">➖ Забрать</button>
           <button class="btn btn-inline" id="g-cancel">Отмена</button>
         </div>
         <hr class="hr">
@@ -985,6 +1054,25 @@ const Admin = {
           giftNote: v('g-note'),
         });
         UI.toast(`✅ Выдано игроку ${p.name}`);
+        box.innerHTML = '';
+        Admin.loadPlayers();
+      } catch(e) { UI.toast('⛔ ' + e.message); }
+    };
+    // Списание ресурсов (значения в полях = сколько ЗАБРАТЬ, включая банк)
+    document.getElementById('g-take').onclick = async () => {
+      const v = id => (document.getElementById(id) || {}).value || '';
+      const fields = ['g-dollars','g-gold','g-xp','g-skill','g-ears','g-tokens','g-bank'];
+      if (!fields.some(f => parseInt(v(f)) > 0)) { UI.toast('⛔ Укажите, сколько забрать'); return; }
+      if (!await UI.confirm(`Списать указанные ресурсы у игрока ${p.name}?<br><span class="muted small">Значения в полях = сколько забрать. Ниже нуля не уйдёт.</span>`,
+        { title: 'Списание ресурсов', icon: '➖', okText: 'Забрать', danger: true })) return;
+      try {
+        await API.post('/api/admin/take', {
+          userId: p.id,
+          dollars: v('g-dollars'), gold: v('g-gold'), xp: v('g-xp'),
+          skillPoints: v('g-skill'), ears: v('g-ears'), tokens: v('g-tokens'),
+          bank: v('g-bank'), giftNote: v('g-note'),
+        });
+        UI.toast(`➖ Списано у игрока ${p.name}`);
         box.innerHTML = '';
         Admin.loadPlayers();
       } catch(e) { UI.toast('⛔ ' + e.message); }

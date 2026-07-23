@@ -975,13 +975,33 @@ const CLUB = {
   PREF_TARGET: 21, PREF_DEALER_STOP: 17,
   // ── 2. Сейф штаба (взлом 4-значного кода, быки и коровы) ──
   SAFE_REWARD: 20, SAFE_DIGITS: 4, SAFE_TRIES: 8, SAFE_CD_WIN_MIN: 35, SAFE_CD_FAIL_MIN: 12,
-  // ── 3. Минное поле (открывай ячейки, забирай вовремя) ──
-  MINE_REWARD_MAX: 20, MINE_CELLS: 25, MINE_BOMBS: 5, MINE_CD_MIN: 25,
-  MINE_STEP_REWARD: 2,  // золота за безопасную ячейку (растёт)
-  // ── 4. Полоса препятствий (5 этапов с выбором риска) ──
-  RUN_STAGES: 5, RUN_REWARD_MAX: 18, RUN_CD_WIN_MIN: 30, RUN_CD_FAIL_MIN: 10,
-  // ── 5. Штабная партия (тактическая дуэль, best of 5) ──
-  DUEL_REWARD_MIN: 10, DUEL_REWARD_MAX: 16, DUEL_WINS_NEEDED: 3, DUEL_CD_WIN_MIN: 18, DUEL_CD_FAIL_MIN: 6,
+  // ── 3. Артиллерийская пристрелка (угадай дистанцию: перелёт/недолёт) ──
+  //    Награда = ARTY_REWARD_BASE − номер удачного выстрела × STEP, но не ниже MIN.
+  //    1-й выстрел = 20 🪙, 6-й = 10 🪙.
+  ARTY_MIN: 1, ARTY_MAX: 100, ARTY_SHOTS: 6,
+  ARTY_REWARD_BASE: 22, ARTY_REWARD_STEP: 2, ARTY_REWARD_MIN: 10,
+  ARTY_CD_WIN_MIN: 25, ARTY_CD_FAIL_MIN: 10,
+
+  // ── 4. Военные кости (5 кубиков, 2 переброса, комбинации) ──
+  DICE_COUNT: 5, DICE_REROLLS: 2,
+  DICE_CD_WIN_MIN: 20, DICE_CD_FAIL_MIN: 8,
+  // Награды за комбинации (сверху вниз — от старшей к младшей)
+  DICE_PAYOUTS: [
+    { id: 'five',    name: 'Полный залп (5 одинаковых)', gold: 20 },
+    { id: 'four',    name: 'Батарея (4 одинаковых)',     gold: 16 },
+    { id: 'full',    name: 'Расчёт (фулл-хаус)',         gold: 13 },
+    { id: 'straight',name: 'Марш-бросок (стрит из 5)',   gold: 12 },
+    { id: 'three',   name: 'Тройка',                     gold: 10 },
+    { id: 'twopair', name: 'Две пары',                   gold: 8  },
+  ],
+
+  // ── 5. Штабной аукцион (слепые ставки против генералов) ──
+  //    20 очков влияния распределяются по 3 лотам. Лот забирает тот,
+  //    кто поставил больше всех. За каждый выигранный лот — золото,
+  //    за все три сразу — бонус.
+  BIDS_POINTS: 20, BIDS_LOTS: 3, BIDS_RIVALS: 3,
+  BIDS_REWARD_PER_LOT: 6, BIDS_SWEEP_BONUS: 4,
+  BIDS_CD_WIN_MIN: 22, BIDS_CD_FAIL_MIN: 8,
 };
 
 // ---------- ЕЖЕДНЕВНЫЕ ПОРУЧЕНИЯ ----------
@@ -1010,55 +1030,55 @@ const DAILY_CHARS: Record<string, { name: string; role: string; icon: string; in
 // base — базовое требование на 1 уровне; итог = base·diff·рост(level).
 const DAILY_QUESTS = [
   // ── Генерал Волков — прямой бой ────────────────────────────────
-  { id: 'v_scout',   char: 'volkov',   counter: 'attacks',       base: 60,  diff: 1.0, icon: '⚔',
+  { id: 'v_scout',   char: 'volkov',   counter: 'attacks', route: 'war',       base: 60,  diff: 1.0, icon: '⚔',
     name: 'Разведка боем',   flavor: 'Не сиди в окопе, боец. Прощупай оборону — соверши атаки и доложи.' },
-  { id: 'v_hill',    char: 'volkov',   counter: 'wins',          base: 40,  diff: 1.6, icon: '🏆',
+  { id: 'v_hill',    char: 'volkov',   counter: 'wins', route: 'war',          base: 40,  diff: 1.6, icon: '🏆',
     name: 'Взять высоту',    flavor: 'Высота наша или ничья. Побеждай в боях, пока флаг не будет нашим.' },
-  { id: 'v_blitz',   char: 'volkov',   counter: 'attacks',       base: 150, diff: 2.4, icon: '💥',
+  { id: 'v_blitz',   char: 'volkov',   counter: 'attacks', route: 'war',       base: 150, diff: 2.4, icon: '💥',
     name: 'Блицкриг',        flavor: 'Темп, темп и ещё раз темп! Обрушь на врага шквал атак без передышки.' },
-  { id: 'v_rout',    char: 'volkov',   counter: 'wins',          base: 80,  diff: 2.4, icon: '🥇',
+  { id: 'v_rout',    char: 'volkov',   counter: 'wins', route: 'war',          base: 80,  diff: 2.4, icon: '🥇',
     name: 'Разгром',         flavor: 'Мне нужен не размен, а разгром. Гони череду побед — без пощады.' },
 
   // ── Полковник Морозова — экономика и тыл ───────────────────────
-  { id: 'm_reserve', char: 'morozova', counter: 'bankDeposited', base: 500000,  diff: 1.0, icon: '🏦',
+  { id: 'm_reserve', char: 'morozova', counter: 'bankDeposited', route: 'bank/storage', base: 500000,  diff: 1.0, icon: '🏦',
     name: 'Запас на чёрный день', flavor: 'Армия воюет на деньги, а не на лозунги. Отложи в банк — тыл скажет спасибо.' },
-  { id: 'm_build',   char: 'morozova', counter: 'buildingsBuilt', base: 15,     diff: 1.6, icon: '🏗',
+  { id: 'm_build',   char: 'morozova', counter: 'buildingsBuilt', route: 'buildings', base: 15,     diff: 1.6, icon: '🏗',
     name: 'Стройка века',    flavor: 'Пока фронт стреляет, тыл строит. Возведи здания — производство не ждёт.' },
-  { id: 'm_gold',    char: 'morozova', counter: 'bankDeposited', base: 2000000, diff: 2.4, icon: '💰',
+  { id: 'm_gold',    char: 'morozova', counter: 'bankDeposited', route: 'bank/storage', base: 2000000, diff: 2.4, icon: '💰',
     name: 'Золото Родины',   flavor: 'Крупный резерв — крупная война. Загрузи банк по-настоящему серьёзной суммой.' },
 
   // ── Майор Ковач — снабжение и техника ──────────────────────────
-  { id: 'k_fresh',   char: 'kovac',    counter: 'unitsBought',   base: 40,  diff: 1.0, icon: '🚜',
+  { id: 'k_fresh',   char: 'kovac',    counter: 'unitsBought', route: 'units',   base: 40,  diff: 1.0, icon: '🚜',
     name: 'Свежее пополнение', flavor: 'Голыми руками не повоюешь. Закупи технику — ангары должны быть полны.' },
-  { id: 'k_smuggle', char: 'kovac',    counter: 'marketBought',  base: 8,   diff: 1.6, icon: '💣',
+  { id: 'k_smuggle', char: 'kovac',    counter: 'marketBought', route: 'market/buffs',  base: 8,   diff: 1.6, icon: '💣',
     name: 'Контрабанда',     flavor: 'Официально этого разговора не было. Возьми пару позиций на чёрном рынке.' },
-  { id: 'k_rearm',   char: 'kovac',    counter: 'unitsBought',   base: 120, diff: 2.4, icon: '🛠',
+  { id: 'k_rearm',   char: 'kovac',    counter: 'unitsBought', route: 'units',   base: 120, diff: 2.4, icon: '🛠',
     name: 'Перевооружение',  flavor: 'Старьё на свалку — фронту нужен свежий металл. Массовая закупка техники, майор ждёт.' },
 
   // ── Наёмник «Гадюка» — грязная работа ──────────────────────────
-  { id: 'g_wet',     char: 'gadyuka',  counter: 'fatalities',    base: 8,   diff: 1.6, icon: '💀',
+  { id: 'g_wet',     char: 'gadyuka',  counter: 'fatalities', route: 'war',    base: 8,   diff: 1.6, icon: '💀',
     name: 'Мокрое дело',     flavor: 'Плачу за результат, не за попытки. Доведи бои до фаталити — чисто и тихо.' },
-  { id: 'g_collect', char: 'gadyuka',  counter: 'earsCut',       base: 6,   diff: 1.6, icon: '👂',
+  { id: 'g_collect', char: 'gadyuka',  counter: 'earsCut', route: 'war',       base: 6,   diff: 1.6, icon: '👂',
     name: 'Коллекция',       flavor: 'У меня хобби, знаешь ли. Принеси ушей — за каждое отдельная благодарность.' },
-  { id: 'g_quiet',   char: 'gadyuka',  counter: 'saboteursBought', base: 30, diff: 1.0, icon: '🥷',
+  { id: 'g_quiet',   char: 'gadyuka',  counter: 'saboteursBought', route: 'saboteurs', base: 30, diff: 1.0, icon: '🥷',
     name: 'Тихие люди',      flavor: 'Война выигрывается в тени. Набери диверсантов — пусть враг не спит спокойно.' },
-  { id: 'g_reap',    char: 'gadyuka',  counter: 'fatalities',    base: 20,  diff: 2.4, icon: '☠',
+  { id: 'g_reap',    char: 'gadyuka',  counter: 'fatalities', route: 'war',    base: 20,  diff: 2.4, icon: '☠',
     name: 'Жатва',           flavor: 'Сегодня косим по-крупному. Череда фаталити — и мой заказчик будет доволен.' },
 
   // ── Аналитик Тесла — спецоперации ──────────────────────────────
-  { id: 't_field',   char: 'tesla',    counter: 'missionStages', base: 20,  diff: 1.0, icon: '📋',
+  { id: 't_field',   char: 'tesla',    counter: 'missionStages', route: 'missions', base: 20,  diff: 1.0, icon: '📋',
     name: 'Полевые испытания', flavor: 'Данные важнее славы. Пройди шаги спецопераций — мне нужна статистика с поля.' },
-  { id: 't_storm',   char: 'tesla',    counter: 'missionStages', base: 50,  diff: 2.4, icon: '🌩',
+  { id: 't_storm',   char: 'tesla',    counter: 'missionStages', route: 'missions', base: 50,  diff: 2.4, icon: '🌩',
     name: 'Операция «Гроза»', flavor: 'Запускаем большую программу. Много шагов спецопераций — и не сбавляй темп.' },
 
   // ── Инструктор Беркут — полигон и досуг ────────────────────────
-  { id: 'b_luck',    char: 'berkut',   counter: 'clubPlayed',    base: 10,  diff: 1.0, icon: '🎲',
+  { id: 'b_luck',    char: 'berkut',   counter: 'clubPlayed', route: 'club',    base: 10,  diff: 1.0, icon: '🎲',
     name: 'Азарт',           flavor: 'Реакция куётся не только в бою. Разомнись в Клубе офицеров — на удачу.' },
-  { id: 'b_march',   char: 'berkut',   counter: 'attacks',       base: 100, diff: 1.6, icon: '🥾',
+  { id: 'b_march',   char: 'berkut',   counter: 'attacks', route: 'war',       base: 100, diff: 1.6, icon: '🥾',
     name: 'Марш-бросок',     flavor: 'Норматив по атакам никто не отменял. Вперёд, без нытья — бегом марш!' },
-  { id: 'b_norm',    char: 'berkut',   counter: 'wins',          base: 60,  diff: 1.6, icon: '🎯',
+  { id: 'b_norm',    char: 'berkut',   counter: 'wins', route: 'war',          base: 60,  diff: 1.6, icon: '🎯',
     name: 'Сдать норматив',  flavor: 'Победа — это навык. Сдай зачёт: нужное число побед, и по-чистому.' },
-  { id: 'b_allin',   char: 'berkut',   counter: 'clubPlayed',    base: 25,  diff: 2.4, icon: '🃏',
+  { id: 'b_allin',   char: 'berkut',   counter: 'clubPlayed', route: 'club',    base: 25,  diff: 2.4, icon: '🃏',
     name: 'Ва-банк',         flavor: 'Для отчаянных: серия партий в Клубе. Кто не рискует — тот стоит в наряде.' },
 ];
 const DAILY_QUEST_BY_ID: Record<string, any> = Object.fromEntries(DAILY_QUESTS.map((q) => [q.id, q]));
@@ -1746,14 +1766,14 @@ const TITLE_BY_ID: Record<string, any> = Object.fromEntries(TITLES.map((t) => [t
 
 // Контракты от NPC (ежедневные задания за золото/опыт)
 const CONTRACTS_POOL = [
-  { id: 'c_attack',  name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks',        targets: [5, 10, 15], rewardGold: [15, 25, 40] },
-  { id: 'c_win',     name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
-  { id: 'c_buy',     name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
-  { id: 'c_build',   name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
-  { id: 'c_ear',     name: 'Трофеи',      desc: 'Отрежь {n} ушей',               counter: 'earsCut',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
-  { id: 'c_mission', name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
-  { id: 'c_fatal',   name: 'Палач',       desc: 'Соверши {n} фаталити',          counter: 'fatalities',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
-  { id: 'c_market',  name: 'Контрабанда', desc: 'Купи {n} на чёрном рынке',      counter: 'marketBought',   targets: [2, 4, 7],   rewardGold: [15, 24, 38] },
+  { id: 'c_attack',  name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks', route: 'war',        targets: [5, 10, 15], rewardGold: [15, 25, 40] },
+  { id: 'c_win',     name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins', route: 'war',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
+  { id: 'c_buy',     name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought', route: 'units',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
+  { id: 'c_build',   name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', route: 'buildings', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
+  { id: 'c_ear',     name: 'Трофеи',      desc: 'Отрежь {n} ушей',               counter: 'earsCut', route: 'war',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
+  { id: 'c_mission', name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages', route: 'missions',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
+  { id: 'c_fatal',   name: 'Палач',       desc: 'Соверши {n} фаталити',          counter: 'fatalities', route: 'war',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
+  { id: 'c_market',  name: 'Контрабанда', desc: 'Купи {n} на чёрном рынке',      counter: 'marketBought', route: 'market/buffs',   targets: [2, 4, 7],   rewardGold: [15, 24, 38] },
 ];
 const CONTRACTS_PER_DAY = 3;
 

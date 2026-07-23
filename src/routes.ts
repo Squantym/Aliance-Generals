@@ -208,17 +208,15 @@ function registerRoutes(app: any) {
   // 2. Сейф штаба
   app.add('POST', '/api/club/safe/start', act((req) => club.safeStart(req.user)));
   app.add('POST', '/api/club/safe/try',   act((req, n) => club.safeTry(req.user, req.body.guess, n)));
-  // 3. Минное поле
-  app.add('POST', '/api/club/mine/start',   act((req) => club.mineStart(req.user)));
-  app.add('POST', '/api/club/mine/open',    act((req, n) => club.mineOpen(req.user, req.body.cell, n)));
-  app.add('POST', '/api/club/mine/cashout', act((req, n) => club.mineCashout(req.user, n)));
-  // 4. Полоса препятствий
-  app.add('POST', '/api/club/run/start',   act((req) => club.runStart(req.user)));
-  app.add('POST', '/api/club/run/step',    act((req, n) => club.runStep(req.user, req.body.level, n)));
-  app.add('POST', '/api/club/run/cashout', act((req, n) => club.runCashout(req.user, n)));
-  // 5. Штабная партия
-  app.add('POST', '/api/club/duel/start', act((req) => club.duelStart(req.user)));
-  app.add('POST', '/api/club/duel/move',  act((req, n) => club.duelMove(req.user, req.body.unit, n)));
+  // 3. Артиллерийская пристрелка
+  app.add('POST', '/api/club/arty/start', act((req) => club.artyStart(req.user)));
+  app.add('POST', '/api/club/arty/shoot', act((req, n) => club.artyShoot(req.user, req.body.distance, n)));
+  // 4. Военные кости
+  app.add('POST', '/api/club/dice/start',  act((req) => club.diceStart(req.user)));
+  app.add('POST', '/api/club/dice/reroll', act((req, n) => club.diceReroll(req.user, req.body.keep, n)));
+  app.add('POST', '/api/club/dice/finish', act((req, n) => club.diceFinish(req.user, n)));
+  // 5. Штабной аукцион
+  app.add('POST', '/api/club/bids/play',   act((req, n) => club.bidsPlay(req.user, req.body.bids, n)));
 
   // ---------- Трофеи ----------
   app.add('GET', '/api/trophies', (req) => trophies.list(req.user));
@@ -303,6 +301,11 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/event/hp', act((req, n) => worldEvent.adminSetHp(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/event/look', act((req, n) => worldEvent.adminSetLook(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/event/images', () => worldEvent.adminListImages(), { admin: true });
+  // Наёмники: выдача админом в обход аукциона (аукцион работает как прежде)
+  app.add('GET',  '/api/admin/merc/list',    () => market.adminCommandersList(), { admin: true });
+  app.add('GET',  '/api/admin/merc/holders', () => market.adminCommanderHolders(), { admin: true });
+  app.add('POST', '/api/admin/merc/grant',   act((req, n) => market.adminGrantCommander(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/merc/revoke',  act((req, n) => market.adminRevokeCommander(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
 
   // ---------- Легион: казна, постройки, кланвойны ----------
@@ -387,6 +390,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/tournaments/create', act((req, n) => require('./services/tournaments').create(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/tournaments/:id/cancel', act((req, n) => require('./services/tournaments').cancel(req.user, req.params.id, n)), { admin: true });
   app.add('POST', '/api/admin/grant',      act((req, n) => admin.grant(req.user, req.body, n)),    { admin: true });
+  app.add('POST', '/api/admin/take',       act((req, n) => admin.take(req.user, req.body, n)),     { admin: true });
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/rewards/grant', act((req, n) => require('./services/rewards').adminGrant(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));
