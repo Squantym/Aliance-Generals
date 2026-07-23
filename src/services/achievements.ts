@@ -36,6 +36,27 @@ function check(user: User, notices?: Notices): void {
       // Разблокирован новый титул за эту ступень
       const titleName = ((a as any).titles || [])[s - 1];
       if (titleName && notices) notices.push(`🏅 Разблокирован титул «${titleName}»! Выберите его в разделе «Титулы».`);
+      // Кладём достижение в очередь всплывающих окон. Фронт показывает
+      // их по одному (закрыл одно — открылось следующее). Работает и
+      // для событий, случившихся оффлайн (поражение в обороне, санкции):
+      // игрок увидит окна при первом заходе в игру.
+      if (!user.pendingAchievements) user.pendingAchievements = [];
+      user.pendingAchievements.push({
+        id: u.uid(8),
+        achId: a.id,
+        stage: s,                          // 1..5 — для картинки /img/achievements/{achId}_{stage}.webp
+        name: a.name,
+        desc: a.desc,
+        threshold: a.steps[s - 1],         // порог, который взят
+        title: titleName || null,          // разблокированный титул (для кнопки «Отобразить»)
+        titleId: titleName ? `${a.id}:${s - 1}` : null,
+        dollars, gold,
+        at: Date.now(),
+      });
+      // Страховка от разбухания: храним не больше 30 непросмотренных окон
+      if (user.pendingAchievements.length > 30) {
+        user.pendingAchievements.splice(0, user.pendingAchievements.length - 30);
+      }
     }
     if (stage > claimed) user.achStages[a.id] = stage;
   }
@@ -58,4 +79,13 @@ function list(user: User) {
   };
 }
 
-export = { bump, check, list };
+// Игрок закрыл окно достижения — убираем его из очереди.
+// Возвращаем остаток очереди, чтобы фронт мог сразу показать следующее.
+function ackPending(user: User, id: string) {
+  if (user.pendingAchievements && user.pendingAchievements.length) {
+    user.pendingAchievements = user.pendingAchievements.filter((p: any) => p.id !== id);
+  }
+  return { pendingAchievements: user.pendingAchievements || [] };
+}
+
+export = { bump, check, list, ackPending };

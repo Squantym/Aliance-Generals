@@ -190,6 +190,8 @@ export interface User {
   // Рейтинговые сезоны
   seasonRating?: number;
   rating?: number;       // накопительный рейтинг: победы/поражения/уши/жетоны/мины
+  reinforcements?: any[];   // активные подкрепления от союзников
+  reinforceSent?: any[];    // отправленные за сутки (лимит 5/день)
   seasonId?: string;
   // Еженедельные метрики рейтингового сезона (пн–вс МСК)
   weekly?: {
@@ -274,6 +276,8 @@ export interface User {
   lasers?: any[];                // лазеры ПВО (см. src/services/lasers.ts)
   lasersBuiltTotal?: number;
   pendingRocketHits?: any[];     // отчёты о долетевших ракетах (окно у цели)
+  offlineWar?: any;              // сводка «пока вас не было»: атаки, потери, санкции (см. warReport.ts)
+  pendingAchievements?: any[];   // очередь окон о новых достижениях (показываются по одному)
   modernProcesses?: any[];
   passport?: { nameChanges: number; countryChanges: number };
   daily?: any;

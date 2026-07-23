@@ -1402,13 +1402,23 @@ App.screens.notifications = async (c) => {
         <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.received} ед.</span></div>
         <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>
         <p class="small mt" style="color:var(--money)">✅ Атака отбита — деньги и большая часть техники в безопасности.</p>`;
+    } else if (n.kind === 'rocket_result') {
+      // Результат СВОЕЙ ракеты (для атакующего)
+      body = `
+        <div class="kv"><span class="k">Цель</span><span class="v name">${UI.esc(p.targetName || '—')}</span></div>
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <div class="kv"><span class="k">Мощность удара</span><span class="v">${p.powerPct}%</span></div>
+        <div class="kv"><span class="k">Уничтожено техники врага</span><span class="v" style="color:var(--money)">${UI.fmtNum(p.techDestroyedCount||0)} ед.${p.techLostText ? ' ('+UI.esc(p.techLostText)+')' : ''}</span></div>
+        <div class="kv"><span class="k">Разрушено зданий врага</span><span class="v" style="color:var(--money)">${UI.fmtNum(p.buildingsDestroyedCount||0)} ед.${p.destroyedBuildingsText ? ' ('+UI.esc(p.destroyedBuildingsText)+')' : ''}</span></div>
+        <button class="btn btn-orange mt rocket-view" data-rep='${encodeURIComponent(JSON.stringify(p))}' style="width:100%">🔍 Посмотреть результат удара</button>`;
     } else if (n.kind === 'rocket_hit') {
       body = `
         <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
         <div class="kv"><span class="k">Мощность удара</span><span class="v dmg-take">${p.powerPct}%</span></div>
         <div class="kv"><span class="k">Уничтожено техники</span><span class="v dmg-take">${UI.fmtNum(p.techDestroyedCount||0)} ед.${p.techLostText ? ' ('+UI.esc(p.techLostText)+')' : ''}</span></div>
-        <div class="kv"><span class="k">Разрушено зданий</span><span class="v dmg-take">${UI.fmtNum(p.buildingsDestroyedCount||0)} ед.${p.destroyedBuildingsText ? ' ('+UI.esc(p.destroyedBuildingsText)+')' : ''}</span></div>`;
+        <div class="kv"><span class="k">Разрушено зданий</span><span class="v dmg-take">${UI.fmtNum(p.buildingsDestroyedCount||0)} ед.${p.destroyedBuildingsText ? ' ('+UI.esc(p.destroyedBuildingsText)+')' : ''}</span></div>
+        <button class="btn btn-orange mt rocket-view" data-rep='${encodeURIComponent(JSON.stringify(p))}' style="width:100%">🔍 Посмотреть результат удара</button>`;
     } else if (n.kind === 'fatality_ear') {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
@@ -1430,7 +1440,7 @@ App.screens.notifications = async (c) => {
 
     return `
       <div class="card" data-notif="${n.id}" style="${n.read ? 'opacity:.65' : ''}">
-        <div class="name">${n.kind.includes('lost') || n.kind === 'rocket_hit' ? '⚠️' : n.kind.includes('defended') || n.kind === 'fatality_mercy' ? '✅' : '<span class="ic-bell"></span>'} ${UI.esc(n.title)}</div>
+        <div class="name">${n.kind === 'rocket_result' ? '🚀' : (n.kind.includes('lost') || n.kind === 'rocket_hit') ? '⚠️' : (n.kind.includes('defended') || n.kind === 'fatality_mercy') ? '✅' : '<span class="ic-bell"></span>'} ${UI.esc(n.title)}</div>
         ${body}
       </div>`;
   };
@@ -1440,6 +1450,17 @@ App.screens.notifications = async (c) => {
     ${notifications.length > 0 ? `<button class="btn mt" id="notif-read-all" style="width:100%">Отметить все как прочитанные</button>` : ''}
     ${notifications.length === 0 ? '<div class="card center muted">Уведомлений пока нет.</div>' : ''}
     ${notifications.map(renderOne).join('')}`;
+
+  // Кнопка «Посмотреть результат удара» — открывает то же окно с отчётом
+  c.querySelectorAll('.rocket-view').forEach((btn) => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      try {
+        const rep = JSON.parse(decodeURIComponent(btn.dataset.rep));
+        App._showRocketReport(rep);
+      } catch (e) { UI.toast('⛔ Не удалось открыть отчёт'); }
+    };
+  });
 
   const readAllBtn = document.getElementById('notif-read-all');
   if (readAllBtn) readAllBtn.onclick = async () => {
@@ -1455,4 +1476,55 @@ App.screens.notifications = async (c) => {
   if (notifications.some((n) => !n.read)) {
     setTimeout(() => App.refreshMe(), 500);
   }
+};
+
+// ---------- ПОДКРЕПЛЕНИЯ СОЮЗНИКАМ ----------
+App.screens.reinforcements = async (c) => {
+  await App.refreshMe();
+  const d = await API.get('/api/reinforcements');
+
+  c.innerHTML = `
+    <div class="title">🎖 Подкрепления</div>
+    <div class="card">
+      <p class="muted small">Отправляйте подкрепления союзникам из вашего личного альянса (взаимно). Каждое активное подкрепление даёт <b>+${d.bonusPctEach}%</b> к мощи армии и действует ${d.lifetimeH} ч. Трофей «Знамя победы» усиливает эффект.</p>
+      <div class="kv mt"><span class="k">Ваших активных подкреплений</span><span class="v gold" style="font-size:18px">${d.activeCount} / ${d.maxActive}</span></div>
+      <div class="kv"><span class="k">Суммарный бонус к мощи</span><span class="v gold">+${d.totalBonusPct}%</span></div>
+      <div class="kv"><span class="k">Отправлено сегодня</span><span class="v">${d.sentToday} / ${d.perDay}</span></div>
+      <p class="muted small mt">Правила: максимум ${d.maxActive} подкреплений одновременно, все от разных игроков. Вы можете отправить до ${d.perDay} в сутки, по одному каждому союзнику.</p>
+    </div>
+
+    ${d.active.length ? `
+      <div class="card">
+        <div class="name">🛡 Вам помогают</div>
+        ${d.active.map((r) => `
+          <div class="list-row">
+            <div class="grow"><span class="name" style="cursor:pointer" onclick="App.go('profile/${r.fromId}')">${UI.esc(r.fromName)}</span></div>
+            <span class="muted small">ещё ${r.expiresInMin > 60 ? Math.round(r.expiresInMin / 60) + ' ч' : r.expiresInMin + ' мин'}</span>
+          </div>`).join('')}
+      </div>` : ''}
+
+    <div class="card">
+      <div class="name">🤝 Союзники</div>
+      ${d.allies.length ? d.allies.map((a) => `
+        <div class="list-row">
+          <div class="grow">
+            <span class="name" style="cursor:pointer" onclick="App.go('profile/${a.id}')">${App._flagImg(a.flag)} ${UI.esc(a.name)}</span>
+            <div class="muted small">Ур. ${a.level} · подкреплений у него: ${a.theirActive}/${a.theirMax}</div>
+          </div>
+          ${a.canSend
+            ? `<button class="btn btn-orange btn-inline" data-reinf="${a.id}">Отправить</button>`
+            : `<span class="muted small" title="${UI.esc(a.reason)}">${UI.esc(a.reason)}</span>`}
+        </div>`).join('')
+        : '<p class="muted small">В вашем альянсе пока нет реальных игроков. Пригласите союзников во вкладке «Мой альянс».</p>'}
+    </div>`;
+
+  c.querySelectorAll('[data-reinf]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await API.post('/api/reinforcements/send', { toId: btn.dataset.reinf });
+        UI.toast('🎖 Подкрепление отправлено');
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
 };

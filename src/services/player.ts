@@ -468,11 +468,16 @@ function buildArmy(user: User, mode: string): any {
   const legionAtk = legionBonus(user, 'atk');
   const legionDef = legionBonus(user, 'def');
   const legionMul = 1 + (mode === 'atk' ? legionAtk : legionDef);
-  power = Math.round(power * legionMul);
-  powerGround = Math.round(powerGround * legionMul);
-  powerAir = Math.round(powerAir * legionMul);
-  powerSea = Math.round(powerSea * legionMul);
-  powerSecret = Math.round(powerSecret * legionMul);
+  // Подкрепления союзников по личному альянсу: +% к мощи за каждое активное
+  // (усиливается трофеем «Знамя победы»). Действуют и в атаке, и в обороне.
+  let reinMul = 1;
+  try { reinMul = require('./reinforcements').powerMul(user); } catch (e) {}
+  const totalMul = legionMul * reinMul;
+  power = Math.round(power * totalMul);
+  powerGround = Math.round(powerGround * totalMul);
+  powerAir = Math.round(powerAir * totalMul);
+  powerSea = Math.round(powerSea * totalMul);
+  powerSecret = Math.round(powerSecret * totalMul);
   // taken — общее число (для обратной совместимости), unitTaken/secretTaken —
   // раздельно для корректного отображения «Техники в бою: X / cap»
   // (секретные разработки НЕ входят в cap и не должны путать это число).
@@ -1056,6 +1061,9 @@ function publicProfile(target: User, viewer: User): any {
     alliance: allianceInfo(target),
     legion: legionInfo(target),
     battle: { ...target.battle },
+    // «Смерти» для блока «Статистика» в профиле: гибель при подрыве на
+    // мине (счётчик достижения «Смертник»)
+    deathsCount: ((target.counters as any) || {}).deaths || 0,
     ears: target.ears, tokens: target.tokens, earsLost: target.earsLost,
     earsCurrent: target.earsCurrent, earsMax: config.EARS.MAX,
     earPenaltyActive: !!(target.earPenaltyUntil && target.earPenaltyUntil > Date.now()),

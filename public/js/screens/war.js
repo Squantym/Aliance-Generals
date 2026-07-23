@@ -469,7 +469,7 @@ App.screens.war = async (c) => {
     list.innerHTML = opponents.map((o) => `
       <div class="list-row">
         <div class="grow">
-          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}</span>
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}${o.inMyAlliance ? ' <span class="ally-star" title="Состоит в вашем альянсе">⭐</span>' : ''}</span>
           <span class="muted small"> Ур. ${o.level}</span>
           ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
           ${o.isBot
@@ -656,7 +656,12 @@ async function renderConflictDetail(c, confId) {
              <div class="kv mt"><span class="k"><span class="ic-energy"></span> Энергия</span><span class="v">${nextStep.energy}</span></div>
              <div class="kv"><span class="k">⏱ Время</span><span class="v">${nextStep.timeMin} мин</span></div>
              <div class="kv"><span class="k">Награда</span><span class="v">${nextStep.xp} опыта, <span class="ic-dollar"></span>${UI.fmtMoney(nextStep.money)}</span></div>
-             <div class="kv"><span class="k">Требования</span><span class="v small">мощь ${UI.fmtNum(nextStep.require.power)}, ур. ${nextStep.require.level}${nextStep.require.units ? `, ${nextStep.require.units.count} ед. техники ур. ${nextStep.require.units.minLevel}+` : ''}</span></div>
+             <div class="kv"><span class="k">Требования</span><span class="v small">мощь ${UI.fmtNum(nextStep.require.power)}, ур. ${nextStep.require.level}</span></div>
+             ${nextStep.require.units && nextStep.require.units.byType ? `
+               <div class="kv"><span class="k">Техника${nextStep.require.units.profile ? ` <span class="muted">(${UI.esc(nextStep.require.units.profile)})</span>` : ''}</span>
+                 <span class="v small req-units">${Object.entries(nextStep.require.units.byType).map(([t, n]) =>
+                   `<span class="req-unit" title="${UI.esc(App._typeRu(t))}">${App.tabImg('tech_' + t, 20)}${n}</span>`).join('')}
+                 <span class="muted"> ур. ${nextStep.require.units.minLevel}+</span></span></div>` : ''}
              <button class="btn btn-orange mt" data-start="${op.idx}-${nextStep.idx}" ${conf.activeStep || conf.locked ? 'disabled' : ''}>Начать шаг</button>
              ${conf.activeStep ? '<p class="muted small center mt">Сначала завершите текущий активный шаг</p>' : ''}`}
       </div>`;
@@ -678,9 +683,12 @@ async function renderConflictDetail(c, confId) {
         const disc = s.discount && s.discount.pct
           ? ` <span class="gold">(акция −${s.discount.pct}%)</span>` : '';
         const afford = s.canAfford ? '' : `<br><span style="color:var(--red)">Не хватает денег на счету.</span>`;
+        const rows = (s.items || []).map((it) =>
+          `<div class="kv"><span class="k">${App.tabImg('tech_' + it.type, 18)} ${UI.esc(it.typeRu)} — «${UI.esc(it.unitName)}»</span>` +
+          `<span class="v">${it.deficit} шт · $${UI.fmtNum(it.cost)}</span></div>`).join('');
         const ok = await UI.confirm(
-          `Для операции нужно ещё <b>${s.deficit}</b> ед. техники (${UI.esc(s.unitName)}, ур. ${s.minLevel}+).<br>` +
-          `Купить всё разом за <b class="money">$${UI.fmtNum(s.totalCost)}</b>${disc} — по цене магазина?${afford}`,
+          `Для операции не хватает техники (ур. ${s.minLevel}+):${rows}` +
+          `<br>Купить всё разом за <b class="money">$${UI.fmtNum(s.totalCost)}</b>${disc} — по цене магазина?${afford}`,
           { title: '🛒 Не хватает техники', icon: '🚜', okText: s.canAfford ? 'Купить всё' : 'Купить всё (не хватает $)', cancelText: 'Отмена' }
         );
         if (!ok) return;

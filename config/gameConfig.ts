@@ -729,13 +729,36 @@ const SPEC_OP_STEPS = ['Подготовка', 'Выполнение', 'Закр
 // energy = base + индекс_конфликта × 2 + индекс_операции × 1
 // timeMin = base + индекс_операции × 5
 // xpReward = базовый_для_конфликта × шаг (растёт по мере продвижения)
+// Профили спецопераций — какая техника нужна. Чередуются по номеру операции,
+// чтобы требования были разными: где-то нужен десант, где-то флот.
+const SPEC_OP_PROFILES = [
+  { name: 'Общевойсковая',  mix: { ground: 0.6, air: 0.25, sea: 0.15 } },
+  { name: 'Воздушный десант', mix: { air: 0.65, ground: 0.35 } },
+  { name: 'Морская',        mix: { sea: 0.6, air: 0.25, ground: 0.15 } },
+  { name: 'Бронетанковая',  mix: { ground: 0.8, air: 0.2 } },
+  { name: 'Авиаудар',       mix: { air: 0.8, sea: 0.2 } },
+  { name: 'Десантная',      mix: { sea: 0.45, ground: 0.4, air: 0.15 } },
+  { name: 'Штурмовая',      mix: { ground: 0.5, air: 0.3, sea: 0.2 } },
+  { name: 'Комбинированная', mix: { ground: 0.34, air: 0.33, sea: 0.33 } },
+  { name: 'Прикрытие с воздуха', mix: { air: 0.55, ground: 0.3, sea: 0.15 } },
+  { name: 'Тотальная',      mix: { ground: 0.4, air: 0.35, sea: 0.25 } },
+];
+
 function buildConflictOperations(conflict: any, conflictIdx: number): any {
   const ops: any[] = [];
   for (let opIdx = 0; opIdx < conflict.ops; opIdx++) {
     const opName = SPEC_OP_NAMES[opIdx];
     const steps: any[] = [];
     for (let stepIdx = 0; stepIdx < 3; stepIdx++) {
-      const energy = 4 + conflictIdx * 2 + opIdx * 1 + stepIdx;
+      // ЭНЕРГИЯ: сквозная прогрессия по всей цепочке спецопераций.
+      // Первый конфликт: 10 (первый шаг) … 150 (последний шаг).
+      // Последний конфликт: ~700 … 1400 за шаг.
+      const cFrac = CONFLICTS.length > 1 ? conflictIdx / (CONFLICTS.length - 1) : 0;
+      const eLo = 10 + cFrac * (700 - 10);     // нижняя граница конфликта
+      const eHi = 150 + cFrac * (1400 - 150);  // верхняя граница конфликта
+      const stepsTotal = conflict.ops * 3;
+      const innerFrac = stepsTotal > 1 ? (opIdx * 3 + stepIdx) / (stepsTotal - 1) : 0;
+      const energy = Math.round(eLo + (eHi - eLo) * innerFrac);
       const timeMin = 5 + opIdx * 3 + stepIdx * 4 + conflictIdx * 2;
       // Опыт снижен в 3 раза относительно прежней версии — спецоперации
       // больше не основной источник опыта, упор смещён на бои.
@@ -761,6 +784,15 @@ function buildConflictOperations(conflict: any, conflictIdx: number): any {
       const gap = Math.round(15 * (1 - Math.min(1, stepLevel / 250)));
       const unitReqLevel = Math.max(1, stepLevel - gap);
       const unitReqCount = 5 + conflictIdx * 3 + opIdx * 2 + stepIdx;
+      // КОНКРЕТНЫЕ типы техники вместо абстрактных «ед. техники».
+      // Профиль операции чередуется, чтобы задания были разнообразными:
+      // десант (упор на воздух), морская, общевойсковая, штурмовая и т.д.
+      const profile = SPEC_OP_PROFILES[opIdx % SPEC_OP_PROFILES.length];
+      const byType: Record<string, number> = {};
+      for (const [type, weight] of Object.entries(profile.mix)) {
+        const n = Math.round(unitReqCount * (weight as number));
+        if (n > 0) byType[type] = n;
+      }
       steps.push({
         idx: stepIdx,
         name: SPEC_OP_STEPS[stepIdx],
@@ -769,7 +801,7 @@ function buildConflictOperations(conflict: any, conflictIdx: number): any {
         require: {
           power: powerReq,
           level: stepLevel,
-          units: { minLevel: unitReqLevel, count: unitReqCount },
+          units: { minLevel: unitReqLevel, count: unitReqCount, byType, profile: profile.name },
         },
       });
     }
@@ -1140,7 +1172,7 @@ const TROPHIES = [
   { id: 'shield',    name: 'Орден «Стальной щит»',        desc: '+2% к защите за уровень (макс. 20%).',                 perLvl: 2,   apply: 'def',     expensive: true },
   { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает критический урон: на макс. уровне крит наносит ×6 от базового урона (база крита ×2, трофей добавляет ещё +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
-  { id: 'banner',    name: 'Знамя победы',                desc: '+1.5% к подкреплениям за уровень. (заглушка)',         perLvl: 1.5, flavor: true },
+  { id: 'banner',    name: 'Знамя победы',                desc: 'Каждое присланное союзником подкрепление даёт больше мощи: +1.5% за уровень трофея (базовый бонус подкрепления — 2%).', perLvl: 1.5, apply: 'reinforce' },
   { id: 'sewing',    name: 'Набор полевого хирурга',      desc: 'Шанс мгновенно восстановить отрезанное ухо +6% за уровень (макс. 60%).', perLvl: 6, apply: 'ear_restore' },
   // Крит-лечение медика в бою легиона. Раньше шанс ошибочно зависел от
   // ЛОВКОСТИ (стат уворота) — теперь у него собственный трофей.
@@ -1820,9 +1852,18 @@ const SPY = {
 // Уровень 0 (без трофея): окно ещё может появиться (базовые 1%), но
 // даже верный код никогда не срабатывает (0% успеха) — трофей нужен,
 // чтобы обходить сигнализацию, а не просто чтобы узнать код.
+// ── Подкрепления союзникам (личный альянс) ──────────────────────────
+const REINFORCE = {
+  MAX_ACTIVE: 10,     // максимум активных подкреплений у одного игрока
+  PER_DAY: 5,         // сколько игрок может отправить за сутки
+  LIFETIME_H: 24,     // сколько часов действует одно подкрепление
+  BONUS_PCT: 2,       // +2% к мощи армии за каждое активное подкрепление
+                      // (усиливается трофеем «Знамя победы»)
+};
+
 const BANK_HACK = {
   digits: 4,            // длина кода сейфа (без повторов цифр)
-  maxTries: 6,           // попыток на разгадывание кода за одну попытку взлома
+  maxTries: 10,          // попыток на разгадывание кода за одну попытку взлома
   perDay: 10,            // попыток ВЗЛОМА (не окон) в день — обновлено с 1 до 10
   perVictimPerDay: 1,    // одну и ту же жертву можно пытаться взломать не чаще раза в день
   // Шанс, что окно взлома предложат ПОСЛЕ боя (％), по уровню трофея 0..10.
@@ -2056,5 +2097,5 @@ export = {
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
   LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget, contractReward,
-  COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS,
+  COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS, REINFORCE,
 };

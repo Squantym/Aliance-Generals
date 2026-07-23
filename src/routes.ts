@@ -78,8 +78,17 @@ function registerRoutes(app: any) {
       activeTitle: features.activeTitleName(req.user),
       dailyReward: daily ? { streak: daily.streak, message: daily.message } : null,
       pendingRocketHits: (req.user.pendingRocketHits && req.user.pendingRocketHits.length) ? req.user.pendingRocketHits : null,
+      // Сводка «пока вас не было»: атаки/санкции за время оффлайна
+      pendingWarReport: (() => { try { return require('./services/warReport').view(req.user); } catch (e) { return null; } })(),
+      // Очередь окон о новых достижениях (показываются по одному)
+      pendingAchievements: (req.user.pendingAchievements && req.user.pendingAchievements.length)
+        ? req.user.pendingAchievements : null,
     };
   });
+  // Игрок закрыл окно «События» — очищаем сводку оффлайн-событий
+  app.add('POST', '/api/war-report/ack', (req) => require('./services/warReport').ack(req.user));
+  // Игрок закрыл окно достижения — убираем его из очереди
+  app.add('POST', '/api/achievements/ack', (req) => ach.ackPending(req.user, String(req.body.id || '')));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
   app.add('POST', '/api/avatar', (req) => player.setAvatar(req.user, req.body.avatar));
   app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
@@ -272,6 +281,10 @@ function registerRoutes(app: any) {
   // ── Новые системы ──
   // Ежедневный вход
   app.add('GET',  '/api/streak',       (req) => features.loginStreakView(req.user));
+  // Подкрепления союзникам (личный альянс)
+  app.add('GET',  '/api/reinforcements',      (req) => require('./services/reinforcements').view(req.user));
+  app.add('POST', '/api/reinforcements/send', act((req, n) => require('./services/reinforcements').send(req.user, req.body.toId, n)));
+
   // Титулы
   app.add('GET',  '/api/titles',     (req) => features.titlesView(req.user));
   app.add('POST', '/api/titles/set', act((req, n) => features.setTitle(req.user, req.body.titleId, n)));

@@ -56,7 +56,7 @@ const fs=require('fs'),path=require('path'); const DATA=path.join(process.cwd(),
  const usr=Object.values(player.users()).find(x=>x.name==='Оперативник');
  // Дадим уровень, энергию и МНОГО низкотировой техники (для мощи), но НЕ дадим
  // технику высокого тира, которую требует require.units более сложного конфликта.
- usr.level=300; const mx=player.maxima(usr); usr.res.en.cur=mx.en;
+ usr.level=300; usr.skills.energy=4000; const mx=player.maxima(usr); usr.res.en.cur=Math.max(mx.en, 5000);
  const conf=c.CONFLICTS[c.CONFLICTS.length-1]; // сложный конфликт
  const reqMin=conf.operations[0].steps[0].require.units.minLevel;
  // Мощнейший юнит НИЖЕ гейта: даёт огромную мощь (пройдёт powerReq), но не
@@ -69,10 +69,16 @@ const fs=require('fs'),path=require('path'); const DATA=path.join(process.cwd(),
  ok('старт вернул смету needUnits (нехватка техники)', !!(res && res.needUnits && res.needUnits.deficit > 0));
  ok('шаг НЕ запущен при нехватке техники', (usr.missionQueue||[]).length === 0);
  // Теперь дадим технику НУЖНОГО уровня — требование по технике должно уйти
- const highUnit=c.UNITS.filter(u=>u.unlock>=reqMin).sort((a,b)=>a.unlock-b.unlock)[0];
- if (highUnit) { usr.units[highUnit.id]={0:conf.operations[0].steps[0].require.units.count+5,1:0,2:0};
+ // Выдаём технику КАЖДОГО требуемого рода войск (требования теперь по типам)
+ const need=conf.operations[0].steps[0].require.units;
+ let gave=0;
+ for (const [t, n] of Object.entries(need.byType||{})) {
+   const cu=c.UNITS.filter(x=>x.type===t && x.unlock>=reqMin).sort((a,b)=>a.unlock-b.unlock)[0];
+   if (cu) { usr.units[cu.id]={0:Number(n)+10,1:0,2:0}; gave++; }
+ }
+ if (gave) {
    const res2 = missions.startStep(usr, conf.id, 0, 0, []);
-   ok('после выдачи техники нужного уровня старт проходит без окна покупки', !res2.needUnits && !!res2.processId); }
+   ok('после выдачи техники всех нужных родов старт проходит без окна покупки', !res2.needUnits && !!res2.processId); }
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

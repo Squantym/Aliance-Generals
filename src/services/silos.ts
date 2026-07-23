@@ -330,6 +330,17 @@ function resolveInFlight(): void {
         const report = applyRocketDamage(rk.attackerName, target, rk.powerFrac);
         target.pendingRocketHits = (target.pendingRocketHits || []).concat(report).slice(-10);
         notifications.push(target.id, 'rocket_hit', `🚀 ${rk.attackerName} нанёс по вам ракетный удар`, report);
+
+        // Отчёт АТАКУЮЩЕМУ: он тоже должен увидеть результат своего удара.
+        // Тот же report, но помечен asAttacker и с именем цели — окно
+        // показывается с заголовком «Ваша ракета поразила цель».
+        const attacker = users[rk.attackerId];
+        if (attacker) {
+          const myReport = { ...report, asAttacker: true, targetName: target.name, targetId: target.id };
+          attacker.pendingRocketHits = (attacker.pendingRocketHits || []).concat(myReport).slice(-10);
+          notifications.push(attacker.id, 'rocket_result',
+            `🚀 Ваша ракета поразила «${target.name}»`, myReport);
+        }
       }
       rk.resolved = true; rk.resolvedAt = now; changed = true;
     }

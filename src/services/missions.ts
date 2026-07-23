@@ -62,10 +62,11 @@ function meetsRequirements(user: User, step: any): { ok: boolean; reason?: strin
   // Требование к технике по уровню: нужно владеть N единицами техники,
   // доступной примерно на уровне миссии (тир не ниже require.units.minLevel).
   const ur = step.require.units;
-  if (ur && ur.count > 0) {
-    const owned = ownedUnitsAtLevel(user, ur.minLevel);
-    if (owned < ur.count) {
-      return { ok: false, failedUnits: true, reason: `Нужно ${ur.count} ед. техники уровня от ${ur.minLevel} (у вас ${owned})` };
+  if (ur && ur.byType) {
+    const short = typeShortfalls(user, step).filter((x) => x.lack > 0);
+    if (short.length) {
+      const txt = short.map((x) => `${x.lack} ед. ${TYPE_RU[x.type] || x.type}`).join(', ');
+      return { ok: false, failedUnits: true, reason: `Не хватает техники (ур. от ${ur.minLevel}): ${txt}` };
     }
   }
   return { ok: true };
@@ -74,9 +75,10 @@ function meetsRequirements(user: User, step: any): { ok: boolean; reason?: strin
 // Самая дешёвая единица техники, доступная игроку (unlock ≤ уровень) и
 // подходящая под требование операции (unlock ≥ minLevel). Такая почти всегда
 // есть: шаг требует уровень ≥ stepLevel, а minLevel = stepLevel−15 < уровня.
-function pickRequiredUnit(user: User, minLevel: number): any | null {
+function pickRequiredUnit(user: User, minLevel: number, type?: string): any | null {
   const units = require('./units');
-  const cands = config.UNITS.filter((cu: any) => (cu.unlock || 0) >= minLevel && (cu.unlock || 0) <= user.level);
+  const cands = config.UNITS.filter((cu: any) =>
+    (cu.unlock || 0) >= minLevel && (cu.unlock || 0) <= user.level && (!type || cu.type === type));
   if (!cands.length) return null;
   cands.sort((a: any, b: any) => units.priceFor(user, a) - units.priceFor(user, b));
   return cands[0];
@@ -87,22 +89,34 @@ function pickRequiredUnit(user: User, minLevel: number): any | null {
 // требования по технике нет либо оно уже выполнено.
 function unitShortfall(user: User, step: any): any | null {
   const ur = step.require && step.require.units;
-  if (!ur || ur.count <= 0) return null;
-  const have = ownedUnitsAtLevel(user, ur.minLevel);
-  const deficit = ur.count - have;
-  if (deficit <= 0) return null;
-  const cu = pickRequiredUnit(user, ur.minLevel);
-  if (!cu) return null;
+  if (!ur || !ur.byType) return null;
+  const short = typeShortfalls(user, step).filter((x) => x.lack > 0);
+  if (!short.length) return null;
+
   const units = require('./units');
   const discounts = require('./discounts');
-  const unitPrice = units.priceFor(user, cu);       // цена со скидкой/акцией
-  const basePrice = units.basePriceFor(user, cu);   // без акции
+  const items: any[] = [];
+  let totalCost = 0;
+  for (const sh of short) {
+    const cu = pickRequiredUnit(user, ur.minLevel, sh.type);
+    if (!cu) continue;                       // нет доступной техники этого рода
+    const price = units.priceFor(user, cu);
+    const cost = price * sh.lack;
+    totalCost += cost;
+    items.push({
+      type: sh.type, typeRu: TYPE_RU[sh.type] || sh.type,
+      need: sh.need, have: sh.have, deficit: sh.lack,
+      unitId: cu.id, unitName: cu.name, unitPrice: price, cost,
+    });
+  }
+  if (!items.length) return null;
   return {
-    needed: ur.count, have, deficit, minLevel: ur.minLevel,
-    unitId: cu.id, unitName: cu.name,
-    unitPrice, basePrice, totalCost: unitPrice * deficit,
-    discount: discounts.info('unit'),               // {active, pct, ...} — акция
-    canAfford: user.dollars >= unitPrice * deficit,
+    minLevel: ur.minLevel, profile: ur.profile || '',
+    items,
+    deficit: items.reduce((s2, x) => s2 + x.deficit, 0),
+    totalCost,
+    discount: discounts.info('unit'),
+    canAfford: user.dollars >= totalCost,
   };
 }
 
@@ -116,21 +130,44 @@ function buyRequiredUnits(user: User, confId: string, opIdx: number, stepIdx: nu
   const short = unitShortfall(user, step);
   if (!short) throw new u.ApiError('Техники уже достаточно');
   if (!short.canAfford) throw new u.ApiError(`Не хватает денег: нужно $${u.fmt(short.totalCost)}`);
-  // Покупаем через units.buy — там применяется акция, списание и счётчики
-  require('./units').buy(user, short.unitId, short.deficit, notices);
-  notices.push(`🛒 Докуплено ${short.deficit} ед. «${short.unitName}» для операции.`);
-  return { bought: short.deficit, unitId: short.unitId, spent: short.totalCost };
+  // Покупаем каждый недостающий род войск (цена — с акцией, через units.buy)
+  const units = require('./units');
+  const bought: any[] = [];
+  for (const it of short.items) {
+    units.buy(user, it.unitId, it.deficit, notices);
+    bought.push({ type: it.type, unitId: it.unitId, count: it.deficit });
+  }
+  const txt = short.items.map((x: any) => `${x.deficit} ед. ${x.typeRu} («${x.unitName}»)`).join(', ');
+  notices.push(`🛒 Докуплено для операции: ${txt}.`);
+  return { bought, spent: short.totalCost };
 }
 
 // Сколько всего единиц техники (всех Mk) с уровнем разблокировки >= minLevel
-function ownedUnitsAtLevel(user: User, minLevel: number): number {
+function ownedUnitsAtLevel(user: User, minLevel: number, type?: string): number {
   let n = 0;
   for (const [unitId, mkMap] of Object.entries(user.units || {})) {
     const def = config.UNIT_BY_ID[unitId];
     if (!def || (def.unlock || 0) < minLevel) continue;
+    if (type && def.type !== type) continue;   // считаем только нужный род войск
     for (const cnt of Object.values(mkMap as any)) n += Number(cnt) || 0;
   }
   return n;
+}
+
+// Человекочитаемые названия родов войск
+const TYPE_RU: Record<string, string> = { ground: 'наземной', air: 'воздушной', sea: 'морской' };
+
+// Дефицит техники ПО ТИПАМ для шага: [{type, need, have, lack}]
+function typeShortfalls(user: User, step: any): any[] {
+  const ur = step.require && step.require.units;
+  if (!ur) return [];
+  const byType = ur.byType || {};
+  const out: any[] = [];
+  for (const [type, need] of Object.entries(byType)) {
+    const have = ownedUnitsAtLevel(user, ur.minLevel, type);
+    out.push({ type, need: Number(need), have, lack: Math.max(0, Number(need) - have) });
+  }
+  return out;
 }
 
 // Проверка ресурсов и активного слота

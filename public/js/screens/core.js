@@ -308,6 +308,7 @@ App.screens.home = async (c) => {
   const small = [
     ['profile', 'profile', 'Профиль', ''],
     ['alliance', 'alliance', 'Альянс', ''],
+    ['reinforcements', 'alliance', 'Подкрепления', ''],
     ['fame/alltime/level', 'fame', 'Зал славы', ''],
     ['chat', 'chat', 'Общение', ''],
     ['mail', 'mail', 'Почта', m.mailUnread > 0 ? `<span class="badge">${m.mailUnread}</span>` : ''],
@@ -527,29 +528,52 @@ App.screens.profile = async (c, param) => {
     <div class="title">Личное дело</div>
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
-      <div class="list-row">
-        ${p.avatar
-          ? `<div class="pf-avatar-sm" style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)">
-              <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
-              ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Сменить аватар">📷</button>' : ''}
-            </div>`
-          : `<div class="pf-avatar ${p.profileFrame ? UI.esc(p.profileFrame) : ''}">
-              ${p.online ? '🟢' : '⚪'}
-              ${own ? '<button class="pf-avatar-edit" id="pf-avatar-btn" title="Поставить аватар">📷</button>' : ''}
-            </div>`}
-        <div class="grow">
-          <div class="name" style="font-size:17px">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)} ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}</div>
-          ${p.activeTitle ? `<div class="pf-title">🏅 ${UI.esc(p.activeTitle)}</div>` : ''}
-          <div class="muted small">Звание: <b>${UI.esc(p.rank)}</b> · Ур. ${p.level} · Рейтинг ${UI.fmtNum(p.rating)}</div>
-          ${p.countryName ? `<div class="muted small">${App._flagImg(p.flag)} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
-          <div class="muted small">${(p.alliance && p.alliance.members) ? 'Альянс: <b>' + p.alliance.members + ' бойцов</b>' : 'Без альянса'}</div>
-          ${p.legion ? `<div class="muted small">Легион: <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${p.legion.id}')">🏰 ${UI.esc(p.legion.name)}</b> <span style="font-size:10px">(${p.legion.rankName || 'Боец'})</span></div>` : '<div class="muted small">Без легиона</div>'}
+      <div class="pf2-head">
+        <span class="pf2-name">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)}</span>
+        ${p.activeTitle ? `<span class="pf2-title">${UI.esc(p.activeTitle)}</span>` : ''}
+        ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}
+      </div>
+      <div class="pf2-meta">
+        <span>Ур. <b>${p.level}</b></span>
+        ${(p.alliance && p.alliance.members) ? `<span>Ал. <b>${p.alliance.members}</b></span>` : ''}
+        <span>Рейтинг <b>${UI.fmtNum(p.rating)}</b></span>
+      </div>
+      <div id="status-box" class="pf2-status">
+        <p class="small" style="font-style:italic;margin:0">${p.status ? UI.esc(p.status) : '<span class="muted">Статус не задан</span>'}</p>
+        ${own ? '<a href="javascript:void 0" class="small pf2-edit-status" id="edit-status">редактировать статус</a>' : ''}
+      </div>
+      <div class="pf2-row">
+        <div class="pf2-avatar ${!p.avatar && p.profileFrame ? UI.esc(p.profileFrame) : ''}"
+             ${p.avatar ? `style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
+          ${p.avatar ? '' : '<span class="pf2-avatar-stub">👤</span>'}
+          <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
+          ${own ? `<button class="pf-avatar-edit" id="pf-avatar-btn" title="${p.avatar ? 'Сменить аватар' : 'Поставить аватар'}">📷</button>` : ''}
+        </div>
+        <div class="pf2-info">
+          <div class="kv" style="padding:2px 0"><span class="k">Звание:</span><span class="v" style="color:var(--green);font-weight:700">${UI.esc(p.rank)}</span></div>
+          <div class="pf2-stats-label">Статистика:</div>
+          <div class="kv" style="padding:2px 0"><span class="k">победы</span><span class="v">${UI.fmtNum((p.battle.wins||0) + (p.battle.defWins||0))}</span></div>
+          <div class="kv" style="padding:2px 0"><span class="k">поражения</span><span class="v">${UI.fmtNum((p.battle.losses||0) + (p.battle.defLosses||0))}</span></div>
+          <div class="kv" style="padding:2px 0"><span class="k">убийства</span><span class="v">${UI.fmtNum(p.battle.fatalities||0)}</span></div>
+          <div class="kv" style="padding:2px 0"><span class="k">смерти</span><span class="v">${UI.fmtNum(p.deathsCount||0)}</span></div>
         </div>
       </div>
-      <div id="status-box">
-        <p class="small mt" style="font-style:italic">${p.status ? UI.esc(p.status) : '<span class="muted">Статус не задан</span>'}</p>
-        ${own ? '<a href="javascript:void 0" class="small" id="edit-status">редактировать статус</a>' : ''}
+      ${p.countryName ? `<div class="muted small mt">${App._flagImg(p.flag)} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
+      ${p.legion ? `<div class="muted small">Легион: <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${p.legion.id}')">🏰 ${UI.esc(p.legion.name)}</b> <span style="font-size:10px">(${p.legion.rankName || 'Боец'})</span></div>` : '<div class="muted small">Без легиона</div>'}
+      ${own ? `
+      <div class="pf2-vip">
+        <div class="pf2-vip-note">Ощутите все преимущества и удобства игры!</div>
+        <button class="btn pf2-vip-btn" id="pf-vip" disabled>Стать VIP</button>
+        <a href="javascript:void 0" class="pf2-vip-more" id="pf-vip-more">Нажмите, чтобы увидеть подробности</a>
       </div>
+      ${p.power ? `
+      <div class="pf2-be">
+        <div class="pf2-be-title">Боевая эффективность:</div>
+        <div class="pf2-be-grid">
+          <span class="k">Атака</span><span class="pf2-be-val">${UI.fmtNum(p.power.atk)}</span><span class="k">Шанс крита</span><span class="pf2-be-val">${p.critChancePct} %</span>
+          <span class="k">Защита</span><span class="pf2-be-val">${UI.fmtNum(p.power.def)}</span><span class="k">Шанс уворота</span><span class="pf2-be-val">${p.dodgeChancePct} %</span>
+        </div>
+      </div>` : ''}` : ''}
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-msg"><span class="ic-mail"></span> Написать сообщение</button>` : ''}
@@ -577,13 +601,8 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">📊 Опыт</span><span class="v">${UI.fmtNum(App.me.xp)} / ${UI.fmtNum(App.me.xpNext)}</span></div>
       <div class="mt">${UI.bar(App.me.xp, App.me.xpNext, 'xp', `До ${App.me.level + 1} уровня: ${UI.fmtNum(Math.max(0, App.me.xpNext - App.me.xp))} XP`)}</div>
       <hr class="hr">` : ''}
-      ${p.isOwn && p.power ? `
-      <div class="kv"><span class="k">⚔ Атака</span><span class="v">${UI.fmtNum(p.power.atk)}</span></div>
-      <div class="kv"><span class="k">🛡 Защита</span><span class="v">${UI.fmtNum(p.power.def)}</span></div>` : ''}
       <div class="kv"><span class="k">🚚 Вместимость армии</span><span class="v">${UI.fmtNum(p.capacity)}</span></div>
       ${p.isOwn ? `
-      <div class="kv"><span class="k">💥 Шанс крита</span><span class="v">${p.critChancePct}%</span></div>
-      <div class="kv"><span class="k">🏃 Шанс уворота</span><span class="v">${p.dodgeChancePct}%</span></div>
       ${p.powerStats ? `<button class="btn mt" id="pf-stats-toggle" style="width:100%">📊 Подробная статистика</button>` : ''}` : ''}
       <hr class="hr">
       <div class="kv"><span class="k">Нападения</span><span class="v">${UI.fmtNum(p.battle.attacks)}</span></div>
@@ -673,6 +692,9 @@ App.screens.profile = async (c, param) => {
     };
     const avBtn = document.getElementById('pf-avatar-btn');
     if (avBtn) avBtn.onclick = () => App._showAvatarPicker(p.avatar);
+    // VIP — пока заглушка: кнопка неактивна, «подробности» показывают тост
+    const vipMore = document.getElementById('pf-vip-more');
+    if (vipMore) vipMore.onclick = () => UI.toast('🔒 VIP-статус скоро появится в игре');
   }
 
   // Разворачивание/сворачивание подробной статистики мощи

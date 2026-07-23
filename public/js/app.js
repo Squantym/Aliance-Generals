@@ -300,6 +300,14 @@ const App = {
     if (!App.me) location.hash = '#auth';
     App.route();
 
+    // Сводка «пока вас не было»: атаки и санкции за время оффлайна.
+    // Показываем первой — раньше подарков и достижений.
+    if (App.me && App.me.pendingWarReport) {
+      setTimeout(() => App._showWarReport(App.me.pendingWarReport), 400);
+    } else if (App.me && App.me.pendingAchievements && App.me.pendingAchievements.length) {
+      // Окна новых достижений (в т.ч. заработанных оффлайн) — по одному
+      setTimeout(() => App._processAchQueue(), 600);
+    }
     // Показываем подарки от администратора при входе
     if (App.me && App.me.pendingGifts && App.me.pendingGifts.length) {
       setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 800);
@@ -348,6 +356,13 @@ const App = {
       // Если появились новые уведомления — показываем окно/баннер атаки
       if (App.me.notifUnread > prevNotifUnread) {
         App._checkNewAttackNotification();
+      }
+      // Сводка «пока вас не было» (если init не успел её показать)
+      if (App.me.pendingWarReport) App._showWarReport(App.me.pendingWarReport);
+      // Новые достижения: окно появляется сразу после действия игрока;
+      // несколько достижений за одно действие показываются по очереди
+      if (App.me.pendingAchievements && App.me.pendingAchievements.length) {
+        App._processAchQueue();
       }
       // Проверяем подарки от администратора
       if (App.me.pendingGifts && App.me.pendingGifts.length) {
@@ -480,6 +495,8 @@ const App = {
     if (!trophyId) return '';
     return `<img class="ic-trophy" src="/img/trophies/${trophyId}.webp" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.style.display='none'">`;
   },
+  // Русское название рода войск
+  _typeRu(t) { return { ground: 'Наземная', air: 'Воздушная', sea: 'Морская' }[t] || t; },
   // Иконка внутренней вкладки меню (по ключу, напр. tech_air, legion_war)
   tabImg(key, size = 22) {
     if (!key) return '';
@@ -1702,6 +1719,13 @@ const App = {
         <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.received} ед.</span></div>
         <div class="kv"><span class="k">Потери</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>
         <p class="small mt" style="color:var(--money)">✅ Атака отбита!</p>`;
+    } else if (n.kind === 'rocket_result') {
+      // Результат СВОЕГО удара — открывается тем же окном
+      body = `
+        <div class="kv"><span class="k">Цель</span><span class="v name">${UI.esc(p.targetName || '—')}</span></div>
+        <div class="kv"><span class="k">Мощность</span><span class="v">${p.powerPct}%</span></div>
+        <div class="kv"><span class="k">Уничтожено техники</span><span class="v">${UI.fmtNum(p.techDestroyedCount || 0)}</span></div>
+        <div class="kv"><span class="k">Разрушено зданий</span><span class="v">${UI.fmtNum(p.buildingsDestroyedCount || 0)}</span></div>`;
     } else if (n.kind === 'rocket_hit') {
       body = `
         <div class="kv"><span class="k">Урон ракеты</span><span class="v dmg-take">${UI.fmtNum(p.damage)} (мощность ${p.powerPct}%)</span></div>
@@ -1762,27 +1786,23 @@ const App = {
 
   // Окна попаданий ракет по игроку (для офлайн-цели). Показываем по очереди,
   // каждое — со списком жертв (техника/здания/диверсанты), затем закрываем на сервере.
-  async _showRocketHits(list) {
-    if (!list || !list.length) return;
-    if (document.getElementById('rocket-hit-window')) return;
-    for (const rep of list) {
-      await new Promise((resolve) => {
-        const techRows = Object.entries(rep.techLost || {}).map(([nm, cnt]) =>
+  // Разметка окна отчёта по ракетному удару (используется и очередью, и просмотром)
+  _rocketReportHtml(rep) {
+    const techRows = Object.entries(rep.techLost || {}).map(([nm, cnt]) =>
           `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('') || '<p class="muted small">Техника уцелела</p>';
-        const buildRows = Object.entries(rep.destroyedBuildings || {}).map(([nm, cnt]) =>
+    const buildRows = Object.entries(rep.destroyedBuildings || {}).map(([nm, cnt]) =>
           `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('') || '<p class="muted small">Постройки уцелели</p>';
-        const SAB_RU = { ground: 'Наземные диверсанты', sea: 'Морские диверсанты', air: 'Воздушные диверсанты',
+    const SAB_RU = { ground: 'Наземные диверсанты', sea: 'Морские диверсанты', air: 'Воздушные диверсанты',
           secret: 'Секретные диверсанты', building: 'Диверсанты по постройкам', suicide: 'Смертники' };
-        const sab = rep.lostSaboteurs && Object.keys(rep.lostSaboteurs).length
+    const sab = rep.lostSaboteurs && Object.keys(rep.lostSaboteurs).length
           ? Object.entries(rep.lostSaboteurs).map(([type, cnt]) => `<div class="kv"><span class="k">${App.sabImg(type, 22)} ${UI.esc(SAB_RU[type] || type)}</span><span class="v dmg-take">−${cnt}</span></div>`).join('')
           : '';
-        const popup = document.createElement('div');
-        popup.id = 'rocket-hit-window';
-        popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px';
-        popup.innerHTML = `
-          <div style="background:var(--card);border:2px solid var(--red);border-radius:12px;max-width:440px;width:100%;padding:20px;max-height:85vh;overflow-y:auto">
-            <div style="font-size:18px;font-weight:bold;text-align:center;margin-bottom:4px">🚀 По вам нанесён ракетный удар!</div>
-            <p class="muted small" style="text-align:center;margin-bottom:14px">От: <b>${UI.esc(rep.attackerName || 'неизвестно')}</b> · Мощность ${rep.powerPct}%</p>
+    return `
+          <div style="background:var(--card);border:2px solid ${rep.asAttacker ? 'var(--money)' : 'var(--red)'};border-radius:12px;max-width:440px;width:100%;padding:20px;max-height:85vh;overflow-y:auto">
+            <div style="font-size:18px;font-weight:bold;text-align:center;margin-bottom:4px">${rep.asAttacker ? '🚀 Ваша ракета поразила цель!' : '🚀 По вам нанесён ракетный удар!'}</div>
+            <p class="muted small" style="text-align:center;margin-bottom:14px">${rep.asAttacker
+              ? `Цель: <b>${UI.esc(rep.targetName || 'противник')}</b>`
+              : `От: <b>${UI.esc(rep.attackerName || 'неизвестно')}</b>`} · Мощность ${rep.powerPct}%</p>
             <div style="display:flex;gap:10px;margin-bottom:14px">
               <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
                 <div style="font-size:24px;font-weight:bold;color:var(--red)">${rep.techDestroyedCount || 0}</div>
@@ -1793,11 +1813,34 @@ const App = {
                 <div class="muted small">зданий</div>
               </div>
             </div>
-            <div style="margin-bottom:10px"><b>🔧 Уничтоженная техника:</b>${techRows}</div>
-            <div style="margin-bottom:10px"><b>🏚 Разрушенные здания:</b>${buildRows}</div>
-            ${sab ? `<div style="margin-bottom:14px"><b>${App.menuImg('saboteurs', 20)} Погибшие диверсанты:</b>${sab}</div>` : ''}
+            <div style="margin-bottom:10px"><b>🔧 ${rep.asAttacker ? 'Уничтожено техники врага' : 'Уничтоженная техника'}:</b>${techRows}</div>
+            <div style="margin-bottom:10px"><b>🏚 ${rep.asAttacker ? 'Разрушено зданий врага' : 'Разрушенные здания'}:</b>${buildRows}</div>
+            ${sab ? `<div style="margin-bottom:14px"><b>${App.menuImg('saboteurs', 20)} ${rep.asAttacker ? 'Уничтожено диверсантов врага' : 'Погибшие диверсанты'}:</b>${sab}</div>` : ''}
             <button class="btn btn-orange" id="rocket-hit-close" style="width:100%">Закрыть</button>
           </div>`;
+  },
+
+  // Показать ОДИН отчёт по ракете (из уведомления). Не трогает очередь
+  // pendingRocketHits — это просто просмотр «постфактум».
+  _showRocketReport(rep) {
+    if (!rep || document.getElementById('rocket-hit-window')) return;
+    const popup = document.createElement('div');
+    popup.id = 'rocket-hit-window';
+    popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px';
+    popup.innerHTML = App._rocketReportHtml(rep);
+    document.body.appendChild(popup);
+    popup.querySelector('#rocket-hit-close').onclick = () => popup.remove();
+  },
+
+  async _showRocketHits(list) {
+    if (!list || !list.length) return;
+    if (document.getElementById('rocket-hit-window')) return;
+    for (const rep of list) {
+      await new Promise((resolve) => {
+        const popup = document.createElement('div');
+        popup.id = 'rocket-hit-window';
+        popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px';
+        popup.innerHTML = App._rocketReportHtml(rep);
         document.body.appendChild(popup);
         popup.querySelector('#rocket-hit-close').onclick = async () => {
           popup.remove();
@@ -1807,6 +1850,118 @@ const App = {
       });
     }
     App.refreshMe && App.refreshMe();
+  },
+
+  // ── Окно «События» — сводка за время отсутствия ─────────────────
+  // Показывается один раз при заходе в игру, если пока игрока не было
+  // на него нападали или объявляли санкции. Закрытие -> ack на сервер.
+  _warReportShown: false,
+
+  _showWarReport(rep) {
+    if (!rep || App._warReportShown) return;
+    if (document.getElementById('war-report-window')) return;
+    App._warReportShown = true;
+
+    const hasWar = rep.attacks > 0;
+    const losses = rep.losses || [];
+    const sanctions = rep.sanctions || [];
+
+    // Сетка потерянной техники: картинка + ×N (клик — модалка предмета)
+    const lossesHtml = losses.length ? UI.battleImgRow(losses, 'units') : '';
+
+    const sancHtml = sanctions.map((s) => `
+      <div class="list-row" style="padding:4px 0">
+        <div class="grow">${App._flagImg(s.byFlag)} <a href="#" style="color:var(--green)"
+          onclick="document.getElementById('war-report-window').querySelector('#war-report-close').click();App.go('profile/${s.byId}');return false">${UI.esc(s.byName)}</a>
+          <span class="muted small">(x${s.count})</span></div>
+        <div class="gold"><span class="ic-dollar"></span> ${UI.fmtMoney(s.amount)}</div>
+      </div>`).join('');
+
+    const popup = document.createElement('div');
+    popup.id = 'war-report-window';
+    popup.className = 'game-dialog-overlay';
+    popup.innerHTML = `
+      <div class="events-popup">
+        <div class="events-popup-title">События</div>
+        ${hasWar ? `
+          <div class="events-popup-section">Война</div>
+          <div class="events-red">Атак на вас: ${UI.fmtNum(rep.attacks)}</div>
+          ${rep.defended > 0 ? `<div style="color:var(--green);font-size:13px">Отбито: ${UI.fmtNum(rep.defended)}</div>` : ''}
+          <div class="events-red">Поражений: ${UI.fmtNum(rep.defeats)}</div>
+          ${rep.moneyLost > 0 ? `<div class="events-red">Потеряно денег: <span class="ic-dollar"></span> <span class="gold">${UI.fmtMoney(rep.moneyLost)}</span></div>` : ''}
+          ${losses.length ? `<div class="events-red">Потери:</div>${lossesHtml}` : ''}
+        ` : ''}
+        ${sanctions.length ? `
+          <div class="events-popup-section">Санкции</div>
+          <div class="events-red">Санкции, объявленные на вас:</div>
+          ${sancHtml}
+        ` : ''}
+        <button class="btn mt" id="war-report-close" style="width:100%">Закрыть</button>
+      </div>`;
+    document.body.appendChild(popup);
+    popup.querySelector('#war-report-close').onclick = async () => {
+      popup.remove();
+      try { await API.post('/api/war-report/ack'); } catch (e) {}
+      if (App.me) App.me.pendingWarReport = null;
+      // Следом показываем накопившиеся окна достижений (если есть)
+      App._processAchQueue();
+    };
+  },
+
+  // ── Окна новых достижений ────────────────────────────────────────
+  // Показываются по одному: закрыл окно — открылось следующее, пока
+  // игрок не увидит все полученные достижения (включая заработанные
+  // оффлайн). «Отобразить» ставит разблокированный титул активным.
+  _shownAchIds: new Set(),
+
+  _processAchQueue() {
+    const q = (App.me && App.me.pendingAchievements) || [];
+    const next = q.find((p) => !App._shownAchIds.has(p.id));
+    if (!next) return;
+    // Не перекрываем окно «События» — достижения покажем после него
+    if (document.getElementById('war-report-window')) return;
+    if (document.getElementById('ach-popup')) return;
+    App._shownAchIds.add(next.id);
+
+    const rewardText = `$${UI.fmtMoney(next.dollars || 0)}${next.gold ? ` и 🪙 ${next.gold}` : ''}`;
+    const popup = document.createElement('div');
+    popup.id = 'ach-popup';
+    popup.className = 'game-dialog-overlay';
+    popup.innerHTML = `
+      <div class="ach-popup">
+        <button class="ach-popup-x" id="ach-close-x" title="Закрыть">✕</button>
+        <div class="ach-popup-head">Вы получили новое достижение:</div>
+        <div class="ach-popup-name">${UI.esc(next.name)}${next.stage ? ` <span class="muted small">— этап ${next.stage}/5</span>` : ''}</div>
+        <div class="ach-popup-desc">${UI.esc(next.desc)}: ${UI.fmtNum(next.threshold)}. Награда: ${rewardText}.</div>
+        <div class="ach-popup-img">${App.achImg(next.achId, next.stage, 84)}</div>
+        ${next.title ? `
+          <a href="javascript:void 0" class="ach-popup-show" id="ach-show-title">отобразить</a>
+          <div class="muted" style="font-size:11px;text-align:center">(можно сменить в профиле)</div>
+        ` : ''}
+        <button class="btn mt" id="ach-close" style="width:100%">Закрыть</button>
+      </div>`;
+    document.body.appendChild(popup);
+
+    // Закрыть окно: ack на сервер, из очереди убрать, показать следующее
+    const close = async () => {
+      popup.remove();
+      try { await API.post('/api/achievements/ack', { id: next.id }); } catch (e) {}
+      if (App.me && App.me.pendingAchievements) {
+        App.me.pendingAchievements = App.me.pendingAchievements.filter((p) => p.id !== next.id);
+      }
+      App._processAchQueue();
+    };
+    popup.querySelector('#ach-close').onclick = close;
+    popup.querySelector('#ach-close-x').onclick = close;
+    const showBtn = popup.querySelector('#ach-show-title');
+    if (showBtn) showBtn.onclick = async () => {
+      showBtn.style.pointerEvents = 'none';
+      try {
+        await API.post('/api/titles/set', { titleId: next.titleId });
+        UI.toast(`🏅 Титул «${next.title}» отображается в профиле`);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+      close();
+    };
   },
 
   // Баннер нападения террористов на шахту — на любом экране; ведёт в «Шахты».

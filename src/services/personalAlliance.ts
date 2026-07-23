@@ -65,6 +65,15 @@ function logInvite(user: User): void {
 }
 
 // ── Вид экрана альянса ────────────────────────────────────────────
+// Состоят ли игроки во ВЗАИМНОМ личном альянсе (каждый есть в ростере другого).
+// Используется для значка союзника в «Войне» и для отправки подкреплений.
+function areAllies(a: any, b: any): boolean {
+  if (!a || !b || a.id === b.id) return false;
+  const inA = (a.allianceRoster || []).some((m: any) => m && m.id === b.id);
+  const inB = (b.allianceRoster || []).some((m: any) => m && m.id === a.id);
+  return inA && inB;
+}
+
 function view(user: User) {
   ensure(user);
   const used = invitesUsedThisHour(user);
@@ -237,6 +246,7 @@ function removeMember(user: User, memberId: string, notices: Notices) {
 }
 
 export = {
+  areAllies,
   ensure, maxMembers, view, inviteBot, buyDiplomat, invitePlayer,
   myInvites, acceptInvite, declineInvite, removeMember,
 };

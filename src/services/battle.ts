@@ -196,6 +196,7 @@ function opponents(user: User): any {
   const botsCount = 2 + (Math.random() < 0.5 ? 1 : 0); // 2 или 3 бота
   const picked = real.slice(0, Math.max(0, 10 - botsCount));
 
+  const pa = require('./personalAlliance');
   const list = picked.map((t) => {
     const a = player.allianceOf(t);
     return {
@@ -203,6 +204,8 @@ function opponents(user: User): any {
       flag: player.flag(t), isBot: false,
       online: Date.now() - (t.lastSeen || 0) < 5 * 60 * 1000,
       allianceMembers: a ? a.members.length : 0,
+      // ⭐ этот игрок состоит в ВАШЕМ личном альянсе (взаимно)
+      inMyAlliance: pa.areAllies(user, t),
     };
   });
   while (list.length < 10) {
@@ -210,6 +213,7 @@ function opponents(user: User): any {
     list.push({
       id: b.id, name: b.name, level: b.level, flag: b.flag, isBot: true, online: true,
       allianceMembers: b.allianceMembers || 0,
+      inMyAlliance: false, // боты не бывают союзниками по личному альянсу
     });
   }
   u.shuffle(list);
@@ -679,7 +683,11 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       ach.bump(target, 'losses', 1, []); // «Битый»: поражение в обороне
       player.addRating(target, -1);      // рейтинг: поражение −1
       // Потери защитника (только если он реальный игрок), с учётом крита
-      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce), crit));
+      const defUnitLosses = removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce), crit);
+      enemyLosses.push(...defUnitLosses);
+      // Если защитник оффлайн — копим сводку «пока вас не было» (окно
+      // «События» при первом заходе). Онлайн-игрок видит живой баннер.
+      try { require('./warReport').onAttack(target, { defeat: true, moneyLost: loot, losses: defUnitLosses }); } catch (e) {}
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         loot, lossesText: enemyLosses.join(', ') || null,
@@ -703,7 +711,10 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       target.battle.defWins++;
       player.addRating(target, 1);        // рейтинг: победа в обороне +1
       // Защитник, отразив атаку, тоже несёт минимальные потери
-      enemyLosses.push(...removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT, false));
+      const defWinLosses = removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT, false);
+      enemyLosses.push(...defWinLosses);
+      // Отбитая атака тоже попадает в сводку «пока вас не было»
+      try { require('./warReport').onAttack(target, { defeat: false, losses: defWinLosses }); } catch (e) {}
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         lossesText: enemyLosses.join(', ') || null,

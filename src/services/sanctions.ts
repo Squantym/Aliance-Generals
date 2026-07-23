@@ -66,6 +66,15 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   db.save('sanctions');
   db.save('users');
 
+  // Если цель оффлайн — добавляем санкцию в сводку «пока вас не было»
+  // (окно «События» при первом заходе цели в игру)
+  try {
+    require('./warReport').onSanction(target, {
+      byId: user.id, byName: user.name,
+      byFlag: require('./player').flag(user), amount,
+    });
+  } catch (e) {}
+
   // Уведомляем цель
   try {
     require('./notifications').push(targetId, 'sanction_declared',

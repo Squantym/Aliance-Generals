@@ -110,7 +110,7 @@ function list(user: User) {
       const isTextTrophy = isSpy || isBankHack || isMine;
       const textFor = (lvl: number) => isSpy ? spyUnlockText(lvl) : isBankHack ? bankHackText(lvl) : mineText(lvl);
       return {
-        id: t.id, name: t.name, desc: t.desc, level, flavor: !!t.flavor, expensive: !!t.expensive,
+        id: t.id, name: t.name, desc: t.desc, level, flavor: !!(t as any).flavor, expensive: !!t.expensive,
         spy: isSpy, bankHack: isBankHack, mine: isMine,
         // Для «текстовых» трофеев (спутник/медвежатник/растяжка) процентного
         // бонуса нет — вместо него человекочитаемое описание разблокировки.

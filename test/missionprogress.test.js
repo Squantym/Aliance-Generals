@@ -14,8 +14,15 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  await auth.register('Боец','password1','a@a.com','ru','1.1.1.1');
  const U=Object.values(player.users()).find(x=>x.name==='Боец');
  U.level=50;
- U.units={ [c.UNITS[0].id]:{0:20,1:0,2:0} };  // техника для требований
- U.skills.energy=400; const mx=player.maxima(U); U.res.en.cur=mx.en;
+ // Техника ВСЕХ родов войск (требования спецопераций теперь по типам)
+ U.units={};
+ const step0=c.CONFLICT_BY_ID['border'].operations[0].steps[0];
+ for (const t of ['ground','air','sea']) {
+   const cu=c.UNITS.filter(x=>x.type===t && x.unlock>=step0.require.units.minLevel && x.unlock<=50)
+                   .sort((a,b)=>a.unlock-b.unlock)[0] || c.UNITS.find(x=>x.type===t);
+   if (cu) U.units[cu.id]={0:200,1:0,2:0};
+ }
+ U.skills.energy=4000; const mx=player.maxima(U); U.res.en.cur=Math.max(mx.en, 5000);
  db.save('users');
  const confId='border';
 
@@ -45,14 +52,24 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  ok('игрок получил опыт за шаг', U.xp > xpBefore);
 
  console.log('\n[4] Три шага → спецоперация завершена');
+ // Выдать технику ПОД ТРЕБОВАНИЯ конкретного шага (они теперь по родам войск,
+ // и профиль операции у разных шагов может отличаться).
+ const armFor = (stepIdx) => {
+   const st = c.CONFLICT_BY_ID[confId].operations[0].steps[stepIdx];
+   const need = st.require.units;
+   U.units = {};
+   for (const [t, n] of Object.entries(need.byType || {})) {
+     const cu = c.UNITS.filter(x => x.type === t && x.unlock >= need.minLevel)
+                       .sort((a, b) => a.unlock - b.unlock)[0]
+             || c.UNITS.filter(x => x.type === t).sort((a, b) => b.unlock - a.unlock)[0];
+     if (cu) U.units[cu.id] = { 0: Number(n) + 50, 1: 0, 2: 0 };
+   }
+ };
  for (let stepN=1; stepN<3; stepN++) {
-   const nx=missions.detail(U, confId).operations[0];
-   // условия шагов растут — если не проходим по требованиям, добьём армию/уровень
-   U.level=300; U.units={ [c.UNITS[5].id]:{0:40,1:0,2:0} };
-   const mx2=player.maxima(U); U.res.en.cur=mx2.en;
-   try { missions.startStep(U, confId, 0, stepN, []); }
-   catch(e){ console.log('     (шаг '+stepN+' требует больше — усилили и повторяем: '+e.message.slice(0,40)+')');
-     U.units={ [c.UNITS[8].id]:{0:60,1:0,2:0} }; missions.startStep(U, confId, 0, stepN, []); }
+   U.level=300; armFor(stepN);
+   const mx2=player.maxima(U); U.res.en.cur=Math.max(mx2.en, 5000);
+   const r = missions.startStep(U, confId, 0, stepN, []);
+   if (r && r.needUnits) throw new Error('шаг '+stepN+': не хватило техники — '+JSON.stringify(r.needUnits.items));
    U.missionQueue[0].finishesAt = Date.now()-1000;
    player.refresh(U);
  }
@@ -60,7 +77,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  eq('все 3 шага опы[0] пройдены', det.operations[0].stepsDone, 3);
 
  console.log('\n[5] Список миссий отдаёт активный шаг с таймером');
- const mx3=player.maxima(U); U.res.en.cur=mx3.en;
+ const mx3=player.maxima(U); U.res.en.cur=Math.max(mx3.en, 5000);
  missions.startStep(U, confId, 1, 0, []);
  const list=missions.list(U);
  ok('в списке есть active', !!list.active);
