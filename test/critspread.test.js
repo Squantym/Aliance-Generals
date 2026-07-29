@@ -22,7 +22,9 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  U.skills.cruelty=100; db.save('users');
 
  const sample=(tr)=>{ U.trophies=tr||{}; let nrm=[], crt=[];
-   for(let i=0;i<2500;i++){ U.recentAttacks={}; U.lastAttackAt=0; U.pendingFatality=null; U.pendingBankHack=null; U.pendingMineDefuse=null;
+   for(let i=0;i<2500;i++){ U.recentAttacks={}; U.lastAttackAt=0;
+     // Составы фиксированы: техника расходуется в бою, а тест изучает урон
+     U.units={ [c.UNITS[10].id]:{0:50,1:0,2:0} }; V.units={ [c.UNITS[10].id]:{0:50,1:0,2:0} }; U.pendingFatality=null; U.pendingBankHack=null; U.pendingMineDefuse=null;
      const mx=player.maxima(U); U.res.hp.cur=mx.hp; U.res.am.cur=mx.am; U.res.en.cur=mx.en; V.res.hp.cur=player.maxima(V).hp; V.dollars=100000;
      let r; try{ r=battle.attack(U,V.id,N()); }catch(e){ continue; } (r.crit?crt:nrm).push(r.dealt); }
    const avg=a=>a.reduce((s,x)=>s+x,0)/a.length, mn=a=>Math.min(...a), mx=a=>Math.max(...a);
@@ -49,6 +51,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  for(let i=0;i<6000;i++){
    const o=battle.opponents(U); const botId=o.opponents.filter(x=>x.isBot)[0]?.id; if(!botId) continue;
    U.recentAttacks={}; U.lastAttackAt=0; U.pendingFatality=null; U.pendingBankHack=null; U.pendingMineDefuse=null;
+   U.units={ [c.UNITS[10].id]:{0:50,1:0,2:0} };   // состав фиксирован
    const mx=player.maxima(U); U.res.hp.cur=mx.hp; U.res.am.cur=mx.am; U.res.en.cur=mx.en;
    let r; try{ r=battle.attack(U,botId,N()); }catch(e){ continue; } total++;
    if(r.dealt!==r.received && r.win!==(r.dealt>r.received)) bad++;

@@ -31,6 +31,9 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
    T.skills.cruelty=0; T.skills.agility=opts.tgtAgility||0; T.trophies={}; T.effects=[];
    for(let i=0;i<n;i++){
      A.lastAttackAt=0; A.pendingFatality=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
+     // Восстанавливаем составы: техника теперь расходуется в бою, а тест
+     // проверяет исход при ЗАДАННОМ соотношении сил
+     W.units={ [c.UNITS[10].id]:{0:50,1:0,2:0} }; S.units={ [c.UNITS[13].id]:{0:50,1:0,2:0} };
      const mx=player.maxima(A); A.res.hp.cur=mx.hp; A.res.am.cur=mx.am; A.res.en.cur=mx.en;
      T.res.hp.cur=player.maxima(T).hp;
      const r=battle.attack(A,T.id,N());

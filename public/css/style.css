@@ -2627,3 +2627,76 @@ body.theme-noir .field:focus {
   box-shadow: 0 0 0 3px rgba(110, 110, 120, .18);
 }
 body.theme-noir .field-hint { color: #8a8a92; }
+
+/* ═══ Окно докупки техники для шага спецоперации ═══════════════════
+   Раньше эта разметка уходила в UI.confirm без опции html, и игрок видел
+   сырые HTML-теги. Теперь — карточки с картинкой техники, количеством,
+   ценой за единицу и итоговой суммой снизу. */
+.buy-units-head { font-size: 13px; margin-bottom: 8px; }
+.buy-units-list { max-height: 46vh; overflow-y: auto; margin-bottom: 10px; }
+.buy-units-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--border-dim);
+  text-align: left;
+}
+.buy-units-img {
+  width: 54px; height: 40px; object-fit: cover; flex: 0 0 54px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel-2);
+}
+.buy-units-stub {
+  width: 54px; height: 40px; flex: 0 0 54px; display: flex;
+  align-items: center; justify-content: center; font-size: 20px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel-2);
+}
+.buy-units-info { flex: 1; min-width: 0; }
+.buy-units-name { font-weight: 600; font-size: 13.5px; }
+.buy-units-num { text-align: right; flex: 0 0 auto; }
+.buy-units-count { font-weight: 700; color: var(--gold); font-size: 15px; }
+.buy-units-total {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.buy-units-total b { font-size: 16px; }
+
+/* Поручение не принято — прогресс-бар заменён пояснением */
+.quest-not-accepted {
+  padding: 5px 8px; border: 1px dashed var(--border);
+  border-radius: 6px; font-style: italic;
+}
+
+/* Заглушка портрета заказчика, если файла картинки нет */
+.ic-instr-stub {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 58px; height: 58px; font-size: 26px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+}
+
+/* ═══ Чат: союзники по личному альянсу и кнопка «Ответить» ═══ */
+.chat-msg-ally { border-left: 2px solid var(--gold); padding-left: 6px; }
+.chat-ally-star { font-size: 11px; margin-right: 2px; }
+.chat-reply {
+  background: none; border: none; cursor: pointer;
+  color: var(--dim); font-size: 13px; padding: 0 4px; line-height: 1;
+}
+.chat-reply:hover { color: var(--orange-1); }
+
+/* ═══ Окно награды за вход («довольствие от штаба») ═══ */
+.login-reward {
+  background: linear-gradient(160deg, #1a2310, #11160b);
+  border: 1px solid var(--gold); border-radius: 12px;
+  max-width: 380px; width: 100%; padding: 18px 16px 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6); text-align: center;
+}
+.login-reward-title { font-size: 17px; font-weight: 700; color: var(--gold); }
+.login-reward-day { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
+.login-reward-text { font-size: 13.5px; font-style: italic; margin: 12px 0; line-height: 1.5; }
+.login-reward-sum {
+  display: flex; justify-content: center; gap: 18px; flex-wrap: wrap;
+  padding: 10px 0; border-top: 1px solid var(--border-dim); border-bottom: 1px solid var(--border-dim);
+}
+.reward-line { font-size: 17px; }
+
+/* Результат взлома сейфа в окне */
+.safe-result { text-align: center; font-size: 13.5px; line-height: 1.5; }
+.safe-sum { margin-top: 10px; font-size: 20px; }

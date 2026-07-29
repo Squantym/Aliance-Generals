@@ -49,9 +49,7 @@ const App = {
         App._lastBattle = null;
         overlay.remove();
         if (res && res.escaped) {
-          UI.toast('💨 Жертва ускользнула — фаталити сорвалось!');
-          await App.refreshMe();
-          if ((location.hash||'').indexOf('war')>=0) App.rerender(); else App.go('war');
+          App._showFatalityEscaped(res);
           return;
         }
         App._showFatalityResult(choice, res);
@@ -62,19 +60,56 @@ const App = {
     });
   },
 
+  // Окно «жертва ускользнула» — раньше был только тост, теперь такое же
+  // окно, как у остальных исходов фаталити.
+  _showFatalityEscaped(res) {
+    const overlay = document.createElement('div');
+    overlay.id = 'fatality-overlay';
+    overlay.className = 'fatality-overlay';
+    overlay.innerHTML = `
+      <div class="fatality-modal">
+        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="">
+        <div class="fatality-title" style="color:var(--orange-1)">💨 Жертва ускользнула</div>
+        <p class="center muted small">${res && res.victimName
+          ? `<b style="color:var(--fg)">${UI.esc(res.victimName)}</b> вывернулся в последний момент — ловкость спасла его от клинка.`
+          : 'Пленный вывернулся в последний момент — ловкость спасла его от клинка.'}
+          Трофея нет, но и следов вы не оставили.</p>
+        <button class="btn btn-orange" id="fat-return" style="width:100%;padding:12px;margin-top:10px">🔙 Вернуться на поле боя</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('fat-return').onclick = async () => {
+      overlay.remove();
+      await App.refreshMe();
+      if ((location.hash || '').indexOf('war') >= 0) App.rerender(); else App.go('war');
+    };
+  },
+
   // Шаг 2: картинка результата + кнопка «Вернуться на поле боя».
   _showFatalityResult(choice, res) {
     const isEar = choice === 'ear';
+    // Сколько ушей срезано: трофей «Тесак мясника» даёт шанс на оба сразу.
+    // Раньше окно всегда говорило «Ухо отрезано», и игрок не понимал,
+    // сработал ли трофей.
+    const bothEars = !!(res && res.doubleCut);
+    const restored = !!(res && res.restored);
+    const earTitle = bothEars ? 'Отрезаны ОБА уха' : 'Ухо отрезано';
+    const earText = bothEars
+      ? `Трофей «Тесак мясника» сработал: одним ударом вы срезали <b>оба уха</b>${res && res.victimName ? ` командиру ${UI.esc(res.victimName)}` : ''} — в коллекцию ушло сразу два трофея.`
+      : `Вы отрезали <b>одно ухо</b> поверженному командиру${res && res.victimName ? ` (${UI.esc(res.victimName)})` : ''} — трофей жестокости пополнил вашу коллекцию.`;
+    const restoredNote = restored
+      ? '<p class="center small mt" style="color:var(--orange-1)">⚕️ Но жертва мгновенно восстановила ухо полевым хирургом — трофей у вас, а враг снова целый.</p>'
+      : '';
     const overlay = document.createElement('div');
     overlay.id = 'fatality-overlay';
     overlay.className = 'fatality-overlay';
     overlay.innerHTML = `
       <div class="fatality-modal">
         <img src="/img/fatality/${isEar ? 'cut' : 'pardon'}.webp" class="fatality-photo" alt="">
-        <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? '<span class="ic-ear"></span> Ухо отрезано' : '<span class="ic-token"></span> Враг помилован'}</div>
+        <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? `<span class="ic-ear"></span> ${earTitle}` : '<span class="ic-token"></span> Враг помилован'}</div>
         <p class="center muted small">${isEar
-          ? 'Вы отрезали ухо поверженному командиру — трофей жестокости пополнил вашу коллекцию.'
+          ? earText
           : 'Вы проявили милосердие и отпустили командира. Знак чести и жетон милосердия — ваши.'}</p>
+        ${isEar ? restoredNote : ''}
         ${(res && (res.ears != null || res.tokens != null)) ? `
           <div class="fat-loot">
             ${res.ears   != null ? `<span><span class="ic-ear"></span> ${UI.fmtNum(res.ears)}</span>` : ''}
@@ -300,6 +335,10 @@ const App = {
     if (!App.me) location.hash = '#auth';
     App.route();
 
+    // Награда за вход — самое первое окно при заходе в игру
+    if (App.me && App.me.pendingLoginReward) {
+      setTimeout(() => App._showLoginReward(App.me.pendingLoginReward), 300);
+    }
     // Сводка «пока вас не было»: атаки и санкции за время оффлайна.
     // Показываем первой — раньше подарков и достижений.
     if (App.me && App.me.pendingWarReport) {
@@ -357,6 +396,8 @@ const App = {
       if (App.me.notifUnread > prevNotifUnread) {
         App._checkNewAttackNotification();
       }
+      // Награда за вход (например, наступила полночь прямо в игре)
+      if (App.me.pendingLoginReward) App._showLoginReward(App.me.pendingLoginReward);
       // Сводка «пока вас не было» (если init не успел её показать)
       if (App.me.pendingWarReport) App._showWarReport(App.me.pendingWarReport);
       // Новые достижения: окно появляется сразу после действия игрока;
@@ -483,7 +524,10 @@ const App = {
   // Портрет инструктора/заказчика ежедневных поручений и обучения
   instrImg(charId, size = 56) {
     if (!charId) return '';
-    return `<img class="ic-instr" src="/img/instructors/${charId}.webp" width="${size}" height="${size}" alt="" loading="lazy">`;
+    // onerror: если файла портрета нет, показываем текстовую заглушку вместо
+    // «битой картинки» — раньше отсутствующий файл ломал вид карточки заказчика
+    return `<img class="ic-instr" src="/img/instructors/${charId}.webp" width="${size}" height="${size}" alt="" loading="lazy"` +
+      ` onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'ic-instr ic-instr-stub',textContent:'🎖'}))">`;
   },
   // Иконка достижения по id и уровню (1..5). dim=true — тусклая (не достигнуто)
   achImg(achId, level, size = 46, dim = false) {
@@ -1852,6 +1896,59 @@ const App = {
     App.refreshMe && App.refreshMe();
   },
 
+  // ── Окно награды за вход: «довольствие от штаба» ────────────────
+  // Раньше награда падала на счёт молча из /api/me — игрок замечал её
+  // только по изменившемуся балансу. Теперь показываем окно с кнопкой.
+  _loginRewardShown: false,
+
+  _showLoginReward(p) {
+    if (!p || App._loginRewardShown) return;
+    if (document.getElementById('login-reward-window')) return;
+    App._loginRewardShown = true;
+
+    // Текст от лица штаба — свой на каждый день серии
+    const LINES = [
+      'Прибыл на позицию — уже неплохо. Штаб выделил довольствие на первые сутки.',
+      'Второй день на посту. Интендант ворчал, но накладные подписал.',
+      'Третьи сутки подряд. В штабе начали запоминать твой позывной.',
+      'Четвёртый день. Снабжение идёт вне очереди — заслужил.',
+      'Пятый день без прогулов. Начальник тыла лично распорядился о выплате.',
+      'Шестые сутки. Штаб считает тебя надёжным — а это дороже денег.',
+      'Седьмой день! Полная выслуга за неделю: штаб раскрыл резервный фонд.',
+    ];
+    const line = LINES[Math.min(6, Math.max(0, (p.streak || 1) - 1))];
+    const rows = [];
+    if (p.dollars) rows.push(`<div class="reward-line"><span class="ic-dollar"></span> <b class="money">${UI.fmtMoney(p.dollars)}</b></div>`);
+    if (p.gold) rows.push(`<div class="reward-line"><span class="ic-gold"></span> <b class="gold">${UI.fmtNum(p.gold)}</b></div>`);
+
+    const popup = document.createElement('div');
+    popup.id = 'login-reward-window';
+    popup.className = 'game-dialog-overlay';
+    popup.innerHTML = `
+      <div class="login-reward">
+        <div class="login-reward-title">Довольствие от штаба</div>
+        <div class="login-reward-day">День ${p.streak} из 7${p.jackpot ? ' · недельная выслуга' : ''}</div>
+        <div class="login-reward-text">«${UI.esc(line)}»</div>
+        <div class="login-reward-sum">${rows.join('')}</div>
+        <button class="btn btn-orange mt" id="login-reward-take" style="width:100%">Забрать довольствие</button>
+      </div>`;
+    document.body.appendChild(popup);
+    popup.querySelector('#login-reward-take').onclick = async () => {
+      const btn = popup.querySelector('#login-reward-take');
+      btn.disabled = true;
+      try {
+        await API.post('/api/login-reward/claim');
+        if (App.me) App.me.pendingLoginReward = null;
+        popup.remove();
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) {
+        btn.disabled = false;
+        UI.toast('⛔ ' + e.message);
+      }
+    };
+  },
+
   // ── Окно «События» — сводка за время отсутствия ─────────────────
   // Показывается один раз при заходе в игру, если пока игрока не было
   // на него нападали или объявляли санкции. Закрытие -> ack на сервер.
@@ -2020,9 +2117,28 @@ const App = {
     App._preserveScroll = false;
     // Сохраняем скролл ДО подмены контента (иначе сжатие страницы сбросит scrollY)
     const savedScroll = window.scrollY;
-    if (!preserve) window.scrollTo(0, 0);
-    c.innerHTML = '<div class="loading">Загрузка…</div>';
+    const scrollToId = App._scrollToId;      // прокрутить к элементу после отрисовки
+    App._scrollToId = null;
+    if (!preserve) {
+      window.scrollTo(0, 0);
+      // Заглушку показываем только при переходе на другой экран. При
+      // перерисовке текущего оставляем прежний контент до готовности нового:
+      // иначе страница на миг сжимается до высоты «Загрузка…», браузер
+      // сбрасывает скролл, и экран прыгает наверх (заметно на трофеях,
+      // спецоперациях и покупке техники).
+      c.innerHTML = '<div class="loading">Загрузка…</div>';
+    }
     Promise.resolve(screen(c, param)).then(() => {
+      if (scrollToId) {
+        // Прокрутка к нужному блоку (например, к результату боя)
+        const jump = () => {
+          const el = document.getElementById(scrollToId);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          else if (preserve) window.scrollTo(0, savedScroll);
+        };
+        requestAnimationFrame(jump);
+        return;
+      }
       if (preserve) {
         // Возвращаем скролл синхронно и страховочно через requestAnimationFrame
         window.scrollTo(0, savedScroll);
@@ -2036,6 +2152,15 @@ const App = {
   // Перерисовка текущего экрана с сохранением скролла (вызывать вместо App.route()
   // после внутренних действий игрока: купил, продал, открыл контейнер, нажал кнопку).
   rerender() {
+    App._preserveScroll = true;
+    App.route();
+  },
+
+  // Перерисовать текущий экран и прокрутить к блоку с указанным id
+  // (используется после атаки: игрок сразу видит окно с результатом боя,
+  // даже если пролистал список противников далеко вниз).
+  rerenderTo(id) {
+    App._scrollToId = id;
     App._preserveScroll = true;
     App.route();
   },

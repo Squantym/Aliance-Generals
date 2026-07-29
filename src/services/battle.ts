@@ -269,7 +269,28 @@ function resolveDamage(atk: number, def: number): any {
 // pctBase — базовая доля «эталонных» потерь (как раньше), но теперь
 // масштабируется случайным образом от 0 до ~2× базы, и явно зависит
 // от того, был ли нанесён критический удар (crit => потери крупнее).
-function removeUnits(victim: any, armyEntries: any[], pctBase: number, crit: boolean): any {
+// Сколько ЕДИНИЦ техники теряется за этот обмен ударами.
+// Зависит от урона: чем сильнее удар, тем крупнее потери.
+//   обычный удар      → UNIT_LOSS_MIN..UNIT_LOSS_MAX           (1..10)
+//   критический удар  → UNIT_LOSS_CRIT_MIN..UNIT_LOSS_CRIT_MAX (10..30)
+// Урон 0 (полный уворот) → потерь НЕТ вообще: увернувшийся не теряет
+// технику ни при каких обстоятельствах. Если увернулись оба — техники не
+// теряет никто, потому что у обоих сторон урон нулевой.
+// reduce — снижение потерь защитника за счёт оборонительных построек.
+function unitLossCount(damage: number, crit: boolean, reduce: number = 0): number {
+  if (!damage || damage <= 0) return 0;      // уворот / нет урона — техника цела
+  const lo = crit ? B.UNIT_LOSS_CRIT_MIN : B.UNIT_LOSS_MIN;
+  const hi = crit ? B.UNIT_LOSS_CRIT_MAX : B.UNIT_LOSS_MAX;
+  // Крит бьёт сильнее обычного удара, поэтому и нормируем его по своему
+  // потолку — иначе любой крит сразу упирался бы в верхнюю границу.
+  const cap = B.UNIT_LOSS_DAMAGE_CAP * (crit ? B.CRIT_MULT : 1);
+  const norm = Math.min(1, Math.max(0, damage / cap));
+  let n = Math.round(lo + norm * (hi - lo));
+  if (reduce > 0) n = Math.max(1, Math.round(n * (1 - reduce)));
+  return u.clamp(n, 1, hi);
+}
+
+function removeUnits(victim: any, armyEntries: any[], toLoseWanted: number, _unused?: boolean): any {
   // Сортируем «жертв» от слабой к сильной: сначала Mk0, потом Mk1, Mk2;
   // внутри одного Mk — по возрастанию unlock (уровень открытия = «слабее»).
   const pool = armyEntries
@@ -284,13 +305,11 @@ function removeUnits(victim: any, armyEntries: any[], pctBase: number, crit: boo
   const totalTaken = pool.reduce((s, e) => s + e.taken, 0);
   if (totalTaken <= 0) return [];
 
-  // Случайный множитель потерь: 0% (без потерь) .. 200% от базовой доли.
-  // Критический удар сдвигает диапазон вверх (потери крупнее и стабильнее).
-  const randMul = crit ? (0.6 + Math.random() * 1.4) : (0 + Math.random() * 1.6);
-  let toLose = Math.floor(totalTaken * pctBase * randMul);
-  // Не более трети взятой в бой техники за один обмен ударами — чтобы
-  // потери оставались правдоподобными даже при крите
-  toLose = Math.min(toLose, Math.ceil(totalTaken / 3));
+  // Количество приходит готовым из unitLossCount (абсолютные единицы,
+  // посчитанные от урона). Ограничиваем долей взятой в бой техники, чтобы
+  // у новичка с маленькой армией один крит не выкосил её целиком.
+  let toLose = Math.max(0, Math.floor(toLoseWanted));
+  toLose = Math.min(toLose, Math.max(1, Math.round(totalTaken * B.UNIT_LOSS_ARMY_PCT)));
   if (toLose <= 0) return [];
 
   const lost = {};
@@ -669,13 +688,19 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       // У бота нет реальной техники в БД (это заглушка для красивого
       // отображения), но потери теперь РАНДОМНЫ и учитывают крит —
       // как и у реальных игроков, без статичного фиксированного числа.
+      // Потери бота считаем по той же формуле, что и у живых игроков:
+      // абсолютное число единиц от нанесённого ему урона. У бота нет
+      // техники в БД, поэтому просто распределяем это число по «псевдоармии».
       if (dArmy && dArmy.entries) {
-        const botRandMul = crit ? (0.6 + Math.random() * 1.4) : (0 + Math.random() * 1.6);
-        for (const e of dArmy.entries) {
-          if (e.taken > 0) {
-            const lost = Math.floor(e.taken * B.LOSS_DEF_PCT * (1 - lossReduce) * 1.5 * botRandMul);
-            if (lost > 0) enemyLosses.push({ name: e.name, count: lost, id: e.unitId, unitType: (config.UNIT_BY_ID[e.unitId] || {}).type });
-          }
+        let botToLose = unitLossCount(dealt, crit);
+        const botPool = dArmy.entries.filter((e: any) => e.taken > 0);
+        const botTaken = botPool.reduce((sum: number, e: any) => sum + e.taken, 0);
+        botToLose = Math.min(botToLose, Math.max(1, Math.round(botTaken * B.UNIT_LOSS_ARMY_PCT)));
+        for (const e of botPool) {
+          if (botToLose <= 0) break;
+          const lost = Math.min(e.taken, botToLose);
+          botToLose -= lost;
+          if (lost > 0) enemyLosses.push({ name: e.name, count: lost, id: e.unitId, unitType: (config.UNIT_BY_ID[e.unitId] || {}).type });
         }
       }
     } else {
@@ -693,7 +718,9 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       ach.bump(target, 'losses', 1, []); // «Битый»: поражение в обороне
       player.addRating(target, -1);      // рейтинг: поражение −1
       // Потери защитника (только если он реальный игрок), с учётом крита
-      const defUnitLosses = removeUnits(target, dArmy.entries, B.LOSS_DEF_PCT * (1 - lossReduce), crit);
+      // Потери зависят от полученного урона (dealt); оборонительные
+      // постройки (lossReduce) их снижают
+      const defUnitLosses = removeUnits(target, dArmy.entries, unitLossCount(dealt, crit, lossReduce));
       enemyLosses.push(...defUnitLosses);
       // Если защитник оффлайн — копим сводку «пока вас не было» (окно
       // «События» при первом заходе). Онлайн-игрок видит живой баннер.
@@ -705,7 +732,9 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       });
     }
     // Победитель тоже несёт небольшие потери (война есть война)
-    myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_WIN_PCT, false));
+    // Победитель теряет технику по УРОНУ, полученному в ответ (received).
+    // Если он увернулся — received = 0, и потерь нет вообще.
+    myLosses.push(...removeUnits(user, aArmy.entries, unitLossCount(received, botCrit)));
     player.addBattleLoot(user, loot);
     try { require('./seasons').onLoot(user, loot); } catch (e) {}
   } else {
@@ -721,7 +750,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       target.battle.defWins++;
       player.addRating(target, 1);        // рейтинг: победа в обороне +1
       // Защитник, отразив атаку, тоже несёт минимальные потери
-      const defWinLosses = removeUnits(target, dArmy.entries, B.LOSS_DEF_WIN_PCT, false);
+      const defWinLosses = removeUnits(target, dArmy.entries, unitLossCount(dealt, crit, lossReduce));
       enemyLosses.push(...defWinLosses);
       // Отбитая атака тоже попадает в сводку «пока вас не было»
       try { require('./warReport').onAttack(target, { defeat: false, losses: defWinLosses }); } catch (e) {}
@@ -733,7 +762,9 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     }
     // Проигравший атакующий теряет существенно больше (крупнее, если
     // защитник нанёс критический ответный удар)
-    myLosses.push(...removeUnits(user, aArmy.entries, B.LOSS_ATK_PCT, botCrit));
+    // Проигравший получил больше урона — значит и потери крупнее; при
+    // критическом ответном ударе диапазон сдвигается к 10..30
+    myLosses.push(...removeUnits(user, aArmy.entries, unitLossCount(received, botCrit)));
   }
 
   // Опыт: фиксированный диапазон из конфига (4–7 за победу, 1–2 за поражение)
@@ -900,12 +931,15 @@ function fatality(user: User, choice: string, notices: Notices) {
           attackerName: user.name, attackerId: user.id, at: Date.now(),
         });
         notices.push(`💨 «${victimCheck.name}» ускользнул в последний момент — фаталити сорвалось!`);
-        return { choice: 'escaped', escaped: true, ears: user.ears, tokens: user.tokens };
+        return { choice: 'escaped', escaped: true, victimName: victimCheck.name, ears: user.ears, tokens: user.tokens };
       }
     }
   }
   user.pendingFatality = null;
   user.battle.fatalities++;
+  // Детали для окна результата: одно ухо или оба (трофей «Тесак мясника»),
+  // и не восстановила ли жертва ухо полевым хирургом
+  let outDoubleCut = false, outRestored = false;
   ach.bump(user, 'fatalities', 1, notices);
   require('./dailyQuests').bump(user, 'fatalities', 1);
 
@@ -922,6 +956,7 @@ function fatality(user: User, choice: string, notices: Notices) {
         // Трофей «Тесак мясника»: шанс отрезать СРАЗУ ОБА уха
         const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
         const doubleCut = victim.earsCurrent >= 2 && Math.random() * 100 < doublePct;
+        outDoubleCut = doubleCut;
         const cutsToMake = doubleCut ? 2 : 1;
         if (doubleCut) { user.ears++; require('./dailyQuests').bump(user, 'earsCut', 1); } // второе ухо тоже в коллекцию
 
@@ -951,6 +986,7 @@ function fatality(user: User, choice: string, notices: Notices) {
           if (lostNow < 2) victim.earCutters[1] = null;
           if (lostNow < 1) victim.earCutters[0] = null;
           restored = true;
+          outRestored = true;
           player.addRating(victim, 3); // ухо восстановлено — возвращаем рейтинг жертве
         }
 
@@ -978,6 +1014,7 @@ function fatality(user: User, choice: string, notices: Notices) {
         // мясника» всё равно даёт шанс отрезать СРАЗУ ОБА уха — в коллекцию.
         const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
         const doubleCut = Math.random() * 100 < doublePct;
+        outDoubleCut = doubleCut;
         if (doubleCut) user.ears++; // второе ухо в коллекцию
         notices.push(`✂️ Фаталити! ${doubleCut ? 'Отрезаны СРАЗУ ОБА уха' : 'Трофейное ухо'} — в коллекцию (всего: ${user.ears}).`);
       }
@@ -987,7 +1024,13 @@ function fatality(user: User, choice: string, notices: Notices) {
       if (Math.random() * 100 < doublePct) user.ears++;
       notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
     }
-    return { choice, ears: user.ears, tokens: user.tokens, canLeaveMessage, victimId: pf.isBot ? null : pf.targetId };
+    // Детали нужны окну результата: одно ухо срезано или оба (трофей
+    // «Тесак мясника»), и не восстановила ли жертва ухо хирургом
+    return {
+      choice, ears: user.ears, tokens: user.tokens, canLeaveMessage,
+      victimId: pf.isBot ? null : pf.targetId,
+      doubleCut: outDoubleCut, restored: outRestored, victimName: pf.name || null,
+    };
   }
 
   // Отпускаем: +1 жетон милосердия
@@ -1004,7 +1047,12 @@ function fatality(user: User, choice: string, notices: Notices) {
     }
   }
   notices.push(`🎖 Враг отпущен. Получен жетон милосердия (всего: ${user.tokens}).`);
-  return { choice, ears: user.ears, tokens: user.tokens };
+  return {
+    choice, ears: user.ears, tokens: user.tokens,
+    doubleCut: outDoubleCut,     // срезаны оба уха (сработал трофей)
+    restored: outRestored,       // жертва восстановила ухо хирургом
+    victimName: pf.name || null,
+  };
 }
 
 // Оставить послание на профиле жертвы — доступно только тому, кто отрезал
@@ -1027,5 +1075,4 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
 
 export = {
   opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits,
-  bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice,
-};
+  bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice, unitLossCount,};

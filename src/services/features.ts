@@ -49,17 +49,36 @@ function claimDailyIfDue(user: User, notices?: Notices): any | null {
   const rewards = config.LOGIN_STREAK.rewards;
   const r = rewards[streak - 1];
 
-  if (r.dollars) player.addMoney(user, r.dollars, false);
-  if (r.gold) player.addGold(user, r.gold);
+  // Награду НЕ начисляем молча: раньше деньги падали на счёт прямо из
+  // mePayload, и игрок узнавал об этом только по изменившемуся балансу.
+  // Теперь она ждёт в pendingLoginReward, а фронт показывает окно с
+  // кнопкой «Забрать». Серия при этом уже зачтена — вход состоялся.
+  (user as any).pendingLoginReward = {
+    streak,
+    dollars: r.dollars || 0,
+    gold: (r as any).gold || 0,
+    jackpot: streak === 7,
+    at: Date.now(),
+  };
   db.save('users');
-
-  const parts: string[] = [];
-  if (r.dollars) parts.push(`$ ${u.fmt(r.dollars)}`);
-  if (r.gold) parts.push(`🪙 ${r.gold}`);
-  const msg = `📅 День ${streak}/7! Награда за вход: ${parts.join(', ')}.${streak === 7 ? ' 🎉 Недельный джекпот!' : ''}`;
-  if (notices) notices.push(msg);
   try { checkTitles(user, notices || { push: () => {} } as any); } catch (e) {}
-  return { streak, reward: r, message: msg };
+  return { streak, reward: r, pending: true };
+}
+
+// Забрать награду за вход (по кнопке в окне). Пока не забрана — ждёт,
+// даже если игрок зашёл и ушёл: серия не теряется.
+function claimLoginReward(user: User, notices: Notices) {
+  const p = (user as any).pendingLoginReward;
+  if (!p) throw new u.ApiError('Награда за вход уже получена');
+  if (p.dollars) player.addMoney(user, p.dollars, false);
+  if (p.gold) player.addGold(user, p.gold);
+  (user as any).pendingLoginReward = null;
+  db.save('users');
+  const parts: string[] = [];
+  if (p.dollars) parts.push(`$ ${u.fmt(p.dollars)}`);
+  if (p.gold) parts.push(`🪙 ${p.gold}`);
+  notices.push(`📅 День ${p.streak}/7. Довольствие получено: ${parts.join(', ')}.${p.jackpot ? ' 🎉 Недельный джекпот!' : ''}`);
+  return { streak: p.streak, dollars: p.dollars, gold: p.gold, jackpot: !!p.jackpot };
 }
 
 // Данные для отображения прогресса серии (профиль/уведомление)
@@ -576,5 +595,4 @@ export = {
   cosmeticsView, buyCosmetic, equipCosmetic, unequipCosmetic,
   referralView, applyReferral, ensureRefCode, onReferralLevelUp, onReferralPurchase,
   spyOn, spyReport,
-  seasonView, addSeasonRating, adminEndSeason,
-};
+  seasonView, addSeasonRating, adminEndSeason, claimLoginReward,};

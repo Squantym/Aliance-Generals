@@ -27,12 +27,14 @@ function ensureDaily(user: User): any {
     (user as any).daily = {
       day: today,
       counters: {},
+      accepted: {},     // id задания -> { at, base } — принятое задание и точка отсчёта
       claimed: {},      // id задания -> true, если награда уже получена
       bonusClaimed: false,
     };
   }
   if (!(user as any).daily.counters) (user as any).daily.counters = {};
   if (!(user as any).daily.claimed) (user as any).daily.claimed = {};
+  if (!(user as any).daily.accepted) (user as any).daily.accepted = {};
   return (user as any).daily;
 }
 
@@ -41,6 +43,118 @@ function ensureDaily(user: User): any {
 function bump(user: User, key: string, amount?: number): void {
   const d = ensureDaily(user);
   d.counters[key] = (d.counters[key] || 0) + (amount || 1);
+  // Недельные поручения ведут собственные счётчики: они живут до
+  // понедельника и не обнуляются вместе с дневными
+  const w = ensureWeekly(user);
+  w.counters[key] = (w.counters[key] || 0) + (amount || 1);
+}
+
+// ═══ НЕДЕЛЬНЫЕ ПОРУЧЕНИЯ ══════════════════════════════════════════
+// Структура та же, что у дневных, но со своим сбросом (понедельник, UTC)
+// и своим пулом уникальных заданий с повышенными лимитами и наградами.
+function ensureWeekly(user: User): any {
+  const week = config.weekUtcKey();
+  if (!(user as any).weekly || (user as any).weekly.week !== week) {
+    (user as any).weekly = { week, counters: {}, accepted: {}, claimed: {}, bonusClaimed: false };
+  }
+  const w = (user as any).weekly;
+  if (!w.counters) w.counters = {};
+  if (!w.accepted) w.accepted = {};
+  if (!w.claimed) w.claimed = {};
+  return w;
+}
+
+function weeklyProgress(w: any, quest: any): number {
+  const acc = w.accepted[quest.id];
+  if (!acc) return 0;
+  return Math.max(0, (w.counters[quest.counter] || 0) - (acc.base || 0));
+}
+
+function daysUntilWeeklyReset(): number {
+  const now = new Date();
+  const day = (now.getUTCDay() + 6) % 7;               // 0 = понедельник
+  const nextMonday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day + 7));
+  return Math.ceil((nextMonday.getTime() - now.getTime()) / (24 * 3600000));
+}
+
+function weeklyList(user: User) {
+  const w = ensureWeekly(user);
+  const ids = config.pickWeeklyQuests(w.week);
+  const quests = ids.map((id: string) => {
+    const q = config.WEEKLY_QUEST_BY_ID[id];
+    const target = config.weeklyQuestTarget(q.base, q.diff, user.level, q.counter, q.fixedTarget);
+    const accepted = !!w.accepted[q.id];
+    const progress = weeklyProgress(w, q);
+    const done = accepted && progress >= target;
+    const rw = config.weeklyQuestReward(q.diff, user.level, q);
+    const ch = config.DAILY_CHARS[q.char] || { name: 'Штаб', role: '', icon: '📌' };
+    return {
+      id: q.id, name: q.name, icon: q.icon, flavor: q.flavor, route: q.route || null,
+      char: q.char, charName: ch.name, charRole: ch.role, charIcon: ch.icon, charIntro: (ch as any).intro || '',
+      diff: q.diff, difficulty: q.diff >= 2.4 ? 'hard' : (q.diff >= 1.6 ? 'medium' : 'easy'),
+      target, progress: Math.min(progress, target),
+      accepted, done, claimed: !!w.claimed[q.id],
+      reward: { xp: rw.xp, dollars: rw.dollars, gold: rw.gold || 0 },
+      item: q.item ? { id: q.item, name: config.smuggleItemName(q.item), gold: config.smuggleItemGold(q.item) } : null,
+    };
+  });
+  const doneCount = quests.filter((q: any) => q.done).length;
+  return {
+    quests, weekly: true,
+    allDone: doneCount === quests.length, doneCount, total: quests.length,
+    bonusGold: config.weeklyAllBonusGold(user.level),
+    bonusClaimed: !!w.bonusClaimed,
+    resetInDays: daysUntilWeeklyReset(),
+  };
+}
+
+function weeklyAccept(user: User, questId: string, notices: Notices) {
+  const w = ensureWeekly(user);
+  if (!config.pickWeeklyQuests(w.week).includes(questId)) throw new u.ApiError('Это недельное поручение недоступно');
+  const quest = config.WEEKLY_QUEST_BY_ID[questId];
+  if (!quest) throw new u.ApiError('Поручение не найдено');
+  if (w.accepted[questId]) throw new u.ApiError('Поручение уже принято');
+  if (w.claimed[questId]) throw new u.ApiError('Это поручение уже выполнено на этой неделе');
+  w.accepted[questId] = { at: Date.now(), base: w.counters[quest.counter] || 0 };
+  const ch = config.DAILY_CHARS[quest.char];
+  notices.push(`📋 ${ch ? ch.name + ': ' : ''}недельное поручение «${quest.name}» принято.`);
+  return { accepted: true, questId };
+}
+
+function weeklyClaim(user: User, questId: string, notices: Notices) {
+  const w = ensureWeekly(user);
+  if (!config.pickWeeklyQuests(w.week).includes(questId)) throw new u.ApiError('Это недельное поручение недоступно');
+  const quest = config.WEEKLY_QUEST_BY_ID[questId];
+  if (!quest) throw new u.ApiError('Поручение не найдено');
+  if (w.claimed[questId]) throw new u.ApiError('Награда за это поручение уже получена');
+  if (!w.accepted[questId]) throw new u.ApiError('Сначала примите это поручение');
+  const target = config.weeklyQuestTarget(quest.base, quest.diff, user.level, quest.counter, quest.fixedTarget);
+  if (weeklyProgress(w, quest) < target) throw new u.ApiError('Поручение ещё не выполнено');
+  w.claimed[questId] = true;
+  const reward = config.weeklyQuestReward(quest.diff, user.level, quest);
+  player.addMoney(user, reward.dollars, true);
+  player.addXp(user, reward.xp, notices);
+  if (reward.gold) player.addGold(user, reward.gold);
+  const ch = config.DAILY_CHARS[quest.char];
+  notices.push(`🎁 ${ch ? ch.name + ': ' : ''}награда за недельное «${quest.name}»: +${reward.xp} XP, +$${u.fmt(reward.dollars)}` +
+    (reward.gold ? `, 🪙 ${reward.gold}` : ''));
+  return reward;
+}
+
+function weeklyClaimBonus(user: User, notices: Notices) {
+  const w = ensureWeekly(user);
+  if (w.bonusClaimed) throw new u.ApiError('Недельный бонус уже получен');
+  const ids = config.pickWeeklyQuests(w.week);
+  const allDone = ids.every((id: string) => {
+    const q = config.WEEKLY_QUEST_BY_ID[id];
+    return !!w.accepted[id] && weeklyProgress(w, q) >= config.weeklyQuestTarget(q.base, q.diff, user.level, q.counter, q.fixedTarget);
+  });
+  if (!allDone) throw new u.ApiError('Примите и выполните все недельные поручения');
+  w.bonusClaimed = true;
+  const bonus = config.weeklyAllBonusGold(user.level);
+  player.addGold(user, bonus);
+  notices.push(`🎉 Все недельные поручения выполнены! Бонус: 🪙 ${bonus}`);
+  return { gold: bonus };
 }
 
 // Активные поручения на сегодня (9 из 20, детерминированно по дню)
@@ -49,24 +163,51 @@ function activeQuestIds(user: User): string[] {
   return config.pickDailyQuests(d.day);
 }
 
+// Прогресс задания. Считается ТОЛЬКО после принятия и отсчитывается от
+// значения счётчика на момент принятия: общий счётчик (например «победы»)
+// растёт всегда, но в зачёт идут лишь действия, сделанные после того, как
+// игрок взял поручение. Не принято — прогресс нулевой.
+function questProgress(d: any, quest: any): number {
+  const acc = d.accepted[quest.id];
+  if (!acc) return 0;
+  const now = d.counters[quest.counter] || 0;
+  return Math.max(0, now - (acc.base || 0));
+}
+
+// Принять поручение: фиксируем точку отсчёта прогресса
+function accept(user: User, questId: string, notices: Notices) {
+  const d = ensureDaily(user);
+  if (!config.pickDailyQuests(d.day).includes(questId)) throw new u.ApiError('Это поручение сегодня недоступно');
+  const quest = config.DAILY_QUEST_BY_ID[questId];
+  if (!quest) throw new u.ApiError('Поручение не найдено');
+  if (d.accepted[questId]) throw new u.ApiError('Поручение уже принято');
+  if (d.claimed[questId]) throw new u.ApiError('Это поручение уже выполнено сегодня');
+  d.accepted[questId] = { at: Date.now(), base: d.counters[quest.counter] || 0 };
+  const ch = config.DAILY_CHARS[quest.char];
+  notices.push(`📋 ${ch ? ch.name + ': ' : ''}поручение «${quest.name}» принято. Прогресс пошёл.`);
+  return { accepted: true, questId };
+}
+
 // Список активных поручений с прогрессом и данными заказчика — для UI
 function list(user: User) {
   const d = ensureDaily(user);
   const ids = config.pickDailyQuests(d.day);
   const quests = ids.map((id) => {
     const q = config.DAILY_QUEST_BY_ID[id];
-    const target = config.dailyQuestTarget(q.base, q.diff, user.level);
-    const progress = d.counters[q.counter] || 0;
-    const done = progress >= target;
-    const rw = config.dailyQuestReward(q.diff, user.level);
+    const target = config.dailyQuestTarget(q.base, q.diff, user.level, q.counter, q.fixedTarget);
+    const accepted = !!d.accepted[q.id];
+    const progress = questProgress(d, q);
+    const done = accepted && progress >= target;
+    const rw = config.dailyQuestReward(q.diff, user.level, q);
     const ch = config.DAILY_CHARS[q.char] || { name: 'Штаб', role: '', icon: '📌' };
     return {
       id: q.id, name: q.name, icon: q.icon, flavor: q.flavor, route: q.route || null,
       char: q.char, charName: ch.name, charRole: ch.role, charIcon: ch.icon, charIntro: (ch as any).intro || '',
       diff: q.diff, difficulty: q.diff >= 2.4 ? 'hard' : (q.diff >= 1.6 ? 'medium' : 'easy'),
       target, progress: Math.min(progress, target),
-      done, claimed: !!d.claimed[q.id],
-      reward: { xp: rw.xp, dollars: rw.dollars },
+      accepted, done, claimed: !!d.claimed[q.id],
+      reward: { xp: rw.xp, dollars: rw.dollars, gold: rw.gold || 0 },
+      item: q.item ? { id: q.item, name: config.smuggleItemName(q.item), gold: config.smuggleItemGold(q.item) } : null,
     };
   });
   const doneCount = quests.filter((q) => q.done).length;
@@ -94,15 +235,18 @@ function claim(user: User, questId: string, notices: Notices) {
   const quest = config.DAILY_QUEST_BY_ID[questId];
   if (!quest) throw new u.ApiError('Поручение не найдено');
   if (d.claimed[questId]) throw new u.ApiError('Награда за это поручение уже получена');
-  const target = config.dailyQuestTarget(quest.base, quest.diff, user.level);
-  const progress = d.counters[quest.counter] || 0;
+  if (!d.accepted[questId]) throw new u.ApiError('Сначала примите это поручение');
+  const target = config.dailyQuestTarget(quest.base, quest.diff, user.level, quest.counter, quest.fixedTarget);
+  const progress = questProgress(d, quest);
   if (progress < target) throw new u.ApiError('Поручение ещё не выполнено');
   d.claimed[questId] = true;
-  const reward = config.dailyQuestReward(quest.diff, user.level);
+  const reward = config.dailyQuestReward(quest.diff, user.level, quest);
   player.addMoney(user, reward.dollars, true);
   player.addXp(user, reward.xp, notices);
+  if (reward.gold) player.addGold(user, reward.gold);   // контрабанда: возврат золота
   const ch = config.DAILY_CHARS[quest.char];
-  notices.push(`🎁 ${ch ? ch.name + ': ' : ''}награда за «${quest.name}»: +${reward.xp} XP, +$${u.fmt(reward.dollars)}`);
+  notices.push(`🎁 ${ch ? ch.name + ': ' : ''}награда за «${quest.name}»: +${reward.xp} XP, +$${u.fmt(reward.dollars)}` +
+    (reward.gold ? `, 🪙 ${reward.gold}` : ''));
   return reward;
 }
 
@@ -113,9 +257,9 @@ function claimBonus(user: User, notices: Notices) {
   const ids = config.pickDailyQuests(d.day);
   const allDone = ids.every((id) => {
     const q = config.DAILY_QUEST_BY_ID[id];
-    return (d.counters[q.counter] || 0) >= config.dailyQuestTarget(q.base, q.diff, user.level);
+    return !!d.accepted[id] && questProgress(d, q) >= config.dailyQuestTarget(q.base, q.diff, user.level, q.counter, q.fixedTarget);
   });
-  if (!allDone) throw new u.ApiError('Выполните все поручения дня, чтобы получить бонус');
+  if (!allDone) throw new u.ApiError('Примите и выполните все поручения дня, чтобы получить бонус');
   d.bonusClaimed = true;
   const bonus = config.dailyAllBonusGold(user.level);
   player.addGold(user, bonus);
@@ -123,4 +267,5 @@ function claimBonus(user: User, notices: Notices) {
   return { gold: bonus };
 }
 
-export = { bump, list, claim, claimBonus, ensureDaily };
+export = { bump, list, accept, claim, claimBonus, ensureDaily, questProgress,
+  ensureWeekly, weeklyList, weeklyAccept, weeklyClaim, weeklyClaimBonus };

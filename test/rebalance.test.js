@@ -15,7 +15,7 @@ ok('ур.300 ≈ 8x базы', at300 >= base*7.9 && at300 <= base*8.1);
 console.log('     цель базы 100 (diff1): ур.1='+c.dailyQuestTarget(100,1,1)+' ур.150='+c.dailyQuestTarget(100,1,150)+' ур.300='+c.dailyQuestTarget(100,1,300));
 
 console.log('\n[2] 20 поручений от 6 заказчиков, выбирается 9 в день');
-eq('всего 20 поручений', c.DAILY_QUESTS.length, 20);
+eq('всего 22 поручения (добавлены 2 контрабандных)', c.DAILY_QUESTS.length, 22);
 eq('6 заказчиков', Object.keys(c.DAILY_CHARS).length, 6);
 ok('у каждого поручения есть заказчик и описание', c.DAILY_QUESTS.every(q=>q.char && q.flavor && c.DAILY_CHARS[q.char]));
 const pick=c.pickDailyQuests('2026-01-01');

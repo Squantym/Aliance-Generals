@@ -211,7 +211,12 @@ const UI = {
 
   // Игровое окно подтверждения (замена браузерного confirm).
   // Возвращает Promise<boolean>. Использование: if (await UI.confirm('...')) {...}
-  // opts: { title, okText, cancelText, danger, icon }
+  // opts: { title, okText, cancelText, danger, icon, html }
+  // html:true — message вставляется КАК РАЗМЕТКА (без экранирования).
+  // Использовать только для верстки, собранной в коде: любые данные игроков
+  // внутри обязаны быть прогнаны через UI.esc(). Раньше опции не было, и
+  // окна с разметкой (например «не хватает техники» в спецоперациях)
+  // показывали игроку сырые HTML-теги вместо содержимого.
   confirm(message, opts) {
     opts = opts || {};
     return new Promise((resolve) => {
@@ -225,7 +230,7 @@ const UI = {
         <div class="game-dialog">
           ${opts.icon ? `<div class="game-dialog-icon">${opts.icon}</div>` : ''}
           ${opts.title ? `<div class="game-dialog-title">${UI.esc(opts.title)}</div>` : ''}
-          <div class="game-dialog-body">${UI.esc(message).replace(/\n/g, '<br>')}</div>
+          <div class="game-dialog-body">${opts.html ? message : UI.esc(message).replace(/\n/g, '<br>')}</div>
           <div class="game-dialog-actions">
             <button class="btn ${okClass}" id="gd-ok">${UI.esc(opts.okText || 'Подтвердить')}</button>
             <button class="btn btn-inline" id="gd-cancel">${UI.esc(opts.cancelText || 'Отмена')}</button>

@@ -110,6 +110,9 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
   const price = marketGold(item);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
   require('./dailyQuests').bump(user, 'marketBought', 1);
+  // Отдельный счётчик по КОНКРЕТНОМУ товару: поручения на контрабанду
+  // называют товар явно, поэтому общего счётчика покупок им мало
+  require('./dailyQuests').bump(user, 'buy:' + item.id, 1);
 
   if (item.kind === 'debuff') {
     // Падлянка применяется к другому игроку по имени
@@ -185,6 +188,8 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   const totalPrice = unitPrice * qty;
   if (user.gold < totalPrice) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${totalPrice} за ${qty} шт.)`);
   require('./dailyQuests').bump(user, 'marketBought', 1);
+  // Счётчик по конкретному контейнеру (для поручений на контрабанду)
+  require('./dailyQuests').bump(user, 'buy:' + c.id, qty);
   user.gold -= totalPrice;
 
   // Открываем qty контейнеров подряд, суммируя выпавшее

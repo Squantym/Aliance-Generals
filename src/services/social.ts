@@ -23,9 +23,25 @@ function mailboxOf(userId: string): any[] {
 }
 
 // ---------- ЧАТ ----------
-function chatGet(afterId?: number | string) {
+// Каждому сообщению добавляем признак ally: автор состоит в личном альянсе
+// со смотрящим ВЗАИМНО (как в списке целей). По нему фронт рисует звёздочку,
+// чтобы сразу видеть, свой в эфире или нет.
+function chatGet(viewer: User | null, afterId?: number | string) {
   const after = u.toInt(afterId, 0);
-  return { messages: world().chat.filter((m) => m.id > after) };
+  const msgs = world().chat.filter((m) => m.id > after);
+  if (!viewer) return { messages: msgs };
+  const pa = require('./personalAlliance');
+  const players: Record<string, User> = require('./player').users();
+  return {
+    messages: msgs.map((m: any) => {
+      const author = m.uid ? players[m.uid] : null;
+      return {
+        ...m,
+        ally: !!author && pa.areAllies(viewer, author),
+        self: m.uid === viewer.id,
+      };
+    }),
+  };
 }
 
 function chatPost(user: User, text: string) {

@@ -367,4 +367,4 @@ function boostStep(user: User, processId: string, notices: Notices) {
   return { ok: true, cost };
 }
 
-export = { list, detail, startStep, boostStep, checkCompleted, buyRequiredUnits };
+export = { list, detail, startStep, boostStep, checkCompleted, buyRequiredUnits, unitShortfall,};

@@ -78,6 +78,8 @@ function registerRoutes(app: any) {
       activeTitle: features.activeTitleName(req.user),
       dailyReward: daily ? { streak: daily.streak, message: daily.message } : null,
       pendingRocketHits: (req.user.pendingRocketHits && req.user.pendingRocketHits.length) ? req.user.pendingRocketHits : null,
+      // Награда за вход ждёт получения в окне (не начисляется молча)
+      pendingLoginReward: (req.user as any).pendingLoginReward || null,
       // Сводка «пока вас не было»: атаки/санкции за время оффлайна
       pendingWarReport: (() => { try { return require('./services/warReport').view(req.user); } catch (e) { return null; } })(),
       // Очередь окон о новых достижениях (показываются по одному)
@@ -246,8 +248,17 @@ function registerRoutes(app: any) {
 
   // ---------- Ежедневные задания ----------
   app.add('GET',  '/api/daily',            (req) => dailyQuests.list(req.user));
+  // Принять поручение: прогресс начинает считаться только после этого
+  // Забрать награду за вход (окно «довольствие от штаба»)
+  app.add('POST', '/api/login-reward/claim', act((req, n) => features.claimLoginReward(req.user, n)));
+  app.add('POST', '/api/daily/accept',     act((req, n) => dailyQuests.accept(req.user, req.body.questId, n)));
   app.add('POST', '/api/daily/claim',      act((req, n) => dailyQuests.claim(req.user, req.body.questId, n)));
   app.add('POST', '/api/daily/bonus',      act((req, n) => dailyQuests.claimBonus(req.user, n)));
+  // Недельные поручения: свой пул, свои лимиты и награды, сброс в понедельник
+  app.add('GET',  '/api/weekly',            (req) => dailyQuests.weeklyList(req.user));
+  app.add('POST', '/api/weekly/accept',     act((req, n) => dailyQuests.weeklyAccept(req.user, req.body.questId, n)));
+  app.add('POST', '/api/weekly/claim',      act((req, n) => dailyQuests.weeklyClaim(req.user, req.body.questId, n)));
+  app.add('POST', '/api/weekly/bonus',      act((req, n) => dailyQuests.weeklyClaimBonus(req.user, n)));
 
   // ---------- Банк ----------
   app.add('POST', '/api/bank', act((req) => {
@@ -365,7 +376,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/legion/battle/restore',    act((req, n) => legion.restoreForBattle(req.user, req.body.kind, n)));
 
   // ---------- Чат, почта, зал славы, достижения ----------
-  app.add('GET', '/api/chat', (req) => social.chatGet(req.query.after));
+  app.add('GET', '/api/chat', (req) => social.chatGet(req.user, req.query.after));
   app.add('POST', '/api/chat', act((req) => { social.chatPost(req.user, req.body.text); return { ok: true }; }));
   app.add('GET', '/api/mail', (req) => social.inbox(req.user));
   app.add('GET', '/api/mail/:id', (req) => social.readThread(req.user, req.params.id));

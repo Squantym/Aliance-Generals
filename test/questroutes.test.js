@@ -30,7 +30,7 @@ for (const f of fs.readdirSync(path.join(ROOT, 'public/js/screens'))) {
   await db.init();
 
   console.log('\n[1] У всех заданий есть маршрут');
-  eq('поручений 20', c.DAILY_QUESTS.length, 20);
+  eq('поручений 22 (добавлены 2 контрабандных)', c.DAILY_QUESTS.length, 22);
   ok('у каждого поручения есть route', c.DAILY_QUESTS.every(q => typeof q.route === 'string' && q.route.length));
   ok('у каждого контракта есть route', c.CONTRACTS_POOL.every(q => typeof q.route === 'string' && q.route.length));
 
@@ -69,7 +69,10 @@ for (const f of fs.readdirSync(path.join(ROOT, 'public/js/screens'))) {
   ok('контракт получает data-goto', /data-goto="\$\{ct\.route\}"/.test(core));
   ok('есть обработчик перехода', /location\.hash = '#' \+ row\.dataset\.goto/.test(core));
   ok('кнопка «Получить» не всплывает наверх (stopPropagation)', /ev\.stopPropagation\(\)/.test(core));
-  ok('выполненные задания не кликабельны', /q\.route && !q\.done/.test(core));
+  // v49: в условие добавлено принятие задания — непринятые тоже не кликабельны,
+  // потому что прогресс по ним не идёт до нажатия «Принять»
+  ok('выполненные задания не кликабельны', /q\.route && q\.accepted && !q\.done/.test(core));
+  ok('непринятые задания не кликабельны', /q\.accepted && !q\.done/.test(core));
   ok('есть подсказка перехода', /Нажмите, чтобы перейти к выполнению/.test(core));
   const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
   ok('стиль кликабельности задан', /\.quest-clickable \{ cursor: pointer/.test(css));

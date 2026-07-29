@@ -159,7 +159,7 @@ App.screens.war = async (c) => {
       b.attackerDodge ? '🌀 Вы увернулись от ответного урона' : '',
     ].filter(Boolean).join(' · ');
     resultHtml = `
-      <div class="card">
+      <div class="card" id="battle-result">
         <div class="result-title ${b.win ? 'win' : 'lose'}">${b.win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</div>
         <p class="center muted small">${UI.esc(b.targetName)} (ур. ${b.targetLevel})${b.isBot ? ' 💀' : ''}</p>
         <div style="margin:8px 0">
@@ -225,7 +225,7 @@ App.screens.war = async (c) => {
   const enc = App._warEncounter;
   const preCombat = enc && enc.type === 'mine_defuse'; // только мина прячет итог боя
   const encounterHtml = enc
-    ? (enc.type === 'bank_hack' ? bankHackCardHtml(enc) : mineDefuseCardHtml(enc))
+    ? `<div id="war-encounter">${enc.type === 'bank_hack' ? bankHackCardHtml(enc) : mineDefuseCardHtml(enc)}</div>`
     : '';
 
   c.innerHTML = `
@@ -330,8 +330,10 @@ App.screens.war = async (c) => {
       const r = await API.post('/api/war/attack', { targetId });
       handleAttackOutcome(r);
       await App.refreshMe();
-      App.rerender();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Прокручиваем к нужному блоку: к панели результата боя, а если после
+      // атаки выпал сейф или мина — к окну встречи. Раньше страница уезжала
+      // в самый верх, и игрок, пролиставший список противников, терял итог.
+      App.rerenderTo(r.encounter ? 'war-encounter' : 'battle-result');
     } catch (e) {
       // Нет боеприпасов — предложить восстановление за золото и повторить атаку
       if (/боеприпас/i.test(e.message)) {
@@ -373,16 +375,31 @@ App.screens.war = async (c) => {
       }
       // Взлом завершён. Бой уже прошёл при атаке — результат боя (_lastBattle)
       // сохраняем, просто закрываем окно сейфа и уведомляем об итоге.
-      if (r.bankHack) {
-        const bh = r.bankHack;
-        if (bh.alarmed) UI.toast(`🚨 Код ${bh.code} верный, но сработала сигнализация — взлом сорван!`);
-        else if (bh.stolen > 0) UI.toast(`🔓 Сейф взломан! Похищено 🪙 из банка: $${UI.fmtNum(bh.stolen)}`);
-        else if (bh.outOfTries) UI.toast(`⛔ Попытки закончились. Код сейфа был: ${bh.code}`);
-      }
+      if (r.bankHack) await showSafeResult(r.bankHack);
       App._warEncounter = null;
       await App.refreshMe();
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
+  // Окно результата взлома сейфа — раньше итог показывался коротким тостом,
+  // и игрок не успевал понять, сколько унёс и почему сорвалось.
+  function showSafeResult(bh) {
+    const win = bh.stolen > 0 && !bh.alarmed;
+    const title = bh.alarmed ? '🚨 Сигнализация!' : (win ? '🔓 Сейф взломан' : '⛔ Взлом сорван');
+    const color = win ? 'var(--money)' : 'var(--red)';
+    const text = bh.alarmed
+      ? `Код <b>${UI.esc(String(bh.code))}</b> был верным, но охрана успела поднять тревогу — пришлось уходить пустым.`
+      : win
+        ? 'Замок поддался. Содержимое сейфа перекочевало в ваши карманы.'
+        : `Попытки закончились, сейф остался закрыт. Код был: <b>${UI.esc(String(bh.code))}</b>.`;
+    const sum = win
+      ? `<div class="safe-sum"><span class="ic-dollar"></span> <b class="money">${UI.fmtNum(bh.stolen)}</b></div>`
+      : '';
+    return UI.confirm(
+      `<div class="safe-result">${text}${sum}</div>`,
+      { title, icon: bh.alarmed ? '🚨' : (win ? '🔓' : '🔒'), html: true, okText: 'Понятно', cancelText: '' }
+    );
   }
 
   async function bankHackSkip() {
@@ -678,19 +695,43 @@ async function renderConflictDetail(c, confId) {
         await App.refreshMe();
         App.rerender();
       };
-      // Окно покупки недостающей техники (цена магазина с учётом акции)
+      // Окно покупки недостающей техники (цена магазина с учётом акции).
+      // Показываем картинку каждой единицы, сколько нужно/есть/докупить,
+      // цену за штуку, а внизу — итоговую сумму и кнопку покупки.
+      // Раньше эта разметка уходила в UI.confirm без опции html и игрок
+      // видел сырые HTML-теги вместо таблицы.
       const _offerBuyUnits = async (s) => {
         const disc = s.discount && s.discount.pct
-          ? ` <span class="gold">(акция −${s.discount.pct}%)</span>` : '';
-        const afford = s.canAfford ? '' : `<br><span style="color:var(--red)">Не хватает денег на счету.</span>`;
-        const rows = (s.items || []).map((it) =>
-          `<div class="kv"><span class="k">${App.tabImg('tech_' + it.type, 18)} ${UI.esc(it.typeRu)} — «${UI.esc(it.unitName)}»</span>` +
-          `<span class="v">${it.deficit} шт · $${UI.fmtNum(it.cost)}</span></div>`).join('');
-        const ok = await UI.confirm(
-          `Для операции не хватает техники (ур. ${s.minLevel}+):${rows}` +
-          `<br>Купить всё разом за <b class="money">$${UI.fmtNum(s.totalCost)}</b>${disc} — по цене магазина?${afford}`,
-          { title: '🛒 Не хватает техники', icon: '🚜', okText: s.canAfford ? 'Купить всё' : 'Купить всё (не хватает $)', cancelText: 'Отмена' }
-        );
+          ? `<span class="gold small">акция −${s.discount.pct}%</span>` : '';
+        const rows = (s.items || []).map((it) => `
+          <div class="buy-units-row">
+            <img class="buy-units-img" src="/img/units/${String(it.unitId).replace(/[^a-z0-9_]/gi, '')}.webp"
+                 alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'buy-units-stub',textContent:'🚜'}))">
+            <div class="buy-units-info">
+              <div class="buy-units-name">${UI.esc(it.unitName)}</div>
+              <div class="muted small">${App.tabImg('tech_' + it.type, 14)} ${UI.esc(it.typeRu)} · есть ${UI.fmtNum(it.have)} из ${UI.fmtNum(it.need)}</div>
+            </div>
+            <div class="buy-units-num">
+              <div class="buy-units-count">×${UI.fmtNum(it.deficit)}</div>
+              <div class="muted small"><span class="ic-dollar"></span>${UI.fmtNum(it.unitPrice)} за ед.</div>
+              <div class="money small"><span class="ic-dollar"></span>${UI.fmtNum(it.cost)}</div>
+            </div>
+          </div>`).join('');
+        const body = `
+          <div class="buy-units-head">Для шага нужна техника уровня ${s.minLevel}+${s.profile ? ` <span class="muted">(${UI.esc(s.profile)})</span>` : ''}</div>
+          <div class="buy-units-list">${rows}</div>
+          <div class="buy-units-total">
+            <span>Итого за ${UI.fmtNum(s.deficit)} ед.:</span>
+            <b class="money"><span class="ic-dollar"></span>${UI.fmtNum(s.totalCost)}</b> ${disc}
+          </div>
+          ${s.canAfford
+            ? `<div class="muted small center">Покупка по цене магазина</div>`
+            : `<div class="small center" style="color:var(--red)">Не хватает денег: на счету <span class="ic-dollar"></span>${UI.fmtNum((App.me && App.me.dollars) || 0)}</div>`}`;
+        const ok = await UI.confirm(body, {
+          title: 'Не хватает техники', icon: '🚜', html: true,
+          okText: s.canAfford ? `Купить всё` : 'Купить всё (не хватает $)',
+          cancelText: 'Отмена',
+        });
         if (!ok) return;
         try {
           await API.post('/api/missions/buy-required', { confId, opIdx, stepIdx });

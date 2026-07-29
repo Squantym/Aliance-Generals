@@ -1080,6 +1080,18 @@ const DAILY_QUESTS = [
     name: 'Золото Родины',   flavor: 'Крупный резерв — крупная война. Загрузи банк по-настоящему серьёзной суммой.' },
 
   // ── Майор Ковач — снабжение и техника ──────────────────────────
+  // ── Контрабанда: ЕДИНСТВЕННЫЕ дневные поручения с золотом ──────
+  // Товар назван явно, цель фиксирована, назад возвращается половина
+  // потраченного золота (см. smuggleGoldReward).
+  { id: 'k_container', char: 'kovac', counter: 'buy:kont', route: 'market/containers', base: 0, diff: 1.0, icon: '📦',
+    item: 'kont', fixedTarget: 1,
+    name: 'Контрабанда: контейнер',
+    flavor: 'Возьми на чёрном рынке один «Исследовательский контейнер» — половину золота проведу как накладные расходы и верну.' },
+  { id: 'k_doping',    char: 'kovac', counter: 'buy:stim', route: 'market/buffs',      base: 0, diff: 1.0, icon: '💉',
+    item: 'stim', fixedTarget: 4,
+    name: 'Контрабанда: допинг',
+    flavor: 'Нужны четыре «Боевых стимулятора» с рынка. Половину золота верну — остальное спишем на убыль.' },
+
   { id: 'k_fresh',   char: 'kovac',    counter: 'unitsBought', route: 'units',   base: 40,  diff: 1.0, icon: '🚜',
     name: 'Свежее пополнение', flavor: 'Голыми руками не повоюешь. Закупи технику — ангары должны быть полны.' },
   { id: 'k_smuggle', char: 'kovac',    counter: 'marketBought', route: 'market/buffs',  base: 8,   diff: 1.6, icon: '💣',
@@ -1120,19 +1132,148 @@ const DAILY_PICK_COUNT = 9; // сколько поручений активно 
 function dailyGrowth(level: number): number {
   return 1 + Math.min(7, (Math.max(1, level) - 1) * 7 / 299);
 }
-// Итоговое требование поручения (с учётом сложности и уровня)
-function dailyQuestTarget(base: number, diff: number, level: number): number {
+// ═══ КОНТРАБАНДНЫЕ ПОРУЧЕНИЯ (единственные с золотом в награде) ═══
+// Такое поручение называет КОНКРЕТНЫЙ товар чёрного рынка и возвращает
+// GOLD_BACK_PCT от суммы, которую игрок на него потратил. Цель фиксирована
+// (не растёт с уровнем), потому что цена товара в золоте тоже не растёт.
+//   1 «Исследовательский контейнер» (100 🪙) → 50 🪙 назад
+//   20 «Технологичных кейсов» (50 🪙)        → 500 🪙 назад
+const GOLD_BACK_PCT = 0.5;
+// Цена товара в золоте: ищем и среди контейнеров, и среди предметов рынка
+function smuggleItemGold(itemId: string): number {
+  const cont = CONTAINERS.find((x: any) => x.id === itemId);
+  if (cont) return cont.gold;
+  const it = MARKET_ITEM_BY_ID[itemId];
+  return it ? (it.gold || 0) : 0;
+}
+// Название товара — чтобы в тексте поручения он был назван явно
+function smuggleItemName(itemId: string): string {
+  const cont = CONTAINERS.find((x: any) => x.id === itemId);
+  if (cont) return cont.name;
+  const it = MARKET_ITEM_BY_ID[itemId];
+  return it ? it.name : itemId;
+}
+// Золото за поручение = половина потраченного на товар
+function smuggleGoldReward(quest: any): number {
+  if (!quest || !quest.item || !quest.fixedTarget) return 0;
+  return Math.round(quest.fixedTarget * smuggleItemGold(quest.item) * (quest.goldBack || GOLD_BACK_PCT));
+}
+
+// ---- Шаги спецоперций: отдельный, СИЛЬНО урезанный диапазон ----
+// Шаг спецоперации требует времени и энергии, поэтому общая формула
+// (base × diff × рост уровня) давала абсурд: 960 шагов на 300 уровне.
+// Теперь цель по счётчику missionStages — строго 5..30 в зависимости от
+// уровня: 5 на старте, 30 у максимального уровня. Сложность задания
+// сдвигает цель внутри этого же диапазона, потолок не пробивается.
+const MISSION_STAGES_MIN = 5;
+const MISSION_STAGES_MAX = 30;
+function missionStagesTarget(diff: number, level: number): number {
+  const lvl = Math.max(1, Math.min(PLAYER.MAX_LEVEL, level || 1));
+  const span = MISSION_STAGES_MAX - MISSION_STAGES_MIN;
+  const byLevel = MISSION_STAGES_MIN + span * ((lvl - 1) / (PLAYER.MAX_LEVEL - 1));
+  const byDiff = byLevel * (0.6 + 0.4 * (diff || 1));   // diff 1.0 → ×1.0, diff 2.4 → ×1.56
+  return Math.max(MISSION_STAGES_MIN, Math.min(MISSION_STAGES_MAX, Math.round(byDiff)));
+}
+
+// Итоговое требование поручения (с учётом сложности и уровня).
+// counter передаётся, чтобы спецоперации считались по своему диапазону.
+function dailyQuestTarget(base: number, diff: number, level: number, counter?: string, fixedTarget?: number): number {
+  // Поручения на конкретный товар за золото: цель фиксирована
+  if (fixedTarget) return fixedTarget;
+  if (counter === 'missionStages') return missionStagesTarget(diff, level);
   return Math.max(1, Math.round(base * (diff || 1) * dailyGrowth(level)));
 }
 // Награда за поручение: растёт с уровнем и сложностью. Доллары — основной приз,
 // опыт — вспомогательный. Правь коэффициенты свободно.
-function dailyQuestReward(diff: number, level: number): { xp: number; dollars: number } {
+function dailyQuestReward(diff: number, level: number, quest?: any): { xp: number; dollars: number; gold: number } {
   const d = diff || 1;
   return {
     xp: Math.max(5, Math.round(level * 0.8 * d)),
     dollars: Math.round(6000 * level * d),
+    // Золото — только у контрабандных поручений: половина потраченного
+    gold: smuggleGoldReward(quest),
   };
 }
+// ═══════════════════════════════════════════════════════════════════
+// НЕДЕЛЬНЫЕ ПОРУЧЕНИЯ — отдельный пул уникальных заданий
+// Не дубли дневных: другие цели, свои названия и реплики заказчиков.
+// Лимиты кратно выше дневных, награда — тоже, плюс золото (у дневных
+// золото даётся только бонусом за все сразу).
+// Сброс — раз в неделю (понедельник, UTC), выбор стабилен внутри недели.
+// ═══════════════════════════════════════════════════════════════════
+const WEEKLY_QUESTS = [
+  { id: 'w_offensive', char: 'volkov',   counter: 'wins',           route: 'war',            base: 400,     diff: 2.0, icon: '🚩',
+    name: 'Большое наступление', flavor: 'Неделя решает исход кампании. Побед мне нужно много — и без оправданий.' },
+  { id: 'w_meatgrinder', char: 'volkov', counter: 'attacks',        route: 'war',            base: 900,     diff: 1.6, icon: '⚔',
+    name: 'Мясорубка',           flavor: 'Давить неделю без остановки. Пусть враг забудет, как это — спать спокойно.' },
+  { id: 'w_treasury',  char: 'morozova', counter: 'bankDeposited',  route: 'bank/storage',   base: 8000000, diff: 2.0, icon: '🏛',
+    name: 'Золотой запас',       flavor: 'Недельный отчёт по резервам должен быть таким, чтобы у штаба дрогнули руки.' },
+  { id: 'w_industry',  char: 'morozova', counter: 'buildingsBuilt', route: 'buildings',      base: 40,      diff: 2.4, icon: '🏗',
+    name: 'Индустриализация',    flavor: 'Неделя — и я хочу видеть новый промышленный район. Стройте.' },
+  { id: 'w_arsenal',   char: 'kovac',    counter: 'unitsBought',    route: 'units',          base: 700,     diff: 2.0, icon: '🏭',
+    name: 'Арсенал',             flavor: 'Ангары должны трещать. Закупай технику всю неделю — война длинная.' },
+  { id: 'w_bloodprice', char: 'gadyuka', counter: 'fatalities',     route: 'war',            base: 25,      diff: 2.4, icon: '💀',
+    name: 'Цена крови',          flavor: 'Недельный подряд. Работа грязная, оплата достойная — считать не буду.' },
+  { id: 'w_collection', char: 'gadyuka', counter: 'earsCut',        route: 'war',            base: 30,      diff: 2.4, icon: '👂',
+    name: 'Коллекция',           flavor: 'Пополни мою коллекцию за неделю. Я не спрашиваю, где ты их взял.' },
+  { id: 'w_campaign',  char: 'tesla',    counter: 'missionStages',  route: 'missions',       base: 0,       diff: 2.4, icon: '🛰',
+    name: 'Долгая кампания',     flavor: 'Недельный цикл спецоперций. Мне нужен объём данных, а не отдельные вылазки.' },
+  { id: 'w_supplies',  char: 'kovac',    counter: 'buy:keis',       route: 'market/containers', base: 0,  diff: 1.6, icon: '📦',
+    item: 'keis', fixedTarget: 20,
+    name: 'Серые поставки',      flavor: 'Неделю выгребаем склады: двадцать «Технологичных кейсов», и половину золота я тебе верну.' },
+  { id: 'w_drills',    char: 'berkut',   counter: 'attacks',        route: 'war',            base: 1500,    diff: 2.4, icon: '🎯',
+    name: 'Недельный норматив',  flavor: 'Норматив недели. Кто не выполнил — тот и не боец, а балласт.' },
+];
+const WEEKLY_QUEST_BY_ID: Record<string, any> = {};
+for (const q of WEEKLY_QUESTS) WEEKLY_QUEST_BY_ID[q.id] = q;
+const WEEKLY_PICK_COUNT = 4;          // сколько недельных поручений активно
+const WEEKLY_STAGES_MULT = 4;         // спецоперации в недельных: 4× дневного диапазона (20..120)
+const WEEKLY_REWARD_MULT = 9;         // деньги и опыт: 9× от дневной награды той же сложности
+const WEEKLY_GOLD_BASE = 60;          // золото за недельное поручение (растёт с уровнем)
+
+// Цель недельного поручения. Спецоперации — свой диапазон (дневной × 4),
+// остальное — base × сложность × рост уровня, как у дневных.
+function weeklyQuestTarget(base: number, diff: number, level: number, counter?: string, fixedTarget?: number): number {
+  if (fixedTarget) return fixedTarget;
+  if (counter === 'missionStages') return missionStagesTarget(diff, level) * WEEKLY_STAGES_MULT;
+  return Math.max(1, Math.round(base * (diff || 1) * dailyGrowth(level)));
+}
+// Награда недельного поручения: кратно дневной + золото
+// quest передаётся, чтобы посчитать возврат золота контрабандных поручений.
+// У всех остальных поручений золота в награде НЕТ — только деньги и опыт
+// (золото остаётся премиум-валютой и приходит бонусом за все поручения).
+function weeklyQuestReward(diff: number, level: number, quest?: any): { xp: number; dollars: number; gold: number } {
+  const d = dailyQuestReward(diff, level);
+  return {
+    xp: d.xp * WEEKLY_REWARD_MULT,
+    dollars: d.dollars * WEEKLY_REWARD_MULT,
+    gold: smuggleGoldReward(quest),
+  };
+}
+// Бонус за выполнение ВСЕХ недельных поручений (золото)
+function weeklyAllBonusGold(level: number): number {
+  return (150 + Math.floor(level / 2)) * 5;
+}
+// Ключ недели (понедельник, UTC) — используется и для сброса, и для выбора
+function weekUtcKey(d?: Date): string {
+  const now = d || new Date();
+  const day = (now.getUTCDay() + 6) % 7;   // 0 = понедельник
+  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day));
+  return `w${monday.getUTCFullYear()}-${monday.getUTCMonth()}-${monday.getUTCDate()}`;
+}
+// Выбор недельных поручений (стабильно внутри недели, меняется в понедельник)
+function pickWeeklyQuests(weekKey: string): string[] {
+  let h = 2166136261;
+  for (let i = 0; i < weekKey.length; i++) { h ^= weekKey.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const rng = _mulberry32(h >>> 0);
+  const ids = WEEKLY_QUESTS.map((q) => q.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return ids.slice(0, WEEKLY_PICK_COUNT);
+}
+
 // Бонус за выполнение ВСЕХ активных поручений дня — растёт с уровнем (золото).
 function dailyAllBonusGold(level: number): number {
   return 150 + Math.floor(level / 2); // ур.1 = 150 🪙 → ур.300 = 300 🪙
@@ -1706,6 +1847,23 @@ const BATTLE = {
   LOSS_DEF_WIN_PCT: 0.001,    // потери защитника даже при успешной обороне
   LOSS_ATK_PCT: 0.0024,       // потери атакующего при поражении
   LOSS_ATK_WIN_PCT: 0.0012,   // даже победитель теряет немного техники (война)
+  // ---- Потери техники: АБСОЛЮТНЫЕ значения, зависят от урона ----
+  // Раньше потери считались как доля от армии, поэтому у крупных игроков
+  // за бой сгорали сотни единиц. Теперь это фиксированный диапазон,
+  // а внутри него потери масштабируются по нанесённому/полученному урону:
+  // слабый удар — по нижней границе, максимальный — по верхней.
+  // Полный уворот (урон 0) не отнимает технику вообще.
+  UNIT_LOSS_MIN: 1,           // обычный удар: от 1 единицы
+  UNIT_LOSS_MAX: 10,          //               до 10
+  UNIT_LOSS_CRIT_MIN: 10,     // критический удар: от 10 единиц
+  UNIT_LOSS_CRIT_MAX: 30,     //                   до 30
+  UNIT_LOSS_DAMAGE_CAP: 30,   // урон, при котором потери достигают максимума
+  // Потери не могут превысить эту долю взятой в бой техники. Нужен для
+  // малых армий: у игрока без альянса в бой уходит всего 10 единиц, и без
+  // этого предела один удар выкашивал бы почти всю его технику.
+  // 0.10 → новичок теряет максимум 1 единицу за бой, развитый игрок
+  // (вместимость 300+) упирается уже в абсолютный потолок 10/30.
+  UNIT_LOSS_ARMY_PCT: 0.10,
   FATALITY_HP_PCT: 0.15,
   FATALITY_WINDOW_MS: 3 * 60 * 1000,
   BOTS_TTL_MS: 15 * 60 * 1000,
@@ -2088,6 +2246,10 @@ export = {
   spyReveal, SPY_LIVE_MS,
   DAILY_QUESTS, DAILY_QUEST_BY_ID, DAILY_CHARS, DAILY_PICK_COUNT,
   dailyQuestTarget, dailyQuestReward, dailyAllBonusGold, pickDailyQuests, dailyGrowth,
+  WEEKLY_QUESTS, WEEKLY_QUEST_BY_ID, WEEKLY_PICK_COUNT, WEEKLY_REWARD_MULT, WEEKLY_STAGES_MULT,
+  weeklyQuestTarget, weeklyQuestReward, weeklyAllBonusGold, pickWeeklyQuests, weekUtcKey,
+  smuggleGoldReward, smuggleItemGold, smuggleItemName, GOLD_BACK_PCT,
+  missionStagesTarget, MISSION_STAGES_MIN, MISSION_STAGES_MAX,
   ACHIEVEMENTS, ACH_DOLLARS, ACH_GOLD,
   ALLIANCE, LEGION, LEGION_BUILDINGS, LEGION_BUILDING_BY_ID,
   LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID, battleBuildingCostAt, battleBuildingLegionReq,

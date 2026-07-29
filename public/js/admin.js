@@ -1172,8 +1172,8 @@ const Admin = {
       const v = id => (document.getElementById(id) || {}).value || '';
       const fields = ['g-dollars','g-gold','g-xp','g-skill','g-ears','g-tokens','g-bank'];
       if (!fields.some(f => parseInt(v(f)) > 0)) { UI.toast('⛔ Укажите, сколько забрать'); return; }
-      if (!await UI.confirm(`Списать указанные ресурсы у игрока ${p.name}?<br><span class="muted small">Значения в полях = сколько забрать. Ниже нуля не уйдёт.</span>`,
-        { title: 'Списание ресурсов', icon: '➖', okText: 'Забрать', danger: true })) return;
+      if (!await UI.confirm(`Списать указанные ресурсы у игрока ${UI.esc(p.name)}?<br><span class="muted small">Значения в полях = сколько забрать. Ниже нуля не уйдёт.</span>`, // html:true ниже
+        { title: 'Списание ресурсов', icon: '➖', okText: 'Забрать', danger: true, html: true })) return;
       try {
         await API.post('/api/admin/take', {
           userId: p.id,

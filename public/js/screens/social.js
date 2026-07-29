@@ -1046,13 +1046,28 @@ App.screens.chat = async (c) => {
       const { messages } = await API.get('/api/chat');
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
-        <div class="chat-msg">
+        <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}">
+          ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
           <span class="muted small">[${msg.level}]</span>
+          ${msg.self ? '' : `<button class="chat-reply" data-reply="${UI.esc(msg.name)}" title="Ответить ${UI.esc(msg.name)}">↩</button>`}
           <span class="at">${UI.fmtDate(msg.at)}</span><br>${UI.esc(msg.text)}
         </div>`).join('')
         : '<p class="muted center">В эфире тишина. Скажите что-нибудь первым!</p>';
       if (atBottom) box.scrollTop = box.scrollHeight;
+      // «Ответить»: подставляем обращение в начало поля и ставим курсор в конец
+      box.querySelectorAll('[data-reply]').forEach((btn) => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          const input = document.getElementById('chat-text');
+          if (!input) return;
+          const name = btn.dataset.reply;
+          const rest = input.value.replace(/^[^,]{1,32},\s*/, '');   // меняем прежнего адресата
+          input.value = `${name}, ${rest}`;
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        };
+      });
     } catch (e) {}
   }
 

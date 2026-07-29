@@ -1153,21 +1153,39 @@ App.screens.settings = async (c) => {
   };
 };
 
-// ---------- ЕЖЕДНЕВНЫЕ ЗАДАНИЯ ----------
+// ---------- ПОРУЧЕНИЯ: ЕЖЕДНЕВНЫЕ И НЕДЕЛЬНЫЕ ----------
+// Два раздела с независимыми пулами, счётчиками и сроками сброса:
+// дневные обнуляются в полночь UTC, недельные — в понедельник.
 App.screens.daily = async (c) => {
   await App.refreshMe();
-  const d = await API.get('/api/daily');
+  const tab = App._questTab === 'weekly' ? 'weekly' : 'daily';
+  const isWeekly = tab === 'weekly';
+  const d = await API.get(isWeekly ? '/api/weekly' : '/api/daily');
+  // Эндпоинты различаются только адресом — разметка ниже общая
+  const acceptUrl = isWeekly ? '/api/weekly/accept' : '/api/daily/accept';
+  const claimUrl  = isWeekly ? '/api/weekly/claim'  : '/api/daily/claim';
+  const bonusUrl  = isWeekly ? '/api/weekly/bonus'  : '/api/daily/bonus';
+  const resetText = isWeekly
+    ? `Смена поручений через ~${d.resetInDays} дн.`
+    : `Обнуление через ~${d.resetInHours} ч`;
 
   c.innerHTML = `
     <div class="title">🎯 Поручения штаба</div>
+    <div class="tabs">
+      <div class="tab ${!isWeekly ? 'active' : ''}" data-qtab="daily">Ежедневные</div>
+      <div class="tab ${isWeekly ? 'active' : ''}" data-qtab="weekly">Недельные</div>
+    </div>
     <div class="card center">
-      <p class="muted small">Сегодня активно <b>${d.total}</b> поручений от заказчиков (меняются каждый день). Выполнено: <b>${d.doneCount} / ${d.total}</b> · Обнуление через ~${d.resetInHours} ч</p>
+      <p class="muted small">${isWeekly
+        ? `На этой неделе активно <b>${d.total}</b> особых поручений — лимиты и награды кратно выше дневных, за каждое дают ещё и золото.`
+        : `Сегодня активно <b>${d.total}</b> поручений от заказчиков (меняются каждый день).`}
+        Выполнено: <b>${d.doneCount} / ${d.total}</b> · ${resetText}</p>
       ${d.allDone && !d.bonusClaimed ? `
         <button class="btn btn-orange mt" id="daily-bonus">🎉 Забрать бонус за все: <span class="ic-gold"></span> ${d.bonusGold}</button>
       ` : d.bonusClaimed ? `
         <p class="small mt" style="color:var(--money)">✅ Бонус <span class="ic-gold"></span> ${d.bonusGold} за все поручения уже получен</p>
       ` : `
-        <p class="small mt muted">Выполните все ${d.total} поручений дня — бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
+        <p class="small mt muted">Выполните все ${d.total} поручений — бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
       `}
     </div>
     ${(() => {
@@ -1193,34 +1211,49 @@ App.screens.daily = async (c) => {
               </div>
             </div>
             ${g.map((q) => `
-              <div class="quest-row${q.route && !q.done ? ' quest-clickable' : ''}"
-                   ${q.route && !q.done ? `data-goto="${q.route}"` : ''}
+              <div class="quest-row${q.route && q.accepted && !q.done ? ' quest-clickable' : ''}"
+                   ${q.route && q.accepted && !q.done ? `data-goto="${q.route}"` : ''}
                    style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
                 <div class="list-row" style="border:none;padding:0">
                   <div class="grow">
                     <div class="name">${q.icon} ${UI.esc(q.name)} ${diffBadge(q.difficulty)}</div>
                     <div class="muted small" style="font-style:italic;margin:2px 0 4px">«${UI.esc(q.flavor)}»</div>
-                    <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.name)}</b> — ${UI.fmtNum(q.target)} ${q.progress >= q.target ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
-                    ${UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)}
-                    <div class="small mt">Награда: +${UI.fmtNum(q.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(q.reward.dollars)}</div>
-                    ${q.route && !q.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
+                    <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.name)}</b> — ${UI.fmtNum(q.target)} ${q.done ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
+                    ${q.accepted
+                      ? UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)
+                      : '<div class="muted small quest-not-accepted">Поручение не принято — прогресс не идёт</div>'}
+                    <div class="small mt">Награда: +${UI.fmtNum(q.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(q.reward.dollars)}${q.reward.gold ? `, <span class="ic-gold"></span> ${UI.fmtNum(q.reward.gold)}` : ''}</div>
+                    ${q.route && q.accepted && !q.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
                   </div>
                   <div style="margin-left:8px">${q.claimed
                     ? `<span class="badge green">✅</span>`
                     : q.done
-                      ? `<button class="btn btn-orange btn-inline" data-quest="${q.id}">Получить</button>`
-                      : `<span class="muted small">в работе</span>`}</div>
+                      ? `<button class="btn btn-orange btn-inline" data-quest="${q.id}">Получить награду</button>`
+                      : q.accepted
+                        ? `<span class="muted small">в работе</span>`
+                        : `<button class="btn btn-green btn-inline" data-accept="${q.id}">Принять</button>`}</div>
                 </div>
               </div>`).join('')}
           </div>`;
       }).join('');
     })()}`;
 
+  // Принятие поручения: прогресс считается только с этого момента
+  c.querySelectorAll('[data-accept]').forEach((btn) => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      try {
+        await API.post(acceptUrl, { questId: btn.dataset.accept });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
   c.querySelectorAll('[data-quest]').forEach((btn) => {
     btn.onclick = async (ev) => {
       ev.stopPropagation(); // не перехватывать переходом по заданию
       try {
-        await API.post('/api/daily/claim', { questId: btn.dataset.quest });
+        await API.post(claimUrl, { questId: btn.dataset.quest });
         await App.refreshMe();
         App.rerender();
       } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -1230,10 +1263,14 @@ App.screens.daily = async (c) => {
   c.querySelectorAll('[data-goto]').forEach((row) => {
     row.onclick = () => { location.hash = '#' + row.dataset.goto; };
   });
+  // Переключение разделов «Ежедневные» / «Недельные»
+  c.querySelectorAll('[data-qtab]').forEach((btn) => {
+    btn.onclick = () => { App._questTab = btn.dataset.qtab; App.rerender(); };
+  });
   const bonusBtn = document.getElementById('daily-bonus');
   if (bonusBtn) bonusBtn.onclick = async () => {
     try {
-      await API.post('/api/daily/bonus');
+      await API.post(bonusUrl);
       await App.refreshMe();
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
