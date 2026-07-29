@@ -88,7 +88,7 @@ if (ids.includes('k_container')) {
 } else {
   ok(true, 'поручение сегодня не в активной выборке — цикл проверен на недельном ниже');
 }
-const wIds = c.pickWeeklyQuests(user.weekly.week);
+const wIds = c.pickWeeklyQuests(user.weeklyQuests.week);
 ok(Array.isArray(wIds), `недельная выборка: ${wIds.join(', ')}`);
 
 console.log('\n── 5. Награда за вход ждёт получения в окне ──');

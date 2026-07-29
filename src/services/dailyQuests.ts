@@ -54,10 +54,26 @@ function bump(user: User, key: string, amount?: number): void {
 // и своим пулом уникальных заданий с повышенными лимитами и наградами.
 function ensureWeekly(user: User): any {
   const week = config.weekUtcKey();
-  if (!(user as any).weekly || (user as any).weekly.week !== week) {
-    (user as any).weekly = { week, counters: {}, accepted: {}, claimed: {}, bonusClaimed: false };
+  // ═══ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ (v53) ═════════════════════════════
+  // Недельные поручения ЖИЛИ в user.weekly — но это поле уже занято
+  // НЕДЕЛЬНЫМ СЕЗОНОМ (seasons.ts: { weekId, ears, wins, loot... }).
+  // Два модуля перетирали объект друг друга: любое действие игрока
+  // (bump) стирало его сезонные очки, а сезонный хук — прогресс
+  // поручений. Из-за этого у активных игроков счёт сезона обнулился.
+  // Поручения переезжают в СОБСТВЕННОЕ поле weeklyQuests.
+  // ────────────────────────────────────────────────────────────────
+  // Миграция: если в user.weekly остался формат поручений (есть week/
+  // counters, нет сезонного weekId) — переносим его в weeklyQuests и
+  // освобождаем поле: сезон пересоздаст свой объект сам (ensureWeek).
+  const legacy = (user as any).weekly;
+  if (legacy && legacy.week && legacy.counters && !legacy.weekId && !(user as any).weeklyQuests) {
+    (user as any).weeklyQuests = legacy;
+    (user as any).weekly = null;
   }
-  const w = (user as any).weekly;
+  if (!(user as any).weeklyQuests || (user as any).weeklyQuests.week !== week) {
+    (user as any).weeklyQuests = { week, counters: {}, accepted: {}, claimed: {}, bonusClaimed: false };
+  }
+  const w = (user as any).weeklyQuests;
   if (!w.counters) w.counters = {};
   if (!w.accepted) w.accepted = {};
   if (!w.claimed) w.claimed = {};

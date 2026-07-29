@@ -94,7 +94,7 @@ ok(isSmuggle ? hero.gold > goldBefore : hero.gold === goldBefore,
 fails(() => daily.weeklyClaim(hero, wq.id, []), 'уже получена', 'повторно забрать нельзя');
 // Дневные и недельные счётчики независимы
 const dailyCounters = hero.daily.counters[quest.counter] || 0;
-ok(dailyCounters > 0 && hero.weekly.counters[quest.counter] > 0, 'счётчики ведутся отдельно для дня и недели');
+ok(dailyCounters > 0 && hero.weeklyQuests.counters[quest.counter] > 0, 'счётчики ведутся отдельно для дня и недели');
 
 console.log('\n── Задача 5: чат ──');
 // Взаимный личный альянс: Боец ↔ Союзник
