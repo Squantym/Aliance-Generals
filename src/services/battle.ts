@@ -69,13 +69,15 @@ function makeBot(user: User): any {
   const base = Math.max(30, player.buildArmy(user, 'atk').power);
   // 50% — обычный бот-террорист, 50% — псевдоигрок
   const isPlayerLike = Math.random() < 0.5;
-  // Псевдоигроки слабее реального игрока на ~10% (было «почти равны»),
-  // террористы слабее ещё сильнее — на 30% от прежнего диапазона.
-  // Было: playerLike 0.90-1.15, террористы 0.50-0.95.
-  // Стало: playerLike 0.80-1.04 (−10%), террористы 0.35-0.665 (−30%).
+  // История снижений силы ботов (каждый раз — множитель к прежнему диапазону):
+  //   изначально: playerLike 0.90–1.15,  террористы 0.50–0.95
+  //   −10% / −30%: playerLike 0.80–1.04, террористы 0.35–0.665
+  //   −20% (сейчас): playerLike 0.64–0.832, террористы 0.28–0.532
+  // ВАЖНО: power у бота одна и служит и защитой (сложность его победить),
+  // и его атакой (урон в ответ игроку) — см. resolveDamage в обе стороны.
   const powerRange = isPlayerLike
-    ? (0.80 + Math.random() * 0.24)
-    : (0.35 + Math.random() * 0.315);
+    ? (0.64 + Math.random() * 0.192)
+    : (0.28 + Math.random() * 0.252);
   const power = Math.max(25, Math.round(base * powerRange * (1 + (level - user.level) * 0.03)));
   const maxHp = 100 + level * 8;
   // ----- Казна бота (loot pool) -----
@@ -605,6 +607,14 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     targetHpAfter = target.res.hp.cur;
   }
 
+  // Была ли цель под санкцией НА МОМЕНТ БОЯ. Фиксируем ДО checkPayout:
+  // добивающий удар закрывает санкцию выплатой награды, и если проверять
+  // позже, охотник успевал бы и забрать награду, и отрезать ухо тем же
+  // ударом. По цели под санкцией фаталити не даётся вообще.
+  const targetUnderSanction = !isBot && (() => {
+    try { return require('./sanctions').isUnderSanction(target.id); } catch (e) { return false; }
+  })();
+
   // Проверка санкций: если цель — живой игрок и его HP упало до ≤5%,
   // охотник получает накопленный банк по этой цели.
   if (!isBot && win) {
@@ -753,7 +763,10 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     const rec = (user.vsRecord || {})[target.id] || { wins: 0, losses: 0 };
     if (rec.losses > rec.wins) fatalityVsOk = false;
   }
-  if (!targetImmune && fatalityAllowed && fatalityVsOk && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
+  // Цель под санкцией — фаталити НЕ срабатывает (флаг targetUnderSanction
+  // зафиксирован выше, ДО выплаты награды). По ней идёт охота за наградой,
+  // и добивать её ради уха нельзя: ни окна фаталити, ни отрезания ушей.
+  if (!targetUnderSanction && !targetImmune && fatalityAllowed && fatalityVsOk && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
     // Жестокость даёт ШАНС совершить фаталити (не гарантию): 0.5% за
     // уровень навыка, максимум 50%. Допинг «Ястреб» (crit_bonus) усиливает
     // не только крит в бою, но и этот шанс — раньше учитывался только в
@@ -858,6 +871,17 @@ function fatality(user: User, choice: string, notices: Notices) {
   }
   // Если цель — реальный игрок без ушей, фаталити совершить нельзя вообще
   if (!pf.isBot) {
+    // Санкцию могли объявить уже ПОСЛЕ того, как открылось окно фаталити:
+    // в этом случае окно закрывается, ухо не режется (по цели под санкцией
+    // идёт охота за наградой, а не за трофеем).
+    try {
+      if (require('./sanctions').isUnderSanction(pf.targetId)) {
+        user.pendingFatality = null;
+        throw new u.ApiError(`На «${pf.name}» объявлена санкция — фаталити по цели под санкцией невозможно.`);
+      }
+    } catch (e) {
+      if (e instanceof u.ApiError) throw e;
+    }
     const victimCheck = player.users()[pf.targetId];
     if (victimCheck) {
       player.refresh(victimCheck); // актуализируем earsCurrent (регенерация)

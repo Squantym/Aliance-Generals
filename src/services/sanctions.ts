@@ -25,6 +25,15 @@ const HP_THRESHOLD_PCT = 0.05; // 5% HP — порог срабатывания
 
 function store(): Record<string, SanctionEntry> { return db.load<Record<string, SanctionEntry>>('sanctions', {}); }
 
+// Висит ли на игроке активная санкция (награда за голову > 0).
+// Нужен бою: по цели под санкцией идёт охота за наградой, поэтому
+// фаталити (и отрезание ушей) на ней не срабатывает.
+function isUnderSanction(targetId: string): boolean {
+  if (!targetId) return false;
+  const entry = store()[targetId];
+  return !!entry && (entry.bounty || 0) > 0;
+}
+
 // ── Объявить санкцию ──────────────────────────────────────────────
 function declare(user: User, targetId: string, amount: number | string, notices: Notices) {
   amount = u.toInt(amount, 0);
@@ -214,4 +223,4 @@ function isOrderer(userId: string, targetId: string): boolean {
   return entry.orders.some((o: any) => o.byId === userId);
 }
 
-export = { declare, list, orders, checkPayout, clearTarget, isOrderer, MIN_BOUNTY, HP_THRESHOLD_PCT };
+export = { declare, list, orders, checkPayout, clearTarget, isOrderer, isUnderSanction, MIN_BOUNTY, HP_THRESHOLD_PCT };

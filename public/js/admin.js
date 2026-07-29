@@ -54,6 +54,7 @@ const Admin = {
       { id:'buffs',     label:'🎉 Бонусы' },
       { id:'logs',      label:'📋 Журнал' },
       { id:'support',   label:'🛟 Поддержка' },
+      { id:'tech',      label:'🔧 Техническое' },
     ];
     document.getElementById('content').innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
@@ -83,6 +84,7 @@ const Admin = {
     if (Admin.tab === 'legions')   return Admin.renderLegions(c);
     if (Admin.tab === 'mercs')     return Admin.renderMercs(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
+    if (Admin.tab === 'tech')      return Admin.renderTech(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
@@ -103,6 +105,113 @@ const Admin = {
     document.getElementById('ad-search').onclick = () => Admin.loadPlayers();
     document.getElementById('ad-q').onkeydown = e => { if(e.key==='Enter') Admin.loadPlayers(); };
     Admin.loadPlayers();
+  },
+
+  // ── Вкладка: Техническое (удаление аккаунта, смена пароля) ──────
+  // Общий поиск игрока сверху: выбранный игрок используется обеими
+  // операциями. Обе — необратимые, поэтому подтверждение вводится
+  // руками, а не одним кликом.
+  techTarget: null,
+
+  renderTech(c) {
+    const t = Admin.techTarget;
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🔎 Выбор аккаунта</div>
+        <p class="muted small mt">Найдите игрока по позывному — он станет целью операций ниже.</p>
+        <div class="field-row mt">
+          <input type="text" id="tech-q" class="field" placeholder="Позывной игрока…" style="flex:1"
+                 value="${t ? UI.esc(t.name) : ''}">
+          <button class="btn btn-orange btn-inline" id="tech-search">🔍 Найти</button>
+        </div>
+        <div id="tech-results" class="mt"></div>
+        ${t ? `
+        <div class="card mt" style="border-color:var(--gold);background:rgba(255,180,0,.06)">
+          <div class="name">Выбран: ${UI.esc(t.name)} ${t.isAdmin ? '<span class="badge">👑 админ</span>' : ''} ${t.banned ? '<span class="badge" style="background:var(--red)">заблокирован</span>' : ''}</div>
+          <div class="muted small mt">ID: <code>${UI.esc(t.id)}</code> · Ур. ${t.level} · ${t.online ? 'онлайн' : 'не в сети'}</div>
+        </div>` : '<p class="muted small mt">Аккаунт не выбран.</p>'}
+      </div>
+
+      <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
+        <div class="name">🔑 Установить пароль</div>
+        <p class="muted small mt">Для случаев, когда игрок забыл пароль, а почта недоступна. Старый пароль не нужен. Минимум 8 символов. Все активные сессии игрока будут сброшены — войти можно будет только с новым паролем.</p>
+        <label class="field-label">Новый пароль для игрока</label>
+        <div class="field-row">
+          <input type="password" id="tech-pass" class="field" placeholder="новый пароль…" style="flex:1" autocomplete="new-password" ${t ? '' : 'disabled'}>
+          <button class="btn btn-inline" id="tech-pass-eye" title="Показать пароль">👁</button>
+        </div>
+        <button class="btn btn-orange mt" id="tech-pass-go" style="width:100%" ${t ? '' : 'disabled'}>
+          🔑 Установить пароль${t ? ` игроку «${UI.esc(t.name)}»` : ''}
+        </button>
+      </div>
+
+      <div class="card" style="margin-top:16px;border-color:var(--red)">
+        <div class="name" style="color:var(--red)">🗑 Полное удаление аккаунта</div>
+        <p class="muted small mt">Аккаунт стирается из игры целиком: почта, уведомления, санкции, награды, обращения, участие в боях и сообщения в чате. Позывной и email освобождаются, вход становится невозможен — сервер отвечает так, будто такого игрока никогда не было. <b style="color:var(--red)">Необратимо.</b> Если нужно лишь обнулить прогресс — используйте «Обнулить аккаунт» во вкладке «Игроки».</p>
+        <label class="field-label">Подтверждение: введите позывной игрока точь-в-точь</label>
+        <input type="text" id="tech-del-confirm" class="field" placeholder="${t ? UI.esc(t.name) : 'сначала выберите аккаунт'}" ${t ? '' : 'disabled'}>
+        <button class="btn btn-red mt" id="tech-del-go" style="width:100%" ${t ? '' : 'disabled'}>
+          🗑 Удалить аккаунт навсегда
+        </button>
+      </div>`;
+
+    // Поиск игрока
+    const doSearch = async () => {
+      const q = document.getElementById('tech-q').value.trim();
+      const box = document.getElementById('tech-results');
+      box.innerHTML = '<div class="loading">Поиск…</div>';
+      try {
+        const { players } = await API.get('/api/admin/players?q=' + encodeURIComponent(q));
+        if (!players.length) { box.innerHTML = '<p class="muted small">Никого не найдено.</p>'; return; }
+        box.innerHTML = players.slice(0, 20).map((p) => `
+          <div class="list-row" style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
+            <div class="grow">${UI.esc(p.name)} ${p.isAdmin ? '<span class="badge">👑</span>' : ''}
+              <span class="muted small">Ур. ${p.level} · ${p.id}</span></div>
+            <button class="btn btn-inline" data-pick="${p.id}">Выбрать</button>
+          </div>`).join('');
+        box.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
+          Admin.techTarget = players.find((x) => x.id === b.dataset.pick);
+          Admin.renderTab();
+        });
+      } catch (e) { box.innerHTML = `<p class="small" style="color:var(--red)">⛔ ${UI.esc(e.message)}</p>`; }
+    };
+    document.getElementById('tech-search').onclick = doSearch;
+    document.getElementById('tech-q').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
+
+    if (!t) return;
+
+    // Показать/скрыть пароль
+    const passInput = document.getElementById('tech-pass');
+    document.getElementById('tech-pass-eye').onclick = () => {
+      passInput.type = passInput.type === 'password' ? 'text' : 'password';
+    };
+
+    // Установка пароля
+    document.getElementById('tech-pass-go').onclick = async () => {
+      const password = passInput.value;
+      if (password.length < 8) return UI.toast('⛔ Пароль: минимум 8 символов');
+      if (!confirm(`Установить новый пароль игроку «${t.name}»?\n\nВсе его активные сессии будут сброшены.`)) return;
+      try {
+        const r = await API.post('/api/admin/set-password', { userId: t.id, password });
+        UI.toast((r.notices && r.notices[0]) || '🔑 Пароль установлен');
+        passInput.value = '';
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+
+    // Удаление аккаунта — двойное подтверждение: поле + confirm
+    document.getElementById('tech-del-go').onclick = async () => {
+      const confirmName = document.getElementById('tech-del-confirm').value.trim();
+      if (confirmName.toLowerCase() !== String(t.name).toLowerCase()) {
+        return UI.toast('⛔ Позывной в поле подтверждения не совпадает');
+      }
+      if (!confirm(`УДАЛИТЬ аккаунт «${t.name}» навсегда?\n\nВосстановить будет невозможно. Игрок не сможет войти в игру, позывной освободится.`)) return;
+      try {
+        const r = await API.post('/api/admin/delete-account', { userId: t.id, confirmName });
+        UI.toast((r.notices && r.notices[0]) || '🗑 Аккаунт удалён');
+        Admin.techTarget = null;
+        Admin.renderTab();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
   },
 
   // ── Вкладка: Инструменты (массовые/опасные операции) ────────────

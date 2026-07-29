@@ -1035,17 +1035,100 @@ App.screens.settings = async (c) => {
     ${themeBtn('cyber',   '⚡ Кибер-война',      'Футуристический HUD: неоновая бирюза, геометрия, glassmorphism.')}
     ${themeBtn('desert',  '☀ Пустынный фронт',   'Жёлтые пески, выгоревший камуфляж и солнечный жар.')}
     ${themeBtn('noir',    '🌑 Полуночный штаб',  'Мягкий чёрно-серый интерфейс без резких цветов — для глаз ночью.')}
-    ${themeBtn('aurora',  '🌅 Аврора',           'Светлый футуристичный интерфейс: белый фон, неоновые акценты, чистая геометрия.')}`;
+    ${themeBtn('aurora',  '🌅 Аврора',           'Светлая молочно-бежевая тема: тёплый мягкий фон, приглушённые акценты, без резкого контраста.')}`;
+
+  // ── Вкладка «Аккаунт»: смена пароля ────────────────────────────
+  // Старый пароль подтверждает, что аккаунт свой; новый вводится дважды,
+  // чтобы опечатка не заперла игрока снаружи.
+  const accountHtml = `
+    <div class="card">
+      <div class="name">🔑 Смена пароля</div>
+      <p class="muted small mt">Введите текущий пароль для подтверждения, затем новый — дважды. Минимум 8 символов, буквы и цифры. После смены все остальные входы в аккаунт будут сброшены.</p>
+
+      <label class="field-label">Текущий пароль</label>
+      <div class="field-row">
+        <input type="password" id="pw-old" class="field" placeholder="ваш нынешний пароль" autocomplete="current-password" style="flex:1">
+        <button class="btn btn-inline" id="pw-eye" title="Показать пароли">👁</button>
+      </div>
+
+      <label class="field-label">Новый пароль</label>
+      <input type="password" id="pw-new1" class="field" placeholder="минимум 8 символов" autocomplete="new-password">
+
+      <label class="field-label">Новый пароль ещё раз</label>
+      <input type="password" id="pw-new2" class="field" placeholder="повторите новый пароль" autocomplete="new-password">
+
+      <div id="pw-hint" class="field-hint"></div>
+      <button class="btn btn-orange mt" id="pw-go" style="width:100%">Сменить пароль</button>
+    </div>`;
 
   c.innerHTML = `
     <div class="title">Настройки</div>
     <div class="tabs">
       <div class="tab ${tab === 'app' ? 'active' : ''}" data-stab="app">Приложение</div>
+      <div class="tab ${tab === 'account' ? 'active' : ''}" data-stab="account">Аккаунт</div>
       <div class="tab ${tab === 'appearance' ? 'active' : ''}" data-stab="appearance">Оформление игры</div>
     </div>
-    ${tab === 'app' ? appTabHtml : themesHtml}
+    ${tab === 'app' ? appTabHtml : tab === 'account' ? accountHtml : themesHtml}
     <hr class="hr">
     <button class="btn btn-red" id="set-logout" style="width:100%">🚪 Выйти из аккаунта</button>`;
+
+  // ── Обработчики смены пароля ────────────────────────────────────
+  if (tab === 'account') {
+    const oldI = document.getElementById('pw-old');
+    const n1 = document.getElementById('pw-new1');
+    const n2 = document.getElementById('pw-new2');
+    const hint = document.getElementById('pw-hint');
+
+    // Живая подсказка: совпадают ли новые пароли и годится ли пароль
+    const validate = () => {
+      const a = n1.value, b = n2.value;
+      n1.classList.remove('field-bad', 'field-good');
+      n2.classList.remove('field-bad', 'field-good');
+      if (!a && !b) { hint.textContent = ''; hint.className = 'field-hint'; return; }
+      if (a.length < 8) {
+        hint.textContent = 'Новый пароль слишком короткий — нужно минимум 8 символов.';
+        hint.className = 'field-hint field-hint-bad'; n1.classList.add('field-bad'); return;
+      }
+      if (!/[A-Za-zА-Яа-яЁё]/.test(a) || !/[0-9]/.test(a)) {
+        hint.textContent = 'Пароль должен содержать и буквы, и цифры.';
+        hint.className = 'field-hint field-hint-bad'; n1.classList.add('field-bad'); return;
+      }
+      if (b && a !== b) {
+        hint.textContent = 'Пароли не совпадают.';
+        hint.className = 'field-hint field-hint-bad'; n2.classList.add('field-bad'); return;
+      }
+      if (b && a === b) {
+        hint.textContent = 'Пароли совпадают ✔';
+        hint.className = 'field-hint field-hint-good';
+        n1.classList.add('field-good'); n2.classList.add('field-good'); return;
+      }
+      hint.textContent = 'Повторите новый пароль во втором поле.';
+      hint.className = 'field-hint';
+    };
+    [n1, n2].forEach((el) => { el.oninput = validate; });
+
+    // Один глаз показывает/прячет все три поля разом
+    document.getElementById('pw-eye').onclick = () => {
+      const show = oldI.type === 'password';
+      [oldI, n1, n2].forEach((el) => { el.type = show ? 'text' : 'password'; });
+    };
+
+    document.getElementById('pw-go').onclick = async () => {
+      if (!oldI.value) return UI.toast('⛔ Введите текущий пароль');
+      if (n1.value !== n2.value) return UI.toast('⛔ Новые пароли не совпадают');
+      try {
+        const r = await API.post('/api/change-password', {
+          oldPassword: oldI.value, newPassword: n1.value, newPassword2: n2.value,
+        });
+        // Сервер сбросил все сессии и выдал новый токен — сохраняем его,
+        // иначе игрока выкинет на экран входа сразу после смены пароля
+        if (r.token) API.setToken(r.token);
+        oldI.value = n1.value = n2.value = '';
+        validate();
+        UI.toast('🔑 Пароль изменён. Другие входы в аккаунт сброшены.');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
 
   c.querySelectorAll('[data-stab]').forEach((btn) => {
     btn.onclick = () => { App._settingsTab = btn.dataset.stab; App.rerender(); };

@@ -673,10 +673,215 @@ function wipeGroups(adminUser: User, body: any, notices: Notices) {
   return { cleared };
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ТЕХНИЧЕСКИЙ РАЗДЕЛ: полное удаление аккаунта и смена пароля
+// ═══════════════════════════════════════════════════════════════════
+
+// ── ПОЛНОЕ УДАЛЕНИЕ АККАУНТА ──────────────────────────────────────
+// В отличие от «обнуления» (resetAccount), которое оставляет учётную
+// запись живой, здесь игрок стирается из игры целиком: логин
+// освобождается, войти под старым паролем нельзя — сервер отвечает так,
+// будто такого позывного никогда не было. Подчищаются ВСЕ коллекции и
+// перекрёстные ссылки у других игроков (уши, история боёв, эффекты),
+// чтобы нигде не осталось битых ссылок на удалённый профиль.
+// Требуется подтверждение: body.confirmName должен совпасть с позывным.
+function deleteAccount(adminUser: User, body: any, notices: Notices) {
+  const db = require('../core/db');
+  const players: Record<string, User> = require('./player').users();
+  const target = players[body.userId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (target.id === adminUser.id) throw new u.ApiError('Нельзя удалить собственный аккаунт');
+  if (target.isAdmin) throw new u.ApiError('Нельзя удалить аккаунт администратора. Сначала снимите права.');
+
+  // Защита от случайного клика: админ вручную вводит позывной игрока
+  const confirm = String(body.confirmName || '').trim().toLowerCase();
+  if (confirm !== String(target.name).trim().toLowerCase()) {
+    throw new u.ApiError('Подтверждение не совпало: введите точный позывной игрока');
+  }
+
+  const id = target.id;
+  const name = target.name;
+  const cleaned: string[] = [];
+
+  // 1) Выводим из альянса и легиона (лидерство передаётся / группа
+  //    расформировывается — та же логика, что при обнулении)
+  try { leaveGroupForReset(target, 'alliance'); } catch (e) {}
+  try { leaveGroupForReset(target, 'legion'); } catch (e) {}
+
+  // 2) Все сессии — иначе по живому токену можно продолжать играть
+  try {
+    const sessions = db.load('sessions', {});
+    let n = 0;
+    for (const [tok, uid] of Object.entries(sessions)) {
+      if (uid === id) { delete (sessions as any)[tok]; n++; }
+    }
+    if (n) { db.save('sessions'); cleaned.push(`сессии (${n})`); }
+  } catch (e) {}
+
+  // 3) Коллекции вида { userId: [...] } — почта, уведомления, push-подписки
+  for (const coll of ['mail', 'notifications', 'pushsubs', 'alliance_invites']) {
+    try {
+      const store = db.load(coll, {});
+      if (store[id]) { delete store[id]; db.save(coll); cleaned.push(coll); }
+    } catch (e) {}
+  }
+
+  // 4) Коллекции вида { recordId: { userId } } — награды и тикеты поддержки
+  for (const coll of ['rewards', 'support']) {
+    try {
+      const store = db.load(coll, {});
+      let n = 0;
+      for (const key of Object.keys(store)) {
+        if (store[key] && store[key].userId === id) { delete store[key]; n++; }
+      }
+      if (n) { db.save(coll); cleaned.push(`${coll} (${n})`); }
+    } catch (e) {}
+  }
+
+  // 5) Санкции: снимаем санкцию НА игрока и вычищаем его взносы из
+  //    санкций на других (иначе в списке заказчиков будет призрак)
+  try {
+    const sanc = db.load('sanctions', {});
+    let changed = false;
+    if (sanc[id]) { delete sanc[id]; changed = true; }
+    for (const key of Object.keys(sanc)) {
+      const entry: any = sanc[key];
+      if (!entry || !Array.isArray(entry.orders)) continue;
+      const before = entry.orders.length;
+      entry.orders = entry.orders.filter((o: any) => o && o.byId !== id);
+      if (entry.orders.length !== before) {
+        // Пересчитываем награду по оставшимся взносам
+        entry.bounty = entry.orders.reduce((s: number, o: any) => s + (o.amount || 0), 0);
+        if (!entry.orders.length) delete sanc[key];
+        changed = true;
+      }
+    }
+    if (changed) { db.save('sanctions'); cleaned.push('санкции'); }
+  } catch (e) {}
+
+  // 6) Летящие ракеты, где игрок — атакующий или цель
+  try {
+    const rockets = db.load('rockets', {});
+    let n = 0;
+    for (const rid of Object.keys(rockets)) {
+      const rk: any = rockets[rid];
+      if (rk && (rk.attackerId === id || rk.targetId === id)) { delete rockets[rid]; n++; }
+    }
+    if (n) { db.save('rockets'); cleaned.push(`ракеты (${n})`); }
+  } catch (e) {}
+
+  // 7) Бои легиона: убираем игрока из составов и статистики активности
+  try {
+    const battles = db.load('battles', {});
+    let changed = false;
+    for (const bid of Object.keys(battles)) {
+      const b: any = battles[bid];
+      if (!b) continue;
+      if (b.combatants && b.combatants[id]) { delete b.combatants[id]; changed = true; }
+      if (b.activity && b.activity[id] !== undefined) { delete b.activity[id]; changed = true; }
+    }
+    if (changed) { db.save('battles'); cleaned.push('бои легиона'); }
+  } catch (e) {}
+
+  // 8) Общий чат: стираем сообщения удалённого игрока
+  try {
+    const w = db.load('world', { chat: [], auctions: [], seq: 1 });
+    if (Array.isArray(w.chat)) {
+      const before = w.chat.length;
+      w.chat = w.chat.filter((m: any) => m && m.userId !== id && m.authorId !== id);
+      if (w.chat.length !== before) { db.save('world'); cleaned.push(`чат (${before - w.chat.length})`); }
+    }
+  } catch (e) {}
+
+  // 9) Перекрёстные ссылки у ОСТАЛЬНЫХ игроков: отрезанные уши,
+  //    послание на ухе, личная история боёв, наложенные эффекты.
+  //    Без этой чистки в чужих профилях остались бы ссылки в никуда.
+  let refs = 0;
+  for (const p of Object.values(players)) {
+    if (p.id === id) continue;
+    let touched = false;
+    if (Array.isArray((p as any).earCutters)) {
+      const cs = (p as any).earCutters;
+      for (let i = 0; i < cs.length; i++) {
+        if (cs[i] && cs[i].id === id) { cs[i] = null; touched = true; }
+      }
+    }
+    if ((p as any).earMessage && (p as any).earMessage.byId === id) {
+      (p as any).earMessage = null; touched = true;
+    }
+    if ((p as any).vsRecord && (p as any).vsRecord[id]) {
+      delete (p as any).vsRecord[id]; touched = true;
+    }
+    if (Array.isArray(p.effects)) {
+      const before = p.effects.length;
+      p.effects = p.effects.filter((e: any) => !(e && e.hostile && e.byId === id));
+      if (p.effects.length !== before) touched = true;
+    }
+    if (touched) { refs++; db.markUser(p.id); }
+  }
+  if (refs) cleaned.push(`ссылки у других игроков (${refs})`);
+
+  // 10) И, наконец, сама учётная запись — позывной и почта снова свободны
+  delete players[id];
+  db.save('users');
+
+  auditLog.record({
+    userId: adminUser.id, userName: adminUser.name,
+    path: '/api/admin/delete-account',
+    body: { deletedId: id, deletedName: name },
+  });
+  notices.push(`🗑 Аккаунт «${name}» удалён из игры полностью. Вход невозможен, позывной и email освобождены. Очищено: ${cleaned.join(', ') || 'нет связанных данных'}.`);
+  return { deletedId: id, deletedName: name, cleaned };
+}
+
+// ── УСТАНОВКА ПАРОЛЯ ИГРОКУ ───────────────────────────────────────
+// Для случаев «игрок забыл пароль, почта недоступна». Админ задаёт
+// любой пароль (минимум 8 символов — единственное ограничение, чтобы
+// аккаунт не остался беззащитным). Все сессии игрока завершаются, а
+// висящая ссылка восстановления аннулируется.
+function setPassword(adminUser: User, body: any, notices: Notices) {
+  const db = require('../core/db');
+  const players: Record<string, User> = require('./player').users();
+  const target = players[body.userId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (target.isAdmin && target.id !== adminUser.id) {
+    throw new u.ApiError('Нельзя менять пароль другого администратора');
+  }
+
+  const pass = String(body.password || '');
+  if (pass.length < 8) throw new u.ApiError('Пароль: минимум 8 символов');
+
+  const salt = u.uid(16);
+  target.salt = salt;
+  target.passHash = u.hashPassword(pass, salt);
+  (target as any).resetToken = null;      // старая ссылка из письма больше не нужна
+  (target as any).resetTokenExp = 0;
+
+  // Завершаем все сессии игрока — вход только с новым паролем
+  let killed = 0;
+  try {
+    const sessions = db.load('sessions', {});
+    for (const [tok, uid] of Object.entries(sessions)) {
+      if (uid === target.id) { delete (sessions as any)[tok]; killed++; }
+    }
+    if (killed) db.save('sessions');
+  } catch (e) {}
+  db.save('users');
+
+  auditLog.record({
+    userId: adminUser.id, userName: adminUser.name,
+    path: '/api/admin/set-password',
+    body: { targetId: target.id, targetName: target.name },  // сам пароль в журнал НЕ пишем
+  });
+  notices.push(`🔑 Пароль игрока «${target.name}» изменён. Активные сессии сброшены (${killed}). Передайте новый пароль игроку — сменить его он сможет в «Настройки → Аккаунт».`);
+  return { userId: target.id, name: target.name, sessionsKilled: killed };
+}
+
 export = {
   listPlayers, grant, grantAll, take, claimGift,
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
   listLogs, setBan, resetAccount, resetParam, resetMissions, wipeGroups,
   viewAsPlayer, playerSnapshot,
+  deleteAccount, setPassword,
 };

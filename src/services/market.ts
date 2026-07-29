@@ -73,7 +73,12 @@ function pushEffect(target: User, item: any, by?: User): void {
   const hostile = !!by;
   // Ищем эффект того же типа И той же природы (допинг ≠ падлянка), чтобы
   // бафф и дебафф одного типа не перезаписывали друг друга.
-  const existing = target.effects.find((e) => e.type === item.effect.type && !!e.hostile === hostile);
+  // ВАЖНО: эффекты наёмников (merc) исключены — иначе купленный поверх
+  // наёмника допинг затирал его бонус, и игрок терял оплаченные +100%.
+  // Наёмник и допинг живут отдельными эффектами и суммируются в effMul.
+  const existing = target.effects.find(
+    (e) => e.type === item.effect.type && !!e.hostile === hostile && !(e as any).merc
+  );
   if (existing) {
     // СУММИРУЕМ время: оставшееся + новая длительность.
     const remaining = Math.max(0, existing.expiresAt - now);
@@ -259,10 +264,16 @@ function applyCommanderUntil(winner: User, commander: any, expiresAt: number): v
   const eff = commander.effect;
   const pushOne = (type: string, value: number) => {
     const id = 'cmd_' + commander.id + '_' + type;
-    const ex = winner.effects.find((e) => e.type === type);
+    // Ищем ТОЛЬКО собственный эффект этого же наёмника: раньше здесь
+    // бралcя любой эффект того же типа, поэтому выдача наёмника затирала
+    // купленный допинг (а заодно могла превратить вражескую падлянку в
+    // бафф, сохранив ей пометку «враждебный»). Теперь допинг, падлянка и
+    // наёмник — независимые эффекты, которые складываются в effMul.
+    const ex = winner.effects.find(
+      (e) => e.type === type && (e as any).merc && (e as any).commanderId === commander.id
+    );
     if (ex) {
-      // Перезаписываем как эффект наёмника: id обязательно cmd_... (иначе
-      // владелец не отобразится в списке holders аукциона и в профиле).
+      // Повторная выдача того же наёмника — продлеваем/обновляем его же эффект
       ex.value = value; ex.expiresAt = expiresAt; ex.name = commander.name;
       ex.id = id; (ex as any).commanderId = commander.id; (ex as any).merc = true;
     } else {

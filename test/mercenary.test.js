@@ -1,5 +1,9 @@
-// Тест наёмника аукциона: эффект помечается как merc с cmd_-id (даже поверх
-// допинга того же типа), показывается в профиле и в списке holders. После build.
+// Тест наёмника аукциона: эффект помечается как merc с cmd_-id, показывается
+// в профиле и в списке holders. После build.
+// ОБНОВЛЕНО (v46): наёмник больше НЕ перезаписывает допинг того же типа —
+// раньше выдача наёмника затирала купленный игроком допинг (и наоборот),
+// из-за чего оплаченный бонус пропадал. Теперь это два независимых эффекта,
+// которые суммируются в effMul: 20% + 100% = 120%.
 const assert=require('assert');
 process.env.MONGODB_URI='';
 const path=require('path'),fs=require('fs');
@@ -16,16 +20,19 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  const berserk=c.COMMANDERS.find(x=>x.id==='berserk'); // +100% атаке, type atk_pct
  const now=Date.now();
 
- console.log('\n[1] Наёмник поверх ДОПИНГА того же типа → эффект помечается как merc');
+ console.log('\n[1] Наёмник поверх ДОПИНГА того же типа → два эффекта, бонусы суммируются');
  // даём допинг того же типа (atk_pct), как у Беатрис
  usr.effects.push({ id:'stim', type:'atk_pct', value:20, name:'Боевой стимулятор', expiresAt: now+3600000 });
  market.applyCommanderEffect(usr, berserk, now);
- const eff = usr.effects.find(e=>e.type==='atk_pct');
- ok('id стал cmd_ (не остался stim)', eff.id.startsWith('cmd_berserk_'));
+ const eff = usr.effects.find(e=>e.type==='atk_pct' && e.merc);
+ const stim = usr.effects.find(e=>e.id==='stim');
+ ok('эффект наёмника создан отдельно (id cmd_berserk_...)', eff && eff.id.startsWith('cmd_berserk_'));
  eq('commanderId проставлен', eff.commanderId, 'berserk');
  eq('merc=true', eff.merc, true);
  eq('имя — имя наёмника', eff.name, berserk.name);
  eq('значение = 100', eff.value, 100);
+ ok('допинг НЕ затёрт наёмником', !!stim && stim.value === 20 && !stim.merc);
+ eq('бонусы суммируются: 20% + 100% = 120%', Math.round((player.effMul(usr,'atk_pct')-1)*100), 120);
 
  console.log('\n[2] Профиль показывает наёмника (merc/commanderId), не допинг');
  const pv = player.publicProfile(usr, usr);

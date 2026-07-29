@@ -274,4 +274,44 @@ function resetPassword(token: string, newPassword: string) {
   return { ok: true };
 }
 
-export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, newUser };
+// ── Смена пароля самим игроком (из «Настройки → Аккаунт») ─────────
+// Три поля: старый пароль (подтверждение владения аккаунтом) и новый
+// дважды (страховка от опечатки). После смены завершаем ВСЕ сессии —
+// если пароль увели, чужой доступ обрывается, — но текущему игроку
+// сразу выдаём свежий токен, чтобы его самого не выкинуло из игры.
+function changePassword(user: User, oldPassword: string, newPassword: string, newPassword2: string) {
+  const oldP = String(oldPassword || '');
+  const newP = String(newPassword || '');
+  const newP2 = String(newPassword2 || '');
+
+  if (!oldP) throw new u.ApiError('Введите текущий пароль');
+  if (!u.verifyPassword(oldP, user.salt, user.passHash)) {
+    throw new u.ApiError('Текущий пароль неверен');
+  }
+  if (!newP) throw new u.ApiError('Введите новый пароль');
+  if (newP !== newP2) throw new u.ApiError('Новые пароли не совпадают — проверьте оба поля');
+  if (newP.length < 8) throw new u.ApiError('Пароль: минимум 8 символов');
+  if (!/[A-Za-zА-Яа-яЁё]/.test(newP) || !/[0-9]/.test(newP)) {
+    throw new u.ApiError('Пароль должен содержать буквы и цифры');
+  }
+  if (newP === oldP) throw new u.ApiError('Новый пароль совпадает со старым');
+
+  const salt = u.uid(16);
+  user.salt = salt;
+  user.passHash = u.hashPassword(newP, salt);
+  (user as any).resetToken = null;
+  (user as any).resetTokenExp = 0;
+
+  // Сбрасываем все сессии игрока и выдаём новую взамен текущей
+  const ss = sessions();
+  for (const [tok, uid] of Object.entries(ss)) {
+    if (uid === user.id) delete ss[tok];
+  }
+  const token = issueToken(user.id);
+  db.save('sessions');
+  db.save('users');
+  auditLog.record({ userId: user.id, userName: user.name, path: '/api/change-password' });
+  return { ok: true, token };
+}
+
+export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser };

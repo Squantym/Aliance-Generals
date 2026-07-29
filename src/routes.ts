@@ -89,6 +89,9 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/war-report/ack', (req) => require('./services/warReport').ack(req.user));
   // Игрок закрыл окно достижения — убираем его из очереди
   app.add('POST', '/api/achievements/ack', (req) => ach.ackPending(req.user, String(req.body.id || '')));
+  // Смена пароля самим игроком: старый пароль + новый дважды
+  app.add('POST', '/api/change-password', (req) => auth.changePassword(
+    req.user, req.body.oldPassword, req.body.newPassword, req.body.newPassword2));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
   app.add('POST', '/api/avatar', (req) => player.setAvatar(req.user, req.body.avatar));
   app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
@@ -415,6 +418,9 @@ function registerRoutes(app: any) {
   // Бан и обнуление аккаунтов
   app.add('POST', '/api/admin/ban',   act((req, n) => admin.setBan(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });
+  // Технический раздел: полное удаление аккаунта и установка пароля
+  app.add('POST', '/api/admin/delete-account', act((req, n) => admin.deleteAccount(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/set-password',   act((req, n) => admin.setPassword(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset-param', act((req, n) => admin.resetParam(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset-missions', act((req, n) => admin.resetMissions(req.user, req.body, n)), { admin: true });
   // Диагностика почты: статус конфигурации и тестовая отправка

@@ -8,10 +8,16 @@
 // Запуск: node test/test-update44.js (после npm run build)
 // ===================================================================
 
-process.env.DATA_DIR = '/tmp/generals-test-data-44';
+// Изоляция БД: db.ts определяет папку данных как process.cwd()/data,
+// поэтому переменной окружения не обойтись — уводим весь тест в
+// отдельный рабочий каталог. require('../dist/...') резолвится
+// относительно файла, а не cwd, поэтому смена каталога безопасна.
 const fs = require('fs');
-fs.rmSync('/tmp/generals-test-data-44', { recursive: true, force: true });
-fs.mkdirSync('/tmp/generals-test-data-44', { recursive: true });
+const path = require('path');
+const TEST_CWD = '/tmp/generals-test-cwd-44';
+fs.rmSync(TEST_CWD, { recursive: true, force: true });
+fs.mkdirSync(TEST_CWD + '/data', { recursive: true });
+process.chdir(TEST_CWD);
 
 let passed = 0, failed = 0;
 function ok(cond, name) {
