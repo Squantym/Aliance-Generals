@@ -45,6 +45,57 @@ let periodicTimer: NodeJS.Timeout | null = null;
 
 let sqlite: any = null;          // модуль SQLite-хранилища (если выбран драйвер)
 let backupTimer: any = null;
+let lockFile = '';
+
+// ═══ ЗАЩИТА ОТ ВТОРОГО ПРОЦЕССА ═══════════════════════════════════
+// Сервер держит всю базу в памяти и сохраняет коллекции целиком. Если
+// запустить два процесса на одних данных, каждый работает со своей копией
+// в памяти: первый сохраняет устаревшее состояние поверх изменений
+// второго. save('users') пишет ВСЕХ игроков, поэтому одним сохранением
+// можно откатить прогресс всей базы — именно так теряются данные, когда
+// в pm2 случайно остаётся дубль процесса.
+// Поэтому при старте ставим замок с PID. Если процесс из замка ещё жив —
+// отказываемся запускаться и объясняем, что делать.
+function acquireLock(dir: string): void {
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    lockFile = path.join(dir, '.db-lock');
+    if (fs.existsSync(lockFile)) {
+      const raw = fs.readFileSync(lockFile, 'utf8').trim();
+      const oldPid = Number(String(raw).split(/\s+/)[0]);
+      if (oldPid && oldPid !== process.pid && isAlive(oldPid)) {
+        throw new Error(
+          `База уже используется процессом PID ${oldPid}.\n` +
+          `Два процесса на одной базе затирают данные друг друга — запуск прерван.\n` +
+          `Проверьте: pm2 list — и оставьте ОДИН процесс игры (pm2 delete <лишний>; pm2 save).\n` +
+          `Если процесс ${oldPid} уже мёртв, удалите файл замка: ${lockFile}`
+        );
+      }
+      // Замок остался от упавшего процесса — забираем себе
+    }
+    fs.writeFileSync(lockFile, `${process.pid} ${new Date().toISOString()}\n`);
+  } catch (e: any) {
+    if (String(e.message).includes('База уже используется')) throw e;
+    // Не смогли поставить замок по другой причине (права и т.п.) — не
+    // блокируем запуск игры из-за этого, но предупреждаем в логе
+    console.warn('⚠️  Не удалось поставить замок базы:', e.message);
+    lockFile = '';
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }     // сигнал 0 не убивает, только проверяет
+  catch (e: any) { return e && e.code === 'EPERM'; }  // EPERM = процесс есть, но чужой
+}
+
+function releaseLock(): void {
+  if (!lockFile) return;
+  try {
+    const raw = fs.readFileSync(lockFile, 'utf8').trim();
+    if (Number(String(raw).split(/\s+/)[0]) === process.pid) fs.unlinkSync(lockFile);
+  } catch (e) {}
+  lockFile = '';
+}
 
 function ensureDir(): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -68,6 +119,7 @@ async function init(): Promise<void> {
     try {
       sqlite = require('./sqliteStore');
       const dir = process.env.SQLITE_DIR || path.join(process.cwd(), 'data');
+      acquireLock(dir);                         // один процесс на базу
       sqlite.open(dir, process.env.SQLITE_FILE || 'generals.db');
       store.users = sqlite.loadAllPlayers();
       const colls = sqlite.loadAllCollections();
@@ -89,6 +141,7 @@ async function init(): Promise<void> {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
     mode = 'json';
+    acquireLock(DATA_DIR);                      // один процесс на файлы базы
     console.log('💾 База данных: локальные JSON-файлы (папка /data)');
     return;
   }
@@ -421,6 +474,29 @@ function sql(query: string, params: any[] = []): any[] {
   catch (e: any) { console.error('SQL ошибка:', e.message); return []; }
 }
 
+// Закрыть базу перед выходом: чекпойнт WAL + закрытие файла. Вызывается
+// из shutdown, чтобы после остановки сервера база лежала одним файлом,
+// пригодным для копирования.
+function closeDb(): void {
+  if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
+  if (mode === 'sqlite' && sqlite) { try { sqlite.close(); } catch (e) {} }
+  releaseLock();
+}
+
+// Список имеющихся копий базы — для админки
+function backupsList(): any[] {
+  if (mode !== 'sqlite') return [];
+  try {
+    const dir = path.join(process.env.SQLITE_DIR || path.join(process.cwd(), 'data'), 'backups');
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.db') || f.endsWith('.db.gz'))
+      .map((f) => { const st = fs.statSync(path.join(dir, f)); return { file: f, size: st.size, at: st.mtimeMs }; })
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 40);
+  } catch (e) { return []; }
+}
+
 function dbStats(): any {
   if (mode !== 'sqlite') return { driver: mode };
   return { driver: 'sqlite', ...sqlite.stats() };
@@ -495,6 +571,6 @@ export = {
   init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
   dropUser, findDuplicateUsers,
   // Своя база: защита данных и аналитика
-  backupNow, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats,
+  backupNow, backupsList, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats, closeDb,
   get mode() { return mode; },
 };

@@ -112,7 +112,7 @@ async function main() {
     console.log('  ⭐ ГЕНЕРАЛЫ — сервер запущен');
     console.log(`  Игра:        http://localhost:${PORT}/`);
     console.log(`  Админ-панель: http://localhost:${PORT}/admin`);
-    console.log(`  База данных:  ${db.mode === 'mongo' ? 'MongoDB' : 'локальные JSON-файлы'}`);
+    console.log(`  База данных:  ${db.mode === 'sqlite' ? 'своя (SQLite)' : db.mode === 'mongo' ? 'MongoDB' : 'локальные JSON-файлы'}`);
     console.log('  Первый зарегистрированный игрок получает права администратора.');
     console.log('=========================================');
   });
@@ -124,6 +124,11 @@ async function main() {
     console.log(`\nПолучен сигнал ${signal}, сохраняю данные перед выходом...`);
     server.close();
     await db.flushAllNow();
+    // Своя база: сводим журнал WAL в основной файл и закрываем соединение.
+    // Без этого рядом с базой остаётся -wal, и хотя SQLite подхватит его
+    // при следующем старте, копировать базу «на горячую» в таком виде
+    // нельзя — копия окажется без последних транзакций.
+    if (typeof (db as any).closeDb === 'function') (db as any).closeDb();
     console.log('Данные сохранены, выхожу.');
     process.exit(0);
   }

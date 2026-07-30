@@ -22,6 +22,7 @@ sq.open(TEST_CWD + '/data', 'test.db');
 const st0 = sq.stats();
 ok(fs.existsSync(TEST_CWD + '/data/test.db'), 'файл базы создан — это один файл, его можно скопировать куда угодно');
 ok(st0.walMode === 'wal', `журнал WAL включён (${st0.walMode}) — база переживает жёсткое падение процесса`);
+console.log(`  (драйвер: ${st0.driverKind})`);
 ok(st0.integrity === 'ok', `проверка целостности: ${st0.integrity}`);
 
 console.log('\n── 2. Запись и чтение игроков ──');
@@ -63,10 +64,14 @@ ok(Object.keys(afterRestart).length === 499, 'остальные 499 на мес
 console.log('\n── 5. Бэкап на живой базе ──');
 const b1 = sq.backup('test', 3);
 ok(fs.existsSync(b1), `копия создана без остановки игры: ${path.basename(b1)}`);
-const Database = require(ROOT + '/node_modules/better-sqlite3');
-const check = new Database(b1, { readonly: true });
-const cnt = check.prepare('SELECT COUNT(*) AS n FROM players').get().n;
-check.close();
+// Открываем копию как отдельную базу тем же способом, что и основную:
+// better-sqlite3 — необязательная зависимость, его может не быть на сервере
+const sqCheck = require(ROOT + '/dist/src/core/sqliteStore');
+sq.close();
+sqCheck.open(path.dirname(b1), path.basename(b1));
+const cnt = sqCheck.stats().players;
+sqCheck.close();
+sq.open(TEST_CWD + '/data', 'test.db');
 ok(cnt === 499, `копия содержит все данные (${cnt} игроков) и открывается отдельно`);
 for (let i = 0; i < 5; i++) sq.backup('test', 3);
 const kept = fs.readdirSync(TEST_CWD + '/data/backups').filter((f) => f.includes('-test-')).length;

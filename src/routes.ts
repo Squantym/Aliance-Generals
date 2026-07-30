@@ -7,6 +7,7 @@
 
 import config = require('../config/gameConfig');
 import u = require('./core/utils');
+import db = require('./core/db');
 import player = require('./services/player');
 import auth = require('./services/auth');
 import battle = require('./services/battle');
@@ -424,6 +425,66 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/rewards/grant', act((req, n) => require('./services/rewards').adminGrant(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));
+  // ═══ БАЗА ДАННЫХ: копии, снимки, восстановление ═══════════════════
+  // Всё только для администратора. Произвольный SQL наружу НЕ выставляется
+  // намеренно: даже админский эндпоинт с произвольным запросом — это
+  // готовый инструмент для порчи данных, если чужой получит доступ к
+  // админской сессии. Наружу отдаются только конкретные операции.
+  app.add('GET', '/api/admin/db/stats', () => {
+    const st = db.dbStats();
+    return { stats: st, backups: db.backupsList ? db.backupsList() : [] };
+  }, { admin: true });
+
+  app.add('POST', '/api/admin/db/backup', act((req, n) => {
+    const file = db.backupNow('manual');
+    if (!file) throw new u.ApiError('Копии доступны только на своей базе (DB_DRIVER=sqlite)');
+    n.push(`🗄 Копия базы создана: ${require('path').basename(file)}`);
+    return { file };
+  }), { admin: true });
+
+  app.add('GET', '/api/admin/db/snapshots', (req) => ({
+    snapshots: db.snapshotsList(req.query.collection || undefined, u.toInt(req.query.limit, 30)),
+  }), { admin: true });
+
+  app.add('POST', '/api/admin/db/snapshot', act((req, n) => {
+    const name = String(req.body.collection || '').trim();
+    if (!name) throw new u.ApiError('Укажите коллекцию');
+    if (!db.snapshotCollection(name, String(req.body.label || 'вручную').slice(0, 40))) {
+      throw new u.ApiError('Не удалось снять снимок (нужна своя база и существующая коллекция)');
+    }
+    n.push(`📸 Снимок коллекции «${name}» сохранён`);
+    return { ok: true };
+  }), { admin: true });
+
+  // Восстановление коллекции из снимка. ПЕРЕД восстановлением делается
+  // копия базы — чтобы можно было отменить и само восстановление.
+  app.add('POST', '/api/admin/db/restore', act((req, n) => {
+    const seq = u.toInt(req.body.seq, 0);
+    const name = String(req.body.collection || '').trim();
+    if (!seq || !name) throw new u.ApiError('Укажите снимок и коллекцию');
+    const safety = db.backupNow('перед-восстановлением');
+    if (!db.snapshotRestore(seq, name)) {
+      throw new u.ApiError('Не удалось восстановить: снимок не найден, либо это коллекция игроков (её восстанавливают только из копии базы)');
+    }
+    n.push(`♻️ Коллекция «${name}» восстановлена из снимка #${seq}. Страховочная копия: ${safety ? require('path').basename(safety) : '—'}`);
+    return { ok: true, safety };
+  }), { admin: true });
+
+  // Сезонные метрики за прошлые недели — то, что теперь снимается перед
+  // каждым обнулением. Отсюда видно, что можно вернуть пострадавшим.
+  app.add('GET', '/api/admin/db/weekly-metrics', (req) => {
+    const store: any = db.load('weeklyMetricsBackup', {});
+    const week = req.query.week ? String(req.query.week) : null;
+    if (week) {
+      const m = store[week] || {};
+      const rows = Object.keys(m).map((id) => ({ id, ...m[id] }));
+      return { week, players: rows.length, rows: rows.slice(0, 500) };
+    }
+    return {
+      weeks: Object.keys(store).sort().reverse().map((w) => ({ week: w, players: Object.keys(store[w] || {}).length })),
+    };
+  }, { admin: true });
+
   app.add('GET',  '/api/admin/discounts', () => admin.discountCategories(), { admin: true });
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/global-buffs', () => admin.listGlobalBuffs(), { admin: true });

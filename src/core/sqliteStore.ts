@@ -31,16 +31,88 @@ type Row = { id: string; data: string };
 let db: any = null;
 let dbPath = '';
 let backupDir = '';
+let driverKind = '';
+
+// ── Выбор драйвера ────────────────────────────────────────────────
+// better-sqlite3 быстрее, но это НАТИВНЫЙ модуль: на сервере без
+// build-essential/python3 он не собирается, и — что хуже — обрушивает
+// весь `npm install`, то есть игра не поднимается вообще. Поэтому он
+// объявлен необязательной зависимостью, а при его отсутствии берётся
+// SQLite, встроенный в Node 22+. Формат файла базы у них одинаковый:
+// переключение драйвера ничего не меняет в данных.
+function makeDriver(file: string): any {
+  // Порядок выбора:
+  //  1) better-sqlite3 — если установлен. У него СТАБИЛЬНЫЙ API, поэтому
+  //     на живом проде он предпочтительнее. Это необязательная зависимость:
+  //     не собрался — просто идём дальше, npm install не ломается.
+  //  2) встроенный node:sqlite (Node 22.5+) — не требует компиляции и
+  //     работает всегда, но в Node 22 помечен экспериментальным: его API
+  //     может измениться при обновлении Node (в Node 24 уже стабилен).
+  // Формат файла базы у обоих одинаковый — драйвер можно менять в любой
+  // момент, данные от этого не зависят.
+  try {
+    const Database = require('better-sqlite3');
+    const h = new Database(file);
+    return {
+      kind: 'better-sqlite3',
+      exec: (sql: string) => h.exec(sql),
+      prepare: (sql: string) => h.prepare(sql),
+      pragma: (expr: string) => h.pragma(expr, { simple: true }),
+      transaction: (fn: () => void) => h.transaction(fn),
+      close: () => h.close(),
+    };
+  } catch (eNative: any) {
+    // Нативного нет — пробуем встроенный
+    const [maj, min] = process.versions.node.split('.').map(Number);
+    if (maj > 22 || (maj === 22 && min >= 5)) {
+      try {
+        const { DatabaseSync } = require('node:sqlite');
+        return builtinDriver(new DatabaseSync(file));
+      } catch (eBuiltin: any) { /* ниже общее сообщение */ }
+    }
+    // Ни нативного, ни встроенного. Объясняем ЧТО делать, а не
+    // выбрасываем «Cannot find module».
+    const e = eNative;
+    throw new Error(
+      `Не найден драйвер SQLite. Node ${process.versions.node}: встроенный модуль появился в 22.5, ` +
+      `нативный better-sqlite3 не установлен (${String(e.message).slice(0, 80)}).\n` +
+      `Решение: либо обновить Node до 22 LTS (тогда драйвер не нужен вообще), ` +
+      `либо установить нативный: npm i better-sqlite3@^11 (нужны build-essential и python3).`
+    );
+  }
+}
+
+// Обёртка над встроенным в Node модулем: у него нет методов pragma() и
+// transaction(), которые есть у нативного драйвера — добавляем их сами.
+function builtinDriver(h: any): any {
+  return {
+    kind: 'node:sqlite',
+    exec: (sql: string) => h.exec(sql),
+    prepare: (sql: string) => h.prepare(sql),
+    pragma: (expr: string) => {
+      if (expr.includes('=')) { h.exec(`PRAGMA ${expr}`); return null; }
+      const row: any = h.prepare(`PRAGMA ${expr}`).get();
+      return row ? Object.values(row)[0] : null;
+    },
+    // Транзакция вручную, с откатом при ошибке
+    transaction: (fn: () => void) => () => {
+      h.exec('BEGIN');
+      try { fn(); h.exec('COMMIT'); }
+      catch (err) { try { h.exec('ROLLBACK'); } catch (e2) {} throw err; }
+    },
+    close: () => h.close(),
+  };
+}
 
 // ---------- Инициализация ----------
 function open(dataDir: string, fileName = 'generals.db'): any {
-  const Database = require('better-sqlite3');
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   dbPath = path.join(dataDir, fileName);
   backupDir = path.join(dataDir, 'backups');
   if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
-  db = new Database(dbPath);
+  db = makeDriver(dbPath);
+  driverKind = db.kind;
 
   // WAL — читатели не блокируют писателя, и база переживает жёсткое падение.
   db.pragma('journal_mode = WAL');
@@ -101,6 +173,7 @@ function open(dataDir: string, fileName = 'generals.db'): any {
 }
 
 function isOpen(): boolean { return !!db; }
+function driver(): string { return driverKind; }
 function file(): string { return dbPath; }
 
 // ---------- Чтение при старте ----------
@@ -243,8 +316,9 @@ function stats(): any {
     collections: one('SELECT COUNT(*) AS n FROM collections').n,
     logs: one('SELECT COUNT(*) AS n FROM action_logs').n,
     snapshots: one('SELECT COUNT(*) AS n FROM snapshots').n,
-    walMode: db.pragma('journal_mode', { simple: true }),
-    integrity: db.pragma('integrity_check', { simple: true }),
+    driverKind,
+    walMode: db.pragma('journal_mode'),
+    integrity: db.pragma('integrity_check'),
   };
 }
 
@@ -256,7 +330,7 @@ function close(): void {
 }
 
 export = {
-  open, isOpen, file, close,
+  open, isOpen, file, close, driver,
   loadAllPlayers, loadAllCollections,
   writeBatch, deletePlayer,
   appendLog, tailLogs,

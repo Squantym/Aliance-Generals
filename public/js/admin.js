@@ -55,6 +55,7 @@ const Admin = {
       { id:'logs',      label:'📋 Журнал' },
       { id:'support',   label:'🛟 Поддержка' },
       { id:'tech',      label:'🔧 Техническое' },
+      { id:'db',        label:'🗄 База данных' },
     ];
     document.getElementById('content').innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
@@ -85,6 +86,7 @@ const Admin = {
     if (Admin.tab === 'mercs')     return Admin.renderMercs(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'tech')      return Admin.renderTech(c);
+    if (Admin.tab === 'db')        return Admin.renderDb(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
@@ -112,6 +114,127 @@ const Admin = {
   // операциями. Обе — необратимые, поэтому подтверждение вводится
   // руками, а не одним кликом.
   techTarget: null,
+
+  // ═══ БАЗА ДАННЫХ: состояние, копии, снимки, восстановление ═══════
+  // Восстановление раньше требовало разработчика — теперь всё кнопками.
+  async renderDb(c) {
+    c.innerHTML = '<div class="loading">Читаю состояние базы…</div>';
+    let d = null;
+    try { d = await API.get('/api/admin/db/stats'); } catch (e) {
+      c.innerHTML = `<div class="card"><p style="color:var(--red)">Не удалось получить состояние базы: ${UI.esc(e.message)}</p></div>`;
+      return;
+    }
+    const st = d.stats || {};
+    const own = st.driver === 'sqlite';
+    const mb = (n) => (n / 1024 / 1024).toFixed(2) + ' МБ';
+    const when = (ms) => new Date(ms).toLocaleString('ru-RU');
+
+    let snaps = { snapshots: [] };
+    let weeks = { weeks: [] };
+    if (own) {
+      try { snaps = await API.get('/api/admin/db/snapshots?limit=15'); } catch (e) {}
+      try { weeks = await API.get('/api/admin/db/weekly-metrics'); } catch (e) {}
+    }
+
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🗄 Состояние базы</div>
+        ${own ? `
+          <div class="kv"><span class="k">Тип</span><span class="v">своя база (SQLite), драйвер ${UI.esc(String(st.driverKind || '—'))}</span></div>
+          <div class="kv"><span class="k">Файл</span><span class="v small">${UI.esc(String(st.file || ''))}</span></div>
+          <div class="kv"><span class="k">Размер</span><span class="v">${mb(st.sizeBytes || 0)}</span></div>
+          <div class="kv"><span class="k">Игроков</span><span class="v">${UI.fmtNum(st.players || 0)} (ботов ${UI.fmtNum(st.bots || 0)})</span></div>
+          <div class="kv"><span class="k">Коллекций</span><span class="v">${st.collections || 0}</span></div>
+          <div class="kv"><span class="k">Записей аудита</span><span class="v">${UI.fmtNum(st.logs || 0)}</span></div>
+          <div class="kv"><span class="k">Журнал</span><span class="v">${UI.esc(String(st.walMode || '—'))}</span></div>
+          <div class="kv"><span class="k">Целостность</span><span class="v" style="color:${st.integrity === 'ok' ? 'var(--money)' : 'var(--red)'}">${UI.esc(String(st.integrity || '?'))}</span></div>
+        ` : `
+          <p class="muted small mt">Сейчас работает <b>${UI.esc(String(st.driver || 'неизвестно'))}</b>. Копии и снимки доступны только на своей базе — переключите <code>DB_DRIVER=sqlite</code> после переноса данных (tools/migrate-to-sqlite.js).</p>
+        `}
+      </div>
+
+      ${own ? `
+      <div class="card">
+        <div class="name">💾 Копии базы</div>
+        <p class="muted small mt">Полная копия делается на живой базе, игру останавливать не нужно. Автоматически — каждые 6 часов с ротацией. Копии лежат рядом с базой, поэтому вывоз на другой сервер — <code>tools/backup-offsite.sh</code>.</p>
+        <button class="btn btn-orange mt" id="db-backup" style="width:100%">💾 Сделать копию сейчас</button>
+        <div class="mt">
+          ${(d.backups || []).length
+            ? (d.backups || []).slice(0, 10).map((b) => `
+              <div class="list-row small">
+                <div class="grow">${UI.esc(b.file)}</div>
+                <span class="muted">${mb(b.size)} · ${when(b.at)}</span>
+              </div>`).join('')
+            : '<p class="muted small">Копий пока нет — сделайте первую.</p>'}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name">📸 Снимки коллекций</div>
+        <p class="muted small mt">Снимок — это состояние одной коллекции на момент времени. Снимаются автоматически перед сбросом недельного сезона (именно этого не хватило, когда обнулились очки) и вручную здесь.</p>
+        <div class="field-row mt">
+          <input type="text" id="db-snap-name" class="field" placeholder="Коллекция (weeklySeason, world, sanctions…)" style="flex:1">
+          <button class="btn btn-inline" id="db-snap">📸 Снять</button>
+        </div>
+        <div class="mt">
+          ${(snaps.snapshots || []).length
+            ? (snaps.snapshots || []).map((sn) => `
+              <div class="list-row small">
+                <div class="grow">#${sn.seq} <b>${UI.esc(sn.collection)}</b> <span class="muted">${UI.esc(sn.label)}</span></div>
+                <span class="muted">${when(sn.at)}</span>
+                <button class="btn btn-red btn-inline" data-restore="${sn.seq}" data-coll="${UI.esc(sn.collection)}">♻️ Восстановить</button>
+              </div>`).join('')
+            : '<p class="muted small">Снимков пока нет.</p>'}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name">🏆 Сезонные метрики по неделям</div>
+        <p class="muted small mt">Сохраняются перед каждым обнулением недели. Отсюда видно, что можно вернуть игрокам, если снова что-то пойдёт не так.</p>
+        ${(weeks.weeks || []).length
+          ? (weeks.weeks || []).map((w) => `
+            <div class="list-row small">
+              <div class="grow">Неделя <b>${UI.esc(w.week)}</b></div>
+              <span class="muted">${UI.fmtNum(w.players)} игроков</span>
+            </div>`).join('')
+          : '<p class="muted small">Пока пусто — появится после первого сброса недели.</p>'}
+      </div>` : ''}
+    `;
+
+    const backupBtn = document.getElementById('db-backup');
+    if (backupBtn) backupBtn.onclick = async () => {
+      backupBtn.disabled = true;
+      try {
+        const r = await API.post('/api/admin/db/backup', {});
+        UI.toast('💾 Копия создана');
+        Admin.render();
+      } catch (e) { UI.toast('⛔ ' + e.message); backupBtn.disabled = false; }
+    };
+    const snapBtn = document.getElementById('db-snap');
+    if (snapBtn) snapBtn.onclick = async () => {
+      const name = (document.getElementById('db-snap-name') || {}).value || '';
+      if (!name.trim()) return UI.toast('⛔ Укажите коллекцию');
+      try {
+        await API.post('/api/admin/db/snapshot', { collection: name.trim(), label: 'вручную' });
+        UI.toast('📸 Снимок сохранён');
+        Admin.render();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    c.querySelectorAll('[data-restore]').forEach((b) => {
+      b.onclick = async () => {
+        const coll = b.dataset.coll;
+        if (!await UI.confirm(
+          `Восстановить коллекцию <b>${UI.esc(coll)}</b> из снимка #${b.dataset.restore}?<br>` +
+          `<span class="muted small">Текущее состояние коллекции будет заменено. Перед восстановлением автоматически создаётся копия всей базы, так что операцию можно отменить.</span>`,
+          { title: 'Восстановление из снимка', icon: '♻️', okText: 'Восстановить', danger: true, html: true })) return;
+        try {
+          const r = await API.post('/api/admin/db/restore', { seq: Number(b.dataset.restore), collection: coll });
+          UI.toast('♻️ Восстановлено');
+          Admin.render();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+  },
 
   renderTech(c) {
     const t = Admin.techTarget;
