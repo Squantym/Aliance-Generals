@@ -1271,7 +1271,22 @@ function pickWeeklyQuests(weekKey: string): string[] {
     const j = Math.floor(rng() * (i + 1));
     [ids[i], ids[j]] = [ids[j], ids[i]];
   }
-  return ids.slice(0, WEEKLY_PICK_COUNT);
+  // Недельных активно всего 4 — набираем от РАЗНЫХ заказчиков, чтобы в
+  // разделе были четыре разных лица, а не два поручения от одного.
+  const picked: string[] = [];
+  const usedChars: Record<string, boolean> = {};
+  for (const id of ids) {
+    if (picked.length >= WEEKLY_PICK_COUNT) break;
+    const q = WEEKLY_QUEST_BY_ID[id];
+    if (usedChars[q.char]) continue;
+    usedChars[q.char] = true;
+    picked.push(id);
+  }
+  for (const id of ids) {                       // если заказчиков не хватило
+    if (picked.length >= WEEKLY_PICK_COUNT) break;
+    if (picked.indexOf(id) < 0) picked.push(id);
+  }
+  return picked;
 }
 
 // Бонус за выполнение ВСЕХ активных поручений дня — растёт с уровнем (золото).
@@ -1293,12 +1308,28 @@ function pickDailyQuests(dayKey: string): string[] {
   let h = 2166136261;
   for (let i = 0; i < dayKey.length; i++) { h ^= dayKey.charCodeAt(i); h = Math.imul(h, 16777619); }
   const rng = _mulberry32(h >>> 0);
-  const ids = DAILY_QUESTS.map((q) => q.id);
-  for (let i = ids.length - 1; i > 0; i--) {           // перемешивание Фишера–Йетса
-    const j = Math.floor(rng() * (i + 1));
-    [ids[i], ids[j]] = [ids[j], ids[i]];
+  const shuffle = (arr: string[]) => {
+    for (let i = arr.length - 1; i > 0; i--) {          // перемешивание Фишера–Йетса
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+  // Раньше 9 поручений выбирались случайно из общего списка, и заказчики с
+  // малым числом заданий (Тесла — 2, Морозова — 3) часто вообще не попадали
+  // в день: игрок видел не всех людей, выдающих поручения.
+  // Теперь сначала берём ПО ОДНОМУ поручению от КАЖДОГО заказчика — так все
+  // лица присутствуют всегда, — а остаток добиваем случайными.
+  const byChar: Record<string, string[]> = {};
+  for (const q of DAILY_QUESTS) (byChar[q.char] = byChar[q.char] || []).push(q.id);
+  const chosen: string[] = [];
+  for (const char of Object.keys(DAILY_CHARS)) {
+    const pool = byChar[char];
+    if (pool && pool.length) chosen.push(pool[Math.floor(rng() * pool.length)]);
   }
-  return ids.slice(0, DAILY_PICK_COUNT);
+  if (chosen.length >= DAILY_PICK_COUNT) return shuffle(chosen).slice(0, DAILY_PICK_COUNT);
+  const rest = shuffle(DAILY_QUESTS.map((q) => q.id).filter((id) => chosen.indexOf(id) < 0));
+  return shuffle(chosen.concat(rest.slice(0, DAILY_PICK_COUNT - chosen.length)));
 }
 
 // На 10 уровне каждый трофей даёт указанный максимум:
@@ -1955,15 +1986,17 @@ const TITLES = [
 const TITLE_BY_ID: Record<string, any> = Object.fromEntries(TITLES.map((t) => [t.id, t]));
 
 // Контракты от NPC (ежедневные задания за золото/опыт)
+// У каждого контракта теперь есть ЗАКАЗЧИК (char) — тот же состав, что
+// выдаёт поручения. В карточке показывается его портрет, а не эмодзи.
 const CONTRACTS_POOL = [
-  { id: 'c_attack',  name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks', route: 'war',        targets: [5, 10, 15], rewardGold: [15, 25, 40] },
-  { id: 'c_win',     name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins', route: 'war',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
-  { id: 'c_buy',     name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought', route: 'units',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
-  { id: 'c_build',   name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', route: 'buildings', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
-  { id: 'c_ear',     name: 'Трофеи',      desc: 'Отрежь {n} ушей',               counter: 'earsCut', route: 'war',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
-  { id: 'c_mission', name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages', route: 'missions',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
-  { id: 'c_fatal',   name: 'Палач',       desc: 'Соверши {n} фаталити',          counter: 'fatalities', route: 'war',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
-  { id: 'c_market',  name: 'Контрабанда', desc: 'Купи {n} на чёрном рынке',      counter: 'marketBought', route: 'market/buffs',   targets: [2, 4, 7],   rewardGold: [15, 24, 38] },
+  { id: 'c_attack',  char: 'volkov',   name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks', route: 'war',        targets: [5, 10, 15], rewardGold: [15, 25, 40] },
+  { id: 'c_win',     char: 'volkov',   name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins', route: 'war',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
+  { id: 'c_buy',     char: 'kovac',    name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought', route: 'units',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
+  { id: 'c_build',   char: 'morozova', name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', route: 'buildings', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
+  { id: 'c_ear',     char: 'gadyuka',  name: 'Трофеи',      desc: 'Отрежь {n} ушей',               counter: 'earsCut', route: 'war',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
+  { id: 'c_mission', char: 'tesla',    name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages', route: 'missions',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
+  { id: 'c_fatal',   char: 'gadyuka',  name: 'Палач',       desc: 'Соверши {n} фаталити',          counter: 'fatalities', route: 'war',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
+  { id: 'c_market',  char: 'kovac',    name: 'Контрабанда', desc: 'Купи {n} на чёрном рынке',      counter: 'marketBought', route: 'market/buffs',   targets: [2, 4, 7],   rewardGold: [15, 24, 38] },
 ];
 const CONTRACTS_PER_DAY = 3;
 

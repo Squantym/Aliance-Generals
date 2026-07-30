@@ -169,6 +169,61 @@ function save(name: string): void {
   scheduleFlush();
 }
 
+// ═══ УДАЛЕНИЕ ИГРОКА ИЗ БАЗЫ ════════════════════════════════════════
+// КРИТИЧНО: flushUsers умеет только replaceOne по существующим id, то есть
+// НИКОГДА не удаляет документы. Раньше admin.deleteAccount делал только
+// `delete players[id]` — в JSON-режиме этого хватало (файл перезаписывается
+// целиком), а в mongo документ оставался в базе, и после рестарта процесса
+// db.load() поднимал удалённого игрока обратно. Отсюда «воскресшие»
+// аккаунты и одинаковые позывные на нескольких местах в рейтинге: игрок
+// освобождал имя, регистрировался заново, и в базе оказывались два
+// документа с разными _id и одним именем.
+function dropUser(id: string): void {
+  if (!id) return;
+  const usersObj = store.users || {};
+  delete usersObj[id];
+  dirtyUsers.delete(id);
+  if (mode === 'mongo' && usersColl) {
+    usersColl.deleteOne({ _id: id }).catch((e: any) => {
+      console.error('❌ Не удалось удалить документ игрока из mongo:', id, e && e.message);
+    });
+  } else {
+    allUsersDirty = true;
+    scheduleFlush();
+  }
+}
+
+// Диагностика: игроки с одинаковыми позывными или email — следствие старой
+// ошибки удаления. Возвращает группы, чтобы владелец решил, кого убрать.
+function findDuplicateUsers(): any {
+  const usersObj: Record<string, any> = store.users || {};
+  const byName: Record<string, any[]> = {};
+  const byEmail: Record<string, any[]> = {};
+  for (const id of Object.keys(usersObj)) {
+    const p = usersObj[id];
+    if (!p || p.isBot) continue;
+    const nameKey = String(p.name || '').trim().toLowerCase();
+    const mailKey = String(p.email || '').trim().toLowerCase();
+    const info = {
+      id, name: p.name, email: p.email, level: p.level,
+      createdAt: p.createdAt || 0, lastSeen: p.lastSeen || 0,
+      ears: p.ears || 0,
+      weeklyEars: (p.weekly && p.weekly.ears) || 0,
+      hasSeasonWeekly: !!(p.weekly && p.weekly.weekId),
+    };
+    if (nameKey) (byName[nameKey] = byName[nameKey] || []).push(info);
+    if (mailKey) (byEmail[mailKey] = byEmail[mailKey] || []).push(info);
+  }
+  const dupNames = Object.keys(byName).filter((k) => byName[k].length > 1).map((k) => ({ key: k, accounts: byName[k] }));
+  const dupEmails = Object.keys(byEmail).filter((k) => byEmail[k].length > 1).map((k) => ({ key: k, accounts: byEmail[k] }));
+  const usersArr: any[] = Object.values(usersObj);
+  return {
+    total: usersArr.length,
+    dupNames, dupEmails,
+    noSeasonWeekly: usersArr.filter((p: any) => p && !p.isBot && !(p.weekly && p.weekly.weekId)).length,
+  };
+}
+
 // Точечно пометить одного игрока на сохранение (дёшево при 1000+ игроков).
 function markUser(id: string): void {
   if (!id) return;
@@ -330,5 +385,6 @@ async function flushAllNow(): Promise<void> {
 
 export = {
   init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
+  dropUser, findDuplicateUsers,
   get mode() { return mode; },
 };

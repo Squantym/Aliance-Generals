@@ -2700,3 +2700,16 @@ body.theme-noir .field-hint { color: #8a8a92; }
 /* Результат взлома сейфа в окне */
 .safe-result { text-align: center; font-size: 13.5px; line-height: 1.5; }
 .safe-sum { margin-top: 10px; font-size: 20px; }
+
+/* Заказчик в карточке контракта */
+.contract-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.contract-head-info { flex: 1; min-width: 0; }
+
+/* Номер места в рейтинге — раньше первые три строки показывали ТОЛЬКО
+   медаль без номера, и такие же медали были в блоке «итоги прошлой недели».
+   Из-за этого один игрок читался как занимающий сразу несколько мест. */
+.rank-num { display: inline-block; min-width: 22px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Портрет заказчика в строке названия поручения (вместо эмодзи-иконки):
+   выравниваем по тексту, чуть меньше скругление под маленький размер */
+.name > .ic-instr { vertical-align: -6px; border-radius: 6px; }

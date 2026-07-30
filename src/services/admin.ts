@@ -822,7 +822,10 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
   if (refs) cleaned.push(`ссылки у других игроков (${refs})`);
 
   // 10) И, наконец, сама учётная запись — позывной и почта снова свободны
-  delete players[id];
+  // Удаляем и из памяти, и из хранилища. Раньше здесь было только
+  // `delete players[id]`, из-за чего в mongo документ игрока оставался
+  // и возвращался после рестарта процесса.
+  db.dropUser(id);
   db.save('users');
 
   auditLog.record({

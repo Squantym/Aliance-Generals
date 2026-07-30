@@ -958,7 +958,16 @@ function fatality(user: User, choice: string, notices: Notices) {
         const doubleCut = victim.earsCurrent >= 2 && Math.random() * 100 < doublePct;
         outDoubleCut = doubleCut;
         const cutsToMake = doubleCut ? 2 : 1;
-        if (doubleCut) { user.ears++; require('./dailyQuests').bump(user, 'earsCut', 1); } // второе ухо тоже в коллекцию
+        if (doubleCut) {
+          // Второе ухо: раньше оно попадало в коллекцию и в поручения, но
+          // НЕ в сезонный рейтинг — из-за этого у владельцев «Тесака
+          // мясника» цифра в рейтинге ушей отставала от реально срезанных.
+          user.ears++;
+          require('./dailyQuests').bump(user, 'earsCut', 1);
+          ach.bump(user, 'earsCut', 1, notices);
+          player.addRating(user, 3);
+          try { require('./seasons').onFatalityEar(user); } catch (e) {}
+        }
 
         if (!victim.earCutters) victim.earCutters = [null, null];
         for (let k = 0; k < cutsToMake; k++) {
@@ -1015,7 +1024,13 @@ function fatality(user: User, choice: string, notices: Notices) {
         const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
         const doubleCut = Math.random() * 100 < doublePct;
         outDoubleCut = doubleCut;
-        if (doubleCut) user.ears++; // второе ухо в коллекцию
+        if (doubleCut) {
+          user.ears++;                                    // второе ухо в коллекцию
+          ach.bump(user, 'earsCut', 1, notices);
+          require('./dailyQuests').bump(user, 'earsCut', 1);
+          player.addRating(user, 3);
+          try { require('./seasons').onFatalityEar(user); } catch (e) {}   // и в сезонный рейтинг
+        }
         notices.push(`✂️ Фаталити! ${doubleCut ? 'Отрезаны СРАЗУ ОБА уха' : 'Трофейное ухо'} — в коллекцию (всего: ${user.ears}).`);
       }
     } else {

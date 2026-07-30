@@ -318,6 +318,9 @@ function registerRoutes(app: any) {
   // Рейтинговые сезоны
   app.add('GET',  '/api/season', (req) => require('./services/seasons').view(req.user));
   app.add('POST', '/api/admin/season/config', act((req) => require('./services/seasons').adminSetRewards(req.user, req.body)), { admin: true });
+  // Диагностика базы: одинаковые позывные/email (следствие старой ошибки
+  // удаления аккаунтов) и сколько игроков без сезонного объекта
+  app.add('GET', '/api/admin/db-integrity', (req) => require('./core/db').findDuplicateUsers(), { admin: true });
   app.add('POST', '/api/admin/season/end',    act((req, n) => require('./services/seasons').adminForceRollover(req.user, n)), { admin: true });
   // Мировое событие (босс)
   app.add('GET',  '/api/event',        (req) => worldEvent.view(req.user));

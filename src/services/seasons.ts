@@ -82,6 +82,38 @@ function metricVal(p: User, metric: string, forWeek: string): number {
   return (p.weekly && p.weekly.weekId === forWeek) ? (Number((p.weekly as any)[metric]) || 0) : 0;
 }
 
+// Живые участники рейтинга БЕЗ дублей по id. Object.values не может дать
+// дубли сам по себе, но защита дешёвая: любой будущий merge аккаунтов или
+// повторная запись под другим ключом иначе посадит одного игрока сразу на
+// два места в топе.
+function rankedPlayers(): User[] {
+  const seen = new Set<string>();
+  const out: User[] = [];
+  for (const p of Object.values(users())) {
+    if (!p || p.isBot || !p.id) continue;
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    out.push(p);
+  }
+  return out;
+}
+
+// Сортировка мест. КРИТИЧНО: при равных значениях нужен стабильный
+// тайбрейкер. Без него Array.sort у игроков с одинаковым счётом (а после
+// сброса недели у большинства он нулевой) выдаёт ПРОИЗВОЛЬНЫЙ порядок,
+// зависящий от порядка ключей в коллекции — он меняется при каждой
+// перезагрузке из Mongo. Игроки прыгали по местам между обновлениями
+// страницы, и выглядело это так, будто один и тот же человек занимает
+// сразу второе и третье место.
+function byValueThenId(a: { value?: number; v?: number; id?: string; p?: any }, b: any): number {
+  const av = a.value !== undefined ? a.value : a.v;
+  const bv = b.value !== undefined ? b.value : b.v;
+  if (bv !== av) return (bv || 0) - (av || 0);
+  const aid = a.id || (a.p && a.p.id) || '';
+  const bid = b.id || (b.p && b.p.id) || '';
+  return aid < bid ? -1 : (aid > bid ? 1 : 0);
+}
+
 // Награждение топ-3 каждой категории + снапшот победителей за завершившуюся неделю
 function awardAndSnapshot(s: any, all: User[], finishingWeek: string) {
   const rewards = (s.rewards && s.rewards.length) ? s.rewards : config.SEASON.rewards;
@@ -90,7 +122,7 @@ function awardAndSnapshot(s: any, all: User[], finishingWeek: string) {
     const ranked = all
       .map((p) => ({ p, v: metricVal(p, cat.metric, finishingWeek) }))
       .filter((x) => x.v > 0)
-      .sort((a, b) => b.v - a.v)
+      .sort(byValueThenId)
       .slice(0, 3);
     winners[cat.id] = ranked.map((x) => ({ id: x.p.id, name: x.p.name, flag: player.flag(x.p), value: x.v }));
     ranked.forEach((x, i) => {
@@ -123,7 +155,7 @@ function rolloverIfNeeded(): boolean {
   if (finishing) {
     // Настоящая смена недели: награждаем топ-3 по статистике завершившейся
     // недели (все weekly ещё нетронуты) и обнуляем метрики всех.
-    const all = Object.values(users()).filter((p) => !p.isBot);
+    const all = rankedPlayers();
     awardAndSnapshot(s, all, finishing);
     for (const p of all) p.weekly = freshWeekly(cur);
     db.save('users');
@@ -137,11 +169,11 @@ function view(user: User) {
   rolloverIfNeeded();
   const s = store();
   const cur = weekId();
-  const all = Object.values(users()).filter((p) => !p.isBot);
+  const all = rankedPlayers();
   const categories = config.SEASON.categories.map((cat) => {
     const ranked = all
       .map((p) => ({ id: p.id, name: p.name, flag: player.flag(p), value: metricVal(p, cat.metric, cur) }))
-      .sort((a, b) => b.value - a.value);
+      .sort(byValueThenId);
     const myRankIdx = ranked.findIndex((x) => x.id === user.id);
     return {
       id: cat.id, name: cat.name, icon: cat.icon, unit: cat.unit, money: !!cat.money,
@@ -179,8 +211,24 @@ function adminSetRewards(adminUser: User, body: any) {
 // ── АДМИН: принудительно завершить текущую неделю сейчас ────────────
 function adminForceRollover(adminUser: User, notices: Notices) {
   const s = store();
-  const all = Object.values(users()).filter((p) => !p.isBot);
+  const all = rankedPlayers();
   const finishing = weekId();
+  // ЗАЩИТА: если в текущей неделе призёров нет (у всех метрики по нулям),
+  // не затираем уже сохранённые «итоги прошлой недели» пустым снапшотом.
+  // Иначе одно нажатие кнопки стирает последнюю уцелевшую сводку.
+  const anyPoints = config.SEASON.categories.some((cat) =>
+    all.some((p) => metricVal(p, cat.metric, finishing) > 0));
+  if (!anyPoints) {
+    const kept = s.lastWinners && Object.values(s.lastWinners).some((a: any) => a && a.length);
+    for (const p of all) p.weekly = freshWeekly(finishing);
+    s.weekId = finishing;
+    db.save('weeklySeason');
+    db.save('users');
+    notices.push(kept
+      ? '⚠️ Награждать некого: на этой неделе ни у кого нет очков. Метрики обнулены, прошлые итоги СОХРАНЕНЫ.'
+      : '⚠️ Награждать некого: на этой неделе ни у кого нет очков. Метрики обнулены.');
+    return { winners: s.lastWinners || {}, skipped: true };
+  }
   awardAndSnapshot(s, all, finishing);
   const cur = weekId(); // не изменится, но метрики сбрасываем «на новую неделю»
   for (const p of all) p.weekly = freshWeekly(cur);

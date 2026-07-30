@@ -427,7 +427,13 @@ App.screens.dailytasks = async (c) => {
     <p class="muted small" style="margin:-4px 4px 10px">Боевые задания от штаба. Обновляются каждый день в 00:00 МСК. Выполняйте и забирайте награду.</p>
     ${d.contracts.length ? d.contracts.map((ct) => `
       <div class="card${ct.route && !ct.done ? ' quest-clickable' : ''}" ${ct.route && !ct.done ? `data-goto="${ct.route}"` : ''}>
-        <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
+        <div class="contract-head">
+          ${ct.char ? App.instrImg(ct.char, 58) : ''}
+          <div class="contract-head-info">
+            <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
+            ${ct.charName ? `<div class="muted small">${UI.esc(ct.charName)}${ct.charRole ? ` · ${UI.esc(ct.charRole)}` : ''}</div>` : ''}
+          </div>
+        </div>
         <p class="muted small">${UI.esc(ct.desc)}</p>
         ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
         <div class="kv mt"><span class="k">Награда</span><span class="v gold"><span class="ic-gold"></span> ${ct.reward}</span></div>
@@ -1216,7 +1222,7 @@ App.screens.daily = async (c) => {
                    style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
                 <div class="list-row" style="border:none;padding:0">
                   <div class="grow">
-                    <div class="name">${q.icon} ${UI.esc(q.name)} ${diffBadge(q.difficulty)}</div>
+                    <div class="name">${q.char ? App.instrImg(q.char, 26) : q.icon} ${UI.esc(q.name)} ${diffBadge(q.difficulty)}</div>
                     <div class="muted small" style="font-style:italic;margin:2px 0 4px">«${UI.esc(q.flavor)}»</div>
                     <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.name)}</b> — ${UI.fmtNum(q.target)} ${q.done ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
                     ${q.accepted
@@ -1432,12 +1438,17 @@ App.screens.season = async (c) => {
     const box = document.getElementById('season-body');
     if (!box) return;
 
+    // Блок победителей — это ЗАВЕРШЁННАЯ неделя, отдельная от текущего топа.
+    // Один и тот же игрок закономерно попадает в оба блока с разными
+    // цифрами; подписываем неделю датами, чтобы это не читалось как дубль.
+    const weekLabel = d.lastWeekId ? ` <span class="muted small">(${UI.esc(App._weekRange(d.lastWeekId))})</span>` : '';
     const winnersHtml = (cat.winners && cat.winners.length) ? `
       <div class="card" style="border-color:var(--gold)">
-        <div class="name">🏆 Победители прошлой недели</div>
+        <div class="name">🏆 Итоги прошлой недели${weekLabel}</div>
+        <div class="muted small" style="margin:-2px 0 6px">Завершённый зачёт. Текущая неделя считается заново — ниже.</div>
         ${cat.winners.map((w, i) => `
           <div class="list-row">
-            <div class="grow">${['🥇','🥈','🥉'][i] || (i+1)+'.'} <span class="name" onclick="App.go('profile/${w.id}')" style="cursor:pointer">${App._flagImg(w.flag)} ${UI.esc(w.name)}</span></div>
+            <div class="grow"><span class="rank-num">${i + 1}.</span>${['🥇','🥈','🥉'][i] ? ' ' + ['🥇','🥈','🥉'][i] : ''} <span class="name" onclick="App.go('profile/${w.id}')" style="cursor:pointer">${App._flagImg(w.flag)} ${UI.esc(w.name)}</span></div>
             <span class="gold">${val(cat, w.value)} ${cat.unit}</span>
           </div>`).join('')}
       </div>` : '';
@@ -1454,7 +1465,7 @@ App.screens.season = async (c) => {
         <div class="title" style="margin-top:0">${cat.icon} Топ-20 · ${UI.esc(cat.name)}</div>
         ${cat.top.length ? cat.top.map((p, i) => `
           <div class="list-row" ${p.id === App.me.id ? 'style="background:rgba(255,180,0,.10);border-radius:8px;padding:4px 6px"' : ''}>
-            <div class="grow">${i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1) + '.'} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${App._flagImg(p.flag)} ${UI.esc(p.name)}</span>${p.id === App.me.id ? ' <span class="gold small">(вы)</span>' : ''}</div>
+            <div class="grow"><span class="rank-num">${i + 1}.</span>${i < 3 ? ' ' + ['🥇','🥈','🥉'][i] : ''} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${App._flagImg(p.flag)} ${UI.esc(p.name)}</span>${p.id === App.me.id ? ' <span class="gold small">(вы)</span>' : ''}</div>
             <span class="gold">${val(cat, p.value)}</span>
           </div>`).join('') : '<p class="muted center">Пока пусто — заработайте очки на этой неделе!</p>'}
       </div>`;

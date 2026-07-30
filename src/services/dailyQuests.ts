@@ -66,8 +66,12 @@ function ensureWeekly(user: User): any {
   // counters, нет сезонного weekId) — переносим его в weeklyQuests и
   // освобождаем поле: сезон пересоздаст свой объект сам (ensureWeek).
   const legacy = (user as any).weekly;
-  if (legacy && legacy.week && legacy.counters && !legacy.weekId && !(user as any).weeklyQuests) {
-    (user as any).weeklyQuests = legacy;
+  if (legacy && legacy.week && legacy.counters && !legacy.weekId) {
+    // Переносим только если своего поля ещё нет; но чужое поле ОСВОБОЖДАЕМ
+    // в любом случае — иначе у игрока, который не воюет (сезонные хуки не
+    // приходят), мусорный формат висел бы в user.weekly бесконечно, и в
+    // топах сезона он показывался бы нулём
+    if (!(user as any).weeklyQuests) (user as any).weeklyQuests = legacy;
     (user as any).weekly = null;
   }
   if (!(user as any).weeklyQuests || (user as any).weeklyQuests.week !== week) {

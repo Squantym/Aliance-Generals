@@ -195,12 +195,17 @@ function contractsView(user: User) {
       const target = config.contractTarget(def.targets[tier], user.level);
       const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
       const done = current >= target;
+      // Заказчик контракта — для портрета в карточке
+      const ch = config.DAILY_CHARS[def.char] || null;
       return {
         id: ct.id, name: def.name, route: def.route || null,
         desc: def.desc.replace('{n}', String(target)),
         current: Math.min(current, target), target,
         reward: config.contractReward(def.rewardGold[tier], user.level),
         done, claimed: !!ct.claimed,
+        char: def.char || null,
+        charName: ch ? ch.name : null,
+        charRole: ch ? ch.role : null,
       };
     }).filter(Boolean),
   };

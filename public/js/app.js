@@ -542,6 +542,19 @@ const App = {
   // Русское название рода войск
   _typeRu(t) { return { ground: 'Наземная', air: 'Воздушная', sea: 'Морская' }[t] || t; },
   // Иконка внутренней вкладки меню (по ключу, напр. tech_air, legion_war)
+  // «2026-07-20» → «20–26 июля»: подпись завершённой недели в рейтинге
+  _weekRange(weekId) {
+    const M = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    const p = String(weekId || '').split('-');
+    if (p.length !== 3) return String(weekId || '');
+    const a = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+    const b = new Date(a.getTime() + 6 * 86400000);
+    const sameMonth = a.getUTCMonth() === b.getUTCMonth();
+    return sameMonth
+      ? `${a.getUTCDate()}–${b.getUTCDate()} ${M[b.getUTCMonth()]}`
+      : `${a.getUTCDate()} ${M[a.getUTCMonth()]} – ${b.getUTCDate()} ${M[b.getUTCMonth()]}`;
+  },
+
   tabImg(key, size = 22) {
     if (!key) return '';
     return `<img class="ic-tab" src="/img/tabs/${key}.webp" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.style.display='none'">`;
