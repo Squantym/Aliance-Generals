@@ -50,13 +50,23 @@ echo "      dist/server.js готов"
 
 echo "[6/6] Перезапуск"
 pm2 restart "$PM2_NAME" --update-env
-sleep 8
 pm2 list
 
-CODE="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || true)"
+# Подключение к облачной базе занимает до 20 секунд (а при проблемах с
+# сертификатом делается вторая попытка), поэтому ждём с повторами, а не
+# один раз — иначе скрипт объявляет провал на живом сервере.
+echo "      жду ответа сервера (до 60 секунд)…"
+CODE=000
+for i in $(seq 1 30); do
+  sleep 2
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || true)"
+  [ "$CODE" = "200" ] && break
+done
+
 if [ "$CODE" = "200" ]; then
   echo "✅ Готово: сервер отвечает 200"
 else
-  echo "⚠ Сервер отвечает код '$CODE'. Логи: pm2 logs $PM2_NAME --lines 40 --nostream"
+  echo "⚠ Сервер не ответил за 60 секунд (последний код '$CODE')."
+  echo "  Логи: pm2 logs $PM2_NAME --lines 40 --nostream"
   exit 1
 fi

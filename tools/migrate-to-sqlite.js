@@ -25,6 +25,28 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+
+// ── Загружаем .env вручную ────────────────────────────────────────
+// Сервер читает .env через dotenv при старте, а этот скрипт запускается
+// напрямую — без этого MONGODB_URI не виден, скрипт молча считает, что
+// облака нет, и переносит пустую локальную папку data вместо боевой базы.
+(function loadEnv() {
+  const envPath = path.join(ROOT, '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq === -1) continue;
+    const key = t.slice(0, eq).trim();
+    let val = t.slice(eq + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = val;
+  }
+})();
+
 const args = process.argv.slice(2);
 const flag = (n) => args.some((a) => a === '--' + n);
 const opt = (n, def) => {
@@ -99,7 +121,13 @@ function readFromJson() {
   }
 
   const from = opt('from', process.env.MONGODB_URI ? 'mongo' : 'json');
-  console.log(`Источник: ${from}`);
+  console.log(`Источник: ${from}` + (from === 'mongo'
+    ? ` (база «${process.env.MONGODB_DB || 'generals'}»)`
+    : ' — локальные файлы data/*.json'));
+  if (from === 'json' && !process.env.MONGODB_URI) {
+    console.log('⚠️  MONGODB_URI не найден ни в окружении, ни в .env.');
+    console.log('   Если боевые данные в облаке — перенос НЕ отсюда. Проверьте .env.');
+  }
 
   let data;
   if (from === 'mongo') {
@@ -121,8 +149,19 @@ function readFromJson() {
   console.log(`  коллекций:        ${collNames.length}${collNames.length ? ' → ' + collNames.join(', ') : ''}`);
   console.log(`  записей аудита:   ${data.logs.length}`);
 
-  if (!userIds.length && !collNames.length) {
-    console.error('\n⛔ Источник пуст. Перенос отменён (чтобы не создать пустую базу вместо рабочей).');
+  if (!userIds.length) {
+    console.error('\n⛔ В источнике НЕТ НИ ОДНОГО ИГРОКА. Перенос отменён.');
+    console.error('   Иначе получилась бы пустая база, и после переключения драйвера');
+    console.error('   игра стартовала бы с нуля игроков.');
+    console.error('');
+    if (from === 'json') {
+      console.error('   Источником выбраны локальные JSON-файлы. Если боевые данные лежат');
+      console.error('   в MongoDB, проверьте, что в .env есть MONGODB_URI, и запустите снова.');
+      console.error('   Пустые json-файлы в data/ можно удалить: rm -f data/*.json');
+    } else {
+      console.error('   Источник — MongoDB, но коллекция users пуста. Проверьте MONGODB_DB:');
+      console.error(`   сейчас «${process.env.MONGODB_DB || 'generals'}».`);
+    }
     process.exit(1);
   }
 
