@@ -123,12 +123,18 @@ async function main() {
   async function shutdown(signal: string) {
     console.log(`\nПолучен сигнал ${signal}, сохраняю данные перед выходом...`);
     server.close();
-    await db.flushAllNow();
+    const failed = await db.flushAllNow();
     // Своя база: сводим журнал WAL в основной файл и закрываем соединение.
     // Без этого рядом с базой остаётся -wal, и хотя SQLite подхватит его
     // при следующем старте, копировать базу «на горячую» в таком виде
     // нельзя — копия окажется без последних транзакций.
     if (typeof (db as any).closeDb === 'function') (db as any).closeDb();
+    // Пишем правду: раньше здесь всегда было «Данные сохранены», даже когда
+    // часть коллекций не записалась
+    if (failed && failed.length) {
+      console.error(`⚠️  ВЫХОД С ПОТЕРЕЙ: не сохранены коллекции: ${failed.join(', ')}`);
+      process.exit(1);
+    }
     console.log('Данные сохранены, выхожу.');
     process.exit(0);
   }

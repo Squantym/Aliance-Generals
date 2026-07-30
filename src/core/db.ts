@@ -42,6 +42,11 @@ let usersColl: any = null; // коллекция игроков: один док
 let collColl: any = null;  // коллекция «прочих» данных: один документ = одна коллекция
 let logsColl: any = null;  // аудит-лог: отдельная capped-коллекция, один документ = одна запись
 let periodicTimer: NodeJS.Timeout | null = null;
+// Идёт остановка процесса: новые записи больше не планируем. Без этого
+// автосохранение (раз в 30 с) успевало запланировать запись ПОСЛЕ того, как
+// финальное сохранение уже закрыло соединение с базой, и коллекция терялась
+// с ошибкой «client was closed» — при каждом рестарте.
+let shuttingDown = false;
 
 let sqlite: any = null;          // модуль SQLite-хранилища (если выбран драйвер)
 let backupTimer: any = null;
@@ -322,6 +327,7 @@ function markUser(id: string): void {
 }
 
 function scheduleFlush(): void {
+  if (shuttingDown) return;   // идёт финальное сохранение — не мешаем
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     flush().catch((e: any) => console.error('Ошибка фонового сохранения:', e.message));
@@ -542,9 +548,17 @@ async function tailLogs(limit: number, userId?: string): Promise<any[]> {
 
 // Немедленное сохранение всего и аккуратное закрытие соединения —
 // используется при остановке сервера (SIGINT/SIGTERM).
-async function flushAllNow(): Promise<void> {
+// Финальное сохранение при остановке. Возвращает список коллекций, которые
+// сохранить НЕ удалось, — чтобы сервер написал правду, а не «всё сохранено».
+async function flushAllNow(): Promise<string[]> {
+  // Первым делом глушим все таймеры и запрещаем планировать новые записи:
+  // иначе автосохранение вклинится в середину и упадёт на закрытом клиенте
+  shuttingDown = true;
+  if (periodicTimer) { clearInterval(periodicTimer); periodicTimer = null; }
+  if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = null;
+  const failed: string[] = [];
   dirty.clear();
   dirtyUsers.clear();
   allUsersDirty = false;
@@ -553,6 +567,7 @@ async function flushAllNow(): Promise<void> {
     try {
       await flushOne(name);
     } catch (e: any) {
+      failed.push(name);
       console.error(`Не удалось сохранить «${name}» при выходе:`, e.message);
     }
   }
@@ -560,11 +575,14 @@ async function flushAllNow(): Promise<void> {
   try {
     await flushUsers(true);
   } catch (e: any) {
+    failed.push('users');
     console.error('Не удалось сохранить игроков при выходе:', e.message);
   }
   if (mongoClient) {
     await mongoClient.close();
+    mongoClient = null;
   }
+  return failed;
 }
 
 export = {

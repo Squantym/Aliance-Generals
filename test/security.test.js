@@ -119,6 +119,19 @@ ok(fs.existsSync(path.join(ROOT, 'tools/backup-offsite.sh')), 'есть скри
 ok(dbSrc.includes('function acquireLock'), 'замок базы: второй процесс на тех же данных не запустится');
 ok(dbSrc.includes('function isAlive'), 'замок от упавшего процесса не блокирует запуск (проверяется, жив ли PID)');
 ok(dbSrc.includes('releaseLock'), 'замок снимается при остановке сервера');
+// Потеря данных при остановке: автосохранение вклинивалось в финальную
+// запись и падало на закрытом соединении («client was closed»), а сервер
+// всё равно писал «Данные сохранены»
+ok(dbSrc.includes('let shuttingDown'), 'при остановке новые записи не планируются');
+ok(/scheduleFlush\(\): void \{\s*\n\s*if \(shuttingDown\) return;/.test(dbSrc),
+   'планировщик записи отключается на время выхода');
+ok(/if \(periodicTimer\) \{ clearInterval\(periodicTimer\); periodicTimer = null; \}/.test(dbSrc),
+   'автосохранение глушится перед финальной записью');
+ok(/async function flushAllNow\(\): Promise<string\[\]>/.test(dbSrc),
+   'финальное сохранение возвращает список несохранённых коллекций');
+const serverSrc = fs.readFileSync(path.join(ROOT, 'server.ts'), 'utf8');
+ok(serverSrc.includes('ВЫХОД С ПОТЕРЕЙ'), 'сервер сообщает о потере, а не рапортует об успехе вслепую');
+ok(/const failed = await db\.flushAllNow\(\)/.test(serverSrc), 'результат финальной записи проверяется');
 const offsite = fs.readFileSync(path.join(ROOT, 'tools/backup-offsite.sh'), 'utf8');
 ok(offsite.includes('integrity_check'), 'вывозимая копия проверяется перед отправкой');
 
