@@ -134,6 +134,65 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   quests:             { owner: 'missions',   note: 'квесты' },
   contracts:          { owner: 'contracts',  note: 'контракты' },
   reserves:           { owner: 'legion',     note: 'резервы легиона у игрока' },
+  // ── Дополнено после сверки реестра с реальным кодом ────────────
+  // Первая версия реестра содержала только поля НОВОГО игрока, а многие
+  // появляются по ходу игры. Из-за этого сезонные seasonId/seasonRating
+  // оставались незарегистрированными — то есть дыра, из-за которой
+  // пострадал недельный сезон, была закрыта не полностью.
+  rating:             { owner: 'player',     note: 'накопительный рейтинг (победы/уши/жетоны)' },
+  seasonId:           { owner: 'seasons',    note: 'идентификатор сезона у игрока' },
+  seasonRating:       { owner: 'seasons',    note: 'рейтинг в текущем сезоне' },
+  updatedAt:          { owner: 'db',         note: 'метка последнего изменения' },
+
+  // Профиль и косметика
+  avatar:             { owner: 'cosmetics',  note: 'аватар' },
+  profileBg:          { owner: 'cosmetics',  note: 'фон профиля' },
+  profileFrame:       { owner: 'cosmetics',  note: 'рамка профиля' },
+  ownedCosmetics:     { owner: 'cosmetics',  note: 'купленная косметика' },
+  emoji:              { owner: 'cosmetics',  note: 'эмодзи-статус' },
+  tag:                { owner: 'cosmetics',  note: 'тег/приписка к позывному' },
+  title:              { owner: 'titles',     note: 'звание (строкой)' },
+  passport:           { owner: 'player',     note: 'паспорт/анкета игрока' },
+  pinned:             { owner: 'player',     note: 'закреплённое на профиле' },
+
+  // Постройки и вооружение
+  silos:              { owner: 'lasers',     note: 'шахты' },
+  silosBuiltTotal:    { owner: 'lasers',     note: 'всего построено шахт' },
+  lasersBuiltTotal:   { owner: 'lasers',     note: 'всего построено лазеров' },
+  mines:              { owner: 'features',   note: 'мины' },
+  minesBuiltTotal:    { owner: 'features',   note: 'всего заложено мин' },
+  minesSchemaV:       { owner: 'features',   note: 'версия схемы мин (миграции)' },
+  reinforcements:     { owner: 'legion',     note: 'подкрепления' },
+  reinforceSent:      { owner: 'legion',     note: 'отправленные подкрепления' },
+
+  // Счётчики и метки времени
+  lastBankHackDay:    { owner: 'battle',     note: 'день последнего взлома сейфа' },
+  lastHospitalHeal:   { owner: 'player',     note: 'последнее лечение в лазарете' },
+  lastSpyDay:         { owner: 'features',   note: 'день последней разведки' },
+  spyCount:           { owner: 'features',   note: 'счётчик разведок за день' },
+  skillResets:        { owner: 'player',     note: 'сколько раз сбрасывал навыки' },
+  containerHistory:   { owner: 'market',     note: 'история открытых контейнеров' },
+  contractsDay:       { owner: 'contracts',  note: 'день активных контрактов' },
+  missionProgress:    { owner: 'missions',   note: 'прогресс по спецоперациям' },
+  missionQueue:       { owner: 'missions',   note: 'очередь шагов спецоперации' },
+  trophyQueue:        { owner: 'trophies',   note: 'очередь окон трофеев' },
+  firstReward:        { owner: 'features',   note: 'награда за первый вход выдана' },
+
+  // Альянс, рефералы, админские выдачи
+  allianceDiplomats:  { owner: 'personalAlliance', note: 'дипломаты альянса' },
+  allianceInviteLog:  { owner: 'personalAlliance', note: 'журнал приглашений' },
+  blocks:             { owner: 'social',     note: 'чёрный список игрока' },
+  refRewarded:        { owner: 'referrals',  note: 'награда за приглашение выдана' },
+  refLevel50Paid:     { owner: 'referrals',  note: 'выплата за 50-й уровень приглашённого' },
+  adminEars:          { owner: 'admin',      note: 'уши, выданные администрацией' },
+  adminTokens:        { owner: 'admin',      note: 'жетоны, выданные администрацией' },
+
+  // Поля, которые встречаются на объектах БОТОВ и во временных структурах
+  // боя (бот — не запись в базе, но проходит по тем же путям кода)
+  hp:                 { owner: 'battle',     note: 'HP бота во временной структуре боя' },
+  loot:               { owner: 'battle',     note: 'добыча бота' },
+  hitsLanded:         { owner: 'battle',     note: 'сколько раз по боту попали' },
+  ops:                { owner: 'battle',     note: 'служебное поле операций' },
 };
 
 // Поля, которые НИКОГДА не должны попадать в ответы API

@@ -79,6 +79,24 @@ ok(unknown.length === 0, `все поля нового игрока зареги
 ok(fields.ownerOf('weekly') === 'seasons', `weekly принадлежит сезону (${fields.ownerOf('weekly')})`);
 ok(fields.ownerOf('weeklyQuests') === 'dailyQuests', `weeklyQuests принадлежит поручениям (${fields.ownerOf('weeklyQuests')})`);
 ok(fields.isFieldTaken('weekly') && fields.isFieldTaken('daily'), 'занятые поля определяются — новый модуль не займёт их молча');
+// Реестр обязан покрывать ВСЕ поля, которым код что-либо присваивает, а не
+// только поля нового игрока. Первая версия проверяла лишь newUser(), и из-за
+// этого seasonId/seasonRating оставались незарегистрированными — то есть
+// дыра, из-за которой пострадал сезон, была закрыта не до конца.
+const assigned = new Set();
+const scanAssign = (file) => {
+  const src = fs.readFileSync(file, 'utf8');
+  for (const mm of src.matchAll(/\b(?:user|target|victim|p|player|found|fresh|u)(?:\s+as\s+any)?\)?\.([a-zA-Z][a-zA-Z0-9_]*)\s*=(?!=)/g)) assigned.add(mm[1]);
+  for (const mm of src.matchAll(/players\[[^\]]+\]\.([a-zA-Z][a-zA-Z0-9_]*)/g)) assigned.add(mm[1]);
+};
+for (const f of fs.readdirSync(path.join(ROOT, 'src/services'))) {
+  if (f.endsWith('.ts')) scanAssign(path.join(ROOT, 'src/services', f));
+}
+scanAssign(path.join(ROOT, 'server.ts'));
+const notRegistered = [...assigned].filter((k) => !fields.isFieldTaken(k)).sort();
+ok(notRegistered.length === 0,
+   `реестр покрывает все ${assigned.size} полей, которым присваивает код${notRegistered.length ? ' ⚠ НЕ в реестре: ' + notRegistered.join(', ') : ''}`);
+ok(fields.ownerOf('seasonRating') === 'seasons', 'сезонный рейтинг закреплён за сезоном');
 // Ключевой инвариант: сезонное поле не пишется из поручений
 const dq = fs.readFileSync(path.join(ROOT, 'src/services/dailyQuests.ts'), 'utf8');
 ok((dq.match(/\.weekly\s*=\s*\{/g) || []).length === 0, 'поручения не создают объект в поле сезона');
