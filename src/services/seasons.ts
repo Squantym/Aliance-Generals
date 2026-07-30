@@ -114,6 +114,28 @@ function byValueThenId(a: { value?: number; v?: number; id?: string; p?: any }, 
   return aid < bid ? -1 : (aid > bid ? 1 : 0);
 }
 
+// Снимок метрик ВСЕХ игроков перед обнулением недели.
+// Когда сезонные очки пропали из-за конфликта полей, откатывать было
+// нечего: значения жили только в самом затираемом поле. Теперь каждую
+// неделю перед сбросом они складываются в коллекцию (последние 8 недель)
+// и, если включён драйвер sqlite, дополнительно в снапшот базы.
+function saveWeeklyMetricsBackup(all: User[], finishingWeek: string): void {
+  try {
+    const metrics: Record<string, any> = {};
+    for (const p of all) if (p.weekly) metrics[p.id] = { name: p.name, ...p.weekly };
+    const backupStore: any = db.load('weeklyMetricsBackup', {});
+    backupStore[finishingWeek] = metrics;
+    const weeks = Object.keys(backupStore).sort();
+    while (weeks.length > 8) { const w = weeks.shift(); if (w) delete backupStore[w]; }
+    db.save('weeklyMetricsBackup');
+    const snap = (db as any).snapshotCollection;
+    if (typeof snap === 'function') snap('weeklyMetricsBackup', `сезон-${finishingWeek}`);
+    console.log(`🗄  Снимок сезонных метрик за ${finishingWeek}: ${Object.keys(metrics).length} игроков`);
+  } catch (e: any) {
+    console.error('⚠️  Не удалось снять снимок сезонных метрик:', e.message);
+  }
+}
+
 // Награждение топ-3 каждой категории + снапшот победителей за завершившуюся неделю
 function awardAndSnapshot(s: any, all: User[], finishingWeek: string) {
   const rewards = (s.rewards && s.rewards.length) ? s.rewards : config.SEASON.rewards;
@@ -155,7 +177,12 @@ function rolloverIfNeeded(): boolean {
   if (finishing) {
     // Настоящая смена недели: награждаем топ-3 по статистике завершившейся
     // недели (все weekly ещё нетронуты) и обнуляем метрики всех.
+    // СНИМОК ПЕРЕД ОБНУЛЕНИЕМ: когда сезонные очки пропали из-за конфликта
+    // полей, откатывать было нечего. Теперь перед каждым сбросом метрики
+    // всех игроков сохраняются в снапшот (db.snapshotsList покажет их,
+    // восстановление — админской ручкой). Работает на драйвере sqlite.
     const all = rankedPlayers();
+    saveWeeklyMetricsBackup(all, finishing);
     awardAndSnapshot(s, all, finishing);
     for (const p of all) p.weekly = freshWeekly(cur);
     db.save('users');

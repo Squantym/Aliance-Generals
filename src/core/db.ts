@@ -35,13 +35,16 @@ let allUsersDirty = false;               // флаг «сохранить все
 let saveTimer: NodeJS.Timeout | null = null;
 
 // Режим работы: 'json' (по умолчанию) или 'mongo'
-let mode: 'json' | 'mongo' = 'json';
+let mode: 'json' | 'mongo' | 'sqlite' = 'json';
 // mongodb-пакет грузится динамически и опционален, поэтому типы any
 let mongoClient: any = null;
 let usersColl: any = null; // коллекция игроков: один документ = один игрок
 let collColl: any = null;  // коллекция «прочих» данных: один документ = одна коллекция
 let logsColl: any = null;  // аудит-лог: отдельная capped-коллекция, один документ = одна запись
 let periodicTimer: NodeJS.Timeout | null = null;
+
+let sqlite: any = null;          // модуль SQLite-хранилища (если выбран драйвер)
+let backupTimer: any = null;
 
 function ensureDir(): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -56,6 +59,33 @@ function fileOf(name: string): string {
 // При ошибке подключения — откатывается на локальные файлы, чтобы
 // сервер всё равно запустился (а не упал из-за временной сети).
 async function init(): Promise<void> {
+  // ── SQLite: своя база на своём сервере ────────────────────────────
+  // Включается DB_DRIVER=sqlite. Проверяется ПЕРВЫМ: если выбран этот
+  // драйвер, к облаку не подключаемся вообще, даже когда MONGODB_URI
+  // остался в окружении (удобно на время переезда — переменную можно
+  // не удалять, а просто переключить драйвер обратно при откате).
+  if (String(process.env.DB_DRIVER || '').toLowerCase() === 'sqlite') {
+    try {
+      sqlite = require('./sqliteStore');
+      const dir = process.env.SQLITE_DIR || path.join(process.cwd(), 'data');
+      sqlite.open(dir, process.env.SQLITE_FILE || 'generals.db');
+      store.users = sqlite.loadAllPlayers();
+      const colls = sqlite.loadAllCollections();
+      for (const k of Object.keys(colls)) store[k] = colls[k];
+      mode = 'sqlite';
+      const st = sqlite.stats();
+      console.log(`💾 База данных: SQLite (${st.file}). Игроков: ${st.players}, прочих коллекций: ${st.collections}, журнал: ${st.walMode}, целостность: ${st.integrity}.`);
+      startPeriodicFlush();
+      startPeriodicBackup();
+      return;
+    } catch (e: any) {
+      console.error('⚠️  Не удалось открыть SQLite, падаю в JSON-режим:', e.message);
+      sqlite = null;
+      mode = 'json';
+      return;
+    }
+  }
+
   const uri = process.env.MONGODB_URI;
   if (!uri) {
     mode = 'json';
@@ -179,6 +209,13 @@ function save(name: string): void {
 // освобождал имя, регистрировался заново, и в базе оказывались два
 // документа с разными _id и одним именем.
 function dropUser(id: string): void {
+  if (mode === 'sqlite') {
+    const players = store.users || {};
+    delete players[id];
+    dirtyUsers.delete(id);
+    try { sqlite.deletePlayer(id); } catch (e) { console.error('SQLite: не удалось удалить игрока', id, e); }
+    return;
+  }
   if (!id) return;
   const usersObj = store.users || {};
   delete usersObj[id];
@@ -240,6 +277,10 @@ function scheduleFlush(): void {
 
 // Записать одну «прочую» коллекцию (не users) в backend
 async function flushOne(name: string): Promise<void> {
+  if (mode === 'sqlite') {
+    sqlite.writeBatch([], [{ id: name, obj: store[name] }]);
+    return;
+  }
   if (mode === 'mongo') {
     await collColl.updateOne({ _id: name }, { $set: { data: store[name] } }, { upsert: true });
   } else {
@@ -252,6 +293,14 @@ async function flushOne(name: string): Promise<void> {
 // иначе только тех, кто помечен через markUser (обычный случай).
 async function flushUsers(allUserIds: boolean): Promise<void> {
   const usersObj = store.users || {};
+  if (mode === 'sqlite') {
+    // Точечно: только те игроки, что менялись (или все — при миграциях).
+    // Всё уходит одной транзакцией внутри writeBatch.
+    const ids = allUserIds ? Object.keys(usersObj) : Array.from(dirtyUsers);
+    if (!ids.length) return;
+    sqlite.writeBatch(ids.filter((id) => usersObj[id]).map((id) => ({ id, obj: usersObj[id] })), []);
+    return;
+  }
   if (mode === 'mongo') {
     const ids = allUserIds ? Object.keys(usersObj) : Array.from(dirtyUsers);
     if (ids.length === 0) return;
@@ -320,6 +369,63 @@ function saveAll(): void {
 // коллекции целиком в Atlas — это давало терабайты трафика. Теперь per-request
 // saveAll убран; точечные save()/markUser() пишут сразу, а этот таймер — лишь
 // страховка от мутаций без явного save (не чаще 2 раз/мин).
+// ── Автобэкап: целостная копия файла базы по расписанию ───────────
+// VACUUM INTO работает на живой базе, игру останавливать не нужно.
+// Копии лежат в data/backups с ротацией; частота — BACKUP_HOURS
+// (по умолчанию каждые 6 часов), число копий — BACKUP_KEEP.
+function startPeriodicBackup(): void {
+  if (mode !== 'sqlite' || backupTimer) return;
+  const hours = Math.max(1, Number(process.env.BACKUP_HOURS || 6));
+  const keep = Math.max(2, Number(process.env.BACKUP_KEEP || 14));
+  backupTimer = setInterval(() => {
+    try { console.log(`🗄  Бэкап базы: ${sqlite.backup('auto', keep)}`); }
+    catch (e: any) { console.error('⚠️  Бэкап не удался:', e.message); }
+  }, hours * 3600 * 1000);
+  if (backupTimer.unref) backupTimer.unref();
+}
+
+// Копия базы прямо сейчас (админка, перед миграцией). Возвращает путь.
+function backupNow(label = 'manual'): string | null {
+  if (mode !== 'sqlite') return null;
+  return sqlite.backup(label, Number(process.env.BACKUP_KEEP || 14));
+}
+
+// Снимок ОДНОЙ коллекции перед рискованной операцией. Дешевле полного
+// бэкапа, поэтому вызывается автоматически — например, перед сбросом
+// недельного сезона: если что-то пойдёт не так, метрики можно вернуть.
+function snapshotCollection(name: string, label: string): boolean {
+  if (mode !== 'sqlite' || store[name] === undefined) return false;
+  try { sqlite.snapshot(name, store[name], label); return true; } catch (e) { return false; }
+}
+
+function snapshotsList(name?: string, limit = 20): any[] {
+  if (mode !== 'sqlite') return [];
+  try { return sqlite.snapshotList(name, limit); } catch (e) { return []; }
+}
+
+// Восстановить коллекцию из снимка. Игроков не трогает — только
+// коллекции (сезон, мир, санкции), чтобы случайно не откатить прогресс.
+function snapshotRestore(seq: number, name: string): boolean {
+  if (mode !== 'sqlite' || name === 'users') return false;
+  const data = sqlite.snapshotGet(seq);
+  if (data === null) return false;
+  store[name] = data;
+  save(name);
+  return true;
+}
+
+// SQL для аналитики: топы и статистика без перебора всех игроков в памяти
+function sql(query: string, params: any[] = []): any[] {
+  if (mode !== 'sqlite') return [];
+  try { return sqlite.query(query, params); }
+  catch (e: any) { console.error('SQL ошибка:', e.message); return []; }
+}
+
+function dbStats(): any {
+  if (mode !== 'sqlite') return { driver: mode };
+  return { driver: 'sqlite', ...sqlite.stats() };
+}
+
 function startPeriodicFlush(): void {
   if (periodicTimer) return;
   periodicTimer = setInterval(() => {
@@ -332,6 +438,7 @@ function startPeriodicFlush(): void {
 // В mongo — вставка в capped-коллекцию (быстро, ~200 байт, авто-вытеснение).
 // В json — дописываем в массив в кэше и лениво пишем файл (локальная разработка).
 function appendLog(entry: any): void {
+  if (mode === 'sqlite') { try { sqlite.appendLog(entry); } catch (e) {} return; }
   if (mode === 'mongo') {
     if (logsColl) logsColl.insertOne(entry).catch((e: any) => console.error('Ошибка записи лога:', e.message));
     return;
@@ -344,6 +451,7 @@ function appendLog(entry: any): void {
 
 // Последние N записей лога (опционально по игроку). Async — читает из БД.
 async function tailLogs(limit: number, userId?: string): Promise<any[]> {
+  if (mode === 'sqlite') { try { return sqlite.tailLogs(limit, userId); } catch (e) { return []; } }
   const n = Math.max(1, Math.min(1000, limit || 200));
   if (mode === 'mongo') {
     if (!logsColl) return [];
@@ -386,5 +494,7 @@ async function flushAllNow(): Promise<void> {
 export = {
   init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
   dropUser, findDuplicateUsers,
+  // Своя база: защита данных и аналитика
+  backupNow, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats,
   get mode() { return mode; },
 };
