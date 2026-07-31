@@ -89,8 +89,12 @@ const Admin = {
       </div>
       <div id="tab-content" style="padding:8px 0"></div>`;
 
+    // Обработчики вешаем ТОЛЬКО на отрисованные вкладки. Скрытые по правам
+    // кнопки в разметке отсутствуют, и обращение к ним роняло весь рендер
+    // с ошибкой «Cannot set properties of null» — панель открывалась пустой.
     tabs.forEach(t => {
-      document.getElementById('tab-'+t.id).onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
+      const btn = document.getElementById('tab-' + t.id);
+      if (btn) btn.onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
     });
     Admin._tabIds = tabs.filter(t => !t.zone || Admin.can(t.zone)).map(t => t.id);
     // Если открыт раздел, к которому доступа нет — уводим на первый доступный
