@@ -22,6 +22,7 @@
 //   --force             перезаписать уже существующую базу
 // ═══════════════════════════════════════════════════════════════════
 const fs = require('fs');
+process.env.DB_TOOL_MODE = '1';   // служебный скрипт: не берём замок базы
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');

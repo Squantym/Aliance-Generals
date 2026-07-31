@@ -62,6 +62,12 @@ let lockFile = '';
 // Поэтому при старте ставим замок с PID. Если процесс из замка ещё жив —
 // отказываемся запускаться и объясняем, что делать.
 function acquireLock(dir: string): void {
+  // Служебные скрипты (grant-admin, диагностика, миграция) работают с той
+  // же базой, что и запущенная игра. Замок нужен для защиты от ВТОРОГО
+  // СЕРВЕРА, а не от одноразовой команды: раньше скрипт натыкался на
+  // замок, падал в JSON-режим и видел пустую базу — «игроков: 0».
+  // DB_TOOL_MODE=1 выставляют сами скрипты.
+  if (process.env.DB_TOOL_MODE === '1') return;
   try {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     lockFile = path.join(dir, '.db-lock');
@@ -136,10 +142,13 @@ async function init(): Promise<void> {
       startPeriodicBackup();
       return;
     } catch (e: any) {
-      console.error('⚠️  Не удалось открыть SQLite, падаю в JSON-режим:', e.message);
-      sqlite = null;
-      mode = 'json';
-      return;
+      // Тихий переход в JSON-режим опасен: сервер поднялся бы на ПУСТОЙ
+      // базе и начал писать в неё, а служебные скрипты показывали бы
+      // «игроков: 0». Если драйвер выбран явно — падаем с внятной причиной.
+      console.error('\n⛔ Не удалось открыть базу SQLite:', e.message);
+      console.error('   DB_DRIVER=sqlite задан явно, поэтому переход на пустую');
+      console.error('   JSON-базу отменён — иначе данные игроков были бы перезаписаны.\n');
+      throw e;
     }
   }
 

@@ -41,5 +41,12 @@ ok(/rel === '\/admin' \|\| rel === '\/admin\/' \|\| rel === '\/admin\.html'/.tes
 ok(http.includes('Попытка открыть админ-панель'), 'попытки записываются в журнал');
 ok(/canAccessZone\(user, roles\.zoneOfPath\(pathname\)\)/.test(http), 'каждый запрос проверяется по своей зоне');
 
+console.log('\n── 5. Скрипт деплоя устойчив ──');
+const deploy = fs.readFileSync(path.join(ROOT, 'tools/deploy.sh'), 'utf8');
+ok(/pm2 describe "\$PM2_NAME" > \/dev\/null 2>&1/.test(deploy), 'наличие процесса проверяется перед перезапуском');
+ok(/pm2 start dist\/server\.js --name/.test(deploy), 'если процесса нет — запускается заново, а не падает');
+ok(/pm2 save/.test(deploy), 'список процессов сохраняется — после перезагрузки сервера игра поднимется сама');
+ok(/не установлен sqlite3 — страховочная копия НЕ создана/.test(deploy), 'предупреждение об отсутствии sqlite3 стало понятным');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

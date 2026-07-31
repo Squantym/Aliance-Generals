@@ -119,6 +119,15 @@ ok(fs.existsSync(path.join(ROOT, 'tools/backup-offsite.sh')), 'есть скри
 ok(dbSrc.includes('function acquireLock'), 'замок базы: второй процесс на тех же данных не запустится');
 ok(dbSrc.includes('function isAlive'), 'замок от упавшего процесса не блокирует запуск (проверяется, жив ли PID)');
 ok(dbSrc.includes('releaseLock'), 'замок снимается при остановке сервера');
+// Замок защищает от второго СЕРВЕРА, но не должен мешать служебным
+// скриптам: раньше grant-admin натыкался на замок, молча уходил в
+// JSON-режим и показывал пустую базу — «игроков: 0»
+ok(dbSrc.includes("process.env.DB_TOOL_MODE === '1'"), 'служебные скрипты не берут замок и читают базу игры');
+const fsTools = fs.readdirSync(path.join(ROOT, 'tools')).filter((f) => f.endsWith('.js'));
+const withMode = fsTools.filter((f) => fs.readFileSync(path.join(ROOT, 'tools', f), 'utf8').includes("DB_TOOL_MODE = '1'"));
+ok(withMode.length >= 3, `режим инструмента включён в скриптах: ${withMode.join(', ')}`);
+ok(!/падаю в JSON-режим/.test(dbSrc), 'тихий переход на пустую JSON-базу убран');
+ok(/DB_DRIVER=sqlite задан явно/.test(dbSrc), 'при сбое открытия базы процесс падает с внятной причиной, а не работает на пустой');
 // Потеря данных при остановке: автосохранение вклинивалось в финальную
 // запись и падало на закрытом соединении («client was closed»), а сервер
 // всё равно писал «Данные сохранены»

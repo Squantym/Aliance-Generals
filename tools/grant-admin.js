@@ -38,6 +38,9 @@ const ROOT = path.join(__dirname, '..');
   }
 })();
 
+// Режим служебного скрипта: работаем с той же базой, что и игра,
+// не претендуя на замок процесса (иначе база откроется пустой)
+process.env.DB_TOOL_MODE = '1';
 const db = require(path.join(ROOT, 'dist/src/core/db'));
 
 const args = process.argv.slice(2);

@@ -28,8 +28,11 @@ if [ -f data/generals.db ] && command -v sqlite3 >/dev/null 2>&1; then
   mkdir -p data/backups
   BK="data/backups/pre-deploy-$(date +%Y-%m-%d_%H-%M-%S).db"
   sqlite3 data/generals.db ".backup '$BK'" && echo "      копия: $BK"
+elif [ -f data/generals.db ]; then
+  echo "      ⚠ база есть, но не установлен sqlite3 — страховочная копия НЕ создана"
+  echo "        поставьте: apt install -y sqlite3"
 else
-  echo "      пропускаю (базы SQLite нет или не установлен sqlite3)"
+  echo "      пропускаю (своей базы SQLite ещё нет)"
 fi
 
 echo "[3/6] Забираю код с GitHub"
@@ -49,7 +52,18 @@ npm run build
 echo "      dist/server.js готов"
 
 echo "[6/6] Перезапуск"
-pm2 restart "$PM2_NAME" --update-env
+# Процесса может не быть в списке pm2 — например, после перезагрузки
+# сервера, если не выполнялся pm2 save. Тогда просто запускаем заново,
+# а не падаем с «Process or Namespace not found».
+if pm2 describe "$PM2_NAME" > /dev/null 2>&1; then
+  pm2 restart "$PM2_NAME" --update-env
+else
+  echo "      процесса «$PM2_NAME» нет в pm2 — запускаю заново"
+  pm2 start dist/server.js --name "$PM2_NAME" --update-env
+fi
+# Сохраняем список процессов, чтобы после перезагрузки сервера игра
+# поднялась сама
+pm2 save > /dev/null 2>&1 || true
 pm2 list
 
 # Подключение к облачной базе занимает до 20 секунд (а при проблемах с
