@@ -39,10 +39,13 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   country:            { owner: 'auth',       note: 'флаг/страна' },
   createdAt:          { owner: 'auth',       note: 'дата регистрации' },
   lastSeen:           { owner: 'player',     note: 'последняя активность' },
-  isAdmin:            { owner: 'auth',       note: 'права администратора' },
+  isAdmin:            { owner: 'auth',       note: 'права администратора (наследие; ведущее поле — role)' },
+  role:               { owner: 'roles',      note: 'роль: owner / admin / moderator (Дозор)' },
+  chatBan:            { owner: 'roles',      note: 'блокировка чата: срок, причина, кто выдал' },
   banned:             { owner: 'admin',      note: 'блокировка' },
   banReason:          { owner: 'admin',      note: 'причина блокировки' },
   bannedAt:           { owner: 'admin',      note: 'когда заблокирован' },
+  banUntil:           { owner: 'admin',      note: 'до какого времени бан (0 — бессрочно)' },
   refCode:            { owner: 'referrals',  note: 'личный код-приглашение' },
   referredBy:         { owner: 'referrals',  note: 'кто пригласил' },
   isBot:              { owner: 'battle',     note: 'признак бота' },
@@ -106,7 +109,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   lastLoginDay:       { owner: 'features',   note: 'день последнего входа (для серии)' },
   pendingLoginReward: { owner: 'features',   note: 'награда за вход ждёт получения в окне' },
   pendingGifts:       { owner: 'admin',      note: 'подарки от администрации' },
-  offlineWar:         { owner: 'battle',     note: 'сводка атак за время отсутствия' },
+  offlineWar:         { owner: 'warReport',  note: 'сводка «пока вас не было»: нападавшие, ущерб, ракеты, санкции' },
 
   // ── Незавершённые действия (модальные окна) ────────────────────
   pendingFatality:    { owner: 'battle',     note: 'решение судьбы поверженного' },

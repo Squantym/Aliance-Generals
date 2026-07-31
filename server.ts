@@ -138,6 +138,31 @@ async function main() {
     console.log('Данные сохранены, выхожу.');
     process.exit(0);
   }
+  // ── Аварийные ситуации ────────────────────────────────────────────
+  // Без этих обработчиков любая необработанная ошибка (в таймере, в
+  // промисе, в фоновом тике) убивает процесс МГНОВЕННО — всё, что не
+  // успело записаться на диск, теряется. Теперь: логируем причину,
+  // сохраняем данные и выходим с ненулевым кодом, чтобы pm2 поднял
+  // сервер заново уже с целыми данными.
+  let crashing = false;
+  const crash = async (kind: string, err: any) => {
+    if (crashing) return;             // второй раз не входим
+    crashing = true;
+    console.error(`\n💥 ${kind}:`, err && err.stack ? err.stack : err);
+    console.error('Пытаюсь сохранить данные перед аварийным выходом…');
+    try {
+      const failed = await db.flushAllNow();
+      if (failed && failed.length) console.error('⚠️  Не сохранены:', failed.join(', '));
+      else console.error('Данные сохранены.');
+      if (typeof (db as any).closeDb === 'function') (db as any).closeDb();
+    } catch (e: any) {
+      console.error('Сохранить не удалось:', e && e.message);
+    }
+    process.exit(1);                  // pm2 перезапустит
+  };
+  process.on('uncaughtException', (err) => { void crash('Необработанная ошибка', err); });
+  process.on('unhandledRejection', (reason) => { void crash('Необработанный отказ промиса', reason); });
+
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }

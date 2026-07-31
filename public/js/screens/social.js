@@ -1049,12 +1049,22 @@ App.screens.chat = async (c) => {
         <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}">
           ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
+          ${msg.staff ? `<span class="chat-staff chat-staff-${msg.staff}" title="${UI.esc(msg.staffLabel || '')}">${UI.esc(msg.staffLabel || '')}</span>` : ''}
           <span class="muted small">[${msg.level}]</span>
           ${msg.self ? '' : `<button class="chat-reply" data-reply="${UI.esc(msg.name)}" title="Ответить ${UI.esc(msg.name)}">↩</button>`}
+          ${(App.me && App.me.staffRole && !msg.self && !msg.staff)
+            ? `<button class="chat-mute" data-mute="${msg.uid}" data-mutename="${UI.esc(msg.name)}" title="Заблокировать чат">🔇</button>` : ''}
           <span class="at">${UI.fmtDate(msg.at)}</span><br>${UI.esc(msg.text)}
         </div>`).join('')
         : '<p class="muted center">В эфире тишина. Скажите что-нибудь первым!</p>';
       if (atBottom) box.scrollTop = box.scrollHeight;
+      // Блокировка чата: доступна модераторам («Дозор») и администрации
+      box.querySelectorAll('[data-mute]').forEach((btn) => {
+        btn.onclick = async (ev) => {
+          ev.stopPropagation();
+          await App.showChatBanDialog(btn.dataset.mute, btn.dataset.mutename);
+        };
+      });
       // «Ответить»: подставляем обращение в начало поля и ставим курсор в конец
       box.querySelectorAll('[data-reply]').forEach((btn) => {
         btn.onclick = (ev) => {

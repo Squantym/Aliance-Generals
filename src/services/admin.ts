@@ -451,22 +451,33 @@ function setBan(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  if (target.isAdmin) throw new u.ApiError('Нельзя забанить администратора');
+  // Сотрудников проекта банит только владелец
+  const rolesSrv = require('./roles');
+  const targetRole = rolesSrv.roleOf(target);
+  if (targetRole === 'owner') throw new u.ApiError('Нельзя забанить владельца проекта');
+  if (targetRole && !rolesSrv.isOwner(adminUser)) throw new u.ApiError('Нельзя забанить сотрудника проекта');
 
   const ban = !!body.banned;
   target.banned = ban;
   if (ban) {
     target.banReason = String(body.reason || 'Нарушение правил').slice(0, 200);
     target.bannedAt = Date.now();
+    // Срок бана в минутах. 0 или пусто — бессрочно. Минимум — 1 минута:
+    // короткие баны нужны для остывания, а не только для тяжёлых случаев.
+    const mins = u.toInt(body.minutes, 0);
+    (target as any).banUntil = mins > 0
+      ? Date.now() + u.clamp(mins, 1, 365 * 24 * 60) * 60 * 1000
+      : 0;
     // Завершаем все сессии забаненного игрока
     try {
       const sessions = require('../core/db').load('sessions', {});
       for (const [tok, uid] of Object.entries(sessions)) {
-        if (uid === target.id) delete (sessions as any)[tok];
+        if ((typeof uid === 'string' ? uid : (uid as any) && (uid as any).u) === target.id) delete (sessions as any)[tok];
       }
       require('../core/db').save('sessions');
     } catch (e) {}
   } else {
+    (target as any).banUntil = 0;
     target.banReason = '';
     target.bannedAt = 0;
   }
@@ -860,15 +871,10 @@ function setPassword(adminUser: User, body: any, notices: Notices) {
   (target as any).resetToken = null;      // старая ссылка из письма больше не нужна
   (target as any).resetTokenExp = 0;
 
-  // Завершаем все сессии игрока — вход только с новым паролем
+  // Завершаем все сессии игрока — вход только с новым паролем.
+  // Формат сессий знает auth — здесь просто просим сбросить.
   let killed = 0;
-  try {
-    const sessions = db.load('sessions', {});
-    for (const [tok, uid] of Object.entries(sessions)) {
-      if (uid === target.id) { delete (sessions as any)[tok]; killed++; }
-    }
-    if (killed) db.save('sessions');
-  } catch (e) {}
+  try { killed = require('./auth').killSessions(target.id); } catch (e) {}
   db.save('users');
 
   auditLog.record({

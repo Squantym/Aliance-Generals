@@ -98,6 +98,13 @@ App.screens.auth = async (c) => {
         login: document.getElementById('li-name').value,
         password: document.getElementById('li-pass').value,
       });
+      // Заблокированного впускаем, но показываем только окно с причиной
+      // и сроком — так он понимает, что произошло и когда это кончится
+      if (r.banned && r.banInfo) {
+        API.setToken(r.token);
+        App.showBanScreen(r.banInfo);
+        return;
+      }
       await finish(r.token);
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
@@ -394,18 +401,17 @@ App.screens.home = async (c) => {
 App.screens.hq = async (c) => {
   await App.refreshMe();
   // Сводка по обоим разделам для бейджей
+  // Счётчик «N осталось» убран: на узких экранах он выталкивал кнопки за
+  // край. Оставляем только пометку о готовом бонусе — она короткая.
   let dailyBadge = '', contractBadge = '';
   try {
     const d = await API.get('/api/daily');
-    const left = d.total - d.doneCount;
-    dailyBadge = (d.allDone && !d.bonusClaimed)
-      ? '<span class="badge green">бонус готов</span>'
-      : (left > 0 ? `<span class="badge">${left} осталось</span>` : '');
+    dailyBadge = (d.allDone && !d.bonusClaimed) ? '<span class="badge green">бонус</span>' : '';
   } catch (e) {}
   try {
     const ct = await API.get('/api/contracts');
     const ready = (ct.contracts || []).filter((x) => x.done && !x.claimed).length;
-    if (ready > 0) contractBadge = `<span class="badge green">${ready} к выдаче</span>`;
+    if (ready > 0) contractBadge = `<span class="badge green">${ready}</span>`;
   } catch (e) {}
 
   c.innerHTML = `
@@ -1075,6 +1081,23 @@ App.screens.settings = async (c) => {
       <div class="tab ${tab === 'appearance' ? 'active' : ''}" data-stab="appearance">Оформление игры</div>
     </div>
     ${tab === 'app' ? appTabHtml : tab === 'account' ? accountHtml : themesHtml}
+    ${(App.me && App.me.staffPanel) ? `
+      <hr class="hr">
+      <div class="card">
+        <div class="name">🛡 Служебный доступ</div>
+        <p class="muted small mt">Ваша роль: <b>${UI.esc(App.me.staffLabel || '')}</b>.
+        Адрес панели виден только сотрудникам — запоминать его не нужно, открывайте отсюда.</p>
+        <a class="btn btn-orange mt" href="${UI.esc(App.me.staffPanel)}" target="_blank" rel="noopener"
+           style="width:100%;display:block;text-align:center;text-decoration:none">⚙️ Открыть панель управления</a>
+      </div>` : ''}
+    ${(App.me && App.me.staffRole === 'moderator') ? `
+      <hr class="hr">
+      <div class="card">
+        <div class="name">🛡 Дозор</div>
+        <p class="muted small mt">Ваши инструменты — в общем чате: рядом с каждым сообщением
+        есть кнопка блокировки. Отдельная панель модератору не нужна.</p>
+        <button class="btn btn-orange mt" style="width:100%" onclick="App.go('chat')">💬 Перейти в чат</button>
+      </div>` : ''}
     <hr class="hr">
     <button class="btn btn-red" id="set-logout" style="width:100%">🚪 Выйти из аккаунта</button>`;
 

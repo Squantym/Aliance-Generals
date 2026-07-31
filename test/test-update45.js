@@ -44,6 +44,10 @@ await auth.register('Свидетель','пароль123', 'wit@test.ru',    'r
 const users = player.users();
 const byName = (n) => users[Object.keys(users).find((id) => users[id].name === n)];
 const boss = byName('Командир'), victim = byName('Жертва'), wit = byName('Свидетель');
+// Права администратора больше не выдаются при регистрации никому —
+// назначаются только с сервера (tools/grant-admin.js). В тесте
+// проставляем флаг напрямую, как это делает скрипт.
+boss.isAdmin = true;
 ok(boss.isAdmin && !victim.isAdmin, 'админ и обычные игроки созданы');
 
 console.log('\n── 1. Смена пароля игроком (Настройки → Аккаунт) ──');
@@ -66,7 +70,11 @@ const r = auth.changePassword(victim, 'старый123', 'новый12345', 'н�
 ok(r.ok && typeof r.token === 'string' && r.token.length > 10, 'смена прошла, выдан новый токен');
 const sessNow = db.load('sessions', {});
 ok(!sessNow['токен-телефон'] && !sessNow['токен-планшет'], 'старые сессии сброшены');
-ok(sessNow[r.token] === victim.id, 'новый токен валиден — игрока не выкинуло из игры');
+// Формат сессии сменился на { u: id, at: время } — у токенов появился срок
+const sessRec = sessNow[r.token];
+const sessUid = typeof sessRec === 'string' ? sessRec : (sessRec && sessRec.u);
+ok(sessUid === victim.id, 'новый токен валиден — игрока не выкинуло из игры');
+ok(sessRec && sessRec.at > 0, 'у новой сессии проставлено время активности (для срока жизни)');
 ok(u.verifyPassword('новый12345', victim.salt, victim.passHash), 'новый пароль установлен');
 ok(!u.verifyPassword('старый123', victim.salt, victim.passHash), 'старый пароль больше не подходит');
 fails(() => auth.login('Жертва', 'старый123', ''), 'Неверный позывной или пароль', 'вход по старому паролю невозможен');

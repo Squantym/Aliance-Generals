@@ -35,10 +35,15 @@ function chatGet(viewer: User | null, afterId?: number | string) {
   return {
     messages: msgs.map((m: any) => {
       const author = m.uid ? players[m.uid] : null;
+      const roles = require('./roles');
       return {
         ...m,
         ally: !!author && pa.areAllies(viewer, author),
         self: m.uid === viewer.id,
+        // Значок сотрудника проекта: «Дозор» у модератора, свои подписи
+        // у администратора и владельца — чтобы в чате было видно, кто есть кто
+        staff: author ? (roles.roleOf(author) || null) : null,
+        staffLabel: author ? (roles.roleLabel(author) || null) : null,
       };
     }),
   };
@@ -47,6 +52,9 @@ function chatGet(viewer: User | null, afterId?: number | string) {
 function chatPost(user: User, text: string) {
   text = String(text || '').trim().slice(0, config.CHAT.MAX_LEN);
   if (!text) throw new u.ApiError('Пустое сообщение');
+  // Блокировка распространяется на общий чат и чат легиона; личные
+  // сообщения остаются доступными
+  require('./roles').assertCanWritePublic(user);
   const now = Date.now();
   // Простейшая защита от спама: не чаще одного сообщения в 3 секунды
   if (user.lastChatAt && now - user.lastChatAt < config.CHAT.RATE_MS) {

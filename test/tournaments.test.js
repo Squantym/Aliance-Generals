@@ -28,7 +28,10 @@ function finishBattle(battleId, side){ const b=db.load('battles',{})[battleId]; 
  // пустой легион (без бойцов) для проверки walkover
  legs['LE']={id:'LE',name:'Пустой',leaderId:null,members:[],activeBattle:null,pendingChallenge:null,arsenal:{},battleBuildings:{},requests:[]};
  db.save('legions'); db.save('users');
- const admin=Object.values(player.users()).find(x=>x.name==='Боец1'); // первый = админ
+ // Права администратора при регистрации больше не выдаются никому —
+ // назначаем явно, как это делает tools/grant-admin.js на сервере
+ const admin=Object.values(player.users()).find(x=>x.name==='Боец1');
+ admin.isAdmin=true;
 
  console.log('\n[1] РАСПИСАНИЕ: матч в прошлом автостартует по тику');
  const past=Date.now()-1000;

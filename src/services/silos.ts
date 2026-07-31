@@ -329,6 +329,9 @@ function resolveInFlight(): void {
       if (target) {
         const report = applyRocketDamage(rk.attackerName, target, rk.powerFrac);
         target.pendingRocketHits = (target.pendingRocketHits || []).concat(report).slice(-10);
+        // Если цель оффлайн — ущерб идёт и в общую сводку «События»,
+        // чтобы игрок увидел ВЕСЬ урон за время отсутствия в одном окне
+        try { require('./warReport').onRocket(target, report); } catch (e) {}
         notifications.push(target.id, 'rocket_hit', `🚀 ${rk.attackerName} нанёс по вам ракетный удар`, report);
 
         // Отчёт АТАКУЮЩЕМУ: он тоже должен увидеть результат своего удара.

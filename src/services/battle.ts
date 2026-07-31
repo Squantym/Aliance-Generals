@@ -724,7 +724,12 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       enemyLosses.push(...defUnitLosses);
       // Если защитник оффлайн — копим сводку «пока вас не было» (окно
       // «События» при первом заходе). Онлайн-игрок видит живой баннер.
-      try { require('./warReport').onAttack(target, { defeat: true, moneyLost: loot, losses: defUnitLosses }); } catch (e) {}
+      try {
+        require('./warReport').onAttack(target, {
+          defeat: true, moneyLost: loot, losses: defUnitLosses,
+          by: { id: user.id, name: user.name, flag: (user as any).country || '', level: user.level },
+        });
+      } catch (e) {}
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         loot, lossesText: enemyLosses.join(', ') || null,
@@ -753,7 +758,12 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       const defWinLosses = removeUnits(target, dArmy.entries, unitLossCount(dealt, crit, lossReduce));
       enemyLosses.push(...defWinLosses);
       // Отбитая атака тоже попадает в сводку «пока вас не было»
-      try { require('./warReport').onAttack(target, { defeat: false, losses: defWinLosses }); } catch (e) {}
+      try {
+        require('./warReport').onAttack(target, {
+          defeat: false, losses: defWinLosses,
+          by: { id: user.id, name: user.name, flag: (user as any).country || '', level: user.level },
+        });
+      } catch (e) {}
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         lossesText: enemyLosses.join(', ') || null,

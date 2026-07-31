@@ -93,6 +93,20 @@ ok(war.includes('id="battle-result"'), 'у панели результата б�
 ok(war.includes('id="war-encounter"'), 'у окна встречи (сейф/мина) есть id для прокрутки');
 ok(app.includes('rerenderTo(id)'), 'добавлен App.rerenderTo — перерисовка с прокруткой к блоку');
 ok(app.includes('scrollIntoView'), 'прокрутка выполняется плавно к самому блоку');
+// Надёжность прокрутки: экран дорисовывается асинхронно, и одного кадра
+// не хватало — игрок оставался там же, где листал список противников
+ok(/if \(\+\+tries < 8\)/.test(app), 'прокрутка повторяет попытки, пока блок не появится');
+ok(app.includes("block: 'start'"), 'блок встаёт под шапкой — заголовок «ПОБЕДА»/«ПОРАЖЕНИЕ» виден сразу');
+ok(app.includes('scroll-flash'), 'результат подсвечивается вспышкой — взгляд сразу находит его');
+ok(/window\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)/.test(app),
+   'если блока нет вовсе — уводим наверх, а не оставляем посреди списка');
+const cssScroll = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
+ok(cssScroll.includes('scroll-margin-top'), 'отступ сверху: блок не уезжает под шапку');
+ok(cssScroll.includes('@keyframes scrollFlash'), 'анимация подсветки добавлена');
+const warSrc2 = fs.readFileSync(ROOT + '/public/js/screens/war.js', 'utf8');
+ok(/ПОБЕДА!.*ПОРАЖЕНИЕ/.test(warSrc2), 'в карточке результата есть надпись победы/поражения');
+const attackCalls = (warSrc2.match(/attackTarget\(/g) || []).length;
+ok(attackCalls >= 4, `все способы атаки идут через одну функцию (${attackCalls} вызовов) — прокрутка работает везде`);
 // Главное: при перерисовке контент не подменяется заглушкой (иначе прыжок наверх)
 const routeBlock = app.slice(app.indexOf('  route() {'), app.indexOf('  route() {') + 3000);
 ok(/if \(!preserve\) \{[\s\S]*?c\.innerHTML = '<div class="loading">/.test(routeBlock),

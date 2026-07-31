@@ -43,6 +43,8 @@ function bankHackCardHtml(enc) {
   ).join('');
   return `
     <div class="card" id="bankhack-card" style="border-color:var(--gold)">
+      <img class="safe-banner" src="/img/safe/found.webp" alt="Обнаружено хранилище" loading="eager"
+           onerror="this.style.display='none'">
       <div class="result-title" style="color:var(--gold)">🔓 Обнаружен сейф!</div>
       <p class="center">У игрока <b>${UI.esc(enc.targetName)}</b> в банке лежит <b class="gold"><span class="ic-dollar"></span> ${UI.fmtNum(enc.bankAmount)}</b>.
       Взломать сейф можно только <b>1 раз в день</b> — используйте попытку с умом!</p>
@@ -61,6 +63,8 @@ function mineDefuseCardHtml(enc) {
   const swatch = (w) => `background:${w.hex};border:2px solid rgba(255,255,255,.25)`;
   return `
     <div class="card" id="minedefuse-card" style="border-color:var(--red)">
+      <img class="mine-banner" src="/img/mine/field.webp" alt="Минное поле" loading="eager"
+           onerror="this.style.display='none'">
       <div class="result-title" style="color:var(--red)">💥 РАСТЯЖКА!</div>
       <p class="center">Вы наступили на мину. Среди проводов только <b>один</b> цвет встречается в одиночку — остальные идут парами/тройками. Перережьте <b>именно его</b>. Ошибётесь — взрыв. Второго шанса не будет.</p>
       ${enc.canSacrifice ? `
@@ -160,7 +164,9 @@ App.screens.war = async (c) => {
     ].filter(Boolean).join(' · ');
     resultHtml = `
       <div class="card" id="battle-result">
-        <div class="result-title ${b.win ? 'win' : 'lose'}">${b.win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</div>
+        <img class="result-banner" src="/img/battle/${b.win ? 'win' : 'lose'}.webp"
+             alt="${b.win ? 'Победа' : 'Поражение'}" loading="eager"
+             onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'result-title ${b.win ? 'win' : 'lose'}',textContent:'${b.win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}'}))">
         <p class="center muted small">${UI.esc(b.targetName)} (ур. ${b.targetLevel})${b.isBot ? ' 💀' : ''}</p>
         <div style="margin:8px 0">
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
@@ -333,6 +339,10 @@ App.screens.war = async (c) => {
       // Прокручиваем к нужному блоку: к панели результата боя, а если после
       // атаки выпал сейф или мина — к окну встречи. Раньше страница уезжала
       // в самый верх, и игрок, пролиставший список противников, терял итог.
+      // Уводим страницу к самому началу карточки боя: результат — первый
+      // блок экрана, поэтому сначала поднимаемся наверх, а затем точно
+      // наводимся на карточку (на случай, если сверху что-то добавится)
+      window.scrollTo({ top: 0, behavior: 'auto' });
       App.rerenderTo(r.encounter ? 'war-encounter' : 'battle-result');
     } catch (e) {
       // Нет боеприпасов — предложить восстановление за золото и повторить атаку
@@ -387,7 +397,6 @@ App.screens.war = async (c) => {
   function showSafeResult(bh) {
     const win = bh.stolen > 0 && !bh.alarmed;
     const title = bh.alarmed ? '🚨 Сигнализация!' : (win ? '🔓 Сейф взломан' : '⛔ Взлом сорван');
-    const color = win ? 'var(--money)' : 'var(--red)';
     const text = bh.alarmed
       ? `Код <b>${UI.esc(String(bh.code))}</b> был верным, но охрана успела поднять тревогу — пришлось уходить пустым.`
       : win
@@ -396,8 +405,13 @@ App.screens.war = async (c) => {
     const sum = win
       ? `<div class="safe-sum"><span class="ic-dollar"></span> <b class="money">${UI.fmtNum(bh.stolen)}</b></div>`
       : '';
+    // Картинка исхода: вскрытое хранилище при удаче, закрытое с тревогой —
+    // при провале. Не загрузилась — окно просто останется текстовым.
+    const img = `<img class="safe-banner safe-banner-dialog" src="/img/safe/${win ? 'success' : 'fail'}.webp"
+         alt="${win ? 'Хранилище взломано' : 'Хранилище не взломано'}" loading="eager"
+         onerror="this.style.display='none'">`;
     return UI.confirm(
-      `<div class="safe-result">${text}${sum}</div>`,
+      `${img}<div class="safe-result">${text}${sum}</div>`,
       { title, icon: bh.alarmed ? '🚨' : (win ? '🔓' : '🔒'), html: true, okText: 'Понятно', cancelText: '' }
     );
   }
@@ -429,9 +443,15 @@ App.screens.war = async (c) => {
         const SAB_RU = { ground: 'наземные', sea: 'морские', air: 'воздушные', secret: 'секретные', building: 'построечные', suicide: 'смертники' };
         const lostSabText = Object.entries(r.lostSaboteurs || {}).map(([k, v]) => `${SAB_RU[k] || k} ×${v}`).join(', ');
         await UI.confirm(
-          `Провод оказался с сюрпризом — взрыв!\n\nЗдоровье снесено полностью. Уничтожено ${r.techLossPct}% техники, участвовавшей в бою: ${lostTechText}.` +
-          (lostSabText ? `\n\nПогибло диверсантов: ${lostSabText}.` : ''),
-          { title: '💥 ВЗРЫВ', icon: '💥', okText: 'Понятно', cancelText: '' }
+          `<img class="mine-banner mine-banner-dialog" src="/img/mine/boom.webp" alt="Подрыв"
+                loading="eager" onerror="this.style.display='none'">
+           <div class="mine-result">
+             <p>Провод оказался с сюрпризом — взрыв!</p>
+             <p>Здоровье снесено полностью. Уничтожено <b>${r.techLossPct}%</b> техники,
+                участвовавшей в бою: ${lostTechText}.</p>
+             ${lostSabText ? `<p>Погибло диверсантов: ${lostSabText}.</p>` : ''}
+           </div>`,
+          { title: '💥 ВЗРЫВ', icon: '💥', html: true, okText: 'Понятно', cancelText: '' }
         );
         App._lastBattle = null;
       } else {

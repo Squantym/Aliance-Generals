@@ -81,6 +81,18 @@ function registerRoutes(app: any) {
       pendingRocketHits: (req.user.pendingRocketHits && req.user.pendingRocketHits.length) ? req.user.pendingRocketHits : null,
       // Награда за вход ждёт получения в окне (не начисляется молча)
       pendingLoginReward: (req.user as any).pendingLoginReward || null,
+      // Роль в проекте: фронт по ней рисует значок и кнопки модерации
+      staffRole: require('./services/roles').roleOf(req.user),
+      staffLabel: require('./services/roles').roleLabel(req.user) || null,
+      // Зоны админ-панели, доступные этому сотруднику
+      staffZones: require('./services/roles').zonesFor(req.user),
+      // Адрес панели отдаём ТОЛЬКО тем, у кого есть доступ. Так сотрудникам
+      // не нужно знать секретный путь: они нажимают кнопку в игре, а сам
+      // путь известен только владельцу и не расходится по людям.
+      staffPanel: (require('./services/roles').zonesFor(req.user).length
+        ? (process.env.ADMIN_PATH || null) : null),
+      // Своя блокировка чата — чтобы поле ввода сразу показало причину
+      chatBan: require('./services/roles').chatBanInfo(req.user),
       // Сводка «пока вас не было»: атаки/санкции за время оффлайна
       pendingWarReport: (() => { try { return require('./services/warReport').view(req.user); } catch (e) { return null; } })(),
       // Очередь окон о новых достижениях (показываются по одному)
@@ -425,6 +437,55 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/rewards/grant', act((req, n) => require('./services/rewards').adminGrant(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/claim-gift', act((req, n) => { const r = admin.claimGift(req.user, req.body.giftId); n.push('OK'); return r; }));
+  // ═══ РОЛИ И МОДЕРАЦИЯ ════════════════════════════════════════════
+  const roles = require('./services/roles');
+
+  // Список сотрудников проекта. Видят администраторы и модераторы —
+  // модератору полезно знать, к кому обращаться.
+  app.add('GET', '/api/staff', (req) => {
+    if (!roles.isModerator(req.user)) throw new u.ApiError('Недостаточно прав');
+    return { staff: roles.staffList(), me: { role: roles.roleOf(req.user), label: roles.roleLabel(req.user) } };
+  });
+
+  // Назначение и снятие ролей. Проверка «кто кого может» внутри setRole:
+  // владелец назначает любые роли, администратор — только модераторов.
+  app.add('POST', '/api/staff/role', act((req, n) => {
+    if (!roles.isAdmin(req.user)) throw new u.ApiError('Недостаточно прав');
+    const role = req.body.role === 'none' ? null : String(req.body.role || '');
+    return roles.setRole(req.user, String(req.body.userId || ''), role as any, n);
+  }));
+
+  // ── Модерация чата (доступна и модераторам, и администрации) ──
+  app.add('GET', '/api/mod/chat-bans', (req) => {
+    if (!roles.isModerator(req.user)) throw new u.ApiError('Недостаточно прав');
+    return { bans: roles.bannedList(), maxMinutes: roles.MAX_BAN_MINUTES };
+  });
+
+  app.add('POST', '/api/mod/chat-ban', act((req, n) =>
+    roles.banChat(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n)));
+
+  app.add('POST', '/api/mod/chat-unban', act((req, n) =>
+    roles.unbanChat(req.user, String(req.body.userId || ''), n)));
+
+  // Поиск игрока по позывному — модератору нужен, чтобы найти нарушителя
+  app.add('GET', '/api/mod/find', (req) => {
+    if (!roles.isModerator(req.user)) throw new u.ApiError('Недостаточно прав');
+    const q = String(req.query.q || '').trim().toLowerCase();
+    if (q.length < 2) return { players: [] };
+    const found = Object.values(player.users())
+      .filter((p: any) => !p.isBot && String(p.name || '').toLowerCase().includes(q))
+      .slice(0, 15)
+      .map((p: any) => {
+        const ban = roles.chatBanInfo(p);
+        return {
+          id: p.id, name: p.name, level: p.level, flag: player.flag(p),
+          role: roles.roleOf(p), label: roles.roleLabel(p),
+          banned: !!ban, banUntil: ban ? ban.until : 0, banReason: ban ? ban.reason : '',
+        };
+      });
+    return { players: found };
+  });
+
   // ═══ БАЗА ДАННЫХ: копии, снимки, восстановление ═══════════════════
   // Всё только для администратора. Произвольный SQL наружу НЕ выставляется
   // намеренно: даже админский эндпоинт с произвольным запросом — это

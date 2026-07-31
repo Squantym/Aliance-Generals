@@ -150,6 +150,12 @@ function xpMul(user: User): number {
 // Начислить опыт; при достижении порога — повышение уровня,
 // +3 очка навыков и полное восстановление ресурсов
 function addXp(user: User, amount: number, notices: Notices): number {
+  // «Сыворотка омоложения» с чёрного рынка полностью останавливает набор
+  // опыта. Проверка стоит в ЕДИНСТВЕННОЙ точке начисления, поэтому
+  // перекрывает сразу всё: бои, задания, спецоперации, события, награды.
+  // Опыт именно сгорает, а не откладывается — иначе после окончания
+  // действия игрок разом получил бы всё накопленное и подскочил в уровне.
+  if (isXpBlocked(user)) return 0;
   // К опыту применяется множитель страны, клановый бонус и глобальный бонус админа
   const legionXp = legionBonus(user, 'xp');
   let globalXpMul = 1;
@@ -287,6 +293,22 @@ function legionBonus(user: User, type: string): number {
 }
 
 // ---------- Эффекты (допинг, падлянки, командиры) ----------
+// Действует ли сейчас блокировка опыта
+function isXpBlocked(user: User): boolean {
+  const now = Date.now();
+  return (user.effects || []).some((e: any) => e.type === 'xp_block' && e.expiresAt > now);
+}
+
+// Сколько минут осталось до конца блокировки (0 — не действует)
+function xpBlockLeftMin(user: User): number {
+  const now = Date.now();
+  let until = 0;
+  for (const e of (user.effects || []) as any[]) {
+    if (e.type === 'xp_block' && e.expiresAt > now && e.expiresAt > until) until = e.expiresAt;
+  }
+  return until ? Math.max(1, Math.round((until - now) / 60000)) : 0;
+}
+
 function effMul(user: User, type: string): number {
   const now = Date.now();
   // Эффекты одного типа СУММИРУЮТСЯ: допинг +20% и наёмник +100% дают
@@ -314,6 +336,7 @@ function effLabel(type: string): string {
     crit_bonus: 'шанс крита', dodge_bonus: 'шанс уворота',
     xp_pct: 'опыт', build_slow_pct: 'замедление строек', research_slow_pct: 'замедление исследований',
     invite_unlimited: 'безлимит приглашений', fatality_immunity: 'иммунитет к фаталити',
+    xp_block: 'опыт не начисляется',
   };
   return map[type] || type;
 }
@@ -328,7 +351,10 @@ function effectsView(user: User): any[] {
       const m = Math.floor((secLeft % 3600) / 60);
       const timeStr = h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
       // Флаговые эффекты (value=1, не проценты) показываем как статус
-      const isFlag = e.type === 'invite_unlimited' || e.type === 'fatality_immunity';
+      // Флаговые эффекты (value=1, не проценты) показываем как статус.
+      // Сыворотка сюда же: «+100% (опыт не начисляется)» читалось бы как
+      // бонус к опыту — ровно наоборот смыслу.
+      const isFlag = e.type === 'invite_unlimited' || e.type === 'fatality_immunity' || e.type === 'xp_block';
       const desc = isFlag
         ? effLabel(e.type)
         : `${e.value > 0 ? '+' : ''}${e.value}% (${effLabel(e.type)})`;
@@ -1164,7 +1190,7 @@ function restoreEar(user: User, notices: Notices) {
   return { earsCurrent: user.earsCurrent };
 }
 
-export = {
+export = { isXpBlocked, xpBlockLeftMin,
   users, maxima, refresh, addMoney, addBattleLoot, addGold, addXp, xpMul, spendSkill, resetSkills,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,

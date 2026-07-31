@@ -158,7 +158,35 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   // защита от выхода за public/ ниже (normalize + startsWith) остаётся.
   try { rel = decodeURIComponent(rel); } catch (e) { /* битая %-последовательность — оставляем как есть */ }
   if (rel.indexOf('\0') !== -1) { res.writeHead(400); res.end('Bad request'); return; }
-  if (rel === '/admin') rel = '/admin.html';
+  // ═══ АДМИН-ПАНЕЛЬ ═════════════════════════════════════════════════
+  // Раньше панель лежала на предсказуемом /admin и отдавалась КОМУ УГОДНО:
+  // API она без прав не открывала, но раскрывала структуру админских
+  // запросов и служила приглашением для перебора. Теперь:
+  //   • /admin и /admin.html закрыты ВСЕГДА — отвечают 404, как
+  //     несуществующая страница, чтобы не подтверждать наличие панели;
+  //   • панель доступна только по секретному пути из ADMIN_PATH;
+  //   • если ADMIN_PATH не задан, панель по HTTP недоступна вовсе.
+  const ADMIN_PATH = String(process.env.ADMIN_PATH || '').trim();
+  const isAdminFile = rel === '/admin' || rel === '/admin/' || rel === '/admin.html';
+  if (ADMIN_PATH && (rel === ADMIN_PATH || rel === ADMIN_PATH + '/')) {
+    rel = '/admin.html';
+  } else if (isAdminFile) {
+    // Кто-то стучится в стандартный адрес панели — это либо сканер, либо
+    // попытка подбора. Записываем в лог: по нему видно, что вас щупают.
+    const ip = ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim()
+      || req.socket.remoteAddress || 'unknown';
+    console.warn(`🛡  Попытка открыть админ-панель по стандартному адресу ${rel} с ${ip}`);
+    // Ответ такой же, как для любого отсутствующего файла — не подтверждаем,
+    // что панель вообще существует
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
+  // Короткие адреса правовых документов: /terms и /privacy. Нужны, чтобы
+  // ссылку можно было дать платёжному сервису или магазину приложений
+  // без расширения в конце.
+  if (rel === '/terms' || rel === '/terms/') rel = '/terms.html';
+  if (rel === '/privacy' || rel === '/privacy/') rel = '/privacy.html';
   const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
 
@@ -313,18 +341,92 @@ function createApp() {
           // Авторизация (если маршрут не открытый)
           if (!found.opts.open) {
             const token = (req.headers['x-token'] as string) || '';
-            const sessions = db.load<Record<string, string>>('sessions', {});
+            const sessions = db.load<Record<string, any>>('sessions', {});
             const users = db.load<Record<string, any>>('users', {});
-            const userId = sessions[token];
+            const rec = sessions[token];
+            // Формат сессии: { u: id, at: время последней активности }.
+            // Строка — старый бессрочный формат, переводим на новый.
+            const SESSION_TTL = 30 * 24 * 3600 * 1000;
+            let userId: string | null = null;
+            if (typeof rec === 'string') {
+              sessions[token] = { u: rec, at: Date.now() };
+              userId = rec;
+            } else if (rec && rec.u) {
+              if (Date.now() - (rec.at || 0) > SESSION_TTL) {
+                delete sessions[token];
+                db.save('sessions');
+                return sendJson(res, 401, { error: 'Сессия истекла — войдите заново' }, acceptEncoding);
+              }
+              userId = rec.u;
+              // Продлеваем при активности, но пишем не чаще раза в час,
+              // чтобы не дёргать сохранение на каждый запрос
+              if (Date.now() - (rec.at || 0) > 3600 * 1000) {
+                rec.at = Date.now();
+                db.save('sessions');
+              }
+            }
             const user = userId && users[userId];
             if (!user) return sendJson(res, 401, { error: 'Требуется вход в игру' }, acceptEncoding);
+            // Срочный бан снимается сам по истечении срока
+            if (user.banned && (user as any).banUntil && (user as any).banUntil <= Date.now()) {
+              user.banned = false;
+              (user as any).banUntil = 0;
+              user.banReason = '';
+              db.save('users');
+            }
             if (user.banned) {
-              return sendJson(res, 403, {
-                error: 'Ваш аккаунт заблокирован администрацией.' + (user.banReason ? ' Причина: ' + user.banReason : ''),
+              // Запрос /api/me пропускаем: игрок должен войти и увидеть
+              // окно с причиной и сроком, а не пустую ошибку. Всё остальное
+              // закрыто — играть он не может.
+              const banPayload = {
                 banned: true,
+                reason: user.banReason || 'Нарушение правил',
+                until: (user as any).banUntil || 0,
+                bannedAt: (user as any).bannedAt || 0,
+                name: user.name,
+              };
+              if (pathname === '/api/me') {
+                return sendJson(res, 200, { banInfo: banPayload, banned: true, name: user.name }, acceptEncoding);
+              }
+              return sendJson(res, 403, {
+                error: 'Ваш аккаунт заблокирован администрацией.'
+                  + (user.banReason ? ' Причина: ' + user.banReason : '')
+                  + ((user as any).banUntil
+                      ? ` Осталось: ${Math.max(1, Math.round(((user as any).banUntil - Date.now()) / 60000))} мин.`
+                      : ' Блокировка бессрочная.'),
+                banned: true,
+                banInfo: banPayload,
               }, acceptEncoding);
             }
-            if (found.opts.admin && !user.isAdmin) return sendJson(res, 403, { error: 'Только для администратора' }, acceptEncoding);
+            if (found.opts.admin) {
+              // Полный доступ определяет модуль ролей: сейчас это только
+              // владелец. Старое поле isAdmin само по себе прав не даёт —
+              // иначе приостановка полномочий администраторов ничего бы
+              // не значила.
+              // Доступ определяется ЗОНОЙ запроса: владельцу открыто всё,
+              // администратору — все зоны, кроме ресурсов, акций, базы,
+              // ролей и настроек сезона. Незнакомый админский адрес
+              // считается владельческим — безопасная сторона по умолчанию.
+              let allowed = false;
+              try {
+                const roles = require('../services/roles');
+                allowed = roles.canAccessZone(user, roles.zoneOfPath(pathname));
+              } catch (e) { allowed = !!user.isAdmin; }
+              if (!allowed) {
+                // Обычный игрок стучится в админский запрос — это уже
+                // осознанная попытка, а не случайность: логируем с именем
+                console.warn(`🛡  Игрок «${user.name}» (id ${user.id}, ip ${reqCtx.ip}) пытался вызвать ${found.method} ${pathname}`);
+                return sendJson(res, 403, { error: 'Недостаточно прав для этого раздела' }, acceptEncoding);
+              }
+              // Необязательный белый список адресов: если ADMIN_IPS задан, админские
+              // запросы принимаются только с перечисленных адресов. Даже угнанная
+              // сессия администратора становится бесполезной с чужого адреса.
+              const allowList = String(process.env.ADMIN_IPS || '').split(',').map((x) => x.trim()).filter(Boolean);
+              if (allowList.length && !allowList.includes(reqCtx.ip)) {
+                console.warn(`🛡  Админский запрос ${pathname} с НЕразрешённого адреса ${reqCtx.ip} (игрок «${user.name}»)`);
+                return sendJson(res, 403, { error: 'Доступ с этого адреса запрещён' }, acceptEncoding);
+              }
+            }
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов
             reqCtx.user = user;

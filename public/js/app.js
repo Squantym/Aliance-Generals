@@ -9,7 +9,7 @@
 const App = {
   // ── Картинки предметов чёрного рынка (допинг/падлянки/мина) ──
   // Возвращает путь к картинке предмета по его id, либо null (нет картинки).
-  _MARKET_IMG_IDS: ['stim','armor','energy','medkit','ammo','sabotage','diversia','ammo_boost','energy_boost','crit_boost','dodge_boost','bureaucracy','espionage','landmine'],
+  _MARKET_IMG_IDS: ['stim','armor','energy','medkit','ammo','sabotage','diversia','ammo_boost','energy_boost','crit_boost','dodge_boost','bureaucracy','espionage','landmine','serum'],
   _marketImg(id) { return this._MARKET_IMG_IDS.indexOf(id) >= 0 ? `/img/market/${id}.webp` : null; },
   // ── Картинки наёмников аукциона ──
   _MERC_IMG_IDS: ['berserk','fortress','tycoon','envoy','ghost'],
@@ -386,6 +386,13 @@ const App = {
     try {
       const prevNotifUnread = App.me ? App.me.notifUnread : 0;
       App.me = await API.get('/api/me');
+      // Аккаунт заблокирован: показываем окно с причиной и сроком вместо
+      // игры. Раньше игрок просто получал ошибку и не понимал, что
+      // произошло и когда это закончится.
+      if (App.me && App.me.banned && App.me.banInfo) {
+        App.showBanScreen(App.me.banInfo);
+        return;
+      }
       App.renderHeader();
       // Ежедневная награда за вход выдана автоматически — показываем тост
       if (App.me.dailyReward && App.me.dailyReward.message && !App._dailyShown) {
@@ -1909,6 +1916,147 @@ const App = {
     App.refreshMe && App.refreshMe();
   },
 
+  // ── Экран блокировки аккаунта ───────────────────────────────────
+  // Игрок входит в игру, но вместо интерфейса видит только это окно:
+  // причина, срок и обратный отсчёт. Ничего больше нажать нельзя.
+  _banTimer: null,
+
+  showBanScreen(info) {
+    document.getElementById('war-report-window')?.remove();
+    document.getElementById('login-reward-window')?.remove();
+    let popup = document.getElementById('ban-screen');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = 'ban-screen';
+      document.body.appendChild(popup);
+    }
+    // Прячем игру целиком: шапку, содержимое и уведомления
+    const wrap = document.getElementById('wrap');
+    if (wrap) wrap.style.display = 'none';
+    const toasts = document.getElementById('toasts');
+    if (toasts) toasts.style.display = 'none';
+
+    const render = () => {
+      const forever = !info.until;
+      const leftMs = forever ? 0 : info.until - Date.now();
+      if (!forever && leftMs <= 0) {
+        // Срок вышел прямо сейчас — возвращаем игрока в игру
+        clearInterval(App._banTimer);
+        location.reload();
+        return;
+      }
+      const parts = [];
+      if (!forever) {
+        const totalMin = Math.max(1, Math.round(leftMs / 60000));
+        const d = Math.floor(totalMin / 1440);
+        const h = Math.floor((totalMin % 1440) / 60);
+        const m = totalMin % 60;
+        if (d) parts.push(`${d} дн`);
+        if (h) parts.push(`${h} ч`);
+        if (m || (!d && !h)) parts.push(`${m} мин`);
+      }
+      popup.innerHTML = `
+        <div class="ban-screen-box">
+          <div class="ban-screen-icon">🚫</div>
+          <div class="ban-screen-title">Доступ заблокирован</div>
+          ${info.name ? `<div class="ban-screen-who">${UI.esc(info.name)}</div>` : ''}
+          <div class="ban-screen-reason">
+            <div class="ban-screen-label">Причина</div>
+            <div class="ban-screen-value">${UI.esc(info.reason || 'Нарушение правил')}</div>
+          </div>
+          <div class="ban-screen-reason">
+            <div class="ban-screen-label">${forever ? 'Срок' : 'Осталось'}</div>
+            <div class="ban-screen-value ${forever ? 'ban-forever' : 'ban-left'}">
+              ${forever ? 'Блокировка бессрочная' : parts.join(' ')}
+            </div>
+          </div>
+          ${info.bannedAt ? `<div class="ban-screen-date">Заблокирован: ${UI.fmtDate(info.bannedAt)}</div>` : ''}
+          <div class="ban-screen-note">
+            ${forever
+              ? 'Решение принято администрацией проекта. Вопросы — через почту поддержки.'
+              : 'По истечении срока доступ откроется автоматически, ничего делать не нужно.'}
+          </div>
+          <button class="btn mt" id="ban-logout" style="width:100%">Выйти из аккаунта</button>
+        </div>`;
+      const out = document.getElementById('ban-logout');
+      if (out) out.onclick = () => { API.setToken(''); location.href = '/'; };
+    };
+    render();
+    clearInterval(App._banTimer);
+    App._banTimer = setInterval(render, 30000);   // обновляем отсчёт
+  },
+
+  // ── Окно блокировки чата (для «Дозора» и администрации) ─────────
+  // Модератор выбирает срок из готовых вариантов и обязательно указывает
+  // причину — она показывается игроку, когда тот попробует написать.
+  async showChatBanDialog(userId, userName) {
+    const durations = [
+      { m: 15, t: '15 минут' }, { m: 60, t: '1 час' }, { m: 180, t: '3 часа' },
+      { m: 720, t: '12 часов' }, { m: 1440, t: '1 сутки' }, { m: 4320, t: '3 суток' },
+      { m: 10080, t: '7 суток' }, { m: 43200, t: '30 суток' },
+    ];
+    const reasons = [
+      'Оскорбления', 'Спам и флуд', 'Реклама', 'Нецензурная брань',
+      'Разжигание вражды', 'Провокации', 'Обман игроков',
+    ];
+    const body = `
+      <div class="ban-dialog">
+        <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
+        <div class="ban-label">Срок блокировки</div>
+        <div class="ban-grid" id="ban-durations">
+          ${durations.map((d, i) => `<button class="ban-opt${i === 1 ? ' active' : ''}" data-min="${d.m}">${d.t}</button>`).join('')}
+        </div>
+        <div class="ban-label">Причина (обязательно)</div>
+        <div class="ban-grid ban-reasons">
+          ${reasons.map((r) => `<button class="ban-opt ban-reason" data-reason="${UI.esc(r)}">${UI.esc(r)}</button>`).join('')}
+        </div>
+        <input type="text" id="ban-reason-text" class="field mt" maxlength="200" placeholder="Или впишите свою причину…">
+      </div>`;
+    App._banMinutes = 60;
+    App._banReason = '';
+    const dialog = UI.confirm(body, {
+      title: 'Блокировка чата', icon: '🔇', html: true,
+      okText: 'Заблокировать', cancelText: 'Отмена', danger: true,
+    });
+    // Обработчики навешиваем после появления окна: разметка исчезает вместе
+    // с ним, поэтому выбор сохраняем в App, а не читаем из DOM в конце
+    requestAnimationFrame(() => {
+      const root = document.querySelector('.ban-dialog');
+      if (!root) return;
+      const input = root.querySelector('#ban-reason-text');
+      root.querySelectorAll('[data-min]').forEach((b) => {
+        b.onclick = () => {
+          root.querySelectorAll('[data-min]').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          App._banMinutes = Number(b.dataset.min) || 60;
+        };
+      });
+      root.querySelectorAll('[data-reason]').forEach((b) => {
+        b.onclick = () => {
+          root.querySelectorAll('[data-reason]').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          App._banReason = b.dataset.reason;
+          if (input) input.value = b.dataset.reason;
+        };
+      });
+      if (input) input.oninput = () => { App._banReason = input.value; };
+    });
+    const ok = await dialog;
+    if (!ok) return;
+    const minutes = App._banMinutes || 60;
+    const reason = (App._banReason || '').trim();
+    if (!reason) { UI.toast('⛔ Укажите причину блокировки'); return; }
+    try {
+      await API.post('/api/mod/chat-ban', { userId, minutes, reason });
+      UI.toast('🔇 Чат заблокирован');
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  },
+
+  // Клики внутри окна блокировки: выбор срока и причины запоминаем в App,
+  // потому что разметка окна исчезает вместе с ним
+  _banMinutes: 60,
+  _banReason: '',
+
   // ── Окно награды за вход: «довольствие от штаба» ────────────────
   // Раньше награда падала на счёт молча из /api/me — игрок замечал её
   // только по изменившемуся балансу. Теперь показываем окно с кнопкой.
@@ -1967,6 +2115,13 @@ const App = {
   // на него нападали или объявляли санкции. Закрытие -> ack на сервер.
   _warReportShown: false,
 
+  // Название типа диверсанта по ключу — для сводки ущерба
+  _SAB_NAMES: {
+    ground: 'наземные', sea: 'морские', air: 'воздушные',
+    secret: 'секретные', building: 'по постройкам', suicide: 'смертники',
+  },
+  sabName(key) { return App._SAB_NAMES[key] || key; },
+
   _showWarReport(rep) {
     if (!rep || App._warReportShown) return;
     if (document.getElementById('war-report-window')) return;
@@ -1975,45 +2130,120 @@ const App = {
     const hasWar = rep.attacks > 0;
     const losses = rep.losses || [];
     const sanctions = rep.sanctions || [];
+    const attackers = rep.attackers || [];
+    const rockets = rep.rockets || [];
+    const sabLost = rep.saboteursLost || {};
 
-    // Сетка потерянной техники: картинка + ×N (клик — модалка предмета)
-    const lossesHtml = losses.length ? UI.battleImgRow(losses, 'units') : '';
+    // Сколько времени копилась сводка
+    const ago = (ms) => {
+      const m = Math.max(1, Math.round((Date.now() - ms) / 60000));
+      if (m < 60) return `${m} мин`;
+      const h = Math.round(m / 60);
+      return h < 24 ? `${h} ч` : `${Math.round(h / 24)} дн`;
+    };
+    const closeAndGo = (id) =>
+      `document.getElementById('war-report-close').click();App.go('profile/${id}');return false`;
+
+    // ── Кто нападал: имя, флаг, сколько раз, чем кончилось, что унёс
+    const attackersHtml = attackers.map((a) => `
+      <div class="wr-attacker">
+        <div class="wr-attacker-main">
+          <a href="#" class="wr-name" onclick="${closeAndGo(a.id)}">${App._flagImg(a.flag)} ${UI.esc(a.name)}</a>
+          ${a.level ? `<span class="muted small">ур. ${a.level}</span>` : ''}
+          <span class="wr-times">×${UI.fmtNum(a.attacks)}</span>
+        </div>
+        <div class="wr-attacker-detail muted small">
+          ${a.won ? `<span class="wr-bad">разбил вас ${UI.fmtNum(a.won)}</span>` : ''}
+          ${a.won && a.lost ? ' · ' : ''}
+          ${a.lost ? `<span class="wr-good">отбито ${UI.fmtNum(a.lost)}</span>` : ''}
+          ${a.moneyTaken ? ` · унёс <span class="ic-dollar"></span>${UI.fmtMoney(a.moneyTaken)}` : ''}
+          ${a.unitsKilled ? ` · уничтожил техники: ${UI.fmtNum(a.unitsKilled)}` : ''}
+        </div>
+      </div>`).join('');
+
+    // ── Ракетные удары: отдельным блоком, с полным ущербом
+    const rocketsHtml = rockets.map((r) => `
+      <div class="wr-rocket">
+        <div class="wr-rocket-head">🚀 <b>${UI.esc(r.by)}</b> <span class="muted small">${ago(r.at)} назад</span></div>
+        <div class="wr-rocket-body small">
+          ${r.moneyLost ? `<div class="wr-bad">Похищено: <span class="ic-dollar"></span>${UI.fmtMoney(r.moneyLost)}</div>` : ''}
+          ${r.buildings ? `<div class="wr-bad">Разрушено построек: ${UI.fmtNum(r.buildings)}${r.buildingsText ? ` <span class="muted">(${UI.esc(r.buildingsText)})</span>` : ''}</div>` : ''}
+          ${r.techLost ? `<div class="wr-bad">Уничтожено техники: ${UI.fmtNum(r.techLost)}${r.techLostText ? ` <span class="muted">(${UI.esc(r.techLostText)})</span>` : ''}</div>` : ''}
+          ${Object.keys(r.saboteurs || {}).length
+            ? `<div class="wr-bad">Погибло диверсантов: ${UI.fmtNum(Object.values(r.saboteurs).reduce((n, v) => n + (Number(v) || 0), 0))}
+                 <span class="muted">(${Object.entries(r.saboteurs).map(([k, v]) => `${App.sabName ? UI.esc(App.sabName(k)) : UI.esc(k)} ×${v}`).join(', ')})</span></div>`
+            : ''}
+          ${!r.moneyLost && !r.buildings && !r.techLost && !Object.keys(r.saboteurs || {}).length
+            ? '<div class="wr-good">Удар не нанёс заметного ущерба</div>' : ''}
+        </div>
+      </div>`).join('');
 
     const sancHtml = sanctions.map((s) => `
-      <div class="list-row" style="padding:4px 0">
-        <div class="grow">${App._flagImg(s.byFlag)} <a href="#" style="color:var(--green)"
-          onclick="document.getElementById('war-report-window').querySelector('#war-report-close').click();App.go('profile/${s.byId}');return false">${UI.esc(s.byName)}</a>
-          <span class="muted small">(x${s.count})</span></div>
-        <div class="gold"><span class="ic-dollar"></span> ${UI.fmtMoney(s.amount)}</div>
+      <div class="wr-row">
+        <div class="grow">${App._flagImg(s.byFlag)}
+          <a href="#" class="wr-name" onclick="${closeAndGo(s.byId)}">${UI.esc(s.byName)}</a>
+          ${s.count > 1 ? `<span class="muted small">×${s.count}</span>` : ''}</div>
+        <div class="gold"><span class="ic-dollar"></span>${UI.fmtMoney(s.amount)}</div>
       </div>`).join('');
+
+    // Диверсанты суммарно (из всех ударов)
+    const sabTotal = rep.saboteursLostTotal || 0;
+    const sabDetail = Object.entries(sabLost)
+      .map(([k, v]) => `${App.sabName ? UI.esc(App.sabName(k)) : UI.esc(k)} ×${UI.fmtNum(v)}`).join(', ');
 
     const popup = document.createElement('div');
     popup.id = 'war-report-window';
     popup.className = 'game-dialog-overlay';
     popup.innerHTML = `
-      <div class="events-popup">
-        <div class="events-popup-title">События</div>
+      <div class="events-popup wr-popup">
+        <div class="events-popup-title">Пока вас не было</div>
+        <div class="wr-since muted small">за последние ${ago(rep.since)}</div>
+
         ${hasWar ? `
-          <div class="events-popup-section">Война</div>
-          <div class="events-red">Атак на вас: ${UI.fmtNum(rep.attacks)}</div>
-          ${rep.defended > 0 ? `<div style="color:var(--green);font-size:13px">Отбито: ${UI.fmtNum(rep.defended)}</div>` : ''}
-          <div class="events-red">Поражений: ${UI.fmtNum(rep.defeats)}</div>
-          ${rep.moneyLost > 0 ? `<div class="events-red">Потеряно денег: <span class="ic-dollar"></span> <span class="gold">${UI.fmtMoney(rep.moneyLost)}</span></div>` : ''}
-          ${losses.length ? `<div class="events-red">Потери:</div>${lossesHtml}` : ''}
+          <div class="wr-stats">
+            <div class="wr-stat"><div class="wr-stat-num wr-bad">${UI.fmtNum(rep.attacks)}</div><div class="wr-stat-cap">атак</div></div>
+            <div class="wr-stat"><div class="wr-stat-num wr-good">${UI.fmtNum(rep.defended)}</div><div class="wr-stat-cap">отбито</div></div>
+            <div class="wr-stat"><div class="wr-stat-num wr-bad">${UI.fmtNum(rep.defeats)}</div><div class="wr-stat-cap">поражений</div></div>
+          </div>
         ` : ''}
+
+        ${(rep.moneyLost || rep.unitsLost || sabTotal || rep.buildingsLost) ? `
+          <div class="events-popup-section">Общий ущерб</div>
+          <div class="wr-damage">
+            ${rep.moneyLost ? `<div class="wr-row"><span>Похищено денег</span><b class="wr-bad"><span class="ic-dollar"></span>${UI.fmtMoney(rep.moneyLost)}</b></div>` : ''}
+            ${rep.unitsLost ? `<div class="wr-row"><span>Потеряно техники</span><b class="wr-bad">${UI.fmtNum(rep.unitsLost)} ед.</b></div>` : ''}
+            ${sabTotal ? `<div class="wr-row"><span>Погибло диверсантов</span><b class="wr-bad">${UI.fmtNum(sabTotal)}</b></div>${sabDetail ? `<div class="muted small" style="text-align:right">${sabDetail}</div>` : ''}` : ''}
+            ${rep.buildingsLost ? `<div class="wr-row"><span>Разрушено построек</span><b class="wr-bad">${UI.fmtNum(rep.buildingsLost)}</b></div>` : ''}
+          </div>
+        ` : ''}
+
+        ${attackers.length ? `
+          <div class="events-popup-section">Кто нападал</div>
+          ${attackersHtml}
+        ` : ''}
+
+        ${losses.length ? `
+          <div class="events-popup-section">Потерянная техника</div>
+          ${UI.battleImgRow(losses, 'units')}
+        ` : ''}
+
+        ${rockets.length ? `
+          <div class="events-popup-section">Ракетные удары (${UI.fmtNum(rockets.length)})</div>
+          ${rocketsHtml}
+        ` : ''}
+
         ${sanctions.length ? `
-          <div class="events-popup-section">Санкции</div>
-          <div class="events-red">Санкции, объявленные на вас:</div>
+          <div class="events-popup-section">Санкции на вас</div>
           ${sancHtml}
         ` : ''}
-        <button class="btn mt" id="war-report-close" style="width:100%">Закрыть</button>
+
+        <button class="btn btn-orange mt" id="war-report-close" style="width:100%">Закрыть</button>
       </div>`;
     document.body.appendChild(popup);
     popup.querySelector('#war-report-close').onclick = async () => {
       popup.remove();
       try { await API.post('/api/war-report/ack'); } catch (e) {}
       if (App.me) App.me.pendingWarReport = null;
-      // Следом показываем накопившиеся окна достижений (если есть)
       App._processAchQueue();
     };
   },
@@ -2143,11 +2373,29 @@ const App = {
     }
     Promise.resolve(screen(c, param)).then(() => {
       if (scrollToId) {
-        // Прокрутка к нужному блоку (например, к результату боя)
+        // Прокрутка к нужному блоку (например, к результату боя).
+        // Пробуем несколько раз: экран может дорисовываться асинхронно
+        // (список целей грузится после основной разметки), и одного кадра
+        // не хватает — прокрутка уходила в пустоту, а игрок оставался
+        // там же, где листал список.
+        let tries = 0;
         const jump = () => {
           const el = document.getElementById(scrollToId);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          else if (preserve) window.scrollTo(0, savedScroll);
+          if (el) {
+            // block:'start' — блок встаёт под шапкой, заголовок
+            // «Победа»/«Поражение» виден сразу, без доскролла
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Короткая подсветка: взгляд сам находит нужное место
+            el.classList.remove('scroll-flash');
+            void el.offsetWidth;              // перезапуск анимации
+            el.classList.add('scroll-flash');
+            setTimeout(() => el.classList.remove('scroll-flash'), 1600);
+            return;
+          }
+          if (++tries < 8) { setTimeout(jump, 60); return; }
+          // Блока так и нет — просто уводим наверх, чтобы игрок не остался
+          // посреди списка противников
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         };
         requestAnimationFrame(jump);
         return;

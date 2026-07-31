@@ -100,11 +100,34 @@ function newUser(id: string, name: string, email_: string, passHash: string, sal
   };
 }
 
+// Срок жизни сессии. Раньше токены были БЕССРОЧНЫМИ: один раз утёкший
+// (чужой компьютер, лог, история браузера) давал доступ навсегда, а сама
+// коллекция росла без ограничений — запись на каждый вход, никогда не
+// удалялась. Теперь у сессии есть срок, и он продлевается при активности.
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;   // 30 дней бездействия
+
 function issueToken(userId: string): string {
   const token = u.uid(40);
-  sessions()[token] = userId;
+  sessions()[token] = { u: userId, at: Date.now() } as any;
+  pruneSessions();
   db.save('sessions');
   return token;
+}
+
+// Чистка протухших сессий. Вызывается при входе — этого достаточно,
+// отдельный таймер не нужен.
+function pruneSessions(): number {
+  const all: any = sessions();
+  const now = Date.now();
+  let removed = 0;
+  for (const t of Object.keys(all)) {
+    const rec = all[t];
+    // Старый формат — просто строка с id. Считаем такую сессию свежей
+    // (переводим на новый формат), чтобы обновление никого не разлогинило.
+    if (typeof rec === 'string') { all[t] = { u: rec, at: now }; continue; }
+    if (!rec || !rec.u || (now - (rec.at || 0)) > SESSION_TTL_MS) { delete all[t]; removed++; }
+  }
+  return removed;
 }
 
 async function register(login: string, password: string, emailAddr: string, country: string, ip: string) {
@@ -142,19 +165,28 @@ async function register(login: string, password: string, emailAddr: string, coun
     throw new u.ApiError('Этот email уже используется');
   }
 
-  const isFirst = Object.keys(all).length === 0;
+  // ПРАВА АДМИНИСТРАТОРА ПРИ РЕГИСТРАЦИИ НЕ ВЫДАЮТСЯ НИКОМУ.
+  // Раньше их автоматически получал первый зарегистрировавшийся — это
+  // означало, что при потере базы, разворачивании копии или запуске
+  // нового мира администратором становился случайный человек, успевший
+  // зарегистрироваться первым. Теперь права назначаются только с сервера:
+  //   node tools/grant-admin.js <позывной или email>
   const salt = u.uid(16);
   const id = u.uid(12);
   const autoVerified = !email.isConfigured;
-  const newU = newUser(id, login, emailAddr, u.hashPassword(password, salt), salt, country, isFirst, autoVerified);
+  const newU = newUser(id, login, emailAddr, u.hashPassword(password, salt), salt, country, false, autoVerified);
   all[id] = newU;
   db.save('users');
 
-  if (isFirst) console.log(`👑 Игрок «${login}» зарегистрирован первым и получил права администратора.`);
+  // Подсказка владельцу при пустой базе — чтобы он знал, как получить доступ
+  if (Object.keys(all).length === 1) {
+    console.log(`ℹ️  Зарегистрирован первый игрок «${login}». Права администратора НЕ выданы.`);
+    console.log(`   Назначить администратора: node tools/grant-admin.js "${login}"`);
+  }
   auditLog.record({ userId: id, userName: login, path: '/api/register', body: { email: emailAddr, country } });
 
   if (autoVerified) {
-    return { token: issueToken(id), isAdmin: isFirst, emailVerified: true };
+    return { token: issueToken(id), isAdmin: false, emailVerified: true };
   }
   const sendRes = await email.sendVerificationEmail(emailAddr, login, newU.emailVerifyToken || '');
   if (!sendRes.sent) {
@@ -211,14 +243,50 @@ function login(loginName: string, password: string, ip: string) {
   if (!found.emailVerified) {
     throw new u.ApiError(`Подтвердите почту — письмо отправлено при регистрации. Не пришло? Нажмите «Отправить повторно».`);
   }
-  if (found.banned) {
-    throw new u.ApiError('Ваш аккаунт заблокирован администрацией.' + (found.banReason ? ' Причина: ' + found.banReason : ''));
+  // Забаненного ВПУСКАЕМ: он войдёт и увидит окно с причиной и сроком.
+  // Раньше вход отклонялся с текстом ошибки на форме — человек не понимал,
+  // насколько заблокирован и когда это кончится. Играть он всё равно не
+  // сможет: остальные запросы закрыты, а фронт показывает только окно.
+  // Срок мог истечь, пока игрок отсутствовал — снимаем бан сразу.
+  if (found.banned && (found as any).banUntil && (found as any).banUntil <= Date.now()) {
+    found.banned = false;
+    (found as any).banUntil = 0;
+    found.banReason = '';
+    db.save('users');
   }
 
   // Успешный вход — сбрасываем счётчик попыток
   if (ip) clearRateLimit(ip);
   auditLog.record({ userId: found.id, userName: found.name, path: '/api/login' });
+  if (found.banned) {
+    return {
+      token: issueToken(found.id), isAdmin: false, banned: true,
+      banInfo: {
+        banned: true,
+        reason: found.banReason || 'Нарушение правил',
+        until: (found as any).banUntil || 0,
+        bannedAt: (found as any).bannedAt || 0,
+        name: found.name,
+      },
+    };
+  }
   return { token: issueToken(found.id), isAdmin: !!found.isAdmin };
+}
+
+// Сбросить ВСЕ сессии игрока (смена пароля, удаление аккаунта, бан).
+// Единая точка: формат хранения сессии знает только этот модуль, поэтому
+// его изменение не может тихо сломать сброс в других местах — так уже
+// произошло, когда сессии стали объектом, а сравнение осталось строковым.
+function killSessions(userId: string): number {
+  const all: any = sessions();
+  let killed = 0;
+  for (const tok of Object.keys(all)) {
+    const rec = all[tok];
+    const uid = typeof rec === 'string' ? rec : (rec && rec.u);
+    if (uid === userId) { delete all[tok]; killed++; }
+  }
+  if (killed) db.save('sessions');
+  return killed;
 }
 
 function logout(token: string) {
@@ -302,11 +370,11 @@ function changePassword(user: User, oldPassword: string, newPassword: string, ne
   (user as any).resetToken = null;
   (user as any).resetTokenExp = 0;
 
-  // Сбрасываем все сессии игрока и выдаём новую взамен текущей
-  const ss = sessions();
-  for (const [tok, uid] of Object.entries(ss)) {
-    if (uid === user.id) delete ss[tok];
-  }
+  // Сбрасываем все сессии игрока и выдаём новую взамен текущей.
+  // Порядок важен: сначала сброс, потом выдача — иначе новый токен
+  // удалялся бы вместе со старыми, и игрока выкидывало бы из игры
+  // сразу после смены собственного пароля.
+  killSessions(user.id);
   const token = issueToken(user.id);
   db.save('sessions');
   db.save('users');
@@ -314,4 +382,4 @@ function changePassword(user: User, oldPassword: string, newPassword: string, ne
   return { ok: true, token };
 }
 
-export = { register, login, logout, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser };
+export = { register, login, logout, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser };

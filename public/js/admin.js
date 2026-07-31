@@ -6,16 +6,32 @@ const Admin = {
   selected: null,
   tab: 'players',   // players | logs | discounts | buffs
 
+  // Роль и доступные зоны текущего сотрудника — по ним прячем разделы
+  me: null,
+  zones: [],
+
   async init() {
     if (API.token()) {
       try {
         const me = await API.get('/api/me');
-        if (me.isAdmin) return Admin.render();
-        UI.toast('⛔ Эта учётная запись — не администратор');
+        // Пускаем по ЗОНАМ, а не по старому флагу isAdmin: у владельца их
+        // все, у администратора — свои, у модератора нет ни одной, и он
+        // работает прямо из чата
+        if (me.staffZones && me.staffZones.length) {
+          Admin.me = me;
+          Admin.zones = me.staffZones;
+          return Admin.render();
+        }
+        UI.toast(me.staffRole === 'moderator'
+          ? '⛔ Модератор работает из чата игры, панель ему не нужна'
+          : '⛔ У этой учётной записи нет доступа к панели');
       } catch(e) {}
     }
     Admin.renderLogin();
   },
+
+  // Есть ли доступ к разделу
+  can(zone) { return Admin.zones.indexOf(zone) !== -1; },
 
   renderLogin() {
     document.getElementById('content').innerHTML = `
@@ -32,8 +48,15 @@ const Admin = {
           login: document.getElementById('ad-name').value,
           password: document.getElementById('ad-pass').value,
         });
-        if (!r.isAdmin) return UI.toast('⛔ Нет прав администратора');
         API.setToken(r.token);
+        const me = await API.get('/api/me');
+        if (!me.staffZones || !me.staffZones.length) {
+          return UI.toast(me.staffRole === 'moderator'
+            ? '⛔ Модератор работает из чата игры, панель ему не нужна'
+            : '⛔ Нет доступа к панели');
+        }
+        Admin.me = me;
+        Admin.zones = me.staffZones;
         Admin.render();
       } catch(e) { UI.toast('⛔ ' + e.message); }
     };
@@ -43,23 +66,25 @@ const Admin = {
 
   // ── Главный рендер с вкладками ──────────────────────────────────
   render() {
+    // У каждой вкладки своя зона: разделы, недоступные сотруднику, просто
+    // не показываются — он не видит того, чем не может пользоваться
     const tabs = [
-      { id:'players',   label:'👥 Игроки' },
-      { id:'tools',     label:'🛠 Инструменты' },
-      { id:'events',    label:'🐉 События' },
-      { id:'tournament',label:'⚔️ Турниры' },
-      { id:'legions',   label:'🎖 Легионы' },
-      { id:'mercs',     label:'🥷 Наёмники' },
-      { id:'discounts', label:'🏷 Скидки' },
-      { id:'buffs',     label:'🎉 Бонусы' },
-      { id:'logs',      label:'📋 Журнал' },
-      { id:'support',   label:'🛟 Поддержка' },
-      { id:'tech',      label:'🔧 Техническое' },
-      { id:'db',        label:'🗄 База данных' },
+      { id:'players',   label:'👥 Игроки',      zone:'players' },
+      { id:'tools',     label:'🛠 Инструменты', zone:'economy' },
+      { id:'events',    label:'🐉 События',     zone:'event' },
+      { id:'tournament',label:'⚔️ Турниры',     zone:'legions' },
+      { id:'legions',   label:'🎖 Легионы',     zone:'legions' },
+      { id:'mercs',     label:'🥷 Наёмники',    zone:'economy' },
+      { id:'discounts', label:'🏷 Скидки',      zone:'discounts' },
+      { id:'buffs',     label:'🎉 Бонусы',      zone:'economy' },
+      { id:'logs',      label:'📋 Журнал',      zone:'players' },
+      { id:'support',   label:'🛟 Поддержка',   zone:'support' },
+      { id:'tech',      label:'🔧 Техническое', zone:'security' },
+      { id:'db',        label:'🗄 База данных', zone:'database' },
     ];
     document.getElementById('content').innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
-        ${tabs.map(t=>`<button class="btn btn-inline ${Admin.tab===t.id?'btn-orange':''}" id="tab-${t.id}">${t.label}</button>`).join('')}
+        ${tabs.filter(t=>!t.zone||Admin.can(t.zone)).map(t=>`<button class="btn btn-inline ${Admin.tab===t.id?'btn-orange':''}" id="tab-${t.id}">${t.label}</button>`).join('')}
         <a href="/" class="btn btn-inline" style="margin-left:auto">← В игру</a>
       </div>
       <div id="tab-content" style="padding:8px 0"></div>`;
@@ -67,7 +92,11 @@ const Admin = {
     tabs.forEach(t => {
       document.getElementById('tab-'+t.id).onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
     });
-    Admin._tabIds = tabs.map(t => t.id);
+    Admin._tabIds = tabs.filter(t => !t.zone || Admin.can(t.zone)).map(t => t.id);
+    // Если открыт раздел, к которому доступа нет — уводим на первый доступный
+    if (Admin._tabIds.length && Admin._tabIds.indexOf(Admin.tab) === -1) {
+      Admin.tab = Admin._tabIds[0];
+    }
     Admin.renderTab();
   },
 
@@ -729,10 +758,55 @@ const Admin = {
             try { await API.post('/api/admin/ban', { userId: btn.dataset.ban, banned: false }); Admin.loadPlayers(); }
             catch (e) { UI.toast('⛔ ' + e.message); }
           } else {
-            const reason = prompt(`Причина бана игрока «${name}»:`, 'Нарушение правил');
-            if (reason === null) return;
-            try { await API.post('/api/admin/ban', { userId: btn.dataset.ban, banned: true, reason }); Admin.loadPlayers(); }
-            catch (e) { UI.toast('⛔ ' + e.message); }
+            // Срок бана: от 1 минуты до бессрочного. Короткие баны нужны
+            // для остывания, а не только для тяжёлых нарушений.
+            const opts = [
+              { m: 1, t: '1 минута' }, { m: 15, t: '15 минут' }, { m: 60, t: '1 час' },
+              { m: 360, t: '6 часов' }, { m: 1440, t: '1 сутки' }, { m: 4320, t: '3 суток' },
+              { m: 10080, t: '7 суток' }, { m: 43200, t: '30 суток' }, { m: 0, t: 'Бессрочно' },
+            ];
+            Admin._banMinutes = 1440;
+            const body = `
+              <div class="ban-dialog">
+                <div class="ban-target">Игрок: <b>${UI.esc(name)}</b></div>
+                <div class="ban-label">Срок блокировки аккаунта</div>
+                <div class="ban-grid" id="adm-ban-durations">
+                  ${opts.map((o) => `<button class="ban-opt${o.m === 1440 ? ' active' : ''}" data-min="${o.m}">${o.t}</button>`).join('')}
+                </div>
+                <div class="ban-label">Причина (видна игроку)</div>
+                <input type="text" id="adm-ban-reason" class="field" maxlength="200" value="Нарушение правил">
+              </div>`;
+            const dlg = UI.confirm(body, {
+              title: 'Блокировка аккаунта', icon: '🚫', html: true,
+              okText: 'Заблокировать', cancelText: 'Отмена', danger: true,
+            });
+            requestAnimationFrame(() => {
+              const root = document.querySelector('.ban-dialog');
+              if (!root) return;
+              root.querySelectorAll('[data-min]').forEach((b) => {
+                b.onclick = () => {
+                  root.querySelectorAll('[data-min]').forEach((x) => x.classList.remove('active'));
+                  b.classList.add('active');
+                  Admin._banMinutes = Number(b.dataset.min);
+                };
+              });
+              // Причину запоминаем на лету: разметка окна исчезает вместе с ним
+              const ri = root.querySelector('#adm-ban-reason');
+              Admin._lastBanReason = ri ? ri.value : 'Нарушение правил';
+              if (ri) ri.oninput = () => { Admin._lastBanReason = ri.value; };
+            });
+            const okBan = await dlg;
+            if (!okBan) return;
+            const reasonInput = document.getElementById('adm-ban-reason');
+            const reason = (Admin._lastBanReason || 'Нарушение правил');
+            try {
+              await API.post('/api/admin/ban', {
+                userId: btn.dataset.ban, banned: true,
+                reason, minutes: Admin._banMinutes,
+              });
+              UI.toast(Admin._banMinutes ? '🚫 Аккаунт заблокирован' : '🚫 Заблокирован бессрочно');
+              Admin.loadPlayers();
+            } catch (e) { UI.toast('⛔ ' + e.message); }
           }
         };
       });

@@ -2713,3 +2713,192 @@ body.theme-noir .field-hint { color: #8a8a92; }
 /* Портрет заказчика в строке названия поручения (вместо эмодзи-иконки):
    выравниваем по тексту, чуть меньше скругление под маленький размер */
 .name > .ic-instr { vertical-align: -6px; border-radius: 6px; }
+
+/* ═══ Окно «Пока вас не было»: подробная сводка ущерба ═══════════════ */
+.wr-popup { max-width: 460px; max-height: 82vh; overflow-y: auto; text-align: left; }
+.wr-since { text-align: center; margin-bottom: 10px; }
+.wr-bad { color: var(--red); }
+.wr-good { color: var(--money); }
+
+/* Три крупных числа: атак / отбито / поражений */
+.wr-stats { display: flex; gap: 8px; margin-bottom: 6px; }
+.wr-stat {
+  flex: 1; text-align: center; padding: 8px 4px;
+  background: var(--panel-2); border: 1px solid var(--border-dim); border-radius: 8px;
+}
+.wr-stat-num { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.wr-stat-cap { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+.wr-damage { padding: 2px 0; }
+.wr-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; padding: 4px 0; font-size: 13.5px;
+}
+
+/* Карточка нападавшего */
+.wr-attacker {
+  padding: 7px 0; border-bottom: 1px solid var(--border-dim);
+}
+.wr-attacker:last-of-type { border-bottom: none; }
+.wr-attacker-main { display: flex; align-items: center; gap: 6px; }
+.wr-name { color: var(--orange-1); font-weight: 600; text-decoration: none; }
+.wr-name:hover { text-decoration: underline; }
+.wr-times {
+  margin-left: auto; font-weight: 700; color: var(--red);
+  background: rgba(220,60,60,.12); border-radius: 5px; padding: 1px 7px; font-size: 13px;
+}
+.wr-attacker-detail { margin-top: 2px; }
+
+/* Ракетный удар */
+.wr-rocket {
+  padding: 7px 9px; margin: 6px 0;
+  border: 1px solid var(--border); border-left: 3px solid var(--red);
+  border-radius: 6px; background: var(--panel-2);
+}
+.wr-rocket-head { font-size: 13.5px; margin-bottom: 3px; }
+.wr-rocket-body div { padding: 1px 0; }
+
+/* ═══ Прокрутка к результату боя ═════════════════════════════════════
+   scroll-margin-top не даёт блоку уехать под шапку, а вспышка помогает
+   сразу найти взглядом, чем кончилась атака. */
+#battle-result, #war-encounter { scroll-margin-top: 12px; }
+
+@keyframes scrollFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 176, 60, .0); }
+  15%  { box-shadow: 0 0 0 3px rgba(255, 176, 60, .55); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 176, 60, 0); }
+}
+.scroll-flash { animation: scrollFlash 1.5s ease-out; }
+
+/* ═══ Подвал сайта: правовые документы ═══════════════════════════════ */
+#site-footer {
+  max-width: 560px; margin: 26px auto 18px; padding: 14px 16px 0;
+  border-top: 1px solid var(--border-dim);
+  text-align: center; font-size: 12.5px; color: var(--dim);
+}
+#site-footer a { color: var(--dim); text-decoration: none; }
+#site-footer a:hover { color: var(--orange-1); text-decoration: underline; }
+.footer-sep { margin: 0 6px; opacity: .5; }
+
+/* ═══ Роли: значки в чате и окно блокировки ══════════════════════════ */
+.chat-staff {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px; letter-spacing: .3px;
+}
+.chat-staff-moderator { background: rgba(70,140,200,.18); color: #6fb3e0; border: 1px solid #3d6f96; }
+.chat-staff-admin     { background: rgba(200,120,40,.18); color: var(--orange-1); border: 1px solid #96602d; }
+.chat-staff-owner     { background: rgba(200,170,60,.18); color: var(--gold); border: 1px solid #8d7526; }
+
+.chat-mute {
+  background: none; border: none; cursor: pointer;
+  color: var(--dim); font-size: 12px; padding: 0 3px;
+}
+.chat-mute:hover { color: var(--red); }
+
+.ban-dialog { text-align: left; }
+.ban-target { font-size: 14px; margin-bottom: 10px; }
+.ban-label { font-size: 12px; color: var(--dim); margin: 10px 0 5px; }
+.ban-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+.ban-opt {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--fg);
+  border-radius: 6px; padding: 5px 9px; font-size: 12.5px; cursor: pointer;
+}
+.ban-opt:hover { border-color: var(--orange-1); }
+.ban-opt.active { background: rgba(200,120,40,.2); border-color: var(--orange-1); color: var(--orange-1); }
+.ban-reasons .ban-opt { font-size: 12px; }
+
+/* ═══ Экран блокировки аккаунта ══════════════════════════════════════ */
+#ban-screen {
+  position: fixed; inset: 0; z-index: 20000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 10, 6, .97); padding: 16px;
+}
+.ban-screen-box {
+  max-width: 360px; width: 100%; text-align: center;
+  background: linear-gradient(160deg, #241111, #140b0b);
+  border: 1px solid #6b2a2a; border-radius: 14px;
+  padding: 22px 18px 16px; box-shadow: 0 14px 50px rgba(0,0,0,.7);
+}
+.ban-screen-icon { font-size: 40px; line-height: 1; }
+.ban-screen-title { font-size: 19px; font-weight: 700; color: #e56a6a; margin-top: 8px; }
+.ban-screen-who { font-size: 13px; color: var(--dim); margin-top: 2px; }
+.ban-screen-reason {
+  margin-top: 14px; padding: 9px 11px; text-align: left;
+  background: rgba(0,0,0,.3); border: 1px solid #4a2020; border-radius: 8px;
+}
+.ban-screen-label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
+.ban-screen-value { font-size: 15px; margin-top: 2px; word-break: break-word; }
+.ban-left { color: var(--orange-1); font-weight: 700; }
+.ban-forever { color: #e56a6a; font-weight: 700; }
+.ban-screen-date { font-size: 11.5px; color: var(--dim); margin-top: 10px; }
+.ban-screen-note { font-size: 12.5px; color: var(--dim); margin-top: 12px; line-height: 1.5; }
+
+/* ═══ Баннер результата боя ══════════════════════════════════════════
+   Вместо текстовой надписи «ПОБЕДА»/«ПОРАЖЕНИЕ» — картинка на всю
+   ширину карточки. Текстовый вариант остаётся запасным, если файл
+   почему-то не загрузится. */
+.result-banner {
+  display: block; width: calc(100% + 34px); margin: -15px -17px 10px;
+  max-width: none; height: auto; border-radius: 8px 8px 0 0;
+}
+@media (max-width: 400px) {
+  .result-banner { width: calc(100% + 24px); margin: -12px -12px 8px; }
+}
+
+/* ═══ Узкие экраны (от 320px): кнопки не должны вылезать за край ═══ */
+@media (max-width: 380px) {
+  /* Текст в кнопках меню переносится, а не обрезается */
+  .menu-btn {
+    font-size: 11.5px; letter-spacing: .02em; padding: 8px 8px;
+    gap: 6px; min-height: 56px; line-height: 1.25;
+    word-break: break-word; hyphens: auto;
+  }
+  .menu-btn img.ic-menu { width: 30px; height: 30px; }
+  .menu-grid { gap: 6px; }
+  /* Вкладки и кнопки внутри карточек */
+  .tabs { gap: 4px; }
+  .tab { padding: 6px 8px; font-size: 12px; }
+  .btn { padding: 9px 12px; font-size: 13px; }
+  .btn-inline { padding: 5px 8px; font-size: 12px; }
+  .card { padding: 12px; }
+  .title { font-size: 17px; }
+  /* Значки-счётчики не растягивают кнопку */
+  .badge { font-size: 10px; padding: 1px 5px; }
+}
+@media (max-width: 340px) {
+  .menu-btn { font-size: 10.5px; min-height: 52px; }
+  .menu-btn img.ic-menu { width: 26px; height: 26px; }
+}
+
+/* ═══ Баннеры взлома хранилища ═══════════════════════════════════════
+   Появляются при обнаружении сейфа и в окне результата взлома. */
+.safe-banner {
+  display: block; width: calc(100% + 34px); margin: -15px -17px 10px;
+  height: auto; border-radius: 8px 8px 0 0;
+}
+/* В диалоговом окне баннер идёт под заголовком, поэтому верхний отступ
+   не убираем — компенсируем только боковые поля (.game-dialog padding 20px) */
+.safe-banner-dialog {
+  width: calc(100% + 40px); margin: 0 -20px 12px; border-radius: 0;
+}
+@media (max-width: 400px) {
+  .safe-banner { width: calc(100% + 24px); margin: -12px -12px 8px; }
+  .safe-banner-dialog { width: calc(100% + 32px); margin: 0 -16px 10px; }
+}
+
+/* ═══ Баннеры минного поля ═══════════════════════════════════════════
+   Показываются при нарыве на поле и при подрыве. Успешное
+   разминирование картинки не имеет — игрок просто продолжает атаки. */
+.mine-banner {
+  display: block; width: calc(100% + 34px); margin: -15px -17px 10px;
+  height: auto; border-radius: 8px 8px 0 0;
+}
+.mine-banner-dialog {
+  width: calc(100% + 40px); margin: 0 -20px 12px; border-radius: 0;
+}
+.mine-result { text-align: center; font-size: 13.5px; line-height: 1.5; }
+.mine-result p { margin: 6px 0; }
+@media (max-width: 400px) {
+  .mine-banner { width: calc(100% + 24px); margin: -12px -12px 8px; }
+  .mine-banner-dialog { width: calc(100% + 32px); margin: 0 -16px 10px; }
+}
