@@ -41,7 +41,15 @@ ok(/rel === '\/admin' \|\| rel === '\/admin\/' \|\| rel === '\/admin\.html'/.tes
 ok(http.includes('Попытка открыть админ-панель'), 'попытки записываются в журнал');
 ok(/canAccessZone\(user, roles\.zoneOfPath\(pathname\)\)/.test(http), 'каждый запрос проверяется по своей зоне');
 
-console.log('\n── 5. Скрипт деплоя устойчив ──');
+console.log('\n── 5. Скрипт ролей различает роли ──');
+const grant = fs.readFileSync(path.join(ROOT, 'tools/grant-admin.js'), 'utf8');
+ok(/const currentRole = target\.role \|\| \(target\.isAdmin \? 'admin' : null\)/.test(grant),
+   'текущая роль вычисляется с учётом старого флага isAdmin');
+ok(/const wantRole = OFF \? null : \(OWNER \? 'owner'/.test(grant), 'запрошенная роль определяется отдельно');
+ok(/if \(currentRole === wantRole\)/.test(grant),
+   'сравниваются РОЛИ, а не факт наличия прав — повышение админа до владельца больше не игнорируется');
+
+console.log('\n── 6. Скрипт деплоя устойчив ──');
 const deploy = fs.readFileSync(path.join(ROOT, 'tools/deploy.sh'), 'utf8');
 ok(/pm2 describe "\$PM2_NAME" > \/dev\/null 2>&1/.test(deploy), 'наличие процесса проверяется перед перезапуском');
 ok(/pm2 start dist\/server\.js --name/.test(deploy), 'если процесса нет — запускается заново, а не падает');

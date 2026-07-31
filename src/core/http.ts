@@ -166,9 +166,18 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   //     несуществующая страница, чтобы не подтверждать наличие панели;
   //   • панель доступна только по секретному пути из ADMIN_PATH;
   //   • если ADMIN_PATH не задан, панель по HTTP недоступна вовсе.
+  // Адрес панели: свой из ADMIN_PATH либо стандартный /admin, если он не
+  // задан. Секретный путь остаётся более безопасным вариантом (он убирает
+  // панель из поля зрения автоматических сканеров), но требовать его
+  // настройки нельзя — иначе владелец теряет доступ после переустановки.
   const ADMIN_PATH = String(process.env.ADMIN_PATH || '').trim();
   const isAdminFile = rel === '/admin' || rel === '/admin/' || rel === '/admin.html';
   if (ADMIN_PATH && (rel === ADMIN_PATH || rel === ADMIN_PATH + '/')) {
+    rel = '/admin.html';
+  } else if (!ADMIN_PATH && isAdminFile) {
+    // Секретный путь не настроен — открываем панель по /admin как раньше.
+    // Сама панель по-прежнему пускает только по правам, а каждый запрос
+    // проверяется по зоне доступа.
     rel = '/admin.html';
   } else if (isAdminFile) {
     // Кто-то стучится в стандартный адрес панели — это либо сканер, либо

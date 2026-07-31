@@ -110,14 +110,21 @@ function ask(question) {
   }
 
   const target = found[0];
-  const already = !!target.isAdmin;
+  // Сравниваем ЖЕЛАЕМУЮ роль с текущей, а не просто «есть ли права».
+  // Раньше проверка была по флагу isAdmin, и попытка повысить
+  // администратора до владельца отклонялась с «уже администратор» —
+  // роль при этом не менялась.
+  const currentRole = target.role || (target.isAdmin ? 'admin' : null);
+  const wantRole = OFF ? null : (OWNER ? 'owner' : (MOD ? 'moderator' : 'admin'));
+  const ruName = (r) => r === 'owner' ? 'владелец' : r === 'moderator' ? 'модератор («Дозор»)' : r === 'admin' ? 'администратор' : 'без роли';
 
-  if (!OFF && already) {
-    console.log(`\n✓ «${target.name}» уже администратор. Ничего не меняю.`);
+  if (currentRole === wantRole) {
+    console.log(`\n✓ «${target.name}» уже ${ruName(currentRole)}. Ничего не меняю.`);
     process.exit(0);
   }
+  const already = !!currentRole;
   if (OFF && !already) {
-    console.log(`\n✓ «${target.name}» не является администратором. Ничего не меняю.`);
+    console.log(`\n✓ «${target.name}» и так без роли. Ничего не меняю.`);
     process.exit(0);
   }
 
@@ -125,6 +132,7 @@ function ask(question) {
   console.log(`ID:       ${target.id}`);
   console.log(`Уровень:  ${target.level}`);
   const roleName = OFF ? 'СНЯТЬ все роли' : (OWNER ? 'назначить ВЛАДЕЛЬЦЕМ' : (MOD ? 'назначить МОДЕРАТОРОМ («Дозор»)' : 'назначить АДМИНИСТРАТОРОМ'));
+  console.log(`Сейчас:   ${ruName(currentRole)}`);
   console.log(`Действие: ${roleName}`);
 
   if (!OFF) {
