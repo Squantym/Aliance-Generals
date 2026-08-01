@@ -26,13 +26,51 @@ function mailboxOf(userId: string): any[] {
 // Каждому сообщению добавляем признак ally: автор состоит в личном альянсе
 // со смотрящим ВЗАИМНО (как в списке целей). По нему фронт рисует звёздочку,
 // чтобы сразу видеть, свой в эфире или нет.
+// Удаление сообщений игрока из ОБЩЕГО чата. Чат легиона и личную
+// переписку не трогаем — это закрытые каналы, разбирательство там не
+// касается остальных игроков.
+// Удаление «мягкое»: сообщение помечается, а не стирается, иначе
+// администрация не смогла бы потом проверить, за что человек наказан.
+function purgeChatMessages(userId: string, byName: string): number {
+  const w = world();
+  let n = 0;
+  const now = Date.now();
+  for (const m of w.chat as any[]) {
+    if (m.uid !== userId || m.del) continue;
+    m.del = true;
+    m.delAt = now;
+    m.delBy = byName || '';
+    n++;
+  }
+  if (n) db.save('world');
+  return n;
+}
+
+// Текст-заглушка на месте удалённого сообщения. Оставляем сам факт
+// сообщения в ленте: так видно, что модерация работает, и разговор не
+// теряет связность — иначе ответы на удалённую реплику повисают в воздухе.
+const DELETED_TEXT = 'Сообщение удалено';
+
 function chatGet(viewer: User | null, afterId?: number | string) {
   const after = u.toInt(afterId, 0);
-  const msgs = world().chat.filter((m) => m.id > after);
-  if (!viewer) return { messages: msgs };
+  const all = world().chat.filter((m) => m.id > after);
+  // Гостю показываем заглушки без имени автора
+  if (!viewer) {
+    return {
+      messages: all.map((m: any) => (m.del
+        ? { ...m, text: DELETED_TEXT, tombstone: true }
+        : m)),
+    };
+  }
   const pa = require('./personalAlliance');
   const players: Record<string, User> = require('./player').users();
-  const viewerIsStaff = require('./roles').isModerator(viewer);
+  const rolesSrv = require('./roles');
+  const viewerIsStaff = rolesSrv.isModerator(viewer);
+  // Исходный текст удалённого сообщения видят только администрация и
+  // владелец — им нужно проверять решения модераторов. Остальные, включая
+  // самого автора, видят на его месте строку «Сообщение удалено».
+  const seesDeleted = rolesSrv.isAdmin(viewer);
+  const msgs = all;
   return {
     messages: msgs.map((m: any) => {
       const author = m.uid ? players[m.uid] : null;
@@ -48,6 +86,12 @@ function chatGet(viewer: User | null, afterId?: number | string) {
         // Сотрудникам показываем, кто уже под блокировкой — чтобы не
         // выдавать повторную и видеть, кем уже занимались
         banned: (viewerIsStaff && author) ? !!roles.chatBanInfo(author) : false,
+        // Пометка удаления. Администрация видит исходный текст и автора
+        // решения, остальные — только заглушку.
+        deleted: !!m.del,
+        deletedBy: seesDeleted ? (m.delBy || '') : '',
+        tombstone: !!m.del && !seesDeleted,
+        ...(m.del && !seesDeleted ? { text: DELETED_TEXT } : {}),
       };
     }),
   };
@@ -170,4 +214,4 @@ function deleteMail(user: User, messageId: string) {
   return { ok: true, deleted: messageId };
 }
 
-export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, deleteMail, sendMail, fame };
+export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, deleteMail, sendMail, fame, purgeChatMessages,};

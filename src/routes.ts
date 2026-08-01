@@ -126,6 +126,7 @@ function registerRoutes(app: any) {
     return r;
   }));
   app.add('GET', '/api/profile/:id', (req) => {
+    // Плашка блокировки добавляется к профилю ниже, после его сборки
     // Если ID начинается с "bot_" — отдаём профиль бота
     if (String(req.params.id).startsWith('bot_')) {
       return { profile: battle.botProfile(req.params.id, req.user) };
@@ -476,7 +477,15 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/mod/chat-ban', act((req, n) =>
     roles.banChat(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0),
                   String(req.body.reason || ''), n,
-                  Array.isArray(req.body.scopes) ? req.body.scopes.map((x: any) => String(x)) : undefined)));
+                  Array.isArray(req.body.scopes) ? req.body.scopes.map((x: any) => String(x)) : undefined,
+                  !!req.body.purge)));
+
+  // Бан аккаунта силами модератора (сроком до 7 суток)
+  app.add('POST', '/api/mod/ban', act((req, n) =>
+    roles.banAccount(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n)));
+
+  app.add('POST', '/api/mod/unban', act((req, n) =>
+    roles.unbanAccount(req.user, String(req.body.userId || ''), n)));
 
   // Список каналов для окна блокировки
   app.add('GET', '/api/mod/chat-scopes', (req) => {
@@ -502,6 +511,12 @@ function registerRoutes(app: any) {
         ? info.scopes.map((sc: string) => (roles.CHAT_SCOPES.find((z: any) => z.id === sc) || { name: sc }).name).join(', ')
         : '',
       canBan: !roles.roleOf(target) || roles.isOwner(req.user),
+      // Бан аккаунта — вторая мера, показывается там же
+      account: (() => {
+        const ab = roles.accountBanInfo(target);
+        return ab ? { banned: true, reason: ab.reason, until: ab.until, byName: ab.byName } : { banned: false };
+      })(),
+      maxBanMinutes: roles.roleOf(req.user) === 'moderator' ? roles.MOD_MAX_BAN_MINUTES : 365 * 24 * 60,
     };
   });
 

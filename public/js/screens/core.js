@@ -463,6 +463,26 @@ App.screens.profile = async (c, param) => {
   const own = p.id === App.me.id;
 
   const isBot = !!p.isBot;
+
+  // Остаток блокировки: часы и минуты, без секунд и без таймера —
+  // значение пересчитывается только при следующем открытии страницы
+  const banLeftText = (until) => {
+    if (!until) return 'бессрочно';
+    const min = Math.max(0, Math.round((until - Date.now()) / 60000));
+    const h = Math.floor(min / 60), m = min % 60;
+    if (h >= 24) return `${Math.floor(h / 24)} дн ${h % 24} ч`;
+    if (h > 0) return `${h} ч ${m} мин`;
+    return `${m} мин`;
+  };
+  // Плашка блокировки аккаунта — первым блоком профиля
+  const banBanner = p.accountBan ? `
+    <div class="pf-ban-banner">
+      <div class="pf-ban-head">🚫 Аккаунт заблокирован</div>
+      <div class="pf-ban-row"><span>Причина</span><b>${UI.esc(p.accountBan.reason)}</b></div>
+      ${p.accountBan.byName ? `<div class="pf-ban-row"><span>Выдал</span><b>${UI.esc(p.accountBan.byName)}</b></div>` : ''}
+      <div class="pf-ban-row"><span>Осталось</span><b class="pf-ban-left">${banLeftText(p.accountBan.until)}</b></div>
+    </div>` : '';
+
   // Армия врага скрыта — рассекречивается разведкой (трофей «Спутник-шпион»).
   // Свои/открытые данные берём из p, разведданные по чужим — из p.spyIntel.
   const intel = p.spyIntel || null;
@@ -537,6 +557,7 @@ App.screens.profile = async (c, param) => {
   }
 
   c.innerHTML = `
+    ${banBanner}
     <div class="title">Личное дело</div>
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
@@ -590,6 +611,13 @@ App.screens.profile = async (c, param) => {
       ${!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-msg"><span class="ic-mail"></span> Написать сообщение</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-sanction" style="border-color:var(--red);color:var(--red)">🎯 Объявить санкции</button>` : ''}
+      ${(!own && !isBot && App.me && App.me.staffRole) ? `
+        <div class="pf-mod-block mt" id="pf-mod-block">
+          <div class="pf-mod-title">🛡 Инструменты «Дозора»</div>
+          <div class="muted small" id="pf-mod-status">Проверяю состояние…</div>
+          <button class="btn mt" id="pf-chatban" style="width:100%">🔇 Блокировка чата</button>
+          <button class="btn mt" id="pf-accban" style="width:100%">🚫 Блокировка аккаунта</button>
+        </div>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
         ? `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс «${UI.esc(App.me.alliance.name)}»</button>` : ''}
@@ -745,36 +773,50 @@ App.screens.profile = async (c, param) => {
   // Личное сообщение игроку
   if (!own) {
     // Инструменты «Дозора» в профиле игрока
+    // ── Инструменты «Дозора» ──
     const modBlock = document.getElementById('pf-mod-block');
     if (modBlock) {
       const statusEl = document.getElementById('pf-mod-status');
-      const banBtn = document.getElementById('pf-chatban');
-      const refreshStatus = async () => {
+      const chatBtn = document.getElementById('pf-chatban');
+      const accBtn = document.getElementById('pf-accban');
+      const refreshMod = async () => {
         try {
           const st = await API.get('/api/mod/chat-status/' + encodeURIComponent(p.id));
+          const parts = [];
           if (st.banned) {
-            const lm = Math.max(1, Math.round((st.until - Date.now()) / 60000));
-            const lt = lm < 60 ? `${lm} мин` : (lm < 1440 ? `${Math.round(lm / 60)} ч` : `${Math.round(lm / 1440)} дн`);
-            statusEl.innerHTML = `<span class="wr-bad">🔇 Закрыто: ${UI.esc(st.scopeNames)}</span> · осталось ${lt}` +
-              `<br>Причина: ${UI.esc(st.reason)}${st.byName ? ` · выдал ${UI.esc(st.byName)}` : ''}`;
-            banBtn.textContent = '🔊 Снять блокировку';
-            banBtn.classList.add('btn-orange');
-            banBtn.style.display = '';
-          } else if (!st.canBan) {
-            statusEl.innerHTML = '<span class="muted">Сотрудник проекта — блокировка недоступна</span>';
-            banBtn.style.display = 'none';
+            parts.push(`<span class="wr-bad">🔇 Чат: ${UI.esc(st.scopeNames)}</span> · ${banLeftText(st.until)}`);
+            chatBtn.textContent = '🔊 Снять блокировку чата';
+            chatBtn.classList.add('btn-orange');
           } else {
-            statusEl.innerHTML = '<span class="muted">Блокировок нет</span>';
-            banBtn.textContent = '🔇 Заблокировать чат';
-            banBtn.classList.remove('btn-orange');
-            banBtn.style.display = '';
+            chatBtn.textContent = '🔇 Блокировка чата';
+            chatBtn.classList.remove('btn-orange');
           }
+          if (st.account && st.account.banned) {
+            parts.push(`<span class="wr-bad">🚫 Аккаунт заблокирован</span> · ${banLeftText(st.account.until)}`);
+            accBtn.textContent = '✅ Разблокировать аккаунт';
+            accBtn.classList.add('btn-orange');
+          } else {
+            accBtn.textContent = '🚫 Блокировка аккаунта';
+            accBtn.classList.remove('btn-orange');
+          }
+          if (!st.canBan) {
+            statusEl.innerHTML = '<span class="muted">Сотрудник проекта — меры недоступны</span>';
+            chatBtn.style.display = 'none';
+            accBtn.style.display = 'none';
+            return;
+          }
+          chatBtn.style.display = ''; accBtn.style.display = '';
+          statusEl.innerHTML = parts.length ? parts.join('<br>') : '<span class="muted">Нарушений не зафиксировано</span>';
         } catch (e) { statusEl.innerHTML = `<span class="muted">${UI.esc(e.message)}</span>`; }
       };
-      refreshStatus();
-      if (banBtn) banBtn.onclick = async () => {
+      refreshMod();
+      if (chatBtn) chatBtn.onclick = async () => {
         await App.showChatBanDialog(p.id, p.name);
-        setTimeout(refreshStatus, 400);
+        setTimeout(refreshMod, 400);
+      };
+      if (accBtn) accBtn.onclick = async () => {
+        await App.showAccountBanDialog(p.id, p.name);
+        setTimeout(() => { refreshMod(); App.rerender(); }, 400);
       };
     }
 
@@ -1115,7 +1157,7 @@ App.screens.settings = async (c) => {
       <div class="tab ${tab === 'appearance' ? 'active' : ''}" data-stab="appearance">Оформление игры</div>
     </div>
     ${tab === 'app' ? appTabHtml : tab === 'account' ? accountHtml : themesHtml}
-    ${(App.me && App.me.staffPanel) ? `
+    ${(App.me && App.me.staffPanel && App.me.staffRole !== 'moderator') ? `
       <hr class="hr">
       <div class="card">
         <div class="name">🛡 Служебный доступ</div>

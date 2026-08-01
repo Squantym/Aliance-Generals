@@ -2785,7 +2785,7 @@ body.theme-noir .field-hint { color: #8a8a92; }
   font-size: 10.5px; font-weight: 700; text-transform: uppercase;
   padding: 1px 6px; border-radius: 4px; letter-spacing: .3px;
 }
-.chat-staff-moderator { background: rgba(70,140,200,.18); color: #6fb3e0; border: 1px solid #3d6f96; }
+.chat-staff-moderator { background: rgba(60,190,240,.20); color: #6fdcff; border: 1px solid #3fa8cc; }
 .chat-staff-admin     { background: rgba(200,120,40,.18); color: var(--orange-1); border: 1px solid #96602d; }
 .chat-staff-owner     { background: rgba(200,170,60,.18); color: var(--gold); border: 1px solid #8d7526; }
 
@@ -2927,8 +2927,8 @@ body.theme-noir .field-hint { color: #8a8a92; }
    в общем потоке */
 .chat-msg-staff { border-left: 2px solid transparent; padding-left: 6px; }
 .chat-msg-moderator {
-  background: linear-gradient(90deg, rgba(70,140,200,.10), transparent);
-  border-left-color: #4d86b8;
+  background: linear-gradient(90deg, rgba(60,190,240,.13), transparent);
+  border-left-color: #3fc6f0;
 }
 .chat-msg-admin {
   background: linear-gradient(90deg, rgba(200,120,40,.10), transparent);
@@ -2938,7 +2938,7 @@ body.theme-noir .field-hint { color: #8a8a92; }
   background: linear-gradient(90deg, rgba(200,170,60,.12), transparent);
   border-left-color: var(--gold);
 }
-.chat-msg-moderator .who { color: #7fc0ea; }
+.chat-msg-moderator .who { color: #6fdcff; }
 .chat-msg-admin .who     { color: var(--orange-1); }
 .chat-msg-owner .who     { color: var(--gold); }
 
@@ -2974,3 +2974,48 @@ body.theme-noir .field-hint { color: #8a8a92; }
 }
 .chat-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chat-foot-hint { margin-left: auto; }
+
+/* ═══ Плашка блокировки аккаунта в профиле ═══════════════════════════
+   Стоит в самом верху, чтобы наказание было видно сразу. Время
+   пересчитывается при открытии страницы, без тиканья секунд. */
+.pf-ban-banner {
+  border: 1px solid #6b2a2a; border-left: 3px solid var(--red);
+  background: linear-gradient(160deg, rgba(90,25,25,.5), rgba(40,15,15,.35));
+  border-radius: 10px; padding: 11px 13px; margin-bottom: 10px;
+}
+.pf-ban-head { font-weight: 700; color: #e56a6a; font-size: 15px; margin-bottom: 6px; }
+.pf-ban-row {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 13.5px; padding: 2px 0;
+}
+.pf-ban-row span { color: var(--dim); }
+.pf-ban-left { color: var(--orange-1); }
+
+/* ═══ Удалённые сообщения ════════════════════════════════════════════
+   Видны только администрации и владельцу — чтобы можно было проверить,
+   за что наказан игрок. Для остальных сообщение просто исчезает. */
+.chat-msg-deleted {
+  opacity: .55;
+  background: repeating-linear-gradient(45deg,
+    rgba(220,60,60,.05) 0 8px, transparent 8px 16px);
+  border-left: 2px solid rgba(220,60,60,.4);
+  padding-left: 6px;
+}
+.chat-msg-deleted .who { text-decoration: line-through; }
+.chat-deleted-mark {
+  font-size: 10.5px; color: #e07a7a; background: rgba(220,60,60,.12);
+  border: 1px solid rgba(220,60,60,.3); border-radius: 4px; padding: 1px 5px;
+}
+
+/* Галочка удаления в окне блокировки */
+.ban-purge {
+  display: flex; align-items: flex-start; gap: 7px; cursor: pointer;
+  margin: 12px 0 4px; padding: 8px 10px; font-size: 12.5px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2);
+}
+.ban-purge input { margin-top: 2px; accent-color: var(--orange-1); cursor: pointer; }
+
+/* Заглушка на месте удалённого сообщения — видна всем игрокам */
+.chat-msg-tomb { opacity: .6; }
+.chat-msg-tomb .who { color: var(--dim); }
+.chat-tomb-text { font-style: italic; color: var(--dim); font-size: 12.5px; }

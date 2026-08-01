@@ -1989,6 +1989,75 @@ const App = {
   // ── Окно блокировки чата (для «Дозора» и администрации) ─────────
   // Модератор выбирает срок из готовых вариантов и обязательно указывает
   // причину — она показывается игроку, когда тот попробует написать.
+  // Блокировка аккаунта силами «Дозора». Срок ограничен неделей —
+  // бессрочные баны остаются за администрацией.
+  async showAccountBanDialog(userId, userName) {
+    let st = null;
+    try { st = await API.get('/api/mod/chat-status/' + encodeURIComponent(userId)); } catch (e) {}
+    if (st && st.account && st.account.banned) {
+      const lm = Math.max(0, Math.round((st.account.until - Date.now()) / 60000));
+      const lt = st.account.until ? (lm >= 60 ? `${Math.floor(lm / 60)} ч ${lm % 60} мин` : `${lm} мин`) : 'бессрочно';
+      const ok = await UI.confirm(
+        `<div class="ban-dialog">
+           <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
+           <div class="ban-status">
+             <div>Причина: ${UI.esc(st.account.reason || '—')}</div>
+             <div>Осталось: <b class="wr-bad">${lt}</b></div>
+             ${st.account.byName ? `<div class="muted small">Выдал: ${UI.esc(st.account.byName)}</div>` : ''}
+           </div>
+         </div>`,
+        { title: 'Аккаунт заблокирован', icon: '🚫', html: true, okText: 'Разблокировать', cancelText: 'Оставить' });
+      if (!ok) return;
+      try { await API.post('/api/mod/unban', { userId }); UI.toast('✅ Аккаунт разблокирован'); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+      return;
+    }
+
+    const maxMin = (st && st.maxBanMinutes) || 10080;
+    const opts = [
+      { m: 15, t: '15 минут' }, { m: 60, t: '1 час' }, { m: 360, t: '6 часов' },
+      { m: 1440, t: '1 сутки' }, { m: 4320, t: '3 суток' }, { m: 10080, t: '7 суток' },
+    ].filter((o) => o.m <= maxMin);
+    App._accBanMinutes = 1440;
+    App._accBanReason = 'Нарушение правил';
+    const body = `
+      <div class="ban-dialog">
+        <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
+        <p class="muted small">Игрок не сможет войти в игру. Он увидит окно с причиной и сроком.</p>
+        <div class="ban-label">Срок блокировки</div>
+        <div class="ban-grid">
+          ${opts.map((o) => `<button class="ban-opt${o.m === 1440 ? ' active' : ''}" data-min="${o.m}">${o.t}</button>`).join('')}
+        </div>
+        <div class="ban-label">Причина (увидит игрок)</div>
+        <input type="text" id="acc-ban-reason" class="field" maxlength="200" value="Нарушение правил">
+        ${maxMin <= 10080 ? '<p class="muted small mt">Бессрочную блокировку выдаёт администрация.</p>' : ''}
+      </div>`;
+    const dlg = UI.confirm(body, {
+      title: 'Блокировка аккаунта', icon: '🚫', html: true,
+      okText: 'Заблокировать', cancelText: 'Отмена', danger: true,
+    });
+    requestAnimationFrame(() => {
+      const root = document.querySelector('.ban-dialog');
+      if (!root) return;
+      root.querySelectorAll('[data-min]').forEach((b) => {
+        b.onclick = () => {
+          root.querySelectorAll('[data-min]').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          App._accBanMinutes = Number(b.dataset.min);
+        };
+      });
+      const ri = root.querySelector('#acc-ban-reason');
+      if (ri) ri.oninput = () => { App._accBanReason = ri.value; };
+    });
+    if (!await dlg) return;
+    const reason = (App._accBanReason || '').trim();
+    if (!reason) { UI.toast('⛔ Укажите причину'); return; }
+    try {
+      await API.post('/api/mod/ban', { userId, minutes: App._accBanMinutes, reason });
+      UI.toast('🚫 Аккаунт заблокирован');
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  },
+
   async showChatBanDialog(userId, userName) {
     // Сначала смотрим, не заблокирован ли игрок уже — тогда предлагаем снять
     let st = null;
@@ -2041,6 +2110,11 @@ const App = {
           <button class="ban-opt ban-scope" data-scope="mail">Личные сообщения</button>
           <button class="ban-opt ban-scope-all" data-scope-all="1">Всё сразу</button>
         </div>
+        <label class="ban-purge" id="ban-purge-row">
+          <input type="checkbox" id="ban-purge">
+          <span>Удалить сообщения игрока в общем чате
+            <span class="muted small">— чат легиона и личные не затрагиваются</span></span>
+        </label>
         <div class="ban-label">Причина (обязательно)</div>
         <div class="ban-grid ban-reasons">
           ${reasons.map((r) => `<button class="ban-opt ban-reason" data-reason="${UI.esc(r)}">${UI.esc(r)}</button>`).join('')}
@@ -2088,6 +2162,9 @@ const App = {
         };
       });
       if (input) input.oninput = () => { App._banReason = input.value; };
+      const purgeBox = root.querySelector('#ban-purge');
+      App._banPurge = false;
+      if (purgeBox) purgeBox.onchange = () => { App._banPurge = purgeBox.checked; };
     });
     const ok = await dialog;
     if (!ok) return;
@@ -2096,8 +2173,10 @@ const App = {
     if (!reason) { UI.toast('⛔ Укажите причину блокировки'); return; }
     try {
       const scopes = (App._banScopes && App._banScopes.length) ? App._banScopes : ['global'];
-      await API.post('/api/mod/chat-ban', { userId, minutes, reason, scopes });
-      UI.toast('🔇 Блокировка выдана');
+      const r = await API.post('/api/mod/chat-ban', { userId, minutes, reason, scopes, purge: !!App._banPurge });
+      UI.toast(r && r.purged
+        ? `🔇 Блокировка выдана · удалено сообщений: ${r.purged}`
+        : '🔇 Блокировка выдана');
     } catch (e) { UI.toast('⛔ ' + e.message); }
   },
 
@@ -2106,6 +2185,7 @@ const App = {
   _banMinutes: 60,
   _banReason: '',
   _banScopes: ['global'],
+  _banPurge: false,
 
   // ── Окно награды за вход: «довольствие от штаба» ────────────────
   // Раньше награда падала на счёт молча из /api/me — игрок замечал её

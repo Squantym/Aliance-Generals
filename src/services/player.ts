@@ -1083,9 +1083,19 @@ function publicProfile(target: User, viewer: User): any {
   // без разведки — как свой. reveal = свой профиль ИЛИ смотрит админ.
   const isAdminViewer = !!(viewer && viewer.isAdmin);
   const reveal = isOwn || isAdminViewer;
+  // Блокировка аккаунта видна в профиле всем: наказание публично, чтобы
+  // другие понимали, почему игрок пропал, и видели, что правила работают
+  const banInfo = (() => {
+    try {
+      const ab = require('./roles').accountBanInfo(target);
+      return ab ? { reason: ab.reason, until: ab.until, byName: ab.byName, at: ab.at } : null;
+    } catch (e) { return null; }
+  })();
+
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,
     level: target.level, rank: rank(target.level), rating: rating(target),
+    accountBan: banInfo,
     country: target.country,
     countryName: country ? country.name : '',
     countryBonus: country ? country.desc : '',

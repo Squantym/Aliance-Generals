@@ -1080,16 +1080,19 @@ App.screens.chat = async (c) => {
       const { messages } = await API.get('/api/chat');
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
-        <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}">
+        <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}${msg.deleted ? ' chat-msg-deleted' : ''}${msg.tombstone ? ' chat-msg-tomb' : ''}">
           ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
           ${msg.staff ? `<span class="chat-staff chat-staff-${msg.staff}" title="${UI.esc(msg.staffLabel || '')}">${UI.esc(msg.staffLabel || '')}</span>` : ''}
           ${msg.banned ? '<span class="chat-banned-mark" title="На игроке действует блокировка">🔇</span>' : ''}
+          ${(msg.deleted && !msg.tombstone) ? `<span class="chat-deleted-mark" title="Исходный текст виден только администрации">🗑 удалено${msg.deletedBy ? ' · ' + UI.esc(msg.deletedBy) : ''}</span>` : ''}
           <span class="muted small">[${msg.level}]</span>
-          ${msg.self ? '' : `<button class="chat-reply" data-reply="${UI.esc(msg.name)}" title="Ответить ${UI.esc(msg.name)}">↩</button>`}
-          ${(App.me && App.me.staffRole && !msg.self && !msg.staff)
+          ${(msg.self || msg.tombstone) ? '' : `<button class="chat-reply" data-reply="${UI.esc(msg.name)}" title="Ответить ${UI.esc(msg.name)}">↩</button>`}
+          ${(App.me && App.me.staffRole && !msg.self && !msg.staff && !msg.tombstone)
             ? `<button class="chat-mute" data-mute="${msg.uid}" data-mutename="${UI.esc(msg.name)}" title="Заблокировать чат">🔇</button>` : ''}
-          <span class="at">${UI.fmtDate(msg.at)}</span><br>${UI.esc(msg.text)}
+          <span class="at">${UI.fmtDate(msg.at)}</span><br>${msg.tombstone
+            ? `<span class="chat-tomb-text">🗑 ${UI.esc(msg.text)}</span>`
+            : UI.esc(msg.text)}
         </div>`).join('')
         : '<p class="muted center">В эфире тишина. Скажите что-нибудь первым!</p>';
       if (atBottom) box.scrollTop = box.scrollHeight;

@@ -349,7 +349,7 @@ function assertCanWrite(user: any, scope: string): void {
   );
 }
 
-function banChat(actor: User, targetId: string, minutes: number, reason: string, notices: Notices, scopeList?: string[]) {
+function banChat(actor: User, targetId: string, minutes: number, reason: string, notices: Notices, scopeList?: string[], purge?: boolean) {
   if (!isModerator(actor)) throw new u.ApiError('Недостаточно прав');
   const users = player.users();
   const target = users[targetId];
@@ -392,10 +392,18 @@ function banChat(actor: User, targetId: string, minutes: number, reason: string,
       { until: (target as any).chatBan.until });
   } catch (e) {}
 
+  // По желанию модератора — вычищаем сообщения нарушителя из общего чата.
+  // Личную переписку и чат легиона не трогаем: это закрытые каналы.
+  let purged = 0;
+  if (purge) {
+    try { purged = require('./social').purgeChatMessages(target.id, actor.name); } catch (e) {}
+  }
+
   const scopeNames = scopes.map((sc) => (CHAT_SCOPES.find((z) => z.id === sc) || { name: sc }).name).join(', ');
-  notices.push(`🔇 Игроку «${target.name}» закрыто на ${humanMinutes(mins)}: ${scopeNames}. Причина: ${why}`);
+  notices.push(`🔇 Игроку «${target.name}» закрыто на ${humanMinutes(mins)}: ${scopeNames}. Причина: ${why}` +
+               (purged ? ` Удалено сообщений в общем чате: ${purged}.` : ''));
   return { id: target.id, name: target.name, until: (target as any).chatBan.until,
-           minutes: mins, reason: why, scopes, scopeNames };
+           minutes: mins, reason: why, scopes, scopeNames, purged };
 }
 
 function unbanChat(actor: User, targetId: string, notices: Notices) {
@@ -416,6 +424,88 @@ function unbanChat(actor: User, targetId: string, notices: Notices) {
   } catch (e) {}
   notices.push(`🔊 Блокировка чата снята с игрока «${target.name}»`);
   return { id: target.id, name: target.name };
+}
+
+// ---------- Бан аккаунта силами модератора ----------
+// У модератора нет доступа к админ-панели, но закрывать вход нарушителю
+// он должен уметь — иначе на грубое нарушение он может ответить только
+// кляпом. Ограничения ниже отличают его от администратора.
+const MOD_MAX_BAN_MINUTES = 7 * 24 * 60;      // модератор банит максимум на 7 суток
+
+function banAccount(actor: User, targetId: string, minutes: number, reason: string, notices: Notices) {
+  if (!isModerator(actor)) throw new u.ApiError('Недостаточно прав');
+  const users = player.users();
+  const target = users[targetId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (target.id === actor.id) throw new u.ApiError('Нельзя забанить самого себя');
+  const targetRole = roleOf(target);
+  if (targetRole === 'owner') throw new u.ApiError('Нельзя забанить владельца проекта');
+  if (targetRole && !isOwner(actor)) throw new u.ApiError('Нельзя забанить сотрудника проекта');
+
+  const why = String(reason || '').trim().slice(0, 200);
+  if (!why) throw new u.ApiError('Укажите причину бана');
+
+  // Бессрочный бан и сроки дольше недели — только для администрации:
+  // это уже решение об удалении игрока из проекта, а не мера воспитания
+  const isMod = roleOf(actor) === 'moderator';
+  let mins = u.toInt(minutes, 0);
+  if (isMod) {
+    if (mins <= 0) throw new u.ApiError('Бессрочный бан выдаёт только администрация. Укажите срок.');
+    mins = u.clamp(mins, 1, MOD_MAX_BAN_MINUTES);
+  } else {
+    mins = mins > 0 ? u.clamp(mins, 1, 365 * 24 * 60) : 0;
+  }
+
+  (target as any).banned = true;
+  (target as any).banReason = why;
+  (target as any).bannedAt = Date.now();
+  (target as any).banUntil = mins > 0 ? Date.now() + mins * 60 * 1000 : 0;
+  (target as any).banByName = actor.name;
+  db.markUser(target.id);
+  db.save('users');
+
+  auditLog.record({
+    userId: actor.id, userName: actor.name, path: '/api/mod/ban',
+    body: { targetId: target.id, targetName: target.name, minutes: mins, reason: why },
+  });
+  notices.push(`🚫 Аккаунт «${target.name}» заблокирован ${mins ? 'на ' + humanMinutes(mins) : 'бессрочно'}. Причина: ${why}`);
+  return { id: target.id, name: target.name, until: (target as any).banUntil, minutes: mins, reason: why };
+}
+
+function unbanAccount(actor: User, targetId: string, notices: Notices) {
+  if (!isModerator(actor)) throw new u.ApiError('Недостаточно прав');
+  const users = player.users();
+  const target = users[targetId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (!(target as any).banned) throw new u.ApiError('Этот аккаунт не заблокирован');
+  // Бессрочный бан снимает только администрация: его выдавали не за мелочь
+  if (!(target as any).banUntil && roleOf(actor) === 'moderator') {
+    throw new u.ApiError('Бессрочную блокировку снимает только администрация');
+  }
+  (target as any).banned = false;
+  (target as any).banUntil = 0;
+  (target as any).banReason = '';
+  (target as any).banByName = '';
+  db.markUser(target.id);
+  db.save('users');
+  auditLog.record({
+    userId: actor.id, userName: actor.name, path: '/api/mod/unban',
+    body: { targetId: target.id, targetName: target.name },
+  });
+  notices.push(`✅ Блокировка аккаунта «${target.name}» снята`);
+  return { id: target.id, name: target.name };
+}
+
+// Сведения о бане аккаунта — для плашки в профиле
+function accountBanInfo(user: any): any | null {
+  if (!user || !user.banned) return null;
+  if (user.banUntil && user.banUntil <= Date.now()) return null;   // срок вышел
+  return {
+    reason: user.banReason || 'Нарушение правил',
+    until: user.banUntil || 0,
+    byName: user.banByName || '',
+    at: user.bannedAt || 0,
+  };
 }
 
 // Действующие блокировки — для панели модератора
@@ -451,6 +541,7 @@ export = {
   permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES,
   setRole, staffList, canManage,
   banChat, unbanChat, chatBanInfo, bannedList, humanMinutes, assertCanWritePublic,
+  banAccount, unbanAccount, accountBanInfo, MOD_MAX_BAN_MINUTES,
   assertCanWrite, isChatBlocked, CHAT_SCOPES, ALL_SCOPES,
   MAX_BAN_MINUTES,
 };
