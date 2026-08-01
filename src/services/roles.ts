@@ -71,6 +71,12 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/mod\//,                                 'moderation'],
   [/^\/api\/admin\/(reset|reset-missions|reset-param|set-password)$/, 'security'],
   [/^\/api\/admin\/(players|logs|db-integrity)$/,   'players'],
+  // Просмотр карточки игрока и его состояния — часть раздела «Игроки».
+  // Раньше эти адреса не попадали ни в одну зону и по умолчанию считались
+  // владельческими: администратор не мог открыть даже профиль.
+  [/^\/api\/admin\/player-(view|snapshot)\//,       'players'],
+  // Кланы и легионы через общий раздел групп
+  [/^\/api\/admin\/groups\//,                       'legions'],
   [/^\/api\/admin\/(support|email)/,                'support'],
   [/^\/api\/admin\/push\//,                        'support'],
   [/^\/api\/admin\/(legion|tournaments)/,           'legions'],

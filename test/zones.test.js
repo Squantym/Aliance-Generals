@@ -73,6 +73,25 @@ for (const [p, what] of ownerOnly) {
 ok(roles.zoneOfPath('/api/admin/unknown-future-route') === null,
    'новый админский адрес по умолчанию закрыт для админов — безопасная сторона');
 
+console.log('\n── 2б. Каждый служебный роут отнесён к зоне ──');
+// Неразмеченный адрес по умолчанию считается владельческим — это верно
+// с точки зрения безопасности, но означает, что администратор не сможет
+// им пользоваться. Так тихо отвалились просмотр профиля игрока и работа
+// с группами: в логах появлялись «пытался вызвать», хотя права были.
+const routesSrc = fs.readFileSync(ROOT + '/src/routes.ts', 'utf8');
+const allPaths = [...new Set([...routesSrc.matchAll(/'(\/api\/(?:admin|staff|mod)[^']*)'/g)].map((m) => m[1]))];
+const unmapped = allPaths.filter((p) => !roles.zoneOfPath(p.replace(/:[a-zA-Z]+/g, 'x')));
+ok(allPaths.length > 50, `служебных роутов в API: ${allPaths.length}`);
+ok(unmapped.length === 0, `все роуты отнесены к зонам${unmapped.length ? ' ⚠ без зоны: ' + unmapped.join(', ') : ''}`);
+for (const [p, what] of [
+  ['/api/admin/player-view/x', 'просмотр карточки игрока'],
+  ['/api/admin/player-snapshot/x', 'состояние аккаунта'],
+  ['/api/admin/groups/legion', 'список групп'],
+  ['/api/admin/groups/legion/x', 'работа с группой'],
+]) {
+  ok(roles.canAccessZone(adm, roles.zoneOfPath(p)), `администратору доступно: ${what}`);
+}
+
 console.log('\n── 3. Модератор и обычный игрок ──');
 ok(roles.zonesFor(mod).length === 0, 'у модератора зон админ-панели нет');
 ok(roles.zonesFor(pl).length === 0, 'у обычного игрока тоже');

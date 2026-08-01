@@ -139,7 +139,7 @@ async function main() {
     console.log(`  Игра:        http://localhost:${PORT}/`);
     console.log(`  Админ-панель: http://localhost:${PORT}/admin`);
     console.log(`  База данных:  ${db.mode === 'sqlite' ? 'своя (SQLite)' : db.mode === 'mongo' ? 'MongoDB' : 'локальные JSON-файлы'}`);
-    console.log('  Первый зарегистрированный игрок получает права администратора.');
+    console.log(`  Владелец:     ${process.env.OWNER_NAME ? 'задан в OWNER_NAME (' + process.env.OWNER_NAME + ')' : 'назначается командой tools/grant-admin.js или из панели'}`);
     console.log('=========================================');
   });
 
