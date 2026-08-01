@@ -334,7 +334,22 @@ function take(adminUser: User, body: any, notices: Notices) {
   return { player: brief(target) };
 }
 
+
+// Вторая линия обороны: проверяем права ВНУТРИ функции, а не только на
+// роуте. Аудит показал, что модератор мог вызвать setBan, setPassword и
+// resetAccount напрямую — роут их закрывал, но сама функция никого не
+// спрашивала, и любой внутренний вызов обходил защиту.
+function assertZone(actor: User, zone: string, what: string): void {
+  const roles = require('./roles');
+  if (!roles.canAccessZone(actor, zone)) {
+    throw new u.ApiError(roles.roleOf(actor) === 'moderator'
+      ? `${what} доступно только администрации. «Дозор» работает с чатами.`
+      : 'Недостаточно прав');
+  }
+}
+
 function grant(adminUser: User, body: any, notices: Notices) {
+  assertZone(adminUser, 'economy', 'Выдача ресурсов');
   const target = player.users()[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
 
@@ -357,6 +372,7 @@ function grant(adminUser: User, body: any, notices: Notices) {
 // Выдача ВСЕМ игрокам сразу
 // ──────────────────────────────────────────────────────────────────
 function grantAll(adminUser: User, body: any, notices: Notices) {
+  assertZone(adminUser, 'economy', 'Массовая выдача');
   const all = player.users();
   const keys = ['dollars','gold','skillPoints','ears','tokens','xp'];
   const hasAny = keys.some(k => u.toInt(body[k], 0) !== 0);
@@ -448,6 +464,7 @@ async function listLogs(query: any) {
 
 // ── Бан / разбан игрока ───────────────────────────────────────────
 function setBan(adminUser: User, body: any, notices: Notices) {
+  assertZone(adminUser, 'moderation', 'Блокировка аккаунта');
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
@@ -519,6 +536,7 @@ function leaveGroupForReset(target: User, kind: string): void {
 }
 
 function resetAccount(adminUser: User, body: any, notices: Notices) {
+  assertZone(adminUser, 'security', 'Сброс аккаунта');
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
@@ -697,6 +715,7 @@ function wipeGroups(adminUser: User, body: any, notices: Notices) {
 // чтобы нигде не осталось битых ссылок на удалённый профиль.
 // Требуется подтверждение: body.confirmName должен совпасть с позывным.
 function deleteAccount(adminUser: User, body: any, notices: Notices) {
+  assertZone(adminUser, 'moderation', 'Удаление аккаунта');
   const db = require('../core/db');
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
@@ -854,6 +873,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
 // аккаунт не остался беззащитным). Все сессии игрока завершаются, а
 // висящая ссылка восстановления аннулируется.
 function setPassword(adminUser: User, body: any, notices: Notices) {
+  assertZone(adminUser, 'security', 'Смена пароля игроку');
   const db = require('../core/db');
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];

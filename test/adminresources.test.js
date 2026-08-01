@@ -23,7 +23,10 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   await auth.register('Боец', 'password1', 'b@a.com', 'ru', '1.1.1.2');
   const adm = Object.values(player.users()).find(x => x.name === 'Главком');
   const p = Object.values(player.users()).find(x => x.name === 'Боец');
+  // Выдача ресурсов — владельческая зона: у роли «администратор» её нет,
+  // поэтому в тесте назначаем владельца
   adm.isAdmin = true;
+  adm.role = 'owner';
   p.level = 50;
 
   console.log('\n[1] Категория скидки «Диверсанты» есть в админке');

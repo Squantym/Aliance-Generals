@@ -2008,12 +2008,12 @@ const App = {
          </div>`,
         { title: 'Аккаунт заблокирован', icon: '🚫', html: true, okText: 'Разблокировать', cancelText: 'Оставить' });
       if (!ok) return;
-      try { await API.post('/api/mod/unban', { userId }); UI.toast('✅ Аккаунт разблокирован'); }
+      try { await API.post('/api/admin/account-unban', { userId }); UI.toast('✅ Аккаунт разблокирован'); }
       catch (e) { UI.toast('⛔ ' + e.message); }
       return;
     }
 
-    const maxMin = (st && st.maxBanMinutes) || 10080;
+    const maxMin = 365 * 24 * 60;   // ограничение по роли проверяет сервер
     const opts = [
       { m: 15, t: '15 минут' }, { m: 60, t: '1 час' }, { m: 360, t: '6 часов' },
       { m: 1440, t: '1 сутки' }, { m: 4320, t: '3 суток' }, { m: 10080, t: '7 суток' },
@@ -2030,7 +2030,7 @@ const App = {
         </div>
         <div class="ban-label">Причина (увидит игрок)</div>
         <input type="text" id="acc-ban-reason" class="field" maxlength="200" value="Нарушение правил">
-        ${maxMin <= 10080 ? '<p class="muted small mt">Бессрочную блокировку выдаёт администрация.</p>' : ''}
+        <p class="muted small mt">Игрок увидит окно с причиной и сроком.</p>
       </div>`;
     const dlg = UI.confirm(body, {
       title: 'Блокировка аккаунта', icon: '🚫', html: true,
@@ -2053,7 +2053,7 @@ const App = {
     const reason = (App._accBanReason || '').trim();
     if (!reason) { UI.toast('⛔ Укажите причину'); return; }
     try {
-      await API.post('/api/mod/ban', { userId, minutes: App._accBanMinutes, reason });
+      await API.post('/api/admin/account-ban', { userId, minutes: App._accBanMinutes, reason });
       UI.toast('🚫 Аккаунт заблокирован');
     } catch (e) { UI.toast('⛔ ' + e.message); }
   },

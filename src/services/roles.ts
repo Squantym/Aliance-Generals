@@ -112,7 +112,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // сервис (только владелец), но адрес обязан быть размечен, иначе
   // тест полноты зон справедливо ругается
   [/^\/api\/staff\/permissions/,                    'roles'],
-  [/^\/api\/admin\/(ban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
+  [/^\/api\/admin\/(ban|account-ban|account-unban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
   [/^\/api\/mod\//,                                 'moderation'],
   [/^\/api\/admin\/(reset|reset-missions|reset-param|set-password)$/, 'security'],
   [/^\/api\/admin\/(players|logs|db-integrity)$/,   'players'],
@@ -433,7 +433,14 @@ function unbanChat(actor: User, targetId: string, notices: Notices) {
 const MOD_MAX_BAN_MINUTES = 7 * 24 * 60;      // модератор банит максимум на 7 суток
 
 function banAccount(actor: User, targetId: string, minutes: number, reason: string, notices: Notices) {
-  if (!isModerator(actor)) throw new u.ApiError('Недостаточно прав');
+  // Блокировка АККАУНТА — мера администрации. Модератор («Дозор») следит
+  // за общением и располагает только блокировкой чатов: закрыть человеку
+  // вход в игру — решение другого уровня, и права на него у него нет.
+  if (!canAccessZone(actor, 'moderation')) {
+    throw new u.ApiError(roleOf(actor) === 'moderator'
+      ? 'Блокировка аккаунта доступна только администрации. «Дозор» может закрыть чаты.'
+      : 'Недостаточно прав');
+  }
   const users = player.users();
   const target = users[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
@@ -445,16 +452,8 @@ function banAccount(actor: User, targetId: string, minutes: number, reason: stri
   const why = String(reason || '').trim().slice(0, 200);
   if (!why) throw new u.ApiError('Укажите причину бана');
 
-  // Бессрочный бан и сроки дольше недели — только для администрации:
-  // это уже решение об удалении игрока из проекта, а не мера воспитания
-  const isMod = roleOf(actor) === 'moderator';
   let mins = u.toInt(minutes, 0);
-  if (isMod) {
-    if (mins <= 0) throw new u.ApiError('Бессрочный бан выдаёт только администрация. Укажите срок.');
-    mins = u.clamp(mins, 1, MOD_MAX_BAN_MINUTES);
-  } else {
-    mins = mins > 0 ? u.clamp(mins, 1, 365 * 24 * 60) : 0;
-  }
+  mins = mins > 0 ? u.clamp(mins, 1, 365 * 24 * 60) : 0;   // 0 — бессрочно
 
   (target as any).banned = true;
   (target as any).banReason = why;
@@ -473,15 +472,15 @@ function banAccount(actor: User, targetId: string, minutes: number, reason: stri
 }
 
 function unbanAccount(actor: User, targetId: string, notices: Notices) {
-  if (!isModerator(actor)) throw new u.ApiError('Недостаточно прав');
+  if (!canAccessZone(actor, 'moderation')) {
+    throw new u.ApiError(roleOf(actor) === 'moderator'
+      ? 'Снятие блокировки аккаунта доступно только администрации'
+      : 'Недостаточно прав');
+  }
   const users = player.users();
   const target = users[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
   if (!(target as any).banned) throw new u.ApiError('Этот аккаунт не заблокирован');
-  // Бессрочный бан снимает только администрация: его выдавали не за мелочь
-  if (!(target as any).banUntil && roleOf(actor) === 'moderator') {
-    throw new u.ApiError('Бессрочную блокировку снимает только администрация');
-  }
   (target as any).banned = false;
   (target as any).banUntil = 0;
   (target as any).banReason = '';

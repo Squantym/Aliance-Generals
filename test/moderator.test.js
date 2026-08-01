@@ -137,42 +137,30 @@ ok(/Без вражды/.test(socSrc) && /Без рекламы/.test(socSrc), '
 ok(/не мешает играть/.test(socSrc), 'объяснено, что блокировка не мешает играть');
 ok(css.includes('.chat-rule'), 'стили правил добавлены');
 
-console.log('\n── 13. Бан аккаунта силами модератора ──');
+console.log('\n── 13. Бан аккаунта модератору НЕДОСТУПЕН ──');
 reset();
 bad.banned = false; bad.banUntil = 0;
-const nb = [];
-const ban = roles.banAccount(mod, bad.id, 1440, 'Оскорбления в чате', nb);
-ok(bad.banned === true, 'модератор заблокировал аккаунт');
-ok(bad.banUntil > Date.now(), `срок проставлен (${Math.round((bad.banUntil - Date.now()) / 60000)} мин)`);
-ok(bad.banByName === 'Дозорный', 'записано, кто выдал');
-const ai = roles.accountBanInfo(bad);
-ok(ai && ai.reason === 'Оскорбления в чате' && ai.byName === 'Дозорный',
-   'сведения для плашки: причина и автор');
-const nu = [];
-roles.unbanAccount(mod, bad.id, nu);
-ok(bad.banned === false, 'и снял блокировку');
+fails(() => roles.banAccount(mod, bad.id, 1440, 'Оскорбления', []), 'только администрации',
+      'модератор не может заблокировать аккаунт');
+fails(() => roles.unbanAccount(mod, bad.id, []), 'только администрации',
+      'и не может снять чужую блокировку аккаунта');
+ok(bad.banned === false, 'аккаунт остался незаблокированным');
 
-console.log('\n── 14. Ограничения модератора ──');
-fails(() => roles.banAccount(mod, bad.id, 0, 'навсегда', []), 'Бессрочный бан выдаёт только администрация',
-      'модератор не может забанить бессрочно');
-const long = roles.banAccount(mod, bad.id, 99999, 'проверка предела', []);
-ok(long.minutes === roles.MOD_MAX_BAN_MINUTES,
-   `срок ограничен неделей: ${Math.round(long.minutes / 1440)} суток`);
-roles.unbanAccount(mod, bad.id, []);
-fails(() => roles.banAccount(mod, bad.id, 60, '', []), 'Укажите причину', 'без причины нельзя');
-fails(() => roles.banAccount(mod, mod.id, 60, 'x', []), 'самого себя', 'себя забанить нельзя');
-fails(() => roles.banAccount(mod, owner.id, 60, 'x', []), 'владельца', 'владельца — тоже');
-// Бессрочный бан от администрации модератор не снимет
-roles.banAccount(owner, bad.id, 0, 'Серьёзное нарушение', []);
-fails(() => roles.unbanAccount(mod, bad.id, []), 'только администрация',
-      'бессрочную блокировку модератор снять не может');
+console.log('\n── 14. Аккаунты банит администрация ──');
+const nb = [];
+roles.banAccount(owner, bad.id, 1440, 'Оскорбления в чате', nb);
+ok(bad.banned === true, 'владелец заблокировал аккаунт');
+ok(bad.banByName === 'Хозяин', 'записано, кто выдал');
+const ai = roles.accountBanInfo(bad);
+ok(ai && ai.reason === 'Оскорбления в чате', 'сведения для плашки на месте');
 roles.unbanAccount(owner, bad.id, []);
+ok(bad.banned === false, 'и снял её');
 
 console.log('\n── 15. Плашка в профиле ──');
-roles.banAccount(mod, bad.id, 180, 'Мат в чате', []);
+roles.banAccount(owner, bad.id, 180, 'Мат в чате', []);
 const prof = player.publicProfile(bad, other);
 ok(prof.accountBan && prof.accountBan.reason === 'Мат в чате', 'профиль отдаёт причину блокировки');
-ok(prof.accountBan.byName === 'Дозорный', 'и кто её выдал');
+ok(prof.accountBan.byName === 'Хозяин', 'и кто её выдал');
 ok(prof.accountBan.until > Date.now(), 'и время окончания');
 const coreSrc2 = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
 ok(/\$\{banBanner\}/.test(coreSrc2), 'плашка выводится в самом верху профиля');
@@ -180,7 +168,7 @@ ok(/pf-ban-banner/.test(coreSrc2), 'у плашки своя разметка');
 ok(/const banLeftText/.test(coreSrc2), 'время считается отдельной функцией');
 ok(/ч \$\{m\} мин/.test(coreSrc2), 'формат — часы и минуты, без секунд');
 ok(!/setInterval[^)]*banLeft/.test(coreSrc2), 'таймера нет — время обновляется при открытии страницы');
-roles.unbanAccount(mod, bad.id, []);
+roles.unbanAccount(owner, bad.id, []);
 
 console.log('\n── 16. Кнопки в профиле и настройки ──');
 ok(/id="pf-accban"/.test(coreSrc2), 'в профиле есть кнопка блокировки аккаунта');
@@ -190,7 +178,7 @@ ok(/staffRole !== 'moderator'/.test(coreSrc2), 'у модератора убра
 const appSrc2 = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
 ok(/showAccountBanDialog/.test(appSrc2), 'окно блокировки аккаунта существует');
 ok(/Разблокировать/.test(appSrc2), 'умеет и разблокировать');
-ok(/Бессрочную блокировку выдаёт администрация/.test(appSrc2), 'модератору объяснён предел его полномочий');
+ok(/canBanAccount/.test(coreSrc2), 'кнопка бана аккаунта показывается только по праву');
 
 console.log('\n── 17. Голубой цвет модератора ──');
 const css2 = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');

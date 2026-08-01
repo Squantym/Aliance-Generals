@@ -480,12 +480,18 @@ function registerRoutes(app: any) {
                   Array.isArray(req.body.scopes) ? req.body.scopes.map((x: any) => String(x)) : undefined,
                   !!req.body.purge)));
 
-  // Бан аккаунта силами модератора (сроком до 7 суток)
-  app.add('POST', '/api/mod/ban', act((req, n) =>
-    roles.banAccount(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n)));
+  // Блокировка аккаунта — зона «Модерация», доступна администрации.
+  // Адрес намеренно в /api/admin/: так он попадает в админскую зону и
+  // проверяется на входе, ещё до вызова сервиса. Раньше он лежал в
+  // /api/mod/ и пускал по признаку «сотрудник», из-за чего «Дозор»
+  // мог закрыть игроку вход в игру.
+  app.add('POST', '/api/admin/account-ban', act((req, n) =>
+    roles.banAccount(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n)),
+    { admin: true });
 
-  app.add('POST', '/api/mod/unban', act((req, n) =>
-    roles.unbanAccount(req.user, String(req.body.userId || ''), n)));
+  app.add('POST', '/api/admin/account-unban', act((req, n) =>
+    roles.unbanAccount(req.user, String(req.body.userId || ''), n)),
+    { admin: true });
 
   // Список каналов для окна блокировки
   app.add('GET', '/api/mod/chat-scopes', (req) => {
@@ -511,12 +517,14 @@ function registerRoutes(app: any) {
         ? info.scopes.map((sc: string) => (roles.CHAT_SCOPES.find((z: any) => z.id === sc) || { name: sc }).name).join(', ')
         : '',
       canBan: !roles.roleOf(target) || roles.isOwner(req.user),
-      // Бан аккаунта — вторая мера, показывается там же
-      account: (() => {
-        const ab = roles.accountBanInfo(target);
-        return ab ? { banned: true, reason: ab.reason, until: ab.until, byName: ab.byName } : { banned: false };
-      })(),
-      maxBanMinutes: roles.roleOf(req.user) === 'moderator' ? roles.MOD_MAX_BAN_MINUTES : 365 * 24 * 60,
+      // Сведения о бане аккаунта — только тем, кто вправе им управлять
+      account: roles.canAccessZone(req.user, 'moderation')
+        ? (() => {
+            const ab = roles.accountBanInfo(target);
+            return ab ? { banned: true, reason: ab.reason, until: ab.until, byName: ab.byName } : { banned: false };
+          })()
+        : null,
+      canBanAccount: roles.canAccessZone(req.user, 'moderation'),
     };
   });
 

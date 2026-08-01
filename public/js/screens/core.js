@@ -616,7 +616,7 @@ App.screens.profile = async (c, param) => {
           <div class="pf-mod-title">🛡 Инструменты «Дозора»</div>
           <div class="muted small" id="pf-mod-status">Проверяю состояние…</div>
           <button class="btn mt" id="pf-chatban" style="width:100%">🔇 Блокировка чата</button>
-          <button class="btn mt" id="pf-accban" style="width:100%">🚫 Блокировка аккаунта</button>
+          <button class="btn mt" id="pf-accban" style="width:100%;display:none">🚫 Блокировка аккаунта</button>
         </div>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
@@ -791,7 +791,10 @@ App.screens.profile = async (c, param) => {
             chatBtn.textContent = '🔇 Блокировка чата';
             chatBtn.classList.remove('btn-orange');
           }
-          if (st.account && st.account.banned) {
+          // Кнопка бана аккаунта — только у тех, кому это доступно.
+          // «Дозор» её не увидит: его инструмент — блокировка чатов.
+          accBtn.style.display = st.canBanAccount ? '' : 'none';
+          if (st.canBanAccount && st.account && st.account.banned) {
             parts.push(`<span class="wr-bad">🚫 Аккаунт заблокирован</span> · ${banLeftText(st.account.until)}`);
             accBtn.textContent = '✅ Разблокировать аккаунт';
             accBtn.classList.add('btn-orange');
@@ -805,7 +808,8 @@ App.screens.profile = async (c, param) => {
             accBtn.style.display = 'none';
             return;
           }
-          chatBtn.style.display = ''; accBtn.style.display = '';
+          chatBtn.style.display = '';
+          accBtn.style.display = st.canBanAccount ? '' : 'none';
           statusEl.innerHTML = parts.length ? parts.join('<br>') : '<span class="muted">Нарушений не зафиксировано</span>';
         } catch (e) { statusEl.innerHTML = `<span class="muted">${UI.esc(e.message)}</span>`; }
       };
