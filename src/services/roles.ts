@@ -84,14 +84,24 @@ const DEFAULT_ZONES: Record<string, Zone[]> = {
   moderator: [],       // модератор работает из чата, панель ему не нужна
 };
 
+// Зоны, недоступные роли «Дозор» ни при каких настройках. Иначе владелец
+// мог по ошибке открыть модератору «Модерацию» и вместе с ней — бан
+// аккаунтов, выдачу ресурсов и удаление игроков.
+const MODERATOR_FORBIDDEN: Zone[] = ['moderation', 'security', 'economy', 'discounts', 'database', 'roles', 'season'];
+
 // Действующая настройка: из базы, если владелец её менял, иначе по
 // умолчанию. Коллекция roleZones переживает перезапуск сервера.
 function zonesOfRole(role: string): Zone[] {
   if (role === 'owner') return ALL_ZONES.slice();
   const saved: any = db.load('roleZones', {});
   const list = saved[role];
-  if (Array.isArray(list)) return list.filter((z: any) => ALL_ZONES.includes(z));
-  return (DEFAULT_ZONES[role] || []).slice();
+  const base: Zone[] = Array.isArray(list)
+    ? list.filter((z: any) => ALL_ZONES.includes(z))
+    : (DEFAULT_ZONES[role] || []).slice();
+  // Страховка: даже если в базе осталась запрещённая зона (выдана по
+  // ошибке или из старой версии), модератор её не получит
+  if (role === 'moderator') return base.filter((z) => !MODERATOR_FORBIDDEN.includes(z));
+  return base;
 }
 
 // Полномочия роли «администратор». true — админы работают в своих зонах.
@@ -173,6 +183,15 @@ function setRoleZone(actor: User, role: string, zone: string, enabled: boolean, 
   if (role === 'owner') throw new u.ApiError('У владельца всегда полный доступ — это нельзя изменить');
   if (role !== 'admin' && role !== 'moderator') throw new u.ApiError('Неизвестная роль');
   if (!ALL_ZONES.includes(zone as Zone)) throw new u.ApiError('Неизвестный раздел');
+  // Опасные зоны роли «Дозор» не выдаются: его полномочия ограничены
+  // общением намеренно, и открыть их «галочкой» нельзя
+  if (role === 'moderator' && enabled && MODERATOR_FORBIDDEN.includes(zone as Zone)) {
+    const zi = ZONE_INFO.find((z) => z.id === zone);
+    throw new u.ApiError(
+      `Раздел «${zi ? zi.name : zone}» нельзя открыть роли «Дозор» — это полномочия администрации. ` +
+      `Если человеку нужны такие права, назначьте его администратором.`
+    );
+  }
 
   const saved: any = db.load('roleZones', {});
   const current: Zone[] = Array.isArray(saved[role]) ? saved[role].slice() : (DEFAULT_ZONES[role] || []).slice();
@@ -433,9 +452,13 @@ function unbanChat(actor: User, targetId: string, notices: Notices) {
 const MOD_MAX_BAN_MINUTES = 7 * 24 * 60;      // модератор банит максимум на 7 суток
 
 function banAccount(actor: User, targetId: string, minutes: number, reason: string, notices: Notices) {
-  // Блокировка АККАУНТА — мера администрации. Модератор («Дозор») следит
-  // за общением и располагает только блокировкой чатов: закрыть человеку
-  // вход в игру — решение другого уровня, и права на него у него нет.
+  // Блокировка АККАУНТА — мера администрации. Роль «Дозор» не получает её
+  // НИ ПРИ КАКИХ настройках: даже если владелец по ошибке откроет ей зону
+  // «Модерация» в настройке возможностей ролей. Инструмент модератора —
+  // чаты; закрыть человеку вход в игру он не может.
+  if (roleOf(actor) === 'moderator') {
+    throw new u.ApiError('Блокировка аккаунта доступна только администрации. «Дозор» работает с чатами.');
+  }
   if (!canAccessZone(actor, 'moderation')) {
     throw new u.ApiError(roleOf(actor) === 'moderator'
       ? 'Блокировка аккаунта доступна только администрации. «Дозор» может закрыть чаты.'
@@ -472,6 +495,9 @@ function banAccount(actor: User, targetId: string, minutes: number, reason: stri
 }
 
 function unbanAccount(actor: User, targetId: string, notices: Notices) {
+  if (roleOf(actor) === 'moderator') {
+    throw new u.ApiError('Снятие блокировки аккаунта доступно только администрации');
+  }
   if (!canAccessZone(actor, 'moderation')) {
     throw new u.ApiError(roleOf(actor) === 'moderator'
       ? 'Снятие блокировки аккаунта доступно только администрации'
@@ -537,7 +563,7 @@ function humanMinutes(m: number): string {
 export = {
   roleOf, isOwner, isAdmin, isModerator, roleLabel, adminPowersEnabled,
   zoneOfPath, canAccessZone, zonesFor, zonesOfRole,
-  permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES,
+  permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES, MODERATOR_FORBIDDEN,
   setRole, staffList, canManage,
   banChat, unbanChat, chatBanInfo, bannedList, humanMinutes, assertCanWritePublic,
   banAccount, unbanAccount, accountBanInfo, MOD_MAX_BAN_MINUTES,

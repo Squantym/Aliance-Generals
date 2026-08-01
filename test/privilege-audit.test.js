@@ -104,8 +104,10 @@ for (const [fn, zone] of [['grant', 'economy'], ['grantAll', 'economy'], ['setBa
   ok(head.includes(`assertZone(adminUser, '${zone}'`), `${fn}: права проверяются внутри функции (зона ${zone})`);
 }
 const rolesSrc = fs.readFileSync(ROOT + '/src/services/roles.ts', 'utf8');
-ok(/function banAccount[\s\S]{0,400}canAccessZone\(actor, 'moderation'\)/.test(rolesSrc),
-   'banAccount требует зону «Модерация», а не просто статус сотрудника');
+ok(/function banAccount[\s\S]{0,700}canAccessZone\(actor, 'moderation'\)/.test(rolesSrc),
+   'banAccount требует зону «Модерация»');
+ok(/function banAccount[\s\S]{0,400}roleOf\(actor\) === 'moderator'[\s\S]{0,200}throw/.test(rolesSrc),
+   'и отдельно, жёстко, отсекает роль «Дозор» — независимо от настроек зон');
 ok(!/function banAccount\(actor[\s\S]{0,200}isModerator\(actor\)\) throw/.test(rolesSrc),
    'прежняя проверка «любой сотрудник» убрана');
 
@@ -118,6 +120,32 @@ for (const p of ['/api/admin/account-ban', '/api/admin/account-unban']) {
   ok(z === 'moderation', `${p} → зона ${z}`);
   ok(!roles.canAccessZone(mod, z), `модератору адрес ${p} закрыт на входе`);
 }
+
+console.log('\n── 7б. Опасные зоны нельзя выдать «Дозору» ──');
+// Настройка возможностей ролей позволяла открыть модератору зону
+// «Модерация», а вместе с ней — бан аккаунтов. Теперь это запрещено
+// и на выдаче, и на чтении: даже уже сохранённая зона не действует.
+for (const zone of ['moderation', 'security', 'economy', 'database', 'roles', 'season']) {
+  try {
+    roles.setRoleZone(own, 'moderator', zone, true, []);
+    ok(false, `владелец смог открыть «Дозору» зону ${zone}`);
+  } catch (e) { ok(true, `зона ${zone} не выдаётся роли «Дозор»`); }
+}
+allowed(() => roles.setRoleZone(own, 'moderator', 'players', true, []), 'Владелец', 'открыть «Дозору» безопасную зону «Игроки»');
+roles.setRoleZone(own, 'moderator', 'players', false, []);
+// Зона, оставшаяся в базе от прежней версии, не должна действовать
+const dbMod = require(ROOT + '/dist/src/core/db');
+const savedZones = dbMod.load('roleZones', {});
+savedZones.moderator = ['moderation', 'economy', 'security'];
+dbMod.save('roleZones');
+ok(roles.zonesFor(mod).length === 0, 'запрещённые зоны из базы не действуют');
+ok(!roles.canAccessZone(mod, 'moderation'), 'доступ к «Модерации» закрыт даже при записи в базе');
+clean();
+denied(() => roles.banAccount(mod, vic.id, 60, 'x', []), 'Дозор', 'бан аккаунта при выданной зоне');
+denied(() => admin.setBan(mod, { userId: vic.id, banned: true, reason: 'x' }, []), 'Дозор', 'бан через админку при выданной зоне');
+ok(vic.banned === false, 'игрок остался незаблокированным');
+savedZones.moderator = [];
+dbMod.save('roleZones');
 
 console.log('\n── 8. Кнопки в интерфейсе ──');
 // Кнопка бана аккаунта не должна попадать в разметку у модератора.
