@@ -616,7 +616,9 @@ App.screens.profile = async (c, param) => {
           <div class="pf-mod-title">🛡 Инструменты «Дозора»</div>
           <div class="muted small" id="pf-mod-status">Проверяю состояние…</div>
           <button class="btn mt" id="pf-chatban" style="width:100%">🔇 Блокировка чата</button>
-          <button class="btn mt" id="pf-accban" style="width:100%;display:none">🚫 Блокировка аккаунта</button>
+          ${(App.me.staffZones || []).indexOf('moderation') >= 0
+            ? `<button class="btn mt" id="pf-accban" style="width:100%">🚫 Блокировка аккаунта</button>`
+            : ''}
         </div>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
@@ -791,25 +793,26 @@ App.screens.profile = async (c, param) => {
             chatBtn.textContent = '🔇 Блокировка чата';
             chatBtn.classList.remove('btn-orange');
           }
-          // Кнопка бана аккаунта — только у тех, кому это доступно.
-          // «Дозор» её не увидит: его инструмент — блокировка чатов.
-          accBtn.style.display = st.canBanAccount ? '' : 'none';
-          if (st.canBanAccount && st.account && st.account.banned) {
-            parts.push(`<span class="wr-bad">🚫 Аккаунт заблокирован</span> · ${banLeftText(st.account.until)}`);
-            accBtn.textContent = '✅ Разблокировать аккаунт';
-            accBtn.classList.add('btn-orange');
-          } else {
-            accBtn.textContent = '🚫 Блокировка аккаунта';
-            accBtn.classList.remove('btn-orange');
+          // Кнопки бана аккаунта у модератора нет вовсе — она не
+          // отрисовывается, поэтому здесь просто проверяем её наличие
+          if (accBtn) {
+            if (st.account && st.account.banned) {
+              parts.push(`<span class="wr-bad">🚫 Аккаунт заблокирован</span> · ${banLeftText(st.account.until)}`);
+              accBtn.textContent = '✅ Разблокировать аккаунт';
+              accBtn.classList.add('btn-orange');
+            } else {
+              accBtn.textContent = '🚫 Блокировка аккаунта';
+              accBtn.classList.remove('btn-orange');
+            }
           }
           if (!st.canBan) {
             statusEl.innerHTML = '<span class="muted">Сотрудник проекта — меры недоступны</span>';
             chatBtn.style.display = 'none';
-            accBtn.style.display = 'none';
+            if (accBtn) accBtn.style.display = 'none';
             return;
           }
           chatBtn.style.display = '';
-          accBtn.style.display = st.canBanAccount ? '' : 'none';
+          if (accBtn) accBtn.style.display = '';
           statusEl.innerHTML = parts.length ? parts.join('<br>') : '<span class="muted">Нарушений не зафиксировано</span>';
         } catch (e) { statusEl.innerHTML = `<span class="muted">${UI.esc(e.message)}</span>`; }
       };

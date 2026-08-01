@@ -2923,24 +2923,13 @@ body.theme-noir .field-hint { color: #8a8a92; }
 }
 
 /* ═══ Модерация чата: цвета, метки, правила ══════════════════════════ */
-/* Сообщения сотрудников выделяются, чтобы их требования не терялись
-   в общем потоке */
-.chat-msg-staff { border-left: 2px solid transparent; padding-left: 6px; }
-.chat-msg-moderator {
-  background: linear-gradient(90deg, rgba(60,190,240,.13), transparent);
-  border-left-color: #3fc6f0;
-}
-.chat-msg-admin {
-  background: linear-gradient(90deg, rgba(200,120,40,.10), transparent);
-  border-left-color: var(--orange-1);
-}
-.chat-msg-owner {
-  background: linear-gradient(90deg, rgba(200,170,60,.12), transparent);
-  border-left-color: var(--gold);
-}
-.chat-msg-moderator .who { color: #6fdcff; }
-.chat-msg-admin .who     { color: var(--orange-1); }
-.chat-msg-owner .who     { color: var(--gold); }
+/* Сообщения сотрудников: выделяется только САМ ТЕКСТ, чтобы требования
+   не терялись в потоке. Имя, флаг и фон строки остаются обычными —
+   подсветка всей строки перегружала ленту. Роль и так видна по значку. */
+.chat-msg-staff { padding-left: 0; }
+.chat-msg-moderator .chat-text { color: #6fdcff; }
+.chat-msg-admin .chat-text     { color: var(--orange-1); }
+.chat-msg-owner .chat-text     { color: var(--gold); }
 
 /* Игрок под блокировкой — видно только сотрудникам */
 .chat-msg-banned { opacity: .72; }

@@ -119,6 +119,18 @@ for (const p of ['/api/admin/account-ban', '/api/admin/account-unban']) {
   ok(!roles.canAccessZone(mod, z), `модератору адрес ${p} закрыт на входе`);
 }
 
+console.log('\n── 8. Кнопки в интерфейсе ──');
+// Кнопка бана аккаунта не должна попадать в разметку у модератора.
+// Прятать её стилем недостаточно: она остаётся в DOM, и её видно тому,
+// кто откроет исходник страницы.
+const coreUi = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
+ok(/\(App\.me\.staffZones \|\| \[\]\)\.indexOf\('moderation'\) >= 0/.test(coreUi),
+   'кнопка бана аккаунта рисуется только при наличии зоны «Модерация»');
+ok(!/id="pf-accban" style="width:100%;display:none"/.test(coreUi),
+   'кнопка больше не прячется стилем — её просто нет в разметке');
+ok(/if \(accBtn\)/.test(coreUi), 'обработчики переживают отсутствие кнопки');
+ok(/id="pf-chatban"/.test(coreUi), 'кнопка блокировки чата остаётся у всех сотрудников');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

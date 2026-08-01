@@ -111,7 +111,7 @@ ok(/chat-msg-staff chat-msg-' \+ msg\.staff/.test(socSrc), 'класс сооб�
 const css = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
 ok(css.includes('.chat-msg-moderator'), 'у «Дозора» свой цвет');
 ok(css.includes('.chat-msg-admin') && css.includes('.chat-msg-owner'), 'у администратора и владельца тоже');
-ok(/\.chat-msg-moderator \.who \{ color: #6fdcff/.test(css), 'имя модератора выделено голубым');
+ok(!/\.chat-msg-moderator \.who \{ color/.test(css), 'имя модератора обычного цвета — красится только текст');
 
 console.log('\n── 10. Кнопка в профиле игрока ──');
 const coreSrc = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
@@ -178,12 +178,17 @@ ok(/staffRole !== 'moderator'/.test(coreSrc2), 'у модератора убра
 const appSrc2 = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
 ok(/showAccountBanDialog/.test(appSrc2), 'окно блокировки аккаунта существует');
 ok(/Разблокировать/.test(appSrc2), 'умеет и разблокировать');
-ok(/canBanAccount/.test(coreSrc2), 'кнопка бана аккаунта показывается только по праву');
+ok(/staffZones \|\| \[\]\)\.indexOf\('moderation'\)/.test(coreSrc2),
+   'кнопка бана аккаунта рисуется только при наличии зоны «Модерация» — у модератора её нет');
 
 console.log('\n── 17. Голубой цвет модератора ──');
 const css2 = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
-ok(/\.chat-msg-moderator \{[\s\S]{0,120}rgba\(60,190,240/.test(css2), 'подсветка сообщения голубая');
-ok(/\.chat-msg-moderator \.who \{ color: #6fdcff/.test(css2), 'имя модератора голубое');
+// Красится САМ ТЕКСТ сообщения: имя, флаг и фон строки остаются обычными
+ok(/\.chat-msg-moderator \.chat-text \{ color: #6fdcff/.test(css2), 'текст сообщения модератора голубой');
+ok(!/\.chat-msg-moderator \{[\s\S]{0,120}background:/.test(css2), 'фон строки не подсвечивается');
+ok(!/\.chat-msg-moderator \.who \{ color/.test(css2), 'имя остаётся обычного цвета');
+const socColor = fs.readFileSync(ROOT + '/public/js/screens/social.js', 'utf8');
+ok(/<span class="chat-text">/.test(socColor), 'текст сообщения обёрнут для окраски');
 ok(/\.chat-staff-moderator \{[\s\S]{0,120}#6fdcff/.test(css2), 'значок «Дозор» тоже голубой');
 
 console.log('\n── 18. Удаление сообщений при блокировке ──');

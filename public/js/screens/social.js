@@ -1092,7 +1092,7 @@ App.screens.chat = async (c) => {
             ? `<button class="chat-mute" data-mute="${msg.uid}" data-mutename="${UI.esc(msg.name)}" title="Заблокировать чат">🔇</button>` : ''}
           <span class="at">${UI.fmtDate(msg.at)}</span><br>${msg.tombstone
             ? `<span class="chat-tomb-text">🗑 ${UI.esc(msg.text)}</span>`
-            : UI.esc(msg.text)}
+            : `<span class="chat-text">${UI.esc(msg.text)}</span>`}
         </div>`).join('')
         : '<p class="muted center">В эфире тишина. Скажите что-нибудь первым!</p>';
       if (atBottom) box.scrollTop = box.scrollHeight;
