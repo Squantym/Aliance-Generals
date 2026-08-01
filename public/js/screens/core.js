@@ -563,6 +563,7 @@ App.screens.profile = async (c, param) => {
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="pf2-head">
         <span class="pf2-name">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)}</span>
+        ${p.staffRole ? `<span class="pf-staff-badge pf-staff-${p.staffRole}" title="Сотрудник проекта">${UI.esc(p.staffLabel || '')}</span>` : ''}
         ${p.activeTitle ? `<span class="pf2-title">${UI.esc(p.activeTitle)}</span>` : ''}
         ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}
       </div>

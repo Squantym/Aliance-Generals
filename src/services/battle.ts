@@ -204,6 +204,9 @@ function opponents(user: User): any {
     return {
       id: t.id, name: t.name, level: t.level,
       flag: player.flag(t), isBot: false,
+      // Метка сотрудника проекта в списке целей: игрок сразу видит,
+      // что перед ним «Дозор» или администрация
+      staffRole: (() => { try { return require('./roles').roleOf(t); } catch (e) { return null; } })(),
       online: Date.now() - (t.lastSeen || 0) < 5 * 60 * 1000,
       allianceMembers: a ? a.members.length : 0,
       // ⭐ этот игрок состоит в ВАШЕМ личном альянсе (взаимно)
@@ -214,6 +217,7 @@ function opponents(user: User): any {
     const b = makeBot(user);
     list.push({
       id: b.id, name: b.name, level: b.level, flag: b.flag, isBot: true, online: true,
+      staffRole: null,                 // боты не бывают сотрудниками
       allianceMembers: b.allianceMembers || 0,
       inMyAlliance: false, // боты не бывают союзниками по личному альянсу
     });

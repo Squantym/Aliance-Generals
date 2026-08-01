@@ -2245,6 +2245,20 @@ const App = {
   // на него нападали или объявляли санкции. Закрытие -> ack на сервер.
   _warReportShown: false,
 
+  // Короткая метка сотрудника проекта: буква в кружке рядом с именем.
+  // Нужна в списках, где на полную подпись роли нет места — например,
+  // среди целей во вкладке «Война».
+  _STAFF_MARK: {
+    moderator: { letter: 'Д', title: 'Дозор — модератор проекта' },
+    admin:     { letter: 'А', title: 'Администратор проекта' },
+    owner:     { letter: 'В', title: 'Владелец проекта' },
+  },
+  staffMark(role) {
+    const m = this._STAFF_MARK[role];
+    if (!m) return '';
+    return ` <span class="staff-mark staff-mark-${role}" title="${m.title}">${m.letter}</span>`;
+  },
+
   // Название типа диверсанта по ключу — для сводки ущерба
   _SAB_NAMES: {
     ground: 'наземные', sea: 'морские', air: 'воздушные',

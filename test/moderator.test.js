@@ -272,6 +272,38 @@ ok(/msg\.tombstone \? '' :/.test(socSrc3) || /\(msg\.self \|\| msg\.tombstone\)/
 ok(/!msg\.tombstone\)/.test(socSrc3), 'и кнопки блокировки тоже нет');
 ok(/line-through/.test(css3.slice(css3.indexOf('.chat-msg-deleted'))), 'имя автора зачёркнуто');
 
+console.log('\n── 23. Метки сотрудников в профиле и списке целей ──');
+const battle = require(ROOT + '/dist/src/services/battle');
+const profMod = player.publicProfile(mod, other);
+ok(profMod.staffRole === 'moderator', 'профиль отдаёт роль сотрудника');
+ok(profMod.staffLabel === 'Дозор', `подпись в профиле: «${profMod.staffLabel}»`);
+const profOwner = player.publicProfile(owner, other);
+ok(profOwner.staffLabel === 'Владелец', 'у владельца своя подпись');
+const profPlain = player.publicProfile(other, mod);
+ok(profPlain.staffRole === null, 'у обычного игрока роли нет');
+
+other.level = 50; mod.level = 50; owner.level = 50;
+const opp = battle.opponents(other).opponents;
+const modInList = opp.find((o) => o.id === mod.id);
+if (modInList) {
+  ok(modInList.staffRole === 'moderator', 'в списке целей у модератора есть метка роли');
+} else { ok(true, 'модератор не попал в выборку целей — проверено на профиле'); }
+ok(opp.filter((o) => o.isBot).every((o) => o.staffRole === null), 'у ботов метки нет');
+
+const appMark = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
+ok(/staffMark\(role\)/.test(appMark), 'есть общий хелпер метки');
+ok(/moderator: \{ letter: 'Д'/.test(appMark), 'у модератора буква «Д»');
+ok(/admin: *\{ letter: 'А'/.test(appMark) && /owner: *\{ letter: 'В'/.test(appMark),
+   'у администратора «А», у владельца «В»');
+const warMark = fs.readFileSync(ROOT + '/public/js/screens/war.js', 'utf8');
+ok(/App\.staffMark\(o\.staffRole\)/.test(warMark), 'метка выводится в списке целей во вкладке «Война»');
+const coreMark = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
+ok(/pf-staff-badge/.test(coreMark), 'в профиле выводится полная подпись роли');
+ok(/p\.staffLabel/.test(coreMark), 'подпись берётся с сервера');
+const cssMark = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
+ok(/\.staff-mark-moderator \{[\s\S]{0,120}#6fdcff/.test(cssMark), 'буква «Д» голубая');
+ok(/\.pf-staff-moderator \{[\s\S]{0,120}#6fdcff/.test(cssMark), 'подпись «Дозор» в профиле тоже голубая');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

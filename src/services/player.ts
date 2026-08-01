@@ -1094,6 +1094,10 @@ function publicProfile(target: User, viewer: User): any {
 
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,
+    // Роль в проекте: сотрудников видно всем, чтобы игроки знали, к кому
+    // обращаться и от кого исходят требования в чате
+    staffRole: (() => { try { return require('./roles').roleOf(target); } catch (e) { return null; } })(),
+    staffLabel: (() => { try { return require('./roles').roleLabel(target) || null; } catch (e) { return null; } })(),
     level: target.level, rank: rank(target.level), rating: rating(target),
     accountBan: banInfo,
     country: target.country,
