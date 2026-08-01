@@ -81,6 +81,7 @@ const Admin = {
       { id:'support',   label:'🛟 Поддержка',   zone:'support' },
       { id:'tech',      label:'🔧 Техническое', zone:'security' },
       { id:'db',        label:'🗄 База данных', zone:'database' },
+      { id:'roles',     label:'🛡 Роли',        zone:'roles' },
     ];
     document.getElementById('content').innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
@@ -120,6 +121,7 @@ const Admin = {
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'tech')      return Admin.renderTech(c);
     if (Admin.tab === 'db')        return Admin.renderDb(c);
+    if (Admin.tab === 'roles')     return Admin.renderRoles(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
@@ -147,6 +149,106 @@ const Admin = {
   // операциями. Обе — необратимые, поэтому подтверждение вводится
   // руками, а не одним кликом.
   techTarget: null,
+
+  // ═══ РОЛИ: выдача прав без остановки сервера ═════════════════════
+  // Через панель роль меняется в памяти работающего сервера и сразу
+  // сохраняется — в отличие от скрипта на сервере, правку которого
+  // затирает сохранение памяти при перезапуске.
+  async renderRoles(c) {
+    c.innerHTML = '<div class="loading">Загружаю сотрудников…</div>';
+    let data = null;
+    try { data = await API.get('/api/staff'); } catch (e) {
+      c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
+      return;
+    }
+    const iAmOwner = data.me && data.me.role === 'owner';
+    const label = { owner: 'Владелец', admin: 'Администратор', moderator: 'Дозор' };
+
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🛡 Сотрудники проекта</div>
+        <p class="muted small mt">Ваша роль: <b>${UI.esc((data.me && data.me.label) || '—')}</b>.
+        ${iAmOwner
+          ? 'Вы можете назначать любые роли, включая администраторов.'
+          : 'Администратор назначает и снимает только модераторов.'}</p>
+        <div class="mt">
+          ${(data.staff || []).map((s) => `
+            <div class="list-row">
+              <div class="grow">
+                <b>${UI.esc(s.name)}</b>
+                <span class="badge">${UI.esc(label[s.role] || s.role)}</span>
+                <span class="muted small">ур. ${s.level}</span>
+              </div>
+              ${(s.role !== 'owner' && (iAmOwner || s.role === 'moderator'))
+                ? `<button class="btn btn-red btn-inline" data-role-off="${s.id}" data-name="${UI.esc(s.name)}">снять</button>`
+                : ''}
+            </div>`).join('') || '<p class="muted small">Пока только вы.</p>'}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name">➕ Назначить роль</div>
+        <p class="muted small mt">Найдите игрока по позывному и выберите роль.
+        Изменение вступает в силу сразу — игроку нужно лишь обновить страницу.</p>
+        <div class="field-row mt">
+          <input type="text" id="role-q" class="field" placeholder="Позывной игрока…" style="flex:1">
+          <button class="btn btn-orange btn-inline" id="role-find">🔍 Найти</button>
+        </div>
+        <div id="role-results" class="mt"></div>
+      </div>`;
+
+    // Снятие роли
+    c.querySelectorAll('[data-role-off]').forEach((b) => {
+      b.onclick = async () => {
+        if (!await UI.confirm(`Снять все роли с игрока <b>${UI.esc(b.dataset.name)}</b>?`,
+            { title: 'Снятие роли', icon: '🛡', okText: 'Снять', danger: true, html: true })) return;
+        try {
+          await API.post('/api/staff/role', { userId: b.dataset.roleOff, role: 'none' });
+          UI.toast('✅ Роль снята');
+          Admin.renderRoles(c);
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+
+    // Поиск и назначение
+    const doFind = async () => {
+      const q = (document.getElementById('role-q') || {}).value || '';
+      const box = document.getElementById('role-results');
+      if (q.trim().length < 2) { box.innerHTML = '<p class="muted small">Введите хотя бы 2 символа</p>'; return; }
+      box.innerHTML = '<div class="loading">Ищу…</div>';
+      try {
+        const r = await API.get('/api/mod/find?q=' + encodeURIComponent(q.trim()));
+        box.innerHTML = (r.players || []).length
+          ? (r.players || []).map((p) => `
+              <div class="list-row">
+                <div class="grow"><b>${UI.esc(p.name)}</b> <span class="muted small">ур. ${p.level}</span>
+                  ${p.role ? `<span class="badge">${UI.esc(label[p.role] || p.role)}</span>` : ''}</div>
+                <button class="btn btn-inline" data-set="${p.id}" data-r="moderator" data-name="${UI.esc(p.name)}">Дозор</button>
+                ${iAmOwner ? `<button class="btn btn-inline" data-set="${p.id}" data-r="admin" data-name="${UI.esc(p.name)}">Админ</button>` : ''}
+                ${iAmOwner ? `<button class="btn btn-inline" data-set="${p.id}" data-r="owner" data-name="${UI.esc(p.name)}">Владелец</button>` : ''}
+              </div>`).join('')
+          : '<p class="muted small">Никого не найдено</p>';
+        box.querySelectorAll('[data-set]').forEach((b) => {
+          b.onclick = async () => {
+            const rn = label[b.dataset.r] || b.dataset.r;
+            if (!await UI.confirm(
+              `Назначить игроку <b>${UI.esc(b.dataset.name)}</b> роль <b>${UI.esc(rn)}</b>?` +
+              (b.dataset.r === 'owner' ? '<br><span class="muted small">Владелец получает полный доступ, включая выдачу ресурсов и управление базой.</span>' : ''),
+              { title: 'Назначение роли', icon: '🛡', okText: 'Назначить', html: true, danger: b.dataset.r === 'owner' })) return;
+            try {
+              await API.post('/api/staff/role', { userId: b.dataset.set, role: b.dataset.r });
+              UI.toast('✅ Роль назначена');
+              Admin.renderRoles(c);
+            } catch (e) { UI.toast('⛔ ' + e.message); }
+          };
+        });
+      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+    };
+    const fb = document.getElementById('role-find');
+    if (fb) fb.onclick = doFind;
+    const qi = document.getElementById('role-q');
+    if (qi) qi.onkeydown = (ev) => { if (ev.key === 'Enter') doFind(); };
+  },
 
   // ═══ БАЗА ДАННЫХ: состояние, копии, снимки, восстановление ═══════
   // Восстановление раньше требовало разработчика — теперь всё кнопками.

@@ -58,7 +58,24 @@ function ask(question) {
   });
 }
 
+// Работает ли сейчас сервер игры на этой же базе.
+// Это КРИТИЧНО: сервер держит всех игроков в памяти и при остановке
+// записывает память на диск целиком. Правка, сделанная скриптом в файле
+// базы «на живую», будет затёрта этим сохранением — роль молча
+// откатится к прежней, и человек не поймёт, почему ничего не изменилось.
+function serverRunning() {
+  try {
+    const lock = path.join(process.env.SQLITE_DIR || path.join(ROOT, 'data'), '.db-lock');
+    if (!fs.existsSync(lock)) return 0;
+    const pid = Number(String(fs.readFileSync(lock, 'utf8')).trim().split(/\s+/)[0]);
+    if (!pid) return 0;
+    try { process.kill(pid, 0); return pid; }        // сигнал 0 только проверяет
+    catch (e) { return e && e.code === 'EPERM' ? pid : 0; }
+  } catch (e) { return 0; }
+}
+
 (async () => {
+  const runningPid = serverRunning();
   await db.init();
   const users = db.load('users', {});
   const all = Object.values(users);
@@ -142,6 +159,17 @@ function ask(question) {
   if (OFF && admins.length === 1 && already) {
     console.log('\n⚠️  Это ПОСЛЕДНИЙ администратор. После снятия прав войти в панель');
     console.log('   будет некому — вернуть доступ можно только этой же командой.');
+  }
+
+  if (runningPid) {
+    console.log(`\n⛔ СЕЙЧАС РАБОТАЕТ СЕРВЕР ИГРЫ (PID ${runningPid}).`);
+    console.log('   Он держит игроков в памяти и при остановке перезапишет базу');
+    console.log('   своей копией — изменение роли будет молча отменено.');
+    console.log('\n   Сделайте так:');
+    console.log('     pm2 stop generals-game');
+    console.log(`     node tools/grant-admin.js "${target.name}"${OWNER ? ' --owner' : (MOD ? ' --moderator' : (OFF ? ' --off' : ''))}`);
+    console.log('     pm2 start generals-game --update-env');
+    process.exit(1);
   }
 
   if (!YES) {

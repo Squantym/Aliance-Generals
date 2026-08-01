@@ -59,6 +59,32 @@ async function main() {
   // и только потом начинаем принимать запросы.
   await db.init();
 
+  // ---- Владелец проекта из настроек ----
+  // OWNER_NAME в .env назначает владельцем указанный позывной при каждом
+  // старте. Нужен потому, что скрипт на сервере правит ФАЙЛ базы, а
+  // работающий сервер держит игроков в памяти и при остановке
+  // перезаписывает базу своей копией — правка молча пропадала.
+  // Здесь роль выставляется в памяти сервера, поэтому она сохраняется.
+  try {
+    const ownerName = String(process.env.OWNER_NAME || '').trim();
+    if (ownerName) {
+      const players = db.load<Record<string, any>>('users', {});
+      const low = ownerName.toLowerCase();
+      const target = Object.values(players).find((p: any) => String(p.name || '').toLowerCase() === low);
+      if (!target) {
+        console.warn(`⚠️  OWNER_NAME=«${ownerName}»: игрок с таким позывным не найден`);
+      } else if ((target as any).role !== 'owner') {
+        (target as any).role = 'owner';
+        (target as any).isAdmin = true;
+        db.markUser((target as any).id);
+        db.save('users');
+        console.log(`👑 Игрок «${(target as any).name}» назначен владельцем проекта (OWNER_NAME).`);
+      }
+    }
+  } catch (e: any) {
+    console.error('Ошибка назначения владельца:', e && e.message);
+  }
+
   // ---- Разовая миграция: обнуление рейтинга под новую систему ----
   // Рейтинг стал накопительным (победа +1 / поражение −1 / ухо или жетон +3 /
   // тебе отрезали ухо −3 / подрыв на мине −3). Старые значения считались по

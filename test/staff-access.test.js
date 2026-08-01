@@ -41,7 +41,23 @@ ok(/rel === '\/admin' \|\| rel === '\/admin\/' \|\| rel === '\/admin\.html'/.tes
 ok(http.includes('Попытка открыть админ-панель'), 'попытки записываются в журнал');
 ok(/canAccessZone\(user, roles\.zoneOfPath\(pathname\)\)/.test(http), 'каждый запрос проверяется по своей зоне');
 
-console.log('\n── 5. Скрипт ролей различает роли ──');
+console.log('\n── 5. Назначение владельца без потери правки ──');
+const server = fs.readFileSync(path.join(ROOT, 'server.ts'), 'utf8');
+ok(server.includes('OWNER_NAME'), 'владельца можно задать переменной OWNER_NAME в .env');
+ok(/\(target as any\)\.role = 'owner'/.test(server), 'роль выставляется при старте сервера');
+ok(/держит игроков в памяти и при остановке/.test(server),
+   'в коде объяснено, почему правка из скрипта пропадала');
+ok(/toLowerCase\(\) === low/.test(server), 'позывной сравнивается без учёта регистра');
+const grantSrc = fs.readFileSync(path.join(ROOT, 'tools/grant-admin.js'), 'utf8');
+ok(/function serverRunning/.test(grantSrc), 'скрипт определяет работающий сервер');
+ok(/СЕЙЧАС РАБОТАЕТ СЕРВЕР ИГРЫ/.test(grantSrc),
+   'и отказывается менять роль на живую — иначе изменение молча затрётся');
+const adminJs2 = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
+ok(/renderRoles/.test(adminJs2), 'в панели есть вкладка «Роли» — назначение без остановки сервера');
+ok(/data-set=.*data-r="owner"/.test(adminJs2) || /data-r="owner"/.test(adminJs2), 'владелец может назначить владельца');
+ok(/data-r="moderator"/.test(adminJs2), 'и модератора');
+
+console.log('\n── 6. Скрипт ролей различает роли ──');
 const grant = fs.readFileSync(path.join(ROOT, 'tools/grant-admin.js'), 'utf8');
 ok(/const currentRole = target\.role \|\| \(target\.isAdmin \? 'admin' : null\)/.test(grant),
    'текущая роль вычисляется с учётом старого флага isAdmin');
@@ -49,7 +65,7 @@ ok(/const wantRole = OFF \? null : \(OWNER \? 'owner'/.test(grant), 'запро�
 ok(/if \(currentRole === wantRole\)/.test(grant),
    'сравниваются РОЛИ, а не факт наличия прав — повышение админа до владельца больше не игнорируется');
 
-console.log('\n── 6. Скрипт деплоя устойчив ──');
+console.log('\n── 7. Скрипт деплоя устойчив ──');
 const deploy = fs.readFileSync(path.join(ROOT, 'tools/deploy.sh'), 'utf8');
 ok(/pm2 describe "\$PM2_NAME" > \/dev\/null 2>&1/.test(deploy), 'наличие процесса проверяется перед перезапуском');
 ok(/pm2 start dist\/server\.js --name/.test(deploy), 'если процесса нет — запускается заново, а не падает');
