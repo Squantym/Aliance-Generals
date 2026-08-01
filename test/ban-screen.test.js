@@ -32,17 +32,19 @@ owner.role = 'owner'; owner.isAdmin = true;
 roles.setRole(owner, mod.id, 'moderator', []);
 
 console.log('\n── 1. Чат-бан закрывает публичные каналы ──');
-roles.banChat(mod, bad.id, 60, 'Оскорбления', []);
+// Блокировка теперь адресная: по умолчанию закрываются общий чат и
+// чат легиона, личные сообщения остаются
+roles.banChat(mod, bad.id, 60, 'Оскорбления', [], ['global', 'legion']);
 bad.lastChatAt = 0;
-fails(() => social.chatPost(bad, 'всем привет'), 'общие чаты', 'общий чат закрыт');
+fails(() => social.chatPost(bad, 'всем привет'), 'Общий чат закрыт', 'общий чат закрыт');
 fails(() => social.chatPost(bad, 'привет'), 'Оскорбления', 'причина сообщается');
-fails(() => social.chatPost(bad, 'привет'), 'Личные сообщения по-прежнему доступны', 'игроку сразу объясняют, что личные работают');
+fails(() => social.chatPost(bad, 'привет'), 'Доступно: Личные сообщения', 'игроку перечисляют, что осталось доступным');
 // Чат легиона — тоже публичный канал
 const legions = db.load('legions', {});
 legions['L1'] = { id: 'L1', name: 'Легион', leaderId: bad.id, members: [bad.id], chat: [], requests: [], arsenal: {}, battleBuildings: {} };
 bad.legionId = 'L1';
 db.save('legions');
-fails(() => legion.chatPost(bad, 'привет легион', []), 'общие чаты', 'чат легиона тоже закрыт');
+fails(() => legion.chatPost(bad, 'привет легион', []), 'Чат легиона закрыт', 'чат легиона тоже закрыт');
 
 console.log('\n── 2. Личные сообщения работают ──');
 let mailSent = true;

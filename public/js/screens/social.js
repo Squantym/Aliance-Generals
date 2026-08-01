@@ -1028,6 +1028,33 @@ async function renderPersonalAlliance(c) {
 }
 
 // ---------- ОБЩЕНИЕ (общий чат) ----------
+// Правила поведения в чате — открываются кнопкой, чтобы игрок мог
+// свериться до того, как получит блокировку, а модератор — сослаться
+App.showChatRules = () => {
+  const RULES = [
+    ['Уважение', 'Без оскорблений, травли и перехода на личности. Спор о тактике — нормально, оскорбление собеседника — нет.'],
+    ['Без флуда', 'Не повторяйте одно и то же сообщение, не пишите фразу по словам в разных строках, не злоупотребляйте капсом.'],
+    ['Без рекламы', 'Ссылки на посторонние сайты, продажу аккаунтов и другие игры запрещены.'],
+    ['Без вражды', 'Оскорбления по национальному, религиозному и любому подобному признаку — блокировка сразу и надолго.'],
+    ['Без мата', 'Нецензурная брань в общем чате запрещена, в том числе завуалированная.'],
+    ['Без обмана', 'Не выманивайте данные для входа, не обещайте «перевести золото» за услуги вне игры.'],
+    ['Уважайте «Дозор»', 'Требования модератора выполняются сразу. Спорить о блокировке — в личных сообщениях, а не в общем чате.'],
+  ];
+  UI.confirm(
+    `<div class="chat-rules">
+       <p class="muted small">Правила действуют в общем чате, чате легиона и личных сообщениях.
+       За нарушение «Дозор» закрывает доступ к чатам на срок от 15 минут до 30 суток.</p>
+       ${RULES.map((r, i) => `
+         <div class="chat-rule">
+           <div class="chat-rule-num">${i + 1}</div>
+           <div><b>${UI.esc(r[0])}</b><div class="muted small">${UI.esc(r[1])}</div></div>
+         </div>`).join('')}
+       <p class="muted small mt">Блокировка чата не мешает играть: бои, задания и покупки остаются доступны.</p>
+     </div>`,
+    { title: 'Правила общения', icon: '📜', html: true, okText: 'Понятно', cancelText: '' }
+  );
+};
+
 App.screens.chat = async (c) => {
   c.innerHTML = `
     <div class="title">Общение</div>
@@ -1037,7 +1064,14 @@ App.screens.chat = async (c) => {
         <input type="text" id="chat-text" maxlength="300" placeholder="Сообщение в эфир…">
         <button class="btn btn-orange btn-inline" id="chat-send">➤</button>
       </div>
+      <div class="chat-foot mt">
+        <button class="btn btn-inline" id="chat-rules">📜 Правила общения</button>
+        ${(App.me && App.me.staffRole) ? '<span class="chat-foot-hint muted small">🛡 Кнопка 🔇 у сообщения — блокировка чата</span>' : ''}
+      </div>
     </div>`;
+
+  const rulesBtn = document.getElementById('chat-rules');
+  if (rulesBtn) rulesBtn.onclick = () => App.showChatRules();
 
   const box = document.getElementById('chat-box');
 
@@ -1046,10 +1080,11 @@ App.screens.chat = async (c) => {
       const { messages } = await API.get('/api/chat');
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
-        <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}">
+        <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}">
           ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
           ${msg.staff ? `<span class="chat-staff chat-staff-${msg.staff}" title="${UI.esc(msg.staffLabel || '')}">${UI.esc(msg.staffLabel || '')}</span>` : ''}
+          ${msg.banned ? '<span class="chat-banned-mark" title="На игроке действует блокировка">🔇</span>' : ''}
           <span class="muted small">[${msg.level}]</span>
           ${msg.self ? '' : `<button class="chat-reply" data-reply="${UI.esc(msg.name)}" title="Ответить ${UI.esc(msg.name)}">↩</button>`}
           ${(App.me && App.me.staffRole && !msg.self && !msg.staff)

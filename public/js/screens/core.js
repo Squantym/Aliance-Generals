@@ -744,6 +744,40 @@ App.screens.profile = async (c, param) => {
   }
   // Личное сообщение игроку
   if (!own) {
+    // Инструменты «Дозора» в профиле игрока
+    const modBlock = document.getElementById('pf-mod-block');
+    if (modBlock) {
+      const statusEl = document.getElementById('pf-mod-status');
+      const banBtn = document.getElementById('pf-chatban');
+      const refreshStatus = async () => {
+        try {
+          const st = await API.get('/api/mod/chat-status/' + encodeURIComponent(p.id));
+          if (st.banned) {
+            const lm = Math.max(1, Math.round((st.until - Date.now()) / 60000));
+            const lt = lm < 60 ? `${lm} мин` : (lm < 1440 ? `${Math.round(lm / 60)} ч` : `${Math.round(lm / 1440)} дн`);
+            statusEl.innerHTML = `<span class="wr-bad">🔇 Закрыто: ${UI.esc(st.scopeNames)}</span> · осталось ${lt}` +
+              `<br>Причина: ${UI.esc(st.reason)}${st.byName ? ` · выдал ${UI.esc(st.byName)}` : ''}`;
+            banBtn.textContent = '🔊 Снять блокировку';
+            banBtn.classList.add('btn-orange');
+            banBtn.style.display = '';
+          } else if (!st.canBan) {
+            statusEl.innerHTML = '<span class="muted">Сотрудник проекта — блокировка недоступна</span>';
+            banBtn.style.display = 'none';
+          } else {
+            statusEl.innerHTML = '<span class="muted">Блокировок нет</span>';
+            banBtn.textContent = '🔇 Заблокировать чат';
+            banBtn.classList.remove('btn-orange');
+            banBtn.style.display = '';
+          }
+        } catch (e) { statusEl.innerHTML = `<span class="muted">${UI.esc(e.message)}</span>`; }
+      };
+      refreshStatus();
+      if (banBtn) banBtn.onclick = async () => {
+        await App.showChatBanDialog(p.id, p.name);
+        setTimeout(refreshStatus, 400);
+      };
+    }
+
     const btnSpy = document.getElementById('pf-spy');
     if (btnSpy) btnSpy.onclick = async () => {
       try {

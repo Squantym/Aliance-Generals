@@ -28,6 +28,17 @@ type Role = 'owner' | 'admin' | 'moderator' | null;
 // Максимальный срок блокировки чата, минут (30 суток)
 const MAX_BAN_MINUTES = 30 * 24 * 60;
 
+// Каналы общения, которые можно закрыть игроку по отдельности.
+// Раньше блокировка была одна на все публичные чаты; теперь модератор
+// выбирает, что именно закрыть — например, только общий чат, оставив
+// человеку связь с легионом.
+const CHAT_SCOPES: Array<{ id: string; name: string; note: string }> = [
+  { id: 'global', name: 'Общий чат',        note: 'мировой чат, виден всем игрокам' },
+  { id: 'legion', name: 'Чат легиона',      note: 'внутренний чат легиона и альянса' },
+  { id: 'mail',   name: 'Личные сообщения', note: 'переписка один на один' },
+];
+const ALL_SCOPES = CHAT_SCOPES.map((s) => s.id);
+
 // ═══ ЗОНЫ ДОСТУПА ═════════════════════════════════════════════════
 // Права разложены по зонам. Владелец имеет все, администратор — все,
 // кроме перечисленных в OWNER_ONLY. Каждый админский запрос относится
@@ -304,24 +315,41 @@ function staffList() {
 // Личная переписка блокировкой не затрагивается: наказание за поведение
 // на публике не должно лишать человека возможности написать напрямую.
 function assertCanWritePublic(user: any): void {
-  const ban = chatBanInfo(user);
-  if (!ban) return;
-  const left = Math.max(1, Math.round((ban.until - Date.now()) / 60000));
-  throw new u.ApiError(
-    `🔇 Вам закрыты общие чаты ещё на ${humanMinutes(left)}. Причина: ${ban.reason}` +
-    (ban.byName ? ` (Дозор: ${ban.byName})` : '') +
-    '. Личные сообщения по-прежнему доступны.'
-  );
+  assertCanWrite(user, 'global');
 }
 
-function chatBanInfo(user: any): { active: boolean; until: number; reason: string; byName: string } | null {
+function chatBanInfo(user: any): { active: boolean; until: number; reason: string; byName: string; scopes: string[] } | null {
   const b = user && (user as any).chatBan;
   if (!b) return null;
   if (b.until && b.until <= Date.now()) return null;         // срок вышел
-  return { active: true, until: b.until, reason: b.reason || '', byName: b.byName || '' };
+  // Старые блокировки без списка каналов закрывали общий чат и легион —
+  // сохраняем это поведение, чтобы обновление не сняло действующие кляпы
+  const scopes = Array.isArray(b.scopes) && b.scopes.length ? b.scopes : ['global', 'legion'];
+  return { active: true, until: b.until, reason: b.reason || '', byName: b.byName || '', scopes };
 }
 
-function banChat(actor: User, targetId: string, minutes: number, reason: string, notices: Notices) {
+// Закрыт ли игроку конкретный канал
+function isChatBlocked(user: any, scope: string): boolean {
+  const info = chatBanInfo(user);
+  return !!info && info.scopes.includes(scope);
+}
+
+// Проверка перед отправкой в конкретный канал
+function assertCanWrite(user: any, scope: string): void {
+  const info = chatBanInfo(user);
+  if (!info || !info.scopes.includes(scope)) return;
+  const left = Math.max(1, Math.round((info.until - Date.now()) / 60000));
+  const zone = CHAT_SCOPES.find((z) => z.id === scope);
+  const openLeft = ALL_SCOPES.filter((sc) => !info.scopes.includes(sc))
+    .map((sc) => (CHAT_SCOPES.find((z) => z.id === sc) || { name: sc }).name);
+  throw new u.ApiError(
+    `🔇 ${zone ? zone.name : 'Чат'} закрыт для вас ещё на ${humanMinutes(left)}. Причина: ${info.reason}` +
+    (info.byName ? ` (Дозор: ${info.byName})` : '') +
+    (openLeft.length ? `. Доступно: ${openLeft.join(', ')}.` : '.')
+  );
+}
+
+function banChat(actor: User, targetId: string, minutes: number, reason: string, notices: Notices, scopeList?: string[]) {
   if (!isModerator(actor)) throw new u.ApiError('Недостаточно прав');
   const users = player.users();
   const target = users[targetId];
@@ -338,10 +366,15 @@ function banChat(actor: User, targetId: string, minutes: number, reason: string,
   const why = String(reason || '').trim().slice(0, 200);
   if (!why) throw new u.ApiError('Укажите причину блокировки');
 
+  // Какие каналы закрываем. Пусто или 'all' — закрываем все.
+  let scopes: string[] = Array.isArray(scopeList) ? scopeList.filter((x) => ALL_SCOPES.includes(x)) : [];
+  if (!scopes.length) scopes = ALL_SCOPES.slice();
+
   (target as any).chatBan = {
     until: Date.now() + mins * 60 * 1000,
     minutes: mins,
     reason: why,
+    scopes,
     byId: actor.id,
     byName: actor.name,
     at: Date.now(),
@@ -355,11 +388,14 @@ function banChat(actor: User, targetId: string, minutes: number, reason: string,
   });
   try {
     require('./notifications').push(target.id, 'chat_ban',
-      `🔇 Чат заблокирован на ${humanMinutes(mins)}. Причина: ${why}`, { until: (target as any).chatBan.until });
+      `🔇 Закрыто на ${humanMinutes(mins)}: ${scopes.map((sc) => (CHAT_SCOPES.find((z) => z.id === sc) || { name: sc }).name).join(', ')}. Причина: ${why}`,
+      { until: (target as any).chatBan.until });
   } catch (e) {}
 
-  notices.push(`🔇 Чат игрока «${target.name}» заблокирован на ${humanMinutes(mins)}. Причина: ${why}`);
-  return { id: target.id, name: target.name, until: (target as any).chatBan.until, minutes: mins, reason: why };
+  const scopeNames = scopes.map((sc) => (CHAT_SCOPES.find((z) => z.id === sc) || { name: sc }).name).join(', ');
+  notices.push(`🔇 Игроку «${target.name}» закрыто на ${humanMinutes(mins)}: ${scopeNames}. Причина: ${why}`);
+  return { id: target.id, name: target.name, until: (target as any).chatBan.until,
+           minutes: mins, reason: why, scopes, scopeNames };
 }
 
 function unbanChat(actor: User, targetId: string, notices: Notices) {
@@ -391,6 +427,8 @@ function bannedList() {
     out.push({
       id: p.id, name: p.name, flag: player.flag(p), level: p.level,
       until: info.until, reason: info.reason, byName: info.byName,
+      scopes: info.scopes,
+      scopeNames: info.scopes.map((sc: string) => (CHAT_SCOPES.find((z) => z.id === sc) || { name: sc }).name).join(', '),
       leftMinutes: Math.max(1, Math.round((info.until - Date.now()) / 60000)),
     });
   }
@@ -413,5 +451,6 @@ export = {
   permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES,
   setRole, staffList, canManage,
   banChat, unbanChat, chatBanInfo, bannedList, humanMinutes, assertCanWritePublic,
+  assertCanWrite, isChatBlocked, CHAT_SCOPES, ALL_SCOPES,
   MAX_BAN_MINUTES,
 };

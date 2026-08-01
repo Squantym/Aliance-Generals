@@ -973,8 +973,9 @@ function chatGet(user: User): any {
 }
 
 function chatPost(user: User, text: string, notices: Notices) {
-  // Блокировка «Дозора» закрывает и чат легиона — это тоже публичный канал
-  require('./roles').assertCanWritePublic(user);
+  // Чат легиона — отдельный канал: модератор может закрыть его,
+  // оставив игроку общий чат, и наоборот
+  require('./roles').assertCanWrite(user, 'legion');
   const l = legionOf(user);
   if (!l) throw new u.ApiError('Вы не состоите в легионе');
   ensureLegionFields(l);

@@ -1990,6 +1990,34 @@ const App = {
   // Модератор выбирает срок из готовых вариантов и обязательно указывает
   // причину — она показывается игроку, когда тот попробует написать.
   async showChatBanDialog(userId, userName) {
+    // Сначала смотрим, не заблокирован ли игрок уже — тогда предлагаем снять
+    let st = null;
+    try { st = await API.get('/api/mod/chat-status/' + encodeURIComponent(userId)); } catch (e) {}
+    if (st && st.banned) {
+      const leftMin = Math.max(1, Math.round((st.until - Date.now()) / 60000));
+      const leftTxt = leftMin < 60 ? `${leftMin} мин` : (leftMin < 1440 ? `${Math.round(leftMin / 60)} ч` : `${Math.round(leftMin / 1440)} дн`);
+      const ok = await UI.confirm(
+        `<div class="ban-dialog">
+           <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
+           <div class="ban-status">
+             <div>Закрыто: <b>${UI.esc(st.scopeNames || '—')}</b></div>
+             <div>Осталось: <b class="wr-bad">${leftTxt}</b></div>
+             <div>Причина: ${UI.esc(st.reason || '—')}</div>
+             ${st.byName ? `<div class="muted small">Выдал: ${UI.esc(st.byName)}</div>` : ''}
+           </div>
+         </div>`,
+        { title: 'Блокировка активна', icon: '🔇', html: true, okText: 'Снять блокировку', cancelText: 'Оставить' });
+      if (!ok) return;
+      try {
+        await API.post('/api/mod/chat-unban', { userId });
+        UI.toast('🔊 Блокировка снята');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+      return;
+    }
+    return App._showChatBanForm(userId, userName);
+  },
+
+  async _showChatBanForm(userId, userName) {
     const durations = [
       { m: 15, t: '15 минут' }, { m: 60, t: '1 час' }, { m: 180, t: '3 часа' },
       { m: 720, t: '12 часов' }, { m: 1440, t: '1 сутки' }, { m: 4320, t: '3 суток' },
@@ -2005,6 +2033,13 @@ const App = {
         <div class="ban-label">Срок блокировки</div>
         <div class="ban-grid" id="ban-durations">
           ${durations.map((d, i) => `<button class="ban-opt${i === 1 ? ' active' : ''}" data-min="${d.m}">${d.t}</button>`).join('')}
+        </div>
+        <div class="ban-label">Что закрыть</div>
+        <div class="ban-grid ban-scopes">
+          <button class="ban-opt ban-scope active" data-scope="global">Общий чат</button>
+          <button class="ban-opt ban-scope" data-scope="legion">Чат легиона</button>
+          <button class="ban-opt ban-scope" data-scope="mail">Личные сообщения</button>
+          <button class="ban-opt ban-scope-all" data-scope-all="1">Всё сразу</button>
         </div>
         <div class="ban-label">Причина (обязательно)</div>
         <div class="ban-grid ban-reasons">
@@ -2031,6 +2066,19 @@ const App = {
           App._banMinutes = Number(b.dataset.min) || 60;
         };
       });
+      // Каналы: можно отметить несколько или нажать «Всё сразу»
+      const syncScopes = () => {
+        App._banScopes = [...root.querySelectorAll('.ban-scope.active')].map((x) => x.dataset.scope);
+      };
+      root.querySelectorAll('.ban-scope').forEach((b) => {
+        b.onclick = () => { b.classList.toggle('active'); syncScopes(); };
+      });
+      const allBtn = root.querySelector('[data-scope-all]');
+      if (allBtn) allBtn.onclick = () => {
+        root.querySelectorAll('.ban-scope').forEach((x) => x.classList.add('active'));
+        syncScopes();
+      };
+      syncScopes();
       root.querySelectorAll('[data-reason]').forEach((b) => {
         b.onclick = () => {
           root.querySelectorAll('[data-reason]').forEach((x) => x.classList.remove('active'));
@@ -2047,8 +2095,9 @@ const App = {
     const reason = (App._banReason || '').trim();
     if (!reason) { UI.toast('⛔ Укажите причину блокировки'); return; }
     try {
-      await API.post('/api/mod/chat-ban', { userId, minutes, reason });
-      UI.toast('🔇 Чат заблокирован');
+      const scopes = (App._banScopes && App._banScopes.length) ? App._banScopes : ['global'];
+      await API.post('/api/mod/chat-ban', { userId, minutes, reason, scopes });
+      UI.toast('🔇 Блокировка выдана');
     } catch (e) { UI.toast('⛔ ' + e.message); }
   },
 
@@ -2056,6 +2105,7 @@ const App = {
   // потому что разметка окна исчезает вместе с ним
   _banMinutes: 60,
   _banReason: '',
+  _banScopes: ['global'],
 
   // ── Окно награды за вход: «довольствие от штаба» ────────────────
   // Раньше награда падала на счёт молча из /api/me — игрок замечал её

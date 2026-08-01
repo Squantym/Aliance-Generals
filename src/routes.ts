@@ -474,7 +474,36 @@ function registerRoutes(app: any) {
   });
 
   app.add('POST', '/api/mod/chat-ban', act((req, n) =>
-    roles.banChat(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n)));
+    roles.banChat(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0),
+                  String(req.body.reason || ''), n,
+                  Array.isArray(req.body.scopes) ? req.body.scopes.map((x: any) => String(x)) : undefined)));
+
+  // Список каналов для окна блокировки
+  app.add('GET', '/api/mod/chat-scopes', (req) => {
+    if (!roles.isModerator(req.user)) throw new u.ApiError('Недостаточно прав');
+    return { scopes: roles.CHAT_SCOPES, maxMinutes: roles.MAX_BAN_MINUTES };
+  });
+
+  // Состояние блокировки конкретного игрока — для кнопки в профиле
+  app.add('GET', '/api/mod/chat-status/:id', (req) => {
+    if (!roles.isModerator(req.user)) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.params.id || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    const info = roles.chatBanInfo(target);
+    return {
+      id: target.id, name: target.name,
+      role: roles.roleOf(target),
+      banned: !!info,
+      until: info ? info.until : 0,
+      reason: info ? info.reason : '',
+      byName: info ? info.byName : '',
+      scopes: info ? info.scopes : [],
+      scopeNames: info
+        ? info.scopes.map((sc: string) => (roles.CHAT_SCOPES.find((z: any) => z.id === sc) || { name: sc }).name).join(', ')
+        : '',
+      canBan: !roles.roleOf(target) || roles.isOwner(req.user),
+    };
+  });
 
   app.add('POST', '/api/mod/chat-unban', act((req, n) =>
     roles.unbanChat(req.user, String(req.body.userId || ''), n)));

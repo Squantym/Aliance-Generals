@@ -32,6 +32,7 @@ function chatGet(viewer: User | null, afterId?: number | string) {
   if (!viewer) return { messages: msgs };
   const pa = require('./personalAlliance');
   const players: Record<string, User> = require('./player').users();
+  const viewerIsStaff = require('./roles').isModerator(viewer);
   return {
     messages: msgs.map((m: any) => {
       const author = m.uid ? players[m.uid] : null;
@@ -44,6 +45,9 @@ function chatGet(viewer: User | null, afterId?: number | string) {
         // у администратора и владельца — чтобы в чате было видно, кто есть кто
         staff: author ? (roles.roleOf(author) || null) : null,
         staffLabel: author ? (roles.roleLabel(author) || null) : null,
+        // Сотрудникам показываем, кто уже под блокировкой — чтобы не
+        // выдавать повторную и видеть, кем уже занимались
+        banned: (viewerIsStaff && author) ? !!roles.chatBanInfo(author) : false,
       };
     }),
   };
@@ -52,9 +56,7 @@ function chatGet(viewer: User | null, afterId?: number | string) {
 function chatPost(user: User, text: string) {
   text = String(text || '').trim().slice(0, config.CHAT.MAX_LEN);
   if (!text) throw new u.ApiError('Пустое сообщение');
-  // Блокировка распространяется на общий чат и чат легиона; личные
-  // сообщения остаются доступными
-  require('./roles').assertCanWritePublic(user);
+  require('./roles').assertCanWrite(user, 'global');
   const now = Date.now();
   // Простейшая защита от спама: не чаще одного сообщения в 3 секунды
   if (user.lastChatAt && now - user.lastChatAt < config.CHAT.RATE_MS) {
@@ -133,6 +135,9 @@ function readThread(user: User, otherId: string) {
 }
 
 function sendMail(user: User, toName: string, subject: string, text: string) {
+  // Личные сообщения тоже можно закрыть — но только если модератор выбрал
+  // этот канал отдельно. По умолчанию блокировка их не затрагивает.
+  require('./roles').assertCanWrite(user, 'mail');
   const target = player.findByName(toName);
   if (!target) throw new u.ApiError('Игрок с таким именем не найден');
   if (target.id === user.id) throw new u.ApiError('Письмо самому себе? Лучше веди дневник.');
