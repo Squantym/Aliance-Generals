@@ -48,10 +48,40 @@ type Zone =
   | 'roles'       // назначение администраторов и владельцев
   | 'season';     // настройки сезона, принудительное завершение недели
 
-// Зоны, доступные ТОЛЬКО владельцу. Остальное открыто администраторам.
-// Зона 'roles' открыта администраторам намеренно: сам роут они вызвать
-// могут, но canManage не даст им назначить никого выше модератора.
-const OWNER_ONLY: Zone[] = ['economy', 'discounts', 'database', 'season'];
+// Все зоны с человеческими названиями — для настройки в панели
+const ZONE_INFO: Array<{ id: Zone; name: string; note: string }> = [
+  { id: 'players',    name: 'Игроки',          note: 'поиск, профили, история входов, IP и устройства' },
+  { id: 'moderation', name: 'Модерация',       note: 'баны аккаунтов, блокировка чата, удаление аккаунтов' },
+  { id: 'security',   name: 'Безопасность',    note: 'сброс паролей и прогресса, поиск мультоводов' },
+  { id: 'support',    name: 'Поддержка',       note: 'обращения игроков, ответы, push-уведомления' },
+  { id: 'legions',    name: 'Легионы',         note: 'управление легионами, кланами и турнирами' },
+  { id: 'news',       name: 'Новости',         note: 'публикация новостей и анонсов' },
+  { id: 'event',      name: 'Мировое событие', note: 'запуск и остановка события' },
+  { id: 'roles',      name: 'Роли',            note: 'назначение модераторов (администраторов — только владелец)' },
+  { id: 'economy',    name: 'Ресурсы',         note: 'выдача и списание денег, золота, наград, наёмников' },
+  { id: 'discounts',  name: 'Акции',           note: 'скидки и глобальные бонусы' },
+  { id: 'database',   name: 'База данных',     note: 'копии, снимки, восстановление' },
+  { id: 'season',     name: 'Сезон',           note: 'настройки наград и завершение недели' },
+];
+const ALL_ZONES: Zone[] = ZONE_INFO.map((z) => z.id);
+
+// Что доступно ролям ПО УМОЛЧАНИЮ. Владельца здесь нет: у него всегда
+// полный доступ, иначе он мог бы отключить себе разделы и остаться без
+// возможности вернуть их обратно.
+const DEFAULT_ZONES: Record<string, Zone[]> = {
+  admin: ['players', 'moderation', 'security', 'support', 'legions', 'news', 'event', 'roles'],
+  moderator: [],       // модератор работает из чата, панель ему не нужна
+};
+
+// Действующая настройка: из базы, если владелец её менял, иначе по
+// умолчанию. Коллекция roleZones переживает перезапуск сервера.
+function zonesOfRole(role: string): Zone[] {
+  if (role === 'owner') return ALL_ZONES.slice();
+  const saved: any = db.load('roleZones', {});
+  const list = saved[role];
+  if (Array.isArray(list)) return list.filter((z: any) => ALL_ZONES.includes(z));
+  return (DEFAULT_ZONES[role] || []).slice();
+}
 
 // Полномочия роли «администратор». true — админы работают в своих зонах.
 const ADMIN_POWERS_ENABLED = true;
@@ -67,6 +97,10 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/season\//,                      'season'],
   [/^\/api\/admin\/fame\//,                        'season'],
   [/^\/api\/staff\/role$/,                          'roles'],
+  // Настройка возможностей ролей — отдельная зона: её проверяет сам
+  // сервис (только владелец), но адрес обязан быть размечен, иначе
+  // тест полноты зон справедливо ругается
+  [/^\/api\/staff\/permissions/,                    'roles'],
   [/^\/api\/admin\/(ban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
   [/^\/api\/mod\//,                                 'moderation'],
   [/^\/api\/admin\/(reset|reset-missions|reset-param|set-password)$/, 'security'],
@@ -93,18 +127,69 @@ function zoneOfPath(pathname: string): Zone | null {
 function canAccessZone(user: any, zone: Zone | null): boolean {
   if (isOwner(user)) return true;                       // владельцу открыто всё
   if (!ADMIN_POWERS_ENABLED) return false;
-  if (roleOf(user) !== 'admin') return false;
+  const r = roleOf(user);
+  if (!r) return false;
   if (!zone) return false;                              // незнакомый адрес — нет
-  return !OWNER_ONLY.includes(zone);
+  return zonesOfRole(r).includes(zone);
 }
 
 // Зоны, доступные конкретному пользователю — для интерфейса панели
 function zonesFor(user: any): Zone[] {
-  const all: Zone[] = ['players', 'moderation', 'security', 'support', 'legions',
-                       'news', 'event', 'economy', 'discounts', 'database', 'roles', 'season'];
-  if (isOwner(user)) return all;
-  if (!ADMIN_POWERS_ENABLED || roleOf(user) !== 'admin') return [];
-  return all.filter((z) => !OWNER_ONLY.includes(z));
+  if (isOwner(user)) return ALL_ZONES.slice();
+  if (!ADMIN_POWERS_ENABLED) return [];
+  const r = roleOf(user);
+  return r ? zonesOfRole(r) : [];
+}
+
+// ---------- Настройка возможностей ролей (только владелец) ----------
+function permissionsView() {
+  const saved: any = db.load('roleZones', {});
+  return {
+    zones: ZONE_INFO,
+    roles: [
+      { id: 'admin',     name: 'Администратор', zones: zonesOfRole('admin'),     custom: Array.isArray(saved.admin) },
+      { id: 'moderator', name: 'Дозор',         zones: zonesOfRole('moderator'), custom: Array.isArray(saved.moderator) },
+    ],
+    defaults: DEFAULT_ZONES,
+  };
+}
+
+// Включить или выключить раздел для роли. Владельца настраивать нельзя:
+// у него всегда полный доступ — иначе можно было бы отключить себе
+// «Роли» и потерять возможность вернуть настройки обратно.
+function setRoleZone(actor: User, role: string, zone: string, enabled: boolean, notices: Notices) {
+  if (!isOwner(actor)) throw new u.ApiError('Настраивать возможности ролей может только владелец');
+  if (role === 'owner') throw new u.ApiError('У владельца всегда полный доступ — это нельзя изменить');
+  if (role !== 'admin' && role !== 'moderator') throw new u.ApiError('Неизвестная роль');
+  if (!ALL_ZONES.includes(zone as Zone)) throw new u.ApiError('Неизвестный раздел');
+
+  const saved: any = db.load('roleZones', {});
+  const current: Zone[] = Array.isArray(saved[role]) ? saved[role].slice() : (DEFAULT_ZONES[role] || []).slice();
+  const has = current.includes(zone as Zone);
+  if (enabled && !has) current.push(zone as Zone);
+  if (!enabled && has) current.splice(current.indexOf(zone as Zone), 1);
+  saved[role] = current;
+  db.save('roleZones');
+
+  const zi = ZONE_INFO.find((z) => z.id === zone);
+  auditLog.record({
+    userId: actor.id, userName: actor.name, path: '/api/staff/permissions',
+    body: { role, zone, enabled },
+  });
+  notices.push(`${enabled ? '✅ Открыт' : '⛔ Закрыт'} раздел «${zi ? zi.name : zone}» для роли ` +
+               `${role === 'admin' ? 'Администратор' : 'Дозор'}`);
+  return permissionsView();
+}
+
+// Вернуть роли настройку по умолчанию
+function resetRoleZones(actor: User, role: string, notices: Notices) {
+  if (!isOwner(actor)) throw new u.ApiError('Настраивать возможности ролей может только владелец');
+  if (role !== 'admin' && role !== 'moderator') throw new u.ApiError('Неизвестная роль');
+  const saved: any = db.load('roleZones', {});
+  delete saved[role];
+  db.save('roleZones');
+  notices.push(`↩️ Возможности роли «${role === 'admin' ? 'Администратор' : 'Дозор'}» сброшены к исходным`);
+  return permissionsView();
 }
 
 // ---------- Определение роли ----------
@@ -324,7 +409,8 @@ function humanMinutes(m: number): string {
 
 export = {
   roleOf, isOwner, isAdmin, isModerator, roleLabel, adminPowersEnabled,
-  zoneOfPath, canAccessZone, zonesFor, OWNER_ONLY,
+  zoneOfPath, canAccessZone, zonesFor, zonesOfRole,
+  permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES,
   setRole, staffList, canManage,
   banChat, unbanChat, chatBanInfo, bannedList, humanMinutes, assertCanWritePublic,
   MAX_BAN_MINUTES,

@@ -455,6 +455,18 @@ function registerRoutes(app: any) {
     return roles.setRole(req.user, String(req.body.userId || ''), role as any, n);
   }));
 
+  // ── Настройка возможностей ролей (только владелец) ──
+  app.add('GET', '/api/staff/permissions', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return roles.permissionsView();
+  });
+
+  app.add('POST', '/api/staff/permissions', act((req, n) =>
+    roles.setRoleZone(req.user, String(req.body.role || ''), String(req.body.zone || ''), !!req.body.enabled, n)));
+
+  app.add('POST', '/api/staff/permissions/reset', act((req, n) =>
+    roles.resetRoleZones(req.user, String(req.body.role || ''), n)));
+
   // ── Модерация чата (доступна и модераторам, и администрации) ──
   app.add('GET', '/api/mod/chat-bans', (req) => {
     if (!roles.isModerator(req.user)) throw new u.ApiError('Недостаточно прав');

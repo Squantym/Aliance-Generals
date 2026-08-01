@@ -186,6 +186,15 @@ const Admin = {
         </div>
       </div>
 
+      ${iAmOwner ? `
+      <div class="card">
+        <div class="name">⚙️ Возможности ролей</div>
+        <p class="muted small mt">Отметьте, какие разделы панели доступны каждой роли.
+        Изменения действуют сразу. У владельца всегда полный доступ — это не настраивается,
+        иначе можно было бы случайно закрыть себе выход.</p>
+        <div id="perm-box" class="mt"><div class="loading">Загружаю…</div></div>
+      </div>` : ''}
+
       <div class="card">
         <div class="name">➕ Назначить роль</div>
         <p class="muted small mt">Найдите игрока по позывному и выберите роль.
@@ -209,6 +218,61 @@ const Admin = {
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });
+
+    // ── Настройка возможностей ролей ──
+    const renderPerms = async () => {
+      const box = document.getElementById('perm-box');
+      if (!box) return;
+      let p = null;
+      try { p = await API.get('/api/staff/permissions'); }
+      catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; return; }
+
+      box.innerHTML = (p.roles || []).map((r) => `
+        <div class="perm-role">
+          <div class="perm-role-head">
+            <b>${UI.esc(r.name)}</b>
+            ${r.custom ? '<span class="badge">изменено</span>' : '<span class="muted small">по умолчанию</span>'}
+            <span class="muted small">— доступно разделов: ${r.zones.length}</span>
+            ${r.custom ? `<button class="btn btn-inline" data-perm-reset="${r.id}">↩ сбросить</button>` : ''}
+          </div>
+          <div class="perm-grid">
+            ${(p.zones || []).map((z) => {
+              const on = r.zones.indexOf(z.id) >= 0;
+              return `<label class="perm-item${on ? ' on' : ''}" title="${UI.esc(z.note)}">
+                        <input type="checkbox" data-perm-role="${r.id}" data-perm-zone="${z.id}" ${on ? 'checked' : ''}>
+                        <span>${UI.esc(z.name)}</span>
+                      </label>`;
+            }).join('')}
+          </div>
+        </div>`).join('');
+
+      box.querySelectorAll('[data-perm-zone]').forEach((cb) => {
+        cb.onchange = async () => {
+          const role = cb.dataset.permRole, zone = cb.dataset.permZone, enabled = cb.checked;
+          cb.disabled = true;
+          try {
+            await API.post('/api/staff/permissions', { role, zone, enabled });
+            UI.toast(enabled ? '✅ Раздел открыт' : '⛔ Раздел закрыт');
+            await renderPerms();
+          } catch (e) {
+            cb.checked = !enabled;          // возвращаем как было
+            UI.toast('⛔ ' + e.message);
+          } finally { cb.disabled = false; }
+        };
+      });
+      box.querySelectorAll('[data-perm-reset]').forEach((b) => {
+        b.onclick = async () => {
+          if (!await UI.confirm('Вернуть исходные возможности этой роли?',
+              { title: 'Сброс настроек', icon: '↩', okText: 'Сбросить' })) return;
+          try {
+            await API.post('/api/staff/permissions/reset', { role: b.dataset.permReset });
+            UI.toast('↩️ Сброшено');
+            await renderPerms();
+          } catch (e) { UI.toast('⛔ ' + e.message); }
+        };
+      });
+    };
+    if (iAmOwner) renderPerms();
 
     // Поиск и назначение
     const doFind = async () => {
