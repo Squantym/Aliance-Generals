@@ -164,13 +164,23 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   // запросов и служила приглашением для перебора. Теперь:
   //   • /admin и /admin.html закрыты ВСЕГДА — отвечают 404, как
   //     несуществующая страница, чтобы не подтверждать наличие панели;
-  //   • панель доступна только по секретному пути из ADMIN_PATH;
-  //   • если ADMIN_PATH не задан, панель по HTTP недоступна вовсе.
+  //   • панель доступна по секретному пути из ADMIN_PATH;
+  //   • если ADMIN_PATH не задан — работает привычный /admin.
   // Адрес панели: свой из ADMIN_PATH либо стандартный /admin, если он не
   // задан. Секретный путь остаётся более безопасным вариантом (он убирает
   // панель из поля зрения автоматических сканеров), но требовать его
   // настройки нельзя — иначе владелец теряет доступ после переустановки.
-  const ADMIN_PATH = String(process.env.ADMIN_PATH || '').trim();
+  // Путь нормализуем: принимаем и «shtab-x7», и «/shtab-x7», и со слэшем
+  // в конце — иначе одна забытая косая черта оставляла бы без доступа.
+  let ADMIN_PATH = String(process.env.ADMIN_PATH || '').trim();
+  if (ADMIN_PATH && !ADMIN_PATH.startsWith('/')) ADMIN_PATH = '/' + ADMIN_PATH;
+  if (ADMIN_PATH.length > 1 && ADMIN_PATH.endsWith('/')) ADMIN_PATH = ADMIN_PATH.slice(0, -1);
+  // Защита от самоблокировки: пути, которые заняты игрой, игнорируем —
+  // иначе панель перекрыла бы саму игру или её файлы.
+  if (['/', '/api', '/index.html', '/js', '/css', '/img'].includes(ADMIN_PATH)) {
+    console.warn(`⚠️  ADMIN_PATH=${ADMIN_PATH} занят игрой — маскировка отключена, панель на /admin`);
+    ADMIN_PATH = '';
+  }
   const isAdminFile = rel === '/admin' || rel === '/admin/' || rel === '/admin.html';
   if (ADMIN_PATH && (rel === ADMIN_PATH || rel === ADMIN_PATH + '/')) {
     rel = '/admin.html';

@@ -172,10 +172,13 @@ function ask(question) {
   console.log(`\n✅ Готово: «${target.name}» — ${OFF ? 'роли сняты' : (target.role === 'owner' ? 'владелец' : target.role === 'moderator' ? 'модератор («Дозор»)' : 'администратор')}.`);
   console.log('   Игроку нужно перезайти в игру, чтобы изменения вступили в силу.');
   if (!OFF) {
+    // Адрес панели: свой из ADMIN_PATH либо стандартный /admin.
+    // Раньше здесь говорилось, что без ADMIN_PATH панель недоступна —
+    // это перестало быть правдой, когда /admin вернули как запасной путь.
     const adminPath = process.env.ADMIN_PATH;
     console.log(adminPath
-      ? `   Панель доступна по адресу: ${adminPath}`
-      : '   ⚠ ADMIN_PATH не задан в .env — панель по HTTP сейчас недоступна никому.');
+      ? `   Панель открывается по адресу: ${adminPath}`
+      : '   Панель открывается по адресу: /admin (задайте ADMIN_PATH в .env, чтобы скрыть её за своим путём)');
   }
   process.exit(0);
 })().catch((e) => { console.error('\n💥 Ошибка:', e); process.exit(1); });
