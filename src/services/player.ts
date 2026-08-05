@@ -563,6 +563,59 @@ function totalIncome(user: User): number {
 }
 
 // Содержание всей техники в час (секретные разработки бесплатны)
+// ── Принудительная распродажа техники ────────────────────────────
+// Когда содержание армии превышает доход построек и деньги кончились,
+// техника уходит с молотка за половину цены — ровно столько, чтобы
+// закрыть часовой платёж. Так каждый час, пока расходы не станут
+// подъёмными. Продаём с САМОЙ ДОРОГОЙ в содержании: она и разоряет.
+function sellUnitsForDebt(user: User, debt: number): void {
+  if (debt <= 0) return;
+  const owned: Array<{ unitId: string; mk: string; count: number; upkeep: number; price: number }> = [];
+  for (const [unitId, mkMap] of Object.entries(user.units || {})) {
+    const def: any = config.UNIT_BY_ID[unitId];
+    if (!def) continue;
+    for (const [mk, count] of Object.entries(mkMap as any)) {
+      const n = Number(count) || 0;
+      if (n > 0) owned.push({ unitId, mk, count: n, upkeep: def.upkeep, price: def.price });
+    }
+  }
+  if (!owned.length) return;
+  // Дороже в содержании — первой на продажу
+  owned.sort((a, b) => b.upkeep - a.upkeep);
+
+  let need = debt;
+  let soldCount = 0;
+  let earned = 0;
+  for (const it of owned) {
+    if (need <= 0) break;
+    const perUnit = Math.max(1, Math.floor(it.price * 0.5));   // 50% от цены
+    const want = Math.min(it.count, Math.ceil(need / perUnit));
+    if (want <= 0) continue;
+    (user.units as any)[it.unitId][it.mk] -= want;
+    if ((user.units as any)[it.unitId][it.mk] <= 0) delete (user.units as any)[it.unitId][it.mk];
+    if (!Object.keys((user.units as any)[it.unitId]).length) delete (user.units as any)[it.unitId];
+    const got = perUnit * want;
+    earned += got;
+    need -= got;
+    soldCount += want;
+  }
+  if (!soldCount) return;
+
+  // Вырученное сверх долга остаётся игроку
+  user.dollars = Math.max(0, user.dollars + Math.max(0, earned - debt));
+  try {
+    require('./notifications').push(user.id, 'forced_sale',
+      `⚠️ Содержание армии превысило доход. Продано техники: ${soldCount} ед. за $${u.fmt(earned)} (50% цены).`,
+      { sold: soldCount, earned });
+  } catch (e) {}
+  try {
+    require('./auditLog').record({
+      userId: user.id, userName: user.name, path: '/system/forced-sale',
+      body: { sold: soldCount, earned, debt },
+    });
+  } catch (e) {}
+}
+
 function totalUpkeep(user: User): number {
   let total = 0;
   for (const [unitId, mkMap] of Object.entries(user.units)) {
@@ -663,9 +716,20 @@ function refresh(user: User): void {
   if (!user.lastIncomeAt) user.lastIncomeAt = now;
   const hours = Math.floor((now - user.lastIncomeAt) / HOUR);
   if (hours > 0) {
-    const net = (totalIncome(user) - totalUpkeep(user)) * hours;
-    if (net >= 0) addMoney(user, net, true);
-    else user.dollars = Math.max(0, user.dollars + net);
+    // Считаем по часам ОТДЕЛЬНО, а не одной суммой: если содержание
+    // превышает доход, армия распродаётся постепенно, и каждый
+    // следующий час расход уже меньше. Иначе за сутки отсутствия
+    // списалось бы всё разом по старой, самой высокой ставке.
+    for (let h = 0; h < hours; h++) {
+      const net = totalIncome(user) - totalUpkeep(user);
+      if (net >= 0) { addMoney(user, net, true); continue; }
+      const debt = -net;
+      if (user.dollars >= debt) { user.dollars -= debt; continue; }
+      // Денег не хватает — распродаём технику по 50% цены ровно
+      // столько, чтобы закрыть часовое содержание
+      user.dollars = Math.max(0, user.dollars - debt);
+      sellUnitsForDebt(user, debt - Math.max(0, user.dollars));
+    }
     user.lastIncomeAt += hours * HOUR;
   }
 
@@ -1278,4 +1342,4 @@ export = { isXpBlocked, xpBlockLeftMin,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, addRating, rank, flag, findByName,
   bankDeposit, bankWithdraw, reserveForLegion, goldPackages, buyGold,
-  mePayload, publicProfile, setStatus, setAvatar, restoreEar, renameSelf,};
+  mePayload, publicProfile, setStatus, setAvatar, restoreEar, renameSelf, sellUnitsForDebt,};

@@ -270,7 +270,14 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
       'X-Frame-Options': 'SAMEORIGIN',
       'X-XSS-Protection': '1; mode=block',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;",
+      // Картинки разрешаем и с чужих сайтов: администратор указывает
+      // ссылку на фото босса, а игроки прикрепляют изображения к темам
+      // форума. Прежняя политика (только 'self') молча блокировала их —
+      // ссылка сохранялась, но картинка не показывалась.
+      // Скрипты и стили по-прежнему только свои: именно они опасны.
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+        + "script-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; "
+        + "media-src 'self' https:; connect-src 'self'; frame-ancestors 'self';",
     };
 
     const enc = compress.pickEncoding(acceptEncoding);

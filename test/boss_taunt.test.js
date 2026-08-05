@@ -82,7 +82,9 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   ok('ширина поля 300px', /\.boss-photo \{[^}]*width: 300px/.test(css));
   ok('квадратная пропорция', /\.boss-photo \{[^}]*aspect-ratio: 1 \/ 1/.test(css));
   ok('картинка вписывается (object-fit: cover)', /\.boss-photo \{[^}]*object-fit: cover/.test(css));
-  ok('на узком экране не вылезает', /\.boss-photo \{[^}]*max-width: 100%/.test(css));
+  // Картинка приводится к 400×400 при загрузке; здесь ограничение показа
+  ok('на узком экране не вылезает и не крупнее 400px',
+     /\.boss-photo \{[^}]*max-width: min\(100%, 400px\)/.test(css));
 
   // Возвращаем активного босса для дальнейших проверок
   we.adminStart(admin, { name: 'Тест-босс', hp: 1000000 }, []);

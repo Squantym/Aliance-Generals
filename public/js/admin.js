@@ -1117,8 +1117,27 @@ const Admin = {
           <div><label style="font-size:11px;color:var(--dim)">⏰ Отложить старт (мин, 0=сразу)</label><input type="number" id="ev-delay" placeholder="0"></div>
         </div>
         <div style="margin-top:8px">
-          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса — ссылка (/img/... или https://...). Показывается квадратом 300×300</label>
-          <input type="text" id="ev-image" placeholder="/img/bosses/armada.webp">
+          <label style="font-size:11px;color:var(--dim)">🖼 Фото босса</label>
+          <input type="text" id="ev-image" placeholder="https://site.com/boss.png — или /img/bosses/armada.webp">
+          <div class="boss-img-tools mt">
+            <button class="btn btn-inline" id="ev-img-shrink">📐 Сжать до 400×400</button>
+            <button class="btn btn-inline" id="ev-img-file">📁 Взять файл с компьютера</button>
+            <input type="file" id="ev-img-input" accept="image/*" style="display:none">
+            <span class="muted small" id="ev-img-shrink-status"></span>
+          </div>
+          <div class="boss-img-row">
+            <div class="boss-img-preview" id="ev-img-preview">
+              <span class="muted small">предпросмотр</span>
+            </div>
+            <div class="grow">
+              <p class="muted small">Вставьте <b>ссылку на любую картинку из интернета</b> — класть файл
+              на сервер не нужно. Подойдёт адрес вида <code>https://…/boss.png</code>.
+              Можно и без «https://»: <code>site.com/boss.png</code>.</p>
+              <p class="muted small">Файлы с сервера (папка <code>/img/bosses/</code>) тоже работают —
+              список ниже.</p>
+              <div class="small" id="ev-img-status"></div>
+            </div>
+          </div>
         </div>
         <div style="margin-top:8px">
           <label style="font-size:11px;color:var(--dim)">💬 Своя фраза босса (пусто = случайные из 40 заготовок)</label>
@@ -1194,7 +1213,121 @@ const Admin = {
     };
     const lookBtn = document.getElementById('evl-apply');
     // Показываем, какие файлы РЕАЛЬНО лежат на сервере в /img/bosses/.
+    // ── Сжатие картинки босса до 400×400 ──
+    // Картинку уменьшаем ПРЯМО ЗДЕСЬ, в браузере, и кладём файлом на свой
+    // сервер: игроки грузят лёгкое изображение, а не мегабайтную картинку
+    // с чужого сайта. Ссылку можно вставить любую — размер приведётся сам.
+    (() => {
+      const inp = document.getElementById('ev-image');
+      const st = document.getElementById('ev-img-shrink-status');
+      const fileBtn = document.getElementById('ev-img-file');
+      const fileInp = document.getElementById('ev-img-input');
+      const shrinkBtn = document.getElementById('ev-img-shrink');
+      if (!inp || !shrinkBtn) return;
+
+      // Приводим к квадрату 400×400: обрезаем по центру, чтобы босс не
+      // растягивался, и жмём качество, пока файл не станет лёгким
+      const toSquare = (img) => {
+        const S = 400;
+        const cv = document.createElement('canvas');
+        cv.width = S; cv.height = S;
+        const side = Math.min(img.width, img.height);
+        cv.getContext('2d').drawImage(
+          img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+        let q = 0.85, out = cv.toDataURL('image/jpeg', q);
+        while (out.length > 220 * 1024 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        return out;
+      };
+
+      const upload = async (dataUrl, sourceLabel) => {
+        st.textContent = 'загружаю на сервер…';
+        try {
+          const r = await API.post('/api/admin/event/image', { image: dataUrl });
+          inp.value = r.url;
+          inp.dispatchEvent(new Event('input'));
+          st.innerHTML = `<span style="color:var(--green)">✅ сжато до 400×400 и сохранено${sourceLabel ? ' (' + sourceLabel + ')' : ''}</span>`;
+        } catch (e) { st.innerHTML = `<span style="color:var(--red)">⛔ ${UI.esc(e.message)}</span>`; }
+      };
+
+      // Из ссылки. Чужой сайт может запретить чтение картинки скриптом —
+      // тогда сжать её не выйдет, и мы честно об этом сообщаем.
+      shrinkBtn.onclick = () => {
+        const url = (inp.value || '').trim();
+        if (!url) { st.textContent = 'сначала вставьте ссылку'; return; }
+        if (url.startsWith('/')) { st.textContent = 'это уже файл на сервере'; return; }
+        st.textContent = 'загружаю картинку…';
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try { upload(toSquare(img), 'из ссылки'); }
+          catch (e) {
+            st.innerHTML = '<span style="color:var(--orange-1)">⚠ сайт запрещает копирование картинки. ' +
+              'Скачайте её и загрузите кнопкой «Взять файл»</span>';
+          }
+        };
+        img.onerror = () => { st.innerHTML = '<span style="color:var(--red)">⛔ картинка не открылась по этой ссылке</span>'; };
+        img.src = url;
+      };
+
+      // Из файла — работает всегда, ограничений чужого сайта нет
+      if (fileBtn && fileInp) {
+        fileBtn.onclick = () => fileInp.click();
+        fileInp.onchange = () => {
+          const f = fileInp.files && fileInp.files[0];
+          if (!f) return;
+          st.textContent = 'обрабатываю…';
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = new Image();
+            img.onload = () => upload(toSquare(img), f.name);
+            img.onerror = () => { st.innerHTML = '<span style="color:var(--red)">⛔ это не изображение</span>'; };
+            img.src = reader.result;
+          };
+          reader.readAsDataURL(f);
+        };
+      }
+    })();
+
     // Пустой список = файл не задеплоен (а не «ссылка неправильная»).
+    // Живой предпросмотр картинки босса: сразу видно, открывается ли
+    // ссылка. Раньше ошибку в адресе замечали только при запуске события.
+    (() => {
+      const inp = document.getElementById('ev-image');
+      const prev = document.getElementById('ev-img-preview');
+      const status = document.getElementById('ev-img-status');
+      if (!inp || !prev) return;
+      let timer = null;
+      const show = () => {
+        const raw = (inp.value || '').trim();
+        if (!raw) {
+          prev.innerHTML = '<span class="muted small">предпросмотр</span>';
+          status.innerHTML = '';
+          return;
+        }
+        if (/^\s*(javascript|data|vbscript|file|blob)\s*:/i.test(raw)) {
+          prev.innerHTML = '<span class="small" style="color:var(--red)">⛔</span>';
+          status.innerHTML = '<span style="color:var(--red)">Такая ссылка не принимается</span>';
+          return;
+        }
+        // Тот же разбор, что и на сервере: без схемы подставляем https://
+        let url = raw;
+        if (/^\/\//.test(url)) url = 'https:' + url;
+        else if (!/^https?:\/\//i.test(url) && !/^\//.test(url) && /^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(url)) url = 'https://' + url;
+        status.innerHTML = '<span class="muted">Загружаю…</span>';
+        prev.innerHTML = `<img src="${UI.esc(url)}" alt="">`;
+        const img = prev.querySelector('img');
+        img.onload = () => {
+          status.innerHTML = `<span style="color:#8fd47a">✅ Картинка открывается · ${img.naturalWidth}×${img.naturalHeight}</span>`;
+        };
+        img.onerror = () => {
+          prev.innerHTML = '<span class="small" style="color:var(--red)">✕</span>';
+          status.innerHTML = '<span style="color:var(--red)">Не удалось загрузить. Проверьте ссылку — она должна вести прямо на файл картинки, а не на страницу.</span>';
+        };
+      };
+      inp.oninput = () => { clearTimeout(timer); timer = setTimeout(show, 500); };
+      if (inp.value) show();
+    })();
+
     (async () => {
       const box = document.getElementById('boss-img-list');
       if (!box) return;

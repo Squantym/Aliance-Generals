@@ -435,6 +435,16 @@ function registerRoutes(app: any) {
   // ---------- Новости (чтение — всем; управление — админу, проверка в сервисе) ----------
   app.add('GET',  '/api/news',        (req) => require('./services/news').list(req.user));
 
+  // Сохранение уменьшенной картинки босса. Панель присылает её уже
+  // сжатой до 400×400 — здесь только проверка и запись файлом, чтобы
+  // игроки грузили лёгкое изображение со своего же сервера, а не
+  // мегабайтную картинку с чужого сайта.
+  app.add('POST', '/api/admin/event/image', act((req) => {
+    const url = saveForumImage(req.body.image);
+    if (!url) throw new u.ApiError('Изображение не передано');
+    return { url };
+  }), { admin: true });
+
   // ═══ ЛОТЫ ДНЯ на чёрном рынке ════════════════════════════════════
   const lots = require('./services/lots');
   app.add('GET',  '/api/lots',     (req) => lots.view(req.user));

@@ -167,6 +167,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/push\//,                        'support'],
   [/^\/api\/admin\/(legion|tournaments)/,           'legions'],
   [/^\/api\/admin\/event\//,                       'event'],
+  [/^\/api\/admin\/event\/image$/,                 'event'],
   [/^\/api\/staff$/,                                 'players'],
 ];
 

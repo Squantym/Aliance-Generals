@@ -1722,16 +1722,17 @@ App.screens.event = async (c) => {
         <p class="mt"><b class="gold" style="font-size:18px">${UI.esc(d.name)}</b></p>
         <p class="muted">Событие начнётся через:</p>
         <p style="font-size:28px;font-weight:bold;color:var(--orange)" id="event-countdown">${UI.fmtTimer(d.startsInSec)}</p>
-        <p class="muted small">Готовьте армию к бою!</p>
+        <p class="muted small">Значение обновится при следующем открытии экрана</p>
       </div>`;
-    // Тикаем таймер
-    let left = d.startsInSec;
-    const el = document.getElementById('event-countdown');
-    const iv = setInterval(() => {
-      left--;
-      if (left <= 0) { clearInterval(iv); App.rerender(); return; }
-      if (el) el.textContent = UI.fmtTimer(left);
-    }, 1000);
+    // Таймер СТАТИЧНЫЙ: значение считается один раз при открытии экрана.
+    // Посекундное тиканье заставляло браузер перерисовывать страницу
+    // каждую секунду и разряжало телефон, а точность до секунды здесь
+    // не нужна. Экран сам обновится, когда событие начнётся.
+    if (d.startsInSec > 0) {
+      setTimeout(() => {
+        if ((location.hash || '').replace(/^#/, '') === 'event') App.rerender();
+      }, Math.min(d.startsInSec + 2, 3600) * 1000);
+    }
     return;
   }
   if (!d.active) {
