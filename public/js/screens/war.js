@@ -506,7 +506,7 @@ App.screens.war = async (c) => {
     list.innerHTML = opponents.map((o) => `
       <div class="list-row">
         <div class="grow">
-          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}${App.staffMark(o.staffRole)}${o.inMyAlliance ? ' <span class="ally-star" title="Состоит в вашем альянсе">⭐</span>' : ''}</span>
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}${App.vipMark(o.vip)}${App.staffMark(o.staffRole)}${o.inMyAlliance ? ' <span class="ally-star" title="Состоит в вашем альянсе">⭐</span>' : ''}</span>
           <span class="muted small"> Ур. ${o.level}</span>
           ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
           ${o.isBot

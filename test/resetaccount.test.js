@@ -71,7 +71,7 @@ rockets['r1'] = { id: 'r1', attackerId: 'p1', targetId: 'p2', resolved: false };
 rockets['r2'] = { id: 'r2', attackerId: 'p2', targetId: 'p1', resolved: false };
 rockets['r3'] = { id: 'r3', attackerId: 'p2', targetId: 'p3', resolved: false };
 
-const adminU = { id: 'adm', name: 'Admin', isAdmin: true };
+const adminU = { id: 'adm', name: 'Admin', isAdmin: true, role: 'owner' };   // права выдаёт владелец
 users['adm'] = adminU;
 const N = [];
 

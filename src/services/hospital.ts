@@ -35,11 +35,22 @@ function heal(user: User, notices: Notices) {
   if (user.res.hp.cur >= max.hp) {
     throw new u.ApiError('Вы и так в полном здравии, лечение не требуется');
   }
-  // Кулдаун лечения: не чаще раза в 5 минут
+  // Кулдаун лечения: не чаще раза в 5 минут.
+  // VIP (пункт 2): пять лечений в сутки идут ВНЕ очереди — ожидание
+  // не действует. Использование списывается только когда кулдаун
+  // реально мешает, иначе подписка сжигала бы попытки впустую.
   const COOLDOWN_MS = 5 * 60 * 1000;
   const now = Date.now();
   const last = (user as any).lastHospitalHeal || 0;
+  let vipSkip = false;
   if (now - last < COOLDOWN_MS) {
+    const vipSrv = require('./vip');
+    if (vipSrv.spend(user, 'heal')) {
+      vipSkip = true;
+      notices.push(`🏥 Лечение вне очереди по VIP. Осталось сегодня: ${vipSrv.left(user, 'heal')}`);
+    }
+  }
+  if (!vipSkip && now - last < COOLDOWN_MS) {
     const waitSec = Math.ceil((COOLDOWN_MS - (now - last)) / 1000);
     const m = Math.floor(waitSec / 60), s = waitSec % 60;
     throw new u.ApiError(`Лечение доступно раз в 5 минут. Подождите ещё ${m}:${String(s).padStart(2, '0')}.`);

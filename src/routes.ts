@@ -32,10 +32,31 @@ import dailyQuests = require('./services/dailyQuests');
 import tutorial = require('./services/tutorial');
 import admin = require('./services/admin');
 import support = require('./services/support');
+import auditLog = require('./services/auditLog');
 import payments = require('./services/payments');
 import palliance = require('./services/personalAlliance');
 import features = require('./services/features');
 import worldEvent = require('./services/worldEvent');
+
+// Сохранение картинки темы. Браузер присылает уже уменьшенное
+// изображение как data:URL — здесь проверяем формат и размер и кладём
+// файлом: base64 в базе раздул бы её в разы.
+function saveForumImage(dataUrl: any): string | null {
+  const raw = String(dataUrl || '');
+  if (!raw) return null;
+  const m = /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(raw);
+  if (!m) throw new u.ApiError('Неподдерживаемый формат изображения');
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 700 * 1024) throw new u.ApiError('Изображение слишком большое даже после сжатия');
+  const fs = require('fs');
+  const path = require('path');
+  const dir = path.join(process.cwd(), 'data', 'forum');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const name = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  fs.writeFileSync(path.join(dir, name), buf);
+  return '/forum-img/' + name;
+}
 
 function registerRoutes(app: any) {
   // Перед каждым авторизованным запросом игрок «освежается»:
@@ -84,6 +105,9 @@ function registerRoutes(app: any) {
       // Роль в проекте: фронт по ней рисует значок и кнопки модерации
       staffRole: require('./services/roles').roleOf(req.user),
       staffLabel: require('./services/roles').roleLabel(req.user) || null,
+      staffTag: require('./services/roles').roleTag(req.user) || null,
+      vip: require('./services/vip').isVip(req.user),
+      vipUntil: Number((req.user as any).vipUntil || 0),
       // Зоны админ-панели, доступные этому сотруднику
       staffZones: require('./services/roles').zonesFor(req.user),
       // Адрес панели отдаём ТОЛЬКО тем, у кого есть доступ. Так сотрудникам
@@ -109,6 +133,8 @@ function registerRoutes(app: any) {
     req.user, req.body.oldPassword, req.body.newPassword, req.body.newPassword2));
   app.add('POST', '/api/status', (req) => { player.setStatus(req.user, req.body.text); return { status: req.user.status }; });
   app.add('POST', '/api/avatar', (req) => player.setAvatar(req.user, req.body.avatar));
+  // Смена позывного (VIP): бесплатно раз в 30 дней
+  app.add('POST', '/api/rename', act((req, n) => auth.renameSelf(req.user, String(req.body.name || ''), n)));
   app.add('POST', '/api/verify-human', (req) => require('./services/antibot').passVerification(req.user));
   app.add('POST', '/api/ears/restore', act((req, n) => player.restoreEar(req.user, n)));
   app.add('POST', '/api/skill', act((req, notices) => {
@@ -217,7 +243,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/lasers/intercept',   act((req, n) => require('./services/lasers').intercept(req.user, req.body.laserId, req.body.rocketId, n)));
 
   // ---------- Чёрный рынок ----------
-  app.add('GET', '/api/market/items', () => market.itemsList());
+  app.add('GET', '/api/market/items', (req) => market.itemsList(req.user));
   app.add('POST', '/api/market/buy', act((req, n) => market.buyItem(req.user, req.body.itemId, req.body.targetName, n)));
   app.add('GET', '/api/market/mines', (req) => market.mineInfo(req.user));
   app.add('POST', '/api/market/mines/buy', act((req, n) => market.buyMines(req.user, req.body.qty, n)));
@@ -268,6 +294,37 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/daily/accept',     act((req, n) => dailyQuests.accept(req.user, req.body.questId, n)));
   app.add('POST', '/api/daily/claim',      act((req, n) => dailyQuests.claim(req.user, req.body.questId, n)));
   app.add('POST', '/api/daily/bonus',      act((req, n) => dailyQuests.claimBonus(req.user, n)));
+  // VIP: массовые действия и замена поручений
+  app.add('POST', '/api/daily/accept-all', act((req, n) => dailyQuests.acceptAll(req.user, n)));
+  app.add('POST', '/api/daily/claim-all',  act((req, n) => dailyQuests.claimAll(req.user, n)));
+  app.add('POST', '/api/daily/reroll',     act((req, n) => dailyQuests.reroll(req.user, String(req.body.questId || ''), n)));
+  // Расширенная статистика (VIP, пункт 9). Собирает всё, что игра
+  // накопила об игроке: время в строю, движение денег и золота по
+  // источникам, техника и диверсанты по родам и типам.
+  // Расширенная статистика (VIP, пункт 9). Данные собирает сервис
+  // stats: он и так ведёт учёт времени в игре, движения денег и золота
+  // по источникам, техники и диверсантов по типам — писать свой второй
+  // учёт значило бы разойтись в цифрах.
+  app.add('GET', '/api/stats-full', (req) => {
+    if (!require('./services/vip').isVip(req.user)) {
+      throw new u.ApiError('Расширенная статистика доступна по VIP-подписке');
+    }
+    return require('./services/stats').report(req.user);
+  });
+
+  // Смена позывного (VIP, пункт 18)
+  app.add('POST', '/api/rename', act((req, n) =>
+    player.renameSelf(req.user, String(req.body.name || ''), n)));
+
+  // Кто разведал игрока за сутки (VIP, пункт 10)
+  app.add('GET', '/api/spied-by', (req) => {
+    const vipSrv = require('./services/vip');
+    if (!vipSrv.isVip(req.user)) throw new u.ApiError('Доступно по VIP-подписке');
+    const sb: any = (req.user as any).spiedBy;
+    const day = vipSrv.mskDayKey();
+    const list = (sb && sb.day === day) ? (sb.list || []) : [];
+    return { day, list: list.slice().sort((a: any, b: any) => b.at - a.at) };
+  });
   // Недельные поручения: свой пул, свои лимиты и награды, сброс в понедельник
   app.add('GET',  '/api/weekly',            (req) => dailyQuests.weeklyList(req.user));
   app.add('POST', '/api/weekly/accept',     act((req, n) => dailyQuests.weeklyAccept(req.user, req.body.questId, n)));
@@ -377,6 +434,80 @@ function registerRoutes(app: any) {
 
   // ---------- Новости (чтение — всем; управление — админу, проверка в сервисе) ----------
   app.add('GET',  '/api/news',        (req) => require('./services/news').list(req.user));
+
+  // ═══ ЛОТЫ ДНЯ на чёрном рынке ════════════════════════════════════
+  const lots = require('./services/lots');
+  app.add('GET',  '/api/lots',     (req) => lots.view(req.user));
+  app.add('POST', '/api/lots/bid', act((req, n) =>
+    lots.bid(req.user, String(req.body.devId || ''), u.toInt(req.body.gold, 0), n)));
+  app.add('POST', '/api/lots/buy', act((req, n) =>
+    lots.buyBuff(req.user, String(req.body.itemId || ''), u.toInt(req.body.qty, 1), n)));
+
+  // ═══ ФОРУМ ═══════════════════════════════════════════════════════
+  const forum = require('./services/forum');
+
+  app.add('GET', '/api/forum', (req) => forum.list(req.user, req.query.page));
+  app.add('GET', '/api/forum/topic/:id', (req) => forum.view(req.user, String(req.params.id || '')));
+
+  // Создание темы. Картинка приходит уже уменьшенной браузером —
+  // сервер только проверяет формат и размер и сохраняет файлом.
+  app.add('POST', '/api/forum/topic', act((req, n) => {
+    const img = saveForumImage(req.body.image);
+    return forum.createTopic(req.user, String(req.body.title || ''), String(req.body.text || ''), img, n);
+  }));
+
+  app.add('POST', '/api/forum/comment', act((req, n) =>
+    forum.addComment(req.user, String(req.body.topicId || ''), String(req.body.text || ''), n)));
+
+  app.add('POST', '/api/forum/close', act((req, n) =>
+    forum.setClosed(req.user, String(req.body.topicId || ''), !!req.body.closed, n)));
+  app.add('POST', '/api/forum/pin', act((req, n) =>
+    forum.setPinned(req.user, String(req.body.topicId || ''), !!req.body.pinned, n)));
+  app.add('POST', '/api/forum/delete', act((req, n) =>
+    forum.deleteTopic(req.user, String(req.body.topicId || ''), n)));
+  app.add('POST', '/api/forum/delete-comment', act((req, n) =>
+    forum.deleteComment(req.user, String(req.body.topicId || ''), String(req.body.commentId || ''), n)));
+
+  // Ограничения игроку на форуме — по праву «Модерация чатов»
+  app.add('GET', '/api/forum/ban-scopes', (req) => {
+    if (!roles.canAccessZone(req.user, 'chat')) throw new u.ApiError('Недостаточно прав');
+    return { scopes: forum.FORUM_SCOPES };
+  });
+  app.add('POST', '/api/forum/ban', act((req, n) =>
+    forum.banForum(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0),
+                   String(req.body.reason || ''),
+                   Array.isArray(req.body.scopes) ? req.body.scopes.map((x: any) => String(x)) : [], n)));
+  app.add('POST', '/api/forum/unban', act((req, n) =>
+    forum.unbanForum(req.user, String(req.body.userId || ''), n)));
+
+  // ═══ VIP-ПОДПИСКА ════════════════════════════════════════════════
+  const vip = require('./services/vip');
+
+  // Своё состояние и витрина преимуществ — открыта всем
+  app.add('GET', '/api/vip', (req) => ({
+    ...vip.vipInfo(req.user),
+    benefits: vip.benefits(),
+    left: {
+      heal: vip.left(req.user, 'heal'),
+      immunity: vip.left(req.user, 'immunity'),
+      reroll: vip.left(req.user, 'reroll'),
+    },
+    canRenameFree: vip.canRenameFree(req.user),
+  }));
+
+  // Выдача и снятие — зона «Ресурсы»: подписка это благо, как и золото
+  app.add('POST', '/api/admin/vip/grant', act((req, n) => {
+    const target = player.users()[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    return vip.grant(req.user, target, u.toInt(req.body.days, 0), String(req.body.reason || ''), n);
+  }), { admin: true });
+
+  app.add('POST', '/api/admin/vip/revoke', act((req, n) => {
+    const target = player.users()[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    return vip.revoke(req.user, target, n);
+  }), { admin: true });
+
   app.add('POST', '/api/news/create', act((req, n) => require('./services/news').create(req.user, req.body, n)));
   app.add('POST', '/api/news/update', act((req, n) => require('./services/news').update(req.user, req.body.id, req.body, n)));
   app.add('POST', '/api/news/delete', act((req, n) => require('./services/news').remove(req.user, req.body.id, n)));
@@ -393,8 +524,19 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/legion/battle/restore',    act((req, n) => legion.restoreForBattle(req.user, req.body.kind, n)));
 
   // ---------- Чат, почта, зал славы, достижения ----------
-  app.add('GET', '/api/chat', (req) => social.chatGet(req.user, req.query.after));
-  app.add('POST', '/api/chat', act((req) => { social.chatPost(req.user, req.body.text); return { ok: true }; }));
+  // Счётчик онлайна для подвала. Онлайн считаем по активности за 5 минут —
+  // это реальные люди в игре, а не «зарегистрировано всего».
+  // Доступен без входа: цифра на главной нужна и гостям.
+  app.add('GET', '/api/online', () => {
+    const now = Date.now();
+    const all = Object.values(player.users()).filter((p: any) => !p.isBot);
+    const online = all.filter((p: any) => now - (p.lastSeen || 0) < 5 * 60 * 1000).length;
+    const day = all.filter((p: any) => now - (p.lastSeen || 0) < 24 * 3600 * 1000).length;
+    return { online, day, total: all.length };
+  }, { open: true });   // виден и гостям: цифра нужна на странице входа
+
+  app.add('GET', '/api/chat', (req) => social.chatGet(req.user, req.query.after, req.query.room));
+  app.add('POST', '/api/chat', act((req) => { social.chatPost(req.user, req.body.text, req.body.room); return { ok: true }; }));
   app.add('GET', '/api/mail', (req) => social.inbox(req.user));
   app.add('GET', '/api/mail/:id', (req) => social.readThread(req.user, req.params.id));
   app.add('POST', '/api/mail/read-all', act((req) => social.markAllRead(req.user)));
@@ -550,6 +692,194 @@ function registerRoutes(app: any) {
     return { players: found };
   });
 
+  // ═══ СВОДКА ДЛЯ АДМИНИСТРАТОРА ════════════════════════════════════
+  // Рабочий стол вместо голого списка вкладок: показывает, что требует
+  // внимания прямо сейчас. Панель владельца — про настройку игры,
+  // панель администратора — про ежедневную работу с людьми, поэтому
+  // и открывается она с этого экрана.
+  app.add('GET', '/api/admin/dashboard', async (req) => {
+    const me = req.user;
+    const zones = roles.zonesFor(me);
+    const has = (z: string) => zones.indexOf(z) >= 0;
+    const users = player.users();
+    const live = Object.values(users).filter((p: any) => !p.isBot);
+    const now = Date.now();
+    const DAY = 24 * 3600 * 1000;
+
+    // Обращения в поддержку
+    let tickets = { open: 0, answered: 0, oldest: 0 };
+    if (has('support')) {
+      try {
+        const list = support.adminList({ status: 'open' }).tickets || [];
+        tickets.open = list.filter((t: any) => t.status === 'open').length;
+        tickets.answered = list.filter((t: any) => t.status === 'answered').length;
+        const oldest = list.filter((t: any) => t.status === 'open').sort((a: any, b: any) => a.createdAt - b.createdAt)[0];
+        tickets.oldest = oldest ? Math.floor((now - oldest.createdAt) / 3600000) : 0;
+      } catch (e) {}
+    }
+
+    // Действующие меры
+    const chatBans = has('moderation') ? roles.bannedList() : [];
+    const accountBans = has('moderation')
+      ? live.filter((p: any) => roles.accountBanInfo(p)).map((p: any) => {
+          const ab = roles.accountBanInfo(p);
+          return { id: p.id, name: p.name, reason: ab.reason, until: ab.until, byName: ab.byName };
+        })
+      : [];
+
+    // Люди: кто в игре, новички за сутки
+    const online = live.filter((p: any) => now - (p.lastSeen || 0) < 5 * 60 * 1000).length;
+    const newToday = live.filter((p: any) => now - (p.createdAt || 0) < DAY).length;
+
+    // Мои действия за сутки — прозрачность для самого сотрудника
+    let myActions: any[] = [];
+    try {
+      const logs = await auditLog.listForUser(me.id, 40);
+      myActions = logs.filter((l: any) => now - (l.at || 0) < DAY).slice(0, 12);
+    } catch (e) {}
+
+    return {
+      me: { name: me.name, role: roles.roleOf(me), label: roles.roleLabel(me) },
+      zones,
+      tickets,
+      players: { total: live.length, online, newToday },
+      chatBans: chatBans.slice(0, 20),
+      chatBansTotal: chatBans.length,
+      accountBans: accountBans.slice(0, 20),
+      accountBansTotal: accountBans.length,
+      myActions,
+      myActionsTotal: myActions.length,
+    };
+  }, { admin: true });
+
+  // Карточка игрока для администратора: всё нужное в одном ответе,
+  // чтобы не собирать её из пяти запросов
+  app.add('GET', '/api/admin/player-card/:id', async (req) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.params.id || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    const chatBan = roles.chatBanInfo(target);
+    const accBan = roles.accountBanInfo(target);
+    let recent: any[] = [];
+    try { recent = (await auditLog.listForUser(target.id, 15)) || []; } catch (e) {}
+    const now = Date.now();
+    return {
+      id: target.id, name: target.name, level: target.level,
+      flag: player.flag(target), role: roles.roleOf(target), roleLabel: roles.roleLabel(target),
+      createdAt: (target as any).createdAt || 0,
+      lastSeen: target.lastSeen || 0,
+      online: now - (target.lastSeen || 0) < 5 * 60 * 1000,
+      email: (target as any).email || '',
+      dollars: target.dollars || 0, gold: target.gold || 0,
+      legionId: (target as any).legionId || null,
+      chatBan: chatBan
+        ? { until: chatBan.until, reason: chatBan.reason, byName: chatBan.byName, scopes: chatBan.scopes }
+        : null,
+      accountBan: accBan
+        ? { until: accBan.until, reason: accBan.reason, byName: accBan.byName }
+        : null,
+      recent,
+      can: {
+        chatBan: roles.isModerator(req.user),
+        accountBan: roles.canAccessZone(req.user, 'moderation'),
+        password: roles.canAccessZone(req.user, 'security'),
+        resources: roles.canAccessZone(req.user, 'economy'),
+      },
+    };
+  }, { admin: true });
+
+  // ═══ ЖУРНАЛ НАЧИСЛЕНИЙ ЗОЛОТА (только владелец) ══════════════════
+  // Золото — премиум-валюта: владелец должен видеть каждый источник,
+  // включая выдачу администрацией. Администраторам раздел недоступен,
+  // иначе смысл контроля теряется.
+  app.add('GET', '/api/admin/gold-log', async (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const limit = u.clamp(u.toInt(req.query.limit, 300), 1, 2000);
+    const source = String(req.query.source || 'all');
+
+    // По какому пути какой источник золота
+    const SOURCES: Array<[RegExp, string, string]> = [
+      [/\/api\/daily\/claim/,        'quest',    'Поручение'],
+      [/\/api\/daily\/bonus/,        'quest',    'Бонус за поручения'],
+      [/\/api\/weekly\/(claim|bonus)/, 'weekly', 'Недельное поручение'],
+      [/\/api\/contracts\/claim/,    'contract', 'Контракт'],
+      [/\/api\/admin\/(grant|grant-all|rewards)/, 'admin', 'Выдача администрацией'],
+      [/\/api\/login-reward\/claim/,  'login',    'Награда за вход'],
+      [/\/api\/season|\/api\/admin\/season/, 'season', 'Сезон'],
+      [/\/api\/payments/,            'payment',  'Покупка'],
+      [/\/api\/referral/,            'referral', 'Приглашение друга'],
+      [/\/api\/achievements/,        'achieve',  'Достижение'],
+    ];
+    const classify = (path: string) => {
+      for (const [re, id, label] of SOURCES) if (re.test(path || '')) return { id, label };
+      return { id: 'other', label: 'Прочее' };
+    };
+
+    let logs: any[] = [];
+    try { logs = await auditLog.listAll(3000); } catch (e) {}
+    const users = player.users();
+    const rows = logs
+      .map((l: any) => ({ ...l, src: classify(l.path) }))
+      .filter((l: any) => source === 'all' || l.src.id === source)
+      // Оставляем только то, где золото реально могло начислиться
+      .filter((l: any) => /gold|золот|🪙/i.test(JSON.stringify(l.body || {}) + (l.human || '') + l.path)
+                       || ['quest','weekly','contract','admin','login','season','payment','referral','achieve'].includes(l.src.id))
+      .slice(0, limit)
+      .map((l: any) => ({
+        at: l.at, userId: l.userId, userName: l.userName || (users[l.userId] || {}).name || '—',
+        source: l.src.id, sourceLabel: l.src.label,
+        path: l.path, human: l.human || '',
+        gold: (() => {
+          const m = /🪙\s*([\d\s]+)/.exec(String(l.human || ''));
+          if (m) return Number(m[1].replace(/\s/g, '')) || 0;
+          const b: any = l.body || {};
+          return Number(b.gold) || 0;
+        })(),
+      }));
+
+    const bySource: Record<string, { count: number; gold: number; label: string }> = {};
+    for (const r of rows) {
+      if (!bySource[r.source]) bySource[r.source] = { count: 0, gold: 0, label: r.sourceLabel };
+      bySource[r.source].count++;
+      bySource[r.source].gold += r.gold;
+    }
+    return {
+      sources: [{ id: 'all', label: 'Все источники' },
+                ...SOURCES.filter((x, i, a) => a.findIndex((y) => y[1] === x[1]) === i)
+                          .map(([, id, label]) => ({ id, label })),
+                { id: 'other', label: 'Прочее' }],
+      rows, bySource,
+      totalGold: rows.reduce((n, r) => n + r.gold, 0),
+    };
+  }, { admin: true });
+
+  // ═══ ЖУРНАЛ ДЕЙСТВИЙ СОТРУДНИКОВ (только владелец) ════════════════
+  // Владелец должен видеть, что делают его администраторы и модераторы:
+  // это единственная защита от злоупотреблений теми правами, что он им
+  // выдал. Сотрудники свой журнал видят, чужой — нет.
+  app.add('GET', '/api/admin/staff-log', async (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const users = player.users();
+    const staffIds = new Set(
+      Object.values(users).filter((p: any) => roles.roleOf(p)).map((p: any) => p.id));
+    const who = String(req.query.userId || '').trim();
+    const limit = u.clamp(u.toInt(req.query.limit, 200), 1, 1000);
+
+    let logs: any[] = [];
+    try {
+      logs = who
+        ? await auditLog.listForUser(who, limit)
+        : (await auditLog.listAll(1000)).filter((l: any) => staffIds.has(l.userId));
+    } catch (e) {}
+
+    // Кто есть кто — для фильтра в интерфейсе
+    const staff = Object.values(users)
+      .filter((p: any) => roles.roleOf(p))
+      .map((p: any) => ({ id: p.id, name: p.name, role: roles.roleOf(p), label: roles.roleLabel(p) }));
+
+    return { staff, logs: logs.slice(0, limit), total: logs.length };
+  }, { admin: true });
+
   // ═══ БАЗА ДАННЫХ: копии, снимки, восстановление ═══════════════════
   // Всё только для администратора. Произвольный SQL наружу НЕ выставляется
   // намеренно: даже админский эндпоинт с произвольным запросом — это
@@ -647,7 +977,9 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/rewards/:id/claim',  act((req, n) => rewards.claim(req.user, req.params.id, n)));
   app.add('POST', '/api/rewards/:id/delete', act((req) => rewards.remove(req.user, req.params.id)));
   // Служба поддержки — администратор
-  app.add('GET',  '/api/admin/support',       (req) => support.adminList(req.query), { admin: true });
+  app.add('GET',  '/api/admin/support',       (req) => support.adminList(req.query, req.user), { admin: true });
+  app.add('POST', '/api/admin/support/claim',   act((req, n) => support.claim(req.user, String(req.body.ticketId || ''), n)), { admin: true });
+  app.add('POST', '/api/admin/support/release', act((req, n) => support.release(req.user, String(req.body.ticketId || ''), n)), { admin: true });
   app.add('POST', '/api/admin/support/reply', act((req, n) => support.adminReply(req.user, req.body.ticketId, req.body.text, !!req.body.close, n)), { admin: true });
   // Платёжная система (заготовка)
   app.add('GET',  '/api/payments/packages', (req) => payments.packages());

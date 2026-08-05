@@ -20,14 +20,14 @@ const src = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 console.log('\n── 1. Обработчики только на существующие кнопки ──');
 ok(/const btn = document\.getElementById\('tab-' \+ t\.id\);\s*\n\s*if \(btn\) btn\.onclick/.test(src),
    'перед назначением обработчика вкладки проверяется её наличие');
-ok(/tabs\.filter\(t=>!t\.zone\|\|Admin\.can\(t\.zone\)\)/.test(src), 'в разметку попадают только доступные вкладки');
+ok(/tabs\.filter\(t=>\(!t\.zone\|\|Admin\.can\(t\.zone\)\)/.test(src), 'в разметку попадают только доступные вкладки');
 ok(/Admin\._tabIds = tabs\.filter/.test(src), 'список активных вкладок тоже фильтруется по правам');
 
 if (JSDOM) {
   console.log('\n── 2. Рендер при разных ролях ──');
   const roleZones = {
-    'владелец': ['players','moderation','security','support','legions','news','event','economy','discounts','database','roles','season'],
-    'администратор': ['players','moderation','security','support','legions','event','roles','news'],
+    'owner': ['players','moderation','security','support','legions','news','event','economy','discounts','database','roles','season'],
+    'admin': ['players','moderation','security','support','legions','event','roles','news'],
   };
   for (const [roleName, zones] of Object.entries(roleZones)) {
     const dom = new JSDOM('<div id="content"></div>', { runScripts: 'outside-only' });
@@ -49,12 +49,13 @@ if (JSDOM) {
       const tabs = [...w.document.querySelectorAll('[id^="tab-"]')]
         .filter((b) => b.id !== 'tab-content').map((b) => b.id.replace('tab-', ''));
       ok(tabs.length > 0, `${roleName}: панель отрисовалась, вкладок ${tabs.length}`);
-      if (roleName === 'администратор') {
-        ok(!tabs.includes('tools') && !tabs.includes('db') && !tabs.includes('discounts'),
-           'у администратора скрыты владельческие разделы (ресурсы, скидки, база)');
+      if (roleName === 'admin') {
+        ok(!tabs.includes('econ') && !tabs.includes('gold'),
+           'у администратора скрыты владельческие разделы (экономика, журнал золота)');
         ok(tabs.includes('players') && tabs.includes('support'), 'а свои разделы на месте');
       } else {
-        ok(tabs.includes('db') && tabs.includes('tools'), 'у владельца доступны все разделы');
+        ok(tabs.includes('gold') && tabs.includes('econ'),
+           'у владельца доступны все разделы, включая экономику и журнал золота');
       }
     } catch (e) {
       ok(false, `${roleName}: рендер упал — ${e.message}`);

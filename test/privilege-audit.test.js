@@ -18,6 +18,9 @@ const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const roles = require(ROOT + '/dist/src/services/roles');
+// Чистим настройку прав: она хранится в базе и иначе перетекала бы
+// между прогонами тестов
+try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 const admin = require(ROOT + '/dist/src/services/admin');
 
 // Действие должно быть ЗАПРЕЩЕНО
@@ -54,17 +57,25 @@ denied(() => admin.deleteAccount(mod, { userId: vic.id, confirmName: vic.name },
 denied(() => admin.grant(mod, { userId: vic.id, gold: 1000 }, []), 'Дозор', 'выдача ресурсов');
 denied(() => admin.grantAll(mod, { gold: 100 }, []), 'Дозор', 'массовая выдача');
 denied(() => roles.setRole(mod, vic.id, 'moderator', []), 'Дозор', 'назначение ролей');
+// GRANT_MARK: права выдаются владельцем — роль сама по себе их не даёт
+for (const z of ['players', 'chat', 'moderation', 'security', 'support', 'legions', 'news', 'event', 'roles']) {
+  try { roles.setRoleZone(own, 'admin', z, true, []); } catch (e) {}
+}
+try { roles.setRoleZone(own, 'moderator', 'chat', true, []); } catch (e) {}
 denied(() => roles.setRoleZone(mod, 'moderator', 'economy', true, []), 'Дозор', 'изменение прав ролей');
 denied(() => roles.banChat(mod, own.id, 60, 'x', []), 'Дозор', 'блокировка чата владельцу');
 denied(() => roles.banChat(mod, adm.id, 60, 'x', []), 'Дозор', 'блокировка чата администратору');
 
 console.log('\n── 2. Модератор: чем должен ──');
 clean();
+// Право на чаты выдаётся владельцем — по умолчанию его нет
+roles.setRoleZone(own, 'moderator', 'chat', true, []);
 allowed(() => roles.banChat(mod, vic.id, 60, 'Оскорбления', [], ['global']), 'Дозор', 'блокировка общего чата');
 allowed(() => roles.unbanChat(mod, vic.id, []), 'Дозор', 'снятие блокировки чата');
 allowed(() => roles.banChat(mod, vic.id, 60, 'Спам', [], ['global', 'legion', 'mail']), 'Дозор', 'блокировка всех каналов');
 allowed(() => roles.unbanChat(mod, vic.id, []), 'Дозор', 'снятие');
-ok(roles.zonesFor(mod).length === 0, 'у модератора нет разделов админ-панели');
+ok(roles.zonesFor(mod).join(',') === 'chat',
+   'дозорному выдана только модерация чатов — разделов панели нет');
 
 console.log('\n── 3. Администратор ──');
 clean();
@@ -85,7 +96,7 @@ allowed(() => roles.setRole(own, vic.id, 'moderator', []), 'Владелец', '
 allowed(() => roles.setRoleZone(own, 'admin', 'economy', true, []), 'Владелец', 'настройка прав ролей');
 roles.setRoleZone(own, 'admin', 'economy', false, []);
 roles.setRole(own, vic.id, null, []);
-ok(roles.zonesFor(own).length === 12, 'у владельца все 12 разделов');
+ok(roles.zonesFor(own).length === 14, 'у владельца все 14 разделов');
 
 console.log('\n── 5. Обычный игрок ──');
 clean();
@@ -104,10 +115,10 @@ for (const [fn, zone] of [['grant', 'economy'], ['grantAll', 'economy'], ['setBa
   ok(head.includes(`assertZone(adminUser, '${zone}'`), `${fn}: права проверяются внутри функции (зона ${zone})`);
 }
 const rolesSrc = fs.readFileSync(ROOT + '/src/services/roles.ts', 'utf8');
-ok(/function banAccount[\s\S]{0,700}canAccessZone\(actor, 'moderation'\)/.test(rolesSrc),
-   'banAccount требует зону «Модерация»');
-ok(/function banAccount[\s\S]{0,400}roleOf\(actor\) === 'moderator'[\s\S]{0,200}throw/.test(rolesSrc),
-   'и отдельно, жёстко, отсекает роль «Дозор» — независимо от настроек зон');
+const banFn = rolesSrc.slice(rolesSrc.indexOf('function banAccount'), rolesSrc.indexOf('function unbanAccount'));
+ok(banFn.includes("canAccessZone(actor, 'moderation')"), 'banAccount требует зону «Модерация»');
+ok(!/roleOf\(actor\) === 'moderator'/.test(banFn),
+   'право определяется выданной зоной, а не ролью — так решил владелец');
 ok(!/function banAccount\(actor[\s\S]{0,200}isModerator\(actor\)\) throw/.test(rolesSrc),
    'прежняя проверка «любой сотрудник» убрана');
 
@@ -121,31 +132,18 @@ for (const p of ['/api/admin/account-ban', '/api/admin/account-unban']) {
   ok(!roles.canAccessZone(mod, z), `модератору адрес ${p} закрыт на входе`);
 }
 
-console.log('\n── 7б. Опасные зоны нельзя выдать «Дозору» ──');
-// Настройка возможностей ролей позволяла открыть модератору зону
-// «Модерация», а вместе с ней — бан аккаунтов. Теперь это запрещено
-// и на выдаче, и на чтении: даже уже сохранённая зона не действует.
-for (const zone of ['moderation', 'security', 'economy', 'database', 'roles', 'season']) {
-  try {
-    roles.setRoleZone(own, 'moderator', zone, true, []);
-    ok(false, `владелец смог открыть «Дозору» зону ${zone}`);
-  } catch (e) { ok(true, `зона ${zone} не выдаётся роли «Дозор»`); }
+console.log('\n── 7б. Права выдаёт владелец ──');
+// Раньше опасные зоны были запрещены роли жёстко. Теперь решает владелец:
+// он может открыть «Дозору» что угодно, кроме управления базой.
+for (const zone of ['moderation', 'security', 'economy', 'roles', 'season']) {
+  try { roles.setRoleZone(own, 'moderator', zone, true, []); ok(true, `владелец может открыть «Дозору» зону ${zone}`); }
+  catch (e) { ok(false, `зона ${zone} не выдалась: ${e.message}`); }
+  roles.setRoleZone(own, 'moderator', zone, false, []);
 }
-allowed(() => roles.setRoleZone(own, 'moderator', 'players', true, []), 'Владелец', 'открыть «Дозору» безопасную зону «Игроки»');
-roles.setRoleZone(own, 'moderator', 'players', false, []);
-// Зона, оставшаяся в базе от прежней версии, не должна действовать
-const dbMod = require(ROOT + '/dist/src/core/db');
-const savedZones = dbMod.load('roleZones', {});
-savedZones.moderator = ['moderation', 'economy', 'security'];
-dbMod.save('roleZones');
-ok(roles.zonesFor(mod).length === 0, 'запрещённые зоны из базы не действуют');
-ok(!roles.canAccessZone(mod, 'moderation'), 'доступ к «Модерации» закрыт даже при записи в базе');
+try { roles.setRoleZone(own, 'moderator', 'database', true, []); ok(false, 'база данных выдалась'); }
+catch (e) { ok(true, 'управление базой не выдаётся никому — только владелец'); }
 clean();
-denied(() => roles.banAccount(mod, vic.id, 60, 'x', []), 'Дозор', 'бан аккаунта при выданной зоне');
-denied(() => admin.setBan(mod, { userId: vic.id, banned: true, reason: 'x' }, []), 'Дозор', 'бан через админку при выданной зоне');
-ok(vic.banned === false, 'игрок остался незаблокированным');
-savedZones.moderator = [];
-dbMod.save('roleZones');
+denied(() => roles.banAccount(mod, vic.id, 60, 'x', []), 'Дозор', 'без выданного права бан аккаунта недоступен');
 
 console.log('\n── 8. Кнопки в интерфейсе ──');
 // Кнопка бана аккаунта не должна попадать в разметку у модератора.

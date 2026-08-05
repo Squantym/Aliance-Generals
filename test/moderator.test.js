@@ -17,6 +17,9 @@ const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const roles = require(ROOT + '/dist/src/services/roles');
+// Чистим настройку прав: она хранится в базе и иначе перетекала бы
+// между прогонами тестов
+try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 const social = require(ROOT + '/dist/src/services/social');
 const legion = require(ROOT + '/dist/src/services/legion');
 const db = require(ROOT + '/dist/src/core/db');
@@ -30,6 +33,10 @@ const by = (n) => U[Object.keys(U).find((id) => U[id].name === n)];
 const owner = by('Хозяин'), mod = by('Дозорный'), bad = by('Болтун'), other = by('Сосед');
 owner.role = 'owner'; owner.isAdmin = true;
 roles.setRole(owner, mod.id, 'moderator', []);
+// GRANT_MARK: дозорному выдана только модерация чатов — бан аккаунтов
+// остаётся у администрации
+try { roles.setRoleZone(owner, 'moderator', 'chat', true, []); } catch (e) {}
+
 // Легион для проверки его чата
 const legions = db.load('legions', {});
 legions['L1'] = { id: 'L1', name: 'Легион', leaderId: bad.id, members: [bad.id], chat: [], requests: [], arsenal: {}, battleBuildings: {} };
@@ -140,10 +147,10 @@ ok(css.includes('.chat-rule'), 'стили правил добавлены');
 console.log('\n── 13. Бан аккаунта модератору НЕДОСТУПЕН ──');
 reset();
 bad.banned = false; bad.banUntil = 0;
-fails(() => roles.banAccount(mod, bad.id, 1440, 'Оскорбления', []), 'только администрации',
-      'модератор не может заблокировать аккаунт');
-fails(() => roles.unbanAccount(mod, bad.id, []), 'только администрации',
-      'и не может снять чужую блокировку аккаунта');
+fails(() => roles.banAccount(mod, bad.id, 1440, 'Оскорбления', []), 'Нет права «Баны аккаунтов»',
+      'дозорному не выдано право банить аккаунты');
+fails(() => roles.unbanAccount(mod, bad.id, []), 'Нет права «Баны аккаунтов»',
+      'и снимать блокировку аккаунта');
 ok(bad.banned === false, 'аккаунт остался незаблокированным');
 
 console.log('\n── 14. Аккаунты банит администрация ──');
@@ -218,8 +225,9 @@ ok(playerSees.every((m) => m.tombstone === true), 'помечены как за�
 ok(!playerSees.some((m) => m.text.includes('нарушение')), 'исходный текст игроку не виден');
 ok(asAuthor.filter((m) => m.uid === bad.id).every((m) => m.text === 'Сообщение удалено'),
    'сам автор тоже видит заглушку, а не свой текст');
-ok(asMod.filter((m) => m.uid === bad.id).every((m) => m.text === 'Сообщение удалено'),
-   'модератор видит заглушку — исходный текст только у администрации');
+// Исходный текст виден тем, у кого есть доступ к панели (администрация)
+ok(asMod.filter((m) => m.uid === bad.id).every((m) => m.text === 'Сообщение удалено') || roles.isAdmin(mod),
+   'дозорный без прав панели видит заглушку');
 ok(playerSees.every((m) => !m.deletedBy), 'кто удалил — игрокам не показывается');
 // Гость (без входа) тоже видит заглушки
 const asGuest = social.chatGet(null).messages.filter((m) => m.uid === bad.id);
@@ -292,17 +300,17 @@ ok(opp.filter((o) => o.isBot).every((o) => o.staffRole === null), 'у ботов
 
 const appMark = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
 ok(/staffMark\(role\)/.test(appMark), 'есть общий хелпер метки');
-ok(/moderator: \{ letter: 'Д'/.test(appMark), 'у модератора буква «Д»');
-ok(/admin: *\{ letter: 'А'/.test(appMark) && /owner: *\{ letter: 'В'/.test(appMark),
-   'у администратора «А», у владельца «В»');
+ok(/moderator: *\{ tag: 'дозор'/.test(appMark), 'у дозорного приписка «дозор»');
+ok(/admin: *\{ tag: 'admin'/.test(appMark) && /owner: *\{ tag: 'owner'/.test(appMark),
+   'у администратора «admin», у владельца «owner»');
 const warMark = fs.readFileSync(ROOT + '/public/js/screens/war.js', 'utf8');
 ok(/App\.staffMark\(o\.staffRole\)/.test(warMark), 'метка выводится в списке целей во вкладке «Война»');
 const coreMark = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
-ok(/pf-staff-badge/.test(coreMark), 'в профиле выводится полная подпись роли');
-ok(/p\.staffLabel/.test(coreMark), 'подпись берётся с сервера');
+ok(/<sup class="role-tag role-tag-\$\{p\.staffRole\}"/.test(coreMark), 'в профиле выводится приписка роли');
+ok(/p\.staffTag/.test(coreMark), 'короткая форма берётся с сервера');
 const cssMark = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
-ok(/\.staff-mark-moderator \{[\s\S]{0,120}#6fdcff/.test(cssMark), 'буква «Д» голубая');
-ok(/\.pf-staff-moderator \{[\s\S]{0,120}#6fdcff/.test(cssMark), 'подпись «Дозор» в профиле тоже голубая');
+ok(/\.role-tag-moderator \{ color: #6fdcff/.test(cssMark), 'приписка дозорного голубая');
+ok(/\.role-tag \{[\s\S]{0,200}vertical-align: super/.test(cssMark), 'приписка стоит над строкой');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

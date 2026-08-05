@@ -457,6 +457,53 @@ App.screens.dailytasks = async (c) => {
   });
 };
 
+// ═══ Страница VIP-подписки ══════════════════════════════════════════
+// Витрина преимуществ и состояние своей подписки. Список берём с
+// сервера: там он рядом с самими механиками и не разъедется с ними.
+App.screens.vip = async (c) => {
+  c.innerHTML = '<div class="loading">Загружаю…</div>';
+  let d = null;
+  try { d = await API.get('/api/vip'); }
+  catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+  const until = d.until ? new Date(d.until).toLocaleDateString('ru-RU') : '';
+  c.innerHTML = `
+    <div class="title">VIP-подписка</div>
+
+    <div class="card vip-head${d.active ? ' vip-head-on' : ''}">
+      ${d.active ? `
+        <div class="vip-head-title">👑 Подписка активна</div>
+        <div class="muted small">Действует до ${until} · осталось ${d.daysLeft} дн.</div>
+        <div class="vip-left mt">
+          <div><b>${d.left.heal}</b><span>лечений</span></div>
+          <div><b>${d.left.immunity}</b><span>уходов от фаталити</span></div>
+          <div><b>${d.left.reroll}</b><span>замен поручений</span></div>
+        </div>
+        <p class="muted small mt">Счётчики обновляются в полночь по Москве.</p>
+        ${d.canRenameFree ? '<p class="small mt">✏️ Доступна бесплатная смена позывного</p>' : ''}
+      ` : `
+        <div class="vip-head-title">👑 VIP-подписка</div>
+        <p class="muted small mt">Двадцать преимуществ: меньше ожидания, больше лимитов,
+        выгоднее экономика. Подписка не делает вас сильнее в бою — она экономит время.</p>
+        <p class="small mt">Оформить подписку можно у администрации проекта.</p>
+      `}
+    </div>
+
+    <div class="card">
+      <div class="name">Что входит</div>
+      <div class="vip-list mt">
+        ${(d.benefits || []).map((b) => `
+          <div class="vip-item">
+            <span class="vip-item-icon">${b.icon}</span>
+            <div>
+              <b>${UI.esc(b.title)}</b>
+              <div class="muted small">${UI.esc(b.text)}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+};
+
 App.screens.profile = async (c, param) => {
   const id = param || App.me.id;
   const { profile: p } = await API.get('/api/profile/' + encodeURIComponent(id));
@@ -562,8 +609,9 @@ App.screens.profile = async (c, param) => {
     ${p.adminView ? '<div class="card" style="border-color:var(--gold);background:rgba(255,180,0,.06);padding:8px 12px;margin-bottom:8px"><b class="gold">👑 Обзор администратора</b><span class="muted small"> — техника, постройки и секретки видны без разведки.</span></div>' : ''}
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="pf2-head">
-        <span class="pf2-name">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)}</span>
-        ${p.staffRole ? `<span class="pf-staff-badge pf-staff-${p.staffRole}" title="Сотрудник проекта">${UI.esc(p.staffLabel || '')}</span>` : ''}
+        <span class="pf2-name">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)}</span>${App.vipMark(p.vip)}
+        ${App.vipMark(p.vip)}
+        ${p.staffRole ? `<sup class="role-tag role-tag-${p.staffRole}" title="${UI.esc(p.staffLabel || '')}">${UI.esc(p.staffTag || '')}</sup>` : ''}
         ${p.activeTitle ? `<span class="pf2-title">${UI.esc(p.activeTitle)}</span>` : ''}
         ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}
       </div>
@@ -581,8 +629,8 @@ App.screens.profile = async (c, param) => {
              ${p.avatar ? `style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
           ${p.avatar ? '' : '<span class="pf2-avatar-stub">👤</span>'}
           <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
-          ${own ? `<button class="pf-avatar-edit" id="pf-avatar-btn" title="${p.avatar ? 'Сменить аватар' : 'Поставить аватар'}">📷</button>` : ''}
         </div>
+        ${own ? `<button class="btn btn-inline pf-avatar-change" id="pf-avatar-btn">${p.avatar ? '🖼 Сменить аватар' : '🖼 Поставить аватар'}</button>` : ''}
         <div class="pf2-info">
           <div class="kv" style="padding:2px 0"><span class="k">Звание:</span><span class="v" style="color:var(--green);font-weight:700">${UI.esc(p.rank)}</span></div>
           <div class="pf2-stats-label">Статистика:</div>
@@ -595,10 +643,12 @@ App.screens.profile = async (c, param) => {
       ${p.countryName ? `<div class="muted small mt">${App._flagImg(p.flag)} ${UI.esc(p.countryName)}: ${UI.esc(p.countryBonus || '')}</div>` : ''}
       ${p.legion ? `<div class="muted small">Легион: <b style="cursor:pointer;color:var(--gold)" onclick="App._showPublicLegion('${p.legion.id}')">🏰 ${UI.esc(p.legion.name)}</b> <span style="font-size:10px">(${p.legion.rankName || 'Боец'})</span></div>` : '<div class="muted small">Без легиона</div>'}
       ${own ? `
-      <div class="pf2-vip">
-        <div class="pf2-vip-note">Ощутите все преимущества и удобства игры!</div>
-        <button class="btn pf2-vip-btn" id="pf-vip" disabled>Стать VIP</button>
-        <a href="javascript:void 0" class="pf2-vip-more" id="pf-vip-more">Нажмите, чтобы увидеть подробности</a>
+      <div class="pf2-vip${App.me.vip ? ' pf2-vip-active' : ''}">
+        <div class="pf2-vip-note">${App.me.vip
+          ? `👑 VIP активен · осталось ${Math.max(1, Math.ceil((App.me.vipUntil - Date.now()) / 86400000))} дн.`
+          : 'Ощутите все преимущества и удобства игры!'}</div>
+        <button class="btn pf2-vip-btn" id="pf-vip">${App.me.vip ? 'Мои преимущества' : 'Стать VIP'}</button>
+        <a href="javascript:void 0" class="pf2-vip-more" id="pf-vip-more">Что даёт подписка</a>
       </div>
       ${p.power ? `
       <div class="pf2-be">
@@ -735,9 +785,11 @@ App.screens.profile = async (c, param) => {
     };
     const avBtn = document.getElementById('pf-avatar-btn');
     if (avBtn) avBtn.onclick = () => App._showAvatarPicker(p.avatar);
-    // VIP — пока заглушка: кнопка неактивна, «подробности» показывают тост
+    // VIP: и кнопка, и ссылка ведут на страницу подписки
     const vipMore = document.getElementById('pf-vip-more');
-    if (vipMore) vipMore.onclick = () => UI.toast('🔒 VIP-статус скоро появится в игре');
+    if (vipMore) vipMore.onclick = () => App.go('vip');
+    const vipBtn = document.getElementById('pf-vip');
+    if (vipBtn) vipBtn.onclick = () => App.go('vip');
   }
 
   // Разворачивание/сворачивание подробной статистики мощи
@@ -1301,6 +1353,12 @@ App.screens.daily = async (c) => {
         <p class="small mt muted">Выполните все ${d.total} поручений — бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
       `}
     </div>
+    ${App.me && App.me.vip ? `
+      <div class="vip-bulk">
+        <span class="vip-mark">VIP</span>
+        <button class="btn btn-inline" id="q-accept-all">📋 Принять все</button>
+        <button class="btn btn-orange btn-inline" id="q-claim-all">✅ Сдать выполненные</button>
+      </div>` : ''}
     ${(() => {
       const diffBadge = (df) => df === 'hard'
         ? '<span class="badge" style="background:var(--red)">сложное</span>'
@@ -1344,7 +1402,9 @@ App.screens.daily = async (c) => {
                       ? `<button class="btn btn-orange btn-inline" data-quest="${q.id}">Получить награду</button>`
                       : q.accepted
                         ? `<span class="muted small">в работе</span>`
-                        : `<button class="btn btn-green btn-inline" data-accept="${q.id}">Принять</button>`}</div>
+                        : `<button class="btn btn-green btn-inline" data-accept="${q.id}">Принять</button>
+                           ${(App.me && App.me.vip && !isWeekly) ? `<button class="btn btn-inline q-reroll" data-reroll="${q.id}" title="Заменить поручение (VIP)">🔄</button>` : ''}`}
+                        ${(App.me.vip && !isWeekly && !q.claimed) ? `<button class="btn btn-inline" data-reroll="${q.id}" title="Заменить поручение">🔄</button>` : ''}</div>
                 </div>
               </div>`).join('')}
           </div>`;
@@ -1352,6 +1412,27 @@ App.screens.daily = async (c) => {
     })()}`;
 
   // Принятие поручения: прогресс считается только с этого момента
+  // VIP: массовые действия и замена
+  const bulkAccept = document.getElementById('q-accept-all');
+  if (bulkAccept) bulkAccept.onclick = async () => {
+    bulkAccept.disabled = true;
+    try { await API.post('/api/daily/accept-all', {}); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); bulkAccept.disabled = false; }
+  };
+  const bulkClaim = document.getElementById('q-claim-all');
+  if (bulkClaim) bulkClaim.onclick = async () => {
+    bulkClaim.disabled = true;
+    try { await API.post('/api/daily/claim-all', {}); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); bulkClaim.disabled = false; }
+  };
+  c.querySelectorAll('[data-reroll]').forEach((btn) => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      try { await API.post('/api/daily/reroll', { questId: btn.dataset.reroll }); App.rerender(); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+
   c.querySelectorAll('[data-accept]').forEach((btn) => {
     btn.onclick = async (ev) => {
       ev.stopPropagation();
@@ -1377,6 +1458,27 @@ App.screens.daily = async (c) => {
     row.onclick = () => { location.hash = '#' + row.dataset.goto; };
   });
   // Переключение разделов «Ежедневные» / «Недельные»
+  // VIP: массовые действия одной кнопкой
+  const aAll = document.getElementById('q-accept-all');
+  if (aAll) aAll.onclick = async () => {
+    try { await API.post('/api/daily/accept-all', {}); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  const cAll = document.getElementById('q-claim-all');
+  if (cAll) cAll.onclick = async () => {
+    try { await API.post('/api/daily/claim-all', {}); App.rerender(); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  // VIP: замена поручения на другое
+  c.querySelectorAll('[data-reroll]').forEach((b) => {
+    b.onclick = async () => {
+      if (!await UI.confirm('Заменить это поручение на другое?<br><span class="muted small">Прогресс по нему сбросится.</span>',
+          { title: 'Замена поручения', icon: '🔄', html: true, okText: 'Заменить' })) return;
+      try { await API.post('/api/daily/reroll', { questId: b.dataset.reroll }); App.rerender(); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+
   c.querySelectorAll('[data-qtab]').forEach((btn) => {
     btn.onclick = () => { App._questTab = btn.dataset.qtab; App.rerender(); };
   });

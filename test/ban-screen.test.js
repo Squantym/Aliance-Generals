@@ -16,6 +16,9 @@ const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const roles = require(ROOT + '/dist/src/services/roles');
+// Чистим настройку прав: она хранится в базе и иначе перетекала бы
+// между прогонами тестов
+try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 const social = require(ROOT + '/dist/src/services/social');
 const legion = require(ROOT + '/dist/src/services/legion');
 const admin = require(ROOT + '/dist/src/services/admin');
@@ -30,6 +33,12 @@ const by = (n) => U[Object.keys(U).find((id) => U[id].name === n)];
 const owner = by('Хозяин'), mod = by('Дозорный'), bad = by('Болтун'), other = by('Собеседник');
 owner.role = 'owner'; owner.isAdmin = true;
 roles.setRole(owner, mod.id, 'moderator', []);
+
+// Роли больше не дают прав сами по себе — выдаём их явно, как это
+// делает владелец во вкладке «Роли»
+const ALL_Z = ['players','chat','moderation','security','support','legions','news','event','roles','economy','discounts','season'];
+const grantAll = (role) => { for (const z of ALL_Z) { try { roles.setRoleZone(owner, role, z, true, []); } catch (e) {} } };
+grantAll('admin'); grantAll('moderator'); grantAll('arbiter'); grantAll('commissar');
 
 console.log('\n── 1. Чат-бан закрывает публичные каналы ──');
 // Блокировка теперь адресная: по умолчанию закрываются общий чат и

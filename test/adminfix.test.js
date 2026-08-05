@@ -17,6 +17,9 @@ const now = Date.now();
 function mkUser(id, name, isAdmin) {
   return {
     id, name, email: id + '@t.t', passHash: 'x', salt: 'x', isAdmin: !!isAdmin,
+    // Роль владельца: с новой моделью прав один флаг isAdmin
+    // возможностей не даёт — они выдаются владельцем явно
+    role: isAdmin ? 'owner' : null,
     emailVerified: true, country: 'ru', status: '', createdAt: now, lastSeen: now,
     level: 20, xp: 0, dollars: 1e6, gold: 0, bank: 0, skillPoints: 0,
     skills: { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 },

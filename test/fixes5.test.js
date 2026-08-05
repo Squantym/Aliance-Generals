@@ -103,7 +103,7 @@ const ally = (a, b) => {
   ok('бонус к мощи появился', reinf.view(vic).totalBonusPct > 0);
   throws('второй раз тому же в тот же день нельзя', () => reinf.send(atk, vic.id, []));
 
-  console.log('\n[7] Лимит 5 отправок в сутки');
+  console.log('\n[7] Лимит отправок в сутки');
   const mates = [];
   for (let i = 0; i < 6; i++) {
     await auth.register('Союзник' + i, 'password1', `s${i}@a.com`, 'ru', '1.1.2.' + i);
@@ -114,9 +114,14 @@ const ally = (a, b) => {
   for (const m of mates) {
     try { reinf.send(atk, m.id, []); sent++; } catch (e) { break; }
   }
-  eq('всего отправлено за сутки = 5', sent, c.REINFORCE.PER_DAY);
-  eq('счётчик отправок совпадает', reinf.view(atk).sentToday, 5);
-  eq('осталось отправок 0', reinf.view(atk).sentLeft, 0);
+  // Лимит подкреплений поднят до 10 (у VIP — 15), поэтому упереться
+  // можно и в число доступных соратников
+  // sent начинается с 1 (одно ушло «Мишени») плюс отправки соратникам
+  eq('отправлено столько, сколько позволили лимит и число соратников',
+     sent, Math.min(1 + mates.length, c.REINFORCE.PER_DAY));
+  eq('счётчик отправок совпадает', reinf.view(atk).sentToday, sent);
+  eq('остаток отправок посчитан верно',
+     reinf.view(atk).sentLeft, Math.max(0, c.REINFORCE.PER_DAY - sent));
 
   console.log('\n[8] Максимум 10 подкреплений, все от РАЗНЫХ игроков');
   const target = vic;

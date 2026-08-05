@@ -21,9 +21,10 @@ ok(/У этой учётной записи нет доступа к панел�
 ok(/const me = await API\.get\('\/api\/me'\)[\s\S]{0,200}staffZones/.test(adminJs), 'после входа по паролю зоны тоже проверяются');
 
 console.log('\n── 2. Разделы скрыты по правам ──');
-ok(/tabs\.filter\(t=>!t\.zone\|\|Admin\.can\(t\.zone\)\)/.test(adminJs), 'недоступные вкладки не показываются');
-ok(/zone:'economy'/.test(adminJs) && /zone:'discounts'/.test(adminJs), 'выдача ресурсов и скидки помечены владельческими зонами');
-ok(/zone:'database'/.test(adminJs), 'управление базой — тоже');
+ok(/tabs\.filter\(t=>\(!t\.zone\|\|Admin\.can\(t\.zone\)\)/.test(adminJs), 'недоступные вкладки не показываются');
+ok(/id:'econ',[^}]*zone:'economy'/.test(adminJs), 'вкладка «Экономика» помечена владельческой зоной');
+ok(/ownerOnly:true/.test(adminJs), 'журнал золота открыт только владельцу');
+ok(/Admin\.can\('database'\)/.test(adminJs), 'блок базы виден по праву на базу');
 ok(/Admin\._tabIds\.indexOf\(Admin\.tab\) === -1/.test(adminJs), 'если открытый раздел недоступен, сотрудника уводит на доступный');
 ok(adminJs.includes('can(zone)'), 'есть проверка доступа к разделу');
 
@@ -54,8 +55,10 @@ ok(/СЕЙЧАС РАБОТАЕТ СЕРВЕР ИГРЫ/.test(grantSrc),
    'и отказывается менять роль на живую — иначе изменение молча затрётся');
 const adminJs2 = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 ok(/renderRoles/.test(adminJs2), 'в панели есть вкладка «Роли» — назначение без остановки сервера');
-ok(/data-set=.*data-r="owner"/.test(adminJs2) || /data-r="owner"/.test(adminJs2), 'владелец может назначить владельца');
-ok(/data-r="moderator"/.test(adminJs2), 'и модератора');
+ok(/data-r="owner"/.test(adminJs2), 'владелец может назначить владельца');
+// Кнопки остальных ролей формируются из списка доступных назначений
+ok(/canAssign\.map\(\(r\) =>/.test(adminJs2), 'кнопки ролей строятся по правам назначающего');
+ok(/moderator: 'Дозор'/.test(adminJs2), 'дозорный есть в списке ролей');
 
 console.log('\n── 6. Скрипт ролей различает роли ──');
 const grant = fs.readFileSync(path.join(ROOT, 'tools/grant-admin.js'), 'utf8');

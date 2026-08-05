@@ -47,7 +47,7 @@ const boss = byName('Командир'), victim = byName('Жертва'), wit = 
 // Права администратора больше не выдаются при регистрации никому —
 // назначаются только с сервера (tools/grant-admin.js). В тесте
 // проставляем флаг напрямую, как это делает скрипт.
-boss.isAdmin = true;
+boss.isAdmin = true; boss.role = 'owner';   // прав по роли больше нет — делаем владельцем
 ok(boss.isAdmin && !victim.isAdmin, 'админ и обычные игроки созданы');
 
 console.log('\n── 1. Смена пароля игроком (Настройки → Аккаунт) ──');
@@ -97,7 +97,7 @@ ok(JSON.stringify(logs).indexOf('админский99') === -1, 'пароль Н
 
 // Пароль другого админа менять нельзя
 await auth.register('Второй', 'пароль123', 'a2@test.ru', 'ru', '4.4.4.4');
-const boss2 = byName('Второй'); boss2.isAdmin = true;
+const boss2 = byName('Второй'); boss2.isAdmin = true; boss2.role = 'owner';   // прав по роли больше нет — делаем владельцем
 fails(() => admin.setPassword(boss, { userId: boss2.id, password: 'пароль1234' }, n),
       'другого администратора', 'смена пароля другому админу запрещена');
 

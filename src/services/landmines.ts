@@ -64,8 +64,13 @@ function wiresView(wires: string[]): { id: string; name: string; hex: string }[]
 // ---------- Проверка срабатывания мины у жертвы ----------
 // level — уровень трофея «Растяжка» у ЖЕРТВЫ (target). Возвращает true,
 // если мина сработала (и уже списана из запаса жертвы вызывающим кодом).
-function rollTrigger(level: number): boolean {
-  const chance = config.MINES.triggerChancePct[Math.max(0, Math.min(10, level || 0))];
+function rollTrigger(level: number, owner?: any): boolean {
+  // VIP: мины владельца срабатывают чаще на 5 процентных пунктов —
+  // подписка усиливает уже установленные растяжки
+  const bonus = owner
+    ? (() => { try { return require('./vip').mineTriggerBonusPct(owner); } catch (e) { return 0; } })()
+    : 0;
+  const chance = config.MINES.triggerChancePct[Math.max(0, Math.min(10, level || 0))] + bonus;
   if (chance <= 0) return false;
   return Math.random() * 100 < chance;
 }

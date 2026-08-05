@@ -52,15 +52,26 @@ function pctOf(category: string): number {
 }
 
 // Применить скидку к цене. price * (1 - pct/100), округление вниз до целого
-function applyTo(category: string, price: number): number {
-  const pct = pctOf(category);
+// user необязателен: если передан и у игрока действует VIP, к акции
+// добавляется его скидка. Итог ограничен 50%, но если администрация
+// сама выставила больше — её значение остаётся, надбавка не идёт.
+function applyTo(category: string, price: number, user?: any): number {
+  let pct = pctOf(category);
+  if (user && (category === 'market' || category === 'container')) {
+    try { pct = require('./vip').marketDiscountPct(user, pct); } catch (e) {}
+  }
   if (pct <= 0) return Math.round(price);
   return Math.max(0, Math.floor(price * (1 - pct / 100)));
 }
 
 // Множитель бонуса (для категории gold — увеличивает покупаемое золото)
-function bonusMul(category: string): number {
-  return 1 + pctOf(category) / 100;
+function bonusMul(category: string, user?: any): number {
+  let pct = pctOf(category);
+  // VIP: +15% к покупаемому золоту поверх акции (акция 50% → итого 65%)
+  if (user && category === 'gold') {
+    try { pct = require('./vip').goldPurchaseBonusPct(user, pct); } catch (e) {}
+  }
+  return 1 + pct / 100;
 }
 
 // Установить скидку: pct% на durationHours часов, с возможностью отложенного

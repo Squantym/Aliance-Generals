@@ -102,7 +102,9 @@ function list(user: User) {
       const level = levelOf(user, t.id);
       const active = activeFor(user, t.id);
       const targetLevel = level + 1;
-      const trainMin = config.trophyTrainMinutes(targetLevel, (t as any).timeMul);
+      // VIP (пункт 19): улучшение вдвое быстрее
+      const trainMin = Math.max(1, Math.round(
+        require('./vip').trophyUpgradeSeconds(user, config.trophyTrainMinutes(targetLevel, (t as any).timeMul) * 60) / 60));
       const secLeft = active ? Math.max(0, Math.floor((active.finishesAt - Date.now()) / 1000)) : 0;
       const isSpy = !!(t as any).spy;
       const isBankHack = !!(t as any).bankHack;
@@ -143,7 +145,8 @@ function startUpgrade(user: User, id: string, notices: Notices) {
   if (!(user as any).trophyQueue) (user as any).trophyQueue = [];
   const now = Date.now();
   const targetLevel = level + 1;
-  const minutes = config.trophyTrainMinutes(targetLevel, (def as any).timeMul);
+  const minutes = Math.max(1, Math.round(
+    require('./vip').trophyUpgradeSeconds(user, config.trophyTrainMinutes(targetLevel, (def as any).timeMul) * 60) / 60));
   (user as any).trophyQueue.push({
     id, level: targetLevel,
     startedAt: now,

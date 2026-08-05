@@ -1028,6 +1028,263 @@ async function renderPersonalAlliance(c) {
 }
 
 // ---------- ОБЩЕНИЕ (общий чат) ----------
+// ═══ ФОРУМ ══════════════════════════════════════════════════════════
+// Темы сотрудников всегда сверху и выделены — так объявления не тонут
+// в обсуждениях. По 15 тем на странице, листание внизу.
+App._forumPage = 1;
+
+App.renderForum = async (box, page) => {
+  if (!box) return;
+  App._forumPage = page || App._forumPage || 1;
+  box.innerHTML = '<div class="loading">Загружаю форум…</div>';
+  let d = null;
+  try { d = await API.get('/api/forum?page=' + App._forumPage); }
+  catch (e) {
+    box.innerHTML = `<div class="card center"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
+    return;
+  }
+
+  const ago = (ms) => {
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 60) return `${m} мин назад`;
+    const h = Math.round(m / 60);
+    return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
+  };
+
+  // Кнопки страниц: первая, соседние, последняя
+  const pageBtns = () => {
+    if (d.pages <= 1) return '';
+    const out = [];
+    const add = (n) => out.push(`<button class="btn btn-inline forum-page${n === d.page ? ' btn-orange' : ''}" data-page="${n}">${n}</button>`);
+    out.push(`<button class="btn btn-inline forum-page" data-page="${Math.max(1, d.page - 1)}" ${d.page === 1 ? 'disabled' : ''}>‹</button>`);
+    const from = Math.max(1, d.page - 2), to = Math.min(d.pages, d.page + 2);
+    if (from > 1) { add(1); if (from > 2) out.push('<span class="forum-dots">…</span>'); }
+    for (let i = from; i <= to; i++) add(i);
+    if (to < d.pages) { if (to < d.pages - 1) out.push('<span class="forum-dots">…</span>'); add(d.pages); }
+    out.push(`<button class="btn btn-inline forum-page" data-page="${Math.min(d.pages, d.page + 1)}" ${d.page === d.pages ? 'disabled' : ''}>›</button>`);
+    return `<div class="forum-pages">${out.join('')}</div>`;
+  };
+
+  box.innerHTML = `
+    ${d.myBan ? `<div class="card forum-ban-note">🚫 Ограничения на форуме: ${UI.esc((d.myBan.scopes || []).join(', '))}<br>
+      <span class="muted small">Причина: ${UI.esc(d.myBan.reason || '')}</span></div>` : ''}
+    <div class="card">
+      <div class="forum-head">
+        <div class="name">📋 Форум <span class="muted small">· тем: ${UI.fmtNum(d.total)}</span></div>
+        ${d.canCreate ? '<button class="btn btn-orange btn-inline" id="forum-new">✍️ Создать тему</button>' : ''}
+      </div>
+      <div class="mt">
+        ${d.topics.length ? d.topics.map((t) => `
+          <div class="forum-row${t.staff ? ' forum-row-staff' : ''}">
+            <div class="grow">
+              <a href="#" class="forum-title${t.staff ? ' forum-title-staff' : ''}" data-topic="${t.id}">
+                ${t.pinned ? '📌 ' : ''}${t.closed ? '🔒 ' : ''}${UI.esc(t.title)}
+              </a>
+              <div class="muted small forum-meta">
+                ${UI.esc(t.authorName)}${App.vipMark(t.authorVip)}${t.authorRole ? App.staffMark(t.authorRole) : ''} ·
+                ${ago(t.at)} · 💬 ${UI.fmtNum(t.comments)}${t.hasImage ? ' · 🖼' : ''} · 👁 ${UI.fmtNum(t.views)}
+              </div>
+            </div>
+          </div>`).join('') : '<p class="muted center">Пока ни одной темы. Создайте первую.</p>'}
+      </div>
+      ${pageBtns()}
+    </div>`;
+
+  const nb = document.getElementById('forum-new');
+  if (nb) nb.onclick = () => App.showNewTopic(box);
+  box.querySelectorAll('[data-topic]').forEach((a) => {
+    a.onclick = (ev) => { ev.preventDefault(); App.renderTopic(box, a.dataset.topic); };
+  });
+  box.querySelectorAll('[data-page]').forEach((b) => {
+    b.onclick = () => App.renderForum(box, Number(b.dataset.page));
+  });
+};
+
+// Просмотр темы с комментариями
+App.renderTopic = async (box, topicId) => {
+  box.innerHTML = '<div class="loading">Открываю тему…</div>';
+  let t = null;
+  try { t = await API.get('/api/forum/topic/' + encodeURIComponent(topicId)); }
+  catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+  const dt = (ms) => new Date(ms).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  box.innerHTML = `
+    <button class="btn btn-inline mb" id="forum-back">← К списку тем</button>
+    <div class="card">
+      <div class="forum-topic-title${t.staff ? ' forum-title-staff' : ''}">
+        ${t.pinned ? '📌 ' : ''}${t.closed ? '🔒 ' : ''}${UI.esc(t.title)}
+      </div>
+      <div class="muted small forum-meta">
+        ${UI.esc(t.authorName)}${t.authorRole ? App.staffMark(t.authorRole) : ''} · ${dt(t.at)} · 👁 ${UI.fmtNum(t.views)}
+        ${t.closed ? `<span class="forum-closed">закрыта${t.closedBy ? ' · ' + UI.esc(t.closedBy) : ''}</span>` : ''}
+      </div>
+      ${t.image ? `<img class="forum-img" src="${UI.esc(t.image)}" alt="Изображение темы" loading="lazy">` : ''}
+      ${t.text ? `<div class="forum-text">${UI.esc(t.text).replace(/\n/g, '<br>')}</div>` : ''}
+      ${(t.canModerate || t.isAuthor) ? `
+        <div class="forum-acts mt">
+          <button class="btn btn-inline" data-close="${t.closed ? '0' : '1'}">${t.closed ? '🔓 Открыть' : '🔒 Закрыть обсуждение'}</button>
+          ${t.canModerate ? `<button class="btn btn-inline" data-pin="${t.pinned ? '0' : '1'}">${t.pinned ? 'Открепить' : '📌 Закрепить'}</button>` : ''}
+          <button class="btn btn-inline btn-red" data-del-topic="1">🗑 Удалить</button>
+        </div>` : ''}
+    </div>
+
+    <div class="card">
+      <div class="name">💬 Обсуждение (${UI.fmtNum(t.comments.length)})</div>
+      <div class="mt">
+        ${t.comments.length ? t.comments.map((cm) => `
+          <div class="forum-comment${cm.deleted ? ' forum-comment-deleted' : ''}">
+            <div class="forum-comment-head">
+              <b>${UI.esc(cm.userName)}</b>${cm.role ? App.staffMark(cm.role) : ''}
+              <span class="muted small">${dt(cm.at)}</span>
+              ${cm.deleted ? `<span class="chat-deleted-mark">🗑 удалено${cm.deletedBy ? ' · ' + UI.esc(cm.deletedBy) : ''}</span>` : ''}
+              ${(!cm.deleted && (t.canModerate || cm.mine)) ? `<button class="chat-mute" data-del-comment="${cm.id}" title="Удалить">🗑</button>` : ''}
+            </div>
+            <div class="forum-comment-text">${UI.esc(cm.text).replace(/\n/g, '<br>')}</div>
+          </div>`).join('') : '<p class="muted small">Пока нет комментариев.</p>'}
+      </div>
+      ${t.canComment ? `
+        <div class="mt">
+          <textarea id="forum-comment" rows="3" maxlength="1500" placeholder="Ваш комментарий…" style="width:100%;box-sizing:border-box"></textarea>
+          <button class="btn btn-orange mt" id="forum-send" style="width:100%">Отправить</button>
+        </div>`
+      : `<p class="muted small mt">${t.closed ? 'Тема закрыта для обсуждения.' : 'Вам закрыта возможность комментировать.'}</p>`}
+    </div>`;
+
+  document.getElementById('forum-back').onclick = () => App.renderForum(box);
+  const send = document.getElementById('forum-send');
+  if (send) send.onclick = async () => {
+    const txt = (document.getElementById('forum-comment') || {}).value || '';
+    if (!txt.trim()) return UI.toast('⛔ Пустой комментарий');
+    try { await API.post('/api/forum/comment', { topicId: t.id, text: txt }); App.renderTopic(box, t.id); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  const cl = box.querySelector('[data-close]');
+  if (cl) cl.onclick = async () => {
+    try { await API.post('/api/forum/close', { topicId: t.id, closed: cl.dataset.close === '1' }); App.renderTopic(box, t.id); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  const pn = box.querySelector('[data-pin]');
+  if (pn) pn.onclick = async () => {
+    try { await API.post('/api/forum/pin', { topicId: t.id, pinned: pn.dataset.pin === '1' }); App.renderTopic(box, t.id); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  const dt2 = box.querySelector('[data-del-topic]');
+  if (dt2) dt2.onclick = async () => {
+    if (!await UI.confirm('Удалить эту тему вместе с обсуждением?', { title: 'Удаление темы', icon: '🗑', okText: 'Удалить', danger: true })) return;
+    try { await API.post('/api/forum/delete', { topicId: t.id }); UI.toast('🗑 Тема удалена'); App.renderForum(box); }
+    catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  box.querySelectorAll('[data-del-comment]').forEach((b) => {
+    b.onclick = async () => {
+      try { await API.post('/api/forum/delete-comment', { topicId: t.id, commentId: b.dataset.delComment }); App.renderTopic(box, t.id); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+};
+
+// Создание темы. Картинку уменьшаем ПРЯМО В БРАУЗЕРЕ до ширины 900px:
+// сервер принимает ограниченный размер, а игрок может выбрать любое фото
+// с телефона — пересжатие снимает с него эту заботу.
+App._resizeImage = (file, maxW) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => reject(new Error('Это не изображение'));
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      // Подбираем качество, пока не уложимся в разумный вес
+      let q = 0.85, out = cv.toDataURL('image/jpeg', q);
+      while (out.length > 600 * 1024 && q > 0.4) { q -= 0.12; out = cv.toDataURL('image/jpeg', q); }
+      resolve(out);
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+App.showNewTopic = (box) => {
+  App._newImg = null;
+  const body = `
+    <div class="forum-new">
+      <input type="text" id="nt-title" class="field" maxlength="100" placeholder="Название темы">
+      <textarea id="nt-text" rows="6" maxlength="4000" placeholder="Текст сообщения…" style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
+      <div class="forum-new-img mt">
+        <button class="btn btn-inline" id="nt-pick">🖼 Прикрепить изображение</button>
+        <span class="muted small" id="nt-imgname">файл не выбран</span>
+        <input type="file" id="nt-file" accept="image/*" style="display:none">
+      </div>
+      <div id="nt-preview"></div>
+      <p class="muted small mt">Изображение любого размера — оно само уменьшится до нужной ширины.</p>
+    </div>`;
+  const dlg = UI.confirm(body, { title: 'Новая тема', icon: '✍️', html: true, okText: 'Создать', cancelText: 'Отмена' });
+  requestAnimationFrame(() => {
+    const pick = document.getElementById('nt-pick');
+    const file = document.getElementById('nt-file');
+    if (pick && file) {
+      pick.onclick = () => file.click();
+      file.onchange = async () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        document.getElementById('nt-imgname').textContent = 'обрабатываю…';
+        try {
+          App._newImg = await App._resizeImage(f, 900);
+          document.getElementById('nt-imgname').textContent = f.name;
+          document.getElementById('nt-preview').innerHTML =
+            `<img class="forum-img forum-img-preview" src="${App._newImg}" alt="Предпросмотр">`;
+        } catch (e) {
+          App._newImg = null;
+          document.getElementById('nt-imgname').textContent = 'ошибка: ' + e.message;
+        }
+      };
+    }
+    const ti = document.getElementById('nt-title');
+    const tx = document.getElementById('nt-text');
+    if (ti) ti.oninput = () => { App._newTitle = ti.value; };
+    if (tx) tx.oninput = () => { App._newText = tx.value; };
+    App._newTitle = ''; App._newText = '';
+  });
+  dlg.then(async (ok) => {
+    if (!ok) return;
+    if (!(App._newTitle || '').trim()) return UI.toast('⛔ Укажите название темы');
+    try {
+      await API.post('/api/forum/topic', {
+        title: App._newTitle, text: App._newText, image: App._newImg,
+      });
+      UI.toast('📝 Тема создана');
+      App.renderForum(box, 1);
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  });
+};
+
+// Новости внутри «Общения» — тот же список, что и в разделе новостей
+App.renderCommNews = async (box) => {
+  if (!box) return;
+  box.innerHTML = '<div class="loading">Загружаю новости…</div>';
+  try {
+    const r = await API.get('/api/news');
+    const items = r.posts || [];
+    // Пост состоит из блоков — собираем текстовые в один абзац
+    const bodyOf = (p) => (p.blocks || [])
+      .map((b) => (b && (b.text || b.value || '')) || '')
+      .filter(Boolean).join('\n');
+    box.innerHTML = items.length
+      ? items.map((n) => `
+          <div class="card">
+            <div class="name">${n.pinned ? '📌 ' : ''}${n.emoji ? UI.esc(n.emoji) + ' ' : ''}${UI.esc(n.title || 'Новость')}</div>
+            <div class="muted small">${n.createdAt ? new Date(n.createdAt).toLocaleString('ru-RU') : ''}${n.authorName ? ' · ' + UI.esc(n.authorName) : ''}</div>
+            <div class="forum-text mt">${UI.esc(bodyOf(n)).replace(/\n/g, '<br>')}</div>
+          </div>`).join('')
+      : '<div class="card center"><p class="muted">Новостей пока нет.</p></div>';
+  } catch (e) {
+    box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
+  }
+};
+
 // Правила поведения в чате — открываются кнопкой, чтобы игрок мог
 // свериться до того, как получит блокировку, а модератор — сослаться
 App.showChatRules = () => {
@@ -1055,13 +1312,37 @@ App.showChatRules = () => {
   );
 };
 
-App.screens.chat = async (c) => {
+// Раздел «Общение»: три вкладки. Чат — по умолчанию, у него свои
+// подвкладки: общий эфир и «Позывные» — доска для поиска соратников,
+// чтобы объявления не тонули в живом чате.
+App.screens.chat = async (c, param) => {
+  const tab = param || App._commTab || 'chat';
+  App._commTab = tab;
+  const tabsHtml = `
+    <div class="tabs comm-tabs">
+      <div class="tab ${tab === 'chat' ? 'active' : ''}" data-ctab="chat">💬 Чат</div>
+      <div class="tab ${tab === 'forum' ? 'active' : ''}" data-ctab="forum">📋 Форум</div>
+      <div class="tab ${tab === 'news' ? 'active' : ''}" data-ctab="news">📰 Новости</div>
+    </div>`;
+  const wireTabs = () => {
+    document.querySelectorAll('[data-ctab]').forEach((t) => {
+      t.onclick = () => { App._commTab = t.dataset.ctab; App.go('chat/' + t.dataset.ctab); };
+    });
+  };
+  if (tab === 'forum') { c.innerHTML = `<div class="title">Общение</div>${tabsHtml}<div id="comm-body"></div>`; wireTabs(); return App.renderForum(document.getElementById('comm-body')); }
+  if (tab === 'news')  { c.innerHTML = `<div class="title">Общение</div>${tabsHtml}<div id="comm-body"></div>`; wireTabs(); return App.renderCommNews(document.getElementById('comm-body')); }
+
   c.innerHTML = `
     <div class="title">Общение</div>
+    ${tabsHtml}
+    <div class="tabs comm-subtabs">
+      <div class="tab ${(App._chatRoom || 'global') === 'global' ? 'active' : ''}" data-croom="global">Общий чат</div>
+      <div class="tab ${App._chatRoom === 'recruit' ? 'active' : ''}" data-croom="recruit">📣 Позывные</div>
+    </div>
     <div class="card">
       <div class="chat-box" id="chat-box"><div class="loading">Подключение к рации…</div></div>
       <div class="field-row mt">
-        <input type="text" id="chat-text" maxlength="300" placeholder="Сообщение в эфир…">
+        <input type="text" id="chat-text" maxlength="300" placeholder="${(App._chatRoom === 'recruit') ? 'Ищу альянс / набираю бойцов…' : 'Сообщение в эфир…'}">
         <button class="btn btn-orange btn-inline" id="chat-send">➤</button>
       </div>
       <div class="chat-foot mt">
@@ -1070,6 +1351,13 @@ App.screens.chat = async (c) => {
       </div>
     </div>`;
 
+  wireTabs();
+  // Подвкладки чата: общий эфир и «Позывные» — доска для поиска
+  // соратников в альянс, чтобы такие объявления не тонули в чате
+  document.querySelectorAll('[data-croom]').forEach((t) => {
+    t.onclick = () => { App._chatRoom = t.dataset.croom; App.rerender(); };
+  });
+
   const rulesBtn = document.getElementById('chat-rules');
   if (rulesBtn) rulesBtn.onclick = () => App.showChatRules();
 
@@ -1077,13 +1365,15 @@ App.screens.chat = async (c) => {
 
   async function loadChat() {
     try {
-      const { messages } = await API.get('/api/chat');
+      const { messages } = await API.get('/api/chat?room=' + (App._chatRoom || 'global'));
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
         <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}${msg.deleted ? ' chat-msg-deleted' : ''}${msg.tombstone ? ' chat-msg-tomb' : ''}">
           ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
-          ${msg.staff ? `<span class="chat-staff chat-staff-${msg.staff}" title="${UI.esc(msg.staffLabel || '')}">${UI.esc(msg.staffLabel || '')}</span>` : ''}
+          ${App.vipMark(msg.vip)}
+          ${App.vipMark(msg.vip)}
+          ${msg.staff ? `<sup class="role-tag role-tag-${msg.staff}" title="${UI.esc(msg.staffLabel || '')}">${UI.esc(msg.staffTag || '')}</sup>` : ''}
           ${msg.banned ? '<span class="chat-banned-mark" title="На игроке действует блокировка">🔇</span>' : ''}
           ${(msg.deleted && !msg.tombstone) ? `<span class="chat-deleted-mark" title="Исходный текст виден только администрации">🗑 удалено${msg.deletedBy ? ' · ' + UI.esc(msg.deletedBy) : ''}</span>` : ''}
           <span class="muted small">[${msg.level}]</span>
@@ -1124,7 +1414,7 @@ App.screens.chat = async (c) => {
     const text = input.value.trim();
     if (!text) return;
     try {
-      await API.post('/api/chat', { text });
+      await API.post('/api/chat', { text: txt, room: App._chatRoom || 'global' });
       input.value = '';
       await loadChat();
       box.scrollTop = box.scrollHeight;

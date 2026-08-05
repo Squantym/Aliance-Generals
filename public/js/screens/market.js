@@ -14,12 +14,106 @@ App.screens.market = async (c, param) => {
     ['buffs', App.tabImg('market_doping', 20) + 'Допинг'],
     ['debuffs', App.tabImg('market_padlyanki', 20) + 'Падлянки'],
     ['mines', App.tabImg('market_mines', 20) + 'Мины'],
+    ['lots', '🎯 Лоты дня'],
     ['containers', App.tabImg('market_containers', 20) + 'Контейнеры'],
     ['auction', App.tabImg('market_auction', 20) + 'Аукцион'],
     ['passport', App.tabImg('market_passport', 20) + 'Паспорт'],
   ];
   const tabsHtml = `<div class="tabs">${tabs.map(([id, label]) =>
     `<div class="tab ${id === tab ? 'active' : ''}" onclick="location.hash='#market/${id}'">${label}</div>`).join('')}</div>`;
+
+  // --- Вкладка: лоты дня ---
+  // Аукцион секретных разработок и допинг со скидкой. Набор меняется
+  // в полночь по Москве и одинаков для всех игроков.
+  if (tab === 'lots') {
+    let d = null;
+    try { d = await API.get('/api/lots'); }
+    catch (e) {
+      c.innerHTML = `<div class="title">Чёрный рынок</div>${tabsHtml}
+        <div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
+      return;
+    }
+    const left = (sec) => {
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+      return h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+    };
+
+    c.innerHTML = `
+      <div class="title">Чёрный рынок</div>
+      ${tabsHtml}
+      <div class="card lots-head">
+        <div class="name">🎯 Лоты дня</div>
+        <p class="muted small mt">Набор меняется в полночь по Москве и одинаков для всех.
+        До смены лотов: <b class="gold">${left(d.secondsLeft)}</b></p>
+      </div>
+
+      <div class="card">
+        <div class="name">🔨 Аукцион: секретные разработки</div>
+        <p class="muted small mt">По одной штуке на всех. Побеждает наибольшая ставка —
+        разработка зачисляется победителю в полночь, остальным золото возвращается.</p>
+        ${d.devs.map((x) => `
+          <div class="lot-row${x.leading ? ' lot-leading' : ''}">
+            <div class="grow">
+              <b>${UI.esc(x.name)}</b>
+              <div class="muted small">атака ${UI.fmtNum(x.atk)} · защита ${UI.fmtNum(x.def)}</div>
+              <div class="lot-bid-info">
+                ${x.topGold
+                  ? `Лидер: <b>${UI.esc(x.topName)}</b> — <b class="gold">🪙 ${UI.fmtNum(x.topGold)}</b>
+                     <span class="muted small">· ставок: ${x.bidders}</span>`
+                  : '<span class="muted small">Ставок пока нет</span>'}
+                ${x.myBid ? `<div class="lot-mine">Ваша ставка: 🪙 ${UI.fmtNum(x.myBid)}${x.leading ? ' — вы лидируете' : ''}</div>` : ''}
+              </div>
+            </div>
+            <div class="lot-actions">
+              <input type="number" class="field lot-input" id="bid-${x.devId}"
+                     value="${x.nextBid}" min="${x.nextBid}" step="${d.bidStep}">
+              <button class="btn btn-orange btn-inline" data-bid="${x.devId}">Ставка</button>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <div class="card">
+        <div class="name">💊 Допинг со скидкой</div>
+        <p class="muted small mt">Запас общий на всех: кто успел, тот и купил.
+        Действует сразу, ждать полуночи не нужно.</p>
+        ${d.buffs.map((b) => `
+          <div class="lot-row${b.left <= 0 ? ' lot-out' : ''}">
+            <div class="grow">
+              <b>${UI.esc(b.name)}</b> <span class="lot-disc">−${b.discountPct}%</span>
+              <div class="muted small">${UI.esc(b.desc)}</div>
+              <div class="muted small">Осталось: <b>${b.left}</b> из ${b.stock}</div>
+            </div>
+            <div class="lot-actions">
+              <div class="lot-price">
+                <s class="muted small">🪙 ${b.basePrice}</s>
+                <b class="gold">🪙 ${b.price}</b>
+              </div>
+              ${b.left > 0
+                ? `<input type="number" class="field lot-input" id="qty-${b.itemId}" value="1" min="1" max="${b.left}">
+                   <button class="btn btn-orange btn-inline" data-buy="${b.itemId}">Купить</button>`
+                : '<span class="muted small">разобрали</span>'}
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+    c.querySelectorAll('[data-bid]').forEach((btn) => {
+      btn.onclick = async () => {
+        const inp = document.getElementById('bid-' + btn.dataset.bid);
+        btn.disabled = true;
+        try { await API.post('/api/lots/bid', { devId: btn.dataset.bid, gold: Number(inp.value) || 0 }); App.rerender(); }
+        catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
+      };
+    });
+    c.querySelectorAll('[data-buy]').forEach((btn) => {
+      btn.onclick = async () => {
+        const inp = document.getElementById('qty-' + btn.dataset.buy);
+        btn.disabled = true;
+        try { await API.post('/api/lots/buy', { itemId: btn.dataset.buy, qty: Number(inp.value) || 1 }); App.rerender(); }
+        catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
+      };
+    });
+    return;
+  }
 
   // --- Вкладка: допинг (баффы и восстановители себе) ---
   if (tab === 'buffs' || tab === 'debuffs') {
@@ -469,7 +563,9 @@ App.screens.trophies = async (c) => {
     return `${days} сут ${hours} ч`;
   };
   // Текущий/будущий бонус: для спутника-шпиona bonusNow — строка, иначе проценты
-  const bonusStr = (t, val) => (t.spy ? UI.esc(String(val)) : `${val}%`);
+  // У «текстовых» трофеев (спутник, медвежатник, растяжка) значение уже
+  // содержит проценты внутри — второй знак приводил к «окно 5%, успех 20%%»
+  const bonusStr = (t, val) => ((t.spy || t.bankHack || t.mine) ? UI.esc(String(val)) : `${val}%`);
 
   c.innerHTML = `
     <div class="title">Трофеи</div>
@@ -491,7 +587,7 @@ App.screens.trophies = async (c) => {
         </div>
         <div class="mt">${UI.bar(t.level, data.maxLevel, 'gold', `${t.level} / ${data.maxLevel}`)}</div>
         ${t.level > 0
-          ? `<p class="small mt">${t.spy ? 'Сейчас раскрывает' : 'Текущий бонус'}: <b class="gold">${bonusStr(t, t.bonusNow)}</b></p>`
+          ? `<p class="small mt">${t.spy ? 'Сейчас раскрывает' : ((t.bankHack || t.mine) ? 'Сейчас' : 'Текущий бонус')}: <b class="gold">${bonusStr(t, t.bonusNow)}</b></p>`
           : ''}
         ${t.training
           ? `<div class="mt">${UI.bar(
@@ -502,7 +598,7 @@ App.screens.trophies = async (c) => {
             )}</div>
             <button class="btn mt" data-tboost="${t.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(t.boostGold)}</button>`
           : (t.nextCost !== null
-              ? `<p class="small mt">${t.spy ? 'Станет раскрывать' : 'Будущий бонус'}: <b>${bonusStr(t, t.bonusNext)}</b></p>
+              ? `<p class="small mt">${t.spy ? 'Станет раскрывать' : ((t.bankHack || t.mine) ? 'Станет' : 'Будущий бонус')}: <b>${bonusStr(t, t.bonusNext)}</b></p>
                  <button class="btn btn-orange mt" data-tstart="${t.id}">Прокачать до ур. ${t.level + 1} за ${UI.priceWithSale(t.baseNextCost, t.nextCost, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
                  <p class="muted small center mt">Прокачка займёт ${fmtMin(t.trainMinutes)}</p>`
               : `<p class="center gold mt">Максимальный уровень ✔</p>`)}

@@ -335,6 +335,7 @@ const App = {
     if (!App.me) location.hash = '#auth';
     App.route();
 
+    App.startOnlineCounter();
     // Награда за вход — самое первое окно при заходе в игру
     if (App.me && App.me.pendingLoginReward) {
       setTimeout(() => App._showLoginReward(App.me.pendingLoginReward), 300);
@@ -1747,11 +1748,24 @@ const App = {
       if (!App._shownNotifIds) App._shownNotifIds = new Set();
       App._shownNotifIds.add(latest.id);
 
-      // Нападение террористов на шахту — отдельный баннер с переходом в «Шахты»,
-      // показывается на любом экране (в т.ч. на главном).
-      if (latest.kind === 'mine_terror') { App._showMineTerrorBanner(latest); return; }
-      // Летящая ракета — баннер с переходом к лазерам (сбить за 10 минут).
-      if (latest.kind === 'rocket_incoming') { App._showRocketIncomingBanner(latest); return; }
+      // Баннеры с переходом к экрану не показываем, если игрок уже там:
+      // предложение «перейти в шахты», когда ты и так в шахтах, только
+      // мешает и перекрывает содержимое
+      const screenNow = (location.hash || '').slice(1).split('/')[0] || 'home';
+      const subNow = (location.hash || '').slice(1).split('/')[1] || '';
+
+      // Нападение террористов на шахту — баннер с переходом в «Шахты»
+      if (latest.kind === 'mine_terror') {
+        if (screenNow === 'production' && subNow === 'silos') return;   // уже здесь
+        App._showMineTerrorBanner(latest);
+        return;
+      }
+      // Летящая ракета — баннер с переходом к лазерам (сбить за 10 минут)
+      if (latest.kind === 'rocket_incoming') {
+        if (screenNow === 'production' && subNow === 'lasers') return;
+        App._showRocketIncomingBanner(latest);
+        return;
+      }
 
       const onHome = (location.hash || '').slice(1).split('/')[0] === 'home' || !location.hash;
       if (onHome) {
@@ -2187,6 +2201,26 @@ const App = {
   _banScopes: ['global'],
   _banPurge: false,
 
+  // ── Счётчик онлайна в подвале ───────────────────────────────────
+  // Показываем реальных игроков за последние 5 минут. Обновляем раз в
+  // минуту: чаще незачем, а лишние запросы на живом сервере ни к чему.
+  _onlineTimer: null,
+
+  startOnlineCounter() {
+    const paint = async () => {
+      try {
+        const r = await API.get('/api/online');
+        const el = document.getElementById('online-num');
+        const box = document.getElementById('online-counter');
+        if (el) el.textContent = UI.fmtNum(r.online);
+        if (box) box.title = `${r.online} в игре · ${r.day} заходили за сутки · всего ${r.total}`;
+      } catch (e) {}
+    };
+    paint();
+    clearInterval(App._onlineTimer);
+    App._onlineTimer = setInterval(paint, 60000);
+  },
+
   // ── Окно награды за вход: «довольствие от штаба» ────────────────
   // Раньше награда падала на счёт молча из /api/me — игрок замечал её
   // только по изменившемуся балансу. Теперь показываем окно с кнопкой.
@@ -2248,15 +2282,29 @@ const App = {
   // Короткая метка сотрудника проекта: буква в кружке рядом с именем.
   // Нужна в списках, где на полную подпись роли нет места — например,
   // среди целей во вкладке «Война».
+  // Короткая приписка роли: маленьким шрифтом над строкой имени
   _STAFF_MARK: {
-    moderator: { letter: 'Д', title: 'Дозор — модератор проекта' },
-    admin:     { letter: 'А', title: 'Администратор проекта' },
-    owner:     { letter: 'В', title: 'Владелец проекта' },
+    owner:     { tag: 'owner',     title: 'Владелец проекта' },
+    arbiter:   { tag: 'arbiter',   title: 'Арбитр — главный администратор' },
+    admin:     { tag: 'admin',     title: 'Администратор проекта' },
+    commissar: { tag: 'commissar', title: 'Комиссар — главный модератор' },
+    moderator: { tag: 'дозор',     title: 'Дозор — модератор чатов' },
   },
+  // Золотой значок VIP. Отдельно от роли: сотрудник тоже может быть
+  // подписчиком, и одно не заменяет другое.
+  vipMark(isVip) {
+    return isVip ? '<span class="vip-mark" title="VIP-подписка">VIP</span>' : '';
+  },
+
+  // Золотой значок VIP — рядом с именем в чате, списке целей, профиле
+  vipMark(isVip) {
+    return isVip ? ' <span class="vip-mark" title="VIP-подписка">VIP</span>' : '';
+  },
+
   staffMark(role) {
     const m = this._STAFF_MARK[role];
     if (!m) return '';
-    return ` <span class="staff-mark staff-mark-${role}" title="${m.title}">${m.letter}</span>`;
+    return `<sup class="role-tag role-tag-${role}" title="${m.title}">${m.tag}</sup>`;
   },
 
   // Название типа диверсанта по ключу — для сводки ущерба

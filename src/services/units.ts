@@ -65,6 +65,11 @@ function buy(user: User, unitId: string, qty: number, notices: Notices) {
   m[0] += qty;
   ach.bump(user, 'unitsBought', qty, notices);
   require('./dailyQuests').bump(user, 'unitsBought', qty);
+  // Расширенная статистика: покупки по родам войск
+  try {
+    const def = config.UNIT_BY_ID[unitId];
+    if (def) require('./stats').track(user, 'unitsBought', def.type, qty);
+  } catch (e) {}
   tutorial.notify(user, 'buy_unit', notices);
   return { unitId, owned: player.unitTotalCount(user, unitId), spent: cost };
 }

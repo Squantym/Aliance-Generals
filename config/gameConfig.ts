@@ -45,6 +45,67 @@ function skillResetCost(resetsDone: number): number {
 // Регенерация: секунд на +1 единицу
 const REGEN = { hp: 180, en: 180, am: 180, EN_PER_TICK: 5 };
 
+// ═══════════════════════════════════════════════════════════════════
+// VIP-ПОДПИСКА
+// Все преимущества собраны в одном месте: так их видно целиком и можно
+// менять цифры, не разыскивая по коду. Каждый пункт помечен номером из
+// списка владельца, чтобы связь была прослеживаемой.
+// ═══════════════════════════════════════════════════════════════════
+const VIP = {
+  // 1. Восстановление ресурсов: минус 30% от ТЕКУЩЕГО таймера, то есть
+  // уже после ускорения трофеями. 90 с → 63 с.
+  REGEN_CUT_PCT: 30,
+
+  // 2. Мгновенное лечение в госпитале: 5 раз в сутки без ожидания,
+  // дальше обычный порядок (раз в 5 минут).
+  HOSPITAL_FREE_PER_DAY: 5,
+
+  // 3. Стройка шахт и ракет быстрее в полтора раза.
+  SILO_ROCKET_SPEED_PCT: 50,
+
+  // 5. Разведка: бесплатных попыток в сутки (обычным — 3).
+  SPY_FREE_PER_DAY: 7,
+
+  // 6. Подкрепления: базовый лимит поднят до 10, у VIP — 15.
+  REINFORCE_PER_DAY: 15,
+
+  // 7. Контрактов в день (обычным — 3).
+  CONTRACTS_PER_DAY: 5,
+
+  // 8. Бесплатная замена поручений в сутки.
+  QUEST_REROLLS_PER_DAY: 2,
+
+  // 12. Скидка на чёрном рынке. Складывается со скидкой администрации,
+  // но итог не больше 50% — если админ сам не выставил выше.
+  MARKET_DISCOUNT_PCT: 15,
+  MARKET_DISCOUNT_CAP_PCT: 50,
+
+  // 13. Прибавка к покупаемому золоту, складывается с акцией.
+  GOLD_PURCHASE_BONUS_PCT: 15,
+
+  // 14. Содержание техники дешевле, доход построек выше.
+  UPKEEP_CUT_PCT: 15,
+  INCOME_BONUS_PCT: 15,
+
+  // 15. Гарантированный уход от фаталити — независимо от ловкости.
+  FATALITY_IMMUNITY_PER_DAY: 3,
+
+  // 16. Опыт.
+  XP_BONUS_PCT: 30,
+
+  // 17. Потери техники в бою.
+  UNIT_LOSS_CUT_PCT: 30,
+
+  // 18. Бесплатная смена позывного раз в 30 дней.
+  RENAME_FREE_DAYS: 30,
+
+  // 19. Улучшение трофеев быстрее в полтора раза.
+  TROPHY_UPGRADE_SPEED_PCT: 50,
+
+  // 20. Мины VIP-игрока срабатывают чаще на 5 процентных пунктов.
+  MINE_TRIGGER_BONUS_PCT: 5,
+};
+
 // ---------- Опыт и уровни ----------
 // Кусочная кривая. Базовые суммы УВЕЛИЧЕНЫ НА 50% относительно прежней
 // версии (было ~1 000 000 суммарно, стало ~1 500 000):
@@ -1183,10 +1244,27 @@ function missionStagesTarget(diff: number, level: number): number {
 
 // Итоговое требование поручения (с учётом сложности и уровня).
 // counter передаётся, чтобы спецоперации считались по своему диапазону.
+// Трудные действия зависят от чужой активности: фаталити и уши можно
+// получить, только если противник подставился. Общая формула давала
+// невыполнимые цели (384 фаталити в сутки на 300 уровне), поэтому для
+// них своя шкала: на 10 уровне — одно действие, дальше +1 за каждые
+// 10 уровней. Сложность поручения умножает результат.
+const HARD_COUNTERS = ['fatalities', 'earsCut', 'merciesGiven'];
+// Ровно по правилу владельца: на 10 уровне — одно действие, дальше +1
+// за каждые полные 10 уровней. Сложность поручения НЕ умножает цель, а
+// добавляет одно-два действия — иначе на высоких уровнях снова выходят
+// десятки фаталити в сутки.
+function hardTarget(diff: number, level: number): number {
+  const byLevel = Math.max(1, Math.floor(Math.max(1, level) / 10));
+  const extra = (diff || 1) >= 2.4 ? 2 : ((diff || 1) >= 1.6 ? 1 : 0);
+  return byLevel + extra;
+}
+
 function dailyQuestTarget(base: number, diff: number, level: number, counter?: string, fixedTarget?: number): number {
   // Поручения на конкретный товар за золото: цель фиксирована
   if (fixedTarget) return fixedTarget;
   if (counter === 'missionStages') return missionStagesTarget(diff, level);
+  if (counter && HARD_COUNTERS.includes(counter)) return hardTarget(diff, level);
   return Math.max(1, Math.round(base * (diff || 1) * dailyGrowth(level)));
 }
 // Награда за поручение: растёт с уровнем и сложностью. Доллары — основной приз,
@@ -1242,6 +1320,8 @@ const WEEKLY_GOLD_BASE = 60;          // золото за недельное п
 function weeklyQuestTarget(base: number, diff: number, level: number, counter?: string, fixedTarget?: number): number {
   if (fixedTarget) return fixedTarget;
   if (counter === 'missionStages') return missionStagesTarget(diff, level) * WEEKLY_STAGES_MULT;
+  // Трудные действия за неделю: та же щадящая шкала, умноженная на 4
+  if (counter && HARD_COUNTERS.includes(counter)) return hardTarget(diff, level) * 2;
   return Math.max(1, Math.round(base * (diff || 1) * dailyGrowth(level)));
 }
 // Награда недельного поручения: кратно дневной + золото
@@ -2008,7 +2088,15 @@ const CONTRACTS_PER_DAY = 3;
 
 // Контракты тоже усложняются с уровнем: цель растёт (1x→~5x), а награда
 // золотом — умереннее (1x→3x), т.к. золото — премиум-валюта.
-function contractTarget(base: number, level: number): number {
+function contractTarget(base: number, level: number, counter?: string): number {
+  // Фаталити и уши — по щадящей шкале: базовая ступень контракта
+  // умножается на «одно действие за каждые 10 уровней»
+  if (counter && HARD_COUNTERS.includes(counter)) {
+    // Ступени контракта добавляют действия, а не умножают:
+    // 1-я ступень — по уровню, 2-я и 3-я — на 1 и 2 больше
+    const byLevel = Math.max(1, Math.floor(Math.max(1, level) / 10));
+    return byLevel + Math.max(0, base - 1);
+  }
   return Math.max(base, Math.round(base * (1 + Math.min(4, (level - 1) / 75))));
 }
 function contractReward(baseGold: number, level: number): number {
@@ -2052,7 +2140,7 @@ const SPY = {
 // ── Подкрепления союзникам (личный альянс) ──────────────────────────
 const REINFORCE = {
   MAX_ACTIVE: 10,     // максимум активных подкреплений у одного игрока
-  PER_DAY: 5,         // сколько игрок может отправить за сутки
+  PER_DAY: 10,        // сколько игрок может отправить за сутки (у VIP — 15)
   LIFETIME_H: 24,     // сколько часов действует одно подкрепление
   BONUS_PCT: 2,       // +2% к мощи армии за каждое активное подкрепление
                       // (усиливается трофеем «Знамя победы»)
@@ -2297,6 +2385,7 @@ export = {
   BATTLE, EARS, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
-  LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget, contractReward,
+  VIP, LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget, contractReward,
+  HARD_COUNTERS, hardTarget,
   COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS, REINFORCE,
 };

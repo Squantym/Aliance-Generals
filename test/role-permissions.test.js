@@ -17,6 +17,9 @@ const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const roles = require(ROOT + '/dist/src/services/roles');
+// Чистим настройку прав: она хранится в базе и иначе перетекала бы
+// между прогонами тестов
+try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 
 async function main() {
 for (const [n, e] of [['Хозяин','o@t.ru'],['Куратор','a@t.ru'],['Дозорный','m@t.ru']]) {
@@ -29,14 +32,15 @@ owner.role = 'owner'; owner.isAdmin = true;
 roles.setRole(owner, adm.id, 'admin', []);
 roles.setRole(owner, mod.id, 'moderator', []);
 
+
 console.log('\n── 1. Настройки по умолчанию ──');
 const v0 = roles.permissionsView();
-ok(v0.zones.length === 12, `разделов для настройки: ${v0.zones.length}`);
+ok(v0.zones.length === 14, `разделов для настройки: ${v0.zones.length}`);
 ok(v0.zones.every((z) => z.name && z.note), 'у каждого раздела есть название и пояснение');
 const admDef = v0.roles.find((r) => r.id === 'admin');
-ok(admDef.zones.length === 8, `администратору по умолчанию открыто ${admDef.zones.length} разделов`);
-ok(!admDef.zones.includes('economy') && !admDef.zones.includes('database'),
-   'ресурсы и база данных изначально закрыты');
+ok(admDef.zones.length === 0, 'у роли НЕТ прав по умолчанию — всё выдаёт владелец');
+ok(v0.roles.every((r) => r.zones.length === 0), 'и так у всех четырёх ролей');
+ok(v0.roles.length === 4, `настраиваются: ${v0.roles.map((r) => r.name).join(', ')}`);
 ok(admDef.custom === false, 'помечено как «по умолчанию»');
 
 console.log('\n── 2. Владелец открывает раздел ──');
@@ -60,13 +64,16 @@ console.log('\n── 4. Модератору можно дать разделы
 ok(roles.zonesFor(mod).length === 0, 'по умолчанию у модератора разделов панели нет');
 roles.setRoleZone(owner, 'moderator', 'players', true, []);
 ok(roles.canAccessZone(mod, 'players') === true, 'после включения модератор видит раздел «Игроки»');
-ok(roles.isModerator(mod) === true, 'модерация чата у него осталась');
+roles.setRoleZone(owner, 'moderator', 'chat', true, []);
+ok(roles.isModerator(mod) === true, 'модерация чатов — тоже выдаваемое право');
+roles.setRoleZone(owner, 'moderator', 'chat', false, []);
+ok(roles.isModerator(mod) === false, 'и его можно отобрать');
 roles.setRoleZone(owner, 'moderator', 'players', false, []);
 
 console.log('\n── 5. Защита от самоблокировки ──');
 fails(() => roles.setRoleZone(owner, 'owner', 'database', false, []), 'всегда полный доступ',
       'владельцу нельзя отключить свои разделы');
-ok(roles.zonesFor(owner).length === 12, 'у владельца по-прежнему все 12 разделов');
+ok(roles.zonesFor(owner).length === 14, 'у владельца по-прежнему все 14 разделов');
 fails(() => roles.setRoleZone(adm, 'admin', 'database', true, []), 'только владелец',
       'администратор не может расширить себе права');
 fails(() => roles.setRoleZone(mod, 'admin', 'players', false, []), 'только владелец',
@@ -80,15 +87,16 @@ roles.resetRoleZones(owner, 'admin', n3);
 const v3 = roles.permissionsView();
 const admAfter = v3.roles.find((r) => r.id === 'admin');
 ok(admAfter.custom === false, 'пометка «изменено» снята');
-ok(admAfter.zones.length === 8, `вернулось ${admAfter.zones.length} разделов по умолчанию`);
+ok(admAfter.zones.length === 0, 'сброс возвращает пустой лист — как у новой роли');
 ok(roles.canAccessZone(adm, 'economy') === false, 'ресурсы снова закрыты');
-ok(roles.canAccessZone(adm, 'security') === true, 'безопасность снова открыта');
+ok(roles.canAccessZone(adm, 'security') === false, 'и всё остальное тоже');
 
 console.log('\n── 7. Настройка переживает перезапуск ──');
-roles.setRoleZone(owner, 'admin', 'database', true, []);
+// Управление базой не выдаётся никому — проверяем на другой зоне
+roles.setRoleZone(owner, 'admin', 'moderation', true, []);
 const db = require(ROOT + '/dist/src/core/db');
 const saved = db.load('roleZones', {});
-ok(Array.isArray(saved.admin) && saved.admin.includes('database'),
+ok(Array.isArray(saved.admin) && saved.admin.includes('moderation'),
    'настройка сохранена в базу, а не только в памяти');
 
 console.log('\n── 8. Интерфейс ──');

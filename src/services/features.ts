@@ -170,7 +170,8 @@ function rollContracts(user: User): void {
   const day = today();
   if (user.contractsDay === day && user.contracts && user.contracts.length) return;
   // Новый набор на сегодня
-  const pool = u.shuffle(config.CONTRACTS_POOL.slice()).slice(0, config.CONTRACTS_PER_DAY);
+  const perDay = require('./vip').contractsPerDay(user);   // VIP: 5 вместо 3
+  const pool = u.shuffle(config.CONTRACTS_POOL.slice()).slice(0, perDay);
   user.contracts = pool.map((c: any) => {
     const tier = u.rnd(0, c.targets.length - 1);
     return { id: c.id + '_' + tier, progress: 0, claimed: false,
@@ -192,7 +193,7 @@ function contractsView(user: User) {
       const tier = parseInt(tierStr || '0', 10);
       const def = config.CONTRACTS_POOL.find((c: any) => c.id === baseId);
       if (!def) return null;
-      const target = config.contractTarget(def.targets[tier], user.level);
+      const target = config.contractTarget(def.targets[tier], user.level, def.counter);
       const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
       const done = current >= target;
       // Заказчик контракта — для портрета в карточке
@@ -220,7 +221,7 @@ function claimContract(user: User, contractId: string, notices: Notices) {
   const tier = parseInt(tierStr || '0', 10);
   const def = config.CONTRACTS_POOL.find((c: any) => c.id === baseId);
   if (!def) throw new u.ApiError('Контракт не найден');
-  const target = config.contractTarget(def.targets[tier], user.level);
+  const target = config.contractTarget(def.targets[tier], user.level, def.counter);
   const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
   if (current < target) throw new u.ApiError('Контракт ещё не выполнен');
 
@@ -461,7 +462,7 @@ function buildSpyReport(target: User, reveal: ReturnType<typeof config.spyReveal
 function spyOn(user: User, targetId: string, notices: Notices) {
   const day = today();
   if (user.lastSpyDay !== day) { user.lastSpyDay = day; user.spyCount = 0; }
-  const free = config.SPY.freePerDay;
+  const free = require('./vip').spyFreePerDay(user);   // VIP: 7 вместо 3
   const used = user.spyCount || 0;
 
   const target = users()[targetId];
@@ -486,6 +487,21 @@ function spyOn(user: User, targetId: string, notices: Notices) {
   // разведает заново (для 10 ур. — live-режим, актуален 3 дня).
   if (!user.spyReports) user.spyReports = {};
   user.spyReports[targetId] = buildSpyReport(target, reveal, lvl, now, liveUntil);
+
+  // Пункт 10: цель узнаёт, кто её изучал. Список суточный — обнуляется
+  // в полночь по Москве, как и остальные суточные механики.
+  try {
+    const vipSrv = require('./vip');
+    const day = vipSrv.mskDayKey();
+    const t: any = target;
+    if (!t.spiedBy || t.spiedBy.day !== day) t.spiedBy = { day, list: [] };
+    const already = t.spiedBy.list.find((x: any) => x.id === user.id);
+    if (already) { already.count = (already.count || 1) + 1; already.at = now; }
+    else t.spiedBy.list.push({ id: user.id, name: user.name, at: now, count: 1 });
+    if (t.spiedBy.list.length > 50) t.spiedBy.list = t.spiedBy.list.slice(-50);
+    db.markUser(target.id);
+  } catch (e) {}
+
   db.save('users');
 
   notices.push(reveal.live

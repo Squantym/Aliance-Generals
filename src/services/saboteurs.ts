@@ -156,6 +156,8 @@ function buyPack(user: User, type: LimitedType, packs: number, notices: Notices)
   user.gold -= totalGold;
   user.saboteurs![type] += n * S.packSize;
   require('./dailyQuests').bump(user, 'saboteursBought', n * S.packSize); // поручение «Тихие люди»
+  // Статистика: покупка диверсантов по типам
+  try { require('./stats').track(user, 'sabBought', type, n * S.packSize); } catch (e) {}
   db.save('users');
   notices.push(`🥷 Куплено ${RU_NAME[type].toLowerCase()}: ${n * S.packSize} шт. (за $${u.fmt(totalDollars)}${totalGold ? ` + 🪙 ${totalGold}` : ''}). В наличии: ${user.saboteurs![type]} (работает: ${active(user, type)}/${user.saboteurLimits![type]}).`);
   return view(user);

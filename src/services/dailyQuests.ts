@@ -9,6 +9,7 @@
 import config = require('../../config/gameConfig');
 import u = require('../core/utils');
 import player = require('./player');
+import db = require('../core/db');
 import type { User, Notices } from '../types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -40,9 +41,30 @@ function ensureDaily(user: User): any {
 
 // Увеличить счётчик задания (вызывается из боя, покупки и т.п.)
 //   key: 'attacks' | 'wins' | 'missionStages' | 'unitsBought' | ...
+// Счётчики, которые уже увеличиваются через achievements.bump в местах
+// вызова (бой, стройка, покупка техники, спецоперации). Для них здесь
+// ведётся только дневной учёт, иначе выйдет двойной счёт.
+const COUNTED_ELSEWHERE = new Set([
+  'attacks', 'wins', 'fatalities', 'earsCut',
+  'buildingsBuilt', 'unitsBought', 'missionStages',
+]);
+
 function bump(user: User, key: string, amount?: number): void {
   const d = ensureDaily(user);
   d.counters[key] = (d.counters[key] || 0) + (amount || 1);
+  // Накопительные счётчики игрока: по ним считаются КОНТРАКТЫ и достижения.
+  // Раньше bump писал только в дневные счётчики, поэтому контракты на
+  // события без отдельного кода (покупки на чёрном рынке, клуб, диверсанты)
+  // никогда не выполнялись — прогресс оставался нулевым.
+  //
+  // ВАЖНО: боевые счётчики уже увеличиваются через achievements.bump рядом
+  // с вызовом этой функции. Дублировать их здесь нельзя — прогресс пошёл бы
+  // вдвое быстрее. Поэтому ведём список тех, у кого своя точка учёта.
+  if (!COUNTED_ELSEWHERE.has(key)) {
+    if (!(user as any).counters) (user as any).counters = {};
+    const c: any = (user as any).counters;
+    c[key] = (c[key] || 0) + (amount || 1);
+  }
   // Недельные поручения ведут собственные счётчики: они живут до
   // понедельника и не обнуляются вместе с дневными
   const w = ensureWeekly(user);
@@ -180,7 +202,13 @@ function weeklyClaimBonus(user: User, notices: Notices) {
 // Активные поручения на сегодня (9 из 20, детерминированно по дню)
 function activeQuestIds(user: User): string[] {
   const d = ensureDaily(user);
-  return config.pickDailyQuests(d.day);
+  const base = config.pickDailyQuests(d.day);
+  // VIP-замены: подменяем идентификаторы в наборе на выбранные взамен.
+  // Единая точка — иначе замена была бы видна в одном месте и не видна
+  // в другом (приём, прогресс, сдача берут набор отсюда же).
+  const rep = (d as any).replaced;
+  if (!rep) return base;
+  return base.map((id: string) => rep[id] || id);
 }
 
 // Прогресс задания. Считается ТОЛЬКО после принятия и отсчитывается от
@@ -197,7 +225,7 @@ function questProgress(d: any, quest: any): number {
 // Принять поручение: фиксируем точку отсчёта прогресса
 function accept(user: User, questId: string, notices: Notices) {
   const d = ensureDaily(user);
-  if (!config.pickDailyQuests(d.day).includes(questId)) throw new u.ApiError('Это поручение сегодня недоступно');
+  if (!activeQuestIds(user).includes(questId)) throw new u.ApiError('Это поручение сегодня недоступно');
   const quest = config.DAILY_QUEST_BY_ID[questId];
   if (!quest) throw new u.ApiError('Поручение не найдено');
   if (d.accepted[questId]) throw new u.ApiError('Поручение уже принято');
@@ -211,7 +239,7 @@ function accept(user: User, questId: string, notices: Notices) {
 // Список активных поручений с прогрессом и данными заказчика — для UI
 function list(user: User) {
   const d = ensureDaily(user);
-  const ids = config.pickDailyQuests(d.day);
+  const ids = activeQuestIds(user);
   const quests = ids.map((id) => {
     const q = config.DAILY_QUEST_BY_ID[id];
     const target = config.dailyQuestTarget(q.base, q.diff, user.level, q.counter, q.fixedTarget);
@@ -251,7 +279,7 @@ function hoursUntilReset(): number {
 // Забрать награду за конкретное поручение (только из активных сегодня)
 function claim(user: User, questId: string, notices: Notices) {
   const d = ensureDaily(user);
-  if (!config.pickDailyQuests(d.day).includes(questId)) throw new u.ApiError('Это поручение сегодня недоступно');
+  if (!activeQuestIds(user).includes(questId)) throw new u.ApiError('Это поручение сегодня недоступно');
   const quest = config.DAILY_QUEST_BY_ID[questId];
   if (!quest) throw new u.ApiError('Поручение не найдено');
   if (d.claimed[questId]) throw new u.ApiError('Награда за это поручение уже получена');
@@ -271,10 +299,85 @@ function claim(user: User, questId: string, notices: Notices) {
 }
 
 // Забрать бонус за выполнение ВСЕХ активных поручений дня (золото)
+// ── VIP: массовые действия (пункт 4) ──────────────────────────────
+// Принять все доступные и сдать все выполненные одним нажатием.
+// Ошибки по отдельным поручениям не прерывают остальные: если одно
+// нельзя принять, это не повод не принимать другие.
+function acceptAll(user: User, notices: Notices) {
+  if (!require('./vip').isVip(user)) throw new u.ApiError('Доступно по VIP-подписке');
+  const view = list(user);
+  const wk = weeklyList(user);
+  let n = 0;
+  for (const q of view.quests || []) {
+    if (q.accepted || q.claimed) continue;
+    try { accept(user, q.id, []); n++; } catch (e) {}
+  }
+  for (const q of wk.quests || []) {
+    if (q.accepted || q.claimed) continue;
+    try { weeklyAccept(user, q.id, []); n++; } catch (e) {}
+  }
+  notices.push(n ? `📋 Принято поручений: ${n}` : 'Нечего принимать — все уже в работе');
+  return list(user);
+}
+
+function claimAll(user: User, notices: Notices) {
+  if (!require('./vip').isVip(user)) throw new u.ApiError('Доступно по VIP-подписке');
+  const view = list(user);
+  const wk = weeklyList(user);
+  let n = 0;
+  for (const q of view.quests || []) {
+    if (!q.done || q.claimed) continue;
+    try { claim(user, q.id, notices); n++; } catch (e) {}
+  }
+  for (const q of wk.quests || []) {
+    if (!q.done || q.claimed) continue;
+    try { weeklyClaim(user, q.id, notices); n++; } catch (e) {}
+  }
+  if (!n) notices.push('Нет выполненных поручений к сдаче');
+  return list(user);
+}
+
+// ── VIP: замена поручений (пункт 8) ───────────────────────────────
+// Меняет одно поручение на другое из набора. Две замены в сутки.
+function reroll(user: User, questId: string, notices: Notices) {
+  const vipSrv = require('./vip');
+  if (!vipSrv.isVip(user)) throw new u.ApiError('Доступно по VIP-подписке');
+  const d = ensureDaily(user);
+  const ids: string[] = activeQuestIds(user);
+  const idx = ids.indexOf(String(questId));
+  if (idx < 0) throw new u.ApiError('Поручение не найдено');
+  if (d.claimed && d.claimed[questId]) throw new u.ApiError('Это поручение уже сдано');
+
+  // Ищем замену среди тех, которых сегодня нет
+  // Замена не должна выдать то, что уже есть в наборе
+  const pool = config.DAILY_QUESTS.filter((q: any) => !ids.includes(q.id));
+  if (!pool.length) throw new u.ApiError('Заменить не на что — набор исчерпан');
+  if (!vipSrv.spend(user, 'reroll')) {
+    throw new u.ApiError('Замены на сегодня закончились — обновятся в полночь по Москве');
+  }
+
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  // Ключом служит ИСХОДНЫЙ идентификатор из набора дня: если поручение
+  // уже меняли, повторная замена перезаписывает ту же ячейку, а не
+  // создаёт цепочку
+  const baseIds = config.pickDailyQuests(d.day);
+  const rep0 = (d as any).replaced || {};
+  const originKey = baseIds.find((bid: string) => (rep0[bid] || bid) === questId) || questId;
+  d.replaced = rep0;
+  d.replaced[originKey] = pick.id;
+  // Прогресс и приём старого поручения сбрасываем — иначе замена была бы
+  // способом мгновенно получить награду за уже выполненное
+  if (d.accepted) delete d.accepted[questId];
+  db.markUser(user.id);
+  db.save('users');
+  notices.push(`🔄 Поручение заменено на «${pick.name}». Осталось замен: ${vipSrv.left(user, 'reroll')}`);
+  return list(user);
+}
+
 function claimBonus(user: User, notices: Notices) {
   const d = ensureDaily(user);
   if (d.bonusClaimed) throw new u.ApiError('Бонус уже получен сегодня');
-  const ids = config.pickDailyQuests(d.day);
+  const ids = activeQuestIds(user);
   const allDone = ids.every((id) => {
     const q = config.DAILY_QUEST_BY_ID[id];
     return !!d.accepted[id] && questProgress(d, q) >= config.dailyQuestTarget(q.base, q.diff, user.level, q.counter, q.fixedTarget);
@@ -288,4 +391,4 @@ function claimBonus(user: User, notices: Notices) {
 }
 
 export = { bump, list, accept, claim, claimBonus, ensureDaily, questProgress,
-  ensureWeekly, weeklyList, weeklyAccept, weeklyClaim, weeklyClaimBonus };
+  ensureWeekly, weeklyList, weeklyAccept, weeklyClaim, weeklyClaimBonus, acceptAll, claimAll, reroll,};

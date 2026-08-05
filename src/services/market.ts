@@ -16,8 +16,8 @@ import landmines = require('./landmines');
 import type { User, Notices } from '../types';
 
 // Цена в золоте у предмета рынка с учётом скидки
-function marketGold(item: any): number { return discounts.applyTo('market', item.gold); }
-function containerGold(c: any): number { return discounts.applyTo('container', c.gold); }
+function marketGold(item: any, user?: any): number { return discounts.applyTo('market', item.gold, user); }
+function containerGold(c: any, user?: any): number { return discounts.applyTo('container', c.gold, user); }
 
 function world(): any {
   const w = db.load('world', { chat: [], auctions: [], seq: 1 });
@@ -26,8 +26,8 @@ function world(): any {
 }
 
 // ---------- Допинг и падлянки ----------
-function itemsList() {
-  const withDiscount = (i) => ({ ...i, gold: marketGold(i), baseGold: i.gold });
+function itemsList(user?: any) {
+  const withDiscount = (i) => ({ ...i, gold: marketGold(i, user), baseGold: i.gold });
   return {
     buffs: config.MARKET_ITEMS.filter((i) => i.kind === 'buff' || i.kind.startsWith('refill')).map(withDiscount),
     debuffs: config.MARKET_ITEMS.filter((i) => i.kind === 'debuff').map(withDiscount),
@@ -39,7 +39,7 @@ function itemsList() {
 function mineInfo(user: User) {
   const item = config.MARKET_ITEM_BY_ID['landmine'];
   return {
-    price: marketGold(item), basePrice: item.gold,
+    price: marketGold(item, user), basePrice: item.gold,
     stock: user.landmines || 0, maxStock: landmines.maxStock(),
     maxBuyPerOrder: config.MINES.maxBuyPerOrder,
   };
@@ -48,7 +48,7 @@ function mineInfo(user: User) {
 function buyMines(user: User, qty: number, notices: Notices) {
   const item = config.MARKET_ITEM_BY_ID['landmine'];
   // Скидка на золото применяется так же, как и к прочим товарам рынка
-  const unitPrice = marketGold(item);
+  const unitPrice = marketGold(item, user);
   const q = Math.max(1, Math.min(config.MINES.maxBuyPerOrder, Math.floor(qty) || 0));
   const have = user.landmines || 0;
   const room = Math.max(0, config.MINES.maxStock - have);
@@ -107,7 +107,7 @@ function pushEffect(target: User, item: any, by?: User): void {
 function buyItem(user: User, itemId: string, targetName: string, notices: Notices) {
   const item = config.MARKET_ITEM_BY_ID[itemId];
   if (!item) throw new u.ApiError('Такого товара нет на рынке');
-  const price = marketGold(item);
+  const price = marketGold(item, user);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
   require('./dailyQuests').bump(user, 'marketBought', 1);
   // Отдельный счётчик по КОНКРЕТНОМУ товару: поручения на контрабанду
@@ -161,7 +161,7 @@ function containersView(user: User) {
     defNow: config.secretDef(user, d),
   }));
   return {
-    containers: config.CONTAINERS.map((c) => ({ ...c, gold: containerGold(c), baseGold: c.gold })),
+    containers: config.CONTAINERS.map((c) => ({ ...c, gold: containerGold(c, user), baseGold: c.gold })),
     collection,
     superSecret: {
       id: config.SUPER_DEV.id,
@@ -184,7 +184,7 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   qty = u.clamp(u.toInt(qty, 1), 1, 10);
   if (![1, 5, 10].includes(qty)) throw new u.ApiError('Можно открыть только 1, 5 или 10 контейнеров за раз');
 
-  const unitPrice = containerGold(c);
+  const unitPrice = containerGold(c, user);
   const totalPrice = unitPrice * qty;
   if (user.gold < totalPrice) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${totalPrice} за ${qty} шт.)`);
   require('./dailyQuests').bump(user, 'marketBought', 1);
@@ -512,4 +512,4 @@ function adminCommanderHolders(): any {
 }
 
 export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
-  adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders };
+  adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,};

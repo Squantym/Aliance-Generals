@@ -17,6 +17,9 @@ const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const roles = require(ROOT + '/dist/src/services/roles');
+// Чистим настройку прав: она хранится в базе и иначе перетекала бы
+// между прогонами тестов
+try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 const admin = require(ROOT + '/dist/src/services/admin');
 
 async function main() {
@@ -29,6 +32,12 @@ const owner = by('Хозяин'), adm = by('Помощник'), mod = by('Доз
 owner.role = 'owner'; owner.isAdmin = true;
 roles.setRole(owner, adm.id, 'admin', []);
 roles.setRole(owner, mod.id, 'moderator', []);
+
+// Админу выдаём рабочие права, но НЕ экономику и не акции — так владелец
+// и настраивает на практике
+for (const z of ['players','chat','moderation','security','support','legions','news','event','roles']) {
+  try { roles.setRoleZone(owner, 'admin', z, true, []); } catch (e) {}
+}
 
 console.log('\n── 1. Что доступно администратору ──');
 const allowedForAdmin = [
@@ -95,8 +104,9 @@ for (const [p, what] of [
 console.log('\n── 3. Модератор и обычный игрок ──');
 ok(roles.zonesFor(mod).length === 0, 'у модератора зон админ-панели нет');
 ok(roles.zonesFor(pl).length === 0, 'у обычного игрока тоже');
-ok(roles.isModerator(mod) === true, 'но модерация чата модератору доступна');
-ok(roles.zonesFor(adm).length === 8 && roles.zonesFor(owner).length === 12,
+roles.setRoleZone(owner, 'moderator', 'chat', true, []);
+ok(roles.isModerator(mod) === true, 'после выдачи права модерация чатов доступна');
+ok(roles.zonesFor(adm).length === 9 && roles.zonesFor(owner).length === 14,
    `зон у админа: ${roles.zonesFor(adm).length}, у владельца: ${roles.zonesFor(owner).length}`);
 
 console.log('\n── 4. Границы при назначении ролей ──');
@@ -105,8 +115,8 @@ roles.setRole(adm, pl.id, 'moderator', n1);
 ok(roles.roleOf(pl) === 'moderator', 'администратор назначает модератора');
 roles.setRole(adm, pl.id, null, n1);
 ok(roles.roleOf(pl) === null, 'и снимает его');
-fails(() => roles.setRole(adm, pl.id, 'admin', []), 'только модераторов', 'администратора назначить не может');
-fails(() => roles.setRole(adm, owner.id, null, []), 'только модераторов', 'владельца тронуть не может');
+fails(() => roles.setRole(adm, pl.id, 'admin', []), 'по старшинству', 'администратора назначить не может');
+fails(() => roles.setRole(adm, owner.id, null, []), 'по старшинству', 'владельца тронуть не может');
 
 console.log('\n── 5. Баны: от 1 минуты до бессрочного ──');
 const n2 = [];

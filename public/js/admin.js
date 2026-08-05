@@ -4,7 +4,7 @@
 
 const Admin = {
   selected: null,
-  tab: 'players',   // players | logs | discounts | buffs
+  tab: 'home',   // players | logs | discounts | buffs
 
   // Роль и доступные зоны текущего сотрудника — по ним прячем разделы
   me: null,
@@ -69,23 +69,21 @@ const Admin = {
     // У каждой вкладки своя зона: разделы, недоступные сотруднику, просто
     // не показываются — он не видит того, чем не может пользоваться
     const tabs = [
+      { id:'home',      label:'📊 Сводка' },
       { id:'players',   label:'👥 Игроки',      zone:'players' },
-      { id:'tools',     label:'🛠 Инструменты', zone:'economy' },
-      { id:'events',    label:'🐉 События',     zone:'event' },
+      { id:'econ',      label:'🛠 Экономика',   zone:'economy' },
+      { id:'events',    label:'🐉 Событие',     zone:'event' },
       { id:'tournament',label:'⚔️ Турниры',     zone:'legions' },
       { id:'legions',   label:'🎖 Легионы',     zone:'legions' },
-      { id:'mercs',     label:'🥷 Наёмники',    zone:'economy' },
-      { id:'discounts', label:'🏷 Скидки',      zone:'discounts' },
-      { id:'buffs',     label:'🎉 Бонусы',      zone:'economy' },
       { id:'logs',      label:'📋 Журнал',      zone:'players' },
-      { id:'support',   label:'🛟 Поддержка',   zone:'support' },
-      { id:'tech',      label:'🔧 Техническое', zone:'security' },
-      { id:'db',        label:'🗄 База данных', zone:'database' },
+      { id:'support',   label:'🛟 Заявки',   zone:'support' },
+      { id:'tech',      label:'🔧 Техника', zone:'security' },
       { id:'roles',     label:'🛡 Роли',        zone:'roles' },
+      { id:'gold',      label:'🪙 Золото',      zone:'roles', ownerOnly:true },
     ];
     document.getElementById('content').innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
-        ${tabs.filter(t=>!t.zone||Admin.can(t.zone)).map(t=>`<button class="btn btn-inline ${Admin.tab===t.id?'btn-orange':''}" id="tab-${t.id}">${t.label}</button>`).join('')}
+        ${tabs.filter(t=>(!t.zone||Admin.can(t.zone)) && (!t.ownerOnly||(Admin.me&&Admin.me.staffRole==='owner'))).map(t=>`<button class="btn btn-inline ${Admin.tab===t.id?'btn-orange':''}" id="tab-${t.id}">${t.label}</button>`).join('')}
         <a href="/" class="btn btn-inline" style="margin-left:auto">← В игру</a>
       </div>
       <div id="tab-content" style="padding:8px 0"></div>`;
@@ -97,7 +95,7 @@ const Admin = {
       const btn = document.getElementById('tab-' + t.id);
       if (btn) btn.onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
     });
-    Admin._tabIds = tabs.filter(t => !t.zone || Admin.can(t.zone)).map(t => t.id);
+    Admin._tabIds = tabs.filter(t => (!t.zone || Admin.can(t.zone)) && (!t.ownerOnly || (Admin.me && Admin.me.staffRole === 'owner'))).map(t => t.id);
     // Если открыт раздел, к которому доступа нет — уводим на первый доступный
     if (Admin._tabIds.length && Admin._tabIds.indexOf(Admin.tab) === -1) {
       Admin.tab = Admin._tabIds[0];
@@ -112,16 +110,17 @@ const Admin = {
       if (btn) btn.className = `btn btn-inline ${Admin.tab===id?'btn-orange':''}`;
     });
     const c = document.getElementById('tab-content');
+    if (Admin.tab === 'home')      return Admin.renderHome(c);
     if (Admin.tab === 'players')   return Admin.renderPlayers(c);
-    if (Admin.tab === 'tools')     return Admin.renderTools(c);
+    if (Admin.tab === 'econ')      return Admin.renderEcon(c);
     if (Admin.tab === 'events')    return Admin.renderEvents(c);
     if (Admin.tab === 'tournament')return Admin.renderTournament(c);
     if (Admin.tab === 'legions')   return Admin.renderLegions(c);
     if (Admin.tab === 'mercs')     return Admin.renderMercs(c);
     if (Admin.tab === 'support')   return Admin.renderSupport(c);
     if (Admin.tab === 'tech')      return Admin.renderTech(c);
-    if (Admin.tab === 'db')        return Admin.renderDb(c);
     if (Admin.tab === 'roles')     return Admin.renderRoles(c);
+    if (Admin.tab === 'gold')      return Admin.renderGold(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
@@ -135,7 +134,15 @@ const Admin = {
           <input type="text" id="ad-q" placeholder="Поиск по позывному…" style="flex:1">
           <button class="btn btn-orange btn-inline" id="ad-search">🔍 Найти</button>
         </div>
-        <p class="muted small mt">Найдите игрока, чтобы выдать ресурсы, забанить или обнулить аккаунт. Массовые операции — во вкладке «🛠 Инструменты».</p>
+        <p class="muted small mt">${[
+          Admin.can('economy') ? 'выдать ресурсы' : null,
+          Admin.can('moderation') ? 'заблокировать' : null,
+          Admin.can('security') ? 'обнулить аккаунт' : null,
+        ].filter(Boolean).join(', ') ? `Найдите игрока, чтобы ${[
+          Admin.can('economy') ? 'выдать ресурсы' : null,
+          Admin.can('moderation') ? 'заблокировать' : null,
+          Admin.can('security') ? 'обнулить аккаунт' : null,
+        ].filter(Boolean).join(', ')}.` : 'Найдите игрока, чтобы посмотреть досье.'}${Admin.can('economy') ? ' Массовые операции — во вкладке «🛠 Инструменты».' : ''}</p>
       </div>
       <div id="ad-list"><div class="loading">Загрузка…</div></div>
       <div id="ad-grant-wrap"></div>`;
@@ -150,6 +157,310 @@ const Admin = {
   // руками, а не одним кликом.
   techTarget: null,
 
+  // ═══ СВОДКА — рабочий стол сотрудника ════════════════════════════
+  // Панель владельца — про настройку игры. Панель администратора — про
+  // ежедневную работу с людьми, поэтому открывается она сводкой: что
+  // требует внимания сейчас, кто под мерами, что я сам делал сегодня.
+  async renderHome(c) {
+    c.innerHTML = '<div class="loading">Собираю сводку…</div>';
+    let d = null;
+    try { d = await API.get('/api/admin/dashboard'); }
+    catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+    const has = (z) => (d.zones || []).indexOf(z) >= 0;
+    const ago = (ms) => {
+      if (!ms) return '—';
+      const m = Math.round((Date.now() - ms) / 60000);
+      if (m < 60) return `${m} мин назад`;
+      const h = Math.round(m / 60);
+      return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
+    };
+    const left = (until) => {
+      if (!until) return 'бессрочно';
+      const m = Math.max(0, Math.round((until - Date.now()) / 60000));
+      return m < 60 ? `${m} мин` : (m < 1440 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${Math.floor(m / 1440)} дн`);
+    };
+
+    // Что требует внимания — только по доступным разделам
+    const alerts = [];
+    if (has('support') && d.tickets.open) {
+      alerts.push({ kind: d.tickets.oldest >= 24 ? 'hot' : 'warn', icon: '🛟',
+        text: `Открытых обращений: <b>${d.tickets.open}</b>` +
+              (d.tickets.oldest ? ` · самое старое ждёт <b>${d.tickets.oldest} ч</b>` : ''),
+        tab: 'support', btn: 'Разобрать' });
+    }
+    if (has('moderation') && d.accountBansTotal) {
+      alerts.push({ kind: 'info', icon: '🚫',
+        text: `Заблокированных аккаунтов: <b>${d.accountBansTotal}</b>`, tab: 'players', btn: 'К игрокам' });
+    }
+    if (has('moderation') && d.chatBansTotal) {
+      alerts.push({ kind: 'info', icon: '🔇',
+        text: `Действующих блокировок чата: <b>${d.chatBansTotal}</b>`, tab: null });
+    }
+
+    c.innerHTML = `
+      <div class="adm-hello">
+        <div>
+          <div class="adm-hello-name">${UI.esc(d.me.name)}</div>
+          <div class="muted small">${UI.esc(d.me.label || '')} · доступно разделов: ${(d.zones || []).length}</div>
+        </div>
+        <div class="adm-hello-stats">
+          <div><b>${UI.fmtNum(d.players.online)}</b><span>в игре</span></div>
+          <div><b>${UI.fmtNum(d.players.newToday)}</b><span>новых за сутки</span></div>
+          <div><b>${UI.fmtNum(d.players.total)}</b><span>всего</span></div>
+        </div>
+      </div>
+
+      ${alerts.length ? `
+        <div class="card">
+          <div class="name">Требует внимания</div>
+          ${alerts.map((a, i) => `
+            <div class="adm-alert adm-alert-${a.kind}">
+              <span class="adm-alert-icon">${a.icon}</span>
+              <span class="grow">${a.text}</span>
+              ${a.tab ? `<button class="btn btn-inline" data-goto-tab="${a.tab}">${a.btn}</button>` : ''}
+            </div>`).join('')}
+        </div>
+      ` : `<div class="card center"><p class="muted">✅ Ничего срочного. Спокойная смена.</p></div>`}
+
+      <div class="card">
+        <div class="name">🔎 Найти игрока</div>
+        <p class="muted small mt">Позывной, часть имени или ID — откроется карточка со всеми мерами и действиями.</p>
+        <div class="field-row mt">
+          <input type="text" id="adm-q" class="field" placeholder="Позывной игрока…" style="flex:1">
+          <button class="btn btn-orange btn-inline" id="adm-find">Найти</button>
+        </div>
+        <div id="adm-found" class="mt"></div>
+      </div>
+
+      ${has('moderation') && (d.accountBans.length || d.chatBans.length) ? `
+        <div class="card">
+          <div class="name">Действующие меры</div>
+          ${d.accountBans.map((b) => `
+            <div class="adm-measure">
+              <span class="adm-measure-tag adm-tag-ban">бан</span>
+              <a href="#" class="grow adm-link" data-card="${b.id}">${UI.esc(b.name)}</a>
+              <span class="muted small">${UI.esc(b.reason)}</span>
+              <span class="adm-measure-left">${left(b.until)}</span>
+            </div>`).join('')}
+          ${d.chatBans.map((b) => `
+            <div class="adm-measure">
+              <span class="adm-measure-tag adm-tag-mute">чат</span>
+              <a href="#" class="grow adm-link" data-card="${b.id}">${UI.esc(b.name)}</a>
+              <span class="muted small">${UI.esc(b.scopeNames || '')}</span>
+              <span class="adm-measure-left">${left(b.until)}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+      <div class="card">
+        <div class="name">📋 Мои действия за сутки</div>
+        <p class="muted small mt">Все действия сотрудников записываются. Это ваш собственный журнал.</p>
+        <div class="mt">
+          ${(d.myActions || []).length
+            ? d.myActions.map((a) => `
+                <div class="adm-act">
+                  <span class="muted small">${ago(a.at)}</span>
+                  <span class="grow">${UI.esc(a.human || a.path || '—')}</span>
+                </div>`).join('')
+            : '<p class="muted small">Пока ничего не делали.</p>'}
+        </div>
+      </div>`;
+
+    c.querySelectorAll('[data-goto-tab]').forEach((b) => {
+      b.onclick = () => { Admin.tab = b.dataset.gotoTab; Admin.renderTab(); };
+    });
+    c.querySelectorAll('[data-card]').forEach((a) => {
+      a.onclick = (ev) => { ev.preventDefault(); Admin.showPlayerCard(a.dataset.card); };
+    });
+    const find = async () => {
+      const q = (document.getElementById('adm-q') || {}).value || '';
+      const box = document.getElementById('adm-found');
+      if (q.trim().length < 2) { box.innerHTML = '<p class="muted small">Введите хотя бы 2 символа</p>'; return; }
+      box.innerHTML = '<div class="loading">Ищу…</div>';
+      try {
+        const r = await API.get('/api/mod/find?q=' + encodeURIComponent(q.trim()));
+        box.innerHTML = (r.players || []).length
+          ? r.players.map((p) => `
+              <div class="adm-measure">
+                <a href="#" class="grow adm-link" data-card="${p.id}">${UI.esc(p.name)}</a>
+                <span class="muted small">ур. ${p.level}</span>
+                ${p.banned ? '<span class="adm-measure-tag adm-tag-mute">чат</span>' : ''}
+                ${p.role ? `<span class="adm-measure-tag">${UI.esc(p.label)}</span>` : ''}
+              </div>`).join('')
+          : '<p class="muted small">Никого не найдено</p>';
+        box.querySelectorAll('[data-card]').forEach((a) => {
+          a.onclick = (ev) => { ev.preventDefault(); Admin.showPlayerCard(a.dataset.card); };
+        });
+      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+    };
+    const fb = document.getElementById('adm-find');
+    if (fb) fb.onclick = find;
+    const qi = document.getElementById('adm-q');
+    if (qi) qi.onkeydown = (ev) => { if (ev.key === 'Enter') find(); };
+  },
+
+  // Окна блокировки внутри панели. В админке не подключён app.js, поэтому
+  // окна из игры здесь недоступны — реализуем их отдельно и компактнее.
+  async banChatDialog(userId, userName, active) {
+    if (active) {
+      if (!await UI.confirm(`Снять блокировку чата с игрока <b>${UI.esc(userName)}</b>?`,
+          { title: 'Снятие блокировки', icon: '🔊', html: true, okText: 'Снять' })) return false;
+      try { await API.post('/api/mod/chat-unban', { userId }); UI.toast('🔊 Снято'); return true; }
+      catch (e) { UI.toast('⛔ ' + e.message); return false; }
+    }
+    Admin._banMin = 60; Admin._banScopes = ['global']; Admin._banReason = 'Нарушение правил';
+    const durs = [[15,'15 мин'],[60,'1 час'],[180,'3 часа'],[720,'12 часов'],[1440,'1 сутки'],[4320,'3 суток'],[10080,'7 суток'],[43200,'30 суток']];
+    const scopes = [['global','Общий чат'],['legion','Чат легиона'],['mail','Личные']];
+    const dlg = UI.confirm(`
+      <div class="ban-dialog">
+        <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
+        <div class="ban-label">Срок</div>
+        <div class="ban-grid">${durs.map(([m,t]) => `<button class="ban-opt${m===60?' active':''}" data-min="${m}">${t}</button>`).join('')}</div>
+        <div class="ban-label">Что закрыть</div>
+        <div class="ban-grid">${scopes.map(([id,t]) => `<button class="ban-opt ban-scope${id==='global'?' active':''}" data-scope="${id}">${t}</button>`).join('')}
+          <button class="ban-opt ban-scope-all" data-scope-all="1">Всё сразу</button></div>
+        <label class="ban-purge"><input type="checkbox" id="adm-purge">
+          <span>Удалить сообщения в общем чате</span></label>
+        <div class="ban-label">Причина</div>
+        <input type="text" id="adm-breason" class="field" maxlength="200" value="Нарушение правил">
+      </div>`,
+      { title: 'Блокировка чата', icon: '🔇', html: true, okText: 'Заблокировать', cancelText: 'Отмена', danger: true });
+    requestAnimationFrame(() => Admin._wireBanDialog());
+    if (!await dlg) return false;
+    try {
+      await API.post('/api/mod/chat-ban', {
+        userId, minutes: Admin._banMin, reason: Admin._banReason,
+        scopes: Admin._banScopes.length ? Admin._banScopes : ['global'],
+        purge: !!Admin._banPurge,
+      });
+      UI.toast('🔇 Блокировка выдана');
+      return true;
+    } catch (e) { UI.toast('⛔ ' + e.message); return false; }
+  },
+
+  async banAccountDialog(userId, userName, active) {
+    if (active) {
+      if (!await UI.confirm(`Разблокировать аккаунт <b>${UI.esc(userName)}</b>?`,
+          { title: 'Разблокировка', icon: '✅', html: true, okText: 'Разблокировать' })) return false;
+      try { await API.post('/api/admin/account-unban', { userId }); UI.toast('✅ Разблокирован'); return true; }
+      catch (e) { UI.toast('⛔ ' + e.message); return false; }
+    }
+    Admin._accMin = 1440; Admin._accReason = 'Нарушение правил';
+    const durs = [[15,'15 мин'],[60,'1 час'],[1440,'1 сутки'],[4320,'3 суток'],[10080,'7 суток'],[43200,'30 суток'],[0,'Бессрочно']];
+    const dlg2 = UI.confirm(`
+      <div class="ban-dialog">
+        <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
+        <p class="muted small">Игрок не сможет войти. Он увидит окно с причиной и сроком.</p>
+        <div class="ban-label">Срок</div>
+        <div class="ban-grid">${durs.map(([m,t]) => `<button class="ban-opt${m===1440?' active':''}" data-accmin="${m}">${t}</button>`).join('')}</div>
+        <div class="ban-label">Причина (увидит игрок)</div>
+        <input type="text" id="adm-areason" class="field" maxlength="200" value="Нарушение правил">
+      </div>`,
+      { title: 'Блокировка аккаунта', icon: '🚫', html: true, okText: 'Заблокировать', cancelText: 'Отмена', danger: true });
+    requestAnimationFrame(() => Admin._wireBanDialog());
+    if (!await dlg2) return false;
+    try {
+      await API.post('/api/admin/account-ban', { userId, minutes: Admin._accMin, reason: Admin._accReason });
+      UI.toast('🚫 Аккаунт заблокирован');
+      return true;
+    } catch (e) { UI.toast('⛔ ' + e.message); return false; }
+  },
+
+  // Обработчики кнопок внутри окон блокировки. Вызываются после появления
+  // окна: разметка исчезает вместе с ним, поэтому выбор храним в Admin.
+  _wireBanDialog() {
+    const root = document.querySelector('.ban-dialog');
+    if (!root) return;
+    root.querySelectorAll('[data-min]').forEach((b) => {
+      b.onclick = () => {
+        root.querySelectorAll('[data-min]').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active'); Admin._banMin = Number(b.dataset.min);
+      };
+    });
+    root.querySelectorAll('[data-accmin]').forEach((b) => {
+      b.onclick = () => {
+        root.querySelectorAll('[data-accmin]').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active'); Admin._accMin = Number(b.dataset.accmin);
+      };
+    });
+    const sync = () => { Admin._banScopes = [...root.querySelectorAll('.ban-scope.active')].map((x) => x.dataset.scope); };
+    root.querySelectorAll('.ban-scope').forEach((b) => { b.onclick = () => { b.classList.toggle('active'); sync(); }; });
+    const all = root.querySelector('[data-scope-all]');
+    if (all) all.onclick = () => { root.querySelectorAll('.ban-scope').forEach((x) => x.classList.add('active')); sync(); };
+    const purge = root.querySelector('#adm-purge');
+    Admin._banPurge = false;
+    if (purge) purge.onchange = () => { Admin._banPurge = purge.checked; };
+    const br = root.querySelector('#adm-breason');
+    if (br) br.oninput = () => { Admin._banReason = br.value; };
+    const ar = root.querySelector('#adm-areason');
+    if (ar) ar.oninput = () => { Admin._accReason = ar.value; };
+  },
+
+  // Карточка игрока: всё о человеке и все доступные меры в одном окне —
+  // чтобы не прыгать между вкладками ради одного бана
+  async showPlayerCard(id) {
+    let p = null;
+    try { p = await API.get('/api/admin/player-card/' + encodeURIComponent(id)); }
+    catch (e) { return UI.toast('⛔ ' + e.message); }
+
+    const dt = (ms) => ms ? new Date(ms).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+    const left = (until) => {
+      if (!until) return 'бессрочно';
+      const m = Math.max(0, Math.round((until - Date.now()) / 60000));
+      return m < 60 ? `${m} мин` : (m < 1440 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${Math.floor(m / 1440)} дн`);
+    };
+
+    const body = `
+      <div class="adm-card">
+        <div class="adm-card-head">
+          <b>${UI.esc(p.name)}</b>
+          ${p.roleLabel ? `<span class="badge">${UI.esc(p.roleLabel)}</span>` : ''}
+          <span class="muted small">${p.online ? '● в игре' : 'не в сети · ' + dt(p.lastSeen)}</span>
+        </div>
+        <div class="adm-card-rows">
+          <div><span>Уровень</span><b>${p.level}</b></div>
+          <div><span>В игре с</span><b>${dt(p.createdAt)}</b></div>
+          ${p.can.resources ? `<div><span>Баланс</span><b>$${UI.fmtNum(p.dollars)} · 🪙 ${UI.fmtNum(p.gold)}</b></div>` : ''}
+          <div><span>ID</span><b class="muted small">${UI.esc(p.id)}</b></div>
+        </div>
+
+        ${p.accountBan ? `
+          <div class="adm-card-warn">🚫 Аккаунт заблокирован · ${left(p.accountBan.until)}<br>
+            <span class="muted small">${UI.esc(p.accountBan.reason)}${p.accountBan.byName ? ' · ' + UI.esc(p.accountBan.byName) : ''}</span></div>` : ''}
+        ${p.chatBan ? `
+          <div class="adm-card-warn">🔇 Чат закрыт · ${left(p.chatBan.until)}<br>
+            <span class="muted small">${UI.esc(p.chatBan.reason)}${p.chatBan.byName ? ' · ' + UI.esc(p.chatBan.byName) : ''}</span></div>` : ''}
+
+        <div class="adm-card-acts">
+          ${p.can.chatBan ? `<button class="btn btn-inline" data-act="chat">${p.chatBan ? '🔊 Снять блокировку чата' : '🔇 Заблокировать чат'}</button>` : ''}
+          ${p.can.accountBan ? `<button class="btn btn-inline" data-act="acc">${p.accountBan ? '✅ Разблокировать аккаунт' : '🚫 Заблокировать аккаунт'}</button>` : ''}
+          <button class="btn btn-inline" data-act="profile">👤 Открыть профиль в игре</button>
+        </div>
+
+        ${(p.recent || []).length ? `
+          <div class="adm-card-log">
+            <div class="muted small">Последние действия игрока</div>
+            ${p.recent.slice(0, 8).map((l) => `<div class="adm-act"><span class="muted small">${dt(l.at)}</span><span class="grow">${UI.esc(l.human || l.path || '')}</span></div>`).join('')}
+          </div>` : ''}
+      </div>`;
+
+    await UI.confirm(body, { title: 'Карточка игрока', icon: '👤', html: true, okText: 'Закрыть', cancelText: '' });
+    // Действия вешаем сразу после появления окна
+    requestAnimationFrame(() => {
+      const root = document.querySelector('.adm-card');
+      if (!root) return;
+      root.querySelectorAll('[data-act]').forEach((b) => {
+        b.onclick = async () => {
+          const act = b.dataset.act;
+          if (act === 'profile') { window.open('/#profile/' + p.id, '_blank'); return; }
+          if (act === 'chat') await Admin.banChatDialog(p.id, p.name, !!p.chatBan);
+          if (act === 'acc') await Admin.banAccountDialog(p.id, p.name, !!p.accountBan);
+          setTimeout(() => Admin.renderTab(), 300);
+        };
+      });
+    });
+  },
+
   // ═══ РОЛИ: выдача прав без остановки сервера ═════════════════════
   // Через панель роль меняется в памяти работающего сервера и сразу
   // сохраняется — в отличие от скрипта на сервере, правку которого
@@ -162,15 +473,21 @@ const Admin = {
       return;
     }
     const iAmOwner = data.me && data.me.role === 'owner';
-    const label = { owner: 'Владелец', admin: 'Администратор', moderator: 'Дозор' };
+    const label = { owner: 'Владелец', arbiter: 'Арбитр', admin: 'Администратор',
+                    commissar: 'Комиссар', moderator: 'Дозор' };
+    // Кого может назначать текущий сотрудник — совпадает с проверкой на сервере
+    const myRole = (data.me && data.me.role) || '';
+    const CAN = { owner: ['arbiter','admin','commissar','moderator'], arbiter: ['admin','commissar','moderator'],
+                  admin: ['moderator'], commissar: ['moderator'] };
+    const canAssign = CAN[myRole] || [];
 
     c.innerHTML = `
       <div class="card">
         <div class="name">🛡 Сотрудники проекта</div>
         <p class="muted small mt">Ваша роль: <b>${UI.esc((data.me && data.me.label) || '—')}</b>.
         ${iAmOwner
-          ? 'Вы можете назначать любые роли, включая администраторов.'
-          : 'Администратор назначает и снимает только модераторов.'}</p>
+          ? 'Вы можете назначать любые роли.'
+          : `Вы можете назначать: ${canAssign.map((r) => label[r]).join(', ') || '—'}.`}</p>
         <div class="mt">
           ${(data.staff || []).map((s) => `
             <div class="list-row">
@@ -179,8 +496,12 @@ const Admin = {
                 <span class="badge">${UI.esc(label[s.role] || s.role)}</span>
                 <span class="muted small">ур. ${s.level}</span>
               </div>
+              ${(s.role !== 'owner' && iAmOwner)
+                ? `<button class="btn btn-inline" data-staff-log="${s.id}" data-name="${UI.esc(s.name)}" title="Журнал действий">📋</button>
+                   <button class="btn btn-inline" data-staff-ban="${s.id}" data-name="${UI.esc(s.name)}" title="Заблокировать аккаунт">🚫</button>`
+                : ''}
               ${(s.role !== 'owner' && (iAmOwner || s.role === 'moderator'))
-                ? `<button class="btn btn-red btn-inline" data-role-off="${s.id}" data-name="${UI.esc(s.name)}">снять</button>`
+                ? `<button class="btn btn-red btn-inline" data-role-off="${s.id}" data-name="${UI.esc(s.name)}">снять роль</button>`
                 : ''}
             </div>`).join('') || '<p class="muted small">Пока только вы.</p>'}
         </div>
@@ -188,9 +509,24 @@ const Admin = {
 
       ${iAmOwner ? `
       <div class="card">
+        <div class="name">📜 Журнал действий сотрудников</div>
+        <p class="muted small mt">Все действия администраторов и модераторов. Это единственная проверка того,
+        как используются выданные права — сотрудники чужой журнал не видят.</p>
+        <div class="field-row mt">
+          <select id="staff-log-who" class="field" style="flex:1">
+            <option value="">Все сотрудники</option>
+            ${(data.staff || []).map((s) => `<option value="${s.id}">${UI.esc(s.name)} — ${UI.esc(s.label)}</option>`).join('')}
+          </select>
+          <button class="btn btn-inline" id="staff-log-go">Показать</button>
+        </div>
+        <div id="staff-log-box" class="mt"></div>
+      </div>` : ''}
+
+      ${iAmOwner ? `
+      <div class="card">
         <div class="name">⚙️ Возможности ролей</div>
-        <p class="muted small mt">Отметьте, какие разделы панели доступны каждой роли.
-        Изменения действуют сразу. У владельца всегда полный доступ — это не настраивается,
+        <p class="muted small mt">Отметьте, что доступно каждой роли. <b>Новые роли не имеют прав вообще</b> —
+        всё выдаёте вы. Изменения действуют сразу. У владельца всегда полный доступ: это не настраивается,
         иначе можно было бы случайно закрыть себе выход.</p>
         <div id="perm-box" class="mt"><div class="loading">Загружаю…</div></div>
       </div>` : ''}
@@ -216,6 +552,50 @@ const Admin = {
           UI.toast('✅ Роль снята');
           Admin.renderRoles(c);
         } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+
+    // ── Журнал действий сотрудников (только владелец) ──
+    const showStaffLog = async (userId, name) => {
+      const box = document.getElementById('staff-log-box');
+      if (!box) return;
+      box.innerHTML = '<div class="loading">Загружаю…</div>';
+      try {
+        const r = await API.get('/api/admin/staff-log' + (userId ? '?userId=' + encodeURIComponent(userId) : ''));
+        box.innerHTML = (r.logs || []).length
+          ? `<div class="muted small">${name ? 'Действия: ' + UI.esc(name) : 'Все сотрудники'} · записей: ${r.logs.length}</div>` +
+            r.logs.map((l) => `
+              <div class="adm-act">
+                <span class="muted small">${new Date(l.at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                <b class="adm-log-who">${UI.esc(l.userName || '')}</b>
+                <span class="grow">${UI.esc(l.human || l.path || '')}</span>
+              </div>`).join('')
+          : '<p class="muted small">Записей нет.</p>';
+      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+    };
+    const logGo = document.getElementById('staff-log-go');
+    if (logGo) logGo.onclick = () => {
+      const sel = document.getElementById('staff-log-who');
+      const opt = sel.options[sel.selectedIndex];
+      showStaffLog(sel.value, sel.value ? opt.textContent : '');
+    };
+    if (iAmOwner) showStaffLog('', '');
+
+    c.querySelectorAll('[data-staff-log]').forEach((b) => {
+      b.onclick = () => {
+        const sel = document.getElementById('staff-log-who');
+        if (sel) sel.value = b.dataset.staffLog;
+        showStaffLog(b.dataset.staffLog, b.dataset.name);
+        const box = document.getElementById('staff-log-box');
+        if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      };
+    });
+    c.querySelectorAll('[data-staff-ban]').forEach((b) => {
+      b.onclick = async () => {
+        // Сотрудника банит только владелец — проверка и на сервере
+        if (await Admin.banAccountDialog(b.dataset.staffBan, b.dataset.name, false)) {
+          Admin.renderRoles(c);
+        }
       };
     });
 
@@ -246,9 +626,27 @@ const Admin = {
           </div>
         </div>`).join('');
 
+      // Зоны, дающие власть над людьми и деньгами: включаем с
+      // подтверждением, чтобы случайная галочка не выдала лишнего
+      const DANGEROUS = {
+        moderation: 'блокировать вход в игру и удалять аккаунты',
+        security: 'менять чужие пароли и обнулять прогресс',
+        economy: 'выдавать и списывать деньги, золото и награды',
+        discounts: 'менять акции и глобальные бонусы',
+        roles: 'назначать и снимать роли другим сотрудникам',
+        season: 'менять награды сезона и завершать неделю',
+      };
       box.querySelectorAll('[data-perm-zone]').forEach((cb) => {
         cb.onchange = async () => {
           const role = cb.dataset.permRole, zone = cb.dataset.permZone, enabled = cb.checked;
+          if (enabled && DANGEROUS[zone]) {
+            const roleName = (p.roles.find((x) => x.id === role) || {}).name || role;
+            const okd = await UI.confirm(
+              `Открыть роли <b>${UI.esc(roleName)}</b> раздел, позволяющий <b>${UI.esc(DANGEROUS[zone])}</b>?` +
+              `<br><span class="muted small">Это серьёзные полномочия. Выдавайте их только тем, кому доверяете.</span>`,
+              { title: 'Расширение полномочий', icon: '⚠️', html: true, okText: 'Открыть', danger: true });
+            if (!okd) { cb.checked = false; return; }
+          }
           cb.disabled = true;
           try {
             await API.post('/api/staff/permissions', { role, zone, enabled });
@@ -287,9 +685,8 @@ const Admin = {
               <div class="list-row">
                 <div class="grow"><b>${UI.esc(p.name)}</b> <span class="muted small">ур. ${p.level}</span>
                   ${p.role ? `<span class="badge">${UI.esc(label[p.role] || p.role)}</span>` : ''}</div>
-                <button class="btn btn-inline" data-set="${p.id}" data-r="moderator" data-name="${UI.esc(p.name)}">Дозор</button>
-                ${iAmOwner ? `<button class="btn btn-inline" data-set="${p.id}" data-r="admin" data-name="${UI.esc(p.name)}">Админ</button>` : ''}
-                ${iAmOwner ? `<button class="btn btn-inline" data-set="${p.id}" data-r="owner" data-name="${UI.esc(p.name)}">Владелец</button>` : ''}
+                ${canAssign.map((r) => `<button class="btn btn-inline" data-set="${p.id}" data-r="${r}" data-name="${UI.esc(p.name)}">${UI.esc(label[r])}</button>`).join('')}
+                ${myRole === 'owner' ? `<button class="btn btn-inline" data-set="${p.id}" data-r="owner" data-name="${UI.esc(p.name)}">Владелец</button>` : ''}
               </div>`).join('')
           : '<p class="muted small">Никого не найдено</p>';
         box.querySelectorAll('[data-set]').forEach((b) => {
@@ -314,122 +711,163 @@ const Admin = {
     if (qi) qi.onkeydown = (ev) => { if (ev.key === 'Enter') doFind(); };
   },
 
-  // ═══ БАЗА ДАННЫХ: состояние, копии, снимки, восстановление ═══════
-  // Восстановление раньше требовало разработчика — теперь всё кнопками.
-  async renderDb(c) {
-    c.innerHTML = '<div class="loading">Читаю состояние базы…</div>';
-    let d = null;
-    try { d = await API.get('/api/admin/db/stats'); } catch (e) {
-      c.innerHTML = `<div class="card"><p style="color:var(--red)">Не удалось получить состояние базы: ${UI.esc(e.message)}</p></div>`;
-      return;
-    }
-    const st = d.stats || {};
-    const own = st.driver === 'sqlite';
-    const mb = (n) => (n / 1024 / 1024).toFixed(2) + ' МБ';
-    const when = (ms) => new Date(ms).toLocaleString('ru-RU');
+  // ═══ ЖУРНАЛ НАЧИСЛЕНИЙ ЗОЛОТА (только владелец) ══════════════════
+  // Золото — премиум-валюта, и владелец должен видеть каждый источник:
+  // поручения, контракты, сезон, выдачу администрацией. Это единственный
+  // способ заметить, что кто-то раздаёт золото сверх меры.
+  _goldSrc: 'all',
 
-    let snaps = { snapshots: [] };
-    let weeks = { weeks: [] };
-    if (own) {
-      try { snaps = await API.get('/api/admin/db/snapshots?limit=15'); } catch (e) {}
-      try { weeks = await API.get('/api/admin/db/weekly-metrics'); } catch (e) {}
-    }
+  async renderGold(c) {
+    c.innerHTML = '<div class="loading">Собираю журнал…</div>';
+    let d = null;
+    try { d = await API.get('/api/admin/gold-log?limit=400&source=' + encodeURIComponent(Admin._goldSrc)); }
+    catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+    const dt = (ms) => new Date(ms).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const bySrc = Object.entries(d.bySource || {}).sort((a, b) => b[1].gold - a[1].gold);
 
     c.innerHTML = `
       <div class="card">
-        <div class="name">🗄 Состояние базы</div>
-        ${own ? `
-          <div class="kv"><span class="k">Тип</span><span class="v">своя база (SQLite), драйвер ${UI.esc(String(st.driverKind || '—'))}</span></div>
-          <div class="kv"><span class="k">Файл</span><span class="v small">${UI.esc(String(st.file || ''))}</span></div>
-          <div class="kv"><span class="k">Размер</span><span class="v">${mb(st.sizeBytes || 0)}</span></div>
-          <div class="kv"><span class="k">Игроков</span><span class="v">${UI.fmtNum(st.players || 0)} (ботов ${UI.fmtNum(st.bots || 0)})</span></div>
-          <div class="kv"><span class="k">Коллекций</span><span class="v">${st.collections || 0}</span></div>
-          <div class="kv"><span class="k">Записей аудита</span><span class="v">${UI.fmtNum(st.logs || 0)}</span></div>
-          <div class="kv"><span class="k">Журнал</span><span class="v">${UI.esc(String(st.walMode || '—'))}</span></div>
-          <div class="kv"><span class="k">Целостность</span><span class="v" style="color:${st.integrity === 'ok' ? 'var(--money)' : 'var(--red)'}">${UI.esc(String(st.integrity || '?'))}</span></div>
-        ` : `
-          <p class="muted small mt">Сейчас работает <b>${UI.esc(String(st.driver || 'неизвестно'))}</b>. Копии и снимки доступны только на своей базе — переключите <code>DB_DRIVER=sqlite</code> после переноса данных (tools/migrate-to-sqlite.js).</p>
-        `}
-      </div>
-
-      ${own ? `
-      <div class="card">
-        <div class="name">💾 Копии базы</div>
-        <p class="muted small mt">Полная копия делается на живой базе, игру останавливать не нужно. Автоматически — каждые 6 часов с ротацией. Копии лежат рядом с базой, поэтому вывоз на другой сервер — <code>tools/backup-offsite.sh</code>.</p>
-        <button class="btn btn-orange mt" id="db-backup" style="width:100%">💾 Сделать копию сейчас</button>
-        <div class="mt">
-          ${(d.backups || []).length
-            ? (d.backups || []).slice(0, 10).map((b) => `
-              <div class="list-row small">
-                <div class="grow">${UI.esc(b.file)}</div>
-                <span class="muted">${mb(b.size)} · ${when(b.at)}</span>
-              </div>`).join('')
-            : '<p class="muted small">Копий пока нет — сделайте первую.</p>'}
+        <div class="name">🪙 Начисления золота</div>
+        <p class="muted small mt">Все источники премиум-валюты. Раздел виден только вам —
+        администраторы своих начислений здесь не увидят.</p>
+        <div class="gold-src mt">
+          ${(d.sources || []).map((s) => `<button class="btn btn-inline ${Admin._goldSrc === s.id ? 'btn-orange' : ''}" data-gsrc="${s.id}">${UI.esc(s.label)}</button>`).join('')}
         </div>
       </div>
 
-      <div class="card">
-        <div class="name">📸 Снимки коллекций</div>
-        <p class="muted small mt">Снимок — это состояние одной коллекции на момент времени. Снимаются автоматически перед сбросом недельного сезона (именно этого не хватило, когда обнулились очки) и вручную здесь.</p>
-        <div class="field-row mt">
-          <input type="text" id="db-snap-name" class="field" placeholder="Коллекция (weeklySeason, world, sanctions…)" style="flex:1">
-          <button class="btn btn-inline" id="db-snap">📸 Снять</button>
+      ${bySrc.length ? `
+<div class="card">
+        <div class="name">Сводка по источникам</div>
+        ${bySrc.map(([id, v]) => `
+          <div class="adm-measure">
+            <span class="grow">${UI.esc(v.label)}</span>
+            <span class="muted small">${UI.fmtNum(v.count)} операций</span>
+            <b class="gold">🪙 ${UI.fmtNum(v.gold)}</b>
+          </div>`).join('')}
+        <div class="adm-measure" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px">
+          <span class="grow"><b>Итого за выборку</b></span>
+          <b class="gold">🪙 ${UI.fmtNum(d.totalGold)}</b>
         </div>
-        <div class="mt">
-          ${(snaps.snapshots || []).length
-            ? (snaps.snapshots || []).map((sn) => `
-              <div class="list-row small">
-                <div class="grow">#${sn.seq} <b>${UI.esc(sn.collection)}</b> <span class="muted">${UI.esc(sn.label)}</span></div>
-                <span class="muted">${when(sn.at)}</span>
-                <button class="btn btn-red btn-inline" data-restore="${sn.seq}" data-coll="${UI.esc(sn.collection)}">♻️ Восстановить</button>
-              </div>`).join('')
-            : '<p class="muted small">Снимков пока нет.</p>'}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="name">🏆 Сезонные метрики по неделям</div>
-        <p class="muted small mt">Сохраняются перед каждым обнулением недели. Отсюда видно, что можно вернуть игрокам, если снова что-то пойдёт не так.</p>
-        ${(weeks.weeks || []).length
-          ? (weeks.weeks || []).map((w) => `
-            <div class="list-row small">
-              <div class="grow">Неделя <b>${UI.esc(w.week)}</b></div>
-              <span class="muted">${UI.fmtNum(w.players)} игроков</span>
-            </div>`).join('')
-          : '<p class="muted small">Пока пусто — появится после первого сброса недели.</p>'}
       </div>` : ''}
-    `;
 
-    const backupBtn = document.getElementById('db-backup');
-    if (backupBtn) backupBtn.onclick = async () => {
-      backupBtn.disabled = true;
-      try {
-        const r = await API.post('/api/admin/db/backup', {});
-        UI.toast('💾 Копия создана');
-        Admin.render();
-      } catch (e) { UI.toast('⛔ ' + e.message); backupBtn.disabled = false; }
+      <div class="card">
+        <div class="name">Операции (${UI.fmtNum((d.rows || []).length)})</div>
+        <div class="mt">
+          ${(d.rows || []).length
+            ? d.rows.map((r) => `
+                <div class="adm-act">
+                  <span class="muted small">${dt(r.at)}</span>
+                  <b class="adm-log-who">${UI.esc(r.userName)}</b>
+                  <span class="gold-src-tag">${UI.esc(r.sourceLabel)}</span>
+                  <span class="grow">${UI.esc(r.human || r.path || '')}</span>
+                  ${r.gold ? `<b class="gold">🪙 ${UI.fmtNum(r.gold)}</b>` : ''}
+                </div>`).join('')
+            : '<p class="muted small">Записей нет.</p>'}
+        </div>
+      </div>`;
+
+    c.querySelectorAll('[data-gsrc]').forEach((b) => {
+      b.onclick = () => { Admin._goldSrc = b.dataset.gsrc; Admin.renderGold(c); };
+    });
+  },
+
+  // ═══ БАЗА ДАННЫХ: состояние, копии, снимки, восстановление ═══════
+  // Восстановление раньше требовало разработчика — теперь всё кнопками.
+  // ═══ ЭКОНОМИКА — четыре бывшие вкладки в одной ═══════════════════
+  // Массовая выдача, наёмники, акции и бонусы — про одно и то же:
+  // раздачу благ. Держать под них четыре вкладки в шапке было
+  // расточительно, теперь это подвкладки внутри одной.
+  _econTab: 'tools',
+
+  renderEcon(c) {
+    const subs = [
+      { id: 'tools',     label: '🎁 Массовая выдача', zone: 'economy' },
+      { id: 'mercs',     label: '🥷 Наёмники',        zone: 'economy' },
+      { id: 'discounts', label: '🏷 Акции',           zone: 'discounts' },
+      { id: 'buffs',     label: '🎉 Бонусы',          zone: 'economy' },
+    ].filter((x) => Admin.can(x.zone));
+    if (!subs.length) { c.innerHTML = '<div class="card"><p class="muted">Раздел недоступен.</p></div>'; return; }
+    if (!subs.some((x) => x.id === Admin._econTab)) Admin._econTab = subs[0].id;
+
+    c.innerHTML = `
+      <div class="tabs comm-subtabs">
+        ${subs.map((x) => `<div class="tab ${Admin._econTab === x.id ? 'active' : ''}" data-econ="${x.id}">${x.label}</div>`).join('')}
+      </div>
+      <div id="econ-body"></div>`;
+    c.querySelectorAll('[data-econ]').forEach((t) => {
+      t.onclick = () => { Admin._econTab = t.dataset.econ; Admin.renderEcon(c); };
+    });
+    const body = document.getElementById('econ-body');
+    if (Admin._econTab === 'tools')     return Admin.renderTools(body);
+    if (Admin._econTab === 'mercs')     return Admin.renderMercs(body);
+    if (Admin._econTab === 'discounts') return Admin.renderDiscounts(body);
+    if (Admin._econTab === 'buffs')     return Admin.renderBuffs(body);
+  },
+
+  // ═══ БАЗА ДАННЫХ — компактный блок внутри «Техники» ══════════════
+  // Прежде это была отдельная вкладка на полтора десятка карточек ради
+  // трёх действий. Копии и так делаются автоматически каждые 6 часов,
+  // поэтому здесь осталось только нужное руками: состояние, кнопка
+  // копии и откат коллекции из снимка.
+  async renderDbBlock() {
+    const box = document.getElementById('db-block');
+    if (!box) return;
+    if (!Admin.can('database')) { box.style.display = 'none'; return; }
+
+    let d = null;
+    try { d = await API.get('/api/admin/db/stats'); }
+    catch (e) { box.innerHTML = `<div class="muted small">База: ${UI.esc(e.message)}</div>`; return; }
+    const st = d.stats || {};
+    const mb = (n) => (n / 1024 / 1024).toFixed(1) + ' МБ';
+
+    if (st.driver !== 'sqlite') {
+      box.innerHTML = `<div class="name">🗄 База данных</div>
+        <p class="muted small mt">Сейчас <b>${UI.esc(String(st.driver || '—'))}</b>.
+        Копии и снимки доступны после перехода на свою базу.</p>`;
+      return;
+    }
+
+    let snaps = { snapshots: [] };
+    try { snaps = await API.get('/api/admin/db/snapshots?limit=8'); } catch (e) {}
+
+    box.innerHTML = `
+      <div class="db-line">
+        <div class="name" style="margin:0">🗄 База данных</div>
+        <span class="db-ok">${st.integrity === 'ok' ? '● в порядке' : '● ' + UI.esc(String(st.integrity))}</span>
+        <span class="muted small">${mb(st.sizeBytes || 0)} · игроков ${UI.fmtNum(st.players || 0)} · копий ${(d.backups || []).length}</span>
+        <button class="btn btn-inline" id="db-backup" style="margin-left:auto">💾 Копия</button>
+      </div>
+      <p class="muted small mt">Копии создаются сами каждые 6 часов. Кнопка нужна перед рискованными действиями.</p>
+      ${(snaps.snapshots || []).length ? `
+        <details class="db-more mt">
+          <summary>Снимки коллекций (${snaps.snapshots.length})</summary>
+          <div class="mt">
+            ${snaps.snapshots.map((sn) => `
+              <div class="adm-measure">
+                <span class="grow small">#${sn.seq} <b>${UI.esc(sn.collection)}</b> <span class="muted">${UI.esc(sn.label)}</span></span>
+                <span class="muted small">${new Date(sn.at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                <button class="btn btn-red btn-inline" data-restore="${sn.seq}" data-coll="${UI.esc(sn.collection)}">Откатить</button>
+              </div>`).join('')}
+          </div>
+        </details>` : ''}`;
+
+    const bb = document.getElementById('db-backup');
+    if (bb) bb.onclick = async () => {
+      bb.disabled = true;
+      try { await API.post('/api/admin/db/backup', {}); UI.toast('💾 Копия создана'); Admin.renderDbBlock(); }
+      catch (e) { UI.toast('⛔ ' + e.message); bb.disabled = false; }
     };
-    const snapBtn = document.getElementById('db-snap');
-    if (snapBtn) snapBtn.onclick = async () => {
-      const name = (document.getElementById('db-snap-name') || {}).value || '';
-      if (!name.trim()) return UI.toast('⛔ Укажите коллекцию');
-      try {
-        await API.post('/api/admin/db/snapshot', { collection: name.trim(), label: 'вручную' });
-        UI.toast('📸 Снимок сохранён');
-        Admin.render();
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    };
-    c.querySelectorAll('[data-restore]').forEach((b) => {
+    box.querySelectorAll('[data-restore]').forEach((b) => {
       b.onclick = async () => {
-        const coll = b.dataset.coll;
         if (!await UI.confirm(
-          `Восстановить коллекцию <b>${UI.esc(coll)}</b> из снимка #${b.dataset.restore}?<br>` +
-          `<span class="muted small">Текущее состояние коллекции будет заменено. Перед восстановлением автоматически создаётся копия всей базы, так что операцию можно отменить.</span>`,
-          { title: 'Восстановление из снимка', icon: '♻️', okText: 'Восстановить', danger: true, html: true })) return;
+          `Откатить коллекцию <b>${UI.esc(b.dataset.coll)}</b> к снимку #${b.dataset.restore}?<br>` +
+          `<span class="muted small">Перед откатом создаётся копия всей базы — действие можно отменить.</span>`,
+          { title: 'Откат из снимка', icon: '♻️', html: true, okText: 'Откатить', danger: true })) return;
         try {
-          const r = await API.post('/api/admin/db/restore', { seq: Number(b.dataset.restore), collection: coll });
-          UI.toast('♻️ Восстановлено');
-          Admin.render();
+          await API.post('/api/admin/db/restore', { seq: Number(b.dataset.restore), collection: b.dataset.coll });
+          UI.toast('♻️ Откачено');
+          Admin.renderDbBlock();
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });
@@ -437,6 +875,9 @@ const Admin = {
 
   renderTech(c) {
     const t = Admin.techTarget;
+    // Блок базы данных доезжает следом отдельным запросом — он нужен
+    // редко, и грузить его при каждом открытии вкладки незачем
+    setTimeout(() => Admin.renderDbBlock(), 0);
     c.innerHTML = `
       <div class="card">
         <div class="name">🔎 Выбор аккаунта</div>
@@ -475,7 +916,11 @@ const Admin = {
         <button class="btn btn-red mt" id="tech-del-go" style="width:100%" ${t ? '' : 'disabled'}>
           🗑 Удалить аккаунт навсегда
         </button>
-      </div>`;
+      </div>
+
+      <!-- База данных: копии и снимки. Отдельная вкладка ради трёх
+           кнопок не нужна — блок живёт здесь и грузится отдельно -->
+      <div class="card" id="db-block"><div class="muted small">База данных…</div></div>`;
 
     // Поиск игрока
     const doSearch = async () => {
@@ -891,11 +1336,14 @@ const Admin = {
               <td class="adm-stat" data-l="🎖" style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
               <td class="adm-acts" style="padding:8px;white-space:nowrap">
                 <button class="btn btn-inline" data-view="${p.id}" title="Досье игрока">👁</button>
-                <button class="btn btn-orange btn-inline" data-pick="${p.id}">Выдать</button>
+                ${Admin.can('economy') ? `<button class="btn btn-orange btn-inline" data-pick="${p.id}">Выдать</button>` : ''}
                 <button class="btn btn-inline" data-log="${p.id}" data-log-name="${UI.esc(p.name)}">📋</button>
-                ${!p.isAdmin ? `<button class="btn btn-inline" data-ban="${p.id}" data-banned="${p.banned ? '1' : '0'}" data-name="${UI.esc(p.name)}">${p.banned ? '✅ разбан' : '🚫 бан'}</button>
-                <button class="btn btn-inline" data-reset="${p.id}" data-name="${UI.esc(p.name)}" style="color:var(--red)">♻️ обнулить</button>` : ''}
+                ${(!p.isAdmin && Admin.can('moderation')) ? `<button class="btn btn-inline" data-ban="${p.id}" data-banned="${p.banned ? '1' : '0'}" data-name="${UI.esc(p.name)}">${p.banned ? '✅ разбан' : '🚫 бан'}</button>` : ''}
+                ${(!p.isAdmin && Admin.can('security')) ? `<button class="btn btn-inline" data-reset="${p.id}" data-name="${UI.esc(p.name)}" style="color:var(--red)">♻️ обнулить</button>` : ''}
               </td>
+            </tr>
+            <tr class="grant-row" id="grant-row-${p.id}" style="display:none">
+              <td colspan="6" class="grant-cell"></td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -906,7 +1354,10 @@ const Admin = {
       });
       box.querySelectorAll('[data-pick]').forEach(btn => {
         const p = players.find(x => x.id === btn.dataset.pick);
-        btn.onclick = () => Admin.renderGrantForm(p);
+        // Форма раскрывается прямо под строкой игрока: раньше она
+        // рисовалась в конце страницы, и приходилось листать вниз,
+        // теряя из виду, кому именно выдаёшь
+        btn.onclick = () => Admin.toggleGrantRow(p, btn);
       });
       box.querySelectorAll('[data-log]').forEach(btn => {
         btn.onclick = () => {
@@ -1238,7 +1689,7 @@ const Admin = {
         <div style="margin-bottom:8px">
           <label style="font-size:11px;color:var(--dim)">Наёмник</label>
           <select id="mg-merc" style="width:100%">
-            ${d.commanders.map(m => `<option value="${m.id}">${UI.esc(m.name)} — ${UI.esc(m.effectType)}${m.effectValue ? ' ' + m.effectValue : ''}</option>`).join('')}
+            ${(d.commanders || []).map(m => `<option value="${m.id}">${UI.esc(m.name)} — ${UI.esc(m.effectType)}${m.effectValue ? ' ' + m.effectValue : ''}</option>`).join('')}
           </select>
         </div>
         <div style="margin-bottom:8px">
@@ -1253,7 +1704,7 @@ const Admin = {
 
       <div class="card">
         <div class="name" style="font-size:14px">Действующие наёмники у игроков</div>
-        ${h.holders.length ? h.holders.map(x => `
+        ${(h.holders || []).length ? h.holders.map(x => `
           <div class="list-row">
             <div class="grow"><b>${UI.esc(x.name)}</b> — ${UI.esc(x.commanderName || x.commanderId)}</div>
             <span class="muted small">${x.hoursLeft} ч</span>
@@ -1470,42 +1921,105 @@ const Admin = {
     </div>`;
   },
 
-  renderGrantForm(p) {
-    const box = document.getElementById('ad-grant-wrap');
+  // Раскрыть/свернуть форму выдачи под строкой игрока
+  toggleGrantRow(p, btn) {
+    const row = document.getElementById('grant-row-' + p.id);
+    if (!row) return;
+    const cell = row.querySelector('.grant-cell');
+    const open = row.style.display !== 'none';
+    // Закрываем все остальные — открытой всегда одна
+    document.querySelectorAll('.grant-row').forEach((r) => {
+      r.style.display = 'none';
+      const c = r.querySelector('.grant-cell'); if (c) c.innerHTML = '';
+    });
+    document.querySelectorAll('[data-pick]').forEach((b) => b.classList.remove('btn-green'));
+    if (open) return;
+    row.style.display = '';
+    if (btn) btn.classList.add('btn-green');
+    Admin.renderGrantForm(p, cell);
+  },
+
+  renderGrantForm(p, target) {
+    const box = target || document.getElementById('ad-grant-wrap');
     box.innerHTML = `
-      <div class="card" style="border:2px solid var(--orange)">
-        <div class="name">🎁 Выдача: ${p.flag} ${UI.esc(p.name)} <span class="muted small">Ур.${p.level}</span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-dollar"></span> Доллары</label><input type="number" id="g-dollars" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> Золото</label><input type="number" id="g-gold" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)">⭐ Опыт</label><input type="number" id="g-xp" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)">📈 Очки навыков</label><input type="number" id="g-skill" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="g-ears" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="g-tokens" placeholder="0"></div>
-          <div><label style="font-size:11px;color:var(--dim)">🏦 В банке <span class="muted">(только списание)</span></label><input type="number" id="g-bank" placeholder="0"></div>
+      <div class="grant-panel">
+        <div class="grant-head">
+          <b>🎁 ${p.flag} ${UI.esc(p.name)}</b>
+          <span class="muted small">ур. ${p.level} · <span class="ic-dollar"></span>${UI.fmtMoney(p.dollars)} · 🪙 ${UI.fmtNum(p.gold)}</span>
+          <button class="btn btn-inline" id="g-cancel" style="margin-left:auto">✕</button>
         </div>
-        <hr class="hr">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div><label style="font-size:11px;color:var(--dim)">🎚 Уровень (1-300)</label><input type="number" id="g-level" placeholder="не трогать"></div>
-          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-energy"></span> Энергия</label><input type="number" id="g-energy" placeholder="не трогать"></div>
-          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-health"></span> Здоровье</label><input type="number" id="g-health" placeholder="не трогать"></div>
-          <div><label style="font-size:11px;color:var(--dim)"><span class="ic-ammo"></span> Боеприпасы</label><input type="number" id="g-ammo" placeholder="не трогать"></div>
+
+        <div class="grant-grid">
+          <label><span><span class="ic-dollar"></span> Доллары</span><input type="number" id="g-dollars" placeholder="0"></label>
+          <label><span>🪙 Золото</span><input type="number" id="g-gold" placeholder="0"></label>
+          <label><span>⭐ Опыт</span><input type="number" id="g-xp" placeholder="0"></label>
+          <label><span>📈 Очки</span><input type="number" id="g-skill" placeholder="0"></label>
+          <label><span>👂 Уши</span><input type="number" id="g-ears" placeholder="0"></label>
+          <label><span>🎖 Жетоны</span><input type="number" id="g-tokens" placeholder="0"></label>
         </div>
-        <hr class="hr">
-        <label style="font-size:11px;color:var(--dim)"><span class="ic-mail"></span> Сообщение игроку (необязательно)</label>
-        <textarea id="g-note" placeholder="Текст сообщения от администрации…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>
-        <div class="btn-row mt">
-          <button class="btn btn-orange" id="g-go">✅ Выдать сразу</button>
-          <button class="btn btn-red" id="g-take">➖ Забрать</button>
-          <button class="btn btn-inline" id="g-cancel">Отмена</button>
+
+        <div class="grant-quick">
+          <span class="muted small">Быстро:</span>
+          <button class="btn btn-inline" data-q="gold:100">🪙 100</button>
+          <button class="btn btn-inline" data-q="gold:500">🪙 500</button>
+          <button class="btn btn-inline" data-q="dollars:1000000">💵 1 млн</button>
+          <button class="btn btn-inline" data-q="dollars:1000000000">💵 1 млрд</button>
+          <button class="btn btn-inline" data-q="clear">Сброс</button>
         </div>
-        <hr class="hr">
-        <div class="muted small">🎁 Или отправить наградой-письмом (игрок заберёт сам на главном экране или в почте — начислятся 💵 доллары, 🪙 золото, 🎖 жетоны, 👂 уши, 📈 очки, ✨ опыт из полей выше):</div>
-        <input type="text" id="g-rw-title" placeholder="Заголовок письма (напр. «Награда за турнир»)" maxlength="120" style="width:100%;box-sizing:border-box;margin-top:6px">
-        <input type="text" id="g-rw-reason" placeholder="За что награда (напр. «Победа в турнире легионов»)" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:6px">
-        <button class="btn mt" id="g-rw-go" style="width:100%;border-color:var(--gold);color:var(--gold)">🎁 Отправить наградой (письмом)</button>
+
+        <details class="grant-more">
+          <summary>Ещё: уровень, ресурсы, банк</summary>
+          <div class="grant-grid mt">
+            <label><span>🎚 Уровень</span><input type="number" id="g-level" placeholder="—"></label>
+            <label><span><span class="ic-energy"></span> Энергия</span><input type="number" id="g-energy" placeholder="—"></label>
+            <label><span><span class="ic-health"></span> Здоровье</span><input type="number" id="g-health" placeholder="—"></label>
+            <label><span><span class="ic-ammo"></span> Боеприпасы</span><input type="number" id="g-ammo" placeholder="—"></label>
+            <label><span>🏦 Банк <span class="muted">(списание)</span></span><input type="number" id="g-bank" placeholder="0"></label>
+          </div>
+        </details>
+
+        <input type="text" id="g-note" maxlength="300" class="mt" placeholder="Сообщение игроку (необязательно)" style="width:100%;box-sizing:border-box">
+
+        <div class="grant-btns">
+          <button class="btn btn-orange btn-inline" id="g-go">✅ Выдать</button>
+          <button class="btn btn-red btn-inline" id="g-take">➖ Забрать</button>
+          <button class="btn btn-inline" id="g-rw-toggle" style="border-color:var(--gold);color:var(--gold)">🎁 Письмом</button>
+        </div>
+
+        <div id="g-rw-box" class="grant-reward" style="display:none">
+          <p class="muted small">Игрок заберёт награду сам — на главном экране или в почте.</p>
+          <input type="text" id="g-rw-title" placeholder="Заголовок письма" maxlength="120">
+          <input type="text" id="g-rw-reason" placeholder="За что награда" maxlength="300" class="mt">
+          <button class="btn mt" id="g-rw-go" style="width:100%;border-color:var(--gold);color:var(--gold)">Отправить наградой</button>
+        </div>
       </div>`;
-    document.getElementById('g-cancel').onclick = () => { box.innerHTML = ''; };
+
+    // Быстрые суммы: чаще всего выдают круглые значения
+    box.querySelectorAll('[data-q]').forEach((b) => {
+      b.onclick = () => {
+        const v = b.dataset.q;
+        if (v === 'clear') {
+          ['g-dollars','g-gold','g-xp','g-skill','g-ears','g-tokens'].forEach((id) => {
+            const el = document.getElementById(id); if (el) el.value = '';
+          });
+          return;
+        }
+        const [field, amount] = v.split(':');
+        const el = document.getElementById('g-' + field);
+        if (el) el.value = String((Number(el.value) || 0) + Number(amount));
+      };
+    });
+    const rwToggle = document.getElementById('g-rw-toggle');
+    if (rwToggle) rwToggle.onclick = () => {
+      const rb = document.getElementById('g-rw-box');
+      rb.style.display = rb.style.display === 'none' ? '' : 'none';
+    };
+    document.getElementById('g-cancel').onclick = () => {
+      box.innerHTML = '';
+      const row = box.closest('.grant-row');
+      if (row) row.style.display = 'none';
+      document.querySelectorAll('[data-pick]').forEach((b) => b.classList.remove('btn-green'));
+    };
     const gv = id => (document.getElementById(id) || {}).value || '';
     document.getElementById('g-rw-go').onclick = async () => {
       try {
@@ -1608,6 +2122,16 @@ const Admin = {
             <span class="muted small">${UI.esc(t.userName)} · ${t.status}</span>
           </div>
           <div class="muted small" style="margin-top:2px">Тема: ${UI.esc(t.categoryLabel || 'Другое')}</div>
+          <div class="sup-owner mt">
+            ${t.free
+              ? '<span class="sup-tag sup-free">свободно</span>'
+              : (t.mine
+                  ? '<span class="sup-tag sup-mine">у вас в работе</span>'
+                  : `<span class="sup-tag sup-taken">в работе: ${UI.esc(t.assignedName)}</span>`)}
+            ${t.free ? `<button class="btn btn-inline" data-claim="${t.id}">📌 Взять в работу</button>` : ''}
+            ${(t.mine || Admin.me && Admin.me.staffRole === 'owner') && !t.free
+              ? `<button class="btn btn-inline" data-release="${t.id}">↩ Вернуть в очередь</button>` : ''}
+          </div>
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto">
             ${t.messages.map(m => `
               <div style="padding:7px 9px;border-radius:8px;background:${m.from==='admin'?'rgba(60,180,90,.1)':'rgba(255,255,255,.03)'};border:1px solid ${m.from==='admin'?'var(--green)':'var(--border)'}">
@@ -1615,16 +2139,31 @@ const Admin = {
                 <div style="margin-top:2px;white-space:pre-wrap">${UI.esc(m.text)}</div>
               </div>`).join('')}
           </div>
-          ${t.status!=='closed' ? `
-            <textarea id="ans-${t.id}" rows="2" placeholder="Ответ игроку…" style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
-            <div style="display:flex;gap:8px;margin-top:6px">
-              <button class="btn btn-orange btn-inline" data-ans="${t.id}">Ответить</button>
-              <button class="btn btn-inline" data-ans-close="${t.id}">Ответить и закрыть</button>
-            </div>` : '<p class="muted small mt">Обращение закрыто.</p>'}
+          ${t.status !== 'closed'
+            ? ((t.mine || t.free || (Admin.me && Admin.me.staffRole === 'owner'))
+              ? `<textarea id="ans-${t.id}" rows="2" placeholder="${t.free ? 'Ответ игроку (обращение закрепится за вами)…' : 'Ответ игроку…'}" style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
+                 <div style="display:flex;gap:8px;margin-top:6px">
+                   <button class="btn btn-orange btn-inline" data-ans="${t.id}">Ответить</button>
+                   <button class="btn btn-inline" data-ans-close="${t.id}">Ответить и закрыть</button>
+                 </div>`
+              : '<p class="muted small mt">Обращением занимается другой сотрудник.</p>')
+            : '<p class="muted small mt">Обращение закрыто.</p>'}
         </div>`).join('');
 
     c.innerHTML = statusRow + catRow + `<div id="sup-list">${listHtml}</div>`;
 
+    c.querySelectorAll('[data-claim]').forEach(b => {
+      b.onclick = async () => {
+        try { await API.post('/api/admin/support/claim', { ticketId: b.dataset.claim }); UI.toast('📌 Взято в работу'); Admin.renderSupport(c); }
+        catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+    c.querySelectorAll('[data-release]').forEach(b => {
+      b.onclick = async () => {
+        try { await API.post('/api/admin/support/release', { ticketId: b.dataset.release }); UI.toast('↩️ Возвращено в очередь'); Admin.renderSupport(c); }
+        catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
     c.querySelectorAll('[data-sup-f]').forEach(b => {
       b.onclick = () => { Admin._supStatus = b.dataset.supF; Admin.renderSupport(c); };
     });

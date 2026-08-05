@@ -207,6 +207,7 @@ function opponents(user: User): any {
       // Метка сотрудника проекта в списке целей: игрок сразу видит,
       // что перед ним «Дозор» или администрация
       staffRole: (() => { try { return require('./roles').roleOf(t); } catch (e) { return null; } })(),
+      vip: (() => { try { return require('./vip').isVip(t); } catch (e) { return false; } })(),
       online: Date.now() - (t.lastSeen || 0) < 5 * 60 * 1000,
       allianceMembers: a ? a.members.length : 0,
       // ⭐ этот игрок состоит в ВАШЕМ личном альянсе (взаимно)
@@ -218,6 +219,7 @@ function opponents(user: User): any {
     list.push({
       id: b.id, name: b.name, level: b.level, flag: b.flag, isBot: true, online: true,
       staffRole: null,                 // боты не бывают сотрудниками
+      vip: false,
       allianceMembers: b.allianceMembers || 0,
       inMyAlliance: false, // боты не бывают союзниками по личному альянсу
     });
@@ -281,6 +283,17 @@ function resolveDamage(atk: number, def: number): any {
 // технику ни при каких обстоятельствах. Если увернулись оба — техники не
 // теряет никто, потому что у обоих сторон урон нулевой.
 // reduce — снижение потерь защитника за счёт оборонительных построек.
+// VIP снижает потери техники на 30%. Обёртка нужна, потому что вызовов
+// пять и в каждом свой владелец армии — считаем по нему.
+function unitLossFor(owner: any, damage: number, crit: boolean, reduce: number = 0): number {
+  const n = unitLossCount(damage, crit, reduce);
+  const mul = require('./vip').unitLossMul(owner);
+  const final = mul === 1 ? n : Math.max(0, Math.round(n * mul));
+  // Расширенная статистика: потери техники за всё время
+  try { if (final) require('./stats').track(owner, 'unitsLost', 'total', final); } catch (e) {}
+  return final;
+}
+
 function unitLossCount(damage: number, crit: boolean, reduce: number = 0): number {
   if (!damage || damage <= 0) return 0;      // уворот / нет урона — техника цела
   const lo = crit ? B.UNIT_LOSS_CRIT_MIN : B.UNIT_LOSS_MIN;
@@ -410,7 +423,7 @@ function proceedToCombat(user: User, target: any, isBot: boolean, targetId: stri
   // если есть хотя бы 1 мина в запасе и трофей «Растяжка» прокачан) -----
   if (!isBot) {
     const mineLevel = trophies.mineLevel(target);
-    if ((target.landmines || 0) > 0 && mineLevel > 0 && landmines.rollTrigger(mineLevel)) {
+    if ((target.landmines || 0) > 0 && mineLevel > 0 && landmines.rollTrigger(mineLevel, target)) {
       target.landmines -= 1;
       db.markUser(target.id);
       const { wires, correctIdx } = landmines.generateWires();
@@ -724,7 +737,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       // Потери защитника (только если он реальный игрок), с учётом крита
       // Потери зависят от полученного урона (dealt); оборонительные
       // постройки (lossReduce) их снижают
-      const defUnitLosses = removeUnits(target, dArmy.entries, unitLossCount(dealt, crit, lossReduce));
+      const defUnitLosses = removeUnits(target, dArmy.entries, unitLossFor(target, dealt, crit, lossReduce));
       enemyLosses.push(...defUnitLosses);
       // Если защитник оффлайн — копим сводку «пока вас не было» (окно
       // «События» при первом заходе). Онлайн-игрок видит живой баннер.
@@ -743,7 +756,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     // Победитель тоже несёт небольшие потери (война есть война)
     // Победитель теряет технику по УРОНУ, полученному в ответ (received).
     // Если он увернулся — received = 0, и потерь нет вообще.
-    myLosses.push(...removeUnits(user, aArmy.entries, unitLossCount(received, botCrit)));
+    myLosses.push(...removeUnits(user, aArmy.entries, unitLossFor(user, received, botCrit)));
     player.addBattleLoot(user, loot);
     try { require('./seasons').onLoot(user, loot); } catch (e) {}
   } else {
@@ -759,7 +772,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       target.battle.defWins++;
       player.addRating(target, 1);        // рейтинг: победа в обороне +1
       // Защитник, отразив атаку, тоже несёт минимальные потери
-      const defWinLosses = removeUnits(target, dArmy.entries, unitLossCount(dealt, crit, lossReduce));
+      const defWinLosses = removeUnits(target, dArmy.entries, unitLossFor(target, dealt, crit, lossReduce));
       enemyLosses.push(...defWinLosses);
       // Отбитая атака тоже попадает в сводку «пока вас не было»
       try {
@@ -778,7 +791,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     // защитник нанёс критический ответный удар)
     // Проигравший получил больше урона — значит и потери крупнее; при
     // критическом ответном ударе диапазон сдвигается к 10..30
-    myLosses.push(...removeUnits(user, aArmy.entries, unitLossCount(received, botCrit)));
+    myLosses.push(...removeUnits(user, aArmy.entries, unitLossFor(user, received, botCrit)));
   }
 
   // Опыт: фиксированный диапазон из конфига (4–7 за победу, 1–2 за поражение)
@@ -939,7 +952,10 @@ function fatality(user: User, choice: string, notices: Notices) {
       // и от отрезания уха, и от помилования. Окно просто закрывается.
       const dodgeBase = Math.min(B.DODGE_MAX, victimCheck.skills.agility * B.DODGE_PER_AGILITY);
       const dodgeChance = dodgeBase + (player.effMul(victimCheck, 'dodge_bonus') - 1);
-      if (Math.random() < dodgeChance) {
+      // VIP: три гарантированных ухода в сутки — независимо от ловкости.
+      // Проверяем ДО броска: иначе удачный бросок «съедал» бы попытку.
+      const vipSaved = require('./vip').tryFatalityImmunity(victimCheck);
+      if (vipSaved || Math.random() < dodgeChance) {
         user.pendingFatality = null;
         notifications.push(victimCheck.id, 'fatality_escape', `Вы ускользнули от фаталити игрока ${user.name}!`, {
           attackerName: user.name, attackerId: user.id, at: Date.now(),

@@ -43,11 +43,15 @@ function nextSiloCost(user: User): number {
 }
 
 // Новая «пустая» ракета (после постройки шахты или после запуска)
-function freshRocket(): any {
+function freshRocket(owner?: any): any {
+  // VIP (пункт 3): шахты и ракеты строятся вдвое быстрее
+  const ms = owner
+    ? require('./vip').siloRocketSeconds(owner, Math.round(S.BUILD_TIME_MS / 1000)) * 1000
+    : S.BUILD_TIME_MS;
   return {
     readyEnergy: 0,   // накопленная энергия (0..READY_ENERGY_NEEDED)
     powerAmmo: 0,     // накопленные боеприпасы (0..POWER_AMMO_NEEDED)
-    buildFinishesAt: Date.now() + S.BUILD_TIME_MS,
+    buildFinishesAt: Date.now() + ms,
   };
 }
 
@@ -100,7 +104,7 @@ function build(user: User, notices: Notices) {
   user.gold -= cost;
   user.silosBuiltTotal = (user.silosBuiltTotal || 0) + 1;
 
-  const silo = { id: u.uid(10), rocket: freshRocket() };
+  const silo = { id: u.uid(10), rocket: freshRocket(user) };
   silos(user).push(silo);
   notices.push(`🚀 Заложена новая ракетная шахта. Постройка займёт 24 часа.`);
   return siloView(silo);
@@ -179,7 +183,7 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
   const impactAt = now + S.FLIGHT_MS;
 
   // Ракета покидает шахту — шахта сразу уходит в пересборку (24ч)
-  silo.rocket = freshRocket();
+  silo.rocket = freshRocket(user);
 
   // Создаём летящую ракету
   const rocketId = u.uid(12);

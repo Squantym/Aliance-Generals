@@ -124,6 +124,9 @@ function applyRegen(r: any, max: number, intervalSec: number, now: number, perTi
 
 // ---------- Деньги, золото, опыт ----------
 function addMoney(user: User, amount: number, earned = true): void {
+  // Учёт для расширенной статистики (VIP, пункт 9)
+  try { require('./stats').track(user, amount >= 0 ? 'moneyEarned' : 'moneySpent', '', amount); } catch (e) {}
+
   user.dollars = Math.max(0, Math.round(user.dollars + amount));
   // Счётчик «всего заработано» нужен достижению «Олигарх»
   if (amount > 0 && earned) user.counters.moneyEarned += Math.round(amount);
@@ -137,7 +140,21 @@ function addBattleLoot(user: User, amount: number): void {
   }
 }
 
-function addGold(user: User, amount: number): void {
+// ── Копилка расширенной статистики (VIP, пункт 9) ────────────────
+// Отдельный объект stats: сюда пишутся суммы, которых нет в обычных
+// счётчиках — заработанное и потраченное по источникам, потери техники.
+// Хранится у игрока и накапливается всю жизнь аккаунта.
+
+
+// source — откуда пришло золото: quest, season, event, purchase, admin.
+// Нужен для разбивки в расширенной статистике.
+function addGold(user: User, amount: number, source?: string): void {
+  // Источник золота передаётся вызывающим кодом через третий аргумент
+  try {
+    const src = (arguments as any)[2] || 'other';
+    require('./stats').track(user, amount >= 0 ? 'goldGot' : 'goldSpent', String(src), amount);
+  } catch (e) {}
+
   user.gold = Math.max(0, Math.round(user.gold + amount));
 }
 
@@ -156,6 +173,8 @@ function addXp(user: User, amount: number, notices: Notices): number {
   // Опыт именно сгорает, а не откладывается — иначе после окончания
   // действия игрок разом получил бы всё накопленное и подскочил в уровне.
   if (isXpBlocked(user)) return 0;
+  // VIP: +30% к любому получаемому опыту
+  amount = Math.round(amount * require('./vip').xpMul(user));
   // К опыту применяется множитель страны, клановый бонус и глобальный бонус админа
   const legionXp = legionBonus(user, 'xp');
   let globalXpMul = 1;
@@ -539,6 +558,7 @@ function totalIncome(user: User): number {
   if (country && country.mod.income) total *= country.mod.income;
   total *= (1 + legionBonus(user, 'income'));
   total *= (1 + trophyDiscountPct(user, 'income') / 100); // трофей «Квартмейстер»
+  total *= require('./vip').incomeMul(user);               // VIP: +15% к доходу
   return Math.round(total * effMul(user, 'income_pct'));
 }
 
@@ -553,6 +573,8 @@ function totalUpkeep(user: User): number {
   }
   // Трофей «Снабженческие линии» снижает содержание
   total *= (1 - trophyDiscountPct(user, 'upkeep') / 100);
+  // VIP: содержание техники дешевле на 15%
+  total *= require('./vip').upkeepMul(user);
   return Math.round(total * effMul(user, 'upkeep_pct'));
 }
 
@@ -614,20 +636,23 @@ function refresh(user: User): void {
   // ничего). Делим интервал на множитель: +10% за уровень.
   const med = medcorpsRegenMul(user);
   // Трофей «Полевая реанимация» ускоряет восстановление HP
-  const hpInterval = Math.max(5, Math.round(
+  // VIP срезает ещё 30% — но ПОСЛЕ трофеев и допингов, то есть от уже
+  // ускоренного значения: 180 → 90 трофеем → 63 подпиской
+  const vipSrv = require('./vip');
+  const hpInterval = Math.max(5, vipSrv.regenSeconds(user, Math.round(
     config.REGEN.hp * (1 - trophyDiscountPct(user, 'regen_hp') / 100) / med
-  ));
+  )));
   applyRegen(user.res.hp, mx.hp, hpInterval, now);
   // Трофей «Логистика» снижает интервал регенерации энергии,
   // допинг «Адреналин-Х» дополнительно ускоряет (делим интервал на множитель)
-  const enInterval = Math.max(5, Math.round(
+  const enInterval = Math.max(5, vipSrv.regenSeconds(user, Math.round(
     config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100) / effMul(user, 'energy_regen_pct') / med
-  ));
+  )));
   applyRegen(user.res.en, mx.en, enInterval, now, config.REGEN.EN_PER_TICK);
   // Трофей «Боевая логистика» + допинг «Конвой» ускоряют боеприпасы
-  const amInterval = Math.max(15, Math.round(
+  const amInterval = Math.max(15, vipSrv.regenSeconds(user, Math.round(
     config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct') / med
-  ));
+  )));
   applyRegen(user.res.am, mx.am, amInterval, now);
 
   // Истёкшие эффекты удаляем
@@ -1098,6 +1123,8 @@ function publicProfile(target: User, viewer: User): any {
     // обращаться и от кого исходят требования в чате
     staffRole: (() => { try { return require('./roles').roleOf(target); } catch (e) { return null; } })(),
     staffLabel: (() => { try { return require('./roles').roleLabel(target) || null; } catch (e) { return null; } })(),
+    staffTag: (() => { try { return require('./roles').roleTag(target) || null; } catch (e) { return null; } })(),
+    vip: (() => { try { return require('./vip').isVip(target); } catch (e) { return false; } })(),
     level: target.level, rank: rank(target.level), rating: rating(target),
     accountBan: banInfo,
     country: target.country,
@@ -1173,6 +1200,46 @@ function setStatus(user: User, text: string) {
 }
 
 // Установить аватар профиля (только из разрешённого списка)
+// ── Смена позывного (VIP, пункт 18) ──────────────────────────────
+// Раз в 30 дней бесплатно. Проверки те же, что при регистрации:
+// длина, запрещённые имена, занятость — иначе сменой позывного можно
+// было бы обойти фильтр, действующий при создании аккаунта.
+function renameSelf(user: User, newName: string, notices: Notices) {
+  const vipSrv = require('./vip');
+  if (!vipSrv.isVip(user)) throw new u.ApiError('Смена позывного доступна по VIP-подписке');
+  if (!vipSrv.canRenameFree(user)) {
+    const days = Math.ceil((30 * 86400000 - (Date.now() - (user as any).lastFreeRenameAt)) / 86400000);
+    throw new u.ApiError(`Позывной можно менять раз в 30 дней. Осталось ждать: ${days} дн.`);
+  }
+  const name = String(newName || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 3 || name.length > 16) throw new u.ApiError('Позывной: от 3 до 16 символов');
+  if (name === user.name) throw new u.ApiError('Это ваш текущий позывной');
+  if (!/^[A-Za-zА-Яа-яЁё0-9 _-]+$/.test(name)) {
+    throw new u.ApiError('В позывном допустимы буквы, цифры, пробел, дефис и подчёркивание');
+  }
+  const auth = require('./auth');
+  if (auth.RESERVED_NAMES && auth.RESERVED_NAMES.has(name.toLowerCase().replace(/\s/g, ''))) {
+    throw new u.ApiError('Это имя зарезервировано и недоступно');
+  }
+  const taken = Object.values(users()).find((p: any) => p.id !== user.id
+    && String(p.name || '').toLowerCase() === name.toLowerCase());
+  if (taken) throw new u.ApiError('Такой позывной уже занят');
+
+  const old = user.name;
+  user.name = name;
+  vipSrv.markRenameUsed(user);
+  db.markUser(user.id);
+  db.save('users');
+  try {
+    require('./auditLog').record({
+      userId: user.id, userName: name, path: '/api/rename',
+      body: { from: old, to: name },
+    });
+  } catch (e) {}
+  notices.push(`✏️ Позывной изменён: «${old}» → «${name}»`);
+  return { name, nextFreeAt: Date.now() + 30 * 86400000 };
+}
+
 function setAvatar(user: User, avatarId: string) {
   if (avatarId === '' || avatarId === null) { user.avatar = undefined; db.save('users'); return { avatar: null }; }
   if (!config.AVATAR_IDS.includes(avatarId)) throw new u.ApiError('Неизвестный аватар');
@@ -1211,5 +1278,4 @@ export = { isXpBlocked, xpBlockLeftMin,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, addRating, rank, flag, findByName,
   bankDeposit, bankWithdraw, reserveForLegion, goldPackages, buyGold,
-  mePayload, publicProfile, setStatus, setAvatar, restoreEar,
-};
+  mePayload, publicProfile, setStatus, setAvatar, restoreEar, renameSelf,};

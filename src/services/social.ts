@@ -51,9 +51,11 @@ function purgeChatMessages(userId: string, byName: string): number {
 // теряет связность — иначе ответы на удалённую реплику повисают в воздухе.
 const DELETED_TEXT = 'Сообщение удалено';
 
-function chatGet(viewer: User | null, afterId?: number | string) {
+function chatGet(viewer: User | null, afterId?: number | string, room?: string) {
   const after = u.toInt(afterId, 0);
-  const all = world().chat.filter((m) => m.id > after);
+  // Старые сообщения без комнаты считаются общим чатом
+  const wantRoom = room === 'recruit' ? 'recruit' : 'global';
+  const all = world().chat.filter((m) => m.id > after && ((m as any).room || 'global') === wantRoom);
   // Гостю показываем заглушки без имени автора
   if (!viewer) {
     return {
@@ -83,6 +85,8 @@ function chatGet(viewer: User | null, afterId?: number | string) {
         // у администратора и владельца — чтобы в чате было видно, кто есть кто
         staff: author ? (roles.roleOf(author) || null) : null,
         staffLabel: author ? (roles.roleLabel(author) || null) : null,
+        staffTag: author ? (roles.roleTag(author) || null) : null,
+        vip: author ? (() => { try { return require('./vip').isVip(author); } catch (e) { return false; } })() : false,
         // Сотрудникам показываем, кто уже под блокировкой — чтобы не
         // выдавать повторную и видеть, кем уже занимались
         banned: (viewerIsStaff && author) ? !!roles.chatBanInfo(author) : false,
@@ -97,7 +101,7 @@ function chatGet(viewer: User | null, afterId?: number | string) {
   };
 }
 
-function chatPost(user: User, text: string) {
+function chatPost(user: User, text: string, room?: string) {
   text = String(text || '').trim().slice(0, config.CHAT.MAX_LEN);
   if (!text) throw new u.ApiError('Пустое сообщение');
   require('./roles').assertCanWrite(user, 'global');
@@ -108,7 +112,11 @@ function chatPost(user: User, text: string) {
   }
   user.lastChatAt = now;
   const w = world();
-  w.chat.push({ id: w.seq++, uid: user.id, name: user.name, flag: player.flag(user), level: user.level, text, at: now });
+  // Комната: 'global' — общий эфир, 'recruit' — «Позывные», доска для
+  // поиска соратников. Разделение нужно, чтобы объявления о наборе не
+  // тонули в живом чате, а чат не превращался в ленту объявлений.
+  const roomId = room === 'recruit' ? 'recruit' : 'global';
+  w.chat.push({ id: w.seq++, uid: user.id, name: user.name, flag: player.flag(user), level: user.level, text, at: now, room: roomId });
   // Храним только последние N сообщений
   if (w.chat.length > config.CHAT.KEEP) w.chat.splice(0, w.chat.length - config.CHAT.KEEP);
 }

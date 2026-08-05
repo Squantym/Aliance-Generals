@@ -202,7 +202,7 @@ function applyGrant(target: User, body: any): string[] {
   const addInt = (field) => u.toInt(body[field], 0);
 
   if (addInt('dollars'))    { player.addMoney(target, addInt('dollars'), false);             granted.push(`$${u.fmt(addInt('dollars'))}`); }
-  if (addInt('gold'))       { player.addGold(target, addInt('gold'));                        granted.push(`🪙 ${addInt('gold')}`); }
+  if (addInt('gold'))       { player.addGold(target, addInt('gold'), 'admin');                        granted.push(`🪙 ${addInt('gold')}`); }
   if (addInt('skillPoints')){ target.skillPoints = Math.max(0, target.skillPoints + addInt('skillPoints')); granted.push(`${addInt('skillPoints')} оч. навыков`); }
   if (addInt('ears'))       {
     // Уши от администратора — в отдельный кошелёк, не смешиваются с игровыми

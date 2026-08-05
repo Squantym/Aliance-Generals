@@ -3030,3 +3030,274 @@ body.theme-noir .field-hint { color: #8a8a92; }
 .pf-staff-moderator { background: rgba(60,190,240,.18); color: #6fdcff; border: 1px solid #3fa8cc; }
 .pf-staff-admin     { background: rgba(200,120,40,.18); color: var(--orange-1); border: 1px solid #96602d; }
 .pf-staff-owner     { background: rgba(200,170,60,.18); color: var(--gold); border: 1px solid #8d7526; }
+
+/* ═══ Рабочий стол администратора ════════════════════════════════════
+   Панель владельца — про настройку игры, панель администратора — про
+   ежедневную работу с людьми. Отсюда другой первый экран: не список
+   вкладок, а сводка «что требует внимания сейчас». */
+.adm-hello {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  background: linear-gradient(135deg, rgba(60,110,60,.16), rgba(30,40,25,.4));
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 15px; margin-bottom: 10px;
+}
+.adm-hello-name { font-size: 17px; font-weight: 700; color: var(--gold); }
+.adm-hello-stats { display: flex; gap: 16px; }
+.adm-hello-stats div { text-align: center; }
+.adm-hello-stats b { display: block; font-size: 18px; color: var(--fg); }
+.adm-hello-stats span { font-size: 10.5px; color: var(--dim); }
+
+.adm-alert {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px; margin-top: 7px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--panel-2); font-size: 13.5px;
+}
+.adm-alert-hot  { border-color: #8b3a3a; background: rgba(150,50,50,.12); }
+.adm-alert-warn { border-color: #8a6b2a; background: rgba(190,140,40,.10); }
+.adm-alert-icon { font-size: 17px; }
+
+.adm-measure {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; border-bottom: 1px solid var(--border-dim); font-size: 13px;
+}
+.adm-measure:last-child { border-bottom: none; }
+.adm-measure-tag {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px; background: var(--panel-2);
+  border: 1px solid var(--border); color: var(--dim);
+}
+.adm-tag-ban  { background: rgba(200,60,60,.16); border-color: #8b3a3a; color: #e07a7a; }
+.adm-tag-mute { background: rgba(60,190,240,.14); border-color: #3fa8cc; color: #6fdcff; }
+.adm-measure-left { color: var(--orange-1); font-size: 12px; white-space: nowrap; }
+.adm-link { color: var(--orange-1); text-decoration: none; font-weight: 600; }
+.adm-link:hover { text-decoration: underline; }
+
+.adm-act {
+  display: flex; gap: 9px; padding: 4px 0; font-size: 12.5px;
+  border-bottom: 1px solid var(--border-dim);
+}
+.adm-act:last-child { border-bottom: none; }
+
+/* Карточка игрока */
+.adm-card { text-align: left; }
+.adm-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.adm-card-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 13px; }
+.adm-card-rows div { display: flex; justify-content: space-between; gap: 8px; }
+.adm-card-rows span { color: var(--dim); }
+.adm-card-warn {
+  margin-top: 9px; padding: 8px 10px; border-radius: 7px; font-size: 13px;
+  border: 1px solid #8b3a3a; background: rgba(150,50,50,.12);
+}
+.adm-card-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 11px; }
+.adm-card-log { margin-top: 11px; border-top: 1px solid var(--border-dim); padding-top: 8px; }
+@media (max-width: 420px) {
+  .adm-card-rows { grid-template-columns: 1fr; }
+  .adm-hello-stats { gap: 12px; }
+}
+
+/* Закрепление обращений за сотрудником */
+.sup-owner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sup-tag {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 4px; letter-spacing: .3px;
+}
+.sup-free  { background: rgba(90,150,70,.16); color: #a8d18f; border: 1px solid #4d7a3d; }
+.sup-mine  { background: rgba(200,120,40,.18); color: var(--orange-1); border: 1px solid #96602d; }
+.sup-taken { background: rgba(120,120,120,.15); color: var(--dim); border: 1px solid var(--border); }
+.adm-log-who { color: var(--orange-1); font-size: 12px; white-space: nowrap; }
+
+/* ═══ Приписка роли: маленьким шрифтом по верхней линии имени ════════
+   Раньше роль выводилась полным словом в рамке и перегружала строку.
+   Теперь это короткий надстрочный тег — как сноска у имени. */
+.role-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: .3px;
+  vertical-align: super; line-height: 1; margin-left: 2px;
+  text-transform: lowercase; opacity: .95; white-space: nowrap;
+}
+.role-tag-owner     { color: var(--gold); }
+.role-tag-arbiter   { color: #d98cff; }
+.role-tag-admin     { color: var(--orange-1); }
+.role-tag-commissar { color: #4fd6b8; }
+.role-tag-moderator { color: #6fdcff; }
+
+/* Цвет текста сообщений по роли */
+.chat-msg-arbiter .chat-text   { color: #d98cff; }
+.chat-msg-commissar .chat-text { color: #4fd6b8; }
+
+/* Счётчик онлайна в подвале */
+.online-counter {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--dim); margin-bottom: 6px;
+}
+.online-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #5fbf4a;
+  box-shadow: 0 0 6px rgba(95,191,74,.7); animation: onlinePulse 2.4s ease-in-out infinite;
+}
+@keyframes onlinePulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+#online-num { color: #8fd47a; font-weight: 700; }
+
+/* Журнал начислений золота */
+.gold-src { display: flex; flex-wrap: wrap; gap: 5px; }
+.gold-src-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+  background: rgba(200,170,60,.14); color: var(--gold); border: 1px solid #8d7526;
+}
+
+/* ═══ Форум ══════════════════════════════════════════════════════════ */
+.comm-tabs { margin-bottom: 6px; }
+.comm-subtabs { margin-bottom: 8px; }
+.comm-subtabs .tab { font-size: 12.5px; padding: 5px 10px; }
+
+.forum-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.forum-row {
+  display: flex; gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid var(--border-dim);
+}
+.forum-row:last-child { border-bottom: none; }
+/* Темы сотрудников выделены: объявления не должны теряться */
+.forum-row-staff {
+  background: linear-gradient(90deg, rgba(200,170,60,.07), transparent);
+  border-left: 2px solid var(--gold); padding-left: 8px; margin-left: -8px;
+}
+.forum-title { color: var(--fg); text-decoration: none; font-size: 14.5px; }
+.forum-title:hover { color: var(--orange-1); }
+.forum-title-staff { font-weight: 700; color: var(--gold); }
+.forum-meta { margin-top: 3px; }
+.forum-closed { color: var(--red); margin-left: 6px; }
+
+.forum-topic-title { font-size: 17px; font-weight: 700; margin-bottom: 3px; }
+.forum-text { margin-top: 10px; font-size: 14px; line-height: 1.6; word-break: break-word; }
+/* Картинка темы: 70% ширины основной области, но не шире оригинала */
+.forum-img {
+  display: block; width: 70%; max-width: 100%; height: auto;
+  margin: 12px auto; border-radius: 8px; border: 1px solid var(--border);
+}
+.forum-img-preview { width: 60%; margin: 10px auto 0; }
+.forum-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.forum-comment { padding: 8px 0; border-bottom: 1px solid var(--border-dim); }
+.forum-comment:last-child { border-bottom: none; }
+.forum-comment-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.forum-comment-text { margin-top: 3px; font-size: 13.5px; line-height: 1.55; word-break: break-word; }
+.forum-comment-deleted { opacity: .6; }
+
+.forum-pages { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+.forum-page { min-width: 32px; }
+.forum-dots { color: var(--dim); padding: 0 2px; align-self: center; }
+.forum-ban-note { border-color: #8b3a3a; background: rgba(150,50,50,.10); }
+.forum-new .field { width: 100%; box-sizing: border-box; }
+.forum-new-img { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 420px) {
+  .forum-img { width: 92%; }
+  .forum-img-preview { width: 80%; }
+}
+
+/* ═══ Панель: компактный вид ═════════════════════════════════════════
+   Вкладок много, поэтому они мельче и плотнее — иначе шапка занимает
+   треть экрана и до содержимого приходится листать. */
+#tab-content .card { padding: 11px 13px; margin-bottom: 8px; }
+#tab-content .name { font-size: 14px; }
+#tab-content .card > p.muted.small { margin-top: 3px; line-height: 1.45; }
+
+/* Выдача ресурсов прямо под строкой игрока */
+.grant-row td { padding: 0 !important; background: rgba(200,120,40,.05); }
+.grant-panel {
+  border: 1px solid var(--orange-1); border-radius: 8px;
+  padding: 10px 12px; margin: 4px 0;
+  background: linear-gradient(160deg, rgba(60,45,20,.35), rgba(25,25,18,.3));
+}
+.grant-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 8px; }
+.grant-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px;
+}
+.grant-grid label { display: flex; flex-direction: column; gap: 2px; }
+.grant-grid label span { font-size: 10.5px; color: var(--dim); }
+.grant-grid input { padding: 5px 7px; font-size: 13px; }
+.grant-quick { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+.grant-more { margin-top: 8px; }
+.grant-more summary { cursor: pointer; font-size: 12.5px; color: var(--orange-1); }
+.grant-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+.grant-reward {
+  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border-dim);
+}
+.grant-reward input { width: 100%; box-sizing: border-box; }
+
+/* Блок базы данных в «Технике» */
+.db-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.db-ok { color: #8fd47a; font-size: 12px; }
+.db-more summary { cursor: pointer; font-size: 12.5px; color: var(--orange-1); }
+
+@media (max-width: 480px) {
+  .grant-grid { grid-template-columns: 1fr 1fr; }
+  #tab-content .card { padding: 9px 10px; }
+}
+
+/* Кнопка смены аватара — под самой аватаркой.
+   Значок фотоаппарата поверх изображения перекрывал лицо и на мелких
+   экранах попадал под палец мимо. */
+.pf-avatar-change {
+  display: block; margin: 6px auto 0; font-size: 11.5px; padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* ═══ Значок VIP ═════════════════════════════════════════════════════ */
+.vip-mark {
+  display: inline-block; margin-left: 4px; padding: 0 5px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .5px;
+  color: #1a1408; background: linear-gradient(150deg, #f3d27a, #c9a227);
+  border-radius: 3px; vertical-align: middle; line-height: 15px;
+  box-shadow: 0 0 5px rgba(220,180,70,.4);
+}
+
+/* Страница VIP */
+.vip-head { text-align: center; }
+.vip-head-on { border-color: var(--gold); background: linear-gradient(160deg, rgba(120,95,25,.22), rgba(30,25,12,.3)); }
+.vip-head-title { font-size: 18px; font-weight: 700; color: var(--gold); }
+.vip-left { display: flex; justify-content: center; gap: 20px; }
+.vip-left div { text-align: center; }
+.vip-left b { display: block; font-size: 20px; color: var(--gold); }
+.vip-left span { font-size: 10.5px; color: var(--dim); }
+.vip-list { display: grid; gap: 8px; }
+.vip-item { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--border-dim); }
+.vip-item:last-child { border-bottom: none; }
+.vip-item-icon { font-size: 19px; flex: 0 0 24px; text-align: center; }
+.pf2-vip-active { border-color: var(--gold); }
+
+/* Массовые действия с поручениями (VIP) */
+.quest-bulk {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 8px 0; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid rgba(200,170,60,.35); background: rgba(200,170,60,.07);
+}
+
+/* Массовые действия VIP в поручениях */
+.vip-bulk {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  padding: 8px 10px; margin: 8px 0; border-radius: 8px;
+  border: 1px solid #b8952f; background: rgba(220,180,70,.07);
+}
+.q-reroll { padding: 3px 7px; font-size: 12px; }
+
+/* ═══ Лоты дня ═══════════════════════════════════════════════════════ */
+.lots-head { border-color: var(--gold); }
+.lot-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--border-dim);
+}
+.lot-row:last-child { border-bottom: none; }
+.lot-leading { background: linear-gradient(90deg, rgba(90,150,70,.10), transparent); }
+.lot-out { opacity: .5; }
+.lot-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lot-input { width: 84px; padding: 5px 7px; font-size: 13px; }
+.lot-bid-info { margin-top: 4px; font-size: 13px; }
+.lot-mine { color: var(--orange-1); font-size: 12.5px; margin-top: 2px; }
+.lot-price { text-align: right; line-height: 1.3; }
+.lot-disc {
+  font-size: 10.5px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+  background: rgba(90,150,70,.18); color: #a8d18f; border: 1px solid #4d7a3d;
+}
+@media (max-width: 460px) {
+  .lot-row { flex-direction: column; }
+  .lot-actions { width: 100%; }
+}

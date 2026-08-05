@@ -93,9 +93,17 @@ function confirmPayment(orderId: string): { ok: boolean } {
   const user = players[order.userId];
   if (!user) return { ok: false };
 
-  require('./player').addGold(user, order.gold);
+  // Начисляем с учётом акции и VIP: подписка добавляет свои 15% ПОВЕРХ
+  // действующей акции (акция +50% и VIP +15% дают +65%)
+  let credited = order.gold;
+  try {
+    const mul = require('./discounts').bonusMul('gold', user);
+    credited = Math.round(order.gold * mul);
+  } catch (e) {}
+  require('./player').addGold(user, credited, 'purchase');
+  (order as any).creditedGold = credited;
   // Реферальный процент: 10% от купленного золота — пригласившему
-  try { require('./features').onReferralPurchase(user, order.gold); } catch (e) {}
+  try { require('./features').onReferralPurchase(user, credited); } catch (e) {}
   order.status = 'paid';
   order.paidAt = Date.now();
   db.save('payments');

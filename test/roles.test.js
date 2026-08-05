@@ -16,6 +16,9 @@ const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const roles = require(ROOT + '/dist/src/services/roles');
+// Чистим настройку прав: она хранится в базе и иначе перетекала бы
+// между прогонами тестов
+try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 const social = require(ROOT + '/dist/src/services/social');
 
 async function main() {
@@ -34,33 +37,45 @@ const legacy = { id: 'x', isAdmin: true };
 ok(roles.roleOf(legacy) === 'admin', 'игрок со старым флагом isAdmin числится администратором');
 // Полномочия администраторов включены, но ограничены зонами
 ok(roles.adminPowersEnabled() === true, 'полномочия администраторов включены');
-ok(roles.isAdmin(legacy) === true, 'игрок со старым флагом isAdmin работает как администратор');
+ok(roles.roleOf(legacy) === 'admin', 'старый флаг isAdmin читается как роль «администратор»');
 ok(roles.zonesFor(legacy).length < roles.zonesFor(owner).length,
-   `у администратора зон меньше, чем у владельца (${roles.zonesFor(legacy).length} против ${roles.zonesFor(owner).length})`);
+   `но прав у него меньше, чем у владельца (${roles.zonesFor(legacy).length} против ${roles.zonesFor(owner).length})`);
 
 console.log('\n── 2. Владелец назначает роли ──');
 const n1 = [];
 roles.setRole(owner, admin.id, 'admin', n1);
-ok(roles.roleOf(admin) === 'admin', 'назначен администратор');
-ok(roles.isAdmin(admin) === true, 'у администратора есть доступ к своим зонам');
-ok(roles.isModerator(admin) === true, 'модерация чата ему доступна');
-ok(roles.canAccessZone(admin, 'economy') === false, 'а выдача ресурсов — нет, это только владелец');
-ok(roles.canAccessZone(admin, 'discounts') === false, 'акции — тоже только владелец');
-ok(roles.roleLabel(admin) === 'Администратор', `подпись: «${roles.roleLabel(admin)}»`);
 roles.setRole(owner, mod.id, 'moderator', n1);
+// Владелец выдаёт ролям рабочий набор прав. По умолчанию их нет:
+// роль — это только должность, возможности назначает владелец.
+for (const z of ['players', 'chat', 'moderation', 'security', 'support', 'legions', 'news', 'event', 'roles']) {
+  try { roles.setRoleZone(owner, 'admin', z, true, []); } catch (e) {}
+}
+try { roles.setRoleZone(owner, 'moderator', 'chat', true, []); } catch (e) {}
+
 ok(roles.roleOf(mod) === 'moderator', 'назначен модератор');
 ok(mod.isAdmin === false, 'у модератора НЕТ прав администратора — доступа к ресурсам и удалению аккаунтов не будет');
 ok(roles.roleLabel(mod) === 'Дозор', `подпись модератора: «${roles.roleLabel(mod)}»`);
 ok(roles.roleLabel(owner) === 'Владелец', 'подпись владельца');
+ok(roles.roleOf(admin) === 'admin', 'назначен администратор');
+ok(roles.isAdmin(admin) === true, 'после выдачи прав доступ в панель появился');
+ok(roles.isModerator(admin) === true, 'и модерация чатов — она тоже выдана');
+roles.setRoleZone(owner, 'admin', 'economy', false, []);
+roles.setRoleZone(owner, 'admin', 'discounts', false, []);
+ok(roles.canAccessZone(admin, 'economy') === false, 'что не выдано — то недоступно: ресурсы');
+ok(roles.canAccessZone(admin, 'discounts') === false, 'и акции');
+ok(roles.roleLabel(admin) === 'Администратор', `подпись: «${roles.roleLabel(admin)}»`);
+roles.setRole(owner, mod.id, 'moderator', n1);
+
+
 
 console.log('\n── 3. Границы при назначении ролей ──');
 const nMod = [];
 roles.setRole(admin, pl.id, 'moderator', nMod);
 ok(roles.roleOf(pl) === 'moderator', 'администратор может назначить модератора');
 roles.setRole(admin, pl.id, null, nMod);
-fails(() => roles.setRole(admin, mod.id, 'admin', []), 'только модераторов', 'администратора назначить не может');
-fails(() => roles.setRole(admin, owner.id, null, []), 'только модераторов', 'владельца снять не может');
-fails(() => roles.setRole(mod, pl.id, 'moderator', []), 'Недостаточно прав', 'модератор не может раздавать роли');
+fails(() => roles.setRole(admin, mod.id, 'admin', []), 'по старшинству', 'администратора назначить не может');
+fails(() => roles.setRole(admin, owner.id, null, []), 'по старшинству', 'владельца снять не может');
+fails(() => roles.setRole(mod, pl.id, 'moderator', []), 'Нет права «Роли»', 'модератор не может раздавать роли');
 fails(() => roles.setRole(owner, owner.id, null, []), 'самому себе', 'нельзя менять роль самому себе');
 const n2 = [];
 roles.setRole(owner, pl.id, 'moderator', n2);
@@ -131,7 +146,7 @@ const view = social.chatGet(pl);
 const modMsg = view.messages.find((m) => m.uid === pl.id);
 ok('staff' in view.messages[0] && 'staffLabel' in view.messages[0], 'сообщения чата несут роль автора');
 const soc = fs.readFileSync(ROOT + '/public/js/screens/social.js', 'utf8');
-ok(soc.includes('chat-staff'), 'значок роли рисуется рядом с именем в чате');
+ok(/role-tag role-tag-\$\{msg\.staff\}/.test(soc), 'приписка роли рисуется рядом с именем в чате');
 ok(soc.includes('data-mute'), 'у сотрудника есть кнопка блокировки возле сообщения');
 const app = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
 ok(app.includes('showChatBanDialog'), 'окно блокировки существует');

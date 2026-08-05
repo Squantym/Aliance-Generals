@@ -7,7 +7,7 @@ import db = require('../core/db');
 import u = require('../core/utils');
 import email = require('./email');
 import auditLog = require('./auditLog');
-import type { User } from '../types';
+import type { User, Notices } from '../types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -128,6 +128,49 @@ function pruneSessions(): number {
     if (!rec || !rec.u || (now - (rec.at || 0)) > SESSION_TTL_MS) { delete all[t]; removed++; }
   }
   return removed;
+}
+
+// ── Смена позывного (VIP, пункт 18) ───────────────────────────────
+// Раньше сменить позывной было нельзя вообще. Для VIP — бесплатно раз
+// в 30 дней; остальным пока недоступно (цену в золоте владелец может
+// назначить позже — точка для этого одна).
+const RENAME_GOLD_COST = 0;      // 0 = платная смена выключена
+
+function renameSelf(user: User, newName: string, notices: Notices) {
+  const vipSrv = require('./vip');
+  const name = sanitizeInput(String(newName || '')).trim();
+
+  if (!/^[A-Za-zА-Яа-яЁё0-9_\- ]{3,16}$/.test(name)) {
+    throw new u.ApiError('Позывной: 3–16 символов. Разрешены: буквы, цифры, _ -');
+  }
+  if (RESERVED_NAMES.has(name.toLowerCase().replace(/\s/g, ''))) {
+    throw new u.ApiError('Это имя зарезервировано и недоступно');
+  }
+  if (name === user.name) throw new u.ApiError('Это и есть ваш нынешний позывной');
+
+  // Занятость проверяем без учёта регистра — иначе появятся «Генерал»
+  // и «генерал», которых не отличить в чате
+  const low = name.toLowerCase();
+  const taken = Object.values(require('./player').users()).some((p: any) => p.id !== user.id && String(p.name || '').toLowerCase() === low);
+  if (taken) throw new u.ApiError('Такой позывной уже занят');
+
+  const free = vipSrv.canRenameFree(user);
+  if (!free) {
+    if (!vipSrv.isVip(user)) throw new u.ApiError('Смена позывного доступна по VIP-подписке');
+    const days = config.VIP.RENAME_FREE_DAYS;
+    const last = Number((user as any).lastFreeRenameAt || 0);
+    const leftDays = Math.ceil((days * 86400000 - (Date.now() - last)) / 86400000);
+    throw new u.ApiError(`Бесплатная смена — раз в ${days} дней. Следующая через ${leftDays} дн.`);
+  }
+
+  const old = user.name;
+  user.name = name;
+  vipSrv.markRenameUsed(user);
+  db.markUser(user.id);
+  db.save('users');
+  auditLog.record({ userId: user.id, userName: name, path: '/api/rename', body: { from: old, to: name } });
+  notices.push(`✏️ Позывной изменён: «${old}» → «${name}»`);
+  return { name };
 }
 
 async function register(login: string, password: string, emailAddr: string, country: string, ip: string) {
@@ -382,4 +425,4 @@ function changePassword(user: User, oldPassword: string, newPassword: string, ne
   return { ok: true, token };
 }
 
-export = { register, login, logout, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser };
+export = { register, login, logout, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};

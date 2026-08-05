@@ -109,7 +109,10 @@ function readBody(req: http.IncomingMessage): Promise<any> {
     let data = '';
     req.on('data', (chunk) => {
       data += chunk;
-      if (data.length > 200 * 1024) { req.destroy(); resolve({}); }
+      // Картинки форума приходят в теле запроса (браузер их предварительно
+      // уменьшает), поэтому для них лимит выше обычного
+      const cap = /\/api\/forum\/(topic|upload)/.test(String(req.url || '')) ? 900 * 1024 : 200 * 1024;
+      if (data.length > cap) { req.destroy(); resolve({}); }
     });
     req.on('end', () => {
       try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); }
@@ -204,6 +207,23 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   // Короткие адреса правовых документов: /terms и /privacy. Нужны, чтобы
   // ссылку можно было дать платёжному сервису или магазину приложений
   // без расширения в конце.
+  // Картинки тем форума лежат в data/forum, а не в public
+  if (rel.startsWith('/forum-img/')) {
+    const fsx = require('fs');
+    const pth = require('path');
+    const safe = pth.basename(rel.slice('/forum-img/'.length));
+    const file = pth.join(process.cwd(), 'data', 'forum', safe);
+    if (fsx.existsSync(file)) {
+      const ext = pth.extname(safe).slice(1).toLowerCase();
+      const type = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800' });
+      res.end(fsx.readFileSync(file));
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
   if (rel === '/terms' || rel === '/terms/') rel = '/terms.html';
   if (rel === '/privacy' || rel === '/privacy/') rel = '/privacy.html';
   const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
@@ -446,6 +466,8 @@ function createApp() {
                 return sendJson(res, 403, { error: 'Доступ с этого адреса запрещён' }, acceptEncoding);
               }
             }
+            // Время в игре для расширенной статистики
+            try { require('../services/stats').tickPlayTime(user); } catch (e) {}
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов
             reqCtx.user = user;
