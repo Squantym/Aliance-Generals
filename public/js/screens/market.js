@@ -43,57 +43,82 @@ App.screens.market = async (c, param) => {
       ${tabsHtml}
       <div class="card lots-head">
         <div class="name">🎯 Лоты дня</div>
-        <p class="muted small mt">Набор меняется в полночь по Москве и одинаков для всех.
-        До смены лотов: <b class="gold">${left(d.secondsLeft)}</b></p>
+        <p class="muted small mt">Набор меняется в полночь по Москве и одинаков для всех.</p>
+        <div class="lots-meta">
+          <span>⏳ до смены: <b class="gold">${left(d.secondsLeft)}</b></span>
+          <span>у вас: <span class="ic-gold"></span> <b class="gold">${UI.fmtNum(d.myGold)}</b></span>
+        </div>
       </div>
 
       <div class="card">
         <div class="name">🔨 Аукцион: секретные разработки</div>
         <p class="muted small mt">По одной штуке на всех. Побеждает наибольшая ставка —
         разработка зачисляется победителю в полночь, остальным золото возвращается.</p>
+        <div class="lot-grid">
         ${d.devs.map((x) => `
-          <div class="lot-row${x.leading ? ' lot-leading' : ''}">
-            <div class="grow">
-              <b>${UI.esc(x.name)}</b>
-              <div class="muted small">атака ${UI.fmtNum(x.atk)} · защита ${UI.fmtNum(x.def)}</div>
+          <div class="lot-card${x.leading ? ' lot-leading' : ''}">
+            <div class="lot-card-img img-frame">
+              <img src="/img/secret/${x.devId}.webp" alt="${UI.esc(x.name)}" loading="lazy"
+                   onerror="this.style.display='none'">
+            </div>
+            <div class="lot-card-body">
+              <div class="lot-card-name">${UI.esc(x.name)}</div>
+              <div class="lot-stats">
+                <span title="Атака">⚔ ${UI.fmtNum(x.atk)}</span>
+                <span title="Защита">🛡 ${UI.fmtNum(x.def)}</span>
+              </div>
               <div class="lot-bid-info">
                 ${x.topGold
-                  ? `Лидер: <b>${UI.esc(x.topName)}</b> — <b class="gold">🪙 ${UI.fmtNum(x.topGold)}</b>
-                     <span class="muted small">· ставок: ${x.bidders}</span>`
-                  : '<span class="muted small">Ставок пока нет</span>'}
-                ${x.myBid ? `<div class="lot-mine">Ваша ставка: 🪙 ${UI.fmtNum(x.myBid)}${x.leading ? ' — вы лидируете' : ''}</div>` : ''}
+                  ? `<div class="lot-top">Лидер: <b>${UI.esc(x.topName)}</b> <span class="muted small">· ставок ${x.bidders}</span></div>
+                     <div class="lot-top-gold"><span class="ic-gold"></span> <b>${UI.fmtNum(x.topGold)}</b></div>`
+                  : '<span class="muted small">Ставок пока нет — заберите первым</span>'}
+                ${x.myBid ? `<div class="lot-mine">Ваша ставка: <span class="ic-gold"></span> ${UI.fmtNum(x.myBid)}${x.leading ? ' · вы лидируете' : ''}</div>` : ''}
+              </div>
+              <div class="lot-actions">
+                <input type="number" class="field lot-input" id="bid-${x.devId}"
+                       value="${x.nextBid}" min="${x.nextBid}" step="${d.bidStep}">
+                <button class="btn btn-orange btn-inline" data-bid="${x.devId}">Ставка</button>
               </div>
             </div>
-            <div class="lot-actions">
-              <input type="number" class="field lot-input" id="bid-${x.devId}"
-                     value="${x.nextBid}" min="${x.nextBid}" step="${d.bidStep}">
-              <button class="btn btn-orange btn-inline" data-bid="${x.devId}">Ставка</button>
-            </div>
           </div>`).join('')}
+        </div>
       </div>
 
       <div class="card">
         <div class="name">💊 Допинг со скидкой</div>
         <p class="muted small mt">Запас общий на всех: кто успел, тот и купил.
         Действует сразу, ждать полуночи не нужно.</p>
-        ${d.buffs.map((b) => `
-          <div class="lot-row${b.left <= 0 ? ' lot-out' : ''}">
-            <div class="grow">
-              <b>${UI.esc(b.name)}</b> <span class="lot-disc">−${b.discountPct}%</span>
-              <div class="muted small">${UI.esc(b.desc)}</div>
-              <div class="muted small">Осталось: <b>${b.left}</b> из ${b.stock}</div>
+        <div class="lot-grid">
+        ${d.buffs.map((b) => {
+          const pct = b.stock ? Math.round(b.left / b.stock * 100) : 0;
+          return `
+          <div class="lot-card${b.left <= 0 ? ' lot-out' : ''}">
+            <div class="lot-card-img img-frame">
+              ${App._marketImg(b.itemId)
+                ? `<img src="${App._marketImg(b.itemId)}" alt="${UI.esc(b.name)}" loading="lazy" onerror="this.style.display='none'">`
+                : '<span class="lot-noimg">💊</span>'}
+              <span class="lot-disc">−${b.discountPct}%</span>
             </div>
-            <div class="lot-actions">
+            <div class="lot-card-body">
+              <div class="lot-card-name">${UI.esc(b.name)}</div>
+              <div class="muted small lot-desc">${UI.esc(b.desc)}</div>
+              <div class="lot-stock">
+                <div class="lot-stock-bar"><i style="width:${pct}%"></i></div>
+                <span class="muted small">осталось <b>${b.left}</b> из ${b.stock}</span>
+              </div>
               <div class="lot-price">
-                <s class="muted small">🪙 ${b.basePrice}</s>
-                <b class="gold">🪙 ${b.price}</b>
+                <s class="muted small"><span class="ic-gold"></span> ${b.basePrice}</s>
+                <b class="gold"><span class="ic-gold"></span> ${b.price}</b>
               </div>
               ${b.left > 0
-                ? `<input type="number" class="field lot-input" id="qty-${b.itemId}" value="1" min="1" max="${b.left}">
-                   <button class="btn btn-orange btn-inline" data-buy="${b.itemId}">Купить</button>`
-                : '<span class="muted small">разобрали</span>'}
+                ? `<div class="lot-actions">
+                     <input type="number" class="field lot-input" id="qty-${b.itemId}" value="1" min="1" max="${b.left}">
+                     <button class="btn btn-orange btn-inline" data-buy="${b.itemId}">Купить</button>
+                   </div>`
+                : '<div class="lot-sold">Разобрали</div>'}
             </div>
-          </div>`).join('')}
+          </div>`; }).join('')}
+        </div>
       </div>`;
 
     c.querySelectorAll('[data-bid]').forEach((btn) => {

@@ -256,7 +256,11 @@ function sanitizeImage(raw: any): string {
   if (!s) return '';
   // Явно опасные схемы — сразу отказ
   if (/^\s*(javascript|data|vbscript|file|blob)\s*:/i.test(s)) return '';
-  if (/^\/(img|images|uploads)\//i.test(s)) return s;
+  // Внутренние пути: и статика из public, и файлы, загруженные через
+  // панель (/forum-img/ — общее хранилище для картинок форума и босса).
+  // Без /forum-img/ сжатая картинка сохранялась, но событие её не
+  // принимало: «ссылка некорректна» на уже свой же файл.
+  if (/^\/(img|images|uploads|forum-img)\//i.test(s)) return s;
   if (/^https?:\/\//i.test(s)) return s;
   // Ссылка без схемы: //cdn.site/x.png или cdn.site/x.png → добавим https://
   if (/^\/\//.test(s)) return 'https:' + s;

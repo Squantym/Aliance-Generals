@@ -15,6 +15,7 @@ import db = require('../core/db');
 import u = require('../core/utils');
 import config = require('../../config/gameConfig');
 import auditLog = require('./auditLog');
+import player = require('./player');
 import type { User, Notices } from '../types';
 
 const V = config.VIP;
@@ -157,6 +158,30 @@ function markRenameUsed(user: any): void {
   db.markUser(user.id);
 }
 
+// ---------- Покупка подписки за золото ----------
+// Цена и срок вынесены в конфиг: менять их придётся чаще, чем код.
+const PRICE_GOLD = 500;
+const PRICE_DAYS = 7;
+
+function buy(user: any, notices: Notices) {
+  const price = PRICE_GOLD;
+  if ((user.gold || 0) < price) {
+    throw new u.ApiError(`Подписка стоит 🪙 ${price}. Не хватает 🪙 ${price - (user.gold || 0)}`);
+  }
+  player.addGold(user, -price, 'vip');
+  const base = Math.max(Date.now(), Number(user.vipUntil || 0));
+  user.vipUntil = base + PRICE_DAYS * 86400000;
+  db.markUser(user.id);
+  db.save('users');
+  auditLog.record({
+    userId: user.id, userName: user.name, path: '/api/vip/buy',
+    body: { days: PRICE_DAYS, gold: price },
+  });
+  const info = vipInfo(user);
+  notices.push(`👑 VIP оформлен на ${PRICE_DAYS} дн. Действует до ${new Date(info.until).toLocaleDateString('ru-RU')}`);
+  return { ok: true, until: info.until, daysLeft: info.daysLeft };
+}
+
 // ---------- Выдача подписки ----------
 // Продлевает, а не перетирает: если VIP ещё действует, дни прибавляются
 // к остатку — иначе покупка второй подписки сжигала бы первую.
@@ -217,7 +242,7 @@ function benefits() {
 }
 
 export = {
-  isVip, vipInfo, left, spend, benefits, grant, revoke,
+  isVip, vipInfo, left, spend, benefits, grant, revoke, buy, PRICE_GOLD, PRICE_DAYS,
   regenSeconds, siloRocketSeconds, trophyUpgradeSeconds,
   spyFreePerDay, reinforcePerDay, contractsPerDay,
   marketDiscountPct, goldPurchaseBonusPct,

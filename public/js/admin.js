@@ -717,58 +717,94 @@ const Admin = {
   // способ заметить, что кто-то раздаёт золото сверх меры.
   _goldSrc: 'all',
 
+  // ═══ ЖУРНАЛ ЗОЛОТА: выбор игрока и его история ═══════════════════
+  // Раньше показывался общий поток с сырыми адресами запросов
+  // («/api/lots/buy») — по нему нельзя было понять ни кто, ни за что.
+  // Теперь: список игроков с движением золота, а по нажатию — история
+  // конкретного человека понятными строками.
+  _goldPlayer: null,
+
   async renderGold(c) {
     c.innerHTML = '<div class="loading">Собираю журнал…</div>';
     let d = null;
-    try { d = await API.get('/api/admin/gold-log?limit=400&source=' + encodeURIComponent(Admin._goldSrc)); }
+    const q = Admin._goldPlayer ? '?userId=' + encodeURIComponent(Admin._goldPlayer) : '';
+    try { d = await API.get('/api/admin/gold-log' + q); }
     catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
     const dt = (ms) => new Date(ms).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    const bySrc = Object.entries(d.bySource || {}).sort((a, b) => b[1].gold - a[1].gold);
+    const sel = d.selected;
 
     c.innerHTML = `
       <div class="card">
         <div class="name">🪙 Начисления золота</div>
         <p class="muted small mt">Все источники премиум-валюты. Раздел виден только вам —
         администраторы своих начислений здесь не увидят.</p>
-        <div class="gold-src mt">
-          ${(d.sources || []).map((s) => `<button class="btn btn-inline ${Admin._goldSrc === s.id ? 'btn-orange' : ''}" data-gsrc="${s.id}">${UI.esc(s.label)}</button>`).join('')}
-        </div>
+        ${!sel && d.totals ? `
+          <div class="gold-totals mt">
+            <div><span class="muted small">получено всего</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(d.totals.got)}</b></div>
+            <div><span class="muted small">потрачено всего</span><b><span class="ic-gold"></span> ${UI.fmtNum(d.totals.spent)}</b></div>
+            <div><span class="muted small">на руках сейчас</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(d.totals.now)}</b></div>
+          </div>` : ''}
       </div>
 
-      ${bySrc.length ? `
-<div class="card">
-        <div class="name">Сводка по источникам</div>
-        ${bySrc.map(([id, v]) => `
-          <div class="adm-measure">
-            <span class="grow">${UI.esc(v.label)}</span>
-            <span class="muted small">${UI.fmtNum(v.count)} операций</span>
-            <b class="gold">🪙 ${UI.fmtNum(v.gold)}</b>
-          </div>`).join('')}
-        <div class="adm-measure" style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px">
-          <span class="grow"><b>Итого за выборку</b></span>
-          <b class="gold">🪙 ${UI.fmtNum(d.totalGold)}</b>
+      ${sel ? `
+        <div class="card">
+          <div class="gold-sel-head">
+            <button class="btn btn-inline" id="gold-back">← Ко всем игрокам</button>
+            <b>${UI.esc(sel.name)}</b> <span class="muted small">ур. ${sel.level}</span>
+          </div>
+          <div class="gold-totals mt">
+            <div><span class="muted small">получено</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(sel.got)}</b></div>
+            <div><span class="muted small">потрачено</span><b><span class="ic-gold"></span> ${UI.fmtNum(sel.spent)}</b></div>
+            <div><span class="muted small">сейчас</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(sel.now)}</b></div>
+          </div>
+          ${(sel.bySource || []).length ? `
+            <div class="mt">
+              <div class="muted small">Откуда пришло золото:</div>
+              ${sel.bySource.map((x) => `
+                <div class="adm-measure">
+                  <span class="grow">${UI.esc(x.label)}</span>
+                  <b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(x.value)}</b>
+                </div>`).join('')}
+            </div>` : ''}
         </div>
-      </div>` : ''}
 
-      <div class="card">
-        <div class="name">Операции (${UI.fmtNum((d.rows || []).length)})</div>
-        <div class="mt">
-          ${(d.rows || []).length
-            ? d.rows.map((r) => `
-                <div class="adm-act">
-                  <span class="muted small">${dt(r.at)}</span>
-                  <b class="adm-log-who">${UI.esc(r.userName)}</b>
-                  <span class="gold-src-tag">${UI.esc(r.sourceLabel)}</span>
-                  <span class="grow">${UI.esc(r.human || r.path || '')}</span>
-                  ${r.gold ? `<b class="gold">🪙 ${UI.fmtNum(r.gold)}</b>` : ''}
-                </div>`).join('')
-            : '<p class="muted small">Записей нет.</p>'}
+        <div class="card">
+          <div class="name">История операций (${UI.fmtNum((d.rows || []).length)})</div>
+          <div class="mt">
+            ${(d.rows || []).length
+              ? d.rows.map((r) => `
+                  <div class="gold-op">
+                    <span class="muted small gold-op-date">${dt(r.at)}</span>
+                    <span class="grow">${UI.esc(r.text)}</span>
+                    <b class="gold gold-op-sum"><span class="ic-gold"></span> ${UI.fmtNum(r.gold)}</b>
+                  </div>`).join('')
+              : '<p class="muted small">Операций с золотом не найдено.</p>'}
+          </div>
         </div>
-      </div>`;
+      ` : `
+        <div class="card">
+          <div class="name">Игроки (${UI.fmtNum((d.players || []).length)})</div>
+          <p class="muted small mt">Нажмите на игрока, чтобы увидеть, откуда у него золото и на что он его тратил.</p>
+          <div class="mt">
+            ${(d.players || []).map((p) => `
+              <div class="gold-player" data-gp="${p.id}">
+                <span class="grow"><b>${UI.esc(p.name)}</b>${p.vip ? ' <span class="vip-mark">VIP</span>' : ''}
+                  <span class="muted small">ур. ${p.level}</span></span>
+                <span class="gold-player-nums">
+                  <span title="получено всего" class="gold">+${UI.fmtNum(p.got)}</span>
+                  <span title="потрачено всего" class="muted">−${UI.fmtNum(p.spent)}</span>
+                  <b title="на руках"><span class="ic-gold"></span> ${UI.fmtNum(p.now)}</b>
+                </span>
+              </div>`).join('')}
+          </div>
+        </div>
+      `}`;
 
-    c.querySelectorAll('[data-gsrc]').forEach((b) => {
-      b.onclick = () => { Admin._goldSrc = b.dataset.gsrc; Admin.renderGold(c); };
+    const back = document.getElementById('gold-back');
+    if (back) back.onclick = () => { Admin._goldPlayer = null; Admin.renderGold(c); };
+    c.querySelectorAll('[data-gp]').forEach((row) => {
+      row.onclick = () => { Admin._goldPlayer = row.dataset.gp; Admin.renderGold(c); };
     });
   },
 

@@ -485,23 +485,53 @@ App.screens.vip = async (c) => {
         <div class="vip-head-title">👑 VIP-подписка</div>
         <p class="muted small mt">Двадцать преимуществ: меньше ожидания, больше лимитов,
         выгоднее экономика. Подписка не делает вас сильнее в бою — она экономит время.</p>
-        <p class="small mt">Оформить подписку можно у администрации проекта.</p>
+        <div class="vip-price mt">
+          <span class="ic-gold"></span> <b>${UI.fmtNum(d.priceGold)}</b>
+          <span class="muted">за ${d.priceDays} дней</span>
+        </div>
+        <button class="btn vip-buy mt" id="vip-buy">Купить VIP</button>
+        <p class="muted small mt">У вас: <span class="ic-gold"></span> ${UI.fmtNum(d.myGold)}</p>
       `}
+      ${d.active ? `
+        <div class="vip-price mt"><span class="ic-gold"></span> <b>${UI.fmtNum(d.priceGold)}</b>
+          <span class="muted">за ${d.priceDays} дней</span></div>
+        <button class="btn vip-buy mt" id="vip-buy">Продлить подписку</button>` : ''}
     </div>
 
     <div class="card">
       <div class="name">Что входит</div>
       <div class="vip-list mt">
-        ${(d.benefits || []).map((b) => `
+        ${(d.benefits || []).map((b) => {
+          // Цифры выделяем золотым — по ним и читают выгоду
+          const hl = (t) => UI.esc(t).replace(/(\d+[\d\s]*%?)/g, '<b class="vip-num">$1</b>');
+          return `
           <div class="vip-item">
             <span class="vip-item-icon">${b.icon}</span>
             <div>
-              <b>${UI.esc(b.title)}</b>
-              <div class="muted small">${UI.esc(b.text)}</div>
+              <b class="vip-item-title">${hl(b.title)}</b>
+              <div class="muted small vip-item-text">${hl(b.text)}</div>
             </div>
-          </div>`).join('')}
+          </div>`; }).join('')}
       </div>
     </div>`;
+
+  // Покупка подписки за золото
+  const buyBtn = document.getElementById('vip-buy');
+  if (buyBtn) buyBtn.onclick = async () => {
+    const ok = await UI.confirm(
+      `Оформить VIP-подписку на <b>${d.priceDays} дней</b> за <span class="ic-gold"></span> <b>${UI.fmtNum(d.priceGold)}</b>?` +
+      `<br><span class="muted small">У вас сейчас: ${UI.fmtNum(d.myGold)} золота.` +
+      `${d.active ? ' Дни прибавятся к текущей подписке.' : ''}</span>`,
+      { title: 'VIP-подписка', icon: '👑', html: true, okText: 'Купить', cancelText: 'Отмена' });
+    if (!ok) return;
+    buyBtn.disabled = true;
+    try {
+      await API.post('/api/vip/buy', {});
+      UI.toast('👑 Подписка оформлена');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); buyBtn.disabled = false; }
+  };
 };
 
 App.screens.profile = async (c, param) => {
@@ -625,12 +655,14 @@ App.screens.profile = async (c, param) => {
         ${own ? '<a href="javascript:void 0" class="small pf2-edit-status" id="edit-status">редактировать статус</a>' : ''}
       </div>
       <div class="pf2-row">
-        <div class="pf2-avatar ${!p.avatar && p.profileFrame ? UI.esc(p.profileFrame) : ''}"
-             ${p.avatar ? `style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
-          ${p.avatar ? '' : '<span class="pf2-avatar-stub">👤</span>'}
-          <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
+        <div class="pf2-avatar-col">
+          <div class="pf2-avatar ${!p.avatar && p.profileFrame ? UI.esc(p.profileFrame) : ''}"
+               ${p.avatar ? `style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
+            ${p.avatar ? '' : '<span class="pf2-avatar-stub">👤</span>'}
+            <span class="pf-online-dot">${p.online ? '🟢' : '⚪'}</span>
+          </div>
+          ${own ? `<button class="btn btn-inline pf-avatar-change" id="pf-avatar-btn">${p.avatar ? '🖼 Сменить' : '🖼 Поставить'}</button>` : ''}
         </div>
-        ${own ? `<button class="btn btn-inline pf-avatar-change" id="pf-avatar-btn">${p.avatar ? '🖼 Сменить аватар' : '🖼 Поставить аватар'}</button>` : ''}
         <div class="pf2-info">
           <div class="kv" style="padding:2px 0"><span class="k">Звание:</span><span class="v" style="color:var(--green);font-weight:700">${UI.esc(p.rank)}</span></div>
           <div class="pf2-stats-label">Статистика:</div>
@@ -647,7 +679,7 @@ App.screens.profile = async (c, param) => {
         <div class="pf2-vip-note">${App.me.vip
           ? `👑 VIP активен · осталось ${Math.max(1, Math.ceil((App.me.vipUntil - Date.now()) / 86400000))} дн.`
           : 'Ощутите все преимущества и удобства игры!'}</div>
-        <button class="btn pf2-vip-btn" id="pf-vip">${App.me.vip ? 'Мои преимущества' : 'Стать VIP'}</button>
+        <button class="btn pf2-vip-btn vip-buy" id="pf-vip">${App.me.vip ? 'Моя подписка' : 'Купить VIP'}</button>
         <a href="javascript:void 0" class="pf2-vip-more" id="pf-vip-more">Что даёт подписка</a>
       </div>
       ${p.power ? `

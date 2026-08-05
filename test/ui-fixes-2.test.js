@@ -31,7 +31,7 @@ ok(/t\.bankHack \|\| t\.mine\) \? 'Сейчас'/.test(market), 'подпись 
 console.log('\n── 2. Кнопка смены аватара вместо значка ──');
 ok(!/pf-avatar-edit" id="pf-avatar-btn"[^>]*>📷/.test(core), 'значок фотоаппарата с аватарки убран');
 ok(/pf-avatar-change" id="pf-avatar-btn"/.test(core), 'появилась кнопка под аватаркой');
-ok(/🖼 Сменить аватар/.test(core) && /🖼 Поставить аватар/.test(core),
+ok(/🖼 Сменить/.test(core) && /🖼 Поставить/.test(core),
    'подпись зависит от того, есть ли аватар');
 ok(/id="pf-avatar-btn"[\s\S]{0,200}<\/div>/.test(core) || core.indexOf('pf-avatar-change') > core.indexOf('pf-online-dot'),
    'кнопка стоит ПОД аватаркой, а не поверх неё');

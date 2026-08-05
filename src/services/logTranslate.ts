@@ -48,6 +48,31 @@ function describe(path: string, body?: any, result?: any): string | null {
     if (/^\/api\/notifications\/[^/]+\/read$/.test(path)) {
       return '🔔 Прочитал уведомление';
     }
+    // Лоты дня и подписка: без этих строк журнал показывал сырые адреса
+    // вида «/api/lots/buy», по которым ничего не понять
+    if (path === '/api/lots/bid') {
+      return `🔨 Ставка на лот «${body.devName || body.devId || '—'}» — 🪙 ${body.gold || 0}`;
+    }
+    if (path === '/api/lots/buy') {
+      return `🛒 Купил на лотах: ${body.itemName || body.itemId || '—'}` +
+             `${body.qty ? ' ×' + body.qty : ''} за 🪙 ${body.gold || 0}` +
+             `${body.discountPct ? ` (скидка ${body.discountPct}%)` : ''}`;
+    }
+    if (path === '/api/admin/vip/grant') {
+      return `👑 Выдал VIP игроку ${body.targetName || '—'} на ${body.days || 0} дн.`;
+    }
+    if (path === '/api/admin/vip/revoke') {
+      return `👑 Снял VIP с игрока ${body.targetName || '—'}`;
+    }
+    if (path === '/api/vip/buy') {
+      return `👑 Купил VIP на ${body.days || 7} дн. за 🪙 ${body.gold || 0}`;
+    }
+    if (path === '/system/lot-win') {
+      return `🏆 Выиграл лот «${body.devName || body.devId || '—'}» за 🪙 ${body.gold || 0}`;
+    }
+    if (path === '/system/lot-refund') {
+      return `↩️ Возврат ставки за лот «${body.devName || body.devId || '—'}» — 🪙 ${body.gold || 0}`;
+    }
     // Группы (альянс/легион) — общая логика для обоих :kind, чтобы не
     // дублировать 8 действий × 2 вида группы. targetName берём из body,
     // если роут его передаёт (сейчас — нет, тогда просто id).

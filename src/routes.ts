@@ -503,7 +503,12 @@ function registerRoutes(app: any) {
       reroll: vip.left(req.user, 'reroll'),
     },
     canRenameFree: vip.canRenameFree(req.user),
+    priceGold: vip.PRICE_GOLD,
+    priceDays: vip.PRICE_DAYS,
+    myGold: req.user.gold || 0,
   }));
+
+  app.add('POST', '/api/vip/buy', act((req, n) => vip.buy(req.user, n)));
 
   // Выдача и снятие — зона «Ресурсы»: подписка это благо, как и золото
   app.add('POST', '/api/admin/vip/grant', act((req, n) => {
@@ -804,62 +809,60 @@ function registerRoutes(app: any) {
   // иначе смысл контроля теряется.
   app.add('GET', '/api/admin/gold-log', async (req) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
-    const limit = u.clamp(u.toInt(req.query.limit, 300), 1, 2000);
-    const source = String(req.query.source || 'all');
+    const limit = u.clamp(u.toInt(req.query.limit, 200), 1, 1000);
+    const who = String(req.query.userId || '').trim();
+    const stats = require('./services/stats');
 
-    // По какому пути какой источник золота
-    const SOURCES: Array<[RegExp, string, string]> = [
-      [/\/api\/daily\/claim/,        'quest',    'Поручение'],
-      [/\/api\/daily\/bonus/,        'quest',    'Бонус за поручения'],
-      [/\/api\/weekly\/(claim|bonus)/, 'weekly', 'Недельное поручение'],
-      [/\/api\/contracts\/claim/,    'contract', 'Контракт'],
-      [/\/api\/admin\/(grant|grant-all|rewards)/, 'admin', 'Выдача администрацией'],
-      [/\/api\/login-reward\/claim/,  'login',    'Награда за вход'],
-      [/\/api\/season|\/api\/admin\/season/, 'season', 'Сезон'],
-      [/\/api\/payments/,            'payment',  'Покупка'],
-      [/\/api\/referral/,            'referral', 'Приглашение друга'],
-      [/\/api\/achievements/,        'achieve',  'Достижение'],
-    ];
-    const classify = (path: string) => {
-      for (const [re, id, label] of SOURCES) if (re.test(path || '')) return { id, label };
-      return { id: 'other', label: 'Прочее' };
-    };
+    // Список игроков с движением золота — чтобы выбрать, чью историю смотреть.
+    // Данные берём из накопленной статистики: она и так ведёт разбивку
+    // по источникам, а журнал действий для сводки слишком «сырой».
+    const live = Object.values(player.users()).filter((p: any) => !p.isBot);
+    const players = live
+      .map((p: any) => {
+        const st = (p.stats || {}) as any;
+        const got = Object.values(st.goldGot || {}).reduce((a: any, b: any) => a + b, 0) as number;
+        const spent = Object.values(st.goldSpent || {}).reduce((a: any, b: any) => a + b, 0) as number;
+        return { id: p.id, name: p.name, level: p.level, now: p.gold || 0, got, spent, vip: require('./services/vip').isVip(p) };
+      })
+      .filter((p) => p.got > 0 || p.spent > 0 || p.now > 0)
+      .sort((a, b) => b.got - a.got);
 
-    let logs: any[] = [];
-    try { logs = await auditLog.listAll(3000); } catch (e) {}
-    const users = player.users();
-    const rows = logs
-      .map((l: any) => ({ ...l, src: classify(l.path) }))
-      .filter((l: any) => source === 'all' || l.src.id === source)
-      // Оставляем только то, где золото реально могло начислиться
-      .filter((l: any) => /gold|золот|🪙/i.test(JSON.stringify(l.body || {}) + (l.human || '') + l.path)
-                       || ['quest','weekly','contract','admin','login','season','payment','referral','achieve'].includes(l.src.id))
-      .slice(0, limit)
-      .map((l: any) => ({
-        at: l.at, userId: l.userId, userName: l.userName || (users[l.userId] || {}).name || '—',
-        source: l.src.id, sourceLabel: l.src.label,
-        path: l.path, human: l.human || '',
-        gold: (() => {
-          const m = /🪙\s*([\d\s]+)/.exec(String(l.human || ''));
-          if (m) return Number(m[1].replace(/\s/g, '')) || 0;
-          const b: any = l.body || {};
-          return Number(b.gold) || 0;
-        })(),
-      }));
-
-    const bySource: Record<string, { count: number; gold: number; label: string }> = {};
-    for (const r of rows) {
-      if (!bySource[r.source]) bySource[r.source] = { count: 0, gold: 0, label: r.sourceLabel };
-      bySource[r.source].count++;
-      bySource[r.source].gold += r.gold;
+    // Если игрок не выбран — отдаём только список и общую сводку
+    if (!who) {
+      const totals = players.reduce((acc, p) => {
+        acc.got += p.got; acc.spent += p.spent; acc.now += p.now; return acc;
+      }, { got: 0, spent: 0, now: 0 });
+      return { players, totals, rows: [], selected: null };
     }
+
+    const target: any = player.users()[who];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    const report = stats.report(target);
+
+    // История операций конкретного игрока — с человеческим описанием
+    let logs: any[] = [];
+    try { logs = await auditLog.listForUser(who, 500); } catch (e) {}
+    const translate = require('./services/logTranslate');
+    const rows = logs
+      .map((l: any) => {
+        const human = l.human || translate.describe(l.path, l.body, l.result) || '';
+        // Сумма золота: из описания или из тела запроса
+        const m = /🪙\s*([\d\s]+)/.exec(human);
+        const gold = m ? Number(m[1].replace(/\s/g, '')) || 0 : (Number((l.body || {}).gold) || 0);
+        return { at: l.at, text: human || l.path, gold, path: l.path };
+      })
+      .filter((r) => r.gold > 0)
+      .slice(0, limit);
+
     return {
-      sources: [{ id: 'all', label: 'Все источники' },
-                ...SOURCES.filter((x, i, a) => a.findIndex((y) => y[1] === x[1]) === i)
-                          .map(([, id, label]) => ({ id, label })),
-                { id: 'other', label: 'Прочее' }],
-      rows, bySource,
-      totalGold: rows.reduce((n, r) => n + r.gold, 0),
+      players,
+      selected: {
+        id: target.id, name: target.name, level: target.level,
+        now: target.gold || 0,
+        got: report.gold.total, spent: report.gold.spent,
+        bySource: report.gold.bySource,
+      },
+      rows,
     };
   }, { admin: true });
 

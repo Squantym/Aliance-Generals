@@ -143,6 +143,10 @@ function settleOld(currentDay: string): void {
         lot.winnerGold = win.gold;
         try {
           const dev: any = config.SECRET_DEVS.find((x: any) => x.id === lot.devId);
+          auditLog.record({
+            userId: winner.id, userName: winner.name, path: '/system/lot-win',
+            body: { devId: lot.devId, devName: dev ? dev.name : lot.devId, gold: win.gold },
+          });
           require('./notifications').push(winner.id, 'lot_won',
             `🏆 Вы выиграли лот: ${dev ? dev.name : lot.devId} за 🪙 ${win.gold}`, { devId: lot.devId });
         } catch (e) {}
@@ -153,6 +157,13 @@ function settleOld(currentDay: string): void {
         if (!loser) continue;
         player.addGold(loser, b.gold, 'lot_refund');
         db.markUser(loser.id);
+        try {
+          const dv: any = config.SECRET_DEVS.find((x: any) => x.id === lot.devId);
+          auditLog.record({
+            userId: loser.id, userName: loser.name, path: '/system/lot-refund',
+            body: { devId: lot.devId, devName: dv ? dv.name : lot.devId, gold: b.gold },
+          });
+        } catch (e) {}
         try {
           require('./notifications').push(loser.id, 'lot_lost',
             `Ставка не выиграла — 🪙 ${b.gold} возвращены`, { devId: lot.devId });
@@ -245,11 +256,11 @@ function bid(user: User, devId: string, gold: number, notices: Notices) {
   db.markUser(user.id);
   db.save('lots');
   db.save('users');
+  const dev: any = config.SECRET_DEVS.find((x: any) => x.id === devId);
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/lots/bid',
-    body: { devId, gold: amount },
+    body: { devId, devName: dev ? dev.name : devId, gold: amount },
   });
-  const dev: any = config.SECRET_DEVS.find((x: any) => x.id === devId);
   notices.push(`🔨 Ставка 🪙 ${amount} на «${dev ? dev.name : devId}» принята. Итоги в полночь по Москве.`);
   return view(user);
 }
@@ -287,7 +298,7 @@ function buyBuff(user: User, itemId: string, qty: number, notices: Notices) {
 
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/lots/buy',
-    body: { itemId, qty: n, gold: total, discountPct: lot.discountPct },
+    body: { itemId, itemName: item ? item.name : itemId, qty: n, gold: total, discountPct: lot.discountPct },
   });
   notices.push(`✅ Куплено: ${item ? item.name : itemId} ×${n} за 🪙 ${total} (скидка ${lot.discountPct}%)`);
   return view(user);

@@ -2478,14 +2478,28 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 .pf2-status { margin-top: 6px; }
 .pf2-edit-status { color: var(--green); text-decoration: underline; text-underline-offset: 2px; }
 .pf2-row { display: flex; gap: 12px; margin-top: 10px; align-items: stretch; }
+/* Колонка с аватаркой: сама картинка + кнопка под ней. Без обёртки
+   кнопка становилась соседом аватарки в строке и растягивалась во всю
+   высоту, а аватарка тянулась по высоте всей карточки. */
+.pf2-avatar-col {
+  flex: 0 0 148px; display: flex; flex-direction: column; gap: 6px;
+  align-self: flex-start;
+}
+.pf2-avatar-col .pf-avatar-change { width: 100%; margin: 0; }
+
 .pf2-avatar {
-  position: relative; flex: 0 0 148px; min-height: 196px;
+  position: relative; width: 100%; aspect-ratio: 3 / 4; min-height: 0;
   border: 1px solid var(--border); border-radius: 6px;
   background-color: var(--panel-2);
   background-size: cover; background-position: top center;
   display: flex; align-items: center; justify-content: center;
 }
 .pf2-avatar-stub { font-size: 46px; opacity: .5; }
+@media (max-width: 420px) {
+  .pf2-avatar-col { flex: 0 0 108px; }
+  .pf2-avatar-stub { font-size: 34px; }
+  .pf2-avatar-col .pf-avatar-change { font-size: 10.5px; padding: 4px 6px; }
+}
 .pf2-avatar .pf-online-dot { position: absolute; top: 4px; left: 6px; font-size: 11px; }
 .pf2-avatar .pf-avatar-edit { position: absolute; bottom: 4px; right: 6px; }
 .pf2-info { flex: 1; min-width: 0; }
@@ -3320,3 +3334,118 @@ body.theme-noir .field-hint { color: #8a8a92; }
 
 /* Инструменты картинки босса в панели */
 .boss-img-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* ═══ Лоты дня: карточки ═════════════════════════════════════════════ */
+.lots-meta {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;
+  font-size: 13.5px;
+}
+.lot-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px; margin-top: 10px;
+}
+.lot-card {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  background: var(--panel-2);
+}
+.lot-card.lot-leading { border-color: #4d7a3d; box-shadow: 0 0 0 1px rgba(90,150,70,.35) inset; }
+.lot-card.lot-out { opacity: .55; }
+.lot-card-img {
+  position: relative; aspect-ratio: 16 / 10; display: flex;
+  align-items: center; justify-content: center; overflow: hidden;
+}
+.lot-card-img img { width: 100%; height: 100%; object-fit: cover; }
+.lot-noimg { font-size: 40px; opacity: .5; }
+.lot-card-body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 5px; }
+.lot-card-name { font-weight: 700; font-size: 13.5px; line-height: 1.25; }
+.lot-desc { line-height: 1.4; min-height: 2.6em; }
+.lot-stats { display: flex; gap: 12px; font-size: 12.5px; color: var(--dim); }
+.lot-top { font-size: 12.5px; }
+.lot-top-gold { font-size: 14px; color: var(--gold); }
+.lot-mine { color: var(--orange-1); font-size: 12px; }
+.lot-bid-info { min-height: 34px; }
+.lot-disc {
+  position: absolute; top: 6px; right: 6px;
+  font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 5px;
+  background: rgba(20,40,15,.85); color: #a8d18f; border: 1px solid #4d7a3d;
+}
+.lot-stock-bar {
+  height: 5px; border-radius: 3px; background: rgba(255,255,255,.08);
+  overflow: hidden; margin-bottom: 3px;
+}
+.lot-stock-bar i { display: block; height: 100%; background: linear-gradient(90deg, #5fbf4a, #8fd47a); }
+.lot-price { display: flex; align-items: baseline; gap: 8px; font-size: 15px; }
+.lot-price s { font-size: 12px; }
+.lot-actions { display: flex; gap: 6px; margin-top: 2px; }
+.lot-actions .lot-input { flex: 1; min-width: 0; }
+.lot-sold { text-align: center; color: var(--red); font-size: 13px; padding: 6px 0; }
+@media (max-width: 420px) {
+  .lot-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .lot-card-name { font-size: 12.5px; }
+  .lot-desc { display: none; }
+}
+
+/* ═══ Кнопка покупки VIP ═════════════════════════════════════════════
+   На тёмных темах — золотая, на светлых — тёмная: на светлом фоне
+   золото по золоту не читалось. */
+.vip-buy {
+  width: 100%; font-weight: 800; letter-spacing: .4px; font-size: 15px;
+  color: #1a1408;
+  background: linear-gradient(150deg, #f3d27a, #c9a227);
+  border: 1px solid #b8952f;
+  box-shadow: 0 3px 14px rgba(220,180,70,.28);
+  opacity: 1; cursor: pointer;
+}
+.vip-buy:hover { background: linear-gradient(150deg, #ffe49a, #d9b134); }
+.vip-buy:disabled { opacity: .6; cursor: default; }
+/* Светлые темы: тёмная кнопка с золотой каймой */
+body.theme-light .vip-buy,
+body.theme-paper .vip-buy,
+body.theme-sand .vip-buy {
+  color: #f3d27a;
+  background: linear-gradient(150deg, #2a2416, #171309);
+  border-color: #8d7526;
+  box-shadow: 0 3px 14px rgba(0,0,0,.25);
+}
+body.theme-light .vip-buy:hover,
+body.theme-paper .vip-buy:hover,
+body.theme-sand .vip-buy:hover { background: linear-gradient(150deg, #3a3220, #221c10); }
+
+.vip-price { font-size: 19px; }
+.vip-price b { color: var(--gold); }
+
+/* Список преимуществ: цифры золотом */
+.vip-num { color: var(--gold); font-weight: 700; }
+.vip-item-title { font-size: 14px; }
+.vip-item-text { line-height: 1.5; margin-top: 2px; }
+.vip-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 0; border-bottom: 1px solid var(--border-dim);
+}
+.vip-item:last-child { border-bottom: none; }
+.vip-item-icon { font-size: 19px; flex: 0 0 24px; text-align: center; }
+
+/* Журнал золота в панели */
+.gold-totals { display: flex; gap: 20px; flex-wrap: wrap; }
+.gold-totals div { display: flex; flex-direction: column; }
+.gold-totals b { font-size: 16px; }
+.gold-sel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gold-player {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 7px 8px; border-bottom: 1px solid var(--border-dim); border-radius: 6px;
+}
+.gold-player:hover { background: var(--panel-2); }
+.gold-player:last-child { border-bottom: none; }
+.gold-player-nums { display: flex; gap: 10px; font-size: 12.5px; white-space: nowrap; }
+.gold-op {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--border-dim); font-size: 13px;
+}
+.gold-op:last-child { border-bottom: none; }
+.gold-op-date { white-space: nowrap; }
+.gold-op-sum { white-space: nowrap; }
+@media (max-width: 460px) {
+  .gold-player { flex-wrap: wrap; }
+  .gold-op { flex-wrap: wrap; gap: 4px 10px; }
+}

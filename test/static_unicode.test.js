@@ -22,7 +22,7 @@ ok('проверка идёт ПОСЛЕ декодирования (иначе 
 
 console.log('\n[3] Путь с кириллицей проходит валидацию ссылки на фото');
 const we = fs.readFileSync(path.join(ROOT, 'src/services/worldEvent.ts'), 'utf8');
-ok('sanitizeImage принимает /img/... без ограничений на алфавит', /\^\\\/\(img\|images\|uploads\)\\\//.test(we));
+ok('sanitizeImage принимает внутренние пути без ограничений на алфавит', /\^\\\/\(img\|images\|uploads\|forum-img\)\\\//.test(we));
 
 console.log('\n[4] Папка для фото боссов существует');
 ok('public/img/bosses создана', fs.existsSync(path.join(ROOT, 'public/img/bosses')));

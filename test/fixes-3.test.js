@@ -107,11 +107,15 @@ ok(/\/api\/admin\/gold-log/.test(routes), 'есть роут журнала зо
 const gl = routes.slice(routes.indexOf("'/api/admin/gold-log'"), routes.indexOf('ЖУРНАЛ ДЕЙСТВИЙ СОТРУДНИКОВ'));
 ok(/isOwner\(req\.user\)\) throw new u\.ApiError\('Только для владельца'\)/.test(gl),
    'доступен только владельцу — администраторам нет');
-for (const src of ['quest', 'contract', 'admin', 'season', 'login', 'referral']) {
-  ok(gl.includes(`'${src}'`), `источник «${src}» распознаётся`);
+// Источники теперь берутся из накопленной статистики, а не угадываются
+// по адресам запросов — цифры совпадают с тем, что видит игрок
+ok(/report\.gold\.bySource/.test(gl), 'разбивка по источникам берётся из статистики');
+const statsSrc = fs.readFileSync(ROOT + '/dist/src/services/stats.js', 'utf8');
+for (const src of ['quest', 'season', 'purchase', 'admin']) {
+  ok(statsSrc.includes(src), `источник «${src}» учитывается статистикой`);
 }
-ok(/bySource/.test(gl), 'есть сводка по источникам');
-ok(/req\.query\.source/.test(gl), 'работает фильтр по источнику');
+ok(/req\.query\.userId/.test(gl), 'выбирается конкретный игрок');
+ok(/const players = live/.test(gl), 'отдаётся список игроков для выбора');
 const adminJs = fs.readFileSync(ROOT + '/public/js/admin.js', 'utf8');
 ok(/id:'gold'/.test(adminJs), 'вкладка «Золото» есть в панели');
 ok(/ownerOnly:true/.test(adminJs), 'помечена как владельческая');
