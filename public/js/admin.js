@@ -445,8 +445,10 @@ const Admin = {
           </div>` : ''}
       </div>`;
 
-    await UI.confirm(body, { title: 'Карточка игрока', icon: '👤', html: true, okText: 'Закрыть', cancelText: '' });
-    // Действия вешаем сразу после появления окна
+    // ВАЖНО: не ждём закрытия окна перед навешиванием обработчиков.
+    // С `await` они вешались уже на удалённую разметку — кнопки внутри
+    // карточки просто не нажимались.
+    const dlg = UI.confirm(body, { title: 'Карточка игрока', icon: '👤', html: true, okText: 'Закрыть', cancelText: '' });
     requestAnimationFrame(() => {
       const root = document.querySelector('.adm-card');
       if (!root) return;
@@ -461,6 +463,7 @@ const Admin = {
         };
       });
     });
+    await dlg;
   },
 
   // ═══ ВХОДЫ И УСТРОЙСТВА ══════════════════════════════════════════

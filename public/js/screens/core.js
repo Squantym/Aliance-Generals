@@ -831,6 +831,16 @@ App.screens.profile = async (c, param) => {
   }
 
   // Разворачивание/сворачивание подробной статистики мощи
+  // Инструменты подписки. Раньше они висели внутри ветки «чужой профиль»,
+  // а показываются только в своём — обработчики не навешивались вовсе,
+  // и кнопки не нажимались.
+  const statsBtn = document.getElementById('pf-stats');
+  if (statsBtn) statsBtn.onclick = () => App.showFullStats();
+  const spiedBtn = document.getElementById('pf-spied');
+  if (spiedBtn) spiedBtn.onclick = () => App.showSpiedBy();
+  const renameBtn = document.getElementById('pf-rename');
+  if (renameBtn) renameBtn.onclick = () => App.showRename();
+
   const statsToggle = document.getElementById('pf-stats-toggle');
   if (statsToggle) {
     statsToggle.onclick = () => {
@@ -917,14 +927,6 @@ App.screens.profile = async (c, param) => {
         setTimeout(() => { refreshMod(); App.rerender(); }, 400);
       };
     }
-
-    // Инструменты подписки: статистика, список разведавших, смена имени
-    const statsBtn = document.getElementById('pf-stats');
-    if (statsBtn) statsBtn.onclick = () => App.showFullStats();
-    const spiedBtn = document.getElementById('pf-spied');
-    if (spiedBtn) spiedBtn.onclick = () => App.showSpiedBy();
-    const renameBtn = document.getElementById('pf-rename');
-    if (renameBtn) renameBtn.onclick = () => App.showRename();
 
     const btnSpy = document.getElementById('pf-spy');
     if (btnSpy) btnSpy.onclick = async () => {
