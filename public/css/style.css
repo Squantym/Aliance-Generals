@@ -3576,11 +3576,30 @@ body.theme-sand .vip-buy:hover { background: linear-gradient(150deg, #3a3220, #2
 }
 .cab-current { border-color: var(--orange-1); box-shadow: 0 0 0 1px rgba(200,120,40,.25) inset; }
 .cab-banned { opacity: .6; }
+/* Аватарка в кабинете. Раньше стояло cover — картинка растягивалась на
+   всю рамку и обрезалась по краям, у портретов срезало лицо. Теперь
+   contain: изображение помещается целиком, а пустоту по бокам закрывает
+   размытая копия того же снимка, чтобы карточка не выглядела дырявой. */
 .cab-ava {
-  height: 120px; background: var(--panel); background-size: cover; background-position: center;
+  position: relative; height: 150px; background: var(--panel);
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
 }
-.cab-ava-stub { font-size: 40px; opacity: .4; }
+.cab-ava::before {
+  content: ''; position: absolute; inset: 0;
+  background-image: inherit; background-size: cover; background-position: center;
+  filter: blur(14px) brightness(.45); transform: scale(1.15);
+}
+/* Сама карточка показывает картинку целиком поверх размытого фона.
+   Слой ::before идёт под ней, потому что у него нет z-index, а фон
+   элемента рисуется ниже псевдоэлемента — поэтому поднимаем картинку
+   отдельным слоем ::after. */
+.cab-ava.has-photo::after {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background-image: inherit; background-size: contain;
+  background-position: center; background-repeat: no-repeat;
+}
+.cab-ava-stub { position: relative; z-index: 1; font-size: 40px; opacity: .4; }
 .cab-body { padding: 9px 11px 11px; }
 .cab-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .cab-rows { margin-top: 6px; font-size: 12.5px; }
@@ -3598,5 +3617,17 @@ body.theme-sand .vip-buy:hover { background: linear-gradient(150deg, #3a3220, #2
 .cab-create .field { width: 100%; box-sizing: border-box; }
 @media (max-width: 420px) {
   .cab-grid { grid-template-columns: 1fr; }
-  .cab-ava { height: 100px; }
+  .cab-ava { height: 130px; }
 }
+
+/* Отметка нераспределённых очков навыков.
+   Раньше рядом с уровнем стоял значок с числом («+31») — на узких
+   экранах колонка не вмещала и его обрезало. Точка занимает несколько
+   точек ширины, а точное число видно в подсказке и на самом экране
+   навыков, куда ведёт нажатие. */
+.sp-dot {
+  display: inline-block; margin-left: 3px; vertical-align: super;
+  font-size: 9px; line-height: 1; color: var(--orange-1);
+  animation: spPulse 2s ease-in-out infinite;
+}
+@keyframes spPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }

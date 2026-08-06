@@ -201,6 +201,30 @@ ok(/Логин один на все ваши персонажи/.test(coreSrc), 
 const routesSrc = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
 ok(/accountLogin: \(req\.user as any\)\.accountLogin/.test(routesSrc), 'текущий логин приходит в игру');
 
+console.log('\n── 13. Аватарка в кабинете помещается целиком ──');
+const cssCab = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+const avaBlock = cssCab.slice(cssCab.indexOf('.cab-ava {'), cssCab.indexOf('.cab-ava-stub'));
+ok(!/\.cab-ava \{[^}]*background-size: cover/.test(avaBlock),
+   'обрезка убрана — вертикальные портреты теряли больше половины кадра');
+ok(/\.cab-ava\.has-photo::after[\s\S]{0,200}background-size: contain/.test(cssCab),
+   'картинка вписывается целиком');
+ok(/filter: blur\(14px\)/.test(avaBlock), 'пустоту по бокам закрывает размытая копия');
+ok(/z-index: 1/.test(cssCab.slice(cssCab.indexOf('.cab-ava.has-photo::after'), cssCab.indexOf('.cab-ava.has-photo::after') + 260)),
+   'картинка лежит поверх размытого фона');
+ok(/\.cab-ava \{[^}]*height: 150px/.test(avaBlock), 'рамка стала выше — портрет виден лучше');
+ok(/\.cab-ava \{[^}]*overflow: hidden/.test(avaBlock), 'размытие не вылезает за карточку');
+ok(/\.cab-ava-stub \{ position: relative; z-index: 1/.test(cssCab),
+   'заглушка не прячется под фоном');
+ok(/@media \(max-width: 420px\)[\s\S]{0,220}\.cab-ava \{ height: 130px/.test(cssCab),
+   'на телефоне рамка чуть ниже');
+// Проверяем саму суть: сколько кадра терялось при обрезке
+const fits = (w, h, bw = 220, bh = 150) => {
+  const contain = Math.min(bw / w, bh / h);
+  const cover = Math.max(bw / w, bh / h);
+  return { shown: Math.round((bw * bh) / (w * cover * h * cover) * 100) };
+};
+ok(fits(400, 600).shown < 50, `у портрета 400×600 обрезка показывала лишь ${fits(400, 600).shown}% кадра`);
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

@@ -68,5 +68,21 @@ ok(/@media \(max-width: 340px\)[\s\S]{0,400}font-size: 10\.5px/.test(css), 'на
 ok(/text-overflow: ellipsis/.test(css.slice(css.indexOf('@media (max-width: 340px)'))),
    'если сумма всё же длиннее — многоточие вместо обрезки без предупреждения');
 
+console.log('\n── 6. Очки навыков в шапке ──');
+// Значок с числом («+31») не помещался в колонку уровня на узких экранах
+ok(!/class="badge">\+' \+ m\.skillPoints/.test(app), 'значок с числом убран из шапки');
+ok(/class="sp-dot"/.test(app), 'вместо него компактная точка');
+ok(/m\.skillPoints > 0 \? '<span class="sp-dot"/.test(app), 'точка показывается только при наличии очков');
+ok(/title="\$\{m\.skillPoints > 0 \? 'Нераспределённых очков навыков: '/.test(app),
+   'точное число видно в подсказке');
+ok(/aria-label="есть нераспределённые очки"/.test(app), 'есть подпись для озвучивания');
+ok(/\.sp-dot \{[\s\S]{0,200}font-size: 9px/.test(css), 'точка мелкая');
+ok(/@keyframes spPulse/.test(css), 'мигает, чтобы не потеряться');
+ok(/\.sp-dot \{[\s\S]{0,200}color: var\(--orange-1\)/.test(css), 'заметного цвета');
+// Длина строки — то, из-за чего колонку обрезало
+const was = '⭐ Ур. 300 +31'.length;
+const now = '⭐ Ур. 300●'.length;
+ok(now < was, `строка короче на ${was - now} знака: «${was}» → «${now}»`);
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

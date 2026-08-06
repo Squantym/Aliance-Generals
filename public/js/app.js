@@ -2825,7 +2825,7 @@ const App = {
       <div class="res-row">
         <div class="clickable" onclick="App.go('bank')" title="${UI.fmtMoneyFull(m.dollars)}"><span class="ic-dollar"></span> <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
         <div class="clickable" onclick="App.go('market')"><span class="ic-gold" aria-hidden="true"></span> <span class="gold" id="hd-gold">${UI.fmtNum(m.gold)}</span></div>
-        <div class="clickable" onclick="App.go('${lvlTarget}')">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? ' <span class="badge">+' + m.skillPoints + '</span>' : ''}</div>
+        <div class="clickable" onclick="App.go('${lvlTarget}')" title="${m.skillPoints > 0 ? 'Нераспределённых очков навыков: ' + m.skillPoints : 'Уровень ' + m.level}">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? '<span class="sp-dot" aria-label="есть нераспределённые очки">●</span>' : ''}</div>
         <div class="clickable" onclick="App.go('notifications')">${bell}</div>
         <div class="clickable" onclick="App.go('mail')">${mail}</div>
       </div>
