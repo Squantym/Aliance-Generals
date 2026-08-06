@@ -3189,7 +3189,15 @@ body.theme-noir .field-hint { color: #8a8a92; }
   display: block; width: 70%; max-width: 100%; height: auto;
   margin: 12px auto; border-radius: 8px; border: 1px solid var(--border);
 }
-.forum-img-preview { width: 60%; margin: 10px auto 0; }
+/* Предпросмотр в окне создания темы: ограничиваем ВЫСОТУ, иначе
+   вертикальный скриншот с телефона выталкивает кнопку «Создать»
+   за пределы окна */
+.forum-img-preview {
+  width: auto; max-width: 60%; max-height: 150px;
+  object-fit: contain; margin: 8px auto 0;
+}
+/* Окно создания темы не должно вырастать выше экрана */
+.forum-new { max-height: 62vh; overflow-y: auto; }
 .forum-acts { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .forum-comment { padding: 8px 0; border-bottom: 1px solid var(--border-dim); }
@@ -3448,4 +3456,78 @@ body.theme-sand .vip-buy:hover { background: linear-gradient(150deg, #3a3220, #2
 @media (max-width: 460px) {
   .gold-player { flex-wrap: wrap; }
   .gold-op { flex-wrap: wrap; gap: 4px 10px; }
+}
+
+/* Таблицы журнала золота */
+.table-wrap { overflow-x: auto; }
+.gold-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gold-table th {
+  text-align: left; font-weight: 600; color: var(--dim); font-size: 11.5px;
+  text-transform: uppercase; letter-spacing: .3px;
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
+}
+.gold-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-dim); vertical-align: top; }
+.gold-table tbody tr:last-child td { border-bottom: none; }
+.gold-table .num { text-align: right; white-space: nowrap; }
+.gold-table .nowrap { white-space: nowrap; }
+.gold-table tbody tr[data-gp] { cursor: pointer; }
+.gold-table tbody tr[data-gp]:hover { background: var(--panel-2); }
+.gold-group td { background: rgba(255,255,255,.03); }
+.gold-sub td:first-child { padding-left: 20px; }
+.gold-detail td { padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+.gold-detail td:first-child { padding-left: 34px; color: var(--dim); }
+
+/* Инструменты VIP в профиле */
+.pf2-vip-tools { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.pf2-vip-tools .btn { font-size: 12px; }
+
+/* Полная статистика */
+.stats-full { text-align: left; max-height: 62vh; overflow-y: auto; }
+.stats-sec { margin-bottom: 12px; }
+.stats-title {
+  font-weight: 700; color: var(--orange-1); font-size: 13.5px;
+  margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid var(--border-dim);
+}
+.stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.stats-table td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,.04); }
+.stats-table td.num { text-align: right; white-space: nowrap; }
+.stats-table tr:last-child td { border-bottom: none; }
+
+/* Кто разведал */
+.spied-list { text-align: left; }
+.spied-row {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--border-dim);
+}
+.spied-row:last-of-type { border-bottom: none; }
+.rename-box { text-align: left; }
+.rename-box .field { width: 100%; box-sizing: border-box; }
+
+/* Входы, устройства, адреса */
+.access-box { text-align: left; max-height: 64vh; overflow-y: auto; }
+.access-sec { margin-bottom: 12px; }
+.access-title {
+  font-weight: 700; color: var(--orange-1); font-size: 13.5px;
+  margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid var(--border-dim);
+}
+.access-mail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.access-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.access-table th {
+  text-align: left; font-size: 11px; color: var(--dim); text-transform: uppercase;
+  padding: 3px 6px; border-bottom: 1px solid var(--border);
+}
+.access-table td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,.04); }
+.access-table td.num { text-align: right; }
+.access-table .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.access-table .nowrap { white-space: nowrap; }
+
+/* Несколько аккаунтов с одного адреса */
+.mc-group { padding: 7px 0; border-bottom: 1px solid var(--border-dim); }
+.mc-group:last-child { border-bottom: none; }
+.mc-ip { font-size: 13px; margin-bottom: 3px; }
+.mc-ip .mono { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--orange-1); }
+.mc-players { display: flex; gap: 6px; flex-wrap: wrap; }
+.mc-player {
+  font-size: 12px; padding: 2px 7px; border-radius: 5px;
+  background: var(--panel-2); border: 1px solid var(--border);
 }

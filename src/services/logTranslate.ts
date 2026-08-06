@@ -25,7 +25,11 @@ function skillName(id: string): string { return SKILL_NAMES[id] || id || '?'; }
 function unitName(id: string): string { const x = config.UNIT_BY_ID[id]; return x ? x.name : id; }
 function buildingName(id: string): string { const x = config.BUILDING_BY_ID[id]; return x ? x.name : id; }
 function itemName(id: string): string { const x = config.MARKET_ITEM_BY_ID[id]; return x ? x.name : id; }
-function conflictName(id: string): string { const x = config.CONFLICT_BY_ID[id]; return x ? x.name : id; }
+function conflictName(id: string): string {
+  if (!id) return 'спецоперация';
+  const x = config.CONFLICT_BY_ID[id];
+  return x ? x.name : String(id);
+}
 function trophyName(id: string): string {
   const x = (config.TROPHIES || []).find((t: any) => t.id === id);
   return x ? x.name : id;

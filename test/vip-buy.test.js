@@ -94,11 +94,58 @@ ok(/\.filter\(\(r\) => r\.gold > 0\)/.test(gl), 'показываются тол
 ok(/isOwner\(req\.user\)/.test(gl), 'раздел остаётся только для владельца');
 ok(/data-gp=/.test(adminJs), 'в панели игрок открывается нажатием');
 ok(/id="gold-back"/.test(adminJs), 'есть возврат к списку');
-ok(/gold-player-nums/.test(adminJs), 'у каждого видно получено, потрачено и остаток');
-ok(/Откуда пришло золото/.test(adminJs), 'разбивка по источникам показана');
+ok(/<th class="num">На счету<\/th>/.test(adminJs), 'у каждого видно получено, потрачено и остаток');
+ok(/sel\.groups/.test(adminJs), 'разбивка по источникам показана группами');
 ok(!/r\.sourceLabel/.test(adminJs), 'прежние технические ярлыки убраны');
 ok(css.includes('.gold-player'), 'стили списка добавлены');
 ok(css.includes('.gold-op'), 'стили истории добавлены');
+
+console.log('\n── 6. Журнал золота: таблица с расшифровкой ──');
+const stats = require(ROOT + '/dist/src/services/stats');
+const u2 = u;
+player.addGold(u2, 3300, 'purchase');
+player.addGold(u2, 500, 'event:Армада Кобальт');
+player.addGold(u2, 300, 'event:Армада Кобальт (топ урона)');
+player.addGold(u2, 800, 'season:Итоги недели — 1 место');
+player.addGold(u2, 1000, 'admin:Компенсация за баг');
+player.addGold(u2, -240, 'market');
+player.addGold(u2, -24, 'lot_buff:Боевой стимулятор');
+const rep = stats.report(u2);
+
+const bySrc = (id) => rep.gold.bySource.find((x) => x.id === id);
+ok(bySrc('purchase') && bySrc('purchase').value >= 3300, 'покупки за деньги учтены отдельно');
+ok(bySrc('event') && bySrc('event').value === 800, `события: ${bySrc('event').value}`);
+ok(bySrc('event').details.some((x) => x.label === 'Армада Кобальт'),
+   'видно, за КАКОЕ событие получено золото');
+ok(bySrc('event').details.length === 2, 'разные начисления одного события показаны раздельно');
+ok(bySrc('season') && bySrc('season').details.some((x) => /1 место/.test(x.label)),
+   'по сезону видно место, за которое дали награду');
+ok(bySrc('admin') && bySrc('admin').details.some((x) => /Компенсация/.test(x.label)),
+   'у выдачи администрацией видна причина');
+
+const bySpend = (id) => rep.gold.bySpending.find((x) => x.id === id);
+ok(bySpend('market') && bySpend('market').label === 'Чёрный рынок', 'траты на рынке подписаны по-русски');
+ok(bySpend('lot_buff') && bySpend('lot_buff').details.some((x) => x.label === 'Боевой стимулятор'),
+   'по лотам видно, что именно куплено');
+ok(rep.gold.bySpending.every((x) => x.label !== x.id), 'ни одна трата не показана техническим кодом');
+
+// Группировка поступлений на сервере
+const gl2 = routes.slice(routes.indexOf("'/api/admin/gold-log'"), routes.indexOf('ЖУРНАЛ ДЕЙСТВИЙ СОТРУДНИКОВ'));
+ok(/Куплено за деньги/.test(gl2), 'группа «Куплено за деньги»');
+ok(/Выиграно в игре/.test(gl2), 'группа «Выиграно в игре»');
+ok(/Начислено администрацией/.test(gl2), 'группа «Начислено администрацией»');
+ok(/spending: report\.gold\.bySpending/.test(gl2), 'траты отдаются отдельным разделом');
+
+// Таблицы в панели
+ok(/<table class="gold-table">/.test(adminJs), 'данные выводятся таблицей');
+ok(/<th>Игрок<\/th>/.test(adminJs), 'в списке игроков есть заголовки столбцов');
+ok(/<th class="num">Получено<\/th>/.test(adminJs) && /<th class="num">Потрачено<\/th>/.test(adminJs),
+   'столбцы «Получено» и «Потрачено»');
+ok(/📥 Получено/.test(adminJs) && /📤 Потрачено/.test(adminJs), 'разделы разнесены');
+ok(/gold-detail/.test(adminJs), 'подробности выводятся вложенными строками');
+ok(/Что произошло/.test(adminJs), 'в истории понятный заголовок вместо адреса');
+ok(css.includes('.gold-table'), 'стили таблицы добавлены');
+ok(/\.table-wrap \{ overflow-x: auto/.test(css), 'на узком экране таблица прокручивается');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

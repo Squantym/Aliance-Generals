@@ -64,6 +64,13 @@ function powerMul(user: any): number {
 }
 
 // ── Экран подкреплений ────────────────────────────────────────────
+// Дневной лимит отправок: у VIP больше. Функция нужна, потому что
+// лимит проверяется в трёх местах, и в одном из них он брался прямо
+// из конфига — подписка там не действовала.
+function perDayFor(user: any): number {
+  try { return require('./vip').reinforcePerDay(user); } catch (e) { return R.PER_DAY; }
+}
+
 function view(user: User) {
   const active = prune(user);
   const sent = sentToday(user);
@@ -84,7 +91,7 @@ function view(user: User) {
     else if (alreadyMine) reason = 'ваше подкрепление уже действует';
     else if (alreadyToday) reason = 'уже отправляли сегодня';
     else if (theirSlots) reason = 'у него все слоты заняты';
-    else if (sent.length >= R.PER_DAY) reason = 'ваш дневной лимит исчерпан';
+    else if (sent.length >= perDayFor(user)) reason = 'ваш дневной лимит исчерпан';
     return {
       id: ally.id, name: ally.name, level: ally.level, flag: player.flag(ally),
       canSend: !reason, reason,
@@ -94,7 +101,7 @@ function view(user: User) {
 
   return {
     maxActive: R.MAX_ACTIVE,
-    perDay: R.PER_DAY,
+    perDay: perDayFor(user),
     lifetimeH: R.LIFETIME_H,
     bonusPctEach: R.BONUS_PCT,
     // Мои активные подкрепления (кто прислал)
@@ -105,7 +112,7 @@ function view(user: User) {
     activeCount: active.length,
     totalBonusPct: bonusPct(user),
     sentToday: sent.length,
-    sentLeft: Math.max(0, R.PER_DAY - sent.length),
+    sentLeft: Math.max(0, perDayFor(user) - sent.length),
     allies,
   };
 }
@@ -122,8 +129,8 @@ function send(user: User, toId: string, notices: Notices) {
   }
 
   const sent = sentToday(user);
-  if (sent.length >= R.PER_DAY) {
-    throw new u.ApiError(`Лимит: ${R.PER_DAY} подкреплений в сутки. Попробуйте завтра.`);
+  if (sent.length >= perDayFor(user)) {
+    throw new u.ApiError(`Лимит: ${perDayFor(user)} подкреплений в сутки. Попробуйте завтра.`);
   }
   if (sent.some((x: any) => x.toId === toId)) {
     throw new u.ApiError('Этому союзнику вы уже отправляли подкрепление сегодня');
@@ -152,7 +159,7 @@ function send(user: User, toId: string, notices: Notices) {
   } catch (e) {}
 
   notices.push(`🎖 Подкрепление отправлено союзнику «${target.name}» на ${R.LIFETIME_H} ч. ` +
-    `Осталось отправок сегодня: ${Math.max(0, R.PER_DAY - sentToday(user).length)}.`);
+    `Осталось отправок сегодня: ${Math.max(0, perDayFor(user) - sentToday(user).length)}.`);
   return view(user);
 }
 

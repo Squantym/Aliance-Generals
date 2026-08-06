@@ -332,6 +332,13 @@ const App = {
       try { App.me = await API.get('/api/me'); }
       catch (e) { /* токен умер — попадём на экран входа */ }
     }
+    // Заблокированный аккаунт: показываем окно с причиной и сроком СРАЗУ
+    // при входе. Без этой проверки игра пряталась маршрутизатором, а окно
+    // не рисовалось — игрок видел чёрный экран и не понимал, что случилось.
+    if (App.me && App.me.banned && App.me.banInfo) {
+      App.showBanScreen(App.me.banInfo);
+      return;
+    }
     if (!App.me) location.hash = '#auth';
     App.route();
 
@@ -1995,9 +2002,23 @@ const App = {
       const out = document.getElementById('ban-logout');
       if (out) out.onclick = () => { API.setToken(''); location.href = '/'; };
     };
-    render();
+    try {
+      render();
+    } catch (e) {
+      // Запасной вариант: пустой чёрный экран — худшее, что можно
+      // показать заблокированному игроку. Пусть будет хотя бы текст.
+      popup.innerHTML = `
+        <div class="ban-screen-box">
+          <div class="ban-screen-icon">🚫</div>
+          <div class="ban-screen-title">Доступ заблокирован</div>
+          <div class="ban-screen-note">${UI.esc((info && info.reason) || 'Нарушение правил')}</div>
+          <button class="btn mt" id="ban-logout" style="width:100%">Выйти из аккаунта</button>
+        </div>`;
+      const out2 = document.getElementById('ban-logout');
+      if (out2) out2.onclick = () => { API.setToken(''); location.href = '/'; };
+    }
     clearInterval(App._banTimer);
-    App._banTimer = setInterval(render, 30000);   // обновляем отсчёт
+    App._banTimer = setInterval(() => { try { render(); } catch (e) {} }, 30000);
   },
 
   // ── Окно блокировки чата (для «Дозора» и администрации) ─────────
@@ -2200,6 +2221,130 @@ const App = {
   _banReason: '',
   _banScopes: ['global'],
   _banPurge: false,
+
+  // ── Инструменты VIP: статистика, разведавшие, смена позывного ───
+
+  // Полная статистика: всё, что игра накопила об игроке
+  async showFullStats() {
+    let r = null;
+    try { r = await API.get('/api/stats-full'); }
+    catch (e) { return UI.toast('⛔ ' + e.message); }
+
+    const num = (n) => UI.fmtNum(Math.round(n || 0));
+    const rows = (arr) => (arr || []).length
+      ? arr.map((x) => `<tr><td>${UI.esc(x.label)}</td><td class="num">${num(x.value)}</td></tr>`).join('')
+      : '<tr><td colspan="2" class="muted">нет данных</td></tr>';
+
+    await UI.confirm(`
+      <div class="stats-full">
+        <div class="stats-sec">
+          <div class="stats-title">⏱ В строю</div>
+          <table class="stats-table">
+            <tr><td>Часов в игре</td><td class="num">${r.hoursInGame}</td></tr>
+            <tr><td>Дней с регистрации</td><td class="num">${num(r.daysInService)}</td></tr>
+            <tr><td>Первый вход</td><td class="num">${r.firstSeen ? new Date(r.firstSeen).toLocaleDateString('ru-RU') : '—'}</td></tr>
+          </table>
+        </div>
+
+        <div class="stats-sec">
+          <div class="stats-title"><span class="ic-dollar"></span> Деньги</div>
+          <table class="stats-table">
+            <tr><td>Заработано всего</td><td class="num">${num(r.money.earned)}</td></tr>
+            <tr><td>Потрачено всего</td><td class="num">${num(r.money.spent)}</td></tr>
+            <tr><td>Потеряно</td><td class="num">${num(r.money.lost)}</td></tr>
+            <tr><td>Сейчас на руках</td><td class="num">${num(r.money.now)}</td></tr>
+          </table>
+        </div>
+
+        <div class="stats-sec">
+          <div class="stats-title"><span class="ic-gold"></span> Золото</div>
+          <table class="stats-table">
+            <tr><td><b>Получено всего</b></td><td class="num"><b>${num(r.gold.total)}</b></td></tr>
+            ${rows(r.gold.bySource)}
+            <tr><td><b>Потрачено всего</b></td><td class="num"><b>${num(r.gold.spent)}</b></td></tr>
+            ${rows(r.gold.bySpending)}
+            <tr><td>Сейчас</td><td class="num">${num(r.gold.now)}</td></tr>
+          </table>
+        </div>
+
+        <div class="stats-sec">
+          <div class="stats-title">🚛 Техника</div>
+          <table class="stats-table">
+            <tr><td>Куплено всего</td><td class="num">${num(r.units.bought)}</td></tr>
+            ${rows(r.units.byTypeBought)}
+            <tr><td>Потеряно в боях</td><td class="num">${num(r.units.lost)}</td></tr>
+            ${rows(r.units.byTypeLost)}
+          </table>
+        </div>
+
+        <div class="stats-sec">
+          <div class="stats-title">🥷 Диверсанты</div>
+          <table class="stats-table">
+            <tr><td>Куплено всего</td><td class="num">${num(r.saboteurs.bought)}</td></tr>
+            ${rows(r.saboteurs.byTypeBought)}
+            <tr><td>Потеряно</td><td class="num">${num(r.saboteurs.lost)}</td></tr>
+            ${rows(r.saboteurs.byTypeLost)}
+          </table>
+        </div>
+
+        <div class="stats-sec">
+          <div class="stats-title">⚔ Бои</div>
+          <table class="stats-table">
+            ${rows(r.battle)}
+          </table>
+        </div>
+      </div>`,
+      { title: 'Полная статистика', icon: '📊', html: true, okText: 'Закрыть', cancelText: '' });
+  },
+
+  // Кто изучал вашу армию за сутки
+  async showSpiedBy() {
+    let r = null;
+    try { r = await API.get('/api/spied-by'); }
+    catch (e) { return UI.toast('⛔ ' + e.message); }
+    const ago = (ms) => {
+      const m = Math.round((Date.now() - ms) / 60000);
+      return m < 60 ? `${m} мин назад` : `${Math.round(m / 60)} ч назад`;
+    };
+    await UI.confirm(
+      (r.list || []).length
+        ? `<div class="spied-list">
+             ${r.list.map((x) => `
+               <div class="spied-row">
+                 <b>${UI.esc(x.name)}</b>
+                 <span class="muted small">${ago(x.at)}${x.count > 1 ? ` · ${x.count} раза` : ''}</span>
+               </div>`).join('')}
+             <p class="muted small mt">Список обнуляется в полночь по Москве.</p>
+           </div>`
+        : '<p class="muted center">Сегодня вас никто не разведывал.</p>',
+      { title: 'Кто вас разведал', icon: '🕵', html: true, okText: 'Закрыть', cancelText: '' });
+  },
+
+  // Смена позывного — раз в 30 дней бесплатно по подписке
+  async showRename() {
+    App._newName = '';
+    const dlg = UI.confirm(`
+      <div class="rename-box">
+        <p class="muted small">Позывной можно менять раз в 30 дней. Старое имя освободится
+        и его сможет занять другой игрок.</p>
+        <input type="text" id="rn-name" class="field mt" maxlength="16" placeholder="Новый позывной">
+        <p class="muted small mt">От 3 до 16 символов: буквы, цифры, пробел, дефис, подчёркивание.</p>
+      </div>`,
+      { title: 'Смена позывного', icon: '✏️', html: true, okText: 'Сменить', cancelText: 'Отмена' });
+    requestAnimationFrame(() => {
+      const i = document.getElementById('rn-name');
+      if (i) { i.oninput = () => { App._newName = i.value; }; i.focus(); }
+    });
+    if (!await dlg) return;
+    const name = (App._newName || '').trim();
+    if (!name) return UI.toast('⛔ Введите новый позывной');
+    try {
+      await API.post('/api/rename', { name });
+      UI.toast('✏️ Позывной изменён');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  },
 
   // ── Счётчик онлайна в подвале ───────────────────────────────────
   // Показываем реальных игроков за последние 5 минут. Обновляем раз в
@@ -2727,6 +2872,7 @@ const App = {
       const r = await API.post('/api/verify-email', { token });
       API.setToken(r.token);
       App.me = await API.get('/api/me');
+      if (App.me && App.me.banned && App.me.banInfo) { App.showBanScreen(App.me.banInfo); return; }
       c.innerHTML = `
         <div class="title">✅ Почта подтверждена</div>
         <div class="card center">

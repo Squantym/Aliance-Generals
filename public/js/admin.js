@@ -434,6 +434,7 @@ const Admin = {
         <div class="adm-card-acts">
           ${p.can.chatBan ? `<button class="btn btn-inline" data-act="chat">${p.chatBan ? '🔊 Снять блокировку чата' : '🔇 Заблокировать чат'}</button>` : ''}
           ${p.can.accountBan ? `<button class="btn btn-inline" data-act="acc">${p.accountBan ? '✅ Разблокировать аккаунт' : '🚫 Заблокировать аккаунт'}</button>` : ''}
+          <button class="btn btn-inline" data-act="access">🔎 Входы и устройства</button>
           <button class="btn btn-inline" data-act="profile">👤 Открыть профиль в игре</button>
         </div>
 
@@ -453,12 +454,100 @@ const Admin = {
         b.onclick = async () => {
           const act = b.dataset.act;
           if (act === 'profile') { window.open('/#profile/' + p.id, '_blank'); return; }
+          if (act === 'access') { Admin.showAccess(p.id); return; }
           if (act === 'chat') await Admin.banChatDialog(p.id, p.name, !!p.chatBan);
           if (act === 'acc') await Admin.banAccountDialog(p.id, p.name, !!p.accountBan);
           setTimeout(() => Admin.renderTab(), 300);
         };
       });
     });
+  },
+
+  // ═══ ВХОДЫ И УСТРОЙСТВА ══════════════════════════════════════════
+  // Адрес, устройство и почта нужны, чтобы разбирать жалобы «меня
+  // взломали» и видеть, кто ещё заходит с того же адреса.
+  async showAccess(userId) {
+    let d = null;
+    try { d = await API.get('/api/admin/access/' + encodeURIComponent(userId)); }
+    catch (e) { return UI.toast('⛔ ' + e.message); }
+
+    const dt = (ms) => ms ? new Date(ms).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+
+    await UI.confirm(`
+      <div class="access-box">
+        <div class="access-sec">
+          <div class="access-title">📧 Почта</div>
+          <div class="access-mail">
+            ${UI.esc(d.email || '— не указана')}
+            ${d.emailVerified
+              ? '<span class="badge" style="background:rgba(90,150,70,.2);color:#a8d18f">подтверждена</span>'
+              : '<span class="badge" style="background:rgba(200,120,40,.2);color:var(--orange-1)">не подтверждена</span>'}
+          </div>
+        </div>
+
+        <div class="access-sec">
+          <div class="access-title">📝 При регистрации</div>
+          <table class="access-table">
+            <tr><td>Когда</td><td class="num">${dt(d.registered.at)}</td></tr>
+            <tr><td>Адрес</td><td class="num mono">${UI.esc(d.registered.ip)}</td></tr>
+            <tr><td>Устройство</td><td class="num">${UI.esc(d.registered.device)}</td></tr>
+          </table>
+        </div>
+
+        <div class="access-sec">
+          <div class="access-title">🕘 Последний вход</div>
+          <table class="access-table">
+            <tr><td>Когда</td><td class="num">${dt(d.last.at)}</td></tr>
+            <tr><td>Адрес</td><td class="num mono">${UI.esc(d.last.ip)}</td></tr>
+            <tr><td>Устройство</td><td class="num">${UI.esc(d.last.device)}</td></tr>
+          </table>
+        </div>
+
+        <div class="access-sec">
+          <div class="access-title">🌐 Адреса (${(d.ips || []).length})</div>
+          ${(d.ips || []).length ? `
+            <table class="access-table">
+              <thead><tr><th>Адрес</th><th class="num">Входов</th><th class="num">Последний</th></tr></thead>
+              <tbody>
+                ${d.ips.map((x) => `
+                  <tr><td class="mono">${UI.esc(x.ip)}</td>
+                      <td class="num">${x.count}</td>
+                      <td class="num small muted">${dt(x.lastAt)}</td></tr>`).join('')}
+              </tbody>
+            </table>` : '<p class="muted small">Данных пока нет — они появятся при следующем входе.</p>'}
+        </div>
+
+        <div class="access-sec">
+          <div class="access-title">📜 История входов</div>
+          ${(d.logins || []).length ? `
+            <table class="access-table">
+              <tbody>
+                ${d.logins.map((l) => `
+                  <tr><td class="small muted nowrap">${dt(l.at)}</td>
+                      <td class="mono small">${UI.esc(l.ip)}</td>
+                      <td class="small">${UI.esc(l.device)}</td></tr>`).join('')}
+              </tbody>
+            </table>` : '<p class="muted small">Пока нет записей.</p>'}
+        </div>
+
+        ${(d.related || []).length ? `
+          <div class="access-sec">
+            <div class="access-title">👥 Заходят с тех же адресов (${d.related.length})</div>
+            <p class="muted small">Совпадение адреса — не доказательство: за одним роутером сидит
+            семья, а мобильные операторы выдают общий адрес сотням абонентов.</p>
+            <table class="access-table">
+              <tbody>
+                ${d.related.map((r) => `
+                  <tr>
+                    <td><b>${UI.esc(r.name)}</b> <span class="muted small">ур. ${r.level}</span></td>
+                    <td class="small muted">${UI.esc(r.email || '—')}</td>
+                    <td class="num small">${r.sharedIps.length} общ.</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : ''}
+      </div>`,
+      { title: `Входы: ${d.name}`, icon: '🔎', html: true, okText: 'Закрыть', cancelText: '' });
   },
 
   // ═══ РОЛИ: выдача прав без остановки сервера ═════════════════════
@@ -732,80 +821,143 @@ const Admin = {
     catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
     const dt = (ms) => new Date(ms).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const g = (n) => `<span class="ic-gold"></span> ${UI.fmtNum(n)}`;
     const sel = d.selected;
 
-    c.innerHTML = `
-      <div class="card">
-        <div class="name">🪙 Начисления золота</div>
-        <p class="muted small mt">Все источники премиум-валюты. Раздел виден только вам —
-        администраторы своих начислений здесь не увидят.</p>
-        ${!sel && d.totals ? `
-          <div class="gold-totals mt">
-            <div><span class="muted small">получено всего</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(d.totals.got)}</b></div>
-            <div><span class="muted small">потрачено всего</span><b><span class="ic-gold"></span> ${UI.fmtNum(d.totals.spent)}</b></div>
-            <div><span class="muted small">на руках сейчас</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(d.totals.now)}</b></div>
-          </div>` : ''}
-      </div>
-
-      ${sel ? `
+    // ── Список игроков таблицей ──
+    if (!sel) {
+      c.innerHTML = `
         <div class="card">
-          <div class="gold-sel-head">
-            <button class="btn btn-inline" id="gold-back">← Ко всем игрокам</button>
-            <b>${UI.esc(sel.name)}</b> <span class="muted small">ур. ${sel.level}</span>
-          </div>
-          <div class="gold-totals mt">
-            <div><span class="muted small">получено</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(sel.got)}</b></div>
-            <div><span class="muted small">потрачено</span><b><span class="ic-gold"></span> ${UI.fmtNum(sel.spent)}</b></div>
-            <div><span class="muted small">сейчас</span><b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(sel.now)}</b></div>
-          </div>
-          ${(sel.bySource || []).length ? `
-            <div class="mt">
-              <div class="muted small">Откуда пришло золото:</div>
-              ${sel.bySource.map((x) => `
-                <div class="adm-measure">
-                  <span class="grow">${UI.esc(x.label)}</span>
-                  <b class="gold"><span class="ic-gold"></span> ${UI.fmtNum(x.value)}</b>
-                </div>`).join('')}
+          <div class="name">🪙 Начисления золота</div>
+          <p class="muted small mt">Раздел виден только вам. Нажмите на игрока, чтобы увидеть,
+          откуда у него золото и на что он его тратил.</p>
+          ${d.totals ? `
+            <div class="gold-totals mt">
+              <div><span class="muted small">получено всего</span><b class="gold">${g(d.totals.got)}</b></div>
+              <div><span class="muted small">потрачено всего</span><b>${g(d.totals.spent)}</b></div>
+              <div><span class="muted small">на счетах сейчас</span><b class="gold">${g(d.totals.now)}</b></div>
             </div>` : ''}
         </div>
 
         <div class="card">
-          <div class="name">История операций (${UI.fmtNum((d.rows || []).length)})</div>
-          <div class="mt">
-            ${(d.rows || []).length
-              ? d.rows.map((r) => `
-                  <div class="gold-op">
-                    <span class="muted small gold-op-date">${dt(r.at)}</span>
-                    <span class="grow">${UI.esc(r.text)}</span>
-                    <b class="gold gold-op-sum"><span class="ic-gold"></span> ${UI.fmtNum(r.gold)}</b>
-                  </div>`).join('')
-              : '<p class="muted small">Операций с золотом не найдено.</p>'}
-          </div>
-        </div>
-      ` : `
-        <div class="card">
           <div class="name">Игроки (${UI.fmtNum((d.players || []).length)})</div>
-          <p class="muted small mt">Нажмите на игрока, чтобы увидеть, откуда у него золото и на что он его тратил.</p>
-          <div class="mt">
-            ${(d.players || []).map((p) => `
-              <div class="gold-player" data-gp="${p.id}">
-                <span class="grow"><b>${UI.esc(p.name)}</b>${p.vip ? ' <span class="vip-mark">VIP</span>' : ''}
-                  <span class="muted small">ур. ${p.level}</span></span>
-                <span class="gold-player-nums">
-                  <span title="получено всего" class="gold">+${UI.fmtNum(p.got)}</span>
-                  <span title="потрачено всего" class="muted">−${UI.fmtNum(p.spent)}</span>
-                  <b title="на руках"><span class="ic-gold"></span> ${UI.fmtNum(p.now)}</b>
-                </span>
-              </div>`).join('')}
+          <div class="table-wrap mt">
+            <table class="gold-table">
+              <thead>
+                <tr>
+                  <th>Игрок</th>
+                  <th class="num">Получено</th>
+                  <th class="num">Потрачено</th>
+                  <th class="num">На счету</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(d.players || []).map((p) => `
+                  <tr data-gp="${p.id}">
+                    <td>
+                      <b>${UI.esc(p.name)}</b>${p.vip ? ' <span class="vip-mark">VIP</span>' : ''}
+                      <span class="muted small">ур. ${p.level}</span>
+                    </td>
+                    <td class="num gold">+${UI.fmtNum(p.got)}</td>
+                    <td class="num muted">−${UI.fmtNum(p.spent)}</td>
+                    <td class="num"><b>${UI.fmtNum(p.now)}</b></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
           </div>
-        </div>
-      `}`;
+        </div>`;
+      c.querySelectorAll('[data-gp]').forEach((row) => {
+        row.onclick = () => { Admin._goldPlayer = row.dataset.gp; Admin.renderGold(c); };
+      });
+      return;
+    }
 
-    const back = document.getElementById('gold-back');
-    if (back) back.onclick = () => { Admin._goldPlayer = null; Admin.renderGold(c); };
-    c.querySelectorAll('[data-gp]').forEach((row) => {
-      row.onclick = () => { Admin._goldPlayer = row.dataset.gp; Admin.renderGold(c); };
-    });
+    // ── Карточка игрока: получено / потрачено / на счету ──
+    c.innerHTML = `
+      <div class="card">
+        <div class="gold-sel-head">
+          <button class="btn btn-inline" id="gold-back">← Ко всем игрокам</button>
+          <b>${UI.esc(sel.name)}</b> <span class="muted small">ур. ${sel.level}</span>
+        </div>
+        <div class="gold-totals mt">
+          <div><span class="muted small">получено</span><b class="gold">${g(sel.got)}</b></div>
+          <div><span class="muted small">потрачено</span><b>${g(sel.spent)}</b></div>
+          <div><span class="muted small">на счету</span><b class="gold">${g(sel.now)}</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name">📥 Получено</div>
+        <div class="table-wrap mt">
+          <table class="gold-table">
+            <thead><tr><th>Источник</th><th class="num">Золото</th></tr></thead>
+            <tbody>
+              ${(sel.groups || []).filter((gr) => gr.total > 0).map((gr) => `
+                <tr class="gold-group">
+                  <td><b>${UI.esc(gr.label)}</b></td>
+                  <td class="num gold"><b>${UI.fmtNum(gr.total)}</b></td>
+                </tr>
+                ${gr.items.map((it) => `
+                  <tr class="gold-sub">
+                    <td>${UI.esc(it.label)}</td>
+                    <td class="num">${UI.fmtNum(it.value)}</td>
+                  </tr>
+                  ${(it.details || []).map((dd) => `
+                    <tr class="gold-detail">
+                      <td>· ${UI.esc(dd.label)}</td>
+                      <td class="num muted">${UI.fmtNum(dd.value)}</td>
+                    </tr>`).join('')}
+                `).join('')}
+              `).join('') || '<tr><td colspan="2" class="muted">Поступлений нет</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name">📤 Потрачено</div>
+        <div class="table-wrap mt">
+          <table class="gold-table">
+            <thead><tr><th>На что</th><th class="num">Золото</th></tr></thead>
+            <tbody>
+              ${(sel.spending || []).length
+                ? sel.spending.map((sp) => `
+                    <tr class="gold-group">
+                      <td><b>${UI.esc(sp.label)}</b></td>
+                      <td class="num"><b>${UI.fmtNum(sp.value)}</b></td>
+                    </tr>
+                    ${(sp.details || []).map((dd) => `
+                      <tr class="gold-detail">
+                        <td>· ${UI.esc(dd.label)}</td>
+                        <td class="num muted">${UI.fmtNum(dd.value)}</td>
+                      </tr>`).join('')}
+                  `).join('')
+                : '<tr><td colspan="2" class="muted">Трат нет</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="name">🕒 История операций (${UI.fmtNum((d.rows || []).length)})</div>
+        <div class="table-wrap mt">
+          <table class="gold-table">
+            <thead><tr><th>Когда</th><th>Что произошло</th><th class="num">Золото</th></tr></thead>
+            <tbody>
+              ${(d.rows || []).length
+                ? d.rows.map((r) => `
+                    <tr>
+                      <td class="muted small nowrap">${dt(r.at)}</td>
+                      <td>${UI.esc(r.text)}</td>
+                      <td class="num gold nowrap">${UI.fmtNum(r.gold)}</td>
+                    </tr>`).join('')
+                : '<tr><td colspan="3" class="muted">Операций не найдено</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    document.getElementById('gold-back').onclick = () => { Admin._goldPlayer = null; Admin.renderGold(c); };
   },
 
   // ═══ БАЗА ДАННЫХ: состояние, копии, снимки, восстановление ═══════
@@ -956,6 +1108,23 @@ const Admin = {
 
       <!-- База данных: копии и снимки. Отдельная вкладка ради трёх
            кнопок не нужна — блок живёт здесь и грузится отдельно -->
+      ${Admin.can('security') ? `
+      <div class="card">
+        <div class="name">👥 Несколько аккаунтов с одного адреса</div>
+        <p class="muted small mt">Помогает заметить мультоводов. Но помните: за одним домашним
+        роутером сидит семья, а мобильные операторы выдают общий адрес сотням абонентов —
+        совпадение само по себе ничего не доказывает.</p>
+        <div class="field-row mt">
+          <select id="mc-min" class="field">
+            <option value="2">от 2 аккаунтов</option>
+            <option value="3" selected>от 3 аккаунтов</option>
+            <option value="5">от 5 аккаунтов</option>
+          </select>
+          <button class="btn btn-inline" id="mc-go">Показать</button>
+        </div>
+        <div id="mc-box" class="mt"></div>
+      </div>` : ''}
+
       <div class="card" id="db-block"><div class="muted small">База данных…</div></div>`;
 
     // Поиск игрока
@@ -978,6 +1147,28 @@ const Admin = {
         });
       } catch (e) { box.innerHTML = `<p class="small" style="color:var(--red)">⛔ ${UI.esc(e.message)}</p>`; }
     };
+    // Поиск нескольких аккаунтов с одного адреса
+    const mcGo = document.getElementById('mc-go');
+    if (mcGo) mcGo.onclick = async () => {
+      const box = document.getElementById('mc-box');
+      const min = (document.getElementById('mc-min') || {}).value || '3';
+      box.innerHTML = '<div class="loading">Ищу…</div>';
+      try {
+        const r = await API.get('/api/admin/multi-check?min=' + encodeURIComponent(min));
+        box.innerHTML = (r.groups || []).length
+          ? r.groups.map((gr) => `
+              <div class="mc-group">
+                <div class="mc-ip"><span class="mono">${UI.esc(gr.ip)}</span>
+                  <span class="muted small">· аккаунтов: ${gr.count}</span></div>
+                <div class="mc-players">
+                  ${gr.players.map((p) => `<span class="mc-player">${UI.esc(p.name)}
+                    <span class="muted small">ур. ${p.level}</span></span>`).join('')}
+                </div>
+              </div>`).join('')
+          : '<p class="muted small">Совпадений не найдено.</p>';
+      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+    };
+
     document.getElementById('tech-search').onclick = doSearch;
     document.getElementById('tech-q').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
 

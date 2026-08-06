@@ -249,7 +249,7 @@ function bid(user: User, devId: string, gold: number, notices: Notices) {
   if (charge <= 0) throw new u.ApiError('Новая ставка должна быть выше вашей прежней');
   if ((user.gold || 0) < charge) throw new u.ApiError(`Не хватает золота: нужно 🪙 ${charge}`);
 
-  player.addGold(user, -charge, 'lot_bid');
+  player.addGold(user, -charge, 'lot_bid:' + (config.SECRET_DEVS.find((x: any) => x.id === devId) || { name: devId }).name);
   if (mine) { mine.gold = amount; mine.at = Date.now(); }
   else lot.bids.push({ userId: user.id, userName: user.name, gold: amount, at: Date.now() });
 
@@ -279,7 +279,7 @@ function buyBuff(user: User, itemId: string, qty: number, notices: Notices) {
   const total = lot.price * n;
   if ((user.gold || 0) < total) throw new u.ApiError(`Не хватает золота: нужно 🪙 ${total}`);
 
-  player.addGold(user, -total, 'lot_buff');
+  player.addGold(user, -total, 'lot_buff:' + ((config.MARKET_ITEMS.find((x: any) => x.id === itemId) || { name: itemId }) as any).name);
   lot.sold += n;
   db.save('lots');
 

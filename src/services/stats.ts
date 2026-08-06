@@ -13,6 +13,21 @@ import db = require('../core/db');
 import type { User } from '../types';
 
 // Источники золота — по ним строится разбивка в отчёте
+// На что игроки тратят золото — для понятной расшифровки в журнале
+const GOLD_SPENDING: Record<string, string> = {
+  market: 'Чёрный рынок',
+  lot_buff: 'Лоты: допинг',
+  lot_bid: 'Лоты: ставки',
+  container: 'Контейнеры',
+  vip: 'VIP-подписка',
+  merc: 'Наёмники',
+  boost: 'Ускорения',
+  saboteur: 'Диверсанты',
+  heal: 'Лечение',
+  rename: 'Смена позывного',
+  other: 'Прочее',
+};
+
 const GOLD_SOURCES: Record<string, string> = {
   quest: 'Поручения',
   contract: 'Контракты',
@@ -53,8 +68,30 @@ function track(user: any, kind: string, key: string, amount: number): void {
     case 'moneyEarned': st.moneyEarned += n; break;
     case 'moneySpent':  st.moneySpent += n; break;
     case 'moneyLost':   st.moneyLost += n; break;
-    case 'goldGot':     st.goldGot[key || 'other'] = (st.goldGot[key || 'other'] || 0) + n; break;
-    case 'goldSpent':   st.goldSpent[key || 'other'] = (st.goldSpent[key || 'other'] || 0) + n; break;
+    // Ключ может нести подробность через двоеточие: 'season:12',
+    // 'event:Армада'. Общая сумма пишется в источник, а расшифровка —
+    // в отдельный список, чтобы владелец видел не только «Сезоны», но
+    // и за какой именно сезон человек получил золото.
+    case 'goldGot': {
+      const [src, detail] = String(key || 'other').split(':');
+      st.goldGot[src] = (st.goldGot[src] || 0) + n;
+      if (detail) {
+        st.goldGotDetail = st.goldGotDetail || {};
+        st.goldGotDetail[src] = st.goldGotDetail[src] || {};
+        st.goldGotDetail[src][detail] = (st.goldGotDetail[src][detail] || 0) + n;
+      }
+      break;
+    }
+    case 'goldSpent': {
+      const [dst, detail] = String(key || 'other').split(':');
+      st.goldSpent[dst] = (st.goldSpent[dst] || 0) + n;
+      if (detail) {
+        st.goldSpentDetail = st.goldSpentDetail || {};
+        st.goldSpentDetail[dst] = st.goldSpentDetail[dst] || {};
+        st.goldSpentDetail[dst][detail] = (st.goldSpentDetail[dst][detail] || 0) + n;
+      }
+      break;
+    }
     case 'unitsBought': st.unitsBought[key] = (st.unitsBought[key] || 0) + n; break;
     case 'unitsLost':   st.unitsLost[key] = (st.unitsLost[key] || 0) + n; break;
     case 'sabBought':   st.sabBought[key] = (st.sabBought[key] || 0) + n; break;
@@ -116,8 +153,18 @@ function report(user: any): any {
       total: sum(st.goldGot),
       spent: sum(st.goldSpent),
       now: user.gold || 0,
-      bySource: named(st.goldGot, GOLD_SOURCES),
-      bySpending: named(st.goldSpent),
+      bySource: named(st.goldGot, GOLD_SOURCES).map((x: any) => ({
+        ...x,
+        details: Object.entries((st.goldGotDetail || {})[x.id] || {})
+          .map(([k, v]) => ({ label: k, value: v as number }))
+          .sort((a, b) => b.value - a.value),
+      })),
+      bySpending: named(st.goldSpent, GOLD_SPENDING).map((x: any) => ({
+        ...x,
+        details: Object.entries((st.goldSpentDetail || {})[x.id] || {})
+          .map(([k, v]) => ({ label: k, value: v as number }))
+          .sort((a, b) => b.value - a.value),
+      })),
     },
 
     // Техника и диверсанты
@@ -146,4 +193,4 @@ function report(user: any): any {
   };
 }
 
-export = { track, tickPlayTime, report, GOLD_SOURCES };
+export = { track, tickPlayTime, report, GOLD_SOURCES, GOLD_SPENDING };

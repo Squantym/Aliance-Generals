@@ -680,6 +680,12 @@ App.screens.profile = async (c, param) => {
           ? `👑 VIP активен · осталось ${Math.max(1, Math.ceil((App.me.vipUntil - Date.now()) / 86400000))} дн.`
           : 'Ощутите все преимущества и удобства игры!'}</div>
         <button class="btn pf2-vip-btn vip-buy" id="pf-vip">${App.me.vip ? 'Моя подписка' : 'Купить VIP'}</button>
+        ${App.me.vip ? `
+          <div class="pf2-vip-tools mt">
+            <button class="btn btn-inline" id="pf-stats">📊 Полная статистика</button>
+            <button class="btn btn-inline" id="pf-spied">🕵 Кто меня разведал</button>
+            <button class="btn btn-inline" id="pf-rename">✏️ Сменить позывной</button>
+          </div>` : ''}
         <a href="javascript:void 0" class="pf2-vip-more" id="pf-vip-more">Что даёт подписка</a>
       </div>
       ${p.power ? `
@@ -911,6 +917,14 @@ App.screens.profile = async (c, param) => {
         setTimeout(() => { refreshMod(); App.rerender(); }, 400);
       };
     }
+
+    // Инструменты подписки: статистика, список разведавших, смена имени
+    const statsBtn = document.getElementById('pf-stats');
+    if (statsBtn) statsBtn.onclick = () => App.showFullStats();
+    const spiedBtn = document.getElementById('pf-spied');
+    if (spiedBtn) spiedBtn.onclick = () => App.showSpiedBy();
+    const renameBtn = document.getElementById('pf-rename');
+    if (renameBtn) renameBtn.onclick = () => App.showRename();
 
     const btnSpy = document.getElementById('pf-spy');
     if (btnSpy) btnSpy.onclick = async () => {

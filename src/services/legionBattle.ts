@@ -1422,6 +1422,7 @@ function restoreForBattle(user: User, kind: string, notices: Notices) {
   if ((user.gold || 0) < item.cost) throw new u.ApiError(`Нужно ${item.cost} золота`);
 
   user.gold -= item.cost;
+  try { require('./stats').track(user, 'goldSpent', 'other', item.cost); } catch (e) {}
   item.res.cur = item.max;
   item.res.t = now();
   if (kind === 'hp') {

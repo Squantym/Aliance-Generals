@@ -179,7 +179,7 @@ function attack(user: User, notices: Notices) {
   if (e.goldPool > 0 && u.rnd(1, 100) <= chance) {
     goldDrop = u.rnd(e.dropMin != null ? e.dropMin : 5, e.dropMax != null ? e.dropMax : 10);
     goldDrop = Math.min(goldDrop, e.goldPool);  // не больше остатка пула
-    if (goldDrop > 0) { player.addGold(user, goldDrop); e.goldPool -= goldDrop; }
+    if (goldDrop > 0) { player.addGold(user, goldDrop, 'event:' + (e.name || 'Событие')); e.goldPool -= goldDrop; }
   }
 
   let finished = false;
@@ -188,7 +188,7 @@ function attack(user: User, notices: Notices) {
     finished = true;
     killReward = e.killReward || 0;
     // Награда за последний удар (килл) — этому игроку
-    if (killReward > 0) player.addGold(user, killReward);
+    if (killReward > 0) player.addGold(user, killReward, 'event:' + (e.name || 'Событие') + ' (добивание)');
     finishEvent(e, user);
   }
 
@@ -220,7 +220,7 @@ function finishEvent(e: any, killer: User): void {
   for (let i = 0; i < Math.min(3, ranking.length); i++) {
     const p = all[ranking[i].id];
     if (!p || rewards[i] <= 0) continue;
-    player.addGold(p, rewards[i]);
+    player.addGold(p, rewards[i], 'event:' + (e.name || 'Событие') + ' (топ урона)');
     try {
       require('./notifications').push(p.id, 'world_event_top',
         `🏆 Событие «${e.name}» завершено! Вы заняли ${i + 1} место по урону. Награда: 🪙 ${rewards[i]}`, {});

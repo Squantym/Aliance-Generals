@@ -111,7 +111,7 @@ function claim(user: User, rewardId: string, notices: Notices) {
   if (!r || r.userId !== user.id) throw new u.ApiError('Награда не найдена');
   if (r.claimed) throw new u.ApiError('Эта награда уже получена');
 
-  creditReward(user, r.reward);
+  creditReward(user, r.reward, sourceOf(r));
   r.claimed = true;
   r.claimedAt = Date.now();
   db.save('rewards');
@@ -122,10 +122,24 @@ function claim(user: User, rewardId: string, notices: Notices) {
   return { ok: true, credited: r.reward, rewardText: parts };
 }
 
+// Куда отнести награду: по заголовку письма понятно, за что она.
+// «Итоги недели» → сезон, событие → событие, остальное — администрация.
+function sourceOf(r: any): string {
+  const t = String((r && r.title) || '');
+  const reason = String((r && r.reason) || '');
+  if (/недел|сезон/i.test(t)) return 'season:' + t.replace(/^[^\wА-Яа-я]+/, '').slice(0, 60);
+  if (/событ|босс/i.test(t + reason)) return 'event:' + t.slice(0, 60);
+  if (/турнир/i.test(t + reason)) return 'event:' + t.slice(0, 60);
+  return 'admin:' + (t || 'Награда от администрации').slice(0, 60);
+}
+
 // Начислить ресурсы игроку
-function creditReward(user: User, p: RewardPayload): void {
+function creditReward(user: User, p: RewardPayload, source?: string): void {
   if (p.dollars)     player.addMoney(user, p.dollars, false);
-  if (p.gold)        player.addGold(user, p.gold);
+  // Источник с подробностью («Итоги недели — 1 место») берём из заголовка
+  // награды: иначе всё сваливалось бы в «Прочее» и владелец не понимал,
+  // за что именно человек получил золото
+  if (p.gold)        player.addGold(user, p.gold, source || 'other');
   if (p.tokens)      user.tokens = (user.tokens || 0) + p.tokens;
   if (p.ears)        user.ears = (user.ears || 0) + p.ears;
   if (p.skillPoints) user.skillPoints = Math.max(0, (user.skillPoints || 0) + p.skillPoints);

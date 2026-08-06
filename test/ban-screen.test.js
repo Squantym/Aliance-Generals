@@ -101,13 +101,47 @@ ok(/wrap\.style\.display = 'none'/.test(app), 'интерфейс игры ск�
 ok(app.includes('Доступ заблокирован'), 'заголовок окна');
 ok(app.includes('Причина'), 'показывается причина');
 ok(/Осталось/.test(app) && /Блокировка бессрочная/.test(app), 'показывается срок или пометка о бессрочности');
-ok(/setInterval\(render, 30000\)/.test(app), 'обратный отсчёт обновляется сам');
+ok(/setInterval\([\s\S]{0,60}render\(\)[\s\S]{0,40}30000\)/.test(app), 'обратный отсчёт обновляется сам');
 ok(/location\.reload\(\)/.test(app), 'по истечении срока игра открывается автоматически');
 ok(app.includes('ban-logout'), 'есть кнопка выхода из аккаунта');
 const core = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
 ok(/r\.banned && r\.banInfo/.test(core), 'при входе с формы окно показывается сразу');
 const css = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
 ok(css.includes('#ban-screen'), 'стили экрана добавлены');
+
+console.log('\n── Окно бана показывается ПРИ ВХОДЕ ──');
+// Главная причина чёрного экрана: /api/me запрашивался в трёх местах,
+// а проверка блокировки стояла только в одном. При заходе в игру
+// маршрутизатор прятал содержимое, окно не рисовалось — игрок видел
+// чёрный фон и не понимал, что произошло.
+const appSrc = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
+const checks = (appSrc.match(/App\.me\.banned && App\.me\.banInfo/g) || []).length;
+ok(checks >= 3, `проверка блокировки стоит во всех точках входа (${checks})`);
+const initBlock = appSrc.slice(appSrc.indexOf('if (API.token()) {'), appSrc.indexOf('App.route();'));
+ok(/App\.showBanScreen\(App\.me\.banInfo\)/.test(initBlock),
+   'при запуске игры окно показывается ДО маршрутизации');
+ok(/return;/.test(initBlock), 'дальше выполнение не идёт — игра не запускается');
+ok(/App\.showBanScreen\(App\.me\.banInfo\); return;/.test(appSrc),
+   'после подтверждения почты — тоже');
+
+console.log('\n── Окно не остаётся пустым при сбое ──');
+const fnStart = appSrc.indexOf('showBanScreen(info) {');
+const fnBody = appSrc.slice(fnStart, fnStart + 4200);
+ok(/try \{\s*render\(\);\s*\} catch/.test(fnBody),
+   'отрисовка защищена: игра уже скрыта, и сбой оставил бы чёрный экран');
+ok(/Запасной вариант/.test(fnBody), 'предусмотрен запасной текст');
+ok(/setInterval\(\(\) => \{ try \{ render\(\); \} catch/.test(fnBody),
+   'обновление отсчёта тоже не роняет окно');
+ok(/ban-logout/.test(fnBody), 'кнопка выхода есть в обоих вариантах');
+
+console.log('\n── Содержимое окна ──');
+for (const part of ['Доступ заблокирован', 'Причина', 'Осталось', 'Блокировка бессрочная',
+                    'доступ откроется автоматически', 'Выйти из аккаунта']) {
+  ok(fnBody.includes(part), `в окне есть: «${part}»`);
+}
+const cssSrc = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
+ok(/#ban-screen \{[\s\S]{0,160}position: fixed; inset: 0/.test(cssSrc), 'окно перекрывает игру целиком');
+ok(/#ban-screen \{[\s\S]{0,200}z-index: 20000/.test(cssSrc), 'поверх всех прочих окон');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

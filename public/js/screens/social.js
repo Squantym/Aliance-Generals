@@ -1185,14 +1185,18 @@ App.renderTopic = async (box, topicId) => {
 // Создание темы. Картинку уменьшаем ПРЯМО В БРАУЗЕРЕ до ширины 900px:
 // сервер принимает ограниченный размер, а игрок может выбрать любое фото
 // с телефона — пересжатие снимает с него эту заботу.
-App._resizeImage = (file, maxW) => new Promise((resolve, reject) => {
+App._resizeImage = (file, maxW, maxH) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
   reader.onload = () => {
     const img = new Image();
     img.onerror = () => reject(new Error('Это не изображение'));
     img.onload = () => {
-      const scale = Math.min(1, maxW / img.width);
+      // Ограничиваем И ширину, И высоту, сохраняя пропорции. Раньше
+      // считалась только ширина: вертикальный скриншот с телефона
+      // (1080×2400) превращался в полотно 900×2000 — тяжёлое и
+      // растягивающее всю тему.
+      const scale = Math.min(1, maxW / img.width, (maxH || 1400) / img.height);
       const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
       const cv = document.createElement('canvas');
       cv.width = w; cv.height = h;
@@ -1232,7 +1236,7 @@ App.showNewTopic = (box) => {
         if (!f) return;
         document.getElementById('nt-imgname').textContent = 'обрабатываю…';
         try {
-          App._newImg = await App._resizeImage(f, 900);
+          App._newImg = await App._resizeImage(f, 900, 1400);
           document.getElementById('nt-imgname').textContent = f.name;
           document.getElementById('nt-preview').innerHTML =
             `<img class="forum-img forum-img-preview" src="${App._newImg}" alt="Предпросмотр">`;

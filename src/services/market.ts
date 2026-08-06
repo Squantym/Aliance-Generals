@@ -57,6 +57,7 @@ function buyMines(user: User, qty: number, notices: Notices) {
   const cost = bought * unitPrice;
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   user.gold -= cost;
+  try { require('./stats').track(user, 'goldSpent', 'market', cost); } catch (e) {}
   user.landmines = have + bought;
   require('./dailyQuests').bump(user, 'marketBought', 1);
   notices.push(`💣 Куплено мин: ${bought} (за 🪙 ${cost}). В запасе: ${user.landmines}.`);
@@ -120,6 +121,7 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     if (!target) throw new u.ApiError('Жертва с таким именем не найдена');
     if (target.id === user.id) throw new u.ApiError('Падлянка самому себе? Оригинально, но нет.');
     user.gold -= price;
+  try { require('./stats').track(user, 'goldSpent', 'market', price); } catch (e) {}
     pushEffect(target, item, user);
     notifications.push(target.id, 'debuff_applied', 'Диверсия!',
       { text: `Игрок ${user.name} устроил вам «${item.name}»: ${item.desc}`, byId: user.id, byName: user.name });
@@ -191,6 +193,7 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   // Счётчик по конкретному контейнеру (для поручений на контрабанду)
   require('./dailyQuests').bump(user, 'buy:' + c.id, qty);
   user.gold -= totalPrice;
+  try { require('./stats').track(user, 'goldSpent', 'container', totalPrice); } catch (e) {}
 
   // Открываем qty контейнеров подряд, суммируя выпавшее
   const droppedAll: string[] = [];

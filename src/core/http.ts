@@ -197,6 +197,9 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     // попытка подбора. Записываем в лог: по нему видно, что вас щупают.
     const ip = ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim()
       || req.socket.remoteAddress || 'unknown';
+    // Строка браузера: по ней определяем устройство при входе. Нужна для
+    // разбора жалоб «меня взломали» и для поиска мультоводов.
+    (req as any).ua = String(req.headers['user-agent'] || '').slice(0, 400);
     console.warn(`🛡  Попытка открыть админ-панель по стандартному адресу ${rel} с ${ip}`);
     // Ответ такой же, как для любого отсутствующего файла — не подтверждаем,
     // что панель вообще существует

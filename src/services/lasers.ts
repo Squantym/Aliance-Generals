@@ -100,6 +100,7 @@ function buyLaser(user: User, notices: Notices) {
   const cost = nextLaserCost(user);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   user.gold -= cost;
+  try { require('./stats').track(user, 'goldSpent', 'boost', cost); } catch (e) {}
   (user as any).lasersBuiltTotal = ((user as any).lasersBuiltTotal || 0) + 1;
   const laser = freshLaser();
   lasers(user).push(laser);
@@ -117,6 +118,7 @@ function boost(user: User, laserId: string, notices: Notices) {
   const cost = boostCost(laser);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   user.gold -= cost;
+  try { require('./stats').track(user, 'goldSpent', 'boost', cost); } catch (e) {}
   laser.readyAt = Date.now();
   db.save('users');
   notices.push(`⚡ ${laser.phase === 'cooling' ? 'Охлаждение' : 'Постройка'} ускорено за 🪙 ${cost}. Лазер готов.`);

@@ -41,6 +41,17 @@ import worldEvent = require('./services/worldEvent');
 // Сохранение картинки темы. Браузер присылает уже уменьшенное
 // изображение как data:URL — здесь проверяем формат и размер и кладём
 // файлом: base64 в базе раздул бы её в разы.
+// Записи журнала приходят с сырым адресом запроса. Переводим их в
+// человеческий вид ОДИН РАЗ на сервере: иначе каждый экран панели
+// показывал бы «/api/war/attack» вместо «Атаковал игрока».
+function humanizeLogs(logs: any[]): any[] {
+  const translate = require('./services/logTranslate');
+  return (logs || []).map((l: any) => ({
+    ...l,
+    human: l.human || translate.describe(l.path, l.body, l.result) || l.path,
+  }));
+}
+
 function saveForumImage(dataUrl: any): string | null {
   const raw = String(dataUrl || '');
   if (!raw) return null;
@@ -74,9 +85,9 @@ function registerRoutes(app: any) {
   // ---------- Авторизация (открытые маршруты) ----------
   app.add('GET', '/api/countries', () => ({ countries: config.COUNTRIES }), { open: true });
   app.add('POST', '/api/register', (req) =>
-    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip), { open: true });
+    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua), { open: true });
   app.add('POST', '/api/login', (req) =>
-    auth.login(req.body.login, req.body.password, req.ip), { open: true });
+    auth.login(req.body.login, req.body.password, req.ip, req.ua), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login), { open: true });
@@ -750,7 +761,7 @@ function registerRoutes(app: any) {
     let myActions: any[] = [];
     try {
       const logs = await auditLog.listForUser(me.id, 40);
-      myActions = logs.filter((l: any) => now - (l.at || 0) < DAY).slice(0, 12);
+      myActions = humanizeLogs(logs.filter((l: any) => now - (l.at || 0) < DAY).slice(0, 12));
     } catch (e) {}
 
     return {
@@ -776,7 +787,7 @@ function registerRoutes(app: any) {
     const chatBan = roles.chatBanInfo(target);
     const accBan = roles.accountBanInfo(target);
     let recent: any[] = [];
-    try { recent = (await auditLog.listForUser(target.id, 15)) || []; } catch (e) {}
+    try { recent = humanizeLogs((await auditLog.listForUser(target.id, 15)) || []); } catch (e) {}
     const now = Date.now();
     return {
       id: target.id, name: target.name, level: target.level,
@@ -801,6 +812,28 @@ function registerRoutes(app: any) {
         resources: roles.canAccessZone(req.user, 'economy'),
       },
     };
+  }, { admin: true });
+
+  // ═══ УЧЁТ ВХОДОВ: адреса, устройства, почта ══════════════════════
+  // Данные о входах — чувствительные. Открываем их только тем, кому
+  // выдана зона «Игроки»: это те же люди, что разбирают жалобы.
+  app.add('GET', '/api/admin/access/:id', (req) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.params.id || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    const access = require('./services/access');
+    return {
+      id: target.id, name: target.name, level: target.level,
+      ...access.view(target),
+      related: access.related(target, player.users()),
+    };
+  }, { admin: true });
+
+  // Сводка: с каких адресов заходит по несколько аккаунтов
+  app.add('GET', '/api/admin/multi-check', (req) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const access = require('./services/access');
+    return { groups: access.ipSummary(player.users(), u.toInt(req.query.min, 2)) };
   }, { admin: true });
 
   // ═══ ЖУРНАЛ НАЧИСЛЕНИЙ ЗОЛОТА (только владелец) ══════════════════
@@ -856,12 +889,29 @@ function registerRoutes(app: any) {
 
     return {
       players,
-      selected: {
-        id: target.id, name: target.name, level: target.level,
-        now: target.gold || 0,
-        got: report.gold.total, spent: report.gold.spent,
-        bySource: report.gold.bySource,
-      },
+      selected: (() => {
+        const src = report.gold.bySource || [];
+        const pick = (ids: string[]) => src.filter((x: any) => ids.includes(x.id));
+        const sum = (arr: any[]) => arr.reduce((n, x) => n + x.value, 0);
+        // Три понятные группы поступлений вместо плоского списка
+        const bought = pick(['purchase']);
+        const won = pick(['event', 'season', 'contract', 'quest', 'achievement', 'login', 'referral']);
+        const granted = pick(['admin']);
+        const rest = src.filter((x: any) => !['purchase', 'event', 'season', 'contract',
+          'quest', 'achievement', 'login', 'referral', 'admin'].includes(x.id));
+        return {
+          id: target.id, name: target.name, level: target.level,
+          now: target.gold || 0,
+          got: report.gold.total, spent: report.gold.spent,
+          groups: [
+            { id: 'bought',  label: 'Куплено за деньги',        total: sum(bought),  items: bought },
+            { id: 'won',     label: 'Выиграно в игре',          total: sum(won),     items: won },
+            { id: 'granted', label: 'Начислено администрацией', total: sum(granted), items: granted },
+            ...(rest.length ? [{ id: 'other', label: 'Прочее', total: sum(rest), items: rest }] : []),
+          ],
+          spending: report.gold.bySpending || [],
+        };
+      })(),
       rows,
     };
   }, { admin: true });
@@ -890,7 +940,7 @@ function registerRoutes(app: any) {
       .filter((p: any) => roles.roleOf(p))
       .map((p: any) => ({ id: p.id, name: p.name, role: roles.roleOf(p), label: roles.roleLabel(p) }));
 
-    return { staff, logs: logs.slice(0, limit), total: logs.length };
+    return { staff, logs: humanizeLogs(logs.slice(0, limit)), total: logs.length };
   }, { admin: true });
 
   // ═══ БАЗА ДАННЫХ: копии, снимки, восстановление ═══════════════════

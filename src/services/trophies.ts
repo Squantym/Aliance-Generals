@@ -6,6 +6,7 @@
 // ===================================================================
 
 import config = require('../../config/gameConfig');
+import db = require('../core/db');
 import u = require('../core/utils');
 import discounts = require('./discounts');
 import type { User, Notices } from '../types';
@@ -48,6 +49,24 @@ function checkCompleted(user: User): void {
   const now = Date.now();
   const remaining: any[] = [];
   for (const proc of (user as any).trophyQueue) {
+    // VIP ускоряет и УЖЕ ЗАПУЩЕННЫЕ улучшения: подписка, купленная
+    // посреди прокачки, должна действовать сразу, а не со следующего
+    // раза. Пересчитываем один раз и помечаем, чтобы не сокращать
+    // повторно при каждом обращении.
+    if (!proc.vipCut) {
+      try {
+        const vipSrv = require('./vip');
+        if (vipSrv.isVip(user)) {
+          const leftMs = proc.finishesAt - now;
+          if (leftMs > 0) {
+            const cutMs = vipSrv.trophyUpgradeSeconds(user, Math.round(leftMs / 1000)) * 1000;
+            proc.finishesAt = now + cutMs;
+          }
+          proc.vipCut = true;
+          db.markUser(user.id);
+        }
+      } catch (e) {}
+    }
     if (proc.finishesAt <= now) {
       // Применяем уровень
       if (!user.trophies) user.trophies = {};
