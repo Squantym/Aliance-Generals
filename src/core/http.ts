@@ -39,6 +39,7 @@ interface ReqCtx {
   body: any;
   user: any | null;   // игрок (тип User уточним при переводе сервисов)
   ip: string;
+  ua: string;          // строка браузера — для определения устройства
 }
 
 type RouteHandler = (ctx: ReqCtx) => any | Promise<any>;
@@ -197,9 +198,6 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     // попытка подбора. Записываем в лог: по нему видно, что вас щупают.
     const ip = ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim()
       || req.socket.remoteAddress || 'unknown';
-    // Строка браузера: по ней определяем устройство при входе. Нужна для
-    // разбора жалоб «меня взломали» и для поиска мультоводов.
-    (req as any).ua = String(req.headers['user-agent'] || '').slice(0, 400);
     console.warn(`🛡  Попытка открыть админ-панель по стандартному адресу ${rel} с ${ip}`);
     // Ответ такой же, как для любого отсутствующего файла — не подтверждаем,
     // что панель вообще существует
@@ -385,6 +383,9 @@ function createApp() {
             body: req.method === 'POST' ? await readBody(req) : {},
             user: null,
             ip: ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown',
+            // Строка браузера: по ней определяем устройство. Нужна и роутам
+            // (регистрация, вход), и учёту активности ниже.
+            ua: String(req.headers['user-agent'] || '').slice(0, 400),
           };
 
           // Авторизация (если маршрут не открытый)
@@ -478,6 +479,13 @@ function createApp() {
             }
             // Время в игре для расширенной статистики
             try { require('../services/stats').tickPlayTime(user); } catch (e) {}
+            // Учёт адреса и устройства на КАЖДОМ запросе, а не только при
+            // входе по паролю: игрок с действующим токеном не логинится
+            // месяцами, и данных о нём просто не появлялось бы. Внутри
+            // стоит защита от лишних записей — см. touch().
+            try {
+              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua);
+            } catch (e) {}
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов
             reqCtx.user = user;

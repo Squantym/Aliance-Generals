@@ -939,6 +939,7 @@ function setRank(user: User, targetId: string, rankIndex: number, notices: Notic
 
   const target = player.users()[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  require('./account').assertNotSelfAccount(user, target, 'Управление званием');
 
   rankIndex = u.toInt(rankIndex, 0);
   if (rankIndex < 0 || rankIndex >= config.LEGION.RANKS.length) throw new u.ApiError('Неизвестное звание');

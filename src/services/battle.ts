@@ -380,6 +380,10 @@ function attack(user: User, targetId: string, notices: Notices) {
   } else {
     target = player.users()[targetId];
     if (!target || target.id === user.id) throw new u.ApiError('Цель не найдена');
+    // Персонажи одного аккаунта не воюют между собой. Иначе кабинет
+    // превращается в схему: один персонаж бьёт другого ради опыта,
+    // ушей и трофеев, а «жертва» ничего не теряет по-настоящему.
+    require('./account').assertNotSelfAccount(user, target, 'Нападение');
     player.refresh(target);
     // Обычные атаки по цели РАЗРЕШЕНЫ всем, включая заказчика санкции.
     // Ограничение только на награду: заказчик не может забрать СВОЮ же

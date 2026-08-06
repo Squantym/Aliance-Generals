@@ -120,6 +120,8 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     const target = player.findByName(targetName);
     if (!target) throw new u.ApiError('Жертва с таким именем не найдена');
     if (target.id === user.id) throw new u.ApiError('Падлянка самому себе? Оригинально, но нет.');
+    // И своему же второму персонажу — тоже: это способ обнулить эффект
+    require('./account').assertNotSelfAccount(user, target, 'Применение падлянки');
     user.gold -= price;
   try { require('./stats').track(user, 'goldSpent', 'market', price); } catch (e) {}
     pushEffect(target, item, user);

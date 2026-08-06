@@ -653,12 +653,15 @@ App.screens.hospital = async (c) => {
   const data = await API.get('/api/hospital');
   const needsHeal = data.hp < data.maxHp;
   const onCooldown = (data.cooldownLeft || 0) > 0;
+  // Подписчик лечится вне очереди, пока есть суточные лечения: сервер
+  // уже обнулил ожидание, здесь только подписываем это на экране
+  const vipSkip = (data.vipHealsLeft || 0) > 0 && (data.cooldownRaw || 0) > 0;
 
   c.innerHTML = `
     <div class="title">Полевой госпиталь</div>
     <div class="card center">
       <p style="font-size:40px">🏥</p>
-      <p class="muted small">Полное восстановление здоровья за доллары. Цена растёт с уровнем — берегите бойцов, лечение дорогое. Лечиться можно раз в 5 минут.</p>
+      <p class="muted small">Полное восстановление здоровья за доллары. Цена растёт с уровнем — берегите бойцов, лечение дорогое. Лечиться можно раз в 5 минут.${(data.vipHealsLeft || 0) > 0 ? ' По VIP-подписке доступно ' + data.vipHealsLeft + ' лечений вне очереди сегодня.' : ''}</p>
     </div>
     <div class="card">
       <div class="kv"><span class="k"><span class="ic-health"></span> Здоровье</span><span class="v">${data.hp} / ${data.maxHp}</span></div>
@@ -666,8 +669,9 @@ App.screens.hospital = async (c) => {
       <hr class="hr">
       <div class="kv"><span class="k">Полное восстановление</span><span class="v">${UI.priceWithSale(data.baseFullHeal, data.fullHeal, '<span class="ic-dollar"></span>')}</span></div>
       ${onCooldown ? `<div class="kv"><span class="k">⏳ До следующего лечения</span><span class="v" style="color:var(--orange)">${UI.fmtTimer(data.cooldownLeft)}</span></div>` : ''}
+      ${vipSkip ? `<div class="kv"><span class="k"><span class="vip-mark">VIP</span> Лечений вне очереди</span><span class="v gold">${data.vipHealsLeft} на сегодня</span></div>` : ''}
       <button class="btn btn-orange mt" id="hp-heal" ${!needsHeal || onCooldown || data.dollars < data.fullHeal ? 'disabled' : ''}>
-        ${!needsHeal ? 'Здоровье в норме' : onCooldown ? `Лечение через ${UI.fmtTimer(data.cooldownLeft)}` : (data.dollars < data.fullHeal ? 'Не хватает денег' : 'Полностью вылечиться')}
+        ${!needsHeal ? 'Здоровье в норме' : onCooldown ? `Лечение через ${UI.fmtTimer(data.cooldownLeft)}` : (data.dollars < data.fullHeal ? 'Не хватает денег' : (vipSkip ? 'Вылечиться вне очереди' : 'Полностью вылечиться'))}
       </button>
       ${data.baseFullHeal !== data.fullHeal ? `<p class="muted small center mt">Учтена скидка трофея «Полевой госпиталь»</p>` : ''}
     </div>`;

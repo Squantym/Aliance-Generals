@@ -105,6 +105,35 @@ function recordLogin(user: any, ip: string, ua: string, kind?: string): void {
   db.markUser(user.id);
 }
 
+// ---------- Отметка активности ----------
+// Вызывается на КАЖДОМ запросе игрока. Полноценную запись делаем только
+// когда есть что записать: сменился адрес, сменилось устройство или
+// прошёл час. Иначе история из 20 входов забивалась бы за минуту одним
+// и тем же, а база — лишними записями.
+const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
+
+function touch(user: any, ip: string, ua: string): void {
+  if (!user || !ip) return;
+  const a = user.access || (user.access = {});
+  const addr = String(ip);
+  const dev = parseDevice(ua).label;
+  const now = Date.now();
+
+  const addrChanged = a.lastIp !== addr;
+  const devChanged = a.lastDevice !== dev;
+  const longAgo = !a.lastAt || (now - a.lastAt) > TOUCH_INTERVAL_MS;
+
+  // Первый раз, смена адреса или устройства — полноценная запись
+  if (!a.lastIp || addrChanged || devChanged) {
+    recordLogin(user, addr, ua, !a.lastIp ? 'первый вход' : (addrChanged ? 'смена адреса' : 'смена устройства'));
+    return;
+  }
+  if (longAgo) { recordLogin(user, addr, ua, 'сессия'); return; }
+
+  // Ничего не изменилось — только освежаем время, без новой записи
+  a.lastAt = now;
+}
+
 // ---------- Сведения для админки ----------
 function view(user: any) {
   const a = (user && user.access) || {};
@@ -138,8 +167,12 @@ function related(user: any, allUsers: Record<string, any>) {
   const mine = Object.keys(((user && user.access) || {}).ips || {});
   if (!mine.length) return [];
   const out: any[] = [];
+  const acc = (() => { try { return require('./account'); } catch (e) { return null; } })();
   for (const p of Object.values(allUsers)) {
     if (!p || p.id === user.id || (p as any).isBot) continue;
+    // Свои же персонажи показываются отдельным списком — здесь они
+    // только зашумляли бы выдачу
+    if (acc && acc.sameAccount(user, p)) continue;
     const theirs = Object.keys((((p as any).access) || {}).ips || {});
     const shared = mine.filter((ip) => theirs.includes(ip) && ip !== 'unknown');
     if (!shared.length) continue;
@@ -155,22 +188,47 @@ function related(user: any, allUsers: Record<string, any>) {
   return out.sort((a, b) => b.sharedIps.length - a.sharedIps.length).slice(0, 50);
 }
 
+// Связанные персонажи одного аккаунта (кабинет). Это законная связь —
+// игра сама разрешает три персонажа. Показываем отдельно от совпадений
+// по адресу, чтобы администратор не путал разрешённое с подозрительным.
+function sameAccountChars(user: any, allUsers: Record<string, any>) {
+  try {
+    const acc = require('./account');
+    return acc.charactersOf(user)
+      .filter((p: any) => p.id !== user.id)
+      .map((p: any) => ({
+        id: p.id, name: p.name, level: p.level,
+        lastSeen: p.lastSeen || 0, banned: !!p.banned,
+      }));
+  } catch (e) { return []; }
+}
+
 // Сколько аккаунтов сидит на одном адресе — сводка по всей игре
 function ipSummary(allUsers: Record<string, any>, minAccounts?: number) {
   const min = Math.max(2, minAccounts || 2);
+  const accOf = (p: any) => { try { return require('./account').accountIdOf(p); } catch (e) { return p.id; } };
   const map: Record<string, any[]> = {};
   for (const p of Object.values(allUsers)) {
     if (!p || (p as any).isBot) continue;
     for (const ip of Object.keys((((p as any).access) || {}).ips || {})) {
       if (ip === 'unknown') continue;
-      (map[ip] = map[ip] || []).push({ id: (p as any).id, name: (p as any).name, level: (p as any).level });
+      (map[ip] = map[ip] || []).push({
+        id: (p as any).id, name: (p as any).name, level: (p as any).level,
+        account: accOf(p),
+      });
     }
   }
   return Object.entries(map)
-    .filter(([, list]) => list.length >= min)
-    .map(([ip, list]) => ({ ip, count: list.length, players: list }))
-    .sort((a, b) => b.count - a.count)
+    .map(([ip, list]) => {
+      // Считаем РАЗНЫЕ аккаунты, а не персонажей: три своих персонажа с
+      // одного адреса — это разрешённый кабинет, а не мультоводство.
+      // Без этого различия список забило бы законными записями.
+      const accounts = new Set(list.map((x: any) => x.account));
+      return { ip, count: accounts.size, chars: list.length, accounts: accounts.size, players: list };
+    })
+    .filter((g) => g.accounts >= min)
+    .sort((a, b) => b.accounts - a.accounts)
     .slice(0, 100);
 }
 
-export = { recordLogin, view, related, ipSummary, parseDevice, KEEP_LOGINS };
+export = { recordLogin, touch, view, related, ipSummary, sameAccountChars, parseDevice, KEEP_LOGINS, TOUCH_INTERVAL_MS };

@@ -19,8 +19,16 @@ function priceFor(user: User): number {
 
 function view(user: User) {
   const max = player.maxima(user);
-  const cooldownLeft = Math.max(0, Math.ceil((((user as any).lastHospitalHeal || 0) + 5 * 60 * 1000 - Date.now()) / 1000));
+  const rawCooldown = Math.max(0, Math.ceil((((user as any).lastHospitalHeal || 0) + 5 * 60 * 1000 - Date.now()) / 1000));
+  // У подписчика ожидание можно пропустить, пока есть суточные лечения.
+  // Без этого экран блокировал кнопку и до сервера дело не доходило —
+  // преимущество формально работало, но воспользоваться им было нельзя.
+  let vipHealsLeft = 0;
+  try { vipHealsLeft = require('./vip').left(user, 'heal'); } catch (e) {}
+  const cooldownLeft = vipHealsLeft > 0 ? 0 : rawCooldown;
   return {
+    vipHealsLeft,
+    cooldownRaw: rawCooldown,
     hp: user.res.hp.cur,
     maxHp: max.hp,
     fullHeal: priceFor(user),

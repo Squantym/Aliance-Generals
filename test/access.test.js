@@ -118,6 +118,48 @@ ok(css.includes('.mc-group'), 'стили сводки добавлены');
 const fields = fs.readFileSync(ROOT + '/src/core/playerFields.ts', 'utf8');
 ok(/access:\s+\{ owner: 'access'/.test(fields), 'поле зарегистрировано в реестре');
 
+console.log('\n── 7. Учёт на каждом запросе ──');
+// Главная причина, по которой данных не появлялось: запись велась только
+// при входе по паролю, а игрок с действующим токеном не логинится месяцами
+const httpSrc = fs.readFileSync(ROOT + '/src/core/http.ts', 'utf8');
+ok(/require\('\.\.\/services\/access'\)\.touch\(user, reqCtx\.ip, reqCtx\.ua\)/.test(httpSrc),
+   'учёт вызывается на каждом запросе игрока, а не только при входе');
+ok(/ua: String\(req\.headers\['user-agent'\] \|\| ''\)/.test(httpSrc),
+   'строка браузера попадает в объект запроса');
+ok(/ua: string;/.test(httpSrc), 'поле описано в типе — иначе сборка молча теряла бы его');
+
+const p9 = by('Третий');
+const before = access.view(p9).logins.length;
+// Тот же адрес и устройство — новой записи быть не должно
+access.touch(p9, '188.44.9.2', UA_IPHONE);
+access.touch(p9, '188.44.9.2', UA_IPHONE);
+ok(access.view(p9).logins.length === before,
+   'повторные запросы с того же устройства не плодят записи');
+// Смена адреса — запись появляется
+access.touch(p9, '5.5.5.5', UA_IPHONE);
+const afterIp = access.view(p9);
+ok(afterIp.logins.length === before + 1, 'смена адреса записывается');
+ok(afterIp.logins[0].kind === 'смена адреса', `помечено как «${afterIp.logins[0].kind}»`);
+ok(afterIp.last.ip === '5.5.5.5', 'последний адрес обновился');
+// Смена устройства — тоже
+access.touch(p9, '5.5.5.5', UA_PC);
+const afterDev = access.view(p9);
+ok(afterDev.logins[0].kind === 'смена устройства', `помечено как «${afterDev.logins[0].kind}»`);
+ok(/компьютер/.test(afterDev.last.device), 'устройство обновилось');
+// Долгое молчание — отметка сессии
+const a9 = p9.access;
+a9.lastAt = Date.now() - access.TOUCH_INTERVAL_MS - 1000;
+const beforeLong = access.view(p9).logins.length;
+access.touch(p9, '5.5.5.5', UA_PC);
+ok(access.view(p9).logins.length === beforeLong + 1, 'спустя час активность отмечается заново');
+
+console.log('\n── 8. Данные доходят до панели ──');
+const v9 = access.view(p9);
+ok(v9.last.ip && v9.last.ip !== '—', `последний адрес заполнен: ${v9.last.ip}`);
+ok(v9.last.device && v9.last.device !== '—', `устройство заполнено: ${v9.last.device}`);
+ok(v9.registered.ip !== '—', 'адрес регистрации на месте');
+ok(v9.ips.length >= 2, `адресов в сводке: ${v9.ips.length}`);
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

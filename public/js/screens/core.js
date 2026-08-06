@@ -460,6 +460,87 @@ App.screens.dailytasks = async (c) => {
 // ═══ Страница VIP-подписки ══════════════════════════════════════════
 // Витрина преимуществ и состояние своей подписки. Список берём с
 // сервера: там он рядом с самими механиками и не разъедется с ними.
+// ═══ КАБИНЕТ: до трёх персонажей на аккаунт ═════════════════════════
+App.screens.cabinet = async (c) => {
+  c.innerHTML = '<div class="loading">Загружаю кабинет…</div>';
+  let d = null;
+  try { d = await API.get('/api/account'); }
+  catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+  const ago = (ms) => {
+    if (!ms) return 'ещё не играл';
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 5) return 'сейчас в игре';
+    if (m < 60) return `${m} мин назад`;
+    const h = Math.round(m / 60);
+    return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
+  };
+
+  c.innerHTML = `
+    <div class="title">🎖 Мои персонажи</div>
+    <div class="card">
+      <p class="muted small">На один аккаунт можно создать до ${d.max} персонажей.
+      Вход и почта у них общие — переключайтесь без ввода пароля.</p>
+      <p class="muted small mt">⚠️ Персонажи одного аккаунта не воюют друг с другом,
+      не шлют подкрепления и не разведывают: это было бы обманом остальных игроков.</p>
+    </div>
+
+    <div class="cab-grid">
+      ${d.characters.map((ch) => `
+        <div class="cab-card${ch.current ? ' cab-current' : ''}${ch.banned ? ' cab-banned' : ''}">
+          <div class="cab-ava${ch.avatar ? ' has-photo' : ''}"
+               ${ch.avatar ? `style="background-image:url(/img/avatars/${UI.esc(ch.avatar)}.webp)"` : ''}>
+            ${ch.avatar ? '' : '<span class="cab-ava-stub">👤</span>'}
+          </div>
+          <div class="cab-body">
+            <div class="cab-name">
+              ${App._flagImg(ch.flag)} ${UI.esc(ch.name)}${App.vipMark(ch.vip)}
+              ${ch.staffTag ? `<sup class="role-tag role-tag-${UI.esc(ch.staffTag)}">${UI.esc(ch.staffTag)}</sup>` : ''}
+            </div>
+            <div class="muted small">${UI.esc(ch.rank)} · ур. ${ch.level}</div>
+            <div class="cab-rows">
+              <div><span>Рейтинг</span><b>${UI.fmtNum(ch.rating)}</b></div>
+              <div><span>Альянс</span><b>${ch.alliance ? UI.esc(ch.alliance) : '—'}</b></div>
+              <div><span>Легион</span><b>${ch.legion ? UI.esc(ch.legion) : '—'}</b></div>
+              <div><span><span class="ic-dollar"></span> Деньги</span><b class="money">${UI.fmtMoney(ch.dollars)}</b></div>
+              <div><span><span class="ic-gold"></span> Золото</span><b class="gold">${UI.fmtNum(ch.gold)}</b></div>
+            </div>
+            <div class="muted small mt">${ago(ch.lastSeen)}</div>
+            ${ch.banned ? '<div class="cab-ban">🚫 заблокирован</div>'
+              : (ch.current
+                ? '<div class="cab-here">Вы играете за него</div>'
+                : `<button class="btn btn-orange mt" data-switch="${ch.id}" style="width:100%">Играть за него</button>`)}
+          </div>
+        </div>`).join('')}
+
+      ${d.canCreate ? `
+        <div class="cab-card cab-new" id="cab-create">
+          <div class="cab-new-inner">
+            <div class="cab-new-plus">＋</div>
+            <div>Создать персонажа</div>
+            <div class="muted small">осталось мест: ${d.max - d.characters.length}</div>
+          </div>
+        </div>` : ''}
+    </div>`;
+
+  c.querySelectorAll('[data-switch]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await API.post('/api/account/switch', { id: b.dataset.switch });
+        API.setToken(r.token);
+        UI.toast(`🔄 Вы играете за «${r.name}»`);
+        await App.refreshMe();
+        location.hash = '#home';
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); b.disabled = false; }
+    };
+  });
+
+  const createBtn = document.getElementById('cab-create');
+  if (createBtn) createBtn.onclick = () => App.showCreateCharacter();
+};
+
 App.screens.vip = async (c) => {
   c.innerHTML = '<div class="loading">Загружаю…</div>';
   let d = null;
@@ -640,7 +721,6 @@ App.screens.profile = async (c, param) => {
     <div class="card pf-card ${p.profileBg ? UI.esc(p.profileBg) : ''}">
       <div class="pf2-head">
         <span class="pf2-name">${App._flagImg(p.flag,'mid')} ${UI.esc(p.name)}</span>${App.vipMark(p.vip)}
-        ${App.vipMark(p.vip)}
         ${p.staffRole ? `<sup class="role-tag role-tag-${p.staffRole}" title="${UI.esc(p.staffLabel || '')}">${UI.esc(p.staffTag || '')}</sup>` : ''}
         ${p.activeTitle ? `<span class="pf2-title">${UI.esc(p.activeTitle)}</span>` : ''}
         ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}
@@ -1255,6 +1335,16 @@ App.screens.settings = async (c) => {
 
       <div id="pw-hint" class="field-hint"></div>
       <button class="btn btn-orange mt" id="pw-go" style="width:100%">Сменить пароль</button>
+
+      <hr class="hr">
+      <div class="name">🔑 Логин аккаунта</div>
+      <p class="muted small mt">Логин один на все ваши персонажи и не связан с их позывными.
+      По нему вы входите в игру.${App.me && App.me.accountLogin ? ` Сейчас: <b>${UI.esc(App.me.accountLogin)}</b>` : ' Пока не задан — вход по почте или позывному.'}</p>
+      <label class="field-label">Новый логин</label>
+      <input type="text" id="al-new" class="field" maxlength="20" placeholder="4–20 символов, латиница и цифры">
+      <label class="field-label">Текущий пароль</label>
+      <input type="password" id="al-pass" class="field" placeholder="подтвердите паролем" autocomplete="current-password">
+      <button class="btn mt" id="al-go" style="width:100%">Сменить логин</button>
     </div>`;
 
   c.innerHTML = `
@@ -1326,7 +1416,24 @@ App.screens.settings = async (c) => {
       [oldI, n1, n2].forEach((el) => { el.type = show ? 'text' : 'password'; });
     };
 
-    document.getElementById('pw-go').onclick = async () => {
+    // Смена логина аккаунта. Пароль обязателен: логин — это вход,
+  // и менять его по перехваченной сессии не должно быть можно.
+  const alGo = document.getElementById('al-go');
+  if (alGo) alGo.onclick = async () => {
+    const login = (document.getElementById('al-new') || {}).value || '';
+    const pass = (document.getElementById('al-pass') || {}).value || '';
+    if (!login.trim()) return UI.toast('⛔ Введите новый логин');
+    if (!pass) return UI.toast('⛔ Подтвердите паролем');
+    alGo.disabled = true;
+    try {
+      await API.post('/api/account/login', { login: login.trim(), password: pass });
+      UI.toast('🔑 Логин изменён');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); alGo.disabled = false; }
+  };
+
+  document.getElementById('pw-go').onclick = async () => {
       if (!oldI.value) return UI.toast('⛔ Введите текущий пароль');
       if (n1.value !== n2.value) return UI.toast('⛔ Новые пароли не совпадают');
       try {

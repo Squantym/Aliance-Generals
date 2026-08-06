@@ -122,6 +122,9 @@ function send(user: User, toId: string, notices: Notices) {
   const target = users()[toId];
   if (!target) throw new u.ApiError('Игрок не найден');
   if (target.id === user.id) throw new u.ApiError('Нельзя отправить подкрепление самому себе');
+  // Свои же персонажи не усиливают друг друга — иначе три аккаунта
+  // превращаются в схему бесконечного подкрепления
+  require('./account').assertNotSelfAccount(user, target, 'Отправка подкреплений');
 
   // Только взаимные союзники по личному альянсу
   if (!pa.areAllies(user, target)) {

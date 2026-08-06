@@ -318,6 +318,8 @@ function applyReferral(user: User, code: string, notices: Notices) {
   const inviter = Object.values(users()).find((p) => (p.refCode || '').toUpperCase() === c);
   if (!inviter) throw new u.ApiError('Код не найден');
   if (inviter.id === user.id) throw new u.ApiError('Нельзя пригласить самого себя');
+  // Награда за приглашение самого себя вторым персонажем — прямой обман
+  require('./account').assertNotSelfAccount(user, inviter, 'Приглашение');
   if (user.level >= 50) throw new u.ApiError('Код можно ввести только до 50 уровня');
 
   user.referredBy = inviter.id;
@@ -469,6 +471,7 @@ function spyOn(user: User, targetId: string, notices: Notices) {
   const target = users()[targetId];
   if (!target) throw new u.ApiError('Цель не найдена');
   if (target.id === user.id) throw new u.ApiError('Незачем шпионить за собой');
+  require('./account').assertNotSelfAccount(user, target, 'Разведка');
 
   if (used >= free) {
     if (user.gold < config.SPY.extraCostGold) {

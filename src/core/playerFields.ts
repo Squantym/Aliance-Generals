@@ -44,6 +44,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   vipUntil:           { owner: 'vip',        note: 'до какого времени действует VIP-подписка' },
   stats:              { owner: 'stats',      note: 'расширенная статистика: время, деньги, золото, техника' },
   access:             { owner: 'access',     note: 'учёт входов: адреса, устройства, история' },
+  accountId:          { owner: 'account',    note: 'общий аккаунт нескольких персонажей (кабинет)' },
+  accountLogin:       { owner: 'auth',       note: 'логин входа — общий для всех персонажей аккаунта' },
   vipDaily:           { owner: 'vip',        note: 'суточные счётчики VIP: лечение, иммунитет, замены' },
   lastFreeRenameAt:   { owner: 'vip',        note: 'когда была бесплатная смена позывного' },
   spiedBy:            { owner: 'vip',        note: 'кто разведал игрока за сутки (пункт 10)' },

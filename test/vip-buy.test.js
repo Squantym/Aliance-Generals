@@ -55,9 +55,9 @@ ok(/UI\.confirm\([\s\S]{0,200}Оформить VIP-подписку/.test(core),
 ok(/pf2-vip-btn vip-buy/.test(core), 'кнопка в профиле тоже оформлена');
 ok(!/pf2-vip-btn" id="pf-vip" disabled/.test(core), 'кнопка больше не отключена');
 ok(/\.vip-buy \{[\s\S]{0,240}linear-gradient\(150deg, #f3d27a/.test(css), 'на тёмных темах кнопка золотая');
-ok(/body\.theme-light \.vip-buy[\s\S]{0,200}color: #f3d27a/.test(css), 'на светлых — тёмная с золотым текстом');
+ok(/body\.theme-light \.btn\.vip-buy[\s\S]{0,240}color: #f3d27a/.test(css), 'на светлых — тёмная с золотым текстом');
 for (const t of ['light', 'paper', 'sand']) {
-  ok(css.includes(`body.theme-${t} .vip-buy`), `светлая тема «${t}» учтена`);
+  ok(css.includes(`body.theme-${t} .btn.vip-buy`), `светлая тема «${t}» учтена`);
 }
 
 console.log('\n── 3. Оформление преимуществ ──');

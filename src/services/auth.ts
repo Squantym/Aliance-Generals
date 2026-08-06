@@ -136,6 +136,64 @@ function pruneSessions(): number {
 // назначить позже — точка для этого одна).
 const RENAME_GOLD_COST = 0;      // 0 = платная смена выключена
 
+// Проверка позывного. Вынесена отдельно: правила должны быть одни и те
+// же при регистрации, смене имени и создании персонажа в кабинете —
+// иначе через одну из дверей проходили бы имена, запрещённые в другой.
+// ---------- Логин аккаунта ----------
+// Отдельный от позывного: персонажей трое, а вход один. Логин общий для
+// всех персонажей аккаунта — меняется сразу у всех.
+function validateAccountLogin(raw: string): string {
+  const v = sanitizeInput(String(raw || '')).trim();
+  if (!/^[A-Za-z0-9_.\-]{4,20}$/.test(v)) {
+    throw new u.ApiError('Логин: 4–20 символов, латиница, цифры, точка, дефис, подчёркивание');
+  }
+  if (RESERVED_NAMES.has(v.toLowerCase())) throw new u.ApiError('Этот логин зарезервирован');
+  return v;
+}
+
+function setAccountLogin(user: User, raw: string, password: string, notices: Notices) {
+  // Смена логина — вход в аккаунт, поэтому подтверждаем паролем:
+  // иначе перехваченная сессия позволила бы тихо увести аккаунт
+  if (!u.verifyPassword(String(password || ''), (user as any).salt, (user as any).passHash)) {
+    throw new u.ApiError('Неверный пароль');
+  }
+  const login = validateAccountLogin(raw);
+  const key = login.toLowerCase();
+  const acc = require('./account').accountIdOf(user);
+
+  // Занятость проверяем и по логинам, и по позывным: иначе логин мог бы
+  // совпасть с чужим позывным, и вход стал бы неоднозначным
+  const clash = Object.values(users()).find((p: any) => {
+    if (require('./account').accountIdOf(p) === acc) return false;
+    return String(p.accountLogin || '').toLowerCase() === key
+        || String(p.name || '').toLowerCase() === key;
+  });
+  if (clash) throw new u.ApiError('Такой логин уже занят');
+
+  // Проставляем всем персонажам аккаунта — вход у них общий
+  let changed = 0;
+  for (const p of require('./account').charactersOf(user)) {
+    (p as any).accountLogin = login;
+    db.markUser(p.id);
+    changed++;
+  }
+  db.save('users');
+  auditLog.record({ userId: user.id, userName: user.name, path: '/api/account/login', body: { login } });
+  notices.push(`🔑 Логин аккаунта изменён на «${login}»${changed > 1 ? ` (для всех ${changed} персонажей)` : ''}`);
+  return { login };
+}
+
+function validateName(raw: string): string {
+  const name = sanitizeInput(String(raw || '')).trim();
+  if (!/^[A-Za-zА-Яа-яЁё0-9_\- ]{3,16}$/.test(name)) {
+    throw new u.ApiError('Позывной: 3–16 символов. Разрешены: буквы, цифры, _ -');
+  }
+  if (RESERVED_NAMES.has(name.toLowerCase().replace(/\s/g, ''))) {
+    throw new u.ApiError('Это имя зарезервировано и недоступно');
+  }
+  return name;
+}
+
 function renameSelf(user: User, newName: string, notices: Notices) {
   const vipSrv = require('./vip');
   const name = sanitizeInput(String(newName || '')).trim();
@@ -281,12 +339,25 @@ function login(loginName: string, password: string, ip: string, ua?: string) {
   // БАГ 1: rate limiting
   if (ip) checkRateLimit(ip);
 
-  const found = Object.values(users()).find(
-    (p) => p.name.toLowerCase() === String(loginName || '').trim().toLowerCase()
-  );
+  // Вход по логину аккаунта, почте или позывному любого персонажа.
+  //
+  // Почему все три: логин аккаунта — основной способ (он один на все
+  // три персонажа), почта — привычный, а позывной оставлен для тех, кто
+  // регистрировался до появления кабинета и помнит только его.
+  //
+  // Если совпало несколько персонажей одного аккаунта — впускаем того,
+  // кто играл последним: это ожидаемое поведение, а выбор всё равно
+  // доступен в кабинете.
+  const key = String(loginName || '').trim().toLowerCase();
+  const all = Object.values(users()).filter((p: any) => !p.isBot);
+  const byAccountLogin = all.filter((p: any) => String((p as any).accountLogin || '').toLowerCase() === key);
+  const byEmail = all.filter((p: any) => String(p.email || '').toLowerCase() === key);
+  const byName = all.filter((p) => String(p.name || '').toLowerCase() === key);
+  const candidates = byAccountLogin.length ? byAccountLogin : (byEmail.length ? byEmail : byName);
+  const found = candidates.sort((a: any, b: any) => (b.lastSeen || 0) - (a.lastSeen || 0))[0];
 
   // БАГ 11: единое сообщение — не раскрывать существование пользователя
-  const WRONG_CREDS = 'Неверный позывной или пароль';
+  const WRONG_CREDS = 'Неверный логин или пароль';
   if (!found) throw new u.ApiError(WRONG_CREDS);
   if (!u.verifyPassword(password, found.salt, found.passHash)) throw new u.ApiError(WRONG_CREDS);
   if (!found.emailVerified) {
@@ -432,4 +503,4 @@ function changePassword(user: User, oldPassword: string, newPassword: string, ne
   return { ok: true, token };
 }
 
-export = { register, login, logout, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};
+export = { register, login, logout, issueToken, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};

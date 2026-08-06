@@ -138,18 +138,68 @@ const UI = {
   },
 
   // Деньги с суффиксами: до 100 тыс. — полностью, дальше K / M / Bn / Tr
+  // Короткая запись денег. Шкала продолжена дальше триллионов: на
+  // высоких уровнях суммы доходят до квинтиллионов, и без сокращения
+  // они не помещались в шапку на экранах шириной 320 точек.
+  // Ступени идут по три знака: K, M, Bn, Tr, Qd, Qn, Sx, Sp, Oc.
   fmtMoney(n) {
     n = Math.round(Number(n) || 0);
     const abs = Math.abs(n);
-    const cut = (v) => {
-      const s = v.toFixed(2).replace(/\.?0+$/, '');
-      return s;
-    };
-    if (abs >= 1e12) return cut(n / 1e12) + ' Tr';
-    if (abs >= 1e9) return cut(n / 1e9) + ' Bn';
-    if (abs >= 1e6) return cut(n / 1e6) + ' M';
-    if (abs >= 1e5) return cut(n / 1e3) + ' K';
-    return n.toLocaleString('ru-RU');
+    // Больше двух знаков после запятой в шапке не нужно, а на самых
+    // больших числах хватает и одного — иначе строка снова растёт
+    const cut = (v, digits) => v.toFixed(digits === undefined ? 2 : digits).replace(/\.?0+$/, '');
+    const STEPS = [
+      [1e24, 'Sp'],   // септиллион
+      [1e21, 'Sx'],   // секстиллион
+      [1e18, 'Qn'],   // квинтиллион
+      [1e15, 'Qd'],   // квадриллион
+      [1e12, 'Tr'],   // триллион
+      [1e9,  'Bn'],   // миллиард
+      [1e6,  'M'],    // миллион
+      [1e5,  'K'],    // тысяча (от сотни тысяч, ниже читается и так)
+    ];
+    for (const [size, suffix] of STEPS) {
+      if (abs >= size) {
+        const v = n / (suffix === 'K' ? 1e3 : size);
+        // Для длинных суффиксов режем до одного знака, чтобы строка
+        // оставалась короткой: «1.2 Qn» вместо «1.23 Qn»
+        return cut(v, abs >= 1e15 ? 1 : 2) + ' ' + suffix;
+      }
+    }
+    return n.toLocaleString('ru-RU').replace(/[\u00A0\u202F]/g, ' ');
+  },
+
+  // Полная запись с русским названием — для подсказок и подробных мест,
+  // где важна точность: «21.02 Tr» ничего не говорит, а «21 триллион» —
+  // говорит. Используется в title у сумм в шапке.
+  fmtMoneyFull(n) {
+    n = Math.round(Number(n) || 0);
+    const abs = Math.abs(n);
+    const NAMES = [
+      [1e24, 'септиллион', 'септиллиона', 'септиллионов'],
+      [1e21, 'секстиллион', 'секстиллиона', 'секстиллионов'],
+      [1e18, 'квинтиллион', 'квинтиллиона', 'квинтиллионов'],
+      [1e15, 'квадриллион', 'квадриллиона', 'квадриллионов'],
+      [1e12, 'триллион', 'триллиона', 'триллионов'],
+      [1e9,  'миллиард', 'миллиарда', 'миллиардов'],
+      [1e6,  'миллион', 'миллиона', 'миллионов'],
+    ];
+    for (const [size, one, few, many] of NAMES) {
+      if (abs >= size) {
+        const v = n / size;
+        const num = v.toFixed(2).replace(/\.?0+$/, '');
+        // У дробных числительных по-русски всегда родительный падеж
+        // единственного числа: «21,02 триллиона», а не «триллион»
+        const isFraction = num.indexOf('.') >= 0;
+        const whole = Math.floor(Math.abs(v));
+        const last = whole % 10, last2 = whole % 100;
+        const word = isFraction ? few
+          : ((last === 1 && last2 !== 11) ? one
+            : ((last >= 2 && last <= 4 && (last2 < 10 || last2 >= 20)) ? few : many));
+        return num.replace('.', ',') + ' ' + word;
+      }
+    }
+    return n.toLocaleString('ru-RU').replace(/[\u00A0\u202F]/g, ' ');
   },
 
   fmtNum(n) {

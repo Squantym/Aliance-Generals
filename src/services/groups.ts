@@ -289,6 +289,10 @@ function invite(user: User, kind: string, targetId: string, notices: Notices) {
 
   const target = player.users()[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  // Свои персонажи не вступают в одну группу: вместимость армии растёт
+  // от числа участников, и три своих персонажа давали бы владельцу
+  // бесплатную прибавку, недоступную честному игроку
+  require('./account').assertNotSelfAccount(user, target, 'Приглашение в группу');
   if (target[def.userField]) throw new u.ApiError('Игрок уже состоит в группе');
 
   g.invites = g.invites || [];

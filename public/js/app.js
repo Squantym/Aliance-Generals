@@ -343,6 +343,9 @@ const App = {
     App.route();
 
     App.startOnlineCounter();
+    // Кнопка кабинета появляется только у вошедшего игрока
+    const cabBtn = document.getElementById('cabinet-btn');
+    if (cabBtn) cabBtn.style.display = App.me ? '' : 'none';
     // Награда за вход — самое первое окно при заходе в игру
     if (App.me && App.me.pendingLoginReward) {
       setTimeout(() => App._showLoginReward(App.me.pendingLoginReward), 300);
@@ -2346,6 +2349,42 @@ const App = {
     } catch (e) { UI.toast('⛔ ' + e.message); }
   },
 
+  // Создание нового персонажа в кабинете. Пароль и почта общие с
+  // аккаунтом, поэтому спрашиваем только позывной и страну.
+  async showCreateCharacter() {
+    let countries = [];
+    try { const r = await API.get('/api/countries'); countries = r.countries || []; } catch (e) {}
+    App._newChar = { name: '', country: (App.me && App.me.country) || 'ru' };
+
+    const dlg = UI.confirm(`
+      <div class="cab-create">
+        <p class="muted small">Новый персонаж начинает с нуля. Вход и почта общие —
+        переключаться между персонажами можно в кабинете без пароля.</p>
+        <input type="text" id="nc-name" class="field mt" maxlength="16" placeholder="Позывной">
+        <select id="nc-country" class="field mt">
+          ${countries.map((x) => `<option value="${UI.esc(x.id)}"${x.id === App._newChar.country ? ' selected' : ''}>${UI.esc(x.flag || '')} ${UI.esc(x.name)}</option>`).join('')}
+        </select>
+        <p class="muted small mt">Страна даёт постоянную прибавку и потом не меняется.</p>
+      </div>`,
+      { title: 'Новый персонаж', icon: '🎖', html: true, okText: 'Создать', cancelText: 'Отмена' });
+
+    requestAnimationFrame(() => {
+      const n = document.getElementById('nc-name');
+      const cc = document.getElementById('nc-country');
+      if (n) { n.oninput = () => { App._newChar.name = n.value; }; n.focus(); }
+      if (cc) cc.onchange = () => { App._newChar.country = cc.value; };
+    });
+
+    if (!await dlg) return;
+    const name = (App._newChar.name || '').trim();
+    if (!name) return UI.toast('⛔ Введите позывной');
+    try {
+      await API.post('/api/account/create', { name, country: App._newChar.country });
+      UI.toast('🎖 Персонаж создан');
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  },
+
   // ── Счётчик онлайна в подвале ───────────────────────────────────
   // Показываем реальных игроков за последние 5 минут. Обновляем раз в
   // минуту: чаще незачем, а лишние запросы на живом сервере ни к чему.
@@ -2784,7 +2823,7 @@ const App = {
         <span class="xp-strip-label">Ур. ${m.level} · ${UI.fmtNum(m.xp)} / ${UI.fmtNum(m.xpNext)} XP</span>
       </div>
       <div class="res-row">
-        <div class="clickable" onclick="App.go('bank')"><span class="ic-dollar"></span> <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
+        <div class="clickable" onclick="App.go('bank')" title="${UI.fmtMoneyFull(m.dollars)}"><span class="ic-dollar"></span> <span class="money" id="hd-dollars">${UI.fmtMoney(m.dollars)}</span></div>
         <div class="clickable" onclick="App.go('market')"><span class="ic-gold" aria-hidden="true"></span> <span class="gold" id="hd-gold">${UI.fmtNum(m.gold)}</span></div>
         <div class="clickable" onclick="App.go('${lvlTarget}')">⭐ <span class="lvl">Ур. ${m.level}</span>${m.skillPoints > 0 ? ' <span class="badge">+' + m.skillPoints + '</span>' : ''}</div>
         <div class="clickable" onclick="App.go('notifications')">${bell}</div>

@@ -36,6 +36,10 @@
   <!-- Правовые документы: обязательны для платежей и магазинов приложений,
        поэтому открываются отдельными страницами без входа в игру -->
   <footer id="site-footer">
+    <!-- Переключение персонажа. Появляется только после входа —
+         до этого показывать нечего. -->
+    <button id="cabinet-btn" class="cabinet-btn" style="display:none"
+            onclick="App.go('cabinet')">🎖 Мои персонажи</button>
     <div id="online-counter" class="online-counter">
       <span class="online-dot"></span><span id="online-num">—</span> в игре
     </div>

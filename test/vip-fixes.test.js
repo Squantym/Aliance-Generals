@@ -104,6 +104,43 @@ console.log('\n── 6. Кнопки видны только подписчик
 ok(/App\.me\.vip \? `[\s\S]{0,200}pf2-vip-tools/.test(core), 'блок инструментов показывается по подписке');
 ok(css.includes('.pf2-vip-tools'), 'стили блока добавлены');
 
+console.log('\n── 7. Госпиталь: кнопка не блокируется у подписчика ──');
+// Настоящая причина жалобы: сервер лечение разрешал, но экран показывал
+// ожидание и делал кнопку недоступной — до сервера дело не доходило
+const v9 = by('Шпион');
+vip.grant(null, v9, 30, 'проверка', []);
+v9.level = 50; v9.dollars = 1e12;
+let clicks = 0, blocked = 0;
+for (let i = 0; i < 7; i++) {
+  v9.res.hp.cur = 10;
+  const view = hosp.view(v9);
+  if (view.cooldownLeft > 0) { blocked++; continue; }
+  try { hosp.heal(v9, []); clicks++; } catch (e) {}
+}
+ok(clicks === 6, `подряд доступно ${clicks} лечений: одно обычное и пять по подписке`);
+ok(blocked === 1, 'кнопка блокируется только после исчерпания запаса');
+const hsrc2 = fs.readFileSync(ROOT + '/src/services/hospital.ts', 'utf8');
+ok(/vipHealsLeft > 0 \? 0 : rawCooldown/.test(hsrc2),
+   'сервер обнуляет ожидание, пока есть суточные лечения');
+ok(/vipHealsLeft,/.test(hsrc2), 'остаток лечений передаётся на экран');
+ok(/cooldownRaw: rawCooldown/.test(hsrc2), 'настоящее ожидание тоже передаётся — для подписи');
+const mkt = fs.readFileSync(ROOT + '/public/js/screens/market.js', 'utf8');
+ok(/const vipSkip = \(data\.vipHealsLeft \|\| 0\) > 0 && \(data\.cooldownRaw \|\| 0\) > 0/.test(mkt),
+   'экран понимает, что лечение идёт вне очереди');
+ok(/Вылечиться вне очереди/.test(mkt), 'на кнопке это написано');
+ok(/Лечений вне очереди/.test(mkt), 'показан остаток на сегодня');
+
+// Обычный игрок: ограничение работает как прежде
+const plain2 = by('Обычный');
+plain2.level = 50; plain2.dollars = 1e12;
+plain2.res.hp.cur = 10;
+// Игрок мог лечиться раньше по ходу сценария — снимаем ожидание
+plain2.lastHospitalHeal = 0;
+hosp.heal(plain2, []);
+plain2.res.hp.cur = 10;
+ok(hosp.view(plain2).cooldownLeft > 0, 'без подписки ожидание остаётся');
+ok(hosp.view(plain2).vipHealsLeft === 0, 'и лечений вне очереди у него нет');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

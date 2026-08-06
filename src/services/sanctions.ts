@@ -45,6 +45,9 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   const target = players[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
   if (target.isBot) throw new u.ApiError('Нельзя объявить санкцию на бота');
+  // Санкция на своего же персонажа — способ вернуть себе ставку через
+  // «охоту» третьим персонажем и накрутить достижение охотника
+  require('./account').assertNotSelfAccount(user, target, 'Объявление санкции');
 
   // Объявить санкцию можно ТОЛЬКО на того, кто напал и отрезал тебе ухо.
   // Проверяем по earCutters — там записаны те, кто отрезал уши заказчику.

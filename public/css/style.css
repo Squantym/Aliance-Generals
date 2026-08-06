@@ -2506,7 +2506,9 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 .pf2-stats-label { margin: 8px 0 2px; font-weight: 600; color: var(--dim); }
 .pf2-vip { margin-top: 14px; text-align: center; }
 .pf2-vip-note { font-size: 14px; margin-bottom: 8px; }
-.pf2-vip-btn { width: 100%; opacity: .55; cursor: default; }
+/* Кнопка в профиле раньше была заглушкой — отсюда приглушённость и
+   курсор «не нажимается». Теперь подписка покупается, кнопка живая. */
+.pf2-vip-btn { width: 100%; cursor: pointer; }
 .pf2-vip-more { display: block; margin-top: 8px; color: var(--gold); font-size: 13px; }
 .pf2-be { margin-top: 14px; border-top: 1px solid var(--border-dim); padding-top: 10px; }
 .pf2-be-title { font-weight: 600; margin-bottom: 6px; }
@@ -3397,23 +3399,26 @@ body.theme-noir .field-hint { color: #8a8a92; }
 /* ═══ Кнопка покупки VIP ═════════════════════════════════════════════
    На тёмных темах — золотая, на светлых — тёмная: на светлом фоне
    золото по золоту не читалось. */
-.vip-buy {
+/* Золотая кнопка покупки. Селектор усилен классом .btn: без этого общий
+   стиль кнопок перебивал фон, и она выглядела обычной тёмной. */
+.btn.vip-buy, .vip-buy {
   width: 100%; font-weight: 800; letter-spacing: .4px; font-size: 15px;
-  color: #1a1408;
-  background: linear-gradient(150deg, #f3d27a, #c9a227);
-  border: 1px solid #b8952f;
+  color: #1a1408 !important;
+  background: linear-gradient(150deg, #f3d27a, #c9a227) !important;
+  border: 1px solid #b8952f !important;
   box-shadow: 0 3px 14px rgba(220,180,70,.28);
   opacity: 1; cursor: pointer;
+  text-shadow: none;
 }
-.vip-buy:hover { background: linear-gradient(150deg, #ffe49a, #d9b134); }
+.btn.vip-buy:hover, .vip-buy:hover { background: linear-gradient(150deg, #ffe49a, #d9b134) !important; }
 .vip-buy:disabled { opacity: .6; cursor: default; }
 /* Светлые темы: тёмная кнопка с золотой каймой */
-body.theme-light .vip-buy,
-body.theme-paper .vip-buy,
-body.theme-sand .vip-buy {
-  color: #f3d27a;
-  background: linear-gradient(150deg, #2a2416, #171309);
-  border-color: #8d7526;
+body.theme-light .btn.vip-buy,
+body.theme-paper .btn.vip-buy,
+body.theme-sand .btn.vip-buy {
+  color: #f3d27a !important;
+  background: linear-gradient(150deg, #2a2416, #171309) !important;
+  border-color: #8d7526 !important;
   box-shadow: 0 3px 14px rgba(0,0,0,.25);
 }
 body.theme-light .vip-buy:hover,
@@ -3530,4 +3535,68 @@ body.theme-sand .vip-buy:hover { background: linear-gradient(150deg, #3a3220, #2
 .mc-player {
   font-size: 12px; padding: 2px 7px; border-radius: 5px;
   background: var(--panel-2); border: 1px solid var(--border);
+}
+
+/* ═══ Шапка на узких экранах ═════════════════════════════════════════
+   На 320 точках пять колонок не помещались, и overflow:hidden просто
+   обрезал суммы и уровень. Уменьшаем шрифт и отступы, а сами суммы
+   теперь короче за счёт продолженной шкалы (Qd, Qn, Sx). */
+@media (max-width: 400px) {
+  .res-row > div, .stat-row > div {
+    padding: 5px 2px; font-size: 11.5px; letter-spacing: -0.2px;
+  }
+  .res-row .ic-dollar, .res-row .ic-gold,
+  .stat-row .ic-dollar, .stat-row .ic-gold { transform: scale(.85); }
+  .timer { font-size: 9.5px; }
+}
+@media (max-width: 340px) {
+  .res-row > div, .stat-row > div { padding: 4px 1px; font-size: 10.5px; }
+  /* Даём длинным суммам ужаться, а не обрезаться */
+  .res-row .money, .res-row .gold, .stat-row .money, .stat-row .gold {
+    display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  }
+}
+
+/* ═══ Кабинет: карточки персонажей ═══════════════════════════════════ */
+.cabinet-btn {
+  display: block; margin: 0 auto 8px; padding: 6px 14px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--fg); font-size: 12.5px; cursor: pointer;
+}
+.cabinet-btn:hover { border-color: var(--orange-1); color: var(--orange-1); }
+
+.cab-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px; margin-top: 10px;
+}
+.cab-card {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  background: var(--panel-2);
+}
+.cab-current { border-color: var(--orange-1); box-shadow: 0 0 0 1px rgba(200,120,40,.25) inset; }
+.cab-banned { opacity: .6; }
+.cab-ava {
+  height: 120px; background: var(--panel); background-size: cover; background-position: center;
+  display: flex; align-items: center; justify-content: center;
+}
+.cab-ava-stub { font-size: 40px; opacity: .4; }
+.cab-body { padding: 9px 11px 11px; }
+.cab-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cab-rows { margin-top: 6px; font-size: 12.5px; }
+.cab-rows div { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.cab-rows span { color: var(--dim); }
+.cab-here { margin-top: 8px; text-align: center; font-size: 12.5px; color: var(--orange-1); }
+.cab-ban { margin-top: 8px; text-align: center; font-size: 12.5px; color: var(--red); }
+.cab-new { cursor: pointer; border-style: dashed; }
+.cab-new:hover { border-color: var(--orange-1); }
+.cab-new-inner {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; height: 100%; min-height: 210px; text-align: center; color: var(--dim);
+}
+.cab-new-plus { font-size: 38px; color: var(--orange-1); line-height: 1; }
+.cab-create .field { width: 100%; box-sizing: border-box; }
+@media (max-width: 420px) {
+  .cab-grid { grid-template-columns: 1fr; }
+  .cab-ava { height: 100px; }
 }

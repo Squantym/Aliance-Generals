@@ -118,6 +118,7 @@ function registerRoutes(app: any) {
       staffLabel: require('./services/roles').roleLabel(req.user) || null,
       staffTag: require('./services/roles').roleTag(req.user) || null,
       vip: require('./services/vip').isVip(req.user),
+      accountLogin: (req.user as any).accountLogin || '',
       vipUntil: Number((req.user as any).vipUntil || 0),
       // Зоны админ-панели, доступные этому сотруднику
       staffZones: require('./services/roles').zonesFor(req.user),
@@ -455,6 +456,22 @@ function registerRoutes(app: any) {
     if (!url) throw new u.ApiError('Изображение не передано');
     return { url };
   }), { admin: true });
+
+  // ═══ КАБИНЕТ: до трёх персонажей на аккаунт ══════════════════════
+  const account = require('./services/account');
+
+  app.add('GET', '/api/account', (req) => account.view(req.user));
+
+  app.add('POST', '/api/account/create', act((req, n) =>
+    account.createCharacter(req.user, String(req.body.name || ''), String(req.body.country || ''), n)));
+
+  app.add('POST', '/api/account/switch', act((req, n) =>
+    account.switchTo(req.user, String(req.body.id || ''), n)));
+
+  // Смена логина аккаунта. Позывной персонажа и логин входа — разные
+  // вещи: персонажей трое, а вход один.
+  app.add('POST', '/api/account/login', act((req, n) =>
+    auth.setAccountLogin(req.user, String(req.body.login || ''), String(req.body.password || ''), n)));
 
   // ═══ ЛОТЫ ДНЯ на чёрном рынке ════════════════════════════════════
   const lots = require('./services/lots');
@@ -826,6 +843,10 @@ function registerRoutes(app: any) {
       id: target.id, name: target.name, level: target.level,
       ...access.view(target),
       related: access.related(target, player.users()),
+      // Персонажи того же аккаунта — законная связь через кабинет.
+      // Показываем отдельно, чтобы не путать с подозрительными совпадениями.
+      characters: access.sameAccountChars(target, player.users()),
+      accountLogin: (target as any).accountLogin || '',
     };
   }, { admin: true });
 

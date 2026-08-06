@@ -77,7 +77,7 @@ ok(sessUid === victim.id, 'новый токен валиден — игрока
 ok(sessRec && sessRec.at > 0, 'у новой сессии проставлено время активности (для срока жизни)');
 ok(u.verifyPassword('новый12345', victim.salt, victim.passHash), 'новый пароль установлен');
 ok(!u.verifyPassword('старый123', victim.salt, victim.passHash), 'старый пароль больше не подходит');
-fails(() => auth.login('Жертва', 'старый123', ''), 'Неверный позывной или пароль', 'вход по старому паролю невозможен');
+fails(() => auth.login('Жертва', 'старый123', ''), 'Неверный логин или пароль', 'вход по старому паролю невозможен');
 const okLogin = auth.login('Жертва', 'новый12345', '');
 ok(!!okLogin.token, 'вход по новому паролю работает');
 
@@ -90,7 +90,7 @@ fails(() => admin.setPassword(boss, { userId: 'нет-такого', password: '
 const res = admin.setPassword(boss, { userId: victim.id, password: 'админский99' }, n);
 ok(res.sessionsKilled >= 1, `сессии игрока сброшены (${res.sessionsKilled})`);
 ok(!!auth.login('Жертва', 'админский99', '').token, 'вход с назначенным админом паролем работает');
-fails(() => auth.login('Жертва', 'новый12345', ''), 'Неверный позывной или пароль', 'прежний пароль игрока аннулирован');
+fails(() => auth.login('Жертва', 'новый12345', ''), 'Неверный логин или пароль', 'прежний пароль игрока аннулирован');
 ok(!n.join(' ').includes('админский99'), 'пароль НЕ утекает в уведомления админа');
 const logs = db.load('auditlog', []) || [];
 ok(JSON.stringify(logs).indexOf('админский99') === -1, 'пароль НЕ попадает в журнал действий');
@@ -140,7 +140,7 @@ ok(!player.users()[victimId], 'запись игрока стёрта из users
 let msgDeleted = '', msgNever = '';
 try { auth.login('Жертва', 'админский99', ''); } catch (e) { msgDeleted = e.message; }
 try { auth.login('НетТакого', 'админский99', ''); } catch (e) { msgNever = e.message; }
-ok(msgDeleted === 'Неверный позывной или пароль', 'вход удалённого игрока невозможен');
+ok(msgDeleted === 'Неверный логин или пароль', 'вход удалённого игрока невозможен');
 ok(msgDeleted === msgNever, 'ответ неотличим от «такого аккаунта не существует»');
 
 // Все коллекции подчищены
