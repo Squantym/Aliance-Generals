@@ -3397,33 +3397,137 @@ body.theme-noir .field-hint { color: #8a8a92; }
 }
 
 /* ═══ Кнопка покупки VIP ═════════════════════════════════════════════
-   На тёмных темах — золотая, на светлых — тёмная: на светлом фоне
-   золото по золоту не читалось. */
-/* Золотая кнопка покупки. Селектор усилен классом .btn: без этого общий
-   стиль кнопок перебивал фон, и она выглядела обычной тёмной. */
+   Объёмная, с фактурой и бликом. Собрана слоями:
+     • фон — вертикальный градиент от блика к тёмной базе плюс
+       диагональная штриховка: она и даёт ощущение металла;
+     • inset-тени — светлая полоса сверху, тёмная снизу: выпуклость;
+     • нижняя сплошная тень — «толщина» кнопки, при нажатии убирается;
+     • ::before — медленный бегущий блик;
+     • ::after — тонкая фаска по краю.
+   Цвета заданы переменными, у каждой темы свой набор. Намеренно без
+   color-mix(): он не работает в старых мобильных браузерах, а игра
+   открывается с любых телефонов. */
 .btn.vip-buy, .vip-buy {
-  width: 100%; font-weight: 800; letter-spacing: .4px; font-size: 15px;
-  color: #1a1408 !important;
-  background: linear-gradient(150deg, #f3d27a, #c9a227) !important;
-  border: 1px solid #b8952f !important;
-  box-shadow: 0 3px 14px rgba(220,180,70,.28);
-  opacity: 1; cursor: pointer;
-  text-shadow: none;
+  --vip-deep: #3d2b06;   /* самая тёмная кромка */
+  --vip-a: #6b4e12;      /* тёмная база */
+  --vip-b: #c9a227;      /* основное золото */
+  --vip-c: #f7e08a;      /* блик */
+  --vip-ink: #2a1e05;    /* текст */
+
+  position: relative; overflow: hidden;
+  width: 100%; padding: 11px 14px;
+  font-weight: 800; font-size: 15px; letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--vip-ink) !important;
+  border: 1px solid var(--vip-deep) !important;
+  border-radius: 10px;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255,255,255,.08) 0 2px, rgba(0,0,0,.06) 2px 4px),
+    linear-gradient(180deg,
+      var(--vip-c) 0%, var(--vip-b) 40%,
+      var(--vip-b) 55%, var(--vip-a) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -2px 0 rgba(0,0,0,.35),
+    inset 0 0 14px rgba(255,255,255,.18),
+    0 4px 0 var(--vip-deep),
+    0 8px 18px rgba(0,0,0,.45);
+  transition: transform .08s ease, box-shadow .12s ease, filter .12s ease;
 }
-.btn.vip-buy:hover, .vip-buy:hover { background: linear-gradient(150deg, #ffe49a, #d9b134) !important; }
-.vip-buy:disabled { opacity: .6; cursor: default; }
-/* Светлые темы: тёмная кнопка с золотой каймой */
-body.theme-light .btn.vip-buy,
-body.theme-paper .btn.vip-buy,
-body.theme-sand .btn.vip-buy {
-  color: #f3d27a !important;
-  background: linear-gradient(150deg, #2a2416, #171309) !important;
-  border-color: #8d7526 !important;
-  box-shadow: 0 3px 14px rgba(0,0,0,.25);
+
+/* Фаска по краю — та самая «структурность» */
+.btn.vip-buy::after, .vip-buy::after {
+  content: ''; position: absolute; inset: 1px;
+  border-radius: 9px; pointer-events: none;
+  border: 1px solid rgba(255,255,255,.28);
+  border-bottom-color: rgba(0,0,0,.35);
 }
-body.theme-light .vip-buy:hover,
-body.theme-paper .vip-buy:hover,
-body.theme-sand .vip-buy:hover { background: linear-gradient(150deg, #3a3220, #221c10); }
+
+/* Бегущий блик: медленный и с паузой — быстрый отвлекал бы от игры */
+.btn.vip-buy::before, .vip-buy::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%;
+  width: 45%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.45), transparent);
+  transform: skewX(-18deg);
+  animation: vipShine 5.5s ease-in-out infinite;
+}
+@keyframes vipShine {
+  0%, 62% { left: -60%; }
+  85%, 100% { left: 125%; }
+}
+
+.btn.vip-buy:hover, .vip-buy:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.65),
+    inset 0 -2px 0 rgba(0,0,0,.35),
+    inset 0 0 18px rgba(255,255,255,.25),
+    0 5px 0 var(--vip-deep),
+    0 10px 22px rgba(0,0,0,.5);
+}
+/* Нажатие вдавливает кнопку: опускаем и убираем нижнюю «толщину» */
+.btn.vip-buy:active, .vip-buy:active {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 7px rgba(0,0,0,.45),
+    inset 0 -1px 0 rgba(255,255,255,.15),
+    0 1px 0 var(--vip-deep),
+    0 2px 6px rgba(0,0,0,.4);
+}
+.btn.vip-buy:disabled, .vip-buy:disabled {
+  filter: grayscale(.5) brightness(.8); cursor: default; transform: none;
+}
+.btn.vip-buy:disabled::before, .vip-buy:disabled::before { animation: none; opacity: 0; }
+
+/* ── Свой оттенок для каждого оформления ──
+   Подобраны под палитру темы: в «Кибере» холодная бирюза, в «Нуаре»
+   тусклое серебро, в «Пустыне» раскалённая бронза. */
+body.theme-cyber .vip-buy {
+  --vip-deep: #052832; --vip-a: #0a3d4a; --vip-b: #00b8d4; --vip-c: #9df6ff; --vip-ink: #01222a;
+}
+body.theme-aurora .vip-buy {
+  --vip-deep: #2b1a38; --vip-a: #4a2f5e; --vip-b: #a978d4; --vip-c: #ecd6ff; --vip-ink: #21102e;
+}
+body.theme-noir .vip-buy {
+  --vip-deep: #222226; --vip-a: #3a3a3f; --vip-b: #9a9aa4; --vip-c: #eaeaef; --vip-ink: #14141a;
+}
+body.theme-steel .vip-buy {
+  --vip-deep: #172833; --vip-a: #2f4657; --vip-b: #7fa3bd; --vip-c: #ddf1ff; --vip-ink: #0e1b24;
+}
+body.theme-desert .vip-buy {
+  --vip-deep: #452106; --vip-a: #7a3f10; --vip-b: #e08c2a; --vip-c: #ffe0b0; --vip-ink: #2e1503;
+}
+/* Светлые оформления: тёмная кнопка со светлым золотом — на белом фоне
+   золото по золоту не читалось бы */
+body.theme-light .vip-buy,
+body.theme-paper .vip-buy,
+body.theme-sand .vip-buy {
+  --vip-deep: #0d0a05; --vip-a: #17130a; --vip-b: #3a2f16; --vip-c: #6b5a24; --vip-ink: #f6e2a4;
+}
+body.theme-light .btn.vip-buy, body.theme-light .vip-buy,
+body.theme-paper .btn.vip-buy, body.theme-paper .vip-buy,
+body.theme-sand .btn.vip-buy, body.theme-sand .vip-buy {
+  color: var(--vip-ink) !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,.55);
+}
+body.theme-light .btn.vip-buy::after, body.theme-light .vip-buy::after,
+body.theme-paper .btn.vip-buy::after, body.theme-paper .vip-buy::after,
+body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
+  border-color: rgba(217,181,82,.45);
+  border-bottom-color: rgba(0,0,0,.5);
+}
+
+/* Мелкие экраны: та же кнопка, но скромнее */
+@media (max-width: 400px) {
+  .btn.vip-buy, .vip-buy { font-size: 13.5px; padding: 10px 12px; letter-spacing: .3px; }
+}
+/* Уважаем системную настройку «меньше движения» */
+@media (prefers-reduced-motion: reduce) {
+  .btn.vip-buy::before, .vip-buy::before { animation: none; opacity: 0; }
+}
 
 .vip-price { font-size: 19px; }
 .vip-price b { color: var(--gold); }

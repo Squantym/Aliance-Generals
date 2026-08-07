@@ -26,12 +26,44 @@ ok(!/\.pf2-vip-btn \{ width: 100%; opacity: \.55/.test(css),
    'приглушённость от старой заглушки убрана');
 ok(/\.pf2-vip-btn \{ width: 100%; cursor: pointer/.test(css), 'кнопка выглядит нажимаемой');
 ok(/\.btn\.vip-buy, \.vip-buy \{/.test(css),
-   'селектор усилен классом .btn — общий стиль кнопок перебивал золотой фон');
-ok(/background: linear-gradient\(150deg, #f3d27a, #c9a227\) !important/.test(css),
-   'золотая заливка задана с приоритетом');
-ok(/color: #1a1408 !important/.test(css), 'тёмный текст на золоте');
+   'селектор усилен классом .btn — общий стиль кнопок перебивал фон');
+// Берём блок от начала комментария, чтобы он удалялся целиком —
+// иначе проверка ловила бы упоминание color-mix в самом пояснении
+const vipBlock = css.slice(css.indexOf('/* ═══ Кнопка покупки VIP'), css.indexOf('.vip-price'));
+ok(/color: var\(--vip-ink\) !important/.test(vipBlock), 'цвет текста задан с приоритетом');
+
+console.log('\n── 2б. Кнопка объёмная и фактурная ──');
+ok(/repeating-linear-gradient\(135deg/.test(vipBlock), 'диагональная штриховка даёт фактуру металла');
+ok(/inset 0 1px 0 rgba\(255,255,255,\.55\)/.test(vipBlock), 'светлая полоса сверху — выпуклость');
+ok(/inset 0 -2px 0 rgba\(0,0,0,\.35\)/.test(vipBlock), 'тёмная снизу — тень под кромкой');
+ok(/0 4px 0 var\(--vip-deep\)/.test(vipBlock), 'сплошная нижняя тень даёт толщину');
+ok(/\.vip-buy::after[\s\S]{0,220}border: 1px solid rgba\(255,255,255,\.28\)/.test(vipBlock),
+   'по краю идёт фаска');
+ok(/@keyframes vipShine/.test(vipBlock), 'по кнопке пробегает блик');
+ok(/0%, 62% \{ left: -60%; \}/.test(vipBlock), 'блик идёт с паузой, а не мельтешит');
+ok(/:active[\s\S]{0,120}transform: translateY\(3px\)/.test(vipBlock),
+   'при нажатии кнопка вдавливается');
+ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]{0,160}animation: none/.test(vipBlock),
+   'при системной настройке «меньше движения» блик отключается');
+// Ищем именно ПРИМЕНЕНИЕ функции, а не упоминание в пояснении
+ok(!/color-mix\(/.test(vipBlock.replace(/\/\*[\s\S]*?\*\//g, '')),
+   'без color-mix — он не работает в старых мобильных браузерах');
+
+console.log('\n── 2в. Свой цвет для каждого оформления ──');
+for (const [t, hue] of [['cyber', 'бирюза'], ['aurora', 'сирень'], ['noir', 'серебро'],
+                        ['steel', 'сталь'], ['desert', 'бронза']]) {
+  const re = new RegExp(`body\\.theme-${t} \\.vip-buy \\{[\\s\\S]{0,220}--vip-b: #`);
+  ok(re.test(vipBlock), `тема «${t}» — свой оттенок (${hue})`);
+}
 for (const t of ['light', 'paper', 'sand']) {
-  ok(css.includes(`body.theme-${t} .btn.vip-buy`), `на светлой теме «${t}» кнопка тёмная`);
+  ok(vipBlock.includes(`body.theme-${t} .vip-buy`), `на светлой теме «${t}» кнопка тёмная`);
+}
+// У каждой темы набор должен быть полным, иначе градиент поедет
+for (const t of ['cyber', 'aurora', 'noir', 'steel', 'desert']) {
+  const blk = vipBlock.slice(vipBlock.indexOf(`body.theme-${t} .vip-buy`));
+  const head = blk.slice(0, blk.indexOf('}'));
+  const vars = ['--vip-deep', '--vip-a', '--vip-b', '--vip-c', '--vip-ink'].filter((v) => head.includes(v));
+  ok(vars.length === 5, `тема «${t}»: заданы все ${vars.length} цвета`);
 }
 
 console.log('\n── 3. Короткая запись денег ──');

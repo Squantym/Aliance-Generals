@@ -54,8 +54,13 @@ ok(/api\/vip\/buy/.test(core), 'кнопка обращается к серве�
 ok(/UI\.confirm\([\s\S]{0,200}Оформить VIP-подписку/.test(core), 'перед списанием спрашивается подтверждение');
 ok(/pf2-vip-btn vip-buy/.test(core), 'кнопка в профиле тоже оформлена');
 ok(!/pf2-vip-btn" id="pf-vip" disabled/.test(core), 'кнопка больше не отключена');
-ok(/\.vip-buy \{[\s\S]{0,240}linear-gradient\(150deg, #f3d27a/.test(css), 'на тёмных темах кнопка золотая');
-ok(/body\.theme-light \.btn\.vip-buy[\s\S]{0,240}color: #f3d27a/.test(css), 'на светлых — тёмная с золотым текстом');
+// Цвета вынесены в переменные — кнопка объёмная и своя у каждой темы
+const vipCss = css.slice(css.indexOf('/* ═══ Кнопка покупки VIP'), css.indexOf('.vip-price'));
+ok(/--vip-b: #c9a227/.test(vipCss), 'на тёмных темах кнопка золотая');
+ok(/body\.theme-light \.vip-buy[\s\S]{0,200}--vip-ink: #f6e2a4/.test(vipCss),
+   'на светлых — тёмная со светлым золотом в тексте');
+ok(/0 4px 0 var\(--vip-deep\)/.test(vipCss), 'кнопка объёмная');
+ok(/@keyframes vipShine/.test(vipCss), 'с бликом');
 for (const t of ['light', 'paper', 'sand']) {
   ok(css.includes(`body.theme-${t} .btn.vip-buy`), `светлая тема «${t}» учтена`);
 }
