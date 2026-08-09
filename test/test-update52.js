@@ -108,7 +108,7 @@ ok(/ПОБЕДА!.*ПОРАЖЕНИЕ/.test(warSrc2), 'в карточке ре�
 const attackCalls = (warSrc2.match(/attackTarget\(/g) || []).length;
 ok(attackCalls >= 4, `все способы атаки идут через одну функцию (${attackCalls} вызовов) — прокрутка работает везде`);
 // Главное: при перерисовке контент не подменяется заглушкой (иначе прыжок наверх)
-const routeBlock = app.slice(app.indexOf('  route() {'), app.indexOf('  route() {') + 3000);
+const routeBlock = app.slice(app.indexOf('  async route() {'), app.indexOf('  async route() {') + 3000);
 ok(/if \(!preserve\) \{[\s\S]*?c\.innerHTML = '<div class="loading">/.test(routeBlock),
    'заглушка «Загрузка…» показывается только при переходе на другой экран');
 ok(routeBlock.includes('сжимается до высоты'), 'причина прыжка описана в комментарии для будущих правок');

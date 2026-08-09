@@ -25,9 +25,33 @@ const KEEP_IPS = 30;            // сколько разных адресов п
 // ---------- Разбор строки браузера ----------
 // Полный разбор User-Agent — отдельная наука, но для админки достаточно
 // понять: телефон это или компьютер, какая система и какой браузер.
-function parseDevice(ua: string): { kind: string; os: string; browser: string; label: string } {
+// Модель устройства из строки браузера.
+// Android честно пишет модель: «Linux; Android 13; SM-A536E Build/...».
+// Apple модель не сообщает принципиально — там определяем только тип.
+const APPLE_NAMES: Record<string, string> = {
+  iPhone: 'iPhone', iPad: 'iPad', iPod: 'iPod',
+};
+function parseModel(ua: string): string {
   const s = String(ua || '');
-  if (!s) return { kind: 'неизвестно', os: '—', browser: '—', label: 'неизвестное устройство' };
+  // Android: модель идёт после версии системы, до «Build» или закрывающей скобки
+  const m = /Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/[^;)]*)?\)/i.exec(s);
+  if (m) {
+    let model = m[1].trim();
+    // Отсекаем служебные пометки, которые не относятся к модели
+    model = model.replace(/\s*(wv|Mobile|Tablet)\s*$/i, '').trim();
+    if (model && !/^Android$/i.test(model) && model.length <= 40) return model;
+  }
+  for (const key of Object.keys(APPLE_NAMES)) if (s.includes(key)) return APPLE_NAMES[key];
+  if (/Windows NT/i.test(s)) return 'ПК (Windows)';
+  if (/Macintosh|Mac OS X/i.test(s)) return 'Mac';
+  if (/CrOS/i.test(s)) return 'Chromebook';
+  if (/Linux/i.test(s)) return 'ПК (Linux)';
+  return '';
+}
+
+function parseDevice(ua: string): { kind: string; os: string; browser: string; model: string; label: string } {
+  const s = String(ua || '');
+  if (!s) return { kind: 'неизвестно', os: '—', browser: '—', model: '', label: 'неизвестное устройство' };
 
   const isTablet = /iPad|Tablet|PlayBook|Silk/i.test(s) || (/Android/i.test(s) && !/Mobile/i.test(s));
   const isMobile = !isTablet && /Mobi|Android|iPhone|iPod|Windows Phone/i.test(s);
@@ -54,7 +78,11 @@ function parseDevice(ua: string): { kind: string; os: string; browser: string; l
   else if (/Chrome\/([\d.]+)/i.test(s)) browser = 'Chrome';
   else if (/Safari\/([\d.]+)/i.test(s)) browser = 'Safari';
 
-  return { kind, os, browser, label: `${kind}, ${os}, ${browser}` };
+  const model = parseModel(s);
+  // Модель ставим первой — по ней устройство узнаётся быстрее всего.
+  // Тип («телефон») повторять незачем, если модель уже о нём говорит.
+  const parts = model ? [model, os, browser] : [kind, os, browser];
+  return { kind, os, browser, model, label: parts.join(', ') };
 }
 
 // ---------- Запись входа ----------
@@ -231,4 +259,4 @@ function ipSummary(allUsers: Record<string, any>, minAccounts?: number) {
     .slice(0, 100);
 }
 
-export = { recordLogin, touch, view, related, ipSummary, sameAccountChars, parseDevice, KEEP_LOGINS, TOUCH_INTERVAL_MS };
+export = { recordLogin, touch, view, related, ipSummary, sameAccountChars, parseDevice, parseModel, KEEP_LOGINS, TOUCH_INTERVAL_MS };

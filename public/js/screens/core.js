@@ -843,7 +843,7 @@ App.screens.profile = async (c, param) => {
         const showName = isMerc || !img;
         return `
         <div style="border-bottom:1px solid var(--border-dim);padding:8px 0">
-          ${img ? `<img src="${img}" alt="${UI.esc(e.name)}" class="pf-effect-img">` : ''}
+          ${img ? `<img src="${img}" alt="${UI.esc(e.name)}" class="pf-effect-img" loading="lazy" decoding="async">` : ''}
           <div class="kv" style="padding:0">
             <span class="k" style="${e.hostile?'color:var(--red)':''}">${icon} ${showName ? UI.esc(e.name)+' ' : ''}<span class="muted small">(${UI.esc(e.desc)})</span>${e.byName?` <span class="muted small">— от <b style="color:var(--gold)">${UI.esc(e.byName)}</b></span>`:''}</span>
             <span class="v">${UI.esc(e.timeLeft)}</span>

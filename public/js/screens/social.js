@@ -1239,7 +1239,7 @@ App.showNewTopic = (box) => {
           App._newImg = await App._resizeImage(f, 900, 1400);
           document.getElementById('nt-imgname').textContent = f.name;
           document.getElementById('nt-preview').innerHTML =
-            `<img class="forum-img forum-img-preview" src="${App._newImg}" alt="Предпросмотр">`;
+            `<img class="forum-img forum-img-preview" src="${App._newImg}" alt="Предпросмотр" loading="lazy" decoding="async">`;
         } catch (e) {
           App._newImg = null;
           document.getElementById('nt-imgname').textContent = 'ошибка: ' + e.message;

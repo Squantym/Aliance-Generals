@@ -74,6 +74,48 @@ const MIME: Record<string, string> = {
 //  • /manifest.json — правки иконок/названия должны подхватываться.
 const PWA_NO_CACHE = ['/sw.js', '/sw-config.json', '/manifest.json'];
 
+// ── Настоящий адрес посетителя ────────────────────────────────────
+// За обратным прокси (nginx) сокет всегда показывает 127.0.0.1 — это
+// адрес самого сервера, а не игрока. Поэтому смотрим заголовки, которые
+// проставляет прокси, и перебираем их по порядку: у разных настроек и
+// у Cloudflare заголовки называются по-разному.
+//
+// Loopback и приватные адреса из цепочки отбрасываем: если прокси
+// добавил себя в X-Forwarded-For, первым может оказаться внутренний
+// адрес, а нужен внешний — тот, с которого пришёл человек.
+function isUsableIp(ip: string): boolean {
+  const v = String(ip || '').trim().replace(/^::ffff:/, '');
+  if (!v || v === 'unknown') return false;
+  if (v === '127.0.0.1' || v === '::1' || v.startsWith('127.')) return false;
+  if (/^10\./.test(v)) return false;
+  if (/^192\.168\./.test(v)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(v)) return false;
+  if (/^169\.254\./.test(v)) return false;
+  if (/^f[cd]/i.test(v)) return false;          // приватные IPv6
+  return true;
+}
+
+function clientIp(req: any): string {
+  const h = req.headers || {};
+  // Cloudflare и подобные ставят свой заголовок — он самый надёжный
+  const direct = [h['cf-connecting-ip'], h['true-client-ip'], h['x-real-ip']];
+  for (const v of direct) {
+    const ip = String(v || '').trim().replace(/^::ffff:/, '');
+    if (isUsableIp(ip)) return ip;
+  }
+  // X-Forwarded-For — цепочка «клиент, прокси1, прокси2»
+  const chain = String(h['x-forwarded-for'] || '').split(',').map((x: string) => x.trim().replace(/^::ffff:/, ''));
+  for (const ip of chain) if (isUsableIp(ip)) return ip;
+
+  // Прямое соединение без прокси
+  const sock = String((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
+  if (sock) return sock;
+
+  // Ничего не нашли: возвращаем первое непустое из цепочки, чтобы
+  // хотя бы что-то было видно администратору
+  return chain.find(Boolean) || 'unknown';
+}
+
 function cacheControlFor(ext: string, hasHashParam: boolean, relPath?: string): string {
   if (relPath && PWA_NO_CACHE.includes(relPath)) return 'no-cache';
   if (['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.gif', '.avif'].includes(ext)) {
@@ -196,8 +238,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   } else if (isAdminFile) {
     // Кто-то стучится в стандартный адрес панели — это либо сканер, либо
     // попытка подбора. Записываем в лог: по нему видно, что вас щупают.
-    const ip = ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim()
-      || req.socket.remoteAddress || 'unknown';
+    const ip = clientIp(req);
     console.warn(`🛡  Попытка открыть админ-панель по стандартному адресу ${rel} с ${ip}`);
     // Ответ такой же, как для любого отсутствующего файла — не подтверждаем,
     // что панель вообще существует
@@ -382,7 +423,7 @@ function createApp() {
             query: Object.fromEntries(new URLSearchParams(qs || '')),
             body: req.method === 'POST' ? await readBody(req) : {},
             user: null,
-            ip: ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown',
+            ip: clientIp(req),
             // Строка браузера: по ней определяем устройство. Нужна и роутам
             // (регистрация, вход), и учёту активности ниже.
             ua: String(req.headers['user-agent'] || '').slice(0, 400),

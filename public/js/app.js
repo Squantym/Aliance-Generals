@@ -19,7 +19,7 @@ const App = {
   _flagImg(flag, cls) {
     const code = this._FLAG_MAP[flag];
     if (!code) return flag || '';
-    return `<img src="/img/flags/${code}.webp" class="flag-img ${cls || ''}" alt="">`;
+    return `<img src="/img/flags/${code}.webp" class="flag-img ${cls || ''}" alt="" loading="lazy" decoding="async">`;
   },
 
   // ── ФАТАЛИТИ: взятие в плен → фото + выбор → результат → возврат ──
@@ -32,7 +32,7 @@ const App = {
     overlay.className = 'fatality-overlay';
     overlay.innerHTML = `
       <div class="fatality-modal">
-        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="">
+        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="" loading="lazy" decoding="async">
         <div class="fatality-title" style="color:var(--red)">🪖 Пленный командир</div>
         <p class="center muted small">Командир <b style="color:var(--fg)">${UI.esc(fat.name)}</b> полностью в вашей власти. Решите его судьбу:</p>
         <div class="fatality-choices">
@@ -68,7 +68,7 @@ const App = {
     overlay.className = 'fatality-overlay';
     overlay.innerHTML = `
       <div class="fatality-modal">
-        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="">
+        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="" loading="lazy" decoding="async">
         <div class="fatality-title" style="color:var(--orange-1)">💨 Жертва ускользнула</div>
         <p class="center muted small">${res && res.victimName
           ? `<b style="color:var(--fg)">${UI.esc(res.victimName)}</b> вывернулся в последний момент — ловкость спасла его от клинка.`
@@ -104,7 +104,7 @@ const App = {
     overlay.className = 'fatality-overlay';
     overlay.innerHTML = `
       <div class="fatality-modal">
-        <img src="/img/fatality/${isEar ? 'cut' : 'pardon'}.webp" class="fatality-photo" alt="">
+        <img src="/img/fatality/${isEar ? 'cut' : 'pardon'}.webp" class="fatality-photo" alt="" loading="lazy" decoding="async">
         <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? `<span class="ic-ear"></span> ${earTitle}` : '<span class="ic-token"></span> Враг помилован'}</div>
         <p class="center muted small">${isEar
           ? earText
@@ -343,6 +343,7 @@ const App = {
     App.route();
 
     App.startOnlineCounter();
+    App._prefetchScreens();
     // Кнопка кабинета появляется только у вошедшего игрока
     const cabBtn = document.getElementById('cabinet-btn');
     if (cabBtn) cabBtn.style.display = App.me ? '' : 'none';
@@ -2385,6 +2386,67 @@ const App = {
     } catch (e) { UI.toast('⛔ ' + e.message); }
   },
 
+  // ── Подгрузка экранов по требованию ─────────────────────────────
+  // Раньше все восемь файлов экранов грузились до старта игры, хотя
+  // человек видит только главную. Теперь при первом заходе приходит
+  // лишь ядро, остальное — когда игрок реально туда идёт.
+  _SCREEN_FILES: {
+    war: 'war', missions: 'war',
+    units: 'economy', buildings: 'economy', production: 'economy',
+    market: 'market', club: 'market', trophies: 'market', hospital: 'market',
+    news: 'news', newsview: 'news', newsedit: 'news',
+    saboteurs: 'saboteurs',
+    alliance: 'social', legion: 'social', chat: 'social', mail: 'social',
+    fame: 'social', ach: 'social', notifications: 'social', reinforcements: 'social',
+  },
+  _loadedScreens: {},
+  _loadingScreens: {},
+
+  _screenFile(name) { return App._SCREEN_FILES[name] || null; },
+
+  // Загружаем файл один раз. Повторные обращения ждут ту же загрузку,
+  // иначе быстрые переходы туда-сюда качали бы файл дважды.
+  _loadScreen(name) {
+    const file = App._screenFile(name);
+    if (!file || App._loadedScreens[file]) return Promise.resolve();
+    if (App._loadingScreens[file]) return App._loadingScreens[file];
+
+    const p = new Promise((resolve) => {
+      const el = document.createElement('script');
+      el.src = `/js/screens/${file}.js`;
+      el.async = false;
+      el.onload = () => { App._loadedScreens[file] = true; resolve(); };
+      el.onerror = () => {
+        // Не оставляем игрока с пустым экраном: сообщаем и даём повторить
+        UI.toast('⛔ Не удалось загрузить раздел. Проверьте связь.');
+        delete App._loadingScreens[file];
+        resolve();
+      };
+      document.head.appendChild(el);
+    });
+    App._loadingScreens[file] = p;
+    return p;
+  },
+
+  // Заранее подтягиваем то, куда игрок пойдёт вероятнее всего.
+  // Делаем это в простое, после отрисовки главной, и только на быстрой
+  // связи — на медленной это отняло бы канал у нужного сейчас.
+  _prefetchScreens() {
+    const conn = navigator.connection || {};
+    if (conn.saveData) return;                       // режим экономии трафика
+    if (/(^|-)2g$/.test(String(conn.effectiveType || ''))) return;
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1200));
+    idle(() => {
+      for (const file of ['war', 'social']) {
+        if (App._loadedScreens[file] || App._loadingScreens[file]) continue;
+        const el = document.createElement('link');
+        el.rel = 'prefetch';
+        el.href = `/js/screens/${file}.js`;
+        document.head.appendChild(el);
+      }
+    });
+  },
+
   // ── Счётчик онлайна в подвале ───────────────────────────────────
   // Показываем реальных игроков за последние 5 минут. Обновляем раз в
   // минуту: чаще незачем, а лишние запросы на живом сервере ни к чему.
@@ -2704,7 +2766,7 @@ const App = {
   // Разбор адреса и запуск нужного экрана.
   // App._preserveScroll = true перед вызовом route() сохраняет позицию
   // (используется для перерисовки текущего экрана после действия игрока).
-  route() {
+  async route() {
     if (App._tear) { try { App._tear(); } catch (e) {} App._tear = null; }
 
     const hash = (location.hash || '').slice(1) || 'home';
@@ -2724,6 +2786,12 @@ const App = {
     if (!API.token() && name !== 'auth') { location.hash = '#auth'; return; }
     if (API.token() && name === 'auth') { location.hash = '#home'; return; }
 
+    // Экран может лежать в ещё не загруженном файле — подгружаем по
+    // требованию. Первый заход становится легче на треть: игрок видит
+    // главную, а войну, рынок и общение получает при первом переходе.
+    if (!App.screens[name] && App._screenFile(name)) {
+      await App._loadScreen(name);
+    }
     const screen = App.screens[name] || App.screens.home;
     // Результат боя показывается ТОЛЬКО пока игрок на экране «Война».
     // Если он ушёл на главную (или в любой другой раздел) — карточка боя

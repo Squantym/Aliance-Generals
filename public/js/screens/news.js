@@ -297,7 +297,7 @@
         body = `<div class="news-block-label">🖼 Картинка</div>
           <input class="news-input" data-f="url" data-i="${i}" value="${UI.esc(b.url)}" placeholder="https://… (ссылка на изображение)">
           <input class="news-input" data-f="caption" data-i="${i}" value="${UI.esc(b.caption)}" placeholder="Подпись (необязательно)" style="margin-top:6px">
-          ${safeUrl(b.url) ? `<img src="${safeUrl(b.url)}" style="max-width:100%;border-radius:6px;margin-top:8px" onerror="this.style.display='none'">` : ''}`;
+          ${safeUrl(b.url) ? `<img src="${safeUrl(b.url)}" style="max-width:100%;border-radius:6px;margin-top:8px" onerror="this.style.display='none'" loading="lazy" decoding="async">` : ''}`;
         break;
       case 'list':
         body = `<div class="news-block-label">📋 Список</div>

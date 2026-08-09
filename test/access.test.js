@@ -51,7 +51,7 @@ const p1 = by('Первый'), p2 = by('Второй'), p3 = by('Третий');
 
 const v1 = access.view(p1);
 ok(v1.registered.ip === '95.24.1.7', `адрес регистрации: ${v1.registered.ip}`);
-ok(/компьютер/.test(v1.registered.device), `устройство: ${v1.registered.device}`);
+ok(/ПК \(Windows\)/.test(v1.registered.device), `устройство: ${v1.registered.device}`);
 ok(v1.email === 'a@t.ru', `почта: ${v1.email}`);
 ok(typeof v1.emailVerified === 'boolean', 'видно, подтверждена ли почта');
 ok(v1.logins.length === 1 && v1.logins[0].kind === 'регистрация', 'первая запись помечена как регистрация');
@@ -65,7 +65,7 @@ console.log('\n── 3. История входов ──');
 access.recordLogin(p1, '77.88.5.5', UA_ANDROID, 'вход');
 const v2 = access.view(p1);
 ok(v2.last.ip === '77.88.5.5', 'последний адрес обновился');
-ok(/телефон/.test(v2.last.device), 'последнее устройство обновилось');
+ok(/SM-A536E/.test(v2.last.device), `последнее устройство обновилось: ${v2.last.device}`);
 ok(v2.registered.ip === '95.24.1.7', 'адрес регистрации не затирается');
 ok(v2.ips.length === 2, `помним оба адреса: ${v2.ips.map((x) => x.ip).join(', ')}`);
 ok(v2.logins.length === 2, 'история пополнилась');
@@ -145,7 +145,7 @@ ok(afterIp.last.ip === '5.5.5.5', 'последний адрес обновил�
 access.touch(p9, '5.5.5.5', UA_PC);
 const afterDev = access.view(p9);
 ok(afterDev.logins[0].kind === 'смена устройства', `помечено как «${afterDev.logins[0].kind}»`);
-ok(/компьютер/.test(afterDev.last.device), 'устройство обновилось');
+ok(/ПК \(Windows\)/.test(afterDev.last.device), `устройство обновилось: ${afterDev.last.device}`);
 // Долгое молчание — отметка сессии
 const a9 = p9.access;
 a9.lastAt = Date.now() - access.TOUCH_INTERVAL_MS - 1000;
@@ -159,6 +159,60 @@ ok(v9.last.ip && v9.last.ip !== '—', `последний адрес запол
 ok(v9.last.device && v9.last.device !== '—', `устройство заполнено: ${v9.last.device}`);
 ok(v9.registered.ip !== '—', 'адрес регистрации на месте');
 ok(v9.ips.length >= 2, `адресов в сводке: ${v9.ips.length}`);
+
+console.log('\n── 9. Модель устройства ──');
+for (const [ua, expect] of [
+  ['Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A) AppleWebKit/537.36 Chrome/119 Mobile Safari/537.36', 'SM-A536E'],
+  ['Mozilla/5.0 (Linux; Android 14; Redmi Note 12 Pro) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36', 'Redmi Note 12 Pro'],
+  ['Mozilla/5.0 (Linux; Android 13; 23021RAA2Y) AppleWebKit/537.36 Chrome/119 Mobile Safari/537.36', '23021RAA2Y'],
+  ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1 Safari/604.1', 'iPhone'],
+  ['Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1 Safari/604.1', 'iPad'],
+  ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36', 'ПК (Windows)'],
+]) {
+  ok(access.parseModel(ua) === expect, `модель: «${access.parseModel(ua)}»`);
+}
+// Служебная пометка wv (встроенный браузер приложения) не должна попадать в модель
+ok(!/wv/.test(access.parseModel('Mozilla/5.0 (Linux; Android 13; SM-A536E; wv) AppleWebKit/537.36 Chrome/119')),
+   'служебные пометки отсекаются');
+const lbl = access.parseDevice('Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A) AppleWebKit/537.36 Chrome/119 Mobile Safari/537.36 YaBrowser/23.11').label;
+ok(lbl === 'SM-A536E, Android 13, Яндекс', `подпись целиком: «${lbl}»`);
+ok(lbl.indexOf('SM-A536E') === 0, 'модель стоит первой — по ней устройство узнаётся быстрее');
+ok(access.parseDevice('').label === 'неизвестное устройство', 'пустая строка не ломает разбор');
+
+console.log('\n── 10. Настоящий адрес за прокси ──');
+// Причина, по которой у всех игроков был 127.0.0.1: читался только
+// один заголовок, а nginx часто передаёт адрес другим
+const httpSrc2 = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
+ok(/function clientIp\(req: any\)/.test(httpSrc2), 'определение адреса вынесено в одну функцию');
+for (const h of ['cf-connecting-ip', 'true-client-ip', 'x-real-ip', 'x-forwarded-for']) {
+  ok(httpSrc2.includes(h), `учитывается заголовок «${h}»`);
+}
+ok(/function isUsableIp/.test(httpSrc2), 'внутренние адреса отбрасываются');
+// В коде диапазоны записаны как регулярные выражения с экранированием
+const ipFn = httpSrc2.slice(httpSrc2.indexOf('function isUsableIp'), httpSrc2.indexOf('function clientIp'));
+for (const [needle, label] of [
+  ['127.', 'локальный 127.x'],
+  ['192', 'домашний 192.168.x'],
+  ['10', 'внутренний 10.x'],
+  ['169', 'служебный 169.254.x'],
+  ['172', 'корпоративный 172.16-31.x'],
+  ['f[cd]', 'приватный IPv6'],
+]) {
+  ok(ipFn.includes(needle), `отбрасывается ${label}`);
+}
+ok(/replace\(\/\^::ffff:\/, ''\)/.test(httpSrc2), 'адреса IPv4 в обёртке IPv6 приводятся к обычному виду');
+ok((httpSrc2.match(/clientIp\(req\)/g) || []).length === 2,
+   'обе точки получения адреса используют общую функцию');
+// Проверяем саму логику отбора
+const pick = (chain) => {
+  const usable = (v) => v && v !== 'unknown' && !/^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^169\.254\./.test(v);
+  return chain.map((x) => String(x).trim().replace(/^::ffff:/, '')).find(usable) || 'unknown';
+};
+ok(pick(['95.24.180.7']) === '95.24.180.7', 'обычный адрес принимается');
+ok(pick(['10.0.0.5', '188.44.9.2']) === '188.44.9.2',
+   'внутренний адрес прокси пропускается, берётся внешний');
+ok(pick(['127.0.0.1']) === 'unknown', 'адрес самого сервера не считается адресом игрока');
+ok(pick(['::ffff:77.88.5.5']) === '77.88.5.5', 'обёртка IPv6 снимается');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

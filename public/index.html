@@ -19,6 +19,12 @@
   <meta name="apple-mobile-web-app-title" content="Генералы">
   <link rel="apple-touch-icon" href="/img/pwa/apple-touch-icon-180.png">
 
+  <!-- Стили и ядро скриптов просим заранее и с высоким приоритетом:
+       браузер начинает качать их сразу, не дожидаясь разбора страницы.
+       На медленной связи это заметно сокращает время до первого экрана. -->
+  <link rel="preload" href="/css/style.css" as="style">
+  <link rel="preload" href="/js/app.js" as="script">
+  <link rel="preload" href="/js/screens/core.js" as="script">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     /* БАГ 8: запрет горизонтального скролла на мобильных */
@@ -55,13 +61,11 @@
   <script src="/js/api.js"></script>
   <script src="/js/ui.js"></script>
   <script src="/js/app.js"></script>
+  <!-- Ядро экранов: главная, профиль, настройки, кабинет — нужно сразу.
+       Остальные разделы (война, рынок, общение, новости, производство,
+       диверсанты) подгружаются при первом переходе: см. App._loadScreen.
+       Это снимает с первого захода около трети веса. -->
   <script src="/js/screens/core.js"></script>
-  <script src="/js/screens/war.js"></script>
-  <script src="/js/screens/economy.js"></script>
-  <script src="/js/screens/market.js"></script>
-  <script src="/js/screens/social.js"></script>
-  <script src="/js/screens/saboteurs.js"></script>
-  <script src="/js/screens/news.js"></script>
   <script>App.init();</script>
 </body>
 </html>
