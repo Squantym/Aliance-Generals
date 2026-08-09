@@ -85,9 +85,9 @@ function registerRoutes(app: any) {
   // ---------- Авторизация (открытые маршруты) ----------
   app.add('GET', '/api/countries', () => ({ countries: config.COUNTRIES }), { open: true });
   app.add('POST', '/api/register', (req) =>
-    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua), { open: true });
+    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua, (req as any).hints), { open: true });
   app.add('POST', '/api/login', (req) =>
-    auth.login(req.body.login, req.body.password, req.ip, req.ua), { open: true });
+    auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login), { open: true });
@@ -828,6 +828,42 @@ function registerRoutes(app: any) {
         password: roles.canAccessZone(req.user, 'security'),
         resources: roles.canAccessZone(req.user, 'economy'),
       },
+    };
+  }, { admin: true });
+
+  // Диагностика: что на самом деле приходит от прокси. Нужна, когда в
+  // журнале у всех один адрес — сразу видно, передаёт ли nginx заголовки
+  // или их вовсе нет.
+  app.add('GET', '/api/admin/net-check', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const h = (req as any).rawHeaders || {};
+    return {
+      detected: req.ip,
+      ua: (req as any).ua || '',
+      hints: (req as any).hints || {},
+      headers: {
+        'x-forwarded-for': h['x-forwarded-for'] || '(нет)',
+        'x-real-ip': h['x-real-ip'] || '(нет)',
+        'cf-connecting-ip': h['cf-connecting-ip'] || '(нет)',
+        'true-client-ip': h['true-client-ip'] || '(нет)',
+        'sec-ch-ua-model': h['sec-ch-ua-model'] || '(нет)',
+        'sec-ch-ua-platform-version': h['sec-ch-ua-platform-version'] || '(нет)',
+      },
+      socket: h['__socket'] || '',
+      // Подсказка администратору, что делать с увиденным
+      hint: (() => {
+        const hasProxy = h['x-forwarded-for'] || h['x-real-ip'] || h['cf-connecting-ip'];
+        if (!hasProxy) {
+          return 'Прокси не передаёт адрес игрока. В настройках nginx добавьте: '
+               + 'proxy_set_header X-Real-IP $remote_addr; '
+               + 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;';
+        }
+        if (!h['sec-ch-ua-model']) {
+          return 'Адрес передаётся верно. Модель устройства придёт со следующего '
+               + 'запроса: браузер присылает её только после того, как получил наш запрос на подсказки.';
+        }
+        return 'Всё в порядке: адрес и модель устройства приходят.';
+      })(),
     };
   }, { admin: true });
 

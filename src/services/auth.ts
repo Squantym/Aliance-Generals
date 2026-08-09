@@ -231,7 +231,7 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   return { name };
 }
 
-async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string) {
+async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any) {
   // БАГ 24: очистка управляющих символов
   login = sanitizeInput(login).trim();
 
@@ -289,7 +289,7 @@ async function register(login: string, password: string, emailAddr: string, coun
   // Адрес и устройство запоминаем ДО развилки: игрок мог зарегистрироваться
   // с подтверждением почты и войти позже — данные регистрации нужны в обоих
   // случаях, иначе половина аккаунтов осталась бы без «паспорта» входа
-  try { require('./access').recordLogin(newU, ip, ua, 'регистрация'); } catch (e) {}
+  try { require('./access').recordLogin(newU, ip, ua, 'регистрация', hints); } catch (e) {}
   db.save('users');
 
   if (autoVerified) {
@@ -335,7 +335,7 @@ async function resendVerification(loginName: string) {
   return { message: `Письмо повторно отправлено` };
 }
 
-function login(loginName: string, password: string, ip: string, ua?: string) {
+function login(loginName: string, password: string, ip: string, ua?: string, hints?: any) {
   // БАГ 1: rate limiting
   if (ip) checkRateLimit(ip);
 
@@ -390,7 +390,7 @@ function login(loginName: string, password: string, ip: string, ua?: string) {
       },
     };
   }
-  try { require('./access').recordLogin(found, ip, ua, 'вход'); } catch (e) {}
+  try { require('./access').recordLogin(found, ip, ua, 'вход', hints); } catch (e) {}
   return { token: issueToken(found.id), isAdmin: !!found.isAdmin };
 }
 

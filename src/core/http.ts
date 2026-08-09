@@ -40,6 +40,8 @@ interface ReqCtx {
   user: any | null;   // игрок (тип User уточним при переводе сервисов)
   ip: string;
   ua: string;          // строка браузера — для определения устройства
+  hints?: any;         // подсказки браузера: модель, система (Client Hints)
+  rawHeaders?: any;    // сырые заголовки — только для диагностики
 }
 
 type RouteHandler = (ctx: ReqCtx) => any | Promise<any>;
@@ -312,6 +314,13 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
       'X-Frame-Options': 'SAMEORIGIN',
       'X-XSS-Protection': '1; mode=block',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
+      // Просим браузер присылать модель устройства и версию системы.
+      // Chrome с версии 110 подставляет в обычную строку «Android 10; K»
+      // вместо настоящей модели — это защита приватности, и получить
+      // модель можно ТОЛЬКО так. Заголовок действует на последующие
+      // запросы, поэтому первый вход останется без модели.
+      'Accept-CH': 'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Platform',
+      'Critical-CH': 'Sec-CH-UA-Model',
       // Картинки разрешаем и с чужих сайтов: администратор указывает
       // ссылку на фото босса, а игроки прикрепляют изображения к темам
       // форума. Прежняя политика (только 'self') молча блокировала их —
@@ -427,6 +436,16 @@ function createApp() {
             // Строка браузера: по ней определяем устройство. Нужна и роутам
             // (регистрация, вход), и учёту активности ниже.
             ua: String(req.headers['user-agent'] || '').slice(0, 400),
+            // Подсказки браузера: настоящая модель и версия системы.
+            // Кавычки вокруг значений снимаем — браузер шлёт их в кавычках.
+            // Сырые заголовки — для диагностики в панели: без них нельзя
+            // понять, передаёт ли прокси адрес вообще
+            rawHeaders: { ...req.headers, __socket: String((req.socket && req.socket.remoteAddress) || '') },
+            hints: {
+              model: String(req.headers['sec-ch-ua-model'] || '').replace(/^"|"$/g, '').slice(0, 60),
+              platform: String(req.headers['sec-ch-ua-platform'] || '').replace(/^"|"$/g, '').slice(0, 30),
+              platformVersion: String(req.headers['sec-ch-ua-platform-version'] || '').replace(/^"|"$/g, '').slice(0, 30),
+            },
           };
 
           // Авторизация (если маршрут не открытый)
@@ -525,7 +544,7 @@ function createApp() {
             // месяцами, и данных о нём просто не появлялось бы. Внутри
             // стоит защита от лишних записей — см. touch().
             try {
-              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua);
+              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua, reqCtx.hints);
             } catch (e) {}
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов

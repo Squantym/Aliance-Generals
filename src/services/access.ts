@@ -49,7 +49,11 @@ function parseModel(ua: string): string {
   return '';
 }
 
-function parseDevice(ua: string): { kind: string; os: string; browser: string; model: string; label: string } {
+// hints — подсказки браузера (Client Hints). Chrome с версии 110 прячет
+// модель в обычной строке, подставляя «Android 10; K», и настоящее
+// название приходит только отдельным заголовком. Если подсказка есть —
+// она главнее разбора строки.
+function parseDevice(ua: string, hints?: any): { kind: string; os: string; browser: string; model: string; label: string } {
   const s = String(ua || '');
   if (!s) return { kind: 'неизвестно', os: '—', browser: '—', model: '', label: 'неизвестное устройство' };
 
@@ -78,18 +82,27 @@ function parseDevice(ua: string): { kind: string; os: string; browser: string; m
   else if (/Chrome\/([\d.]+)/i.test(s)) browser = 'Chrome';
   else if (/Safari\/([\d.]+)/i.test(s)) browser = 'Safari';
 
-  const model = parseModel(s);
+  // Модель: сначала подсказка, потом разбор строки. «K» — заглушка
+  // Chrome, её показывать бессмысленно.
+  const hinted = String((hints && hints.model) || '').trim();
+  const parsed = parseModel(s);
+  const model = hinted || (/^(K|Android)$/i.test(parsed) ? '' : parsed);
   // Модель ставим первой — по ней устройство узнаётся быстрее всего.
   // Тип («телефон») повторять незачем, если модель уже о нём говорит.
-  const parts = model ? [model, os, browser] : [kind, os, browser];
-  return { kind, os, browser, model, label: parts.join(', ') };
+  // Версия системы из подсказки точнее: в строке Chrome пишет «Android 10»
+  // всем подряд независимо от настоящей версии
+  const hintedVer = String((hints && hints.platformVersion) || '').trim();
+  const hintedPlat = String((hints && hints.platform) || '').trim();
+  const osFinal = (hintedPlat && hintedVer) ? `${hintedPlat} ${hintedVer.split('.')[0]}` : os;
+  const parts = model ? [model, osFinal, browser] : [kind, osFinal, browser];
+  return { kind, os: osFinal, browser, model, label: parts.join(', ') };
 }
 
 // ---------- Запись входа ----------
-function recordLogin(user: any, ip: string, ua: string, kind?: string): void {
+function recordLogin(user: any, ip: string, ua: string, kind?: string, hints?: any): void {
   if (!user) return;
   const now = Date.now();
-  const dev = parseDevice(ua);
+  const dev = parseDevice(ua, hints);
   const addr = String(ip || 'unknown');
 
   // Первый вход: запоминаем «паспорт» регистрации
@@ -140,11 +153,11 @@ function recordLogin(user: any, ip: string, ua: string, kind?: string): void {
 // и тем же, а база — лишними записями.
 const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
-function touch(user: any, ip: string, ua: string): void {
+function touch(user: any, ip: string, ua: string, hints?: any): void {
   if (!user || !ip) return;
   const a = user.access || (user.access = {});
   const addr = String(ip);
-  const dev = parseDevice(ua).label;
+  const dev = parseDevice(ua, hints).label;
   const now = Date.now();
 
   const addrChanged = a.lastIp !== addr;
@@ -153,10 +166,10 @@ function touch(user: any, ip: string, ua: string): void {
 
   // Первый раз, смена адреса или устройства — полноценная запись
   if (!a.lastIp || addrChanged || devChanged) {
-    recordLogin(user, addr, ua, !a.lastIp ? 'первый вход' : (addrChanged ? 'смена адреса' : 'смена устройства'));
+    recordLogin(user, addr, ua, !a.lastIp ? 'первый вход' : (addrChanged ? 'смена адреса' : 'смена устройства'), hints);
     return;
   }
-  if (longAgo) { recordLogin(user, addr, ua, 'сессия'); return; }
+  if (longAgo) { recordLogin(user, addr, ua, 'сессия', hints); return; }
 
   // Ничего не изменилось — только освежаем время, без новой записи
   a.lastAt = now;

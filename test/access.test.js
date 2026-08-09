@@ -56,7 +56,7 @@ ok(v1.email === 'a@t.ru', `почта: ${v1.email}`);
 ok(typeof v1.emailVerified === 'boolean', 'видно, подтверждена ли почта');
 ok(v1.logins.length === 1 && v1.logins[0].kind === 'регистрация', 'первая запись помечена как регистрация');
 const asrc = fs.readFileSync(ROOT + '/src/services/auth.ts', 'utf8');
-ok(/recordLogin\(newU, ip, ua, 'регистрация'\)/.test(asrc),
+ok(/recordLogin\(newU, ip, ua, 'регистрация'/.test(asrc),
    'запись идёт по ссылке на нового игрока');
 ok(asrc.indexOf('recordLogin(newU') < asrc.indexOf('if (autoVerified)'),
    'запись стоит ДО развилки — иначе аккаунты с подтверждением почты остались бы без данных');
@@ -122,7 +122,7 @@ console.log('\n── 7. Учёт на каждом запросе ──');
 // Главная причина, по которой данных не появлялось: запись велась только
 // при входе по паролю, а игрок с действующим токеном не логинится месяцами
 const httpSrc = fs.readFileSync(ROOT + '/src/core/http.ts', 'utf8');
-ok(/require\('\.\.\/services\/access'\)\.touch\(user, reqCtx\.ip, reqCtx\.ua\)/.test(httpSrc),
+ok(/\.touch\(user, reqCtx\.ip, reqCtx\.ua/.test(httpSrc),
    'учёт вызывается на каждом запросе игрока, а не только при входе');
 ok(/ua: String\(req\.headers\['user-agent'\] \|\| ''\)/.test(httpSrc),
    'строка браузера попадает в объект запроса');
@@ -213,6 +213,49 @@ ok(pick(['10.0.0.5', '188.44.9.2']) === '188.44.9.2',
    'внутренний адрес прокси пропускается, берётся внешний');
 ok(pick(['127.0.0.1']) === 'unknown', 'адрес самого сервера не считается адресом игрока');
 ok(pick(['::ffff:77.88.5.5']) === '77.88.5.5', 'обёртка IPv6 снимается');
+
+console.log('\n── 11. Модель у современного Chrome ──');
+// Chrome с версии 110 подставляет «Android 10; K» вместо настоящей
+// модели — это защита приватности. Настоящая приходит подсказкой.
+const modernUA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36';
+ok(access.parseModel(modernUA) === 'K', 'из строки Chrome достаётся только заглушка «K»');
+ok(!/(^|,) ?K,/.test(access.parseDevice(modernUA).label),
+   `заглушка не показывается администратору: «${access.parseDevice(modernUA).label}»`);
+const withHint = access.parseDevice(modernUA, { model: 'SM-S911B', platform: 'Android', platformVersion: '14.0.0' });
+ok(withHint.model === 'SM-S911B', `по подсказке модель определяется: ${withHint.model}`);
+ok(withHint.label === 'SM-S911B, Android 14, Chrome', `подпись целиком: «${withHint.label}»`);
+ok(withHint.os === 'Android 14',
+   'версия системы берётся из подсказки — в строке Chrome пишет всем «Android 10»');
+// Старые браузеры по-прежнему разбираются из строки
+ok(access.parseDevice('Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A) AppleWebKit/537.36 Chrome/119 Mobile').model === 'SM-A536E',
+   'старый формат строки читается как раньше');
+
+console.log('\n── 12. Запрос подсказок у браузера ──');
+const httpSrc3 = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
+ok(/'Accept-CH': 'Sec-CH-UA-Model/.test(httpSrc3), 'сервер просит присылать модель устройства');
+ok(/'Critical-CH': 'Sec-CH-UA-Model'/.test(httpSrc3), 'помечено как важное — придёт быстрее');
+ok(/sec-ch-ua-platform-version/.test(httpSrc3), 'запрашивается и версия системы');
+ok(/replace\(\/\^"\|"\$\/g, ''\)/.test(httpSrc3), 'кавычки вокруг значений снимаются');
+const authSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/auth.ts'), 'utf8');
+ok(/recordLogin\(newU, ip, ua, 'регистрация', hints\)/.test(authSrc2),
+   'подсказки доходят до регистрации');
+ok(/recordLogin\(found, ip, ua, 'вход', hints\)/.test(authSrc2), 'и до входа');
+ok(/touch\(user, reqCtx\.ip, reqCtx\.ua, reqCtx\.hints\)/.test(httpSrc3),
+   'и до учёта на каждом запросе');
+
+console.log('\n── 13. Диагностика сети ──');
+const routesSrc2 = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
+ok(/'\/api\/admin\/net-check'/.test(routesSrc2), 'есть проверка того, что приходит от прокси');
+const netBlock = routesSrc2.slice(routesSrc2.indexOf("'/api/admin/net-check'"), routesSrc2.indexOf('УЧЁТ ВХОДОВ'));
+ok(/isOwner\(req\.user\)/.test(netBlock), 'доступна только владельцу');
+ok(/proxy_set_header X-Real-IP/.test(netBlock),
+   'при отсутствии заголовков подсказывает готовую настройку nginx');
+ok(/Модель устройства придёт со следующего/.test(netBlock),
+   'объясняет, почему модель появляется не сразу');
+const adminSrc2 = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
+ok(/id="net-check"/.test(adminSrc2), 'кнопка проверки есть в панели');
+ok(/Если у всех игроков[\s\S]{0,40}один и тот же адрес/.test(adminSrc2),
+   'подписано, когда ей пользоваться');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

@@ -1111,6 +1111,15 @@ const Admin = {
 
       <!-- База данных: копии и снимки. Отдельная вкладка ради трёх
            кнопок не нужна — блок живёт здесь и грузится отдельно -->
+      ${(Admin.me && Admin.me.staffRole === 'owner') ? `
+      <div class="card">
+        <div class="name">🌐 Проверка сети</div>
+        <p class="muted small mt">Показывает, что сервер получает от прокси. Если у всех игроков
+        один и тот же адрес — смотрите сюда.</p>
+        <button class="btn btn-inline mt" id="net-check">Проверить</button>
+        <div id="net-box" class="mt"></div>
+      </div>` : ''}
+
       ${Admin.can('security') ? `
       <div class="card">
         <div class="name">👥 Несколько аккаунтов с одного адреса</div>
@@ -1150,6 +1159,25 @@ const Admin = {
         });
       } catch (e) { box.innerHTML = `<p class="small" style="color:var(--red)">⛔ ${UI.esc(e.message)}</p>`; }
     };
+    // Проверка сети: что приходит от прокси
+    const netGo = document.getElementById('net-check');
+    if (netGo) netGo.onclick = async () => {
+      const box = document.getElementById('net-box');
+      box.innerHTML = '<div class="loading">Проверяю…</div>';
+      try {
+        const r = await API.get('/api/admin/net-check');
+        const rows = Object.entries(r.headers || {})
+          .map(([k, v]) => `<tr><td class="mono small">${UI.esc(k)}</td><td class="mono small">${UI.esc(String(v))}</td></tr>`).join('');
+        box.innerHTML = `
+          <table class="access-table">
+            <tr><td><b>Определён адрес</b></td><td class="mono"><b>${UI.esc(r.detected)}</b></td></tr>
+            ${rows}
+            <tr><td>Соединение с</td><td class="mono small">${UI.esc(r.socket || '—')}</td></tr>
+          </table>
+          <p class="small mt" style="color:var(--orange-1)">${UI.esc(r.hint)}</p>`;
+      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+    };
+
     // Поиск нескольких аккаунтов с одного адреса
     const mcGo = document.getElementById('mc-go');
     if (mcGo) mcGo.onclick = async () => {
