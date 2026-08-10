@@ -30,12 +30,10 @@ const TOTAL_SLOTS = 10;                 // сколько мест в бою в�
 const ENTER_WINDOW_MS = 60 * 1000;      // сколько ждём выхода в бой
 const BATTLE_MAX_MS = 20 * 60 * 1000;   // предел длительности
 
-// Базовые ресурсы боя. Живут в groupUpgrades, чтобы база и прибавки
-// не разъехались: там же считаются итоговые характеристики бойца.
-const UP = require('./groupUpgrades');
-const HP = UP.BASE.hp;
-const ENERGY = UP.BASE.energy;
-const AMMO = UP.BASE.ammo;
+// Ресурсы боя — одинаковые у всех
+const HP = 1500;
+const ENERGY = 1000;
+const AMMO = 30;
 
 const ACTION_CD_MS = 1500;              // откат между действиями
 const BOT_THINK_MS = 3000;              // как часто ходят боты
@@ -76,7 +74,6 @@ type Fighter = {
   lastActionAt: number;
   guardedUntil: number;       // до какого времени прикрыт
   guardedBy: string;
-  st: any;                    // характеристики с учётом улучшений
   damageDealt: number;
   healed: number;
   absorbed: number;         // сколько урона снял с союзников прикрытием
@@ -252,19 +249,11 @@ function startBattle(s: Store, list: any[], now: number): void {
   const fighters: Record<string, Fighter> = {};
   for (const { rec, team } of split) {
     const role = ROLES[rec.role] ? rec.role : 'fighter';
-    // Боты играют на базовых характеристиках, игроки — со своими
-    // улучшениями. Иначе прокачка не давала бы ничего.
-    const owner = String(rec.id).startsWith('gbot_') ? null : player.users()[rec.id];
-    const st = owner ? UP.statsFor(owner) : {
-      hp: HP, energy: ENERGY, ammo: AMMO,
-      critChance: UP.BASE.critChance, dodgeChance: UP.BASE.dodgeChance,
-      healCritChance: 0, damageReduce: 0, rewardBonus: 0, critMult: UP.CRIT_MULT,
-    };
     fighters[rec.id] = {
-      id: rec.id, name: rec.name, flag: rec.flag, team, role, st,
-      hp: st.hp, maxHp: st.hp,
-      energy: st.energy, maxEnergy: st.energy,
-      ammo: st.ammo, maxAmmo: st.ammo,
+      id: rec.id, name: rec.name, flag: rec.flag, team, role,
+      hp: HP, maxHp: HP,
+      energy: ENERGY, maxEnergy: ENERGY,
+      ammo: AMMO, maxAmmo: AMMO,
       alive: true, entered: String(rec.id).startsWith('gbot_'),
       isBot: String(rec.id).startsWith('gbot_'),
       targetId: null, lastActionAt: 0,
@@ -417,10 +406,7 @@ function awardRating(b: Battle, winnerTeam: -1 | 0 | 1): any[] {
     // Жетоны отряда
     const won = winnerTeam === f.team;
     const bestCount = (bestFighter ? 1 : 0) + (bestGuard ? 1 : 0) + (bestMedic ? 1 : 0);
-    let tokens = winnerTeam === -1 ? Math.round(TOKEN_BASE_LOSS * 2) : tokensFor(f, won, bestCount, 0);
-    // Прибавка от навыка «Увеличение награды»
-    const rewardBonus = (f.st && f.st.rewardBonus) || 0;
-    if (rewardBonus > 0) tokens = Math.round(tokens * (1 + rewardBonus));
+    const tokens = winnerTeam === -1 ? Math.round(TOKEN_BASE_LOSS * 2) : tokensFor(f, won, bestCount, 0);
     if (!f.isBot) {
       const uu = player.users()[f.id];
       if (uu) {
@@ -515,26 +501,9 @@ function livingAllies(b: Battle, f: Fighter): Fighter[] {
 
 function doAttack(b: Battle, me: Fighter, target: Fighter): string {
   const role = ROLES[me.role];
-  const mySt = me.st || {};
-  const tSt = target.st || {};
-
-  // Уворот проверяется ПЕРВЫМ: увернувшийся не получает ничего, и
-  // боеприпас всё равно тратится — иначе промах ничего не стоил бы
-  if (Math.random() < (tSt.dodgeChance || 0)) {
-    me.ammo = Math.max(0, me.ammo - COST.attack.ammo);
-    addLog(b, `💨 ${target.name} уклонился от удара ${me.name}`, 'dodge', me.id, target.id);
-    return `«${target.name}» уклонился`;
-  }
-
   let dmg = Math.round(BASE_DMG * role.atkMul * (0.85 + Math.random() * 0.3));
-  // Критический удар
-  const crit = Math.random() < (mySt.critChance || 0);
-  if (crit) dmg = Math.round(dmg * (mySt.critMult || 2));
-
   const tRole = ROLES[target.role];
   dmg = Math.round(dmg * (1 - (tRole ? tRole.dmgReduce : 0)));
-  // Снижение урона от улучшения
-  dmg = Math.round(dmg * (1 - (tSt.damageReduce || 0)));
   // Прикрытие срезает урон, и снятое записывается защитнику: без этого
   // его вклад невидим, а он бывает решающим
   if (target.guardedUntil > Date.now()) {
@@ -549,7 +518,7 @@ function doAttack(b: Battle, me: Fighter, target: Fighter): string {
   target.hp = Math.max(0, target.hp - dmg);
   me.ammo = Math.max(0, me.ammo - COST.attack.ammo);
   me.damageDealt += dmg;
-  addLog(b, `${crit ? '💥 Крит! ' : '⚔ '}${me.name} → ${target.name}: −${dmg} HP`, 'attack', me.id, target.id);
+  addLog(b, `⚔ ${me.name} → ${target.name}: −${dmg} HP`, 'attack', me.id, target.id);
 
   if (target.hp <= 0) {
     target.alive = false;
@@ -564,14 +533,11 @@ function doAttack(b: Battle, me: Fighter, target: Fighter): string {
 
 function doHeal(b: Battle, me: Fighter, target: Fighter): string {
   const before = target.hp;
-  const mySt = me.st || {};
-  const critHeal = Math.random() < (mySt.healCritChance || 0);
-  const amount = critHeal ? Math.round(HEAL_AMOUNT * (mySt.critMult || 2)) : HEAL_AMOUNT;
-  target.hp = Math.min(target.maxHp, target.hp + amount);
+  target.hp = Math.min(target.maxHp, target.hp + HEAL_AMOUNT);
   const healed = target.hp - before;
   me.energy = Math.max(0, me.energy - COST.heal.energy);
   me.healed += healed;
-  addLog(b, `${critHeal ? '💚 Крит-лечение! ' : '💉 '}${me.name} лечит ${target.name}: +${healed} HP`, 'heal', me.id, target.id);
+  addLog(b, `💉 ${me.name} лечит ${target.name}: +${healed} HP`, 'heal', me.id, target.id);
   return `Лечение «${target.name}»: +${healed}`;
 }
 

@@ -30,7 +30,7 @@ console.log('\n── 1. Правила ──');
 ok(gb.TEAM_SIZE === 5, `команда до ${gb.TEAM_SIZE} человек`);
 ok(gb.HP === 1500, `здоровье в бою: ${gb.HP}`);
 ok(gb.ENERGY === 1000, `энергия: ${gb.ENERGY}`);
-ok(gb.AMMO === 50, `боеприпасы: ${gb.AMMO}`);
+ok(gb.AMMO === 30, `боеприпасы: ${gb.AMMO}`);
 ok(gb.ROLE_IDS.length === 3, `ролей: ${gb.ROLE_IDS.join(', ')}`);
 ok(!!gb.ROLES.fighter && !!gb.ROLES.guardian && !!gb.ROLES.medic, 'боец, защитник и медик на месте');
 ok(gb.BOT_FILL_BEFORE_MS === 20000, 'добор ботов идёт последние 20 секунд');

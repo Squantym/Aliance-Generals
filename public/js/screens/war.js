@@ -1386,16 +1386,18 @@ App.renderGroup = async () => {
 
   // Улучшения и база снабжения: категории открываются по рангу
   const sectionBox = () => document.getElementById('gb-section-box');
-
-  // База снабжения пока пустая — показываем только ступени
-  const drawSupply = () => {
+  const drawSection = (kind) => {
+    const titles = {
+      upgrades: { name: '🔧 Улучшения', note: 'Постоянные усиления для групповых боёв.' },
+      supply: { name: '📦 База снабжения', note: 'Снаряжение и расходники для боя.' },
+    };
+    const t = titles[kind];
     sectionBox().innerHTML = `
       <div class="gb-section-body mt">
-        <div class="name">📦 База снабжения</div>
-        <p class="muted small mt">Снаряжение и расходники для боя.
-        Разделы открываются по мере роста ранга.</p>
+        <div class="name">${t.name}</div>
+        <p class="muted small mt">${t.note} Разделы открываются по мере роста ранга.</p>
         <div class="gb-ranks mt">
-          ${d.rating.ranks.filter((r) => r.need > 0).map((r) => `
+          ${d.rating.ranks.map((r) => `
             <div class="gb-rank${r.unlocked ? '' : ' locked'}">
               <span class="gb-rank-icon">${r.unlocked ? r.icon : '🔒'}</span>
               <span class="grow">
@@ -1407,113 +1409,8 @@ App.renderGroup = async () => {
               </span>
             </div>`).join('')}
         </div>
-        <p class="muted small mt">Содержимое появится позже.</p>
+        <p class="muted small mt">Содержимое разделов появится позже — пока видно, что и когда откроется.</p>
       </div>`;
-  };
-
-  // Улучшения: восемь навыков по пятьдесят уровней
-  const drawUpgrades = async () => {
-    sectionBox().innerHTML = '<div class="loading">Загружаю улучшения…</div>';
-    let up = null;
-    try { up = await API.get('/api/group/upgrades'); }
-    catch (e) { sectionBox().innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; return; }
-
-    const cost = (c) => c ? `
-      <span class="gb-cost">
-        ${c.currency === 'gold'
-          ? `<span class="ic-gold"></span> ${UI.fmtNum(c.amount)}`
-          : `<span class="ic-dollar"></span> ${UI.fmtMoney(c.amount)}`}
-        <span class="gb-cost-sep">·</span> 👂 ${c.ears}
-        <span class="gb-cost-sep">·</span> 🎫 ${c.tokens}
-      </span>` : '';
-
-    sectionBox().innerHTML = `
-      <div class="gb-section-body mt">
-        <div class="name">🔧 Улучшения</div>
-        <p class="muted small mt">Постоянные усиления для групповых боёв. Каждый ранг открывает
-        следующие десять уровней — но только если предыдущие уже выкачаны.</p>
-
-        <div class="gb-wallet mt">
-          <span><span class="ic-gold"></span> ${UI.fmtNum(up.wallet.gold)}</span>
-          <span>👂 ${UI.fmtNum(up.wallet.ears)}</span>
-          <span>🎫 ${UI.fmtNum(up.wallet.tokens)}</span>
-        </div>
-
-        <div class="gb-ranks mt">
-          ${up.tiers.map((t) => `
-            <div class="gb-rank${t.unlocked ? '' : ' locked'}">
-              <span class="gb-rank-icon">${t.unlocked ? '✅' : '🔒'}</span>
-              <span class="grow">
-                <b>${UI.esc(t.name)}</b>
-                <span class="muted small">уровни ${t.from}–${t.to} · от ${UI.fmtNum(t.need)} очков</span>
-              </span>
-              <span class="small ${t.unlocked ? 'gold' : 'muted'}">
-                ${t.unlocked ? 'открыто' : 'ещё ' + UI.fmtNum(t.left)}
-              </span>
-            </div>`).join('')}
-        </div>
-
-        <div class="gb-skills mt">
-          ${up.skills.map((sk) => `
-            <div class="gb-skill${sk.atMax ? ' maxed' : ''}">
-              <div class="gb-skill-top">
-                <span class="gb-skill-icon">${sk.icon}</span>
-                <span class="grow">
-                  <b>${UI.esc(sk.name)}</b>
-                  <span class="muted small">${UI.esc(sk.desc)}</span>
-                </span>
-                <span class="gb-skill-lvl">${sk.level}<span class="muted">/${sk.maxLevel}</span></span>
-              </div>
-              <div class="gb-skill-bar"><i style="width:${sk.level / sk.maxLevel * 100}%"></i></div>
-              <div class="gb-skill-now">
-                Сейчас: <b class="gold">${sk.kind === 'flat' ? '+' + sk.value : '+' + sk.value + '%'}</b>
-                ${!sk.atMax ? `<span class="muted small">· следующий уровень +${sk.kind === 'flat' ? sk.step : sk.step + '%'}</span>` : ''}
-              </div>
-              ${sk.atMax
-                ? '<div class="gb-skill-max">Прокачан до предела</div>'
-                : `<div class="gb-skill-buy">
-                     ${cost(sk.nextCost)}
-                     <button class="btn btn-inline gb-up" data-skill="${sk.id}"
-                             ${sk.canUpgrade ? '' : 'disabled'}>
-                       ${sk.blockedByRank ? '🔒 ранг' : 'Улучшить'}
-                     </button>
-                   </div>
-                   ${sk.blockedByRank && sk.needTier
-                     ? `<div class="muted small">Уровень ${sk.level + 1} — с ранга «${UI.esc(sk.needTier.name)}»
-                        (${UI.fmtNum(sk.needTier.need)} очков)</div>` : ''}`}
-            </div>`).join('')}
-        </div>
-
-        <div class="gb-stats-now mt">
-          <div class="muted small">Ваши характеристики в бою:</div>
-          <div class="gb-stats-grid">
-            <span>❤ ${UI.fmtNum(up.stats.hp)} HP</span>
-            <span>⚡ ${UI.fmtNum(up.stats.energy)}</span>
-            <span>🎯 ${up.stats.ammo}</span>
-            <span>💥 крит ${Math.round(up.stats.critChance * 100)}%</span>
-            <span>💨 уворот ${Math.round(up.stats.dodgeChance * 100)}%</span>
-            <span>🛡 −${Math.round(up.stats.damageReduce * 1000) / 10}% урона</span>
-            <span>💚 крит-лечение ${Math.round(up.stats.healCritChance * 100)}%</span>
-            <span>🪙 награда +${Math.round(up.stats.rewardBonus * 100)}%</span>
-          </div>
-        </div>
-      </div>`;
-
-    sectionBox().querySelectorAll('.gb-up').forEach((btn) => {
-      btn.onclick = async () => {
-        btn.disabled = true;
-        try {
-          await API.post('/api/group/upgrade', { skill: btn.dataset.skill });
-          await App.refreshMe();
-          drawUpgrades();
-        } catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
-      };
-    });
-  };
-
-  const drawSection = (kind) => {
-    if (kind === 'upgrades') drawUpgrades();
-    else drawSupply();
   };
   box.querySelectorAll('[data-section]').forEach((b2) => {
     b2.onclick = () => {
