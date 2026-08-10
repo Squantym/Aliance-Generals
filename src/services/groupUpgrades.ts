@@ -32,9 +32,13 @@ const BASE = {
   dodgeChance: 0.20,
 };
 
-// Множитель критического удара и критического лечения.
-// В описании не задан — взято привычное для игры удвоение.
-const CRIT_MULT = 2;
+// Критический удар и критическое лечение усиливают втрое-впятеро,
+// как на арене. Разброс случайный при каждом срабатывании.
+const CRIT_MIN = 3;
+const CRIT_MAX = 5;
+function critMult(): number {
+  return CRIT_MIN + Math.random() * (CRIT_MAX - CRIT_MIN);
+}
 
 // ---------- Навыки ----------
 // step — прибавка за один уровень. Для процентных навыков это доли,
@@ -77,10 +81,11 @@ const TIERS = [
 // значения ступеней подобраны так, чтобы цена НИКОГДА не падала при
 // переходе на следующую ступень — иначе выгоднее было бы копить.
 //
-// ВАЖНО: «валюта» из задания — это ЗОЛОТО. Если имелись в виду
-// игровые деньги, поменяйте COST_CURRENCY на 'money' — вся остальная
-// механика останется прежней.
-const COST_CURRENCY: 'gold' | 'money' = 'gold';
+// Валюта улучшений — «боевые очки», отдельный ресурс групповых боёв.
+// Не путать с жетонами милосердия: те давно есть в игре и тратятся
+// здесь как второй ресурс, наравне с ушами.
+const CURRENCY_NAME = 'Боевые очки';
+const CURRENCY_ICON = '🎗';
 
 const TIER_COST = [
   { curFrom: 500,    curTo: 5000,   resFrom: 5,   resTo: 30 },   // 1–10
@@ -95,7 +100,7 @@ function tierOfLevel(level: number): number {
 }
 
 // Цена ПОВЫШЕНИЯ до указанного уровня (1 — первое улучшение)
-function costOf(level: number): { currency: string; amount: number; ears: number; tokens: number } {
+function costOf(level: number): { amount: number; ears: number; tokens: number } {
   const lvl = u.clamp(Math.round(level), 1, MAX_LEVEL);
   const t = tierOfLevel(lvl);
   const c = TIER_COST[t];
@@ -104,7 +109,8 @@ function costOf(level: number): { currency: string; amount: number; ears: number
   // Плавный рост внутри ступени
   const amount = Math.round(c.curFrom + (c.curTo - c.curFrom) * k);
   const res = Math.round(c.resFrom + (c.resTo - c.resFrom) * k);
-  return { currency: COST_CURRENCY, amount, ears: res, tokens: res };
+  // amount — боевые очки, ears — уши, tokens — жетоны милосердия
+  return { amount, ears: res, tokens: res };
 }
 
 // ---------- Уровни игрока ----------
@@ -149,7 +155,8 @@ function statsFor(user: any) {
     healCritChance: pct(Math.min(0.95, get('healCrit'))),
     damageReduce: pct(Math.min(0.60, get('armor'))),
     rewardBonus: pct(get('reward')),
-    critMult: CRIT_MULT,
+    critMin: CRIT_MIN,
+    critMax: CRIT_MAX,
   };
 }
 
@@ -162,16 +169,17 @@ function view(user: User) {
 
   return {
     base: BASE,
-    critMult: CRIT_MULT,
+    critMin: CRIT_MIN,
+    critMax: CRIT_MAX,
     myPoints: points,
     levelCap: cap,
     maxLevel: MAX_LEVEL,
-    currency: COST_CURRENCY,
+    currencyName: CURRENCY_NAME,
+    currencyIcon: CURRENCY_ICON,
     wallet: {
-      gold: (user as any).gold || 0,
-      money: (user as any).dollars || 0,
+      points: (user as any).battlePoints || 0,
       ears: (user as any).ears || 0,
-      tokens: (user as any).squadTokens || 0,
+      tokens: (user as any).tokens || 0,
     },
     stats,
     tiers: TIERS.map((t) => ({
@@ -205,10 +213,9 @@ function view(user: User) {
 
 function affordable(user: any, cost: any): boolean {
   if (!cost) return false;
-  const cur = cost.currency === 'gold' ? (user.gold || 0) : (user.dollars || 0);
-  return cur >= cost.amount
+  return (user.battlePoints || 0) >= cost.amount
     && (user.ears || 0) >= cost.ears
-    && ((user as any).squadTokens || 0) >= cost.tokens;
+    && (user.tokens || 0) >= cost.tokens;
 }
 
 // ---------- Улучшение ----------
@@ -231,22 +238,18 @@ function upgrade(user: User, skillId: string, notices: Notices) {
   }
 
   const cost = costOf(next);
-  const cur = cost.currency === 'gold' ? (user.gold || 0) : ((user as any).dollars || 0);
-  if (cur < cost.amount) {
-    throw new u.ApiError(cost.currency === 'gold'
-      ? `Не хватает золота: нужно 🪙 ${u.fmt(cost.amount)}`
-      : `Не хватает денег: нужно $${u.fmt(cost.amount)}`);
+  if (((user as any).battlePoints || 0) < cost.amount) {
+    throw new u.ApiError(`Не хватает боевых очков: нужно ${CURRENCY_ICON} ${u.fmt(cost.amount)}`);
   }
   if (((user as any).ears || 0) < cost.ears) throw new u.ApiError(`Не хватает ушей: нужно ${cost.ears}`);
-  if (((user as any).squadTokens || 0) < cost.tokens) {
-    throw new u.ApiError(`Не хватает жетонов отряда: нужно ${cost.tokens}`);
+  if (((user as any).tokens || 0) < cost.tokens) {
+    throw new u.ApiError(`Не хватает жетонов милосердия: нужно ${cost.tokens}`);
   }
 
   // Списываем
-  if (cost.currency === 'gold') player.addGold(user, -cost.amount, 'gb_upgrade');
-  else (user as any).dollars = Math.max(0, (user as any).dollars - cost.amount);
+  (user as any).battlePoints -= cost.amount;
   (user as any).ears -= cost.ears;
-  (user as any).squadTokens -= cost.tokens;
+  (user as any).tokens -= cost.tokens;
   lv[def.id] = next;
 
   db.markUser(user.id);
@@ -264,7 +267,7 @@ function upgrade(user: User, skillId: string, notices: Notices) {
 }
 
 export = {
-  view, upgrade, statsFor, costOf, levelsOf, levelCapFor, tierOfLevel,
+  view, upgrade, statsFor, costOf, levelsOf, levelCapFor, tierOfLevel, critMult,
   SKILLS, SKILL_IDS, TIERS, TIER_COST, BASE, MAX_LEVEL, LEVELS_PER_TIER,
-  CRIT_MULT, COST_CURRENCY,
+  CRIT_MIN, CRIT_MAX, CURRENCY_NAME, CURRENCY_ICON,
 };

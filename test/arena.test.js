@@ -412,6 +412,45 @@ ok(/наказывается не гибель, а бездействие/.test(
 ok(/Ниже нуля рейтинг не опускается/.test(resB), 'и про нижнюю границу сказано');
 ok(/−4, −3, −2, −1/.test(war3), 'на витрине показана шкала штрафов');
 
+console.log('\n── 22. Картинки арены ──');
+for (const [f, label] of [['arena.webp', 'превью'], ['win.webp', 'победа'], ['lose.webp', 'поражение']]) {
+  const fp = path.join(ROOT, 'public/img/arena', f);
+  ok(fs.existsSync(fp), `картинка «${label}» на месте`);
+  const kb = fs.statSync(fp).size / 1024;
+  ok(kb < 150, `${f}: ${kb.toFixed(0)} КБ`);
+}
+const war5 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/\/img\/arena\/arena\.webp/.test(war5), 'превью показывается на витрине');
+ok(/\/img\/arena\/\$\{me && me\.winner \? 'win' : 'lose'\}\.webp/.test(war5),
+   'на итогах картинка зависит от исхода');
+ok(/arena-res-banner/.test(war5), 'у баннера итогов свой класс');
+
+console.log('\n── 23. Вкладки раздела «Война» ──');
+const tabsBlock2 = war5.slice(war5.indexOf('data-wartab="targets"'), war5.indexOf('data-wartab="event"') + 60);
+ok(/Вторжение<\/div>/.test(tabsBlock2), 'вкладка «Цели» переименована во «Вторжение»');
+ok(!/>Цели<\/div>/.test(tabsBlock2), 'прежнее название убрано');
+for (const t of ['targets', 'group', 'arena', 'sanctions', 'event']) {
+  ok(tabsBlock2.includes(`data-wartab="${t}"`), `вкладка «${t}» на месте`);
+}
+// Порядок: вторжение → групповые → арена → санкции
+ok(tabsBlock2.indexOf('"targets"') < tabsBlock2.indexOf('"group"')
+   && tabsBlock2.indexOf('"group"') < tabsBlock2.indexOf('"arena"')
+   && tabsBlock2.indexOf('"arena"') < tabsBlock2.indexOf('"sanctions"'),
+   'порядок вкладок правильный');
+
+console.log('\n── 24. Кеш не прячет обновления ──');
+// Причина, по которой новые разделы не появлялись у игроков: скрипты
+// объявлялись свежими на сутки, и браузер даже не спрашивал сервер
+const httpSrc4 = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
+const ccBlock = httpSrc4.slice(httpSrc4.indexOf("if (['.css', '.js'].includes(ext))"),
+                               httpSrc4.indexOf("if (['.woff'"));
+ok(/return hasHashParam[\s\S]{0,120}: 'no-cache';/.test(ccBlock),
+   'скрипты и стили перепроверяются при каждом заходе');
+ok(!/max-age=86400/.test(ccBlock), 'прежняя суточная свежесть убрана');
+ok(/immutable/.test(ccBlock), 'файлы с меткой версии по-прежнему кешируются навсегда');
+ok(/max-age=31536000, immutable/.test(httpSrc4.slice(httpSrc4.indexOf(".webp"))),
+   'картинки кешируются на год — их адреса не меняются');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

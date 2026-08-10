@@ -30,7 +30,7 @@ console.log('\n── 1. Правила ──');
 ok(gb.TEAM_SIZE === 5, `команда до ${gb.TEAM_SIZE} человек`);
 ok(gb.HP === 1500, `здоровье в бою: ${gb.HP}`);
 ok(gb.ENERGY === 1000, `энергия: ${gb.ENERGY}`);
-ok(gb.AMMO === 30, `боеприпасы: ${gb.AMMO}`);
+ok(gb.AMMO === 50, `боеприпасы: ${gb.AMMO}`);
 ok(gb.ROLE_IDS.length === 3, `ролей: ${gb.ROLE_IDS.join(', ')}`);
 ok(!!gb.ROLES.fighter && !!gb.ROLES.guardian && !!gb.ROLES.medic, 'боец, защитник и медик на месте');
 ok(gb.BOT_FILL_BEFORE_MS === 20000, 'добор ботов идёт последние 20 секунд');
@@ -282,6 +282,9 @@ if (guardian) {
   victim.guardedBy = guardian.id;
   guardian.absorbed = 0;
   attacker.lastActionAt = 0;
+  // Уворот отключаем: иначе удар случайно уходит мимо, защищать нечего,
+  // и проверка падала бы примерно в каждом пятом прогоне
+  victim.st = { ...(victim.st || {}), dodgeChance: 0, damageReduce: 0 };
   db.save('groupBattle');
   gb.act(ps[0], 'attack', victim.id, []);
   const after = db.load('groupBattle', {}).battle.fighters[guardian.id];
@@ -436,9 +439,9 @@ const guard = gb.tokensFor(F(300, 0, 2000, 0, true), true, 1, 0);
 const fighter = gb.tokensFor(F(4000, 0, 0, 3, true), true, 1, 0);
 ok(Math.abs(medic - fighter) < 80 && Math.abs(guard - fighter) < 80,
    `роли сопоставимы: боец ${fighter}, медик ${medic}, защитник ${guard}`);
-ok(/squadTokens/.test(srcW), 'жетоны начисляются игроку');
+ok(/battlePoints/.test(srcW), 'боевые очки начисляются игроку');
 const fieldsW = fs.readFileSync(path.join(ROOT, 'src/core/playerFields.ts'), 'utf8');
-ok(/squadTokens:/.test(fieldsW), 'валюта зарегистрирована в реестре');
+ok(/battlePoints:/.test(fieldsW), 'валюта зарегистрирована в реестре');
 
 console.log('\n── 21. Интерфейс наблюдения ──');
 const war3 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
@@ -447,7 +450,7 @@ ok(/Вас добил/.test(war3), 'показывается, кто добил'
 ok(/data-watch=/.test(war3), 'кнопки переключения на союзников');
 ok(/App\._gbWatch/.test(war3), 'выбор наблюдаемого запоминается');
 ok(/Смотрите бой глазами/.test(war3), 'подписано, чей бой показан');
-ok(/Жетоны<\/th>/.test(war3), 'жетоны в таблице итогов');
+ok(/Очки<\/th>/.test(war3), 'боевые очки в таблице итогов');
 
 console.log('\n── 22. Картинки боёв ──');
 const IMG_DIR = path.join(ROOT, 'public/img/group');

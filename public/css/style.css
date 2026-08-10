@@ -3946,5 +3946,40 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
 .gb-head .gb-banner { margin-bottom: 8px; }
 .gb-result-head { padding-top: 0; overflow: hidden; }
 .gb-result-banner { margin: 0 0 10px; border-radius: 8px 8px 0 0; }
+.arena-res-head { padding-top: 0; overflow: hidden; }
+.arena-res-banner { margin: 0 0 10px; border-radius: 8px 8px 0 0; }
 .gb-win-title { color: var(--gold); text-shadow: 0 0 14px rgba(220,180,70,.4); }
 .gb-lose-title { color: #d98a8a; }
+
+/* Улучшения групповых боёв */
+.gb-wallet {
+  display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+  padding: 7px 10px; border-radius: 7px;
+  background: var(--panel); border: 1px solid var(--border); font-size: 13px;
+}
+.gb-skills { display: flex; flex-direction: column; gap: 8px; }
+.gb-skill {
+  padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--panel);
+}
+.gb-skill.maxed { border-color: #b8952f; }
+.gb-skill-top { display: flex; align-items: flex-start; gap: 8px; }
+.gb-skill-top .grow { display: flex; flex-direction: column; }
+.gb-skill-icon { font-size: 18px; }
+.gb-skill-lvl { font-weight: 700; white-space: nowrap; }
+.gb-skill-bar { height: 5px; border-radius: 3px; background: rgba(0,0,0,.35); overflow: hidden; margin-top: 6px; }
+.gb-skill-bar i { display: block; height: 100%; background: linear-gradient(90deg, #c9a227, #f3d27a); }
+.gb-skill-now { margin-top: 5px; font-size: 12.5px; }
+.gb-skill-buy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.gb-skill-max { margin-top: 6px; text-align: center; font-size: 12.5px; color: var(--gold); }
+.gb-cost { font-size: 12.5px; white-space: nowrap; }
+.gb-cost-sep { color: var(--dim); margin: 0 2px; }
+.gb-stats-now { padding-top: 9px; border-top: 1px solid var(--border-dim); }
+.gb-stats-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px 10px;
+  margin-top: 5px; font-size: 12.5px;
+}
+@media (max-width: 420px) {
+  .gb-skill-buy { flex-direction: column; align-items: stretch; }
+  .gb-stats-grid { grid-template-columns: 1fr; }
+}

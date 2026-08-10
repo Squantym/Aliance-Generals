@@ -69,7 +69,11 @@ for (const [lvl, cur, res] of [[1, 500, 5], [10, 5000, 30], [41, 50000, 100], [5
 let mono = true;
 for (let l = 2; l <= 50; l++) if (gu.costOf(l).amount < gu.costOf(l - 1).amount) mono = false;
 ok(mono, 'цена нигде не падает — копить ради дешёвого уровня невыгодно');
-ok(gu.costOf(1).currency === gu.COST_CURRENCY, 'валюта задана одной настройкой');
+ok(gu.CURRENCY_NAME === 'Боевые очки', `валюта улучшений: ${gu.CURRENCY_NAME}`);
+// Три разных ресурса, ни один не путается с другим
+const costParts = gu.costOf(1);
+ok(typeof costParts.amount === 'number' && typeof costParts.ears === 'number' && typeof costParts.tokens === 'number',
+   'цена состоит из боевых очков, ушей и жетонов милосердия');
 
 console.log('\n── 4. Ступени по рангу ──');
 setRating(plain.id, 0);
@@ -84,7 +88,7 @@ fails(() => gu.upgrade(plain, 'crit', []), 'открывается на ранг
 
 console.log('\n── 5. Прокачка и правило ступеней ──');
 setRating(pro.id, 1000);
-pro.gold = 1e9; pro.ears = 1e6; pro.squadTokens = 1e6;
+pro.battlePoints = 1e9; pro.ears = 1e6; pro.tokens = 1e6;
 for (let i = 0; i < 10; i++) gu.upgrade(pro, 'crit', []);
 ok(gu.levelsOf(pro).crit === 10, 'первая ступень выкачана');
 fails(() => gu.upgrade(pro, 'crit', []), 'открывается на ранге',
@@ -102,19 +106,23 @@ const hpSkill = v.skills.find((s) => s.id === 'hp');
 ok(hpSkill.level === 1 && hpSkill.canUpgrade, 'недокачанный навык качается дальше в своей ступени');
 
 console.log('\n── 6. Списание и нехватка ──');
-const goldBefore = pro.gold, earsBefore = pro.ears, tokBefore = pro.squadTokens;
+const ptsBefore = pro.battlePoints, earsBefore = pro.ears, tokBefore = pro.tokens;
+const goldUntouched = pro.gold, moneyUntouched = pro.dollars;
 const nextCost = gu.costOf(gu.levelsOf(pro).hp + 1);
 gu.upgrade(pro, 'hp', []);
-ok(goldBefore - pro.gold === nextCost.amount, `списано валюты: ${nextCost.amount}`);
+ok(ptsBefore - pro.battlePoints === nextCost.amount, `списано боевых очков: ${nextCost.amount}`);
 ok(earsBefore - pro.ears === nextCost.ears, `списано ушей: ${nextCost.ears}`);
-ok(tokBefore - pro.squadTokens === nextCost.tokens, `списано жетонов: ${nextCost.tokens}`);
+ok(tokBefore - pro.tokens === nextCost.tokens, `списано жетонов милосердия: ${nextCost.tokens}`);
+// Валюта новая и отдельная: обычные деньги и золото не трогаются
+ok(pro.gold === goldUntouched, 'золото не расходуется');
+ok(pro.dollars === moneyUntouched, 'игровые деньги тоже');
 pro.ears = 0;
 fails(() => gu.upgrade(pro, 'hp', []), 'ушей', 'без ушей улучшить нельзя');
-pro.ears = 1e6; pro.squadTokens = 0;
-fails(() => gu.upgrade(pro, 'hp', []), 'жетонов', 'без жетонов тоже');
-pro.squadTokens = 1e6; pro.gold = 0;
-fails(() => gu.upgrade(pro, 'hp', []), 'золота', 'и без валюты');
-pro.gold = 1e9;
+pro.ears = 1e6; pro.tokens = 0;
+fails(() => gu.upgrade(pro, 'hp', []), 'жетонов милосердия', 'без жетонов тоже');
+pro.tokens = 1e6; pro.battlePoints = 0;
+fails(() => gu.upgrade(pro, 'hp', []), 'боевых очков', 'и без боевых очков');
+pro.battlePoints = 1e9;
 
 console.log('\n── 7. Прибавки считаются верно ──');
 pro.gbUpgrades = { crit: 10, dodge: 10, reward: 10, healCrit: 10, armor: 10, hp: 10, energy: 10, ammo: 10 };
@@ -180,6 +188,11 @@ db.save('groupBattle');
 gb.act(pro, 'attack', foe.id, []);
 const normDmg = 1500 - db.load('groupBattle', {}).battle.fighters[foe.id].hp;
 ok(critDmg > normDmg * 1.4, `крит бьёт сильнее: ${critDmg} против ${normDmg}`);
+// Крит усиливает втрое-впятеро со случайным разбросом, как на арене
+ok(gu.CRIT_MIN === 3 && gu.CRIT_MAX === 5, `множитель крита: ×${gu.CRIT_MIN}–×${gu.CRIT_MAX}`);
+const mults = Array.from({ length: 200 }, () => gu.critMult());
+ok(Math.min(...mults) >= 3 && Math.max(...mults) <= 5, 'множитель не выходит за границы');
+ok(new Set(mults.map((m) => Math.round(m * 100))).size > 50, 'значение каждый раз разное');
 // Снижение урона
 const c3 = db.load('groupBattle', {}).battle;
 c3.fighters[foe.id].st.damageReduce = 0.5;
@@ -191,7 +204,9 @@ const reduced = 1500 - db.load('groupBattle', {}).battle.fighters[foe.id].hp;
 ok(reduced < normDmg, `снижение урона работает: ${reduced} вместо ${normDmg}`);
 const srcGb = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
 ok(/rewardBonus > 0\) tokens = Math\.round\(tokens \* \(1 \+ rewardBonus\)\)/.test(srcGb),
-   'навык награды увеличивает жетоны за бой');
+   'навык награды увеличивает боевые очки за бой');
+ok(/battlePoints/.test(srcGb), 'награда начисляется в боевых очках');
+ok(/UP\.critMult\(\)/.test(srcGb), 'бой берёт случайный множитель крита');
 ok(/healCritChance/.test(srcGb), 'крит лечения применяется медиком');
 
 console.log('\n── 9. Интерфейс ──');
@@ -207,6 +222,8 @@ const routes = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
 ok(/'\/api\/group\/upgrades'/.test(routes) && /'\/api\/group\/upgrade'/.test(routes), 'роуты есть');
 const fields = fs.readFileSync(path.join(ROOT, 'src/core/playerFields.ts'), 'utf8');
 ok(/gbUpgrades:/.test(fields), 'уровни зарегистрированы в реестре');
+ok(/battlePoints:/.test(fields), 'новая валюта зарегистрирована');
+ok(!/squadTokens/.test(fields), 'прежнее название нигде не осталось');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

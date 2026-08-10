@@ -124,9 +124,16 @@ function cacheControlFor(ext: string, hasHashParam: boolean, relPath?: string): 
     return 'public, max-age=31536000, immutable'; // 1 год
   }
   if (['.css', '.js'].includes(ext)) {
+    // Без метки версии — 'no-cache'. Это НЕ «не кешировать»: копия
+    // хранится, но браузер каждый раз спрашивает сервер, изменилась ли
+    // она, и на 304 берёт своё. Стоит один короткий запрос.
+    //
+    // Прежние сутки свежести означали, что после деплоя игроки ещё день
+    // видели старый код и не получали новых разделов — при этом ничего
+    // не выглядело сломанным, что хуже всего.
     return hasHashParam
       ? 'public, max-age=31536000, immutable'
-      : 'public, max-age=86400, must-revalidate';
+      : 'no-cache';
   }
   if (['.woff', '.woff2', '.ttf', '.eot'].includes(ext)) {
     return 'public, max-age=31536000, immutable'; // шрифты — год

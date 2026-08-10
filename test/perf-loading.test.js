@@ -83,7 +83,9 @@ ok(lazyCount > eagerCount, `ленивых больше, чем немедлен
 
 console.log('\n── 6. Сжатие и кеш ──');
 ok(/'public, max-age=31536000, immutable'/.test(httpSrc), 'картинки и шрифты кешируются на год');
-ok(/must-revalidate/.test(httpSrc), 'скрипты перепроверяются, но не качаются заново');
+// no-cache не значит «не кешировать»: копия хранится, но её свежесть
+// проверяется запросом, и при 304 не качается ни байта
+ok(/: 'no-cache';/.test(httpSrc), 'скрипты перепроверяются, но не качаются заново');
 const compressSrc = fs.readFileSync(path.join(ROOT, 'src/core/compress.ts'), 'utf8');
 ok(/if \(ae\.includes\('br'\)\) return 'br'/.test(compressSrc), 'предпочитается brotli — он сжимает лучше gzip');
 ok(/COMPRESSIBLE/.test(compressSrc), 'сжимается только то, что сжимается');

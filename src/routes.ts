@@ -484,6 +484,12 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/group/act',        act((req, n) =>
     gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
 
+  // Улучшения групповых боёв
+  const gup = require('./services/groupUpgrades');
+  app.add('GET',  '/api/group/upgrades',   (req) => gup.view(req.user));
+  app.add('POST', '/api/group/upgrade',    act((req, n) =>
+    gup.upgrade(req.user, String(req.body.skill || ''), n)));
+
   // ═══ КАБИНЕТ: до трёх персонажей на аккаунт ══════════════════════
   const account = require('./services/account');
 
