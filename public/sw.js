@@ -5,8 +5,9 @@
  *  • /api/*            — НИКОГДА не кешируем. Игра живая, данные всегда с сервера.
  *  • навигация (HTML)  — network-first. index.html отдаётся с no-cache и содержит
  *                        свежие ?v=хэш для CSS/JS. Если сети нет — offline.html.
- *  • /js/, /css/       — cache-first. Безопасно: в URL есть ?v=хэш от содержимого
- *                        (см. src/core/assetHash.ts). Меняется файл → меняется URL.
+ *  • /js/, /css/       — cache-first только для URL с ?v=хэш от содержимого
+ *                        (см. src/core/assetHash.ts). Неверсионированные файлы
+ *                        перепроверяем по сети, чтобы старый код не залипал.
  *  • /img/, шрифты     — cache-first (контент иммутабельный).
  *
  * KILL SWITCH: если что-то пойдёт не так на проде — ставим в /sw-config.json
@@ -14,7 +15,7 @@
  * Файл отдаётся с no-cache, поэтому флаг долетает до всех.
  * =================================================================== */
 
-const SW_VERSION   = 'v1';
+const SW_VERSION   = 'v2';
 const SHELL_CACHE  = 'ag-shell-' + SW_VERSION;
 const ASSET_CACHE  = 'ag-assets-' + SW_VERSION;
 const OFFLINE_URL  = '/offline.html';
@@ -101,7 +102,17 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Статика с хэшем в URL и картинки/шрифты — cache-first
-  if (/^\/(?:js|css|img|fonts)\//.test(p) || p === '/favicon.png' || p === '/favicon.svg') {
+  const isCode = /^\/(?:js|css)\//.test(p);
+
+  // URL без хэша нельзя отдавать cache-first: после деплоя под тем же адресом
+  // может лежать новый экран. Сеть проверяем первой, кеш оставляем для офлайна.
+  if (isCode && !url.searchParams.has('v')) {
+    event.respondWith(networkFirstAsset(req));
+    return;
+  }
+
+  // Версионированный код и неизменяемые картинки/шрифты — cache-first.
+  if (isCode || /^\/(?:img|fonts)\//.test(p) || p === '/favicon.png' || p === '/favicon.svg') {
     event.respondWith(cacheFirst(req));
     return;
   }
@@ -140,6 +151,22 @@ async function cacheFirst(req) {
   } catch (e) {
     const any = await caches.match(req, { ignoreSearch: true });
     if (any) return any;
+    throw e;
+  }
+}
+
+async function networkFirstAsset(req) {
+  try {
+    // Даже если промежуточный HTTP-кеш видел старый URL, требуем revalidate.
+    const res = await fetch(req, { cache: 'no-cache' });
+    if (res && res.status === 200 && res.type === 'basic') {
+      const cache = await caches.open(ASSET_CACHE);
+      cache.put(req, res.clone());
+    }
+    return res;
+  } catch (e) {
+    const cached = await caches.match(req);
+    if (cached) return cached;
     throw e;
   }
 }

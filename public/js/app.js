@@ -2401,8 +2401,24 @@ const App = {
   },
   _loadedScreens: {},
   _loadingScreens: {},
+  _screenAssetUrls: null,
 
   _screenFile(name) { return App._SCREEN_FILES[name] || null; },
+
+  // URL ленивых модулей приходят из index.html уже с контентным хэшем.
+  // Неверсионированный запасной путь нужен для прямого открытия исходного
+  // index.html при локальной разработке без Node-сервера.
+  _screenAssetUrl(file) {
+    if (!App._screenAssetUrls) {
+      App._screenAssetUrls = {};
+      const manifest = document.getElementById('screen-assets');
+      if (manifest) {
+        try { App._screenAssetUrls = JSON.parse(manifest.textContent || '{}'); }
+        catch (e) { App._screenAssetUrls = {}; }
+      }
+    }
+    return App._screenAssetUrls[file] || `/js/screens/${file}.js`;
+  },
 
   // Загружаем файл один раз. Повторные обращения ждут ту же загрузку,
   // иначе быстрые переходы туда-сюда качали бы файл дважды.
@@ -2413,7 +2429,7 @@ const App = {
 
     const p = new Promise((resolve) => {
       const el = document.createElement('script');
-      el.src = `/js/screens/${file}.js`;
+      el.src = App._screenAssetUrl(file);
       el.async = false;
       el.onload = () => { App._loadedScreens[file] = true; resolve(); };
       el.onerror = () => {
@@ -2441,7 +2457,7 @@ const App = {
         if (App._loadedScreens[file] || App._loadingScreens[file]) continue;
         const el = document.createElement('link');
         el.rel = 'prefetch';
-        el.href = `/js/screens/${file}.js`;
+        el.href = App._screenAssetUrl(file);
         document.head.appendChild(el);
       }
     });
