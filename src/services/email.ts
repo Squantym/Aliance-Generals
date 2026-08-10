@@ -16,19 +16,95 @@
 // ссылка выводится в консоль, а auth.register считает почту подтверждённой.
 // ===================================================================
 
+// ── Какой сервис отправляет письма ────────────────────────────────
+// Основной — Unisender Go: российский, и это принципиально. Письма с
+// зарубежных серверов mail.ru и Яндекс часто кладут в спам, а у нашей
+// аудитории почта в основном там. Игрок не получил бы письмо, не смог
+// войти и просто ушёл бы — причём молча.
+//
+// Resend оставлен запасным: если ключа Unisender нет, а ключ Resend
+// есть, работает он. Так переход не ломает уже настроенные серверы.
+const UNISENDER_API_KEY = process.env.UNISENDER_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+
+// Unisender Go разводит клиентов по площадкам: у российской и
+// европейской разные адреса. По умолчанию российская.
+const UNISENDER_URL = process.env.UNISENDER_URL
+  || 'https://go1.unisender.ru/ru/transactional/api/v1/email/send.json';
+
 const EMAIL_FROM = process.env.EMAIL_FROM || 'Генералы <onboarding@resend.dev>';
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
+// Какой сервис используем на самом деле
+const provider: 'unisender' | 'resend' | 'none' =
+  UNISENDER_API_KEY ? 'unisender' : (RESEND_API_KEY ? 'resend' : 'none');
+
 // true, если настроена реальная отправка почты
-const isConfigured = !!RESEND_API_KEY;
+const isConfigured = provider !== 'none';
 // Признак «тестового» отправителя resend.dev — шлёт только владельцу аккаунта
 const usingTestSender = /resend\.dev/i.test(EMAIL_FROM);
+
+// Разбираем «Имя <адрес>» — Unisender требует имя и адрес отдельно
+function splitFrom(raw: string): { name: string; email: string } {
+  const m = /^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/.exec(String(raw || ''));
+  if (m) return { name: m[1].replace(/^["']|["']$/g, '') || 'Генералы', email: m[2] };
+  return { name: 'Генералы', email: String(raw || '').trim() };
+}
 
 function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => (({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   } as Record<string, string>)[c]));
+}
+
+// Отправка через Unisender Go.
+// Формат ответа у него свой: HTTP 200 приходит и при частичном отказе,
+// поэтому обязательно смотрим failed_emails в теле — иначе сбой
+// выглядел бы успехом, и мы не узнали бы, что письма не доходят.
+async function sendViaUnisender(to: string, subject: string, html: string):
+  Promise<{ sent: boolean; status: number; error: string; id?: string }> {
+  const from = splitFrom(EMAIL_FROM);
+  try {
+    const res = await fetch(UNISENDER_URL, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': UNISENDER_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          recipients: [{ email: to }],
+          body: { html },
+          subject,
+          from_email: from.email,
+          from_name: from.name,
+          // Отписка от служебных писем не нужна и мешает: без неё
+          // письмо о подтверждении не превращается в рассылку
+          skip_unsubscribe: 1,
+        },
+      }),
+    });
+    const bodyText = await res.text().catch(() => '');
+    let parsed: any = {};
+    try { parsed = JSON.parse(bodyText); } catch (e) {}
+
+    if (!res.ok || parsed.status === 'error') {
+      const reason = parsed.message || parsed.error || bodyText || `HTTP ${res.status}`;
+      console.error(`📧 Unisender отклонил письмо для <${to}>: HTTP ${res.status} — ${reason}`);
+      return { sent: false, status: res.status, error: String(reason) };
+    }
+    // Адрес мог быть отклонён поимённо при общем «успехе»
+    const failed = parsed.failed_emails || {};
+    if (failed && failed[to]) {
+      console.error(`📧 Unisender не принял адрес <${to}>: ${failed[to]}`);
+      return { sent: false, status: res.status, error: String(failed[to]) };
+    }
+    const id = (parsed.job_id || (parsed.emails && parsed.emails[0])) || undefined;
+    return { sent: true, status: res.status, error: '', id };
+  } catch (e: any) {
+    console.error('📧 Сетевая ошибка отправки письма (Unisender):', e.message);
+    return { sent: false, status: 0, error: e.message || 'network error' };
+  }
 }
 
 // Низкоуровневая отправка через Resend. Возвращает подробный результат,
@@ -56,6 +132,16 @@ async function sendViaResend(to: string, subject: string, html: string):
     console.error('📧 Сетевая ошибка отправки письма:', e.message);
     return { sent: false, status: 0, error: e.message || 'network error' };
   }
+}
+
+// Единая точка отправки: выбор сервиса решается здесь и только здесь.
+// Иначе при добавлении второго сервиса пришлось бы править каждое место
+// вызова, и одно из них рано или поздно забыли бы.
+async function sendMail(to: string, subject: string, html: string):
+  Promise<{ sent: boolean; status: number; error: string; id?: string }> {
+  if (provider === 'unisender') return sendViaUnisender(to, subject, html);
+  if (provider === 'resend') return sendViaResend(to, subject, html);
+  return { sent: false, status: 0, error: 'Отправка писем не настроена' };
 }
 
 function verifyHtml(name: string, link: string): string {
@@ -99,7 +185,7 @@ async function sendVerificationEmail(toEmail: string, name: string, token: strin
     console.log(`📧 [DEV] Ссылка подтверждения для «${name}» <${toEmail}>: ${link}`);
     return { sent: false, link };
   }
-  const r = await sendViaResend(toEmail, 'Подтверждение почты — Генералы', verifyHtml(name, link));
+  const r = await sendMail(toEmail, 'Подтверждение почты — Генералы', verifyHtml(name, link));
   if (!r.sent) console.error(`📧 Не удалось отправить подтверждение <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
 }
@@ -113,7 +199,7 @@ async function sendPasswordResetEmail(toEmail: string, name: string, token: stri
     console.log(`📧 [DEV] Ссылка сброса пароля для «${name}» <${toEmail}>: ${link}`);
     return { sent: false, link };
   }
-  const r = await sendViaResend(toEmail, 'Восстановление пароля — Генералы', resetHtml(name, link));
+  const r = await sendMail(toEmail, 'Восстановление пароля — Генералы', resetHtml(name, link));
   if (!r.sent) console.error(`📧 Не удалось отправить сброс пароля <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
 }
@@ -148,8 +234,8 @@ async function sendTest(toEmail: string):
   }
   const html = `<div style="font-family:Arial,sans-serif"><h3>Проверка почты «Генералы»</h3>
     <p>Если вы видите это письмо — отправка настроена верно ✅</p></div>`;
-  const r = await sendViaResend(to, 'Проверка почты — Генералы', html);
+  const r = await sendMail(to, 'Проверка почты — Генералы', html);
   return { sent: r.sent, status: r.status, error: r.error, from: EMAIL_FROM, configured: true };
 }
 
-export = { sendVerificationEmail, sendPasswordResetEmail, isConfigured, status, sendTest };
+export = { sendVerificationEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, sendMail, UNISENDER_URL,};

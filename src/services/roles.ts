@@ -155,7 +155,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/(players|logs|db-integrity)$/,   'players'],
   // Сводка и карточка игрока — рабочий стол сотрудника, зона «Игроки»
   [/^\/api\/admin\/(dashboard|player-card|access)/, 'players'],
-  [/^\/api\/admin\/(multi-check|net-check)/,        'security'],
+  [/^\/api\/admin\/(multi-check|net-check|email-status|verify-email)/, 'security'],
   // Просмотр карточки игрока и его состояния — часть раздела «Игроки».
   // Раньше эти адреса не попадали ни в одну зону и по умолчанию считались
   // владельческими: администратор не мог открыть даже профиль.

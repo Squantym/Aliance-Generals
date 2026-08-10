@@ -457,6 +457,39 @@ function registerRoutes(app: any) {
     return { url };
   }), { admin: true });
 
+  // ═══ АРЕНА: бой каждый сам за себя ═══════════════════════════════
+  const arena = require('./services/arena');
+
+  app.add('GET',  '/api/arena',            (req) => arena.view(req.user, req.query.div));
+  app.add('POST', '/api/arena/register',   act((req, n) => arena.register(req.user, req.body.div, n)));
+  app.add('POST', '/api/arena/unregister', act((req, n) => arena.unregister(req.user, req.body.div, n)));
+  // Разбор законченного боя — отдельной страницей
+  app.add('GET',  '/api/arena/result/:id', (req) => arena.result(req.user, String(req.params.id || '')));
+  app.add('GET',  '/api/arena/rating',     (req) => arena.rating(req.user, arena.divOf(req.query.div), req.query.limit));
+  app.add('POST', '/api/arena/enter',      act((req, n) => arena.enter(req.user, n)));
+  app.add('GET',  '/api/arena/battle',     (req) => arena.battleState(req.user));
+  app.add('POST', '/api/arena/attack',     act((req) => arena.attack(req.user)));
+  app.add('POST', '/api/arena/switch',     act((req) => arena.switchTarget(req.user)));
+  app.add('POST', '/api/arena/skill',      act((req) => arena.useSkill(req.user, String(req.body.skill || ''))));
+
+  // ═══ ГРУППОВЫЕ БОИ 5 на 5 ════════════════════════════════════════
+  const gb = require('./services/groupBattle');
+
+  app.add('GET',  '/api/group',            (req) => gb.view(req.user));
+  app.add('POST', '/api/group/register',   act((req, n) => gb.register(req.user, String(req.body.role || ''), n)));
+  app.add('POST', '/api/group/unregister', act((req, n) => gb.unregister(req.user, n)));
+  app.add('POST', '/api/group/role',       act((req, n) => gb.setRole(req.user, String(req.body.role || ''), n)));
+  app.add('POST', '/api/group/enter',      act((req, n) => gb.enter(req.user, n)));
+  app.add('GET',  '/api/group/battle',     (req) => gb.battleState(req.user, String(req.query.watch || '')));
+  app.add('POST', '/api/group/act',        act((req, n) =>
+    gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
+
+  // Улучшения групповых боёв
+  const gup = require('./services/groupUpgrades');
+  app.add('GET',  '/api/group/upgrades',   (req) => gup.view(req.user));
+  app.add('POST', '/api/group/upgrade',    act((req, n) =>
+    gup.upgrade(req.user, String(req.body.skill || ''), n)));
+
   // ═══ КАБИНЕТ: до трёх персонажей на аккаунт ══════════════════════
   const account = require('./services/account');
 
@@ -830,6 +863,122 @@ function registerRoutes(app: any) {
       },
     };
   }, { admin: true });
+
+  // ═══ ПОЧТА: проверка настройки и помощь игрокам ══════════════════
+  // Подтверждение почты включается само, когда задан ключ отправки.
+  // Эти два роута нужны, чтобы включение не обернулось бедой: сначала
+  // проверить, что письма уходят, и иметь способ помочь игроку, до
+  // которого письмо не дошло.
+  app.add('GET', '/api/admin/email-status', (req) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const email = require('./services/email');
+    const users = Object.values(player.users()).filter((p: any) => !p.isBot);
+    const unverified = users.filter((p: any) => !p.emailVerified);
+    return {
+      configured: email.isConfigured,
+      testSender: email.usingTestSender,
+      from: email.EMAIL_FROM || '',
+      appUrl: email.APP_URL || '',
+      total: users.length,
+      unverified: unverified.length,
+      list: unverified
+        .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
+        .slice(0, 50)
+        .map((p: any) => ({
+          id: p.id, name: p.name, email: p.email || '',
+          createdAt: p.createdAt || 0, level: p.level,
+        })),
+      hint: email.isConfigured
+        ? (email.usingTestSender
+            ? 'Отправитель тестовый (resend.dev) — письма уходят только на вашу собственную почту. '
+              + 'Для игроков подключите свой домен в Resend и укажите его в EMAIL_FROM.'
+            : 'Отправка настроена. Новые игроки обязаны подтвердить почту перед входом.')
+        : 'Ключ отправки не задан (RESEND_API_KEY). Пока его нет, почта считается подтверждённой '
+          + 'автоматически, и требование не действует.',
+    };
+  }, { admin: true });
+
+  // Подтвердить почту вручную. Нужно, когда письмо не дошло: попало в
+  // спам, игрок ошибся в адресе, почтовый сервис отклонил. Без этого
+  // человек остаётся заперт снаружи, и помочь ему нечем.
+  app.add('POST', '/api/admin/verify-email', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    if ((target as any).emailVerified) throw new u.ApiError('Почта уже подтверждена');
+    (target as any).emailVerified = true;
+    (target as any).emailVerifyToken = null;
+    require('./core/db').markUser(target.id);
+    require('./core/db').save('users');
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/verify-email',
+      body: { targetId: target.id, targetName: target.name, email: (target as any).email },
+    });
+    n.push(`✅ Почта игрока «${target.name}» подтверждена вручную`);
+    return { ok: true };
+  }), { admin: true });
+
+  // ═══ ПОЧТА: проверка настройки и ручное подтверждение ════════════
+  // Включать обязательное подтверждение вслепую опасно: если отправка
+  // настроена неверно, новые игроки не смогут войти вообще. Эта проверка
+  // показывает состояние ДО того, как игроки столкнутся с проблемой.
+  app.add('GET', '/api/admin/email-check', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const email = require('./services/email');
+    const users = player.users();
+    const list = Object.values(users).filter((p: any) => !p.isBot);
+    const unverified = list.filter((p: any) => !p.emailVerified);
+    const PROVIDER_NAMES: Record<string, string> = {
+      unisender: 'Unisender Go (Россия)',
+      resend: 'Resend (США)',
+      none: 'не настроен',
+    };
+    return {
+      configured: email.isConfigured,
+      provider: email.provider,
+      providerName: PROVIDER_NAMES[email.provider] || email.provider,
+      from: email.EMAIL_FROM || '',
+      appUrl: email.APP_URL || '',
+      testSender: email.usingTestSender,
+      totals: { players: list.length, unverified: unverified.length },
+      unverified: unverified
+        .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
+        .slice(0, 50)
+        .map((p: any) => ({ id: p.id, name: p.name, email: p.email, createdAt: p.createdAt || 0 })),
+      hint: !email.isConfigured
+        ? 'Отправка писем не настроена: почта у новых игроков подтверждается сама, '
+          + 'подтверждение не требуется. Задайте UNISENDER_API_KEY в .env и перезапустите — '
+          + 'после этого новые игроки будут обязаны подтвердить почту.'
+        : (email.usingTestSender
+          ? 'Ключ задан, но отправитель тестовый (resend.dev): письма уходят только на вашу '
+            + 'собственную почту. Игроки писем не получат. Укажите в EMAIL_FROM адрес на '
+            + 'своём домене и подтвердите домен у почтового сервиса.'
+          : (email.provider === 'resend'
+            ? 'Работает Resend (США). Для игроков с почтой mail.ru и Яндекс письма чаще '
+              + 'попадают в спам. Рекомендуется Unisender Go: задайте UNISENDER_API_KEY.'
+            : 'Отправка настроена. Новые игроки обязаны подтвердить почту перед входом.')),
+    };
+  }, { admin: true });
+
+  // Подтвердить почту вручную. Нужно, когда письмо не доходит: у игрока
+  // опечатка в адресе, письмо в спаме или почтовый ящик недоступен.
+  // Без этого единственным выходом была бы правка базы руками.
+  app.add('POST', '/api/admin/verify-email', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    if ((target as any).emailVerified) throw new u.ApiError('Почта уже подтверждена');
+    (target as any).emailVerified = true;
+    (target as any).emailVerifyToken = null;
+    require('./core/db').markUser(target.id);
+    require('./core/db').save('users');
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/verify-email',
+      body: { targetId: target.id, targetName: target.name, email: (target as any).email },
+    });
+    n.push(`✅ Почта игрока «${target.name}» подтверждена вручную`);
+    return { ok: true };
+  }), { admin: true });
 
   // Диагностика: что на самом деле приходит от прокси. Нужна, когда в
   // журнале у всех один адрес — сразу видно, передаёт ли nginx заголовки

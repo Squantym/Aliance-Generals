@@ -1111,6 +1111,22 @@ const Admin = {
 
       <!-- База данных: копии и снимки. Отдельная вкладка ради трёх
            кнопок не нужна — блок живёт здесь и грузится отдельно -->
+      ${Admin.can('security') ? `
+      <div class="card">
+        <div class="name">📧 Подтверждение почты</div>
+        <p class="muted small mt">Состояние отправки писем и игроки, застрявшие на подтверждении.</p>
+        <button class="btn btn-inline mt" id="mail-check">Проверить</button>
+        <div id="mail-box" class="mt"></div>
+      </div>` : ''}
+
+      ${(Admin.me && Admin.me.staffRole === 'owner') ? `
+      <div class="card">
+        <div class="name">📧 Подтверждение почты</div>
+        <p class="muted small mt">Состояние отправки писем и список тех, кто ещё не подтвердил адрес.</p>
+        <button class="btn btn-inline mt" id="mail-check">Проверить</button>
+        <div id="mail-box" class="mt"></div>
+      </div>` : ''}
+
       ${(Admin.me && Admin.me.staffRole === 'owner') ? `
       <div class="card">
         <div class="name">🌐 Проверка сети</div>
@@ -1159,6 +1175,52 @@ const Admin = {
         });
       } catch (e) { box.innerHTML = `<p class="small" style="color:var(--red)">⛔ ${UI.esc(e.message)}</p>`; }
     };
+    // Состояние подтверждения почты
+    const mailGo = document.getElementById('mail-check');
+    if (mailGo) {
+      const paintMail = async () => {
+        const box = document.getElementById('mail-box');
+        box.innerHTML = '<div class="loading">Проверяю…</div>';
+        try {
+          const r = await API.get('/api/admin/email-status');
+          const dt = (ms) => ms ? new Date(ms).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+          box.innerHTML = `
+            <table class="access-table">
+              <tr><td>Сервис</td><td class="num"><b>${UI.esc(r.providerName || '—')}</b></td></tr>
+            <tr><td>Отправка писем</td><td class="num">${r.configured
+                ? '<b style="color:var(--green)">настроена</b>'
+                : '<b style="color:var(--orange-1)">не настроена</b>'}</td></tr>
+              <tr><td>Отправитель</td><td class="num small mono">${UI.esc(r.from || '—')}</td></tr>
+              <tr><td>Адрес игры</td><td class="num small mono">${UI.esc(r.appUrl || '—')}</td></tr>
+              <tr><td>Ждут подтверждения</td><td class="num"><b>${UI.fmtNum(r.unverified)}</b> из ${UI.fmtNum(r.total)}</td></tr>
+            </table>
+            <p class="small mt" style="color:var(--orange-1)">${UI.esc(r.hint)}</p>
+            ${(r.list || []).length ? `
+              <div class="mt"><div class="muted small">Не подтвердили почту:</div>
+                <table class="access-table mt">
+                  ${r.list.map((p) => `
+                    <tr>
+                      <td><b>${UI.esc(p.name)}</b> <span class="muted small">ур. ${p.level}</span></td>
+                      <td class="small mono">${UI.esc(p.email)}</td>
+                      <td class="small muted nowrap">${dt(p.createdAt)}</td>
+                      <td class="num"><button class="btn btn-inline" data-verify="${p.id}">Подтвердить</button></td>
+                    </tr>`).join('')}
+                </table>
+                <p class="muted small mt">Подтверждайте вручную, только если убедились, что игрок —
+                владелец этой почты. Обычно письмо просто попало в спам.</p>
+              </div>` : ''}`;
+          box.querySelectorAll('[data-verify]').forEach((b) => {
+            b.onclick = async () => {
+              b.disabled = true;
+              try { await API.post('/api/admin/verify-email', { userId: b.dataset.verify }); UI.toast('✅ Подтверждено'); paintMail(); }
+              catch (e) { UI.toast('⛔ ' + e.message); b.disabled = false; }
+            };
+          });
+        } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+      };
+      mailGo.onclick = paintMail;
+    }
+
     // Проверка сети: что приходит от прокси
     const netGo = document.getElementById('net-check');
     if (netGo) netGo.onclick = async () => {
