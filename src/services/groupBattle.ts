@@ -185,11 +185,32 @@ function teamHp(b: Battle, team: 0 | 1): number {
 const BOT_NAMES = ['Вихрь', 'Кремень', 'Сокол', 'Гранит', 'Барс', 'Ястреб',
                   'Тайфун', 'Клык', 'Разряд', 'Обух'];
 
+// Роль боту выбираем с оглядкой на уже набранный состав: чисто
+// случайный выбор давал перекосы вроде пяти медиков из девяти, и бой
+// превращался в бесконечное перелечивание. Держим примерно половину
+// бойцов, четверть защитников и четверть медиков.
+const ROLE_SHARE: Record<string, number> = { fighter: 0.5, guardian: 0.25, medic: 0.25 };
+
+function pickBotRole(s: Store): string {
+  const all = Object.values(s.registered);
+  const total = all.length + 1;
+  const have: Record<string, number> = { fighter: 0, guardian: 0, medic: 0 };
+  for (const r of all) if (have[r.role] !== undefined) have[r.role]++;
+  // Берём роль, которой не хватает сильнее всего
+  let best = 'fighter', gap = -Infinity;
+  for (const id of ROLE_IDS) {
+    const want = ROLE_SHARE[id] * total;
+    const d = want - have[id];
+    if (d > gap) { gap = d; best = id; }
+  }
+  return best;
+}
+
 function addBot(s: Store, index: number): void {
   const id = 'gbot_' + u.uid(8);
   s.registered[id] = {
     id, name: BOT_NAMES[index % BOT_NAMES.length] + '-' + (index + 1), flag: '🤖',
-    level: 0, role: ROLE_IDS[Math.floor(Math.random() * ROLE_IDS.length)],
+    level: 0, role: pickBotRole(s),
     at: Date.now(),
   };
 }

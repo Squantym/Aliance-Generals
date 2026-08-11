@@ -828,6 +828,27 @@ async function renderConflictDetail(c, confId) {
 // Отпечаток данных: перерисовываем экран, только если что-то реально
 // изменилось. Иначе при обновлении раз в несколько секунд страница
 // моргала бы вхолостую, сбрасывая прокрутку и введённые числа.
+// Живой отсчёт до старта. Секунды считаем локально от времени старта,
+// присланного сервером: опрашивать сервер каждую секунду ради таймера
+// незачем, а между опросами он иначе стоит на месте.
+App._startTicker = (selector, startsAt, onZero) => {
+  clearInterval(App._tickTimer);
+  const paint = () => {
+    const el = document.querySelector(selector);
+    if (!el) { clearInterval(App._tickTimer); return; }
+    const left = Math.max(0, Math.round((startsAt - Date.now()) / 1000));
+    const m = Math.floor(left / 60), sec = left % 60;
+    el.textContent = `${m}:${String(sec).padStart(2, '0')}`;
+    if (left <= 0) {
+      clearInterval(App._tickTimer);
+      // Бой начался — обновляем экран, чтобы показать боевое окно
+      if (onZero) setTimeout(onZero, 800);
+    }
+  };
+  paint();
+  App._tickTimer = setInterval(paint, 1000);
+};
+
 App._sameAsBefore = (key, data) => {
   const sign = JSON.stringify(data);
   if (App['_sign_' + key] === sign) return true;
@@ -856,13 +877,7 @@ App.renderArena = async () => {
   const fingerprint = { ...d, secondsLeft: undefined, rating: undefined,
                         registered: d.registered.map((x) => x.id) };
   if (box.dataset.mode === 'lobby' && App._sameAsBefore('arenaLobby', fingerprint)) {
-    // Обновляем только таймер — точечно, без перерисовки страницы
-    const t = document.getElementById('arena-timer');
-    if (t) {
-      const m = Math.floor(d.secondsLeft / 60), sec = d.secondsLeft % 60;
-      t.textContent = `${m}:${String(sec).padStart(2, '0')}`;
-    }
-    return;
+    return;   // разметка не менялась, таймер идёт сам
   }
   box.dataset.mode = 'lobby';
 
@@ -1016,6 +1031,14 @@ App.renderArena = async () => {
   });
   const lastBtn = document.getElementById('arena-last');
   if (lastBtn) lastBtn.onclick = () => App.renderArenaResult(d.lastResultId);
+
+  // Живой отсчёт до старта боя
+  if (d.nextStartAt) {
+    App._startTicker('#arena-timer', d.nextStartAt, () => {
+      App._resetSign('arenaLobby');
+      App.renderArena();
+    });
+  }
 
   const inBtn = document.getElementById('arena-in');
   if (inBtn) inBtn.onclick = async () => {
@@ -1297,12 +1320,7 @@ App.renderGroup = async () => {
   const fp = { ...d, secondsLeft: undefined, rating: undefined,
                registered: d.registered.map((x) => x.id + ':' + x.role) };
   if (box.dataset.mode === 'lobby' && App._sameAsBefore('gbLobby', fp)) {
-    const t = box.querySelector('.arena-timer');
-    if (t) {
-      const m = Math.floor(d.secondsLeft / 60), sec = d.secondsLeft % 60;
-      t.textContent = `${m}:${String(sec).padStart(2, '0')}`;
-    }
-    return;
+    return;   // разметка не менялась, таймер идёт сам
   }
   box.dataset.mode = 'lobby';
 
@@ -1363,7 +1381,7 @@ App.renderGroup = async () => {
       <div class="arena-next">
         <div>
           <div class="muted small">Следующий бой через</div>
-          <div class="arena-timer">${mmss(d.secondsLeft)}</div>
+          <div class="arena-timer" id="gb-timer">${d.secondsLeft > 0 ? mmss(d.secondsLeft) : '—'}</div>
         </div>
         <div class="arena-pot">
           <div class="muted small">Записалось</div>
@@ -1589,6 +1607,14 @@ App.renderGroup = async () => {
     drawSection(App._gbSection);
     const cur = box.querySelector(`[data-section="${App._gbSection}"]`);
     if (cur) cur.classList.add('active');
+  }
+
+  // Живой отсчёт: идёт, только если кто-то записан
+  if (d.nextStartAt && d.registered.length) {
+    App._startTicker('#gb-timer', d.nextStartAt, () => {
+      App._resetSign('gbLobby');
+      App.renderGroup();
+    });
   }
 
   box.querySelectorAll('[data-role]').forEach((b2) => {

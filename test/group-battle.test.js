@@ -539,6 +539,68 @@ ok(/id="gb-enter-fight"/.test(warE), 'кнопка «В бой» есть в б�
 ok(/gb-enter-left/.test(warE), 'отсчёт до конца входа обновляется точечно');
 ok(/Вы ещё не вступили в бой/.test(warE), 'игрока предупреждают, что его уже бьют');
 
+console.log('\n── 25. Живой отсчёт до боя ──');
+const warT = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/App\._startTicker = \(selector, startsAt, onZero\)/.test(warT),
+   'есть живой отсчёт, считающий локально');
+ok(/setInterval\(paint, 1000\)/.test(warT), 'таймер обновляется каждую секунду');
+ok(/App\._startTicker\('#arena-timer'/.test(warT), 'на арене отсчёт запускается');
+ok(/App\._startTicker\('#gb-timer'/.test(warT), 'в групповых боях тоже');
+ok(/if \(left <= 0\)[\s\S]{0,180}onZero/.test(warT), 'при нуле экран обновляется сам');
+ok(/d\.nextStartAt && d\.registered\.length/.test(warT),
+   'в групповых боях отсчёт идёт, только если кто-то записан');
+// Сервер отдаёт время старта — без него считать нечего
+const arenaSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
+ok(/nextStartAt: s\.slot/.test(arenaSrc2), 'арена отдаёт время старта');
+const gbSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/nextStartAt: s\.slot/.test(gbSrc2), 'групповые бои тоже');
+
+console.log('\n── 26. Состав ботов сбалансирован ──');
+ok(/function pickBotRole/.test(gbSrc2), 'роль боту выбирается с оглядкой на состав');
+ok(/ROLE_SHARE/.test(gbSrc2), 'заданы доли ролей');
+// Набираем ботов много раз и смотрим разброс
+const seen = { fighter: 0, guardian: 0, medic: 0 };
+for (let run = 0; run < 10; run++) {
+  const sb = db.load('groupBattle', {});
+  sb.registered = {}; sb.battle = null; sb.slot = Date.now() + 1000;
+  db.save('groupBattle');
+  gb.fillWithBots(db.load('groupBattle', {}));
+  for (const r of Object.values(db.load('groupBattle', {}).registered)) {
+    if (seen[r.role] !== undefined) seen[r.role]++;
+  }
+}
+const totalRoles = seen.fighter + seen.guardian + seen.medic;
+ok(seen.fighter > seen.medic, `бойцов больше, чем медиков: ${seen.fighter} против ${seen.medic}`);
+ok(seen.medic / totalRoles < 0.4,
+   `медиков не больше трети: ${Math.round(seen.medic / totalRoles * 100)}%`);
+ok(seen.guardian > 0 && seen.medic > 0, 'все роли представлены');
+
+console.log('\n── 27. Боты действуют сами ──');
+const sc = db.load('groupBattle', {});
+sc.registered = {}; sc.battle = null; sc.slot = 0; db.save('groupBattle');
+gb.register(ps[0], 'fighter', []);
+const c1t = db.load('groupBattle', {}); c1t.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
+const c2t = db.load('groupBattle', {}); c2t.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+gb.enter(ps[0], []);
+// Три «хода» с интервалом больше отката
+let botActs = 0;
+for (let i = 0; i < 3; i++) {
+  const cur = db.load('groupBattle', {}).battle;
+  if (!cur || cur.state !== 'running') break;
+  cur.lastBotAt = 0;
+  const mark = cur.log.length;
+  db.save('groupBattle');
+  gb.tick();
+  const after = db.load('groupBattle', {}).battle;
+  botActs += after.log.slice(mark).filter((l) =>
+    ['attack', 'heal', 'guard', 'kill', 'dodge'].includes(l.kind)).length;
+}
+ok(botActs > 0, `боты сделали ${botActs} действий`);
+ok(gb.BOT_THINK_MS === 3000, `откат ботов: ${gb.BOT_THINK_MS / 1000} с`);
+const fin2 = db.load('groupBattle', {}).battle;
+const totalDmg = Object.values(fin2.fighters).reduce((n, f) => n + f.damageDealt, 0);
+ok(totalDmg > 0, `боты наносят урон: ${totalDmg}`);
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }
