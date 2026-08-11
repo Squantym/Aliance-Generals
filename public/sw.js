@@ -5,9 +5,8 @@
  *  • /api/*            — НИКОГДА не кешируем. Игра живая, данные всегда с сервера.
  *  • навигация (HTML)  — network-first. index.html отдаётся с no-cache и содержит
  *                        свежие ?v=хэш для CSS/JS. Если сети нет — offline.html.
- *  • /js/, /css/       — cache-first только для URL с ?v=хэш от содержимого
- *                        (см. src/core/assetHash.ts). Неверсионированные файлы
- *                        перепроверяем по сети, чтобы старый код не залипал.
+ *  • /js/, /css/       — cache-first. Безопасно: в URL есть ?v=хэш от содержимого
+ *                        (см. src/core/assetHash.ts). Меняется файл → меняется URL.
  *  • /img/, шрифты     — cache-first (контент иммутабельный).
  *
  * KILL SWITCH: если что-то пойдёт не так на проде — ставим в /sw-config.json
@@ -15,6 +14,8 @@
  * Файл отдаётся с no-cache, поэтому флаг долетает до всех.
  * =================================================================== */
 
+// Версию НУЖНО поднимать при каждом обновлении клиента: смена строки
+// заставляет служебного работника выбросить прежние кеши целиком.
 const SW_VERSION   = 'v2';
 const SHELL_CACHE  = 'ag-shell-' + SW_VERSION;
 const ASSET_CACHE  = 'ag-assets-' + SW_VERSION;
@@ -101,18 +102,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Статика с хэшем в URL и картинки/шрифты — cache-first
-  const isCode = /^\/(?:js|css)\//.test(p);
-
-  // URL без хэша нельзя отдавать cache-first: после деплоя под тем же адресом
-  // может лежать новый экран. Сеть проверяем первой, кеш оставляем для офлайна.
-  if (isCode && !url.searchParams.has('v')) {
-    event.respondWith(networkFirstAsset(req));
+  // КОД (скрипты и стили) — сначала сеть, кеш только как запасной
+  // вариант при обрыве связи.
+  //
+  // Раньше здесь стоял cache-first, и это была главная беда: браузер
+  // брал старую копию из кеша и вообще НЕ обращался к серверу. После
+  // деплоя игроки месяцами могли не видеть новых разделов, при этом
+  // ничего не выглядело сломанным. Заголовки Cache-Control тут не
+  // помогали — служебный работник перехватывает запрос раньше них.
+  if (/^\/(?:js|css)\//.test(p)) {
+    event.respondWith(networkFirst(req));
     return;
   }
 
-  // Версионированный код и неизменяемые картинки/шрифты — cache-first.
-  if (isCode || /^\/(?:img|fonts)\//.test(p) || p === '/favicon.png' || p === '/favicon.svg') {
+  // Картинки и шрифты — из кеша: они не меняются, а их адреса при
+  // замене всё равно меняются вместе с содержимым
+  if (/^\/(?:img|fonts)\//.test(p) || p === '/favicon.png' || p === '/favicon.svg') {
     event.respondWith(cacheFirst(req));
     return;
   }
@@ -137,6 +142,25 @@ async function navigationHandler(req) {
   }
 }
 
+// Сначала сеть, кеш в запасе. Свежий ответ сразу кладём в кеш, чтобы
+// игра работала и без связи.
+async function networkFirst(req) {
+  try {
+    const res = await fetch(req);
+    if (res && res.status === 200 && res.type === 'basic') {
+      const cache = await caches.open(ASSET_CACHE);
+      cache.put(req, res.clone());
+    }
+    return res;
+  } catch (e) {
+    const cached = await caches.match(req);
+    if (cached) return cached;
+    const any = await caches.match(req, { ignoreSearch: true });
+    if (any) return any;
+    throw e;
+  }
+}
+
 async function cacheFirst(req) {
   const cached = await caches.match(req);
   if (cached) return cached;
@@ -151,22 +175,6 @@ async function cacheFirst(req) {
   } catch (e) {
     const any = await caches.match(req, { ignoreSearch: true });
     if (any) return any;
-    throw e;
-  }
-}
-
-async function networkFirstAsset(req) {
-  try {
-    // Даже если промежуточный HTTP-кеш видел старый URL, требуем revalidate.
-    const res = await fetch(req, { cache: 'no-cache' });
-    if (res && res.status === 200 && res.type === 'basic') {
-      const cache = await caches.open(ASSET_CACHE);
-      cache.put(req, res.clone());
-    }
-    return res;
-  } catch (e) {
-    const cached = await caches.match(req);
-    if (cached) return cached;
     throw e;
   }
 }

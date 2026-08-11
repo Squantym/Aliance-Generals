@@ -27,7 +27,11 @@ const TEAM_SIZE = 5;                    // сколько в команде
 const LOBBY_MS = 5 * 60 * 1000;         // сколько ждём остальных
 const BOT_FILL_BEFORE_MS = 20 * 1000;   // за сколько до старта начинаем добор
 const TOTAL_SLOTS = 10;                 // сколько мест в бою всего
-const ENTER_WINDOW_MS = 60 * 1000;      // сколько ждём выхода в бой
+// Тридцать секунд на нажатие «В бой». Но боец УЖЕ на поле с первой
+// секунды: его можно бить, пока он не зашёл. Не успел — может погибнуть,
+// так и не сделав ни одного удара. Это осознанно: бой начинается сразу
+// для всех, иначе вошедшие первыми стояли бы и ждали.
+const ENTER_WINDOW_MS = 30 * 1000;
 const BATTLE_MAX_MS = 20 * 60 * 1000;   // предел длительности
 
 // Базовые ресурсы боя. Живут в groupUpgrades, чтобы база и прибавки
@@ -159,14 +163,6 @@ function tick(): void {
 
   const b = s.battle;
   if (b && (b.state === 'waiting' || b.state === 'running')) {
-    // Окно выхода истекло
-    if (b.state === 'waiting' && now - b.startedAt >= ENTER_WINDOW_MS) {
-      for (const f of Object.values(b.fighters)) {
-        if (!f.entered && !f.isBot) { f.alive = false; f.hp = 0; }
-      }
-      b.state = 'running';
-      addLog(b, '🔔 Бой начался!', 'system');
-    }
     if (b.state === 'running') {
       botTurn(b, now);
       checkEnd(s, b);
@@ -274,9 +270,9 @@ function startBattle(s: Store, list: any[], now: number): void {
   }
   s.battle = {
     id: u.uid(10), slot: s.slot, startedAt: now, finishedAt: 0,
-    state: 'waiting', fighters, log: [], winnerTeam: -1, lastBotAt: 0,
+    state: 'running', fighters, log: [], winnerTeam: -1, lastBotAt: 0,
   };
-  addLog(s.battle, `⚔ Бой ${split.filter((x) => x.team === 0).length} на ${split.filter((x) => x.team === 1).length} начинается`, 'system');
+  addLog(s.battle, `🔔 Бой ${split.filter((x) => x.team === 0).length} на ${split.filter((x) => x.team === 1).length} начался!`, 'system');
   s.registered = {};
   s.slot = nextSlot(now);
 
@@ -284,7 +280,7 @@ function startBattle(s: Store, list: any[], now: number): void {
     if (f.isBot) continue;
     try {
       require('./notifications').push(f.id, 'gb_start',
-        `⚔ Групповой бой начался! Зайдите в «Война → Групповые бои» — на выход ${Math.round(ENTER_WINDOW_MS / 1000)} секунд.`, {});
+        `⚔ Групповой бой начался! Вы уже на поле — вас могут бить. Заходите скорее: ${Math.round(ENTER_WINDOW_MS / 1000)} секунд на выход.`, {});
     } catch (e) {}
   }
 }
@@ -696,7 +692,9 @@ function view(user: User) {
       state: b.state,
       iAmIn: !!b.fighters[user.id],
       entered: !!(b.fighters[user.id] && b.fighters[user.id].entered),
-      canEnter: !!(b.fighters[user.id] && !b.fighters[user.id].entered && b.state === 'waiting'),
+      canEnter: !!(b.fighters[user.id] && !b.fighters[user.id].entered
+        && b.state === 'running' && b.fighters[user.id].alive
+        && now - b.startedAt <= ENTER_WINDOW_MS),
       enterLeftSec: Math.max(0, Math.round((b.startedAt + ENTER_WINDOW_MS - now) / 1000)),
       id: b.id,
     } : null,
@@ -710,17 +708,16 @@ function enter(user: User, notices: Notices) {
   tick();
   const s = store();
   const b = s.battle;
-  if (!b || (b.state !== 'waiting' && b.state !== 'running')) throw new u.ApiError('Бой не идёт');
+  if (!b || b.state !== 'running') throw new u.ApiError('Бой не идёт');
   const me = b.fighters[user.id];
   if (!me) throw new u.ApiError('Вы не записаны на этот бой');
+  if (!me.alive) throw new u.ApiError('Вы уже выведены из боя');
+  if (Date.now() - b.startedAt > ENTER_WINDOW_MS) {
+    throw new u.ApiError('Время на выход истекло');
+  }
   if (!me.entered) {
     me.entered = true;
-    addLog(b, `➕ ${me.name} вышел на поле (${ROLES[me.role].label})`, 'system');
-    // Все вышли — начинаем не дожидаясь окна
-    if (b.state === 'waiting' && Object.values(b.fighters).every((f) => f.entered)) {
-      b.state = 'running';
-      addLog(b, '🔔 Бой начался!', 'system');
-    }
+    addLog(b, `➕ ${me.name} вступил в бой (${ROLES[me.role].label})`, 'system');
     db.save('groupBattle');
   }
   return battleState(user);
@@ -757,6 +754,8 @@ function battleState(user: User, watchId?: string) {
     result: (b as any).result || null,
     iWon: b.state === 'done' && b.winnerTeam === me.team,
     myTeam: me.team,
+    entered: me.entered,
+    enterLeftSec: Math.max(0, Math.round((b.startedAt + ENTER_WINDOW_MS - now) / 1000)),
     me: {
       ...card(me),
       energy: me.energy, maxEnergy: me.maxEnergy,
@@ -797,6 +796,7 @@ function requireFight(user: User): { s: Store; b: Battle; me: Fighter } {
   const me = b.fighters[user.id];
   if (!me) throw new u.ApiError('Вы не участвуете в бою');
   if (!me.alive) throw new u.ApiError('Вы выведены из боя');
+  if (!me.entered) throw new u.ApiError('Сначала нажмите «В бой»');
   const now = Date.now();
   if (now - me.lastActionAt < ACTION_CD_MS) {
     throw new u.ApiError(`Перезарядка ${((ACTION_CD_MS - (now - me.lastActionAt)) / 1000).toFixed(1)} с`);
@@ -839,6 +839,6 @@ export = {
   ratingTable, rankOf, awardRating, tokensFor, RANKS, CONTRIB_CAP,
   RATING_WIN, RATING_LOSS, RATING_KILL, RATING_BEST,
   ROLES, ROLE_IDS, TEAM_SIZE, HP, ENERGY, AMMO, BASE_DMG, HEAL_AMOUNT,
-  GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, BOT_THINK_MS, BOT_FILL_BEFORE_MS,
+  GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, BOT_THINK_MS, BOT_FILL_BEFORE_MS, ENTER_WINDOW_MS,
   splitTeams, fillWithBots, botTurn,
 };

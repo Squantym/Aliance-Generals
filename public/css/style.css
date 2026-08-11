@@ -3983,3 +3983,22 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
   .gb-skill-buy { flex-direction: column; align-items: stretch; }
   .gb-stats-grid { grid-template-columns: 1fr; }
 }
+
+/* Полоса «вышло обновление» */
+.update-bar {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 19000; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 10px; font-size: 13px;
+  background: var(--panel-2); border: 1px solid var(--orange-1);
+  box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  max-width: calc(100vw - 24px);
+}
+.update-bar .btn { padding: 4px 10px; font-size: 12px; }
+
+/* Предупреждение «вы ещё не в бою» */
+.gb-enter-now {
+  margin-top: 8px; padding: 10px 12px; border-radius: 8px; text-align: center;
+  background: rgba(200,120,40,.15); border: 1px solid var(--orange-1);
+  animation: arenaPulse 1.2s ease-in-out infinite;
+}
+.gb-enter-title { font-weight: 700; color: var(--orange-1); }

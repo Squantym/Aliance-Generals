@@ -9,6 +9,7 @@ const TEST_CWD = '/tmp/generals-tick-test';
 fs.rmSync(TEST_CWD, { recursive: true, force: true });
 fs.mkdirSync(TEST_CWD + '/data', { recursive: true });
 process.chdir(TEST_CWD);
+process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают игроков пачками
 
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };

@@ -90,9 +90,9 @@ function registerRoutes(app: any) {
     auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
-  app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login), { open: true });
+  app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login, req.ip), { open: true });
   app.add('POST', '/api/request-password-reset', (req) => auth.requestPasswordReset(req.body.loginOrEmail), { open: true });
-  app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password), { open: true });
+  app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password, req.ip), { open: true });
 
   // ---------- Игрок ----------
   app.add('GET', '/api/me', (req) => {

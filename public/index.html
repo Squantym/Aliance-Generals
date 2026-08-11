@@ -58,19 +58,6 @@
   <div id="toasts"></div>
 
   <!-- Порядок подключения важен: сначала ядро, потом экраны -->
-  <!-- Карта ленивых модулей хранится в HTML намеренно: при отдаче страницы
-       сервер добавляет к каждому URL хэш содержимого (?v=...). Благодаря
-       этому Service Worker не может подменить обновлённый экран старой копией. -->
-  <script id="screen-assets" type="application/json">
-    {
-      "war": "/js/screens/war.js",
-      "economy": "/js/screens/economy.js",
-      "market": "/js/screens/market.js",
-      "news": "/js/screens/news.js",
-      "saboteurs": "/js/screens/saboteurs.js",
-      "social": "/js/screens/social.js"
-    }
-  </script>
   <script src="/js/api.js"></script>
   <script src="/js/ui.js"></script>
   <script src="/js/app.js"></script>

@@ -9,6 +9,7 @@ const TEST_CWD = '/tmp/generals-arena-test';
 fs.rmSync(TEST_CWD, { recursive: true, force: true });
 fs.mkdirSync(TEST_CWD + '/data', { recursive: true });
 process.chdir(TEST_CWD);
+process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают игроков пачками
 
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
@@ -69,12 +70,15 @@ console.log('\n── 4. Старт и выход на арену ──');
 for (const p of ps) { p.gold = 1000; arena.register(p, 'elite', []); }
 startNow();
 const v2 = arena.view(ps[0], 'elite');
-ok(v2.battle && v2.battle.state === 'waiting', 'бой ждёт участников');
-ok(v2.battle.canEnter === true, 'можно выйти на арену');
+// Ждать нажатия «В бой» больше не нужно: взнос уплачен, и отвлёкшийся
+// на минуту человек терял бы деньги ни за что
+ok(v2.battle && v2.battle.state === 'running', 'бой начинается сразу');
+ok(v2.battle.canEnter === false, 'выходить на арену не требуется');
 ok(v2.battle.pot === 200, `банк боя: ${v2.battle.pot}`);
-for (const p of ps) arena.enter(p, []);
 const st = arena.battleState(ps[0]);
-ok(st.state === 'running', 'после выхода всех бой начался');
+ok(st.state === 'running', 'все участники уже в бою');
+ok(st.active === true, 'бой доступен без лишних действий');
+ok(!!st.target, 'цель назначена автоматически');
 ok(st.aliveCount === 4, `живых: ${st.aliveCount}`);
 
 console.log('\n── 5. Характеристики равные ──');
@@ -220,7 +224,6 @@ ok(ps[0].gold === goldKept, 'золото не тронуто');
 fails(() => arena.register(ps[0], 'elite', []), 'уже записаны в дивизион',
       'в двух дивизионах сразу участвовать нельзя');
 startNow('basic');
-for (const p of ps) arena.enter(p, []);
 const bb2 = db.load('arena', {}).divs.basic.battle;
 ok(bb2.pot === 4e12, `банк в деньгах: ${bb2.pot.toExponential(0)}`);
 // Альфа добивает всех
@@ -284,7 +287,6 @@ const de2 = db.load('arena', {}).divs.elite;
 de2.registered = {}; de2.battle = null; de2.slot = 0; db.save('arena');
 for (const p of ps) { p.gold = 1000; arena.register(p, 'elite', []); }
 startNow('elite');
-for (const p of ps) arena.enter(p, []);
 const eb = db.load('arena', {}).divs.elite.battle;
 // Альфа — фаворит: у него уже есть очки в базовом, но рейтинг элиты
 // свой, поэтому проставим его напрямую
@@ -341,7 +343,6 @@ const dx = db.load('arena', {}).divs.elite;
 dx.registered = {}; dx.battle = null; dx.slot = 0; db.save('arena');
 for (const p of five) { p.gold = 1000; arena.register(p, 'elite', []); }
 startNow('elite');
-for (const p of five) arena.enter(p, []);
 const kill = (killer, foe) => {
   const cur = db.load('arena', {}).divs.elite.battle;
   if (!cur || cur.state === 'done') return;
@@ -373,7 +374,6 @@ const dy = db.load('arena', {}).divs.elite;
 dy.registered = {}; dy.battle = null; dy.slot = 0; db.save('arena');
 for (const p of five) { p.gold = 1000; arena.register(p, 'elite', []); }
 startNow('elite');
-for (const p of five) arena.enter(p, []);
 // «Первый» убивает троих, затем гибнет от «Пятого»
 kill(five[0], five[1]); kill(five[0], five[2]); kill(five[0], five[3]);
 kill(five[4], five[0]);
@@ -397,7 +397,6 @@ const dz = db.load('arena', {}).divs.elite;
 dz.registered = {}; dz.battle = null; dz.slot = 0; db.save('arena');
 for (const p of five) { p.gold = 1000; arena.register(p, 'elite', []); }
 startNow('elite');
-for (const p of five) arena.enter(p, []);
 for (const foe of [five[1], five[2], five[3], five[4]]) kill(five[0], foe);
 const afterPenalty = db.load('arena', {}).ratings.elite[victimId].points;
 ok(afterPenalty === 0, `был 1 очко, штраф −4 → стало ${afterPenalty}, а не отрицательное`);

@@ -25,6 +25,40 @@ const RATE_LIMIT_MAX   = 5;
 const RATE_LIMIT_BLOCK = 15 * 60 * 1000; // 15 минут
 const RATE_LIMIT_WIN   = 5  * 60 * 1000; // окно 5 минут
 
+// Отдельные счётчики для действий, которые дорого обходятся: отправка
+// писем и создание аккаунтов. Без них один человек может выжечь месячную
+// квоту почтового сервиса за час или забить базу пустыми аккаунтами.
+const heavyAttempts = new Map<string, { count: number; firstAt: number }>();
+const HEAVY_WINDOW_MS = 60 * 60 * 1000;      // окно — час
+const HEAVY_LIMITS: Record<string, number> = {
+  register: 5,        // аккаунтов с одного адреса в час
+  mail: 5,            // писем (сброс пароля, повторное подтверждение)
+  reset: 10,          // попыток применить код сброса
+};
+
+function checkHeavy(kind: string, ip: string): void {
+  if (!ip || ip === 'unknown') return;
+  // В тестах и при локальной разработке ограничение мешает: сценарии
+  // создают десятки игроков подряд с одного адреса. На проде переменная
+  // не задаётся, и защита работает.
+  if (process.env.DISABLE_RATE_LIMIT === '1') return;
+  const key = kind + ':' + ip;
+  const now = Date.now();
+  let e = heavyAttempts.get(key);
+  if (!e || now - e.firstAt > HEAVY_WINDOW_MS) { e = { count: 0, firstAt: now }; heavyAttempts.set(key, e); }
+  e.count++;
+  const limit = HEAVY_LIMITS[kind] || 10;
+  if (e.count > limit) {
+    const mins = Math.ceil((e.firstAt + HEAVY_WINDOW_MS - now) / 60000);
+    auditLog.record({ userId: 'system', userName: 'system', path: '/rate-limit-heavy', body: { kind, ip } });
+    throw new u.ApiError(`Слишком часто. Попробуйте через ${mins} мин.`);
+  }
+  // Чистим карту, чтобы она не росла бесконечно
+  if (heavyAttempts.size > 5000) {
+    for (const [k, v] of heavyAttempts) if (now - v.firstAt > HEAVY_WINDOW_MS) heavyAttempts.delete(k);
+  }
+}
+
 function checkRateLimit(ip: string): void {
   const now = Date.now();
   let entry = loginAttempts.get(ip);
@@ -232,6 +266,7 @@ function renameSelf(user: User, newName: string, notices: Notices) {
 }
 
 async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any) {
+  checkHeavy('register', ip);
   // БАГ 24: очистка управляющих символов
   login = sanitizeInput(login).trim();
 
@@ -314,7 +349,8 @@ function verifyEmail(token: string) {
   return { token: issueToken(found.id), isAdmin: !!found.isAdmin, name: found.name };
 }
 
-async function resendVerification(loginName: string) {
+async function resendVerification(loginName: string, ip?: string) {
+  checkHeavy('mail', String(ip || ''));
   const found = Object.values(users()).find(
     (p) => p.name.toLowerCase() === String(loginName || '').trim().toLowerCase()
   );
@@ -417,7 +453,8 @@ function logout(token: string) {
 
 // Запрос на сброс пароля: по позывному или email отправляем письмо со ссылкой.
 // Не раскрываем, существует ли аккаунт (отвечаем одинаково в любом случае).
-async function requestPasswordReset(loginOrEmail: string) {
+async function requestPasswordReset(loginOrEmail: string, ip?: string) {
+  checkHeavy('mail', String(ip || ''));
   const q = String(loginOrEmail || '').trim().toLowerCase();
   const found = Object.values(users()).find(
     (p) => p.name.toLowerCase() === q || (p.email || '').toLowerCase() === q
@@ -436,7 +473,8 @@ async function requestPasswordReset(loginOrEmail: string) {
 }
 
 // Сброс пароля по токену из письма
-function resetPassword(token: string, newPassword: string) {
+function resetPassword(token: string, newPassword: string, ip?: string) {
+  checkHeavy('reset', String(ip || ''));
   const t = String(token || '');
   if (!t) throw new u.ApiError('Неверная ссылка восстановления');
   const found = Object.values(users()).find((p) => p.resetToken && p.resetToken === t);
@@ -503,4 +541,4 @@ function changePassword(user: User, oldPassword: string, newPassword: string, ne
   return { ok: true, token };
 }
 
-export = { register, login, logout, issueToken, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};
+export = { register, login, logout, issueToken, checkHeavy, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};

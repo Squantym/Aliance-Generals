@@ -80,9 +80,6 @@ const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
    ok('хэши ?v= в ссылках на JS по-прежнему подставляются', /\/js\/app\.js\?v=[0-9a-f]{8}/.test(idx.body));
    eq('index.html — no-cache', idx.headers['cache-control'],'no-cache');
 
-   ok('ленивый экран войны получает свой ?v=хэш',
-      /"war":\s*"\/js\/screens\/war\.js\?v=[0-9a-f]{8}"/.test(idx.body));
-
    const js=await get('/js/app.js?v=12345678');
    ok('JS с хэшем — immutable на год (SW кеширует безопасно)', /immutable/.test(js.headers['cache-control']));
 

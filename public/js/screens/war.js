@@ -825,6 +825,17 @@ async function renderConflictDetail(c, confId) {
   }
 }
 
+// Отпечаток данных: перерисовываем экран, только если что-то реально
+// изменилось. Иначе при обновлении раз в несколько секунд страница
+// моргала бы вхолостую, сбрасывая прокрутку и введённые числа.
+App._sameAsBefore = (key, data) => {
+  const sign = JSON.stringify(data);
+  if (App['_sign_' + key] === sign) return true;
+  App['_sign_' + key] = sign;
+  return false;
+};
+App._resetSign = (key) => { delete App['_sign_' + key]; };
+
 // ═══ АРЕНА: бой каждый сам за себя ══════════════════════════════════
 // Экран живёт в двух состояниях: витрина с записью на ближайший бой и
 // боевое окно. Переключение по данным сервера, а не по нажатию: игрок
@@ -839,6 +850,21 @@ App.renderArena = async () => {
   let d = null;
   try { d = await API.get('/api/arena?div=' + (App._arenaDiv || 'elite')); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+  // Витрина перерисовывается, только если что-то поменялось. Секунды до
+  // старта в отпечаток не берём — иначе экран моргал бы каждый раз.
+  const fingerprint = { ...d, secondsLeft: undefined, rating: undefined,
+                        registered: d.registered.map((x) => x.id) };
+  if (box.dataset.mode === 'lobby' && App._sameAsBefore('arenaLobby', fingerprint)) {
+    // Обновляем только таймер — точечно, без перерисовки страницы
+    const t = document.getElementById('arena-timer');
+    if (t) {
+      const m = Math.floor(d.secondsLeft / 60), sec = d.secondsLeft % 60;
+      t.textContent = `${m}:${String(sec).padStart(2, '0')}`;
+    }
+    return;
+  }
+  box.dataset.mode = 'lobby';
 
   // Игрок в идущем бою — показываем боевое окно
   if (d.battle && d.battle.iAmIn && d.battle.entered && d.battle.state === 'running') {
@@ -1031,6 +1057,14 @@ App.renderArenaBattle = async () => {
   try { b = await API.get('/api/arena/battle'); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
+  // Ничего не изменилось — не трогаем разметку. Иначе экран моргал бы
+  // каждые пять секунд и сбрасывал прокрутку списка бойцов.
+  if (box.dataset.mode === 'battle' && App._sameAsBefore('arenaBattle', b)) {
+    scheduleArenaBattle();
+    return;
+  }
+  box.dataset.mode = 'battle';
+
   // Бой окончен — показываем итог и возвращаем к витрине
   // Бой окончен — сразу открываем полную страницу разбора
   if (!b.active || b.finished) {
@@ -1134,12 +1168,19 @@ App.renderArenaBattle = async () => {
   // Обновляем часто: бой идёт в реальном времени, и чужие удары нужно
   // видеть без задержки. Секунда — разумный предел: чаще нагружало бы
   // сервер без пользы, реже бой ощущался бы рваным.
+  scheduleArenaBattle();
+};
+
+// Обновление боя раз в 5 секунд. Секундный опрос давал мигание и грузил
+// сервер, а в отзывчивости не выигрывал: удары ограничены перезарядкой.
+function scheduleArenaBattle() {
+  clearInterval(App._arenaTimer);
   App._arenaTimer = setInterval(() => {
     if (document.hidden) return;
     if ((App._warTab || '') !== 'arena') { clearInterval(App._arenaTimer); return; }
     App.renderArenaBattle();
-  }, 1000);
-};
+  }, 5000);
+}
 
 // ═══ СТРАНИЦА ИТОГОВ БОЯ ════════════════════════════════════════════
 // Полноценный разбор: кто сколько нанёс, кого убил, сколько получил
@@ -1251,9 +1292,24 @@ App.renderGroup = async () => {
   try { d = await API.get('/api/group'); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
+  // Перерисовываем только при изменениях; секунды до старта обновляем
+  // точечно, чтобы страница не моргала
+  const fp = { ...d, secondsLeft: undefined, rating: undefined,
+               registered: d.registered.map((x) => x.id + ':' + x.role) };
+  if (box.dataset.mode === 'lobby' && App._sameAsBefore('gbLobby', fp)) {
+    const t = box.querySelector('.arena-timer');
+    if (t) {
+      const m = Math.floor(d.secondsLeft / 60), sec = d.secondsLeft % 60;
+      t.textContent = `${m}:${String(sec).padStart(2, '0')}`;
+    }
+    return;
+  }
+  box.dataset.mode = 'lobby';
+
   // Игрок вышел в бой — показываем боевое окно
-  if (d.battle && d.battle.iAmIn && d.battle.entered
-      && (d.battle.state === 'running' || d.battle.state === 'waiting')) {
+  // Боевое окно показываем СРАЗУ, как только бой пошёл: игрок уже на
+  // поле и его бьют, даже если он не нажал «В бой»
+  if (d.battle && d.battle.iAmIn && d.battle.state === 'running') {
     return App.renderGroupBattle();
   }
 
@@ -1583,6 +1639,15 @@ App.renderGroupBattle = async () => {
   try { b = await API.get('/api/group/battle' + (App._gbWatch ? '?watch=' + encodeURIComponent(App._gbWatch) : '')); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
+  // Отсчёт до конца входа меняется каждую секунду — из отпечатка его
+  // убираем, иначе смысла в проверке нет
+  if (box.dataset.mode === 'battle' && App._sameAsBefore('gbBattle', { ...b, enterLeftSec: undefined })) {
+    const t = document.getElementById('gb-enter-left');
+    if (t) t.textContent = b.enterLeftSec;
+    return;
+  }
+  box.dataset.mode = 'battle';
+
   if (!b.active && !b.finished) return App.renderGroup();
 
   const pct = (h, m) => Math.max(0, Math.round(h / m * 100));
@@ -1683,6 +1748,14 @@ App.renderGroupBattle = async () => {
         <span class="muted small">${b.state === 'waiting' ? 'ждём остальных' : 'идёт'}</span>
       </div>
 
+      ${(b.entered === false && me.alive) ? `
+        <div class="gb-enter-now">
+          <div class="gb-enter-title">⚠ Вы ещё не вступили в бой!</div>
+          <div class="small">Вас уже могут атаковать. Осталось
+            <b id="gb-enter-left">${b.enterLeftSec}</b> с</div>
+          <button class="btn btn-orange mt" id="gb-enter-fight" style="width:100%">В БОЙ</button>
+        </div>` : ''}
+
       ${!me.alive ? `
         <div class="gb-dead-panel">
           <div class="gb-dead-title">☠ Вы выведены из боя</div>
@@ -1749,6 +1822,13 @@ App.renderGroupBattle = async () => {
       <div class="mt">${b.allies.map((f) => rowOf(f, false)).join('')}</div>
     </div>`;
 
+  const enterNow = document.getElementById('gb-enter-fight');
+  if (enterNow) enterNow.onclick = async () => {
+    enterNow.disabled = true;
+    try { await API.post('/api/group/enter', {}); App._resetSign('gbBattle'); App.renderGroupBattle(); }
+    catch (e) { UI.toast('⛔ ' + e.message); enterNow.disabled = false; }
+  };
+
   box.querySelectorAll('[data-watch]').forEach((btn) => {
     btn.onclick = () => {
       const id = btn.dataset.watch;
@@ -1767,9 +1847,10 @@ App.renderGroupBattle = async () => {
     };
   });
 
+  // Раз в 5 секунд — как и на арене
   App._gbTimer = setInterval(() => {
     if (document.hidden) return;
     if ((App._warTab || '') !== 'group') { clearInterval(App._gbTimer); return; }
     App.renderGroupBattle();
-  }, 1000);
+  }, 5000);
 };

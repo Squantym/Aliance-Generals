@@ -17,6 +17,7 @@ const TEST_CWD = '/tmp/generals-test-cwd-45';
 fs.rmSync(TEST_CWD, { recursive: true, force: true });
 fs.mkdirSync(TEST_CWD + '/data', { recursive: true });
 process.chdir(TEST_CWD);
+process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают игроков пачками
 
 let passed = 0, failed = 0;
 function ok(cond, name) {

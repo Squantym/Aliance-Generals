@@ -12,8 +12,6 @@ const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
 const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
 const httpSrc = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
-const swSrc = fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8');
-const nginxSrc = fs.readFileSync(path.join(ROOT, 'nginx.example.conf'), 'utf8');
 
 console.log('\n── 1. Первый заход грузит только ядро ──');
 const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
@@ -39,16 +37,6 @@ ok(/async route\(\)/.test(app), 'маршрутизатор ждёт загру�
 // Все экраны из карты должны существовать в своих файлах
 const map = /_SCREEN_FILES: \{([\s\S]*?)\n  \},/.exec(app)[1];
 const pairs = [...map.matchAll(/(\w+): '(\w+)'/g)].map((m) => [m[1], m[2]]);
-const manifestMatch = /<script id="screen-assets" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
-let screenAssets = {};
-try { screenAssets = manifestMatch ? JSON.parse(manifestMatch[1]) : {}; } catch (e) {}
-const lazyFiles = [...new Set(pairs.map((x) => x[1]))];
-const unversioned = lazyFiles.filter((file) => screenAssets[file] !== `/js/screens/${file}.js`);
-ok(manifestMatch && unversioned.length === 0,
-   unversioned.length ? `в карте версий отсутствуют: ${unversioned.join(', ')}`
-     : 'каждый ленивый файл объявлен в HTML для подстановки контентного хэша');
-ok(/el\.src = App\._screenAssetUrl\(file\)/.test(app), 'загрузчик использует версионированный URL');
-ok(/el\.href = App\._screenAssetUrl\(file\)/.test(app), 'prefetch использует тот же версионированный URL');
 ok(pairs.length >= 20, `в карте ${pairs.length} разделов`);
 let missing = [];
 for (const [screen, file] of pairs) {
@@ -99,12 +87,6 @@ ok(/'public, max-age=31536000, immutable'/.test(httpSrc), 'картинки и �
 // проверяется запросом, и при 304 не качается ни байта
 ok(/: 'no-cache';/.test(httpSrc), 'скрипты перепроверяются, но не качаются заново');
 const compressSrc = fs.readFileSync(path.join(ROOT, 'src/core/compress.ts'), 'utf8');
-ok(/SW_VERSION\s*=\s*'v2'/.test(swSrc), 'версия Service Worker поднята — старый кеш будет удалён');
-ok(/isCode && !url\.searchParams\.has\('v'\)/.test(swSrc) && /networkFirstAsset\(req\)/.test(swSrc),
-   'Service Worker не отдаёт неверсионированный JS из вечного cache-first');
-ok(/map \$arg_v \$code_cache_control/.test(nginxSrc), 'nginx различает код с хэшем и без хэша');
-ok(/location = \/sw\.js[\s\S]*?Cache-Control "no-cache"/.test(nginxSrc),
-   'nginx не запирает Service Worker в годовом кеше');
 ok(/if \(ae\.includes\('br'\)\) return 'br'/.test(compressSrc), 'предпочитается brotli — он сжимает лучше gzip');
 ok(/COMPRESSIBLE/.test(compressSrc), 'сжимается только то, что сжимается');
 

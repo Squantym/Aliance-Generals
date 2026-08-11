@@ -238,25 +238,9 @@ function tickDiv(div: DivId): void {
   if (s.battle && s.battle.state !== 'done' && s.battle.state !== 'cancelled') {
     const b = s.battle;
 
-    // Окно захода истекло — кто не пришёл, выбывает
-    if (b.state === 'waiting' && now - b.startedAt >= ENTER_WINDOW_MS) {
-      // Кто не вышел — считается выбывшим первым: места раздаём с конца
-      const noShow = Object.values(b.fighters).filter((f) => !f.entered);
-      let placeFrom = Object.keys(b.fighters).length;
-      for (const f of noShow) {
-        f.alive = false; f.hp = 0;
-        f.place = placeFrom--;
-      }
-      const alive = Object.values(b.fighters).filter((f) => f.alive);
-      if (alive.length < MIN_PLAYERS) {
-        // Пришёл один или никто: возвращаем взносы всем, кто заходил
-        cancelBattle(div, s, 'Слишком мало участников вышло на арену');
-        db.save('arena');
-        return;
-      }
-      b.state = 'running';
-      assignTargets(b);
-    }
+    // Окна ожидания нет: все участники выходят на арену сразу при
+    // старте. Взнос уже уплачен, и отвлёкшийся на минуту человек
+    // терял бы деньги ни за что.
 
     // Затянувшийся бой
     if (b.state === 'running' && now - b.startedAt > BATTLE_MAX_MS) {
@@ -278,7 +262,7 @@ function startBattle(div: DivId, s: DivState, list: any[], now: number): void {
       id: r.id, name: r.name, flag: r.flag,
       hp: BASE_HP, maxHp: BASE_HP,
       targetId: null, lastAttackAt: 0,
-      alive: true, entered: false, place: 0,
+      alive: true, entered: true, place: 0,
       skills: { medkit: SKILLS.medkit.uses, crit: SKILLS.crit.uses, armor: SKILLS.armor.uses, smoke: SKILLS.smoke.uses },
       critUntil: 0, armorUntil: 0, kills: 0, killedIds: [], damageDealt: 0, log: [],
     };
@@ -286,14 +270,16 @@ function startBattle(div: DivId, s: DivState, list: any[], now: number): void {
   s.battle = {
     id: u.uid(10), div, slot: s.slot, startedAt: now, finishedAt: 0,
     pot: list.length * DIVISIONS[div].entry,
-    fighters, winnerId: '', winnerName: '', state: 'waiting',
+    // Бой сразу боевой: ждать нажатия «В бой» незачем — взнос уплачен
+    fighters, winnerId: '', winnerName: '', state: 'running',
   };
+  assignTargets(s.battle);
   s.registered = {};
   s.slot = nextSlot(now);
   for (const r of list) {
     try {
       require('./notifications').push(r.id, 'arena_start',
-        `⚔ Бой на арене (${DIVISIONS[div].short}) начался! Зайдите в «Война → Арена» и нажмите «В бой» — на это ${Math.round(ENTER_WINDOW_MS / 1000)} секунд.`, {});
+        `⚔ Бой на арене (${DIVISIONS[div].short}) начался! Вы уже на арене — заходите и бейтесь.`, {});
     } catch (e) {}
   }
 }
@@ -585,9 +571,8 @@ function view(user: User, divRaw?: any) {
       state: b.state,
       iAmIn: !!b.fighters[user.id],
       entered: !!(b.fighters[user.id] && b.fighters[user.id].entered),
-      canEnter: !!(b.fighters[user.id] && !b.fighters[user.id].entered
-        && b.state === 'waiting' && now - b.startedAt < ENTER_WINDOW_MS),
-      enterLeftSec: Math.max(0, Math.round((b.startedAt + ENTER_WINDOW_MS - now) / 1000)),
+      canEnter: false,        // вход не требуется — все уже в бою
+      enterLeftSec: 0,
       pot: b.pot,
       alive: Object.values(b.fighters).filter((f) => f.alive).length,
       total: Object.keys(b.fighters).length,

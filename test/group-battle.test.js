@@ -9,6 +9,7 @@ const TEST_CWD = '/tmp/generals-gb-test';
 fs.rmSync(TEST_CWD, { recursive: true, force: true });
 fs.mkdirSync(TEST_CWD + '/data', { recursive: true });
 process.chdir(TEST_CWD);
+process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают игроков пачками
 
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
@@ -475,6 +476,68 @@ ok(/onerror="this\.style\.display='none'"/.test(war4), 'если картинк�
 const css3 = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
 ok(/\.gb-banner \{[\s\S]{0,160}aspect-ratio: 900 \/ 507/.test(css3),
    'пропорция задана заранее — страница не прыгает при загрузке');
+
+console.log('\n── 23. Вход в бой: 30 секунд, но бьют сразу ──');
+ok(gb.ENTER_WINDOW_MS === 30000, `на выход даётся ${gb.ENTER_WINDOW_MS / 1000} секунд`);
+const se = db.load('groupBattle', {});
+se.registered = {}; se.battle = null; se.slot = 0; db.save('groupBattle');
+gb.register(ps[0], 'fighter', []);
+gb.register(ps[1], 'fighter', []);
+const e1 = db.load('groupBattle', {}); e1.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
+const e2 = db.load('groupBattle', {}); e2.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+const be = db.load('groupBattle', {}).battle;
+ok(be.state === 'running', 'бой идёт сразу, без ожидания');
+const slow = be.fighters[ps[1].id];
+ok(slow.alive && !slow.entered, 'не нажавший «В бой» жив, но ещё не вступил');
+// Его можно бить
+be.fighters[ps[1].id].team = be.fighters[ps[0].id].team === 0 ? 1 : 0;
+db.save('groupBattle');
+gb.enter(ps[0], []);
+// Уворот отключаем: удар мог бы случайно пройти мимо, и проверка
+// падала бы через раз
+const beX = db.load('groupBattle', {}).battle;
+beX.fighters[ps[1].id].st = { ...(beX.fighters[ps[1].id].st || {}), dodgeChance: 0 };
+db.save('groupBattle');
+const hpBefore2 = db.load('groupBattle', {}).battle.fighters[ps[1].id].hp;
+gb.act(ps[0], 'attack', ps[1].id, []);
+const hpAfter2 = db.load('groupBattle', {}).battle.fighters[ps[1].id].hp;
+ok(hpAfter2 < hpBefore2, `не вступившего бьют: ${hpBefore2} → ${hpAfter2}`);
+// А он ответить не может
+fails(() => gb.act(ps[1], 'attack', ps[0].id, []), 'Сначала нажмите',
+      'не вступивший не может действовать');
+// После входа — может
+gb.enter(ps[1], []);
+const be2 = db.load('groupBattle', {}).battle;
+be2.fighters[ps[1].id].lastActionAt = 0;
+db.save('groupBattle');
+let acted = false;
+try { gb.act(ps[1], 'attack', ps[0].id, []); acted = true; } catch (e) {}
+ok(acted, 'после нажатия «В бой» действует нормально');
+// Опоздал — не пустят
+const be3 = db.load('groupBattle', {}).battle;
+be3.fighters[ps[1].id].entered = false;
+be3.startedAt = Date.now() - 40000;
+db.save('groupBattle');
+fails(() => gb.enter(ps[1], []), 'Время на выход истекло', 'после 30 секунд вход закрыт');
+const srcE = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/боец УЖЕ на поле с первой/.test(srcE), 'решение объяснено в коде');
+
+console.log('\n── 24. Обновление без мигания ──');
+const warE = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/App\._sameAsBefore/.test(warE), 'экран сравнивает данные перед перерисовкой');
+ok(/box\.dataset\.mode === 'battle' && App\._sameAsBefore\('gbBattle'/.test(warE),
+   'боевое окно не трогает разметку, если ничего не изменилось');
+ok(/box\.dataset\.mode === 'lobby' && App\._sameAsBefore\('gbLobby'/.test(warE),
+   'витрина тоже');
+ok(!/\}, 1000\);\n\};/.test(warE.slice(warE.indexOf('App.renderGroupBattle'))),
+   'секундного опроса в групповом бою нет');
+const intervals = [...warE.matchAll(/_(?:gb|arena)Timer = setInterval\([\s\S]{0,200}?\}, (\d+)\)/g)]
+  .map((m) => Number(m[1]));
+ok(intervals.length > 0 && intervals.every((x) => x >= 5000),
+   `все обновления не чаще 5 секунд: ${intervals.join(', ')} мс`);
+ok(/id="gb-enter-fight"/.test(warE), 'кнопка «В бой» есть в боевом окне');
+ok(/gb-enter-left/.test(warE), 'отсчёт до конца входа обновляется точечно');
+ok(/Вы ещё не вступили в бой/.test(warE), 'игрока предупреждают, что его уже бьют');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

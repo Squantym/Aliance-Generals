@@ -223,9 +223,44 @@ const App = {
     if (!('serviceWorker' in navigator)) return;
     // SW работает только по HTTPS (и на localhost при разработке)
     if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => { /* не критично для игры */ });
+    window.addEventListener('load', async () => {
+      let reg = null;
+      try { reg = await navigator.serviceWorker.register('/sw.js'); }
+      catch (e) { return; }   // не критично для игры
+
+      // Проверяем обновление при каждом запуске и раз в полчаса: без
+      // этого браузер может неделями не замечать новую версию
+      const check = () => { try { reg.update(); } catch (e) {} };
+      check();
+      setInterval(check, 30 * 60 * 1000);
+
+      // Новая версия установилась — сообщаем и перезагружаем по нажатию
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            App._offerUpdate();
+          }
+        });
+      });
     });
+  },
+
+  // Предложение обновиться. Не перезагружаем сами: игрок может быть в
+  // бою, и внезапная перезагрузка была бы хуже устаревшей версии.
+  _offerUpdate() {
+    if (App._updateShown) return;
+    App._updateShown = true;
+    const bar = document.createElement('div');
+    bar.className = 'update-bar';
+    bar.innerHTML = `
+      <span>Вышло обновление игры</span>
+      <button class="btn btn-inline" id="upd-now">Обновить</button>
+      <button class="btn btn-inline" id="upd-later">Позже</button>`;
+    document.body.appendChild(bar);
+    document.getElementById('upd-now').onclick = () => location.reload();
+    document.getElementById('upd-later').onclick = () => bar.remove();
   },
 
   // Запуск установки: Android/десктоп — системное окно, iOS — инструкция
@@ -2401,24 +2436,8 @@ const App = {
   },
   _loadedScreens: {},
   _loadingScreens: {},
-  _screenAssetUrls: null,
 
   _screenFile(name) { return App._SCREEN_FILES[name] || null; },
-
-  // URL ленивых модулей приходят из index.html уже с контентным хэшем.
-  // Неверсионированный запасной путь нужен для прямого открытия исходного
-  // index.html при локальной разработке без Node-сервера.
-  _screenAssetUrl(file) {
-    if (!App._screenAssetUrls) {
-      App._screenAssetUrls = {};
-      const manifest = document.getElementById('screen-assets');
-      if (manifest) {
-        try { App._screenAssetUrls = JSON.parse(manifest.textContent || '{}'); }
-        catch (e) { App._screenAssetUrls = {}; }
-      }
-    }
-    return App._screenAssetUrls[file] || `/js/screens/${file}.js`;
-  },
 
   // Загружаем файл один раз. Повторные обращения ждут ту же загрузку,
   // иначе быстрые переходы туда-сюда качали бы файл дважды.
@@ -2429,7 +2448,7 @@ const App = {
 
     const p = new Promise((resolve) => {
       const el = document.createElement('script');
-      el.src = App._screenAssetUrl(file);
+      el.src = `/js/screens/${file}.js`;
       el.async = false;
       el.onload = () => { App._loadedScreens[file] = true; resolve(); };
       el.onerror = () => {
@@ -2457,7 +2476,7 @@ const App = {
         if (App._loadedScreens[file] || App._loadingScreens[file]) continue;
         const el = document.createElement('link');
         el.rel = 'prefetch';
-        el.href = App._screenAssetUrl(file);
+        el.href = `/js/screens/${file}.js`;
         document.head.appendChild(el);
       }
     });
