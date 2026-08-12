@@ -357,6 +357,28 @@ function registerRoutes(app: any) {
   // ---------- Альянс ----------
   // ---------- Группы (альянс и легион работают через один API) ----------
   // :kind — 'alliance' или 'legion'
+  // ВАЖНО: групповые бои объявлены ДО шаблона '/api/group/:kind'.
+  // Маршрутизатор берёт первое совпадение, и шаблон с параметром
+  // перехватывал бы '/api/group/upgrades' как альянс с видом
+  // «upgrades» — отсюда была ошибка «Неизвестный тип группы».
+  // ═══ ГРУППОВЫЕ БОИ 5 на 5 ════════════════════════════════════════
+  const gb = require('./services/groupBattle');
+
+  app.add('GET',  '/api/group',            (req) => gb.view(req.user));
+  app.add('POST', '/api/group/register',   act((req, n) => gb.register(req.user, String(req.body.role || ''), n)));
+  app.add('POST', '/api/group/unregister', act((req, n) => gb.unregister(req.user, n)));
+  app.add('POST', '/api/group/role',       act((req, n) => gb.setRole(req.user, String(req.body.role || ''), n)));
+  app.add('POST', '/api/group/enter',      act((req, n) => gb.enter(req.user, n)));
+  app.add('GET',  '/api/group/battle',     (req) => gb.battleState(req.user, String(req.query.watch || '')));
+  app.add('POST', '/api/group/act',        act((req, n) =>
+    gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
+
+  // Улучшения групповых боёв
+  const gup = require('./services/groupUpgrades');
+  app.add('GET',  '/api/group/upgrades',   (req) => gup.view(req.user));
+  app.add('POST', '/api/group/upgrade',    act((req, n) =>
+    gup.upgrade(req.user, String(req.body.skill || ''), n)));
+
   app.add('GET',  '/api/group/:kind',         (req) => groups.view(req.user, req.params.kind));
   app.add('GET',  '/api/group/:kind/invites', (req) => ({ invites: groups.pendingInvites(req.user, req.params.kind) }));
   app.add('POST', '/api/group/:kind/create',  act((req, n) => groups.create(req.user, req.params.kind, req.body.name, n)));
@@ -471,24 +493,6 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/arena/attack',     act((req) => arena.attack(req.user)));
   app.add('POST', '/api/arena/switch',     act((req) => arena.switchTarget(req.user)));
   app.add('POST', '/api/arena/skill',      act((req) => arena.useSkill(req.user, String(req.body.skill || ''))));
-
-  // ═══ ГРУППОВЫЕ БОИ 5 на 5 ════════════════════════════════════════
-  const gb = require('./services/groupBattle');
-
-  app.add('GET',  '/api/group',            (req) => gb.view(req.user));
-  app.add('POST', '/api/group/register',   act((req, n) => gb.register(req.user, String(req.body.role || ''), n)));
-  app.add('POST', '/api/group/unregister', act((req, n) => gb.unregister(req.user, n)));
-  app.add('POST', '/api/group/role',       act((req, n) => gb.setRole(req.user, String(req.body.role || ''), n)));
-  app.add('POST', '/api/group/enter',      act((req, n) => gb.enter(req.user, n)));
-  app.add('GET',  '/api/group/battle',     (req) => gb.battleState(req.user, String(req.query.watch || '')));
-  app.add('POST', '/api/group/act',        act((req, n) =>
-    gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
-
-  // Улучшения групповых боёв
-  const gup = require('./services/groupUpgrades');
-  app.add('GET',  '/api/group/upgrades',   (req) => gup.view(req.user));
-  app.add('POST', '/api/group/upgrade',    act((req, n) =>
-    gup.upgrade(req.user, String(req.body.skill || ''), n)));
 
   // ═══ КАБИНЕТ: до трёх персонажей на аккаунт ══════════════════════
   const account = require('./services/account');

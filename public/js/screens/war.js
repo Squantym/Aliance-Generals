@@ -1494,7 +1494,16 @@ App.renderGroup = async () => {
     sectionBox().innerHTML = '<div class="loading">Загружаю улучшения…</div>';
     let up = null;
     try { up = await API.get('/api/group/upgrades'); }
-    catch (e) { sectionBox().innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; return; }
+    catch (e) {
+      sectionBox().innerHTML = `
+        <div class="gb-section-body mt">
+          <p style="color:var(--red)">${UI.esc(e.message)}</p>
+          <button class="btn btn-inline mt" id="gb-up-retry">Повторить</button>
+        </div>`;
+      const r = document.getElementById('gb-up-retry');
+      if (r) r.onclick = () => drawUpgrades();
+      return;
+    }
 
     const cost = (c) => c ? `
       <span class="gb-cost">
@@ -1604,6 +1613,8 @@ App.renderGroup = async () => {
     };
   });
   if (App._gbSection) {
+    // Раздел рисуем один раз: раньше он перестраивался при каждом
+    // обновлении витрины, из-за чего мигал и повторял запрос к серверу
     drawSection(App._gbSection);
     const cur = box.querySelector(`[data-section="${App._gbSection}"]`);
     if (cur) cur.classList.add('active');
