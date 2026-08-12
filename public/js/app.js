@@ -2425,6 +2425,12 @@ const App = {
   // Раньше все восемь файлов экранов грузились до старта игры, хотя
   // человек видит только главную. Теперь при первом заходе приходит
   // лишь ядро, остальное — когда игрок реально туда идёт.
+  // Метка версии для подгружаемых экранов. Их адреса собираются здесь,
+  // в коде, поэтому автоматическая подстановка версии сервером (она
+  // работает только для index.html) их не затрагивает.
+  // Поднимайте при обновлении экранов войны, рынка, общения и прочих.
+  BUILD: '146',
+
   _SCREEN_FILES: {
     war: 'war', missions: 'war',
     units: 'economy', buildings: 'economy', production: 'economy',
@@ -2448,7 +2454,7 @@ const App = {
 
     const p = new Promise((resolve) => {
       const el = document.createElement('script');
-      el.src = `/js/screens/${file}.js`;
+      el.src = `/js/screens/${file}.js?v=${App.BUILD}`;
       el.async = false;
       el.onload = () => { App._loadedScreens[file] = true; resolve(); };
       el.onerror = () => {
@@ -2476,7 +2482,7 @@ const App = {
         if (App._loadedScreens[file] || App._loadingScreens[file]) continue;
         const el = document.createElement('link');
         el.rel = 'prefetch';
-        el.href = `/js/screens/${file}.js`;
+        el.href = `/js/screens/${file}.js?v=${App.BUILD}`;
         document.head.appendChild(el);
       }
     });

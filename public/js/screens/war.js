@@ -1032,9 +1032,12 @@ App.renderArena = async () => {
   const lastBtn = document.getElementById('arena-last');
   if (lastBtn) lastBtn.onclick = () => App.renderArenaResult(d.lastResultId);
 
-  // Живой отсчёт до старта боя
-  if (d.nextStartAt) {
-    App._startTicker('#arena-timer', d.nextStartAt, () => {
+  // Живой отсчёт до старта. Если сервер по какой-то причине не прислал
+  // время старта, считаем от оставшихся секунд — отсчёт пойдёт в любом
+  // случае, а не замрёт на нуле.
+  const arenaStart = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
+  if (d.secondsLeft > 0 || d.nextStartAt) {
+    App._startTicker('#arena-timer', arenaStart, () => {
       App._resetSign('arenaLobby');
       App.renderArena();
     });
@@ -1620,9 +1623,11 @@ App.renderGroup = async () => {
     if (cur) cur.classList.add('active');
   }
 
-  // Живой отсчёт: идёт, только если кто-то записан
-  if (d.nextStartAt && d.registered.length) {
-    App._startTicker('#gb-timer', d.nextStartAt, () => {
+  // Живой отсчёт: идёт, только если кто-то записан. Время старта берём
+  // из ответа сервера, а если его нет — из оставшихся секунд.
+  const gbStart = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
+  if (d.registered.length && (d.secondsLeft > 0 || d.nextStartAt)) {
+    App._startTicker('#gb-timer', gbStart, () => {
       App._resetSign('gbLobby');
       App.renderGroup();
     });

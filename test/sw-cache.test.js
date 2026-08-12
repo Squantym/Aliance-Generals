@@ -62,5 +62,38 @@ for (const [t, label] of [['targets', 'Вторжение'], ['group', 'Груп
 ok(/data-wartab="targets">\$\{App\.tabImg\('war_targets', 20\)\}Вторжение/.test(war),
    'вкладка называется «Вторжение»');
 
+console.log('\n── 7. Версии файлов ──');
+// Сервер сам подставляет версию в адреса скриптов и стилей, считая её
+// по содержимому файла: изменился файл — изменился адрес, и браузер
+// физически не может отдать старую копию.
+const http2 = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
+ok(/assetHash\.versioned\(relPath\)/.test(http2), 'сервер подставляет версию в index.html');
+const ah = fs.readFileSync(path.join(ROOT, 'src/core/assetHash.ts'), 'utf8');
+ok(/\?v=\$\{h\}/.test(ah), 'версия добавляется к адресу');
+ok(/hashOf/.test(ah), 'версия считается по содержимому файла');
+// Ручных меток в странице быть не должно — они ломают автоматические
+const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+ok(!/\/(?:js|css)\/[^"?]+\.(?:js|css)\?v=\d+/.test(html),
+   'в index.html нет ручных меток: подстановка сервера их не перезаписала бы');
+ok(/[\"']\/(?:css|js)\/[^\"'?]+\.(?:css|js)[\"']/.test(html),
+   'адреса чистые — сервер добавит версию сам');
+
+console.log('\n── 8. Подгружаемые экраны ──');
+const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+ok(/BUILD: '\d+'/.test(app), 'версия клиента задана');
+ok(/\/js\/screens\/\$\{file\}\.js\?v=\$\{App\.BUILD\}/.test(app),
+   'экраны запрашиваются с меткой — их адреса собираются в коде');
+ok(/автоматическая подстановка версии сервером/.test(app),
+   'в коде объяснено, почему здесь метка нужна вручную');
+ok(/hasHashParam = !!\(query && query\.includes\('v='\)\)/.test(http2),
+   'сервер опознаёт файл с версией');
+
+console.log('\n── 9. Таймер не зависит от одного поля ──');
+const war2 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/d\.nextStartAt \|\| \(Date\.now\(\) \+ \(d\.secondsLeft \|\| 0\) \* 1000\)/.test(war2),
+   'если времени старта нет, отсчёт считается от оставшихся секунд');
+ok((war2.match(/Date\.now\(\) \+ \(d\.secondsLeft \|\| 0\) \* 1000/g) || []).length >= 2,
+   'запасной расчёт есть и на арене, и в групповых боях');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

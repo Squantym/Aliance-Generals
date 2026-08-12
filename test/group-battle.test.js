@@ -547,7 +547,7 @@ ok(/setInterval\(paint, 1000\)/.test(warT), 'таймер обновляется
 ok(/App\._startTicker\('#arena-timer'/.test(warT), 'на арене отсчёт запускается');
 ok(/App\._startTicker\('#gb-timer'/.test(warT), 'в групповых боях тоже');
 ok(/if \(left <= 0\)[\s\S]{0,180}onZero/.test(warT), 'при нуле экран обновляется сам');
-ok(/d\.nextStartAt && d\.registered\.length/.test(warT),
+ok(/d\.registered\.length && \(d\.secondsLeft > 0 \|\| d\.nextStartAt\)/.test(warT),
    'в групповых боях отсчёт идёт, только если кто-то записан');
 // Сервер отдаёт время старта — без него считать нечего
 const arenaSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
