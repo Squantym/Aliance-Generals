@@ -883,17 +883,20 @@ App.renderArena = async () => {
   // старта в отпечаток не берём — иначе экран моргал бы каждый раз.
   const fingerprint = { ...d, secondsLeft: undefined, rating: undefined,
                         registered: d.registered.map((x) => x.id) };
-  // Отсчёт запускаем ДО проверки «изменилось ли» — см. пояснение выше
+  // Время старта считаем сейчас, отсчёт запускаем после отрисовки
   const arenaStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
-  if (d.secondsLeft > 0 || d.nextStartAt) {
+  const arenaNeedTicker = d.secondsLeft > 0 || !!d.nextStartAt;
+  const startArenaTicker = () => {
+    if (!arenaNeedTicker) return;
     App._startTicker('#arena-timer', arenaStartAt, () => {
       App._resetSign('arenaLobby');
       App.renderArena();
     });
-  }
+  };
 
   if (box.dataset.mode === 'lobby' && App._sameAsBefore('arenaLobby', fingerprint)) {
-    return;   // разметка не менялась
+    startArenaTicker();
+    return;
   }
   box.dataset.mode = 'lobby';
 
@@ -1047,6 +1050,9 @@ App.renderArena = async () => {
   });
   const lastBtn = document.getElementById('arena-last');
   if (lastBtn) lastBtn.onclick = () => App.renderArenaResult(d.lastResultId);
+
+  // Разметка построена — запускаем отсчёт
+  startArenaTicker();
 
   const inBtn = document.getElementById('arena-in');
   if (inBtn) inBtn.onclick = async () => {
@@ -1327,20 +1333,21 @@ App.renderGroup = async () => {
   // точечно, чтобы страница не моргала
   const fp = { ...d, secondsLeft: undefined, rating: undefined,
                registered: d.registered.map((x) => x.id + ':' + x.role) };
-  // Отсчёт запускаем ДО проверки «изменилось ли»: иначе при выходе
-  // раньше времени тикер не переустановится, а он мог быть остановлен
-  // переключением вкладки или предыдущим экраном.
+  // Время старта. Считаем его ДО отрисовки, а сам отсчёт запускаем
+  // ПОСЛЕ — элемента таймера в разметке ещё не существует.
   const gbStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
   const gbNeedTicker = d.registered.length > 0 && (d.secondsLeft > 0 || d.nextStartAt);
-  if (gbNeedTicker) {
+  const startGbTicker = () => {
+    if (!gbNeedTicker) return;
     App._startTicker('#gb-timer', gbStartAt, () => {
       App._resetSign('gbLobby');
       App.renderGroup();
     });
-  }
+  };
 
   if (box.dataset.mode === 'lobby' && App._sameAsBefore('gbLobby', fp)) {
-    return;   // разметка не менялась
+    startGbTicker();   // разметка на месте, но отсчёт мог остановиться
+    return;
   }
   box.dataset.mode = 'lobby';
 
@@ -1639,6 +1646,9 @@ App.renderGroup = async () => {
     const cur = box.querySelector(`[data-section="${App._gbSection}"]`);
     if (cur) cur.classList.add('active');
   }
+
+  // Разметка построена — теперь элемент таймера существует
+  startGbTicker();
 
   box.querySelectorAll('[data-role]').forEach((b2) => {
     b2.onclick = async () => {
