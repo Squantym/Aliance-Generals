@@ -126,6 +126,74 @@ ok(arDraw > 0 && arStart > arDraw, 'на арене тот же порядок')
 ok(/startGbTicker\(\);\s*\/\/ разметка на месте/.test(war),
    'при раннем выходе отсчёт всё равно переустанавливается');
 
+console.log('\n── 4. Зависшее лобби восстанавливается ──');
+// Ровно то состояние, в котором игра простояла у владельца сутки:
+// участники записаны, а время старта потеряно (ноль). Условие
+// `s.slot &&` ниже не давало бою начаться никогда.
+process.env.DISABLE_RATE_LIMIT = '1';
+const TEST_DIR = '/tmp/generals-lobby-test';
+fs.rmSync(TEST_DIR, { recursive: true, force: true });
+fs.mkdirSync(TEST_DIR + '/data', { recursive: true });
+process.chdir(TEST_DIR);
+const auth = require(ROOT + '/dist/src/services/auth');
+const player = require(ROOT + '/dist/src/services/player');
+const gb = require(ROOT + '/dist/src/services/groupBattle');
+const arena = require(ROOT + '/dist/src/services/arena');
+const db = require(ROOT + '/dist/src/core/db');
+
+await auth.register('Kavkaz', 'пароль123', 'k@t.ru', 'ru', '1.1.1.1', 'UA');
+const me = Object.values(player.users())[0];
+me.gold = 10000;
+
+// ── групповые бои ──
+{
+  const st = db.load('groupBattle', {});
+  st.registered = {
+    [me.id]: { id: me.id, name: 'Kavkaz', flag: '', level: 125, role: 'fighter', at: Date.now() - 86400000 },
+    u2: { id: 'u2', name: 'Squantym', flag: '', level: 300, role: 'fighter', at: Date.now() - 86400000 },
+  };
+  st.slot = 0;
+  st.battle = null;
+  db.save('groupBattle');
+  const v = gb.view(me);
+  ok(v.secondsLeft > 0, `отсчёт восстановлен: ${v.secondsLeft} с (было 0)`);
+  ok(db.load('groupBattle', {}).slot > 0, 'время старта записано в базу');
+  // Доводим до старта
+  const st2 = db.load('groupBattle', {});
+  st2.slot = Date.now() - 100;
+  db.save('groupBattle');
+  gb.view(me);
+  const after = db.load('groupBattle', {});
+  ok(!!after.battle && after.battle.state === 'running', 'бой стартовал, а не завис снова');
+  ok(Object.keys(after.registered).length === 0, 'лобби очищено после старта');
+}
+
+// ── арена ──
+{
+  arena.view(me, 'elite');
+  const st = db.load('arena', {});
+  st.divs.elite.registered = {
+    [me.id]: { id: me.id, name: 'Kavkaz', flag: '', level: 125, at: Date.now() - 86400000 },
+    u2: { id: 'u2', name: 'Squantym', flag: '', level: 300, at: Date.now() - 86400000 },
+  };
+  st.divs.elite.slot = 0;
+  st.divs.elite.battle = null;
+  db.save('arena');
+  const v = arena.view(me, 'elite');
+  ok(v.secondsLeft > 0, `на арене отсчёт восстановлен: ${v.secondsLeft} с`);
+  const st2 = db.load('arena', {});
+  st2.divs.elite.slot = Date.now() - 100;
+  db.save('arena');
+  arena.view(me, 'elite');
+  ok(!!db.load('arena', {}).divs.elite.battle, 'бой на арене стартовал');
+}
+
+const gbSrc = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/!s\.battle && !s\.slot && Object\.keys\(s\.registered\)\.length/.test(gbSrc),
+   'потерянный отсчёт восстанавливается при первом же обращении');
+ok(/earliest \+ LOBBY_MS/.test(gbSrc),
+   'отсчёт ведётся от самой ранней записи — давно ждущие не ждут лишнего');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }
