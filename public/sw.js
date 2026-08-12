@@ -16,7 +16,7 @@
 
 // Версию НУЖНО поднимать при каждом обновлении клиента: смена строки
 // заставляет служебного работника выбросить прежние кеши целиком.
-const SW_VERSION   = 'v3';
+const SW_VERSION   = 'v4';
 const SHELL_CACHE  = 'ag-shell-' + SW_VERSION;
 const ASSET_CACHE  = 'ag-assets-' + SW_VERSION;
 const OFFLINE_URL  = '/offline.html';

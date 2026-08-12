@@ -833,9 +833,16 @@ async function renderConflictDetail(c, confId) {
 // незачем, а между опросами он иначе стоит на месте.
 App._startTicker = (selector, startsAt, onZero) => {
   clearInterval(App._tickTimer);
+  let misses = 0;
   const paint = () => {
     const el = document.querySelector(selector);
-    if (!el) { clearInterval(App._tickTimer); return; }
+    if (!el) {
+      // Разметка ещё не отрисована — подождём несколько тактов.
+      // Раньше тикер сдавался сразу и таймер замирал на нуле.
+      if (++misses > 5) clearInterval(App._tickTimer);
+      return;
+    }
+    misses = 0;
     const left = Math.max(0, Math.round((startsAt - Date.now()) / 1000));
     const m = Math.floor(left / 60), sec = left % 60;
     el.textContent = `${m}:${String(sec).padStart(2, '0')}`;
@@ -876,8 +883,17 @@ App.renderArena = async () => {
   // старта в отпечаток не берём — иначе экран моргал бы каждый раз.
   const fingerprint = { ...d, secondsLeft: undefined, rating: undefined,
                         registered: d.registered.map((x) => x.id) };
+  // Отсчёт запускаем ДО проверки «изменилось ли» — см. пояснение выше
+  const arenaStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
+  if (d.secondsLeft > 0 || d.nextStartAt) {
+    App._startTicker('#arena-timer', arenaStartAt, () => {
+      App._resetSign('arenaLobby');
+      App.renderArena();
+    });
+  }
+
   if (box.dataset.mode === 'lobby' && App._sameAsBefore('arenaLobby', fingerprint)) {
-    return;   // разметка не менялась, таймер идёт сам
+    return;   // разметка не менялась
   }
   box.dataset.mode = 'lobby';
 
@@ -1031,17 +1047,6 @@ App.renderArena = async () => {
   });
   const lastBtn = document.getElementById('arena-last');
   if (lastBtn) lastBtn.onclick = () => App.renderArenaResult(d.lastResultId);
-
-  // Живой отсчёт до старта. Если сервер по какой-то причине не прислал
-  // время старта, считаем от оставшихся секунд — отсчёт пойдёт в любом
-  // случае, а не замрёт на нуле.
-  const arenaStart = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
-  if (d.secondsLeft > 0 || d.nextStartAt) {
-    App._startTicker('#arena-timer', arenaStart, () => {
-      App._resetSign('arenaLobby');
-      App.renderArena();
-    });
-  }
 
   const inBtn = document.getElementById('arena-in');
   if (inBtn) inBtn.onclick = async () => {
@@ -1322,8 +1327,20 @@ App.renderGroup = async () => {
   // точечно, чтобы страница не моргала
   const fp = { ...d, secondsLeft: undefined, rating: undefined,
                registered: d.registered.map((x) => x.id + ':' + x.role) };
+  // Отсчёт запускаем ДО проверки «изменилось ли»: иначе при выходе
+  // раньше времени тикер не переустановится, а он мог быть остановлен
+  // переключением вкладки или предыдущим экраном.
+  const gbStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
+  const gbNeedTicker = d.registered.length > 0 && (d.secondsLeft > 0 || d.nextStartAt);
+  if (gbNeedTicker) {
+    App._startTicker('#gb-timer', gbStartAt, () => {
+      App._resetSign('gbLobby');
+      App.renderGroup();
+    });
+  }
+
   if (box.dataset.mode === 'lobby' && App._sameAsBefore('gbLobby', fp)) {
-    return;   // разметка не менялась, таймер идёт сам
+    return;   // разметка не менялась
   }
   box.dataset.mode = 'lobby';
 
@@ -1621,16 +1638,6 @@ App.renderGroup = async () => {
     drawSection(App._gbSection);
     const cur = box.querySelector(`[data-section="${App._gbSection}"]`);
     if (cur) cur.classList.add('active');
-  }
-
-  // Живой отсчёт: идёт, только если кто-то записан. Время старта берём
-  // из ответа сервера, а если его нет — из оставшихся секунд.
-  const gbStart = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
-  if (d.registered.length && (d.secondsLeft > 0 || d.nextStartAt)) {
-    App._startTicker('#gb-timer', gbStart, () => {
-      App._resetSign('gbLobby');
-      App.renderGroup();
-    });
   }
 
   box.querySelectorAll('[data-role]').forEach((b2) => {

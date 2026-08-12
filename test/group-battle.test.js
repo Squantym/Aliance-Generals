@@ -547,7 +547,7 @@ ok(/setInterval\(paint, 1000\)/.test(warT), 'таймер обновляется
 ok(/App\._startTicker\('#arena-timer'/.test(warT), 'на арене отсчёт запускается');
 ok(/App\._startTicker\('#gb-timer'/.test(warT), 'в групповых боях тоже');
 ok(/if \(left <= 0\)[\s\S]{0,180}onZero/.test(warT), 'при нуле экран обновляется сам');
-ok(/d\.registered\.length && \(d\.secondsLeft > 0 \|\| d\.nextStartAt\)/.test(warT),
+ok(/d\.registered\.length > 0 && \(d\.secondsLeft > 0 \|\| d\.nextStartAt\)/.test(warT),
    'в групповых боях отсчёт идёт, только если кто-то записан');
 // Сервер отдаёт время старта — без него считать нечего
 const arenaSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
@@ -600,6 +600,27 @@ ok(gb.BOT_THINK_MS === 3000, `откат ботов: ${gb.BOT_THINK_MS / 1000} �
 const fin2 = db.load('groupBattle', {}).battle;
 const totalDmg = Object.values(fin2.fighters).reduce((n, f) => n + f.damageDealt, 0);
 ok(totalDmg > 0, `боты наносят урон: ${totalDmg}`);
+
+console.log('\n── 28. Отсчёт переживает повторные опросы ──');
+const warR = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+// Тикер должен запускаться ДО раннего выхода по «ничего не изменилось»
+const gbPart = warR.slice(warR.indexOf('App.renderGroup = async'), warR.indexOf('App.renderGroupBattle'));
+const tickerAt = gbPart.indexOf("App._startTicker('#gb-timer'");
+const bailAt = gbPart.indexOf("App._sameAsBefore('gbLobby'");
+ok(tickerAt > 0 && bailAt > 0, 'оба места найдены');
+ok(tickerAt < bailAt,
+   'отсчёт запускается до выхода «ничего не изменилось» — иначе он не переустановится');
+const arenaPart = warR.slice(warR.indexOf('App.renderArena = async'), warR.indexOf('App.renderArenaBattle'));
+const aTick = arenaPart.indexOf("App._startTicker('#arena-timer'");
+const aBail = arenaPart.indexOf("App._sameAsBefore('arenaLobby'");
+ok(aTick > 0 && aTick < aBail, 'на арене тот же порядок');
+// Тикер не сдаётся, если разметка ещё не появилась
+ok(/if \(\+\+misses > 5\) clearInterval/.test(warR),
+   'тикер ждёт появления разметки, а не гаснет сразу');
+ok(/misses = 0;/.test(warR), 'счётчик сбрасывается при успехе');
+// Запасной расчёт от секунд
+ok((warR.match(/Date\.now\(\) \+ \(d\.secondsLeft \|\| 0\) \* 1000/g) || []).length >= 2,
+   'если время старта не пришло, считаем от оставшихся секунд');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
