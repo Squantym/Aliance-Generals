@@ -1129,6 +1129,16 @@ const Admin = {
 
       ${(Admin.me && Admin.me.staffRole === 'owner') ? `
       <div class="card">
+        <div class="name">⚔ Проверка очередей боёв</div>
+        <p class="muted small mt">Состояние арены и групповых боёв. Если участники висят,
+        а таймер стоит — смотрите сюда.</p>
+        <div class="mt">
+          <button class="btn btn-inline" id="lobby-check">Проверить</button>
+          <button class="btn btn-inline btn-red" id="lobby-reset">Сбросить очереди</button>
+        </div>
+        <div id="lobby-box" class="mt"></div>
+      </div>
+      <div class="card">
         <div class="name">🌐 Проверка сети</div>
         <p class="muted small mt">Показывает, что сервер получает от прокси. Если у всех игроков
         один и тот же адрес — смотрите сюда.</p>
@@ -1220,6 +1230,46 @@ const Admin = {
       };
       mailGo.onclick = paintMail;
     }
+
+    // Проверка очередей боёв
+    const lobbyGo = document.getElementById('lobby-check');
+    if (lobbyGo) lobbyGo.onclick = async () => {
+      const box = document.getElementById('lobby-box');
+      box.innerHTML = '<div class="loading">Проверяю…</div>';
+      try {
+        const r = await API.get('/api/admin/lobby-check');
+        const row = (k, v) => `<tr><td>${UI.esc(k)}</td><td class="num">${UI.esc(String(v))}</td></tr>`;
+        box.innerHTML = `
+          <table class="access-table">
+            <tr><td colspan="2"><b>Групповые бои</b></td></tr>
+            ${row('участников', r.group.registered)}
+            ${row('кто', r.group.names.join(', ') || '—')}
+            ${row('старт через', r.group.slotIn)}
+            ${row('бой', r.group.battle)}
+            <tr><td colspan="2"><b>Арена</b></td></tr>
+            ${['basic', 'elite'].map((d) => {
+              const x = r.arena[d];
+              return typeof x === 'string' ? row(d, x)
+                : row(d, `${x.registered} чел., старт ${x.slotIn}, бой: ${x.battle}`);
+            }).join('')}
+          </table>
+          <p class="small mt" style="color:${r.problems.length ? 'var(--red)' : 'var(--green)'}">
+            ${UI.esc(r.verdict)}</p>`;
+      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
+    };
+    const lobbyReset = document.getElementById('lobby-reset');
+    if (lobbyReset) lobbyReset.onclick = async () => {
+      const go = await UI.confirm(
+        'Сбросить очереди арены и групповых боёв?<br>' +
+        '<span class="muted small">Записи снимутся, взносы на арене вернутся игрокам.</span>',
+        { title: 'Сброс очередей', icon: '⚠️', html: true, okText: 'Сбросить', cancelText: 'Отмена' });
+      if (!go) return;
+      try {
+        const r = await API.post('/api/admin/lobby-reset', {});
+        UI.toast(`✅ Сброшено, взносов возвращено: ${r.refunded}`);
+        if (lobbyGo) lobbyGo.onclick();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
 
     // Проверка сети: что приходит от прокси
     const netGo = document.getElementById('net-check');

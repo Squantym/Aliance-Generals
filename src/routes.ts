@@ -361,6 +361,92 @@ function registerRoutes(app: any) {
   // Маршрутизатор берёт первое совпадение, и шаблон с параметром
   // перехватывал бы '/api/group/upgrades' как альянс с видом
   // «upgrades» — отсюда была ошибка «Неизвестный тип группы».
+  // Диагностика лобби: показывает СЫРОЕ состояние в базе и что именно
+  // мешает бою стартовать. Нужна, когда участники висят, а таймер стоит.
+  app.add('GET', '/api/admin/lobby-check', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const raw = require('./core/db').load('groupBattle', {});
+    const arenaRaw = require('./core/db').load('arena', {});
+    const now = Date.now();
+    const gbList = Object.values(raw.registered || {});
+    const problems: string[] = [];
+
+    if (gbList.length && !raw.slot) problems.push('Групповые: есть участники, но время старта не задано');
+    if (gbList.length && raw.slot && raw.slot < now - 60000) {
+      problems.push('Групповые: время старта в прошлом, но бой не создан');
+    }
+    if (raw.battle && raw.battle.state === 'done') problems.push('Групповые: висит завершённый бой');
+
+    const divInfo: any = {};
+    for (const d of ['basic', 'elite']) {
+      const dv = (arenaRaw.divs || {})[d];
+      if (!dv) { divInfo[d] = 'нет данных'; continue; }
+      const n = Object.keys(dv.registered || {}).length;
+      divInfo[d] = {
+        registered: n,
+        slot: dv.slot || 0,
+        slotIn: dv.slot ? Math.round((dv.slot - now) / 1000) + ' с' : 'не задан',
+        battle: dv.battle ? dv.battle.state : 'нет',
+      };
+      if (n && !dv.slot) problems.push(`Арена (${d}): есть участники, но время старта не задано`);
+      if (n && dv.slot && dv.slot < now - 60000) problems.push(`Арена (${d}): время старта в прошлом`);
+    }
+
+    return {
+      serverTime: now,
+      serverTimeText: new Date(now).toISOString(),
+      group: {
+        registered: gbList.length,
+        names: gbList.map((r: any) => r.name),
+        slot: raw.slot || 0,
+        slotIn: raw.slot ? Math.round((raw.slot - now) / 1000) + ' с' : 'не задан',
+        battle: raw.battle ? raw.battle.state : 'нет',
+      },
+      arena: divInfo,
+      problems,
+      verdict: problems.length ? problems.join('; ') : 'Состояние в порядке — лобби считается верно',
+    };
+  }, { admin: true });
+
+  // Сброс зависшего лобби. Возвращает всё в исходное: записи снимаются,
+  // взносы на арене возвращаются, отсчёт начнётся с новой записи.
+  app.add('POST', '/api/admin/lobby-reset', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const dbc = require('./core/db');
+    const users = player.users();
+    let refunded = 0;
+
+    const raw = dbc.load('groupBattle', {});
+    raw.registered = {};
+    raw.slot = 0;
+    raw.battle = null;
+    dbc.save('groupBattle');
+
+    const arenaSrv = require('./services/arena');
+    const arenaRaw = dbc.load('arena', {});
+    for (const d of ['basic', 'elite']) {
+      const dv = (arenaRaw.divs || {})[d];
+      if (!dv) continue;
+      // Взносы возвращаем: люди платили за бой, которого не было
+      for (const r of Object.values(dv.registered || {}) as any[]) {
+        const p = users[r.id];
+        if (!p) continue;
+        if (d === 'elite') player.addGold(p, arenaSrv.DIVISIONS.elite.entry, 'arena_refund');
+        else player.addMoney(p, arenaSrv.DIVISIONS.basic.entry, false);
+        dbc.markUser(p.id);
+        refunded++;
+      }
+      dv.registered = {};
+      dv.slot = 0;
+      dv.battle = null;
+    }
+    dbc.save('arena');
+    dbc.save('users');
+    auditLog.record({ userId: req.user.id, userName: req.user.name, path: '/api/admin/lobby-reset', body: { refunded } });
+    n.push(`Лобби сброшено. Взносов возвращено: ${refunded}`);
+    return { ok: true, refunded };
+  }), { admin: true });
+
   // ═══ ГРУППОВЫЕ БОИ 5 на 5 ════════════════════════════════════════
   const gb = require('./services/groupBattle');
 
