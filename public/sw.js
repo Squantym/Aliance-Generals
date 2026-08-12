@@ -16,7 +16,7 @@
 
 // Версию НУЖНО поднимать при каждом обновлении клиента: смена строки
 // заставляет служебного работника выбросить прежние кеши целиком.
-const SW_VERSION   = 'v7';
+const SW_VERSION   = 'v9';
 const SHELL_CACHE  = 'ag-shell-' + SW_VERSION;
 const ASSET_CACHE  = 'ag-assets-' + SW_VERSION;
 const OFFLINE_URL  = '/offline.html';
@@ -96,7 +96,11 @@ self.addEventListener('fetch', (event) => {
   // API живой игры и служебные файлы воркера — всегда напрямую в сеть
   if (p.startsWith('/api/') || p === '/sw.js' || p === KILL_URL || p === '/manifest.json') return;
 
-  // Навигация (открытие страницы) — network-first, офлайн-заглушка в запасе
+  // Навигация (открытие страницы) — network-first, офлайн-заглушка в запасе.
+  //
+  // Это важнее, чем кажется: именно в странице лежат ссылки на скрипты
+  // с версиями. Устаревшая страница тянет за собой весь старый набор
+  // файлов, и обновление не доходит целиком.
   if (req.mode === 'navigate') {
     event.respondWith(navigationHandler(req));
     return;

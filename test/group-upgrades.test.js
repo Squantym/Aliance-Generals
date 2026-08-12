@@ -212,7 +212,7 @@ ok(/healCritChance/.test(srcGb), 'крит лечения применяется
 
 console.log('\n── 9. Интерфейс ──');
 const war = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
-ok(/drawUpgrades/.test(war), 'раздел улучшений реализован');
+ok(/App\.renderUpgradesPage = async/.test(war), 'улучшения открываются отдельной страницей');
 ok(/api\/group\/upgrades/.test(war), 'данные берутся с сервера');
 ok(/gb-up/.test(war), 'кнопка улучшения у каждого навыка');
 ok(/🔒 ранг/.test(war), 'заблокированное рангом помечено');

@@ -242,6 +242,25 @@ function tickDiv(div: DivId): void {
     // старте. Взнос уже уплачен, и отвлёкшийся на минуту человек
     // терял бы деньги ни за что.
 
+    // Бой мог остаться с одним живым не только после удара: боец мог
+    // выбыть иначе, а проверка конца стояла ТОЛЬКО внутри атаки. Тогда
+    // бой висел «идущим» вечно, а игроки не могли ни записаться заново,
+    // ни выйти — «вы уже участвуете в идущем бою».
+    if (b.state === 'running') {
+      const stillAlive = Object.values(b.fighters).filter((f) => f.alive);
+      if (stillAlive.length === 1) {
+        finishBattle(div, s, stillAlive[0]);
+        db.save('arena');
+        return;
+      }
+      if (stillAlive.length === 0) {
+        b.state = 'done';
+        b.finishedAt = now;
+        db.save('arena');
+        return;
+      }
+    }
+
     // Затянувшийся бой
     if (b.state === 'running' && now - b.startedAt > BATTLE_MAX_MS) {
       const alive = Object.values(b.fighters).filter((f) => f.alive)
@@ -486,7 +505,9 @@ function register(user: User, divRaw: any, notices: Notices) {
   const s = divState(div);
   if (s.registered[user.id]) throw new u.ApiError('Вы уже записаны на ближайший бой');
   if (s.battle && s.battle.state !== 'done' && s.battle.state !== 'cancelled' && s.battle.fighters[user.id]) {
-    throw new u.ApiError('Вы уже участвуете в идущем бою');
+    // Мёртвый боец в идущем бою больше не участвует — пусть записывается
+    const mine = s.battle.fighters[user.id];
+    if (mine.alive) throw new u.ApiError('Вы уже участвуете в идущем бою');
   }
   // В другом дивизионе тоже нельзя: бои идут одновременно, и человек
   // физически не может воевать в двух местах

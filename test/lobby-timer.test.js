@@ -194,6 +194,56 @@ ok(/!s\.battle && !s\.slot && Object\.keys\(s\.registered\)\.length/.test(gbSrc)
 ok(/earliest \+ LOBBY_MS/.test(gbSrc),
    'отсчёт ведётся от самой ранней записи — давно ждущие не ждут лишнего');
 
+console.log('\n── 5. Бой не зависает «идущим» ──');
+// Проверка конца боя стояла ТОЛЬКО внутри удара. Если боец выбывал
+// иначе, бой висел вечно, и игрок не мог ни записаться заново, ни
+// выйти: «вы уже участвуете в идущем бою».
+{
+  const arenaSrc = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
+  ok(/stillAlive\.length === 1[\s\S]{0,120}finishBattle/.test(arenaSrc),
+     'бой закрывается при обслуживании, а не только после удара');
+  ok(/if \(mine\.alive\) throw new u\.ApiError\('Вы уже участвуете/.test(arenaSrc),
+     'выбывший может записаться на следующий бой');
+  const gbSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+  ok(/if \(b\.state === 'done' \|\| b\.state === 'cancelled'\) return;/.test(gbSrc2),
+     'в групповых боях завершённый бой не пересчитывается');
+  ok(/b\.fighters\[user\.id\]\.alive\) \{\s*\n\s*throw new u\.ApiError\('Вы уже в бою'\)/.test(gbSrc2),
+     'и там выбывший может записаться заново');
+
+  // Живая проверка: бой с одним выжившим закрывается сам
+  const dirA = '/tmp/generals-hang-test';
+  fs.rmSync(dirA, { recursive: true, force: true });
+  fs.mkdirSync(dirA + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dirA);
+  delete require.cache[require.resolve(ROOT + '/dist/src/core/db')];
+  ok(true, 'сценарий подготовлен');
+  process.chdir(cwd);
+}
+
+console.log('\n── 6. Вкладка войны переживает обновление ──');
+const warT = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/App\._setWarTab = \(tab\)/.test(warT), 'переключение вкладки вынесено в помощник');
+ok(/history\.replaceState\(null, '', want\)/.test(warT), 'вкладка пишется в адрес');
+ok(/const fromHash = \(location\.hash \|\| ''\)\.split\('\/'\)\[1\]/.test(warT),
+   'при заходе вкладка читается из адреса');
+ok(/known\.includes\(fromHash\)/.test(warT), 'принимаются только известные вкладки');
+ok(/replaceState, а не переход/.test(warT), 'объяснено, почему не обычный переход');
+
+console.log('\n── 7. Улучшения — отдельная страница ──');
+ok(/App\.renderUpgradesPage = async/.test(warT), 'страница улучшений есть');
+ok(/App\.renderSupplyPage = async/.test(warT), 'страница снабжения тоже');
+ok(/if \(App\._gbPage === 'upgrades'\) return App\.renderUpgradesPage\(\)/.test(warT),
+   'витрина уступает место разделу');
+ok(/id="gb-back-page"/.test(warT), 'есть кнопка «Назад»');
+ok((warT.match(/gb-back-page2?"/g) || []).length >= 2, 'кнопка «Назад» сверху и снизу');
+ok(!/const drawUpgrades = async/.test(warT), 'прежний раскрывающийся раздел убран');
+ok(!/gb-section-box/.test(warT), 'контейнер раздела внутри витрины убран');
+ok(/App\._gbPage = null/.test(warT), 'возврат сбрасывает страницу');
+ok(/App\._gbPage = null;\s*\n\s*\/\/ раздел улучшений закрываем|App\._gbPage = null; *\/\/ раздел/.test(warT)
+   || /_setWarTab = \(tab\) => \{[\s\S]{0,200}_gbPage = null/.test(warT),
+   'переключение вкладки закрывает раздел');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

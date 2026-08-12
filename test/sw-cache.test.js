@@ -80,11 +80,11 @@ ok(/[\"']\/(?:css|js)\/[^\"'?]+\.(?:css|js)[\"']/.test(html),
 
 console.log('\n── 8. Подгружаемые экраны ──');
 const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
-ok(/BUILD: '\d+'/.test(app), 'версия клиента задана');
+ok(/get BUILD\(\)/.test(app), 'версия клиента вычисляется из адреса app.js');
 ok(/\/js\/screens\/\$\{file\}\.js\?v=\$\{App\.BUILD\}/.test(app),
    'экраны запрашиваются с меткой — их адреса собираются в коде');
-ok(/автоматическая подстановка версии сервером/.test(app),
-   'в коде объяснено, почему здесь метка нужна вручную');
+ok(/связь прямая: свежий/.test(app),
+   'в коде объяснено, почему версия берётся из адреса');
 ok(/hasHashParam = !!\(query && query\.includes\('v='\)\)/.test(http2),
    'сервер опознаёт файл с версией');
 
@@ -94,6 +94,50 @@ ok(/d\.nextStartAt \|\| \(Date\.now\(\) \+ \(d\.secondsLeft \|\| 0\) \* 1000\)/.
    'если времени старта нет, отсчёт считается от оставшихся секунд');
 ok((war2.match(/Date\.now\(\) \+ \(d\.secondsLeft \|\| 0\) \* 1000/g) || []).length >= 2,
    'запасной расчёт есть и на арене, и в групповых боях');
+
+console.log('\n── 10. Версия экранов не зависит от устаревшего app.js ──');
+// Экраны (война, рынок, общение) подгружаются по адресу с версией.
+// Раньше версия была числом в коде app.js — и если сам app.js приходил
+// из кеша старым, он запрашивал старую версию экрана. Правки не
+// доходили, сколько ни деплой. Теперь версия берётся из адреса app.js,
+// куда сервер подставляет хэш по содержимому.
+const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+ok(/get BUILD\(\) \{/.test(appSrc), 'версия вычисляется, а не задана числом');
+ok(/script\[src\*="\/js\/app\.js"\]/.test(appSrc), 'берётся из адреса самого app.js');
+ok(/own\.split\('\?v='\)\[1\]/.test(appSrc), 'извлекается хэш из адреса');
+ok(/'h' \+ Math\.floor\(Date\.now\(\) \/ 3600000\)/.test(appSrc),
+   'есть запасной вариант, если хэша нет');
+ok(!/BUILD: '\d+'/.test(appSrc), 'жёсткого числа версии больше нет');
+
+// Проверяем вычисление на живой странице
+const { JSDOM } = require(ROOT + '/node_modules/jsdom');
+{
+  const dom = new JSDOM('<script src="/js/app.js?v=abc12345"></script><div id="content"></div>',
+    { url: 'https://x.test/' });
+  const w = dom.window;
+  global.window = w; global.document = w.document;
+  global.setInterval = () => 0; global.clearInterval = () => {}; global.setTimeout = () => 0;
+  global.requestAnimationFrame = (fn) => { fn(); return 0; };
+  global.localStorage = w.localStorage;
+  eval(fs.readFileSync(path.join(ROOT, 'public/js/ui.js'), 'utf8').replace(/^const UI = /m, 'UI = '));
+  global.UI = UI; w.UI = UI;
+  global.API = { token: () => 't', setToken() {}, get: async () => ({}), post: async () => ({}) };
+  w.API = global.API;
+  let App;
+  eval(fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8').replace(/^const App = /m, 'App = '));
+  ok(App.BUILD === 'abc12345', `версия взята из адреса: ${App.BUILD}`);
+  ok(/\/js\/screens\/\$\{file\}\.js\?v=\$\{App\.BUILD\}/.test(appSrc),
+     'экраны запрашиваются с этой версией');
+}
+
+console.log('\n── 11. Страница всегда свежая ──');
+ok(/if \(req\.mode === 'navigate'\)[\s\S]{0,120}navigationHandler/.test(sw),
+   'открытие страницы идёт в сеть');
+const nav = sw.slice(sw.indexOf('async function navigationHandler'), sw.indexOf('async function networkFirst'));
+ok(/const fresh = await fetch\(req\)/.test(nav), 'сначала сеть');
+ok(/caches\.match\(req\)/.test(nav), 'кеш только при обрыве связи');
+ok(/именно в странице лежат ссылки на скрипты/.test(sw),
+   'в коде объяснено, почему это критично');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

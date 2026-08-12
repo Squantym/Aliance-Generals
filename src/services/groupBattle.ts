@@ -177,6 +177,8 @@ function tick(): void {
   if (b && (b.state === 'waiting' || b.state === 'running')) {
     if (b.state === 'running') {
       botTurn(b, now);
+      // Проверяем конец при КАЖДОМ обращении: боец мог выбыть не от
+      // удара, и тогда бой висел бы «идущим» бесконечно
       checkEnd(s, b);
       if (b.state === 'running' && now - b.startedAt > BATTLE_MAX_MS) {
         // Ничья по времени: побеждает команда с большим суммарным здоровьем
@@ -319,6 +321,7 @@ function startBattle(s: Store, list: any[], now: number): void {
 }
 
 function checkEnd(s: Store, b: Battle): void {
+  if (b.state === 'done' || b.state === 'cancelled') return;
   const a0 = Object.values(b.fighters).filter((f) => f.team === 0 && f.alive).length;
   const a1 = Object.values(b.fighters).filter((f) => f.team === 1 && f.alive).length;
   if (a0 === 0 && a1 === 0) return finish(s, b, -1, 'Обе стороны полегли');
@@ -649,7 +652,7 @@ function register(user: User, roleId: string, notices: Notices) {
   const s = store();
   if (s.registered[user.id]) throw new u.ApiError('Вы уже записаны на бой');
   const b = s.battle;
-  if (b && b.fighters[user.id] && (b.state === 'waiting' || b.state === 'running')) {
+  if (b && b.fighters[user.id] && b.state === 'running' && b.fighters[user.id].alive) {
     throw new u.ApiError('Вы уже в бою');
   }
   const role = ROLES[roleId] ? roleId : 'fighter';

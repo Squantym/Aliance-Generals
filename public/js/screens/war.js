@@ -223,6 +223,13 @@ App.screens.war = async (c) => {
       <button class="btn btn-red mt" id="fat-capture" style="width:100%;padding:12px">🪖 Взять в плен</button>
     </div>` : '';
 
+  // Вкладку держим в адресе (#war/arena): при обновлении страницы игрок
+  // остаётся там же, где был, а не улетает на «Вторжение».
+  if (!App._warTab) {
+    const fromHash = (location.hash || '').split('/')[1] || '';
+    const known = ['targets', 'group', 'arena', 'sanctions', 'event'];
+    if (known.includes(fromHash)) App._warTab = fromHash;
+  }
   const warTab = App._warTab || 'targets';
 
   // Окно «встречи». Мина срабатывает ДО боя — прячет результат, пока игрок
@@ -269,10 +276,10 @@ App.screens.war = async (c) => {
 
   // Переключение вкладок войны
   c.querySelectorAll('[data-wartab]').forEach((t) => {
-    t.onclick = () => { App._warTab = t.dataset.wartab; App.rerender(); };
+    t.onclick = () => { App._setWarTab(t.dataset.wartab); };
   });
   c.querySelectorAll('[data-wartab-go]').forEach((t) => {
-    t.onclick = () => { App._warTab = t.dataset.wartabGo; App.rerender(); };
+    t.onclick = () => { App._setWarTab(t.dataset.wartabGo); };
   });
 
   // Арена рисуется отдельно: у неё своё обновление и боевое окно
@@ -825,6 +832,22 @@ async function renderConflictDetail(c, confId) {
   }
 }
 
+// Переключение вкладки войны. Пишем её в адрес, чтобы обновление
+// страницы возвращало игрока туда же, где он был.
+App._setWarTab = (tab) => {
+  App._warTab = tab;
+  App._gbPage = null;              // раздел улучшений закрываем
+  try {
+    const want = '#war/' + tab;
+    if (location.hash !== want) {
+      // replaceState, а не переход: иначе кнопка «назад» в браузере
+      // проходила бы через каждую открытую вкладку
+      history.replaceState(null, '', want);
+    }
+  } catch (e) {}
+  App.rerender();
+};
+
 // Отпечаток данных: перерисовываем экран, только если что-то реально
 // изменилось. Иначе при обновлении раз в несколько секунд страница
 // моргала бы вхолостую, сбрасывая прокрутку и введённые числа.
@@ -1325,6 +1348,10 @@ App.renderGroup = async () => {
   const box = document.getElementById('gb-box');
   if (!box) return;
 
+  // Открыт отдельный раздел — рисуем его вместо витрины
+  if (App._gbPage === 'upgrades') return App.renderUpgradesPage();
+  if (App._gbPage === 'supply') return App.renderSupplyPage();
+
   let d = null;
   try { d = await API.get('/api/group'); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
@@ -1460,7 +1487,6 @@ App.renderGroup = async () => {
         <button class="btn gb-section" data-section="upgrades">🔧 Улучшения</button>
         <button class="btn gb-section" data-section="supply">📦 База снабжения</button>
       </div>
-      <div id="gb-section-box"></div>
     </div>
 
     <div class="card">
@@ -1490,162 +1516,14 @@ App.renderGroup = async () => {
     </div>`;
 
   // Улучшения и база снабжения: категории открываются по рангу
-  const sectionBox = () => document.getElementById('gb-section-box');
-
-  // База снабжения пока пустая — показываем только ступени
-  const drawSupply = () => {
-    sectionBox().innerHTML = `
-      <div class="gb-section-body mt">
-        <div class="name">📦 База снабжения</div>
-        <p class="muted small mt">Снаряжение и расходники для боя.
-        Разделы открываются по мере роста ранга.</p>
-        <div class="gb-ranks mt">
-          ${d.rating.ranks.filter((r) => r.need > 0).map((r) => `
-            <div class="gb-rank${r.unlocked ? '' : ' locked'}">
-              <span class="gb-rank-icon">${r.unlocked ? r.icon : '🔒'}</span>
-              <span class="grow">
-                <b>${UI.esc(r.name)}</b>
-                <span class="muted small">от ${UI.fmtNum(r.need)} очков</span>
-              </span>
-              <span class="small ${r.unlocked ? 'gold' : 'muted'}">
-                ${r.unlocked ? 'открыто' : 'ещё ' + UI.fmtNum(r.left)}
-              </span>
-            </div>`).join('')}
-        </div>
-        <p class="muted small mt">Содержимое появится позже.</p>
-      </div>`;
-  };
-
-  // Улучшения: восемь навыков по пятьдесят уровней
-  const drawUpgrades = async () => {
-    sectionBox().innerHTML = '<div class="loading">Загружаю улучшения…</div>';
-    let up = null;
-    try { up = await API.get('/api/group/upgrades'); }
-    catch (e) {
-      sectionBox().innerHTML = `
-        <div class="gb-section-body mt">
-          <p style="color:var(--red)">${UI.esc(e.message)}</p>
-          <button class="btn btn-inline mt" id="gb-up-retry">Повторить</button>
-        </div>`;
-      const r = document.getElementById('gb-up-retry');
-      if (r) r.onclick = () => drawUpgrades();
-      return;
-    }
-
-    const cost = (c) => c ? `
-      <span class="gb-cost">
-        ${up.currencyIcon} ${UI.fmtNum(c.amount)}
-        <span class="gb-cost-sep">·</span> 👂 ${c.ears}
-        <span class="gb-cost-sep">·</span> 🎖 ${c.tokens}
-      </span>` : '';
-
-    sectionBox().innerHTML = `
-      <div class="gb-section-body mt">
-        <div class="name">🔧 Улучшения</div>
-        <p class="muted small mt">Постоянные усиления для групповых боёв. Каждый ранг открывает
-        следующие десять уровней — но только если предыдущие уже выкачаны.</p>
-        <p class="muted small">Платите ${up.currencyIcon} <b>боевыми очками</b> (их дают за бои),
-        👂 ушами и 🎖 жетонами милосердия.</p>
-
-        <div class="gb-wallet mt">
-          <span title="${UI.esc(up.currencyName)}">${up.currencyIcon} ${UI.fmtNum(up.wallet.points)}</span>
-          <span title="Уши">👂 ${UI.fmtNum(up.wallet.ears)}</span>
-          <span title="Жетоны милосердия">🎖 ${UI.fmtNum(up.wallet.tokens)}</span>
-        </div>
-
-        <div class="gb-ranks mt">
-          ${up.tiers.map((t) => `
-            <div class="gb-rank${t.unlocked ? '' : ' locked'}">
-              <span class="gb-rank-icon">${t.unlocked ? '✅' : '🔒'}</span>
-              <span class="grow">
-                <b>${UI.esc(t.name)}</b>
-                <span class="muted small">уровни ${t.from}–${t.to} · от ${UI.fmtNum(t.need)} очков</span>
-              </span>
-              <span class="small ${t.unlocked ? 'gold' : 'muted'}">
-                ${t.unlocked ? 'открыто' : 'ещё ' + UI.fmtNum(t.left)}
-              </span>
-            </div>`).join('')}
-        </div>
-
-        <div class="gb-skills mt">
-          ${up.skills.map((sk) => `
-            <div class="gb-skill${sk.atMax ? ' maxed' : ''}">
-              <div class="gb-skill-top">
-                <span class="gb-skill-icon">${sk.icon}</span>
-                <span class="grow">
-                  <b>${UI.esc(sk.name)}</b>
-                  <span class="muted small">${UI.esc(sk.desc)}</span>
-                </span>
-                <span class="gb-skill-lvl">${sk.level}<span class="muted">/${sk.maxLevel}</span></span>
-              </div>
-              <div class="gb-skill-bar"><i style="width:${sk.level / sk.maxLevel * 100}%"></i></div>
-              <div class="gb-skill-now">
-                Сейчас: <b class="gold">${sk.kind === 'flat' ? '+' + sk.value : '+' + sk.value + '%'}</b>
-                ${!sk.atMax ? `<span class="muted small">· следующий уровень +${sk.kind === 'flat' ? sk.step : sk.step + '%'}</span>` : ''}
-              </div>
-              ${sk.atMax
-                ? '<div class="gb-skill-max">Прокачан до предела</div>'
-                : `<div class="gb-skill-buy">
-                     ${cost(sk.nextCost)}
-                     <button class="btn btn-inline gb-up" data-skill="${sk.id}"
-                             ${sk.canUpgrade ? '' : 'disabled'}>
-                       ${sk.blockedByRank ? '🔒 ранг' : 'Улучшить'}
-                     </button>
-                   </div>
-                   ${sk.blockedByRank && sk.needTier
-                     ? `<div class="muted small">Уровень ${sk.level + 1} — с ранга «${UI.esc(sk.needTier.name)}»
-                        (${UI.fmtNum(sk.needTier.need)} очков)</div>` : ''}`}
-            </div>`).join('')}
-        </div>
-
-        <div class="gb-stats-now mt">
-          <div class="muted small">Ваши характеристики в бою:</div>
-          <div class="gb-stats-grid">
-            <span>❤ ${UI.fmtNum(up.stats.hp)} HP</span>
-            <span>⚡ ${UI.fmtNum(up.stats.energy)}</span>
-            <span>🎯 ${up.stats.ammo}</span>
-            <span>💥 крит ${Math.round(up.stats.critChance * 100)}% (×${up.critMin}–×${up.critMax})</span>
-            <span>💨 уворот ${Math.round(up.stats.dodgeChance * 100)}%</span>
-            <span>🛡 −${Math.round(up.stats.damageReduce * 1000) / 10}% урона</span>
-            <span>💚 крит-лечение ${Math.round(up.stats.healCritChance * 100)}%</span>
-            <span>🪙 награда +${Math.round(up.stats.rewardBonus * 100)}%</span>
-          </div>
-        </div>
-      </div>`;
-
-    sectionBox().querySelectorAll('.gb-up').forEach((btn) => {
-      btn.onclick = async () => {
-        btn.disabled = true;
-        try {
-          await API.post('/api/group/upgrade', { skill: btn.dataset.skill });
-          await App.refreshMe();
-          drawUpgrades();
-        } catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
-      };
-    });
-  };
-
-  const drawSection = (kind) => {
-    if (kind === 'upgrades') drawUpgrades();
-    else drawSupply();
-  };
+  // Разделы открываются ОТДЕЛЬНОЙ страницей: внутри витрины они мигали
+  // при каждом её обновлении и перезапрашивали данные
   box.querySelectorAll('[data-section]').forEach((b2) => {
     b2.onclick = () => {
-      const kind = b2.dataset.section;
-      // Повторное нажатие сворачивает
-      if (App._gbSection === kind) { App._gbSection = null; sectionBox().innerHTML = ''; }
-      else { App._gbSection = kind; drawSection(kind); }
-      box.querySelectorAll('[data-section]').forEach((x) =>
-        x.classList.toggle('active', x.dataset.section === App._gbSection));
+      App._gbPage = b2.dataset.section;
+      App.renderGroup();
     };
   });
-  if (App._gbSection) {
-    // Раздел рисуем один раз: раньше он перестраивался при каждом
-    // обновлении витрины, из-за чего мигал и повторял запрос к серверу
-    drawSection(App._gbSection);
-    const cur = box.querySelector(`[data-section="${App._gbSection}"]`);
-    if (cur) cur.classList.add('active');
-  }
 
   // Разметка построена — теперь элемент таймера существует
   startGbTicker();
@@ -1912,4 +1790,180 @@ App.renderGroupBattle = async () => {
     if ((App._warTab || '') !== 'group') { clearInterval(App._gbTimer); return; }
     App.renderGroupBattle();
   }, 5000);
+};
+
+// ═══ УЛУЧШЕНИЯ: отдельная страница ══════════════════════════════════
+// Раньше раздел раскрывался прямо в витрине и мигал при каждом её
+// обновлении, повторяя запрос к серверу. Теперь это самостоятельная
+// страница со своей кнопкой «Назад».
+App.renderUpgradesPage = async () => {
+  clearInterval(App._gbTimer);
+  const box = document.getElementById('gb-box');
+  if (!box) return;
+  box.dataset.mode = 'upgrades';
+  box.innerHTML = '<div class="loading">Загружаю улучшения…</div>';
+
+  let up = null;
+  try { up = await API.get('/api/group/upgrades'); }
+  catch (e) {
+    box.innerHTML = `
+      <button class="btn mt" id="gb-back-page" style="width:100%">← Назад к групповым боям</button>
+      <div class="card mt"><p style="color:var(--red)">${UI.esc(e.message)}</p>
+        <button class="btn btn-inline mt" id="gb-up-retry">Повторить</button></div>`;
+    const b1 = document.getElementById('gb-back-page');
+    if (b1) b1.onclick = () => { App._gbPage = null; App.renderGroup(); };
+    const r = document.getElementById('gb-up-retry');
+    if (r) r.onclick = () => App.renderUpgradesPage();
+    return;
+  }
+
+  const cost = (c) => c ? `
+    <span class="gb-cost">
+      ${up.currencyIcon} ${UI.fmtNum(c.amount)}
+      <span class="gb-cost-sep">·</span> 👂 ${c.ears}
+      <span class="gb-cost-sep">·</span> 🎖 ${c.tokens}
+    </span>` : '';
+
+  box.innerHTML = `
+    <button class="btn" id="gb-back-page" style="width:100%">← Назад к групповым боям</button>
+
+    <div class="card mt">
+      <div class="title" style="margin:0">🔧 Улучшения</div>
+      <p class="muted small mt">Постоянные усиления для групповых боёв. Каждый ранг открывает
+      следующие десять уровней — но только если предыдущие уже выкачаны.</p>
+      <p class="muted small">Платите ${up.currencyIcon} <b>боевыми очками</b> (их дают за бои),
+      👂 ушами и 🎖 жетонами милосердия.</p>
+      <div class="gb-wallet mt">
+        <span title="${UI.esc(up.currencyName)}">${up.currencyIcon} ${UI.fmtNum(up.wallet.points)}</span>
+        <span title="Уши">👂 ${UI.fmtNum(up.wallet.ears)}</span>
+        <span title="Жетоны милосердия">🎖 ${UI.fmtNum(up.wallet.tokens)}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="name">Ступени</div>
+      <div class="gb-ranks mt">
+        ${up.tiers.map((t) => `
+          <div class="gb-rank${t.unlocked ? '' : ' locked'}">
+            <span class="gb-rank-icon">${t.unlocked ? '✅' : '🔒'}</span>
+            <span class="grow">
+              <b>${UI.esc(t.name)}</b>
+              <span class="muted small">уровни ${t.from}–${t.to} · от ${UI.fmtNum(t.need)} очков</span>
+            </span>
+            <span class="small ${t.unlocked ? 'gold' : 'muted'}">
+              ${t.unlocked ? 'открыто' : 'ещё ' + UI.fmtNum(t.left)}
+            </span>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="name">Навыки</div>
+      <div class="gb-skills mt">
+        ${up.skills.map((sk) => `
+          <div class="gb-skill${sk.atMax ? ' maxed' : ''}">
+            <div class="gb-skill-top">
+              <span class="gb-skill-icon">${sk.icon}</span>
+              <span class="grow">
+                <b>${UI.esc(sk.name)}</b>
+                <span class="muted small">${UI.esc(sk.desc)}</span>
+              </span>
+              <span class="gb-skill-lvl">${sk.level}<span class="muted">/${sk.maxLevel}</span></span>
+            </div>
+            <div class="gb-skill-bar"><i style="width:${sk.level / sk.maxLevel * 100}%"></i></div>
+            <div class="gb-skill-now">
+              Сейчас: <b class="gold">${sk.kind === 'flat' ? '+' + sk.value : '+' + sk.value + '%'}</b>
+              ${!sk.atMax ? `<span class="muted small">· следующий уровень +${sk.kind === 'flat' ? sk.step : sk.step + '%'}</span>` : ''}
+            </div>
+            ${sk.atMax
+              ? '<div class="gb-skill-max">Прокачан до предела</div>'
+              : `<div class="gb-skill-buy">
+                   ${cost(sk.nextCost)}
+                   <button class="btn btn-inline gb-up" data-skill="${sk.id}"
+                           ${sk.canUpgrade ? '' : 'disabled'}>
+                     ${sk.blockedByRank ? '🔒 ранг' : 'Улучшить'}
+                   </button>
+                 </div>
+                 ${sk.blockedByRank && sk.needTier
+                   ? `<div class="muted small">Уровень ${sk.level + 1} — с ранга «${UI.esc(sk.needTier.name)}»
+                      (${UI.fmtNum(sk.needTier.need)} очков)</div>` : ''}`}
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="name">Ваши характеристики в бою</div>
+      <div class="gb-stats-grid mt">
+        <span>❤ ${UI.fmtNum(up.stats.hp)} HP</span>
+        <span>⚡ ${UI.fmtNum(up.stats.energy)}</span>
+        <span>🎯 ${up.stats.ammo}</span>
+        <span>💥 крит ${Math.round(up.stats.critChance * 100)}% (×${up.critMin}–×${up.critMax})</span>
+        <span>💨 уворот ${Math.round(up.stats.dodgeChance * 100)}%</span>
+        <span>🛡 −${Math.round(up.stats.damageReduce * 1000) / 10}% урона</span>
+        <span>💚 крит-лечение ${Math.round(up.stats.healCritChance * 100)}%</span>
+        <span>🪙 награда +${Math.round(up.stats.rewardBonus * 100)}%</span>
+      </div>
+    </div>
+
+    <button class="btn mt" id="gb-back-page2" style="width:100%">← Назад к групповым боям</button>`;
+
+  const back = () => { App._gbPage = null; App._resetSign('gbLobby'); App.renderGroup(); };
+  const b1 = document.getElementById('gb-back-page');
+  if (b1) b1.onclick = back;
+  const b2 = document.getElementById('gb-back-page2');
+  if (b2) b2.onclick = back;
+
+  box.querySelectorAll('.gb-up').forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await API.post('/api/group/upgrade', { skill: btn.dataset.skill });
+        await App.refreshMe();
+        App.renderUpgradesPage();
+      } catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
+    };
+  });
+};
+
+// ═══ БАЗА СНАБЖЕНИЯ: отдельная страница ═════════════════════════════
+App.renderSupplyPage = async () => {
+  clearInterval(App._gbTimer);
+  const box = document.getElementById('gb-box');
+  if (!box) return;
+  box.dataset.mode = 'supply';
+
+  let d = null;
+  try { d = await API.get('/api/group'); }
+  catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+  box.innerHTML = `
+    <button class="btn" id="gb-back-page" style="width:100%">← Назад к групповым боям</button>
+
+    <div class="card mt">
+      <div class="title" style="margin:0">📦 База снабжения</div>
+      <p class="muted small mt">Снаряжение и расходники для боя.
+      Разделы открываются по мере роста ранга.</p>
+      <div class="gb-ranks mt">
+        ${d.rating.ranks.filter((r) => r.need > 0).map((r) => `
+          <div class="gb-rank${r.unlocked ? '' : ' locked'}">
+            <span class="gb-rank-icon">${r.unlocked ? r.icon : '🔒'}</span>
+            <span class="grow">
+              <b>${UI.esc(r.name)}</b>
+              <span class="muted small">от ${UI.fmtNum(r.need)} очков</span>
+            </span>
+            <span class="small ${r.unlocked ? 'gold' : 'muted'}">
+              ${r.unlocked ? 'открыто' : 'ещё ' + UI.fmtNum(r.left)}
+            </span>
+          </div>`).join('')}
+      </div>
+      <p class="muted small mt">Содержимое появится позже.</p>
+    </div>
+
+    <button class="btn mt" id="gb-back-page2" style="width:100%">← Назад к групповым боям</button>`;
+
+  const back = () => { App._gbPage = null; App._resetSign('gbLobby'); App.renderGroup(); };
+  const b1 = document.getElementById('gb-back-page');
+  if (b1) b1.onclick = back;
+  const b2 = document.getElementById('gb-back-page2');
+  if (b2) b2.onclick = back;
 };
