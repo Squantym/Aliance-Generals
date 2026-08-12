@@ -244,6 +244,117 @@ ok(/App\._gbPage = null;\s*\n\s*\/\/ раздел улучшений закры�
    || /_setWarTab = \(tab\) => \{[\s\S]{0,200}_gbPage = null/.test(warT),
    'переключение вкладки закрывает раздел');
 
+console.log('\n── 8. Очередь не виснет при идущем бое ──');
+// Главная причина зависаний: пока шёл бой, время следующего сбора не
+// переставлялось. Оно уходило в прошлое, и отсчёт вставал на нуле.
+{
+  const dir = '/tmp/generals-queue-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/arena',
+                   '/dist/src/services/groupBattle', '/dist/src/services/player',
+                   '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const auth2 = require(ROOT + '/dist/src/services/auth');
+  const player2 = require(ROOT + '/dist/src/services/player');
+  const arena2 = require(ROOT + '/dist/src/services/arena');
+  const gb2 = require(ROOT + '/dist/src/services/groupBattle');
+  const db2 = require(ROOT + '/dist/src/core/db');
+
+  await auth2.register('Альфа', 'пароль123', 'al@t.ru', 'ru', '1.1.1.1', 'UA');
+  await auth2.register('Браво', 'пароль123', 'br@t.ru', 'ru', '1.1.1.1', 'UA');
+  const list2 = Object.values(player2.users());
+  for (const p2 of list2) p2.gold = 10000;
+
+  // Арена: бой идёт, время следующего прошло
+  arena2.register(list2[0], 'elite', []);
+  arena2.register(list2[1], 'elite', []);
+  let st = db2.load('arena', {}); st.divs.elite.slot = Date.now() - 1000; db2.save('arena');
+  arena2.tick();
+  ok(!!db2.load('arena', {}).divs.elite.battle, 'бой на арене создан');
+  st = db2.load('arena', {}); st.divs.elite.slot = Date.now() - 1000; db2.save('arena');
+  arena2.tick();
+  const av = arena2.view(list2[0], 'elite');
+  ok(av.secondsLeft > 0, `отсчёт арены идёт при живом бое: ${av.secondsLeft} с`);
+
+  process.chdir(cwd);
+}
+
+console.log('\n── 9. Арена: не набралось — всех сбрасываем ──');
+{
+  const dir = '/tmp/generals-reset-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/arena',
+                   '/dist/src/services/player', '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const auth3 = require(ROOT + '/dist/src/services/auth');
+  const player3 = require(ROOT + '/dist/src/services/player');
+  const arena3 = require(ROOT + '/dist/src/services/arena');
+  const db3 = require(ROOT + '/dist/src/core/db');
+
+  await auth3.register('Один', 'пароль123', 'od@t.ru', 'ru', '1.1.1.1', 'UA');
+  const solo = Object.values(player3.users())[0];
+  solo.gold = 10000;
+  arena3.register(solo, 'elite', []);
+  ok(solo.gold === 9950, 'взнос списан');
+  const st3 = db3.load('arena', {}); st3.divs.elite.slot = Date.now() - 1000; db3.save('arena');
+  arena3.tick();
+  const raw3 = db3.load('arena', {}).divs.elite;
+  ok(Object.keys(raw3.registered).length === 0, 'записи сброшены полностью');
+  ok(solo.gold === 10000, 'взнос возвращён');
+  const v3 = arena3.view(solo, 'elite');
+  ok(v3.iAmRegistered === false, 'игрок больше не числится записанным');
+  ok(v3.secondsLeft > 0, `отсчёт до следующего боя идёт: ${v3.secondsLeft} с`);
+  let canAgain = true;
+  try { arena3.register(solo, 'elite', []); } catch (e) { canAgain = false; }
+  ok(canAgain, 'можно записаться заново');
+  process.chdir(cwd);
+}
+
+console.log('\n── 10. Групповые: время вышло — добираем ботов ──');
+{
+  const dir = '/tmp/generals-bots-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/groupBattle',
+                   '/dist/src/services/player', '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const auth4 = require(ROOT + '/dist/src/services/auth');
+  const player4 = require(ROOT + '/dist/src/services/player');
+  const gb4 = require(ROOT + '/dist/src/services/groupBattle');
+  const db4 = require(ROOT + '/dist/src/core/db');
+
+  await auth4.register('Один', 'пароль123', 'o1@t.ru', 'ru', '1.1.1.1', 'UA');
+  const one = Object.values(player4.users())[0];
+  gb4.register(one, 'fighter', []);
+  const st4 = db4.load('groupBattle', {}); st4.slot = Date.now() - 1000; db4.save('groupBattle');
+  gb4.tick();
+  const b4 = db4.load('groupBattle', {}).battle;
+  ok(!!b4 && b4.state === 'running', 'бой состоялся даже с одним человеком');
+  const fs4 = Object.values(b4.fighters);
+  ok(fs4.length === 10, `все места заняты: ${fs4.length}`);
+  ok(fs4.filter((f) => f.isBot).length === 9, 'свободные места заняли боты');
+  const t0 = fs4.filter((f) => f.team === 0).length;
+  const t1 = fs4.filter((f) => f.team === 1).length;
+  ok(Math.abs(t0 - t1) <= 1, `команды равны: ${t0} на ${t1}`);
+  ok(fs4.some((f) => !f.isBot && f.name === 'Один'), 'человек в бою');
+  const v4 = gb4.view(one);
+  ok(v4.secondsLeft >= 0, 'очередь живёт дальше');
+  const gbSrc4 = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+  ok(/Бой не отменяется никогда/.test(gbSrc4), 'правило записано в коде');
+  process.chdir(cwd);
+}
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

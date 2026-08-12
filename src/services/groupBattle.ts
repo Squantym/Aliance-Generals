@@ -160,11 +160,31 @@ function tick(): void {
     fillWithBotsGradually(s, now);
   }
 
+  // Идущий бой не должен морозить очередь: время следующего сбора
+  // переставляем, иначе отсчёт встанет на нуле
+  if (s.battle && (s.battle.state === 'running' || s.battle.state === 'waiting')
+      && s.slot && now >= s.slot) {
+    s.slot = Object.keys(s.registered).length ? nextSlot(now) : 0;
+    db.save('groupBattle');
+  }
+
+  // Завершённый бой убираем, чтобы очередь пошла дальше
+  if (s.battle && (s.battle.state === 'done' || s.battle.state === 'cancelled')) {
+    if (now - (s.battle.finishedAt || 0) > 60000) {
+      s.battle = null;
+      db.save('groupBattle');
+    }
+  }
+
   // Старт
   if (!s.battle && s.slot && now >= s.slot) {
+    // Время вышло — добираем ботов на все свободные места и начинаем.
+    // Бой не отменяется никогда: человек прождал пять минут и должен
+    // получить бой, пусть и с ботами.
+    fillWithBots(s);
     const list = Object.values(s.registered);
     if (list.length < 2) {
-      // Совсем пусто — сбрасываем лобби, отсчёт начнётся с новой записи
+      // Не набралось даже с ботами (такого быть не должно) — сбрасываем
       s.registered = {};
       s.slot = 0;
       db.save('groupBattle');

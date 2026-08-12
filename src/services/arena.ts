@@ -208,6 +208,29 @@ function tickDiv(div: DivId): void {
   const now = Date.now();
   if (!s.slot) s.slot = nextSlot();
 
+  // Время ушло в прошлое, а бой уже идёт — переставляем на следующее.
+  // Без этого отсчёт вставал на нуле намертво: блок ниже не выполнялся
+  // (условие !s.battle), время не обновлялось, и очередь замирала.
+  if (s.battle && (s.battle.state === 'running' || s.battle.state === 'waiting') && now >= s.slot) {
+    s.slot = nextSlot(now);
+    db.save('arena');
+  }
+
+  // Бой закончился — очередь должна снова принимать людей
+  if (s.battle && (s.battle.state === 'done' || s.battle.state === 'cancelled')) {
+    // Держим разбор недолго: игрокам нужно увидеть итог, но очередь
+    // важнее — иначе следующий бой не начнётся никогда
+    const finishedAgo = now - (s.battle.finishedAt || 0);
+    if (finishedAgo > 60000) {
+      s.battle = null;
+      db.save('arena');
+    }
+    if (now >= s.slot) {
+      s.slot = nextSlot(now);
+      db.save('arena');
+    }
+  }
+
   // Время старта пришло
   if (now >= s.slot && !s.battle) {
     const list = Object.values(s.registered);
