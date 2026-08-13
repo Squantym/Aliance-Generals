@@ -433,6 +433,7 @@ const App = {
     try {
       const prevNotifUnread = App.me ? App.me.notifUnread : 0;
       App.me = await API.get('/api/me');
+      try { App.updateCombatBar(); } catch (e) {}
       // Аккаунт заблокирован: показываем окно с причиной и сроком вместо
       // игры. Раньше игрок просто получал ошибку и не понимал, что
       // произошло и когда это закончится.
@@ -2502,6 +2503,71 @@ const App = {
     });
   },
 
+  // ── Плашка боя: видна на любом экране ───────────────────────────
+  // Показывает отсчёт до боя, а во время боя запирает игрока: ходить по
+  // разделам, пока идёт бой, нельзя — иначе можно было бы торговать и
+  // качаться прямо посреди сражения.
+  _combatBar: null,
+
+  updateCombatBar() {
+    const c = (App.me && App.me.combat) || null;
+    let bar = document.getElementById('combat-bar');
+
+    if (!c || (!c.fighting && !c.registered)) {
+      if (bar) bar.remove();
+      clearInterval(App._combatTimer);
+      document.body.classList.remove('in-combat');
+      return;
+    }
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'combat-bar';
+      document.body.appendChild(bar);
+    }
+    const where = c.fighting ? c.where : c.regWhere;
+    const label = where === 'arena' ? '🏟 Арена' : '🤝 Групповой бой';
+
+    if (c.fighting) {
+      document.body.classList.add('in-combat');
+      bar.className = 'combat-bar fighting';
+      bar.innerHTML = `
+        <span class="cb-dot"></span>
+        <span class="grow"><b>${label}</b> — идёт бой</span>
+        <button class="btn btn-inline" id="cb-go">Вернуться в бой</button>`;
+    } else {
+      document.body.classList.remove('in-combat');
+      bar.className = 'combat-bar';
+      bar.innerHTML = `
+        <span class="cb-dot"></span>
+        <span class="grow"><b>${label}</b> — до боя <b id="cb-left">—</b></span>
+        <button class="btn btn-inline" id="cb-go">Перейти</button>`;
+    }
+
+    const go = document.getElementById('cb-go');
+    if (go) go.onclick = () => {
+      App._warTab = where === 'arena' ? 'arena' : 'group';
+      App._gbPage = null;
+      location.hash = '#war/' + App._warTab;
+      App.rerender();
+    };
+
+    // Живой отсчёт до начала боя
+    clearInterval(App._combatTimer);
+    if (!c.fighting && c.startsAt) {
+      const paint = () => {
+        const el = document.getElementById('cb-left');
+        if (!el) { clearInterval(App._combatTimer); return; }
+        const left = Math.max(0, Math.round((c.startsAt - Date.now()) / 1000));
+        const m = Math.floor(left / 60), sec = left % 60;
+        el.textContent = `${m}:${String(sec).padStart(2, '0')}`;
+        if (left <= 0) { clearInterval(App._combatTimer); App.refreshMe(); }
+      };
+      paint();
+      App._combatTimer = setInterval(paint, 1000);
+    }
+  },
+
   // ── Счётчик онлайна в подвале ───────────────────────────────────
   // Показываем реальных игроков за последние 5 минут. Обновляем раз в
   // минуту: чаще незачем, а лишние запросы на живом сервере ни к чему.
@@ -2847,6 +2913,16 @@ const App = {
     if (!App.screens[name] && App._screenFile(name)) {
       await App._loadScreen(name);
     }
+    // Идёт бой — никуда не пускаем, кроме самого боя. Иначе можно было
+    // бы уйти торговать посреди сражения.
+    const cmb = (App.me && App.me.combat) || null;
+    if (cmb && cmb.fighting && name !== 'war') {
+      UI.toast('⚔ Сначала завершите бой');
+      App._warTab = cmb.where === 'arena' ? 'arena' : 'group';
+      location.hash = '#war/' + App._warTab;
+      return;
+    }
+
     const screen = App.screens[name] || App.screens.home;
     // Результат боя показывается ТОЛЬКО пока игрок на экране «Война».
     // Если он ушёл на главную (или в любой другой раздел) — карточка боя
@@ -3034,6 +3110,7 @@ const App = {
       const r = await API.post('/api/verify-email', { token });
       API.setToken(r.token);
       App.me = await API.get('/api/me');
+      try { App.updateCombatBar(); } catch (e) {}
       if (App.me && App.me.banned && App.me.banInfo) { App.showBanScreen(App.me.banInfo); return; }
       c.innerHTML = `
         <div class="title">✅ Почта подтверждена</div>

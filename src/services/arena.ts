@@ -61,10 +61,15 @@ const RATING_PER_FAVOURITE = 3;   // за убийство самого рейт
 const ENTRY_GOLD = 50;             // взнос с каждого
 const SLOT_MINUTES = 15;           // как часто стартуют бои
 const MIN_PLAYERS = 2;             // меньше — бой не состоится
-const ENTER_WINDOW_MS = 90 * 1000; // сколько ждём захода в бой после старта
+// Подготовка: полминуты перед боем, чтобы все успели открыть комнату
+const PREPARE_MS = 30 * 1000;
 
 const BASE_HP = 1000;
+// Урон гуляет в диапазоне: ровные 30 делали бой предсказуемым до
+// последнего удара — можно было точно посчитать, сколько осталось
 const BASE_ATK = 30;
+const ATK_MIN = 25;
+const ATK_MAX = 35;
 const ATTACK_CD_MS = 1500;         // откат между ударами
 
 const SKILLS = {
@@ -88,11 +93,13 @@ type Fighter = {
   lastAttackAt: number;
   alive: boolean;
   entered: boolean;
+  seen: boolean;              // открывал ли игрок комнату боя
   place: number;            // место в бою: 1 — победитель, дальше по выбыванию
   skills: Record<string, number>;      // сколько применений осталось
   critUntil: number;
   armorUntil: number;
   kills: number;
+  rating: number;             // рейтинг — виден рядом с именем
   killedIds: string[];      // кого добил — нужно для очков за фаворита
   damageDealt: number;
   log: Array<{ at: number; text: string }>;
@@ -108,7 +115,8 @@ type Battle = {
   fighters: Record<string, Fighter>;
   winnerId: string;
   winnerName: string;
-  state: 'waiting' | 'running' | 'done' | 'cancelled';
+  state: 'preparing' | 'waiting' | 'running' | 'done' | 'cancelled';
+  prepareUntil?: number;
 };
 
 // Состояние одного дивизиона
@@ -211,7 +219,8 @@ function tickDiv(div: DivId): void {
   // Время ушло в прошлое, а бой уже идёт — переставляем на следующее.
   // Без этого отсчёт вставал на нуле намертво: блок ниже не выполнялся
   // (условие !s.battle), время не обновлялось, и очередь замирала.
-  if (s.battle && (s.battle.state === 'running' || s.battle.state === 'waiting') && now >= s.slot) {
+  if (s.battle && (s.battle.state === 'preparing' || s.battle.state === 'running'
+      || s.battle.state === 'waiting') && now >= s.slot) {
     s.slot = nextSlot(now);
     db.save('arena');
   }
@@ -261,6 +270,26 @@ function tickDiv(div: DivId): void {
   if (s.battle && s.battle.state !== 'done' && s.battle.state !== 'cancelled') {
     const b = s.battle;
 
+    // Подготовка окончена — начинаем бой.
+    // Кто не открыл комнату — выбывает: он не увидит боя и всё равно
+    // не смог бы драться, а держать его живым нечестно к остальным.
+    if (b.state === 'preparing' && now >= (b.prepareUntil || 0)) {
+      b.state = 'running';
+      b.startedAt = now;
+      const total = Object.keys(b.fighters).length;
+      let placeFrom = total;
+      for (const f of Object.values(b.fighters)) {
+        if (f.seen) continue;
+        f.alive = false;
+        f.hp = 0;
+        f.place = placeFrom--;
+        addLog(f, '⏰ Вы не вышли на бой — засчитано поражение');
+      }
+      // Все цели могли указывать на выбывших — раздаём заново
+      assignTargets(b);
+      db.save('arena');
+    }
+
     // Окна ожидания нет: все участники выходят на арену сразу при
     // старте. Взнос уже уплачен, и отвлёкшийся на минуту человек
     // терял бы деньги ни за что.
@@ -299,21 +328,25 @@ function tickDiv(div: DivId): void {
 
 function startBattle(div: DivId, s: DivState, list: any[], now: number): void {
   const fighters: Record<string, Fighter> = {};
+  // Рейтинг участников для показа рядом с именами
+  const table = store().ratings[div] || {};
   for (const r of list) {
     fighters[r.id] = {
       id: r.id, name: r.name, flag: r.flag,
       hp: BASE_HP, maxHp: BASE_HP,
       targetId: null, lastAttackAt: 0,
-      alive: true, entered: true, place: 0,
+      alive: true, entered: true, seen: false, place: 0,
       skills: { medkit: SKILLS.medkit.uses, crit: SKILLS.crit.uses, armor: SKILLS.armor.uses, smoke: SKILLS.smoke.uses },
+      rating: (table[r.id] && table[r.id].points) || 0,
       critUntil: 0, armorUntil: 0, kills: 0, killedIds: [], damageDealt: 0, log: [],
     };
   }
   s.battle = {
     id: u.uid(10), div, slot: s.slot, startedAt: now, finishedAt: 0,
     pot: list.length * DIVISIONS[div].entry,
-    // Бой сразу боевой: ждать нажатия «В бой» незачем — взнос уплачен
-    fighters, winnerId: '', winnerName: '', state: 'running',
+    // Сначала подготовка, потом бой: игрок должен успеть открыть комнату
+    fighters, winnerId: '', winnerName: '', state: 'preparing',
+    prepareUntil: now + PREPARE_MS,
   };
   assignTargets(s.battle);
   s.registered = {};
@@ -543,6 +576,16 @@ function register(user: User, divRaw: any, notices: Notices) {
       throw new u.ApiError(`Вы участвуете в бою дивизиона «${DIVISIONS[other].short}»`);
     }
   }
+  // Нельзя быть в двух режимах разом: бои идут параллельно, и человек
+  // физически не может воевать и там, и там
+  try {
+    const gbSrv = require('./groupBattle');
+    const gbState = gbSrv.busyState(user.id);
+    if (gbState) throw new u.ApiError(`Вы ${gbState} в групповых боях`);
+  } catch (e: any) {
+    if (e instanceof u.ApiError) throw e;
+  }
+
   if (!hasEntry(user, div)) {
     throw new u.ApiError(`Взнос — ${fmtEntry(div)}. Не хватает средств.`);
   }
@@ -591,6 +634,7 @@ function view(user: User, divRaw?: any) {
     })),
     divName: DIVISIONS[div].name,
     currency: DIVISIONS[div].currency,
+    currencyLabel: DIVISIONS[div].currency === 'gold' ? 'золото' : 'игровые деньги',
     entry: DIVISIONS[div].entry,
     entryGold: DIVISIONS[div].entry,
     slotMinutes: SLOT_MINUTES,
@@ -662,9 +706,6 @@ function enter(user: User, notices: Notices) {
   const f = b.fighters[user.id];
   if (!f) throw new u.ApiError('Вы не записаны на этот бой');
   if (f.entered) return battleState(user);
-  if (b.state === 'waiting' && Date.now() - b.startedAt >= ENTER_WINDOW_MS) {
-    throw new u.ApiError('Время выхода на арену истекло');
-  }
   f.entered = true;
   addLog(f, '⚔ Вы вышли на арену');
 
@@ -684,6 +725,10 @@ function battleState(user: User) {
   const found = myBattle(user.id);
   const b = found ? found.b : null;
   if (!b) return { active: false };
+  // Отмечаем, что игрок открыл комнату: по этому признаку решаем, кто
+  // пропустил бой
+  const meF = b.fighters[user.id];
+  if (meF && !meF.seen) { meF.seen = true; db.save('arena'); }
   const me = b.fighters[user.id];
   if (!me) return { active: false };
 
@@ -693,8 +738,11 @@ function battleState(user: User) {
   const hunters = Object.values(b.fighters).filter((f) => f.alive && f.targetId === me.id && f.id !== me.id);
 
   return {
-    active: b.state === 'waiting' || b.state === 'running',
+    active: b.state === 'preparing' || b.state === 'waiting' || b.state === 'running',
     state: b.state,
+    preparing: b.state === 'preparing',
+    prepareLeftSec: b.state === 'preparing'
+      ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
     pot: b.pot,
     div: found ? found.div : 'elite',
     divName: found ? DIVISIONS[found.div].name : '',
@@ -710,18 +758,23 @@ function battleState(user: User) {
       critLeftSec: Math.max(0, Math.round((me.critUntil - now) / 1000)),
       armorLeftSec: Math.max(0, Math.round((me.armorUntil - now) / 1000)),
       cooldownLeftMs: Math.max(0, me.lastAttackAt + ATTACK_CD_MS - now),
+      cooldownMs: ATTACK_CD_MS,
+      critLeftMs: Math.max(0, me.critUntil - now),
+      armorLeftMs: Math.max(0, me.armorUntil - now),
+      rating: me.rating || 0,
       kills: me.kills, damageDealt: me.damageDealt,
     },
     huntersCount: hunters.length,
     target: target ? {
       id: target.id, name: target.name, flag: target.flag,
-      hp: target.hp, maxHp: target.maxHp, alive: target.alive,
+      hp: target.hp, maxHp: target.maxHp, alive: target.alive, rating: target.rating || 0,
     } : null,
     // Оставшиеся бойцы с их здоровьем
     alive: Object.values(b.fighters)
       .filter((f) => f.alive)
       .sort((a, c) => c.hp - a.hp)
-      .map((f) => ({ id: f.id, name: f.name, flag: f.flag, hp: f.hp, maxHp: f.maxHp, isMe: f.id === me.id })),
+      .map((f) => ({ id: f.id, name: f.name, flag: f.flag, hp: f.hp, maxHp: f.maxHp,
+                     rating: f.rating || 0, isMe: f.id === me.id })),
     aliveCount: Object.values(b.fighters).filter((f) => f.alive).length,
     total: Object.keys(b.fighters).length,
     log: me.log.slice(-25),
@@ -754,7 +807,7 @@ function attack(user: User) {
   me.lastAttackAt = now;
 
   // Урон: база, крит и броня цели
-  let dmg = BASE_ATK;
+  let dmg = ATK_MIN + Math.floor(Math.random() * (ATK_MAX - ATK_MIN + 1));
   let crit = false;
   if (me.critUntil > now) {
     crit = true;
@@ -790,6 +843,29 @@ function attack(user: User) {
   }
   db.save('arena');
   return battleState(user);
+}
+
+// Покинуть бой: боец считается выбывшим, награды не получает.
+// Нужно, чтобы человек не сидел взаперти, если ему надо уйти.
+function leave(user: User, notices: Notices) {
+  tick();
+  const found = myBattle(user.id);
+  if (!found) throw new u.ApiError('Вы не в бою');
+  const { div, s, b } = found;
+  const me = b.fighters[user.id];
+  if (!me || !me.alive) throw new u.ApiError('Вы уже выбыли');
+  me.alive = false;
+  me.hp = 0;
+  me.place = Object.values(b.fighters).filter((f) => f.alive).length + 1;
+  addLog(me, '🚪 Вы покинули бой — поражение засчитано');
+  for (const f of Object.values(b.fighters)) {
+    if (f.alive && f.targetId === me.id) f.targetId = pickTarget(b, f.id);
+  }
+  const alive = Object.values(b.fighters).filter((f) => f.alive);
+  if (alive.length === 1) finishBattle(div, s, alive[0]);
+  db.save('arena');
+  notices.push('Вы покинули бой. Награды не начислены.');
+  return { left: true };
 }
 
 function switchTarget(user: User) {
@@ -838,10 +914,24 @@ function useSkill(user: User, skill: string) {
   return battleState(user);
 }
 
+// Занят ли игрок ареной: записан или в идущем бою
+function busyState(userId: string): string | null {
+  const root = store();
+  for (const d of DIV_IDS) {
+    const st = root.divs[d];
+    if (st.registered[userId]) return 'записаны на бой';
+    const b = st.battle;
+    if (b && b.fighters[userId] && b.state === 'running' && b.fighters[userId].alive) {
+      return 'сейчас в бою';
+    }
+  }
+  return null;
+}
+
 export = {
-  view, register, unregister, enter, battleState, attack, switchTarget, useSkill,
+  view, register, unregister, enter, battleState, attack, switchTarget, useSkill, busyState, leave,
   result, rating, lastResultId, DIVISIONS, DIV_IDS, divOf,
   RATING_PER_KILL, RATING_PER_WIN, RATING_PER_FAVOURITE,
   tick, nextSlot, ENTRY_GOLD, SLOT_MINUTES, MIN_PLAYERS, BASE_HP, BASE_ATK,
-  ATTACK_CD_MS, SKILLS, ENTER_WINDOW_MS,
+  ATTACK_CD_MS, SKILLS, PREPARE_MS,
 };

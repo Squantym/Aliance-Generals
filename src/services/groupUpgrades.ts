@@ -30,6 +30,7 @@ const BASE = {
   ammo: 50,
   critChance: 0.20,
   dodgeChance: 0.20,
+  healCritChance: 0.20,     // базовый шанс критического лечения
 };
 
 // Критический удар и критическое лечение усиливают втрое-впятеро,
@@ -67,12 +68,14 @@ const LEVELS_PER_TIER = 10;
 const MAX_LEVEL = 50;
 
 // Ступени привязаны к рангам групповых боёв
+// Цвет ступени — им красятся названия навыков и цифры прибавок, чтобы
+// с одного взгляда было видно, на каком уровне что прокачано.
 const TIERS = [
-  { rank: 'rookie',   name: 'Новички',     need: 1000, from: 1,  to: 10 },
-  { rank: 'skilled',  name: 'Опытные',     need: 2000, from: 11, to: 20 },
-  { rank: 'advanced', name: 'Продвинутые', need: 3000, from: 21, to: 30 },
-  { rank: 'special',  name: 'Спецотряд',   need: 4000, from: 31, to: 40 },
-  { rank: 'elite',    name: 'Элита',       need: 5000, from: 41, to: 50 },
+  { rank: 'rookie',   name: 'Новички',     need: 1000, from: 1,  to: 10, color: '#ffffff' },
+  { rank: 'skilled',  name: 'Опытные',     need: 2000, from: 11, to: 20, color: '#5fbf4a' },
+  { rank: 'advanced', name: 'Продвинутые', need: 3000, from: 21, to: 30, color: '#4a9fe0' },
+  { rank: 'special',  name: 'Спецотряд',   need: 4000, from: 31, to: 40, color: '#a978d4' },
+  { rank: 'elite',    name: 'Элита',       need: 5000, from: 41, to: 50, color: '#e05555' },
 ];
 
 // ---------- Цена ----------
@@ -152,7 +155,7 @@ function statsFor(user: any) {
     ammo: Math.round(BASE.ammo + get('ammo')),
     critChance: pct(Math.min(0.95, BASE.critChance + get('crit'))),
     dodgeChance: pct(Math.min(0.75, BASE.dodgeChance + get('dodge'))),
-    healCritChance: pct(Math.min(0.95, get('healCrit'))),
+    healCritChance: pct(Math.min(0.95, BASE.healCritChance + get('healCrit'))),
     damageReduce: pct(Math.min(0.60, get('armor'))),
     rewardBonus: pct(get('reward')),
     critMin: CRIT_MIN,
@@ -186,6 +189,39 @@ function view(user: User) {
       ...t,
       unlocked: points >= t.need,
       left: Math.max(0, t.need - points),
+    })),
+    // Навыки, разложенные по ступеням: на каждой — свои десять уровней.
+    // Так игрок видит, что именно откроется дальше, а не сплошной
+    // список из пятидесяти.
+    tierSkills: TIERS.map((t, ti) => ({
+      ...t,
+      unlocked: points >= t.need,
+      left: Math.max(0, t.need - points),
+      skills: SKILLS.map((sk) => {
+        const level = lv[sk.id] || 0;
+        // Сколько уровней этой ступени уже взято
+        const inTier = u.clamp(level - (t.from - 1), 0, LEVELS_PER_TIER);
+        const prevDone = level >= t.from - 1;          // предыдущая ступень выкачана
+        const next = level + 1;
+        const isCurrent = next >= t.from && next <= t.to;
+        const atMaxTier = inTier >= LEVELS_PER_TIER;
+        const cost = (isCurrent && level < MAX_LEVEL) ? costOf(next) : null;
+        const value = sk.kind === 'flat' ? level * sk.step : level * sk.step * 100;
+        // Что даст ступень целиком, если выкачать её до конца
+        const tierValue = sk.kind === 'flat' ? t.to * sk.step : t.to * sk.step * 100;
+        return {
+          id: sk.id, name: sk.name, icon: sk.icon, desc: sk.desc, kind: sk.kind,
+          step: sk.kind === 'flat' ? sk.step : sk.step * 100,
+          level, inTier, tierMax: LEVELS_PER_TIER,
+          atMaxTier, isCurrent,
+          value: Math.round(value * 10) / 10,
+          tierValue: Math.round(tierValue * 10) / 10,
+          nextCost: cost,
+          canUpgrade: !!cost && points >= t.need && prevDone && affordable(user, cost),
+          blockedByRank: isCurrent && points < t.need,
+          blockedByPrev: isCurrent && !prevDone,
+        };
+      }),
     })),
     skills: SKILLS.map((s) => {
       const level = lv[s.id] || 0;

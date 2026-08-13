@@ -20,6 +20,21 @@ const player = require(ROOT + '/dist/src/services/player');
 const gb = require(ROOT + '/dist/src/services/groupBattle');
 const db = require(ROOT + '/dist/src/core/db');
 
+// Пропустить подготовку: в тестах ждать 30 секунд незачем
+function skipPrepare(kind, div) {
+  const st = db.load(kind, {});
+  const b = kind === 'arena' ? (st.divs[div || 'elite'] || {}).battle : st.battle;
+  if (b && b.state === 'preparing') {
+    // Отмечаем всех как явившихся: иначе не открывшие комнату выбывают,
+    // а в тестах комнату никто не открывает
+    for (const fr of Object.values(b.fighters)) fr.seen = true;
+    b.prepareUntil = Date.now() - 1;
+    db.save(kind);
+    if (kind === 'groupBattle') gb.tick(); else require(ROOT + '/dist/src/services/arena').tick();
+  }
+}
+
+
 async function main() {
 const names = ['Игрок1', 'Игрок2', 'Игрок3'];
 for (const n of names) await auth.register(n, 'пароль123', n + '@t.ru', 'ru', '1.1.1.1', 'UA');
@@ -84,6 +99,7 @@ const s2 = db.load('groupBattle', {});
 s2.slot = Date.now() - 1000;
 db.save('groupBattle');
 gb.tick();
+skipPrepare("groupBattle");
 for (const p of ps) gb.enter(p, []);
 const st = gb.battleState(ps[0]);
 ok(st.state === 'running', 'бой идёт');
@@ -100,10 +116,17 @@ const before = ps[0].res.hp.cur;
 
 console.log('\n── 6. Действия ──');
 const foe = st.enemies.find((e) => e.alive);
+// Уворот отключаем: удар мог бы случайно пройти мимо
+{
+  const bF = db.load('groupBattle', {}).battle;
+  bF.fighters[foe.id].st = { ...(bF.fighters[foe.id].st || {}), dodgeChance: 0 };
+  db.save('groupBattle');
+}
 gb.act(ps[0], 'attack', foe.id, []);
 const st2 = gb.battleState(ps[0]);
 const hit = st2.enemies.find((e) => e.id === foe.id);
-ok(hit.hp < gb.HP, `урон прошёл: ${hit.hp} из ${gb.HP}`);
+// Сравниваем с ЕГО запасом: у защитника здоровья больше базового
+ok(hit.hp < hit.maxHp, `урон прошёл: ${hit.hp} из ${hit.maxHp}`);
 ok(st2.me.ammo === gb.AMMO - 1, 'боеприпас потрачен');
 fails(() => gb.act(ps[0], 'attack', foe.id, []), 'Перезарядка', 'сразу второе действие нельзя');
 // Свои — не цель для атаки
@@ -123,7 +146,11 @@ if (target) {
   db.save('groupBattle');
   gb.act(med, 'heal', target.id, []);
   const healed = gb.battleState(med).allies.find((a) => a.id === target.id).hp;
-  ok(healed === 500 + gb.HEAL_AMOUNT, `медик вылечил: 500 → ${healed}`);
+  // Лечение гуляет в диапазоне, критическое — в своём, гораздо выше
+  const gain = healed - 500;
+  ok((gain >= gb.HEAL_MIN && gain <= gb.HEAL_MAX)
+     || (gain >= gb.HEAL_CRIT_MIN && gain <= gb.HEAL_CRIT_MAX),
+     `медик вылечил на ${gain} (обычное ${gb.HEAL_MIN}–${gb.HEAL_MAX}, крит ${gb.HEAL_CRIT_MIN}–${gb.HEAL_CRIT_MAX})`);
   const b4 = db.load('groupBattle', {}).battle;
   b4.fighters[ps[0].id].lastActionAt = 0; db.save('groupBattle');
   fails(() => gb.act(ps[0], 'heal', target.id, []), 'только медик', 'боец лечить не может');
@@ -185,8 +212,8 @@ ok(heals > 0, `медики лечат: ${heals} раз`);
 ok(guards > 0, `защитники прикрывают: ${guards} раз`);
 const src = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
 ok(/weakestAlly = allies\.slice\(\)\.sort/.test(src), 'боты выбирают того, кому хуже всех');
-ok(/low \|\| Math\.random\(\) < 0\.7/.test(src),
-   'медик лечит обязательно ниже половины здоровья, иначе с вероятностью 70%');
+ok(/low \|\| Math\.random\(\) < 0\.65/.test(src),
+   'медик лечит обязательно ниже половины, иначе с вероятностью около двух третей');
 ok(/bot\.energy >= COST\.heal\.energy/.test(src), 'без энергии медик только атакует');
 ok(/bot\.role === 'guardian' && weakestAlly/.test(src), 'защитник в приоритете прикрывает');
 
@@ -234,6 +261,7 @@ gb.register(ps[1], 'guardian', []);
 gb.register(ps[2], 'medic', []);
 const sx = db.load('groupBattle', {}); sx.slot = Date.now() + 10000; db.save('groupBattle'); gb.tick();
 const sy = db.load('groupBattle', {}); sy.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+skipPrepare("groupBattle");
 for (const p of ps) gb.enter(p, []);
 const bx = db.load('groupBattle', {}).battle;
 for (const p of ps) bx.fighters[p.id].team = 0;
@@ -273,6 +301,7 @@ sz.registered = {}; sz.battle = null; sz.slot = 0; db.save('groupBattle');
 gb.register(ps[0], 'fighter', []); gb.register(ps[1], 'guardian', []);
 const s1 = db.load('groupBattle', {}); s1.slot = Date.now() + 10000; db.save('groupBattle'); gb.tick();
 const s2b = db.load('groupBattle', {}); s2b.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+skipPrepare("groupBattle");
 gb.enter(ps[0], []); gb.enter(ps[1], []);
 const bz = db.load('groupBattle', {}).battle;
 const attacker = bz.fighters[ps[0].id];
@@ -336,9 +365,10 @@ ok(/🏅 Рейтинг групповых боёв/.test(war2), 'рейтинг
 const ratingPos = war2.indexOf('🏅 Рейтинг групповых боёв');
 const sectionPos = war2.indexOf('data-section="upgrades"');
 ok(sectionPos < ratingPos, 'кнопки разделов стоят перед рейтингом');
-ok(/gb-rank\$\{r\.unlocked \? '' : ' locked'\}/.test(war2), 'закрытые категории помечаются');
-ok(/r\.unlocked \? r\.icon : '🔒'/.test(war2), 'у закрытых замок вместо значка');
-ok(/ещё ' \+ UI\.fmtNum\(r\.left\)/.test(war2), 'показано, сколько очков не хватает');
+// База снабжения теперь с торговцами: закрытые помечаются замком
+ok(/sup-trader\$\{t\.unlocked \? '' : ' locked'\}/.test(war2), 'закрытые торговцы помечаются');
+ok(/🔒 рейтинг ' \+ UI\.fmtNum\(t\.need\)/.test(war2), 'у закрытых виден нужный рейтинг');
+ok(/осталось набрать \$\{UI\.fmtNum\(t\.left\)\}/.test(war2), 'показано, сколько не хватает');
 ok(/gb-best/.test(war2), 'звания лучших отмечаются в итогах боя');
 ok(/Защита<\/th>/.test(war2), 'в итогах есть столбец защищённого урона');
 const css2 = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
@@ -398,6 +428,7 @@ gb.register(ps[0], 'fighter', []);
 gb.register(ps[1], 'fighter', []);
 const sw1 = db.load('groupBattle', {}); sw1.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const sw2 = db.load('groupBattle', {}); sw2.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+skipPrepare("groupBattle");
 gb.enter(ps[0], []); gb.enter(ps[1], []);
 const bw = db.load('groupBattle', {}).battle;
 bw.fighters[ps[1].id].team = bw.fighters[ps[0].id].team;
@@ -485,6 +516,7 @@ gb.register(ps[0], 'fighter', []);
 gb.register(ps[1], 'fighter', []);
 const e1 = db.load('groupBattle', {}); e1.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const e2 = db.load('groupBattle', {}); e2.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+skipPrepare("groupBattle");
 const be = db.load('groupBattle', {}).battle;
 ok(be.state === 'running', 'бой идёт сразу, без ожидания');
 const slow = be.fighters[ps[1].id];
@@ -529,8 +561,11 @@ ok(/box\.dataset\.mode === 'battle' && App\._sameAsBefore\('gbBattle'/.test(warE
    'боевое окно не трогает разметку, если ничего не изменилось');
 ok(/box\.dataset\.mode === 'lobby' && App\._sameAsBefore\('gbLobby'/.test(warE),
    'витрина тоже');
-ok(!/\}, 1000\);\n\};/.test(warE.slice(warE.indexOf('App.renderGroupBattle'))),
-   'секундного опроса в групповом бою нет');
+// Опрос сервера в бою — раз в 5 секунд. Секундные таймеры остались
+// только для локальных отсчётов (они сервер не дёргают).
+const battleBlock = warE.slice(warE.indexOf('App.renderGroupBattle'), warE.indexOf('App.renderUpgradesPage'));
+ok(!/renderGroupBattle\(\);\s*\n\s*\}, 1000\)/.test(battleBlock),
+   'секундного опроса сервера в групповом бою нет');
 const intervals = [...warE.matchAll(/_(?:gb|arena)Timer = setInterval\([\s\S]{0,200}?\}, (\d+)\)/g)]
   .map((m) => Number(m[1]));
 ok(intervals.length > 0 && intervals.every((x) => x >= 5000),
@@ -581,6 +616,7 @@ sc.registered = {}; sc.battle = null; sc.slot = 0; db.save('groupBattle');
 gb.register(ps[0], 'fighter', []);
 const c1t = db.load('groupBattle', {}); c1t.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const c2t = db.load('groupBattle', {}); c2t.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+skipPrepare("groupBattle");
 gb.enter(ps[0], []);
 // Три «хода» с интервалом больше отката
 let botActs = 0;
@@ -621,6 +657,89 @@ ok(/misses = 0;/.test(warR), 'счётчик сбрасывается при у�
 // Запасной расчёт от секунд
 ok((warR.match(/Date\.now\(\) \+ \(d\.secondsLeft \|\| 0\) \* 1000/g) || []).length >= 2,
    'если время старта не пришло, считаем от оставшихся секунд');
+
+console.log('\n── 29. Баланс ролей ──');
+const srcR = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/label: 'Штурмовик'/.test(srcR), 'боец переименован в штурмовика');
+// Каждая роль отличается от базы ровно на четверть
+ok(/fighter:[\s\S]{0,200}atkMul: 1\.25[\s\S]{0,80}hpMul: 1\.00/.test(srcR),
+   'штурмовик: +25% урона, без минусов');
+ok(/guardian:[\s\S]{0,220}atkMul: 0\.75[\s\S]{0,120}hpMul: 1\.25/.test(srcR),
+   'защитник: +25% здоровья, −25% урона');
+ok(/guardian:[\s\S]{0,220}dmgReduce: 0\.25/.test(srcR), 'и −25% к получаемому урону');
+ok(/medic:[\s\S]{0,220}atkMul: 0\.75[\s\S]{0,140}energyMul: 1\.25/.test(srcR),
+   'медик: +25% энергии, −25% урона');
+ok(gb.COST.heal.energy === 50 && gb.COST.guard.energy === 50,
+   `лечение и прикрытие стоят по ${gb.COST.heal.energy} энергии`);
+ok(gb.GUARD_MS === 20000, `прикрытие держится ${gb.GUARD_MS / 1000} секунд`);
+ok(gb.HEAL_MIN === 25 && gb.HEAL_MAX === 45, `обычное лечение ${gb.HEAL_MIN}–${gb.HEAL_MAX}`);
+ok(gb.HEAL_CRIT_MIN === 90 && gb.HEAL_CRIT_MAX === 220,
+   `критическое лечение ${gb.HEAL_CRIT_MIN}–${gb.HEAL_CRIT_MAX}`);
+const guSrc = fs.readFileSync(path.join(ROOT, 'src/services/groupUpgrades.ts'), 'utf8');
+ok(/healCritChance: 0\.20/.test(guSrc), 'базовый шанс крита лечения 20%');
+
+console.log('\n── 30. Запасы зависят от роли ──');
+{
+  const dir = '/tmp/generals-roles-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/groupBattle',
+                   '/dist/src/services/player', '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const a6 = require(ROOT + '/dist/src/services/auth');
+  const p6 = require(ROOT + '/dist/src/services/player');
+  const gb6 = require(ROOT + '/dist/src/services/groupBattle');
+  const db6 = require(ROOT + '/dist/src/core/db');
+
+  for (const n of ['Штурм', 'Защит', 'Медиком']) {
+    await a6.register(n, 'пароль123', n + '@r.ru', 'ru', '1.1.1.1', 'UA');
+  }
+  const U6 = p6.users();
+  const by6 = (n) => U6[Object.keys(U6).find((id) => U6[id].name === n)];
+  gb6.register(by6('Штурм'), 'fighter', []);
+  gb6.register(by6('Защит'), 'guardian', []);
+  gb6.register(by6('Медиком'), 'medic', []);
+  const st6 = db6.load('groupBattle', {});
+  st6.slot = Date.now() - 1000;
+  db6.save('groupBattle');
+  gb6.tick();
+  const b6 = db6.load('groupBattle', {}).battle;
+  const f6 = b6.fighters[by6('Штурм').id];
+  const g6 = b6.fighters[by6('Защит').id];
+  const m6 = b6.fighters[by6('Медиком').id];
+  ok(f6.maxHp === 1500, `штурмовик: ${f6.maxHp} HP (база)`);
+  ok(g6.maxHp === 1875, `защитник: ${g6.maxHp} HP (+25%)`);
+  ok(m6.maxEnergy === 1250, `медик: ${m6.maxEnergy} энергии (+25%)`);
+  ok(f6.maxEnergy === 1000 && g6.maxEnergy === 1000, 'у остальных энергия базовая');
+  process.chdir(cwd);
+}
+
+console.log('\n── 31. Улучшения по ступеням ──');
+const upSrc = fs.readFileSync(path.join(ROOT, 'src/services/groupUpgrades.ts'), 'utf8');
+ok(/tierSkills: TIERS\.map/.test(upSrc), 'навыки разложены по ступеням');
+for (const [name, color] of [['Новички', '#ffffff'], ['Опытные', '#5fbf4a'],
+                             ['Продвинутые', '#4a9fe0'], ['Спецотряд', '#a978d4'],
+                             ['Элита', '#e05555']]) {
+  ok(new RegExp(`name: '${name}'[\\s\\S]{0,80}color: '${color}'`).test(upSrc),
+     `${name} — цвет ${color}`);
+}
+ok(/const prevDone = level >= t\.from - 1/.test(upSrc),
+   'следующая ступень открывается только после предыдущей');
+ok(/blockedByPrev/.test(upSrc), 'блокировка по предыдущей ступени отдаётся на экран');
+const warR2 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/tier-card/.test(warR2), 'ступени рисуются отдельными карточками');
+ok(/style="--tier:\$\{t\.color\}"/.test(warR2), 'цвет ступени применяется');
+ok(/Сначала пройдите предыдущую ступень/.test(warR2), 'игроку объяснено, почему закрыто');
+
+console.log('\n── 32. Правила свёрнуты ──');
+ok(/rules-toggle/.test(warR2), 'правила прячутся за кнопкой');
+ok(/data-rules-body/.test(warR2), 'список правил помечен');
+ok(/style="display:none"/.test(warR2), 'по умолчанию свёрнуты');
+ok(/App\._bindRules/.test(warR2), 'разворачивание работает в обоих режимах');
+ok((warR2.match(/data-rules="/g) || []).length === 2, 'и на арене, и в групповых боях');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

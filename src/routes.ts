@@ -118,6 +118,34 @@ function registerRoutes(app: any) {
       staffLabel: require('./services/roles').roleLabel(req.user) || null,
       staffTag: require('./services/roles').roleTag(req.user) || null,
       vip: require('./services/vip').isVip(req.user),
+      // Состояние боёв: нужно на каждом экране — показать плашку с
+      // отсчётом и запереть игрока в бою, где бы он ни находился
+      combat: (() => {
+        try {
+          const a = require('./services/arena');
+          const g = require('./services/groupBattle');
+          const av = a.view(req.user, 'elite');
+          const av2 = a.view(req.user, 'basic');
+          const gv = g.view(req.user);
+          const inArena = a.busyState(req.user.id);
+          const inGroup = g.busyState(req.user.id);
+          const arenaBattle = a.battleState(req.user);
+          const groupBattle = g.battleState(req.user);
+          const fighting = !!(arenaBattle.active && arenaBattle.me && arenaBattle.me.alive)
+            || !!(groupBattle.active && groupBattle.me && groupBattle.me.alive);
+          const regDiv = av.iAmRegistered ? 'elite' : (av2.iAmRegistered ? 'basic' : null);
+          return {
+            fighting,
+            where: (arenaBattle.active && arenaBattle.me && arenaBattle.me.alive) ? 'arena'
+              : ((groupBattle.active && groupBattle.me && groupBattle.me.alive) ? 'group' : null),
+            registered: !!inArena || !!inGroup,
+            regWhere: regDiv ? 'arena' : (gv.iAmRegistered ? 'group' : null),
+            regDiv,
+            startsAt: regDiv ? (regDiv === 'elite' ? av.nextStartAt : av2.nextStartAt)
+              : (gv.iAmRegistered ? gv.nextStartAt : 0),
+          };
+        } catch (e) { return { fighting: false, where: null, registered: false, regWhere: null, startsAt: 0 }; }
+      })(),
       accountLogin: (req.user as any).accountLogin || '',
       vipUntil: Number((req.user as any).vipUntil || 0),
       // Зоны админ-панели, доступные этому сотруднику
@@ -458,12 +486,19 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/group/battle',     (req) => gb.battleState(req.user, String(req.query.watch || '')));
   app.add('POST', '/api/group/act',        act((req, n) =>
     gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
+  app.add('POST', '/api/group/leave',      act((req, n) => gb.leave(req.user, n)));
 
   // Улучшения групповых боёв
   const gup = require('./services/groupUpgrades');
   app.add('GET',  '/api/group/upgrades',   (req) => gup.view(req.user));
   app.add('POST', '/api/group/upgrade',    act((req, n) =>
     gup.upgrade(req.user, String(req.body.skill || ''), n)));
+
+  // База снабжения: торговцы и временные усиления
+  const gsup = require('./services/groupSupply');
+  app.add('GET',  '/api/group/supply',      (req) => gsup.view(req.user));
+  app.add('POST', '/api/group/supply/buy',  act((req, n) =>
+    gsup.buy(req.user, String(req.body.item || ''), n)));
 
   app.add('GET',  '/api/group/:kind',         (req) => groups.view(req.user, req.params.kind));
   app.add('GET',  '/api/group/:kind/invites', (req) => ({ invites: groups.pendingInvites(req.user, req.params.kind) }));
@@ -579,6 +614,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/arena/attack',     act((req) => arena.attack(req.user)));
   app.add('POST', '/api/arena/switch',     act((req) => arena.switchTarget(req.user)));
   app.add('POST', '/api/arena/skill',      act((req) => arena.useSkill(req.user, String(req.body.skill || ''))));
+  app.add('POST', '/api/arena/leave',      act((req, n) => arena.leave(req.user, n)));
 
   // ═══ КАБИНЕТ: до трёх персонажей на аккаунт ══════════════════════
   const account = require('./services/account');

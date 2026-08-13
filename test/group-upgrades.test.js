@@ -134,7 +134,8 @@ ok(up.ammo === 80, `боеприпасы: 50 → ${up.ammo} (+30)`);
 ok(up.critChance === 0.30, `крит: 20% → ${Math.round(up.critChance * 100)}%`);
 ok(up.dodgeChance === 0.30, `уворот: 20% → ${Math.round(up.dodgeChance * 100)}%`);
 ok(Math.abs(up.damageReduce - 0.07) < 1e-6, `снижение урона: ${(up.damageReduce * 100).toFixed(1)}%`);
-ok(up.healCritChance === 0.10, `крит лечения: ${up.healCritChance * 100}%`);
+// Базовый шанс крита лечения 20%, улучшения добавляют сверху
+ok(up.healCritChance === 0.30, `крит лечения: 20% базовых + 10% от прокачки = ${up.healCritChance * 100}%`);
 ok(up.rewardBonus === 0.10, `награда: +${up.rewardBonus * 100}%`);
 // Потолки, чтобы прокачка не сломала бой
 pro.gbUpgrades = { crit: 50, dodge: 50, armor: 50, reward: 0, healCrit: 0, hp: 0, energy: 0, ammo: 0 };
@@ -150,7 +151,28 @@ gb.register(pro, 'fighter', []);
 gb.register(plain, 'fighter', []);
 const g1 = db.load('groupBattle', {}); g1.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const g2 = db.load('groupBattle', {}); g2.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+// Пропускаем подготовку: ждать 30 секунд в тесте незачем
+{
+  const st = db.load('groupBattle', {});
+  if (st.battle && st.battle.state === 'preparing') {
+    // Отмечаем всех явившимися: не открывшие комнату выбывают, а в
+    // тесте комнату никто не открывает
+    for (const fr of Object.values(st.battle.fighters)) fr.seen = true;
+    st.battle.prepareUntil = Date.now() - 1;
+    db.save('groupBattle');
+    gb.tick();
+  }
+}
 gb.enter(pro, []); gb.enter(plain, []);
+// Усыпляем ботов: здесь проверяются улучшения игрока, а агрессивные
+// боты успевали добить проверяющего до конца проверки
+{
+  const st = db.load('groupBattle', {});
+  if (st.battle) {
+    st.battle.lastBotAt = Date.now() + 3600000;
+    db.save('groupBattle');
+  }
+}
 const bt = db.load('groupBattle', {}).battle;
 const fPro = bt.fighters[pro.id], fPlain = bt.fighters[plain.id];
 ok(fPro.maxHp === 1800, `в бою у прокачанного ${fPro.maxHp} HP`);
@@ -165,6 +187,9 @@ let dodged = 0;
 for (let i = 0; i < 5; i++) {
   const cur = db.load('groupBattle', {}).battle;
   cur.fighters[pro.id].lastActionAt = 0;
+  // Боты агрессивные и могут добить проверяющего — держим его живым
+  cur.fighters[pro.id].alive = true;
+  cur.fighters[pro.id].hp = cur.fighters[pro.id].maxHp;
   db.save('groupBattle');
   const before = db.load('groupBattle', {}).battle.fighters[foe.id].hp;
   try { gb.act(pro, 'attack', foe.id, []); } catch (e) {}
@@ -204,8 +229,8 @@ gb.act(pro, 'attack', foe.id, []);
 const reduced = 1500 - db.load('groupBattle', {}).battle.fighters[foe.id].hp;
 ok(reduced < normDmg, `снижение урона работает: ${reduced} вместо ${normDmg}`);
 const srcGb = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
-ok(/rewardBonus > 0\) tokens = Math\.round\(tokens \* \(1 \+ rewardBonus\)\)/.test(srcGb),
-   'навык награды увеличивает боевые очки за бой');
+ok(/tokens = Math\.round\(tokens \* \(1 \+ rewardBonus \+ moneyBuff\)\)/.test(srcGb),
+   'навык награды и усиление из базы снабжения увеличивают боевые очки');
 ok(/battlePoints/.test(srcGb), 'награда начисляется в боевых очках');
 ok(/UP\.critMult\(\)/.test(srcGb), 'бой берёт случайный множитель крита');
 ok(/healCritChance/.test(srcGb), 'крит лечения применяется медиком');

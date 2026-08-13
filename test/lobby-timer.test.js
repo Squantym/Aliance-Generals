@@ -164,7 +164,8 @@ me.gold = 10000;
   db.save('groupBattle');
   gb.view(me);
   const after = db.load('groupBattle', {});
-  ok(!!after.battle && after.battle.state === 'running', 'бой стартовал, а не завис снова');
+  ok(!!after.battle && (after.battle.state === 'preparing' || after.battle.state === 'running'),
+     `бой стартовал (${after.battle && after.battle.state}), а не завис снова`);
   ok(Object.keys(after.registered).length === 0, 'лобби очищено после старта');
 }
 
@@ -277,6 +278,8 @@ console.log('\n── 8. Очередь не виснет при идущем б
   ok(!!db2.load('arena', {}).divs.elite.battle, 'бой на арене создан');
   st = db2.load('arena', {}); st.divs.elite.slot = Date.now() - 1000; db2.save('arena');
   arena2.tick();
+  // Отсчёт следующего сбора идёт, даже пока бой в подготовке или в разгаре
+  arena2.tick();
   const av = arena2.view(list2[0], 'elite');
   ok(av.secondsLeft > 0, `отсчёт арены идёт при живом бое: ${av.secondsLeft} с`);
 
@@ -340,7 +343,8 @@ console.log('\n── 10. Групповые: время вышло — доби
   const st4 = db4.load('groupBattle', {}); st4.slot = Date.now() - 1000; db4.save('groupBattle');
   gb4.tick();
   const b4 = db4.load('groupBattle', {}).battle;
-  ok(!!b4 && b4.state === 'running', 'бой состоялся даже с одним человеком');
+  ok(!!b4 && (b4.state === 'preparing' || b4.state === 'running'),
+     `бой состоялся даже с одним человеком (${b4 && b4.state})`);
   const fs4 = Object.values(b4.fighters);
   ok(fs4.length === 10, `все места заняты: ${fs4.length}`);
   ok(fs4.filter((f) => f.isBot).length === 9, 'свободные места заняли боты');
@@ -354,6 +358,82 @@ console.log('\n── 10. Групповые: время вышло — доби
   ok(/Бой не отменяется никогда/.test(gbSrc4), 'правило записано в коде');
   process.chdir(cwd);
 }
+
+console.log('\n── 11. Нельзя быть в двух режимах ──');
+{
+  const dir = '/tmp/generals-both-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/arena',
+                   '/dist/src/services/groupBattle', '/dist/src/services/player',
+                   '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const a5 = require(ROOT + '/dist/src/services/auth');
+  const p5 = require(ROOT + '/dist/src/services/player');
+  const ar5 = require(ROOT + '/dist/src/services/arena');
+  const gb5 = require(ROOT + '/dist/src/services/groupBattle');
+
+  await a5.register('Двойной', 'пароль123', 'db@t.ru', 'ru', '1.1.1.1', 'UA');
+  const who = Object.values(p5.users())[0];
+  who.gold = 10000;
+
+  ar5.register(who, 'elite', []);
+  let blocked = false;
+  try { gb5.register(who, 'fighter', []); } catch (e) { blocked = /на арене/.test(e.message); }
+  ok(blocked, 'записанный на арену не попадёт в групповые бои');
+
+  ar5.unregister(who, 'elite', []);
+  gb5.register(who, 'fighter', []);
+  let blocked2 = false;
+  try { ar5.register(who, 'elite', []); } catch (e) { blocked2 = /групповых боях/.test(e.message); }
+  ok(blocked2, 'записанный в групповые не попадёт на арену');
+  process.chdir(cwd);
+}
+
+console.log('\n── 12. Подготовка и выход из боя ──');
+const arSrc = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
+const gbSrc5 = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/const PREPARE_MS = 30 \* 1000/.test(arSrc), 'на арене подготовка 30 секунд');
+ok(/const PREPARE_MS = 30 \* 1000/.test(gbSrc5), 'в групповых боях тоже');
+ok(/state: 'preparing'/.test(arSrc) && /state: 'preparing'/.test(gbSrc5),
+   'бой начинается с подготовки');
+ok(/function leave\(user: User, notices: Notices\)/.test(arSrc), 'с арены можно выйти');
+ok(/function leave\(user: User, notices: Notices\)/.test(gbSrc5), 'из группового боя тоже');
+ok(/Награды не начислены/.test(arSrc), 'при выходе награды не дают');
+
+console.log('\n── 13. Урон и цели ботов ──');
+ok(/const ATK_MIN = 25/.test(arSrc) && /const ATK_MAX = 35/.test(arSrc),
+   'урон на арене гуляет в диапазоне 25–35');
+ok(/ATK_MIN \+ Math\.floor\(Math\.random\(\)/.test(arSrc), 'разброс применяется при ударе');
+ok(/Цель выбираем случайно, а не самого слабого/.test(gbSrc5),
+   'боты бьют случайные цели, а не фокусируются на одном');
+ok(/Math\.random\(\) < 0\.5/.test(gbSrc5), 'в половине случаев добивают раненого — боты агрессивные');
+
+console.log('\n── 14. Плашка боя и запрет перемещения ──');
+const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+ok(/updateCombatBar\(\)/.test(appSrc), 'плашка боя реализована');
+ok(/bar\.id = 'combat-bar'/.test(appSrc), 'плашка видна поверх экранов');
+ok(/cmb\.fighting && name !== 'war'/.test(appSrc), 'во время боя переходы закрыты');
+ok(/Сначала завершите бой/.test(appSrc), 'игроку объясняют, почему нельзя уйти');
+ok(/App\._combatTimer = setInterval\(paint, 1000\)/.test(appSrc), 'отсчёт в плашке живой');
+ok(/id="cb-go"/.test(appSrc), 'есть кнопка перехода к бою');
+const routesSrc5 = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
+ok(/combat: \(\(\) => \{/.test(routesSrc5), 'состояние боя приходит в данных игрока');
+
+console.log('\n── 15. Интерфейс боя ──');
+const warSrc5 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/id="ar-attack-label"/.test(warSrc5), 'на кнопке атаки живой отсчёт отката');
+ok(/App\._arenaBtnTimer = setInterval/.test(warSrc5), 'отсчёты обновляются каждые 0.1 с');
+ok(/data-active-until/.test(warSrc5), 'у умений видно время действия');
+ok(/ar-leave/.test(warSrc5) && /gb-leave/.test(warSrc5),
+   'кнопки выхода есть в обоих режимах');
+ok(/prep-timer/.test(warSrc5), 'комната подготовки с отсчётом');
+ok(/rt-badge/.test(warSrc5), 'рейтинг показан рядом с именами');
+const cssSrc5 = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+ok(/\.arena-row \.arena-mini-hp \{ flex: 1/.test(cssSrc5), 'полосы здоровья во всю ширину');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

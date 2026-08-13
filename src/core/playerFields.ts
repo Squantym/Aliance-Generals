@@ -54,6 +54,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   killedById:         { owner: 'groupBattle', note: 'идентификатор добившего' },
   battlePoints:       { owner: 'groupBattle', note: 'боевые очки — валюта групповых боёв, тратится на улучшения' },
   gbUpgrades:         { owner: 'groupBattle', note: 'уровни улучшений групповых боёв' },
+  gbBuffs:            { owner: 'groupBattle', note: 'временные усиления из базы снабжения' },
+  atkBonus:           { owner: 'groupBattle', note: 'прибавка к урону от усиления (поле бойца)' },
   st:                 { owner: 'groupBattle', note: 'характеристики бойца с улучшениями (поле боя)' },
   vipDaily:           { owner: 'vip',        note: 'суточные счётчики VIP: лечение, иммунитет, замены' },
   lastFreeRenameAt:   { owner: 'vip',        note: 'когда была бесплатная смена позывного' },
