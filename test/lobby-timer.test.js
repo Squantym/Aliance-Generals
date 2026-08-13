@@ -549,6 +549,20 @@ const admJs = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 ok(/\$\{prefix\}-levels/.test(admJs) && /\$\{prefix\}-bp/.test(admJs) && /\$\{prefix\}-gbr/.test(admJs),
    'поля есть в форме выдачи');
 ok(/levels: v\(prefix\+'-levels'\)/.test(admJs), 'значения уходят на сервер');
+// Массовая выдача проверяет свой список полей — он отставал от формы,
+// и новые поля не принимались: «укажите хотя бы один ресурс»
+const grantAllKeys = /const keys = \[([\s\S]*?)\];/.exec(admF);
+ok(!!grantAllKeys, 'список полей массовой выдачи найден');
+for (const k of ['levels', 'battlePoints', 'gbRating']) {
+  ok(grantAllKeys[1].includes(`'${k}'`), `массовая выдача принимает «${k}»`);
+}
+// Все поля формы должны быть в этом списке — иначе снова разойдётся
+const formKeys = [...admJs.matchAll(/(\w+): v\(prefix\+'-\w+'\)/g)].map((m) => m[1])
+  .filter((k) => k !== 'giftNote' && k !== 'bank');
+const missing = formKeys.filter((k) => !grantAllKeys[1].includes(`'${k}'`));
+ok(missing.length === 0,
+   missing.length ? `поля формы не принимаются массовой выдачей: ${missing.join(', ')}`
+                  : `все ${formKeys.length} полей формы приняты массовой выдачей`);
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

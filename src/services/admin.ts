@@ -414,8 +414,12 @@ function grant(adminUser: User, body: any, notices: Notices) {
 function grantAll(adminUser: User, body: any, notices: Notices) {
   assertZone(adminUser, 'economy', 'Массовая выдача');
   const all = player.users();
-  const keys = ['dollars','gold','skillPoints','ears','tokens','xp'];
-  const hasAny = keys.some(k => u.toInt(body[k], 0) !== 0);
+  // Список полей должен совпадать с тем, что умеет applyGrant. Раньше
+  // он задавался отдельно и отставал: новые поля появлялись в форме, а
+  // массовая выдача про них не знала и отвечала «укажите ресурс».
+  const keys = ['dollars', 'gold', 'skillPoints', 'ears', 'tokens', 'xp',
+                'levels', 'battlePoints', 'gbRating'];
+  const hasAny = keys.some((k) => u.toInt(body[k], 0) !== 0);
   if (!hasAny) throw new u.ApiError('Не указано, что выдавать');
 
   const customNote = String(body.giftNote || '').trim().slice(0, 300);
