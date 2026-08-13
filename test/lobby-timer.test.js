@@ -564,6 +564,25 @@ ok(missing.length === 0,
    missing.length ? `поля формы не принимаются массовой выдачей: ${missing.join(', ')}`
                   : `все ${formKeys.length} полей формы приняты массовой выдачей`);
 
+// Третий список — проверка в браузере ПЕРЕД отправкой. Он тоже отставал,
+// и кнопка ругалась «укажите ресурс», не доходя до сервера.
+ok(/GRANT_KEYS:/.test(admJs), 'список полей выдачи задан в одном месте');
+ok(/Admin\.GRANT_KEYS\.some/.test(admJs), 'проверка перед отправкой берёт его же');
+const clientKeys = /GRANT_KEYS: \[([\s\S]*?)\],/.exec(admJs);
+ok(!!clientKeys, 'список найден');
+for (const k of ['levels', 'battlePoints', 'gbRating']) {
+  ok(clientKeys[1].includes(`'${k}'`), `проверка в браузере знает про «${k}»`);
+}
+// Клиент и сервер должны видеть одни и те же поля
+const clientSet = (clientKeys[1].match(/'(\w+)'/g) || []).map((x) => x.replace(/'/g, ''));
+const serverSet = (grantAllKeys[1].match(/'(\w+)'/g) || []).map((x) => x.replace(/'/g, ''));
+const onlyClient = clientSet.filter((k) => !serverSet.includes(k));
+const onlyServer = serverSet.filter((k) => !clientSet.includes(k));
+ok(onlyClient.length === 0 && onlyServer.length === 0,
+   (onlyClient.length || onlyServer.length)
+     ? `списки разошлись — только в браузере: ${onlyClient}, только на сервере: ${onlyServer}`
+     : `браузер и сервер видят одни и те же ${clientSet.length} полей`);
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

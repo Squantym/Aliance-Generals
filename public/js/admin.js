@@ -1798,6 +1798,13 @@ const Admin = {
       <textarea id="${prefix}-note" placeholder="Текст сообщения от администратора…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>`;
   },
 
+  // Поля выдачи в одном месте. Раньше список повторялся трижды — в
+  // форме, в проверке перед отправкой и на сервере — и расходился:
+  // поле добавляли в форму, а проверка его не знала и отвечала
+  // «укажите хотя бы один ресурс», не доходя до сервера.
+  GRANT_KEYS: ['dollars', 'gold', 'xp', 'skillPoints', 'ears', 'tokens',
+               'levels', 'battlePoints', 'gbRating'],
+
   _grantVals(prefix) {
     const v = id => (document.getElementById(id) || {}).value || '';
     return {
@@ -2580,7 +2587,7 @@ const Admin = {
 
   async submitGrantAll() {
     const vals = Admin._grantVals('all');
-    const hasAny = ['dollars','gold','xp','skillPoints','ears','tokens'].some(k => parseInt(vals[k]) !== 0 && vals[k] !== '');
+    const hasAny = Admin.GRANT_KEYS.some((k) => vals[k] !== '' && parseInt(vals[k], 10) !== 0);
     if (!hasAny) { UI.toast('⛔ Укажите хотя бы один ресурс'); return; }
     if (!await UI.confirm('Выдать ресурсы ВСЕМ игрокам?', {title:'Массовая выдача', icon:'🎁', okText:'Выдать', danger:true})) return;
     try {
