@@ -94,7 +94,9 @@ const v2 = arena.view(ps[0], 'elite');
 // на минуту человек терял бы деньги ни за что
 // Сначала подготовка, потом бой: игрок должен успеть открыть комнату
 ok(v2.battle && v2.battle.state === 'preparing', 'сначала идёт подготовка');
-ok(v2.battle.canEnter === false, 'выходить на арену не требуется');
+// Теперь в комнату нужно зайти: не пришёл — за тебя играет бот
+ok(v2.battle.canEnter === true, 'во время подготовки зовут в комнату');
+ok(v2.battle.needEnter === true, 'признак «нужно занять место» выставлен');
 ok(v2.battle.pot === 200, `банк боя: ${v2.battle.pot}`);
 const prep = arena.battleState(ps[0]);
 ok(prep.preparing === true, 'состояние подготовки видно на экране');

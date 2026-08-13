@@ -915,6 +915,7 @@ App._arenaTimer = null;
 
 App.renderArena = async () => {
   clearInterval(App._arenaTimer);
+  document.body.classList.remove('combat-fullscreen');
   const box = document.getElementById('arena-box');
   if (!box) return;
 
@@ -1168,6 +1169,7 @@ App.renderArenaBattle = async () => {
     ['smoke', '🌫', 'Дым'],
   ];
 
+  document.body.classList.add('combat-fullscreen');
   box.innerHTML = `
     <div class="card arena-fight">
       <div class="arena-fight-head">
@@ -1410,6 +1412,8 @@ App._gbTimer = null;
 
 App.renderGroup = async () => {
   clearInterval(App._gbTimer);
+  // Витрина — обычный экран: полноэкранный режим боя снимаем
+  document.body.classList.remove('combat-fullscreen');
   const box = document.getElementById('gb-box');
   if (!box) return;
 
@@ -1660,8 +1664,10 @@ App.renderGroupBattle = async () => {
   const pct = (h, m) => Math.max(0, Math.round(h / m * 100));
   const me = b.me;
 
-  // Комната подготовки: бой ещё не начался, все занимают места
+  // Комната подготовки: бой ещё не начался, все занимают места.
+  // Открывается на весь экран — остального интерфейса не видно.
   if (b.preparing) {
+    document.body.classList.add('combat-fullscreen');
     const teamList = (arr, title, cls) => `
       <div class="prep-team ${cls}">
         <div class="prep-team-title">${title}</div>
@@ -1673,13 +1679,37 @@ App.renderGroupBattle = async () => {
             <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
           </div>`).join('')}
       </div>`;
+    const me2 = b.me;
     box.innerHTML = `
       <div class="card center prep-card">
-        <div class="arena-title">⏳ ПОДГОТОВКА К БОЮ</div>
-        <p class="muted small mt">Займите места — бой начнётся автоматически.</p>
+        <div class="arena-title">⏳ КОМНАТА ПОДГОТОВКИ</div>
+        <p class="muted small mt">Бой начнётся автоматически. Не уходите — за ушедших
+        будет играть бот, а поражение засчитают вам.</p>
         <div class="prep-timer" id="prep-left">${b.prepareLeftSec}</div>
         <p class="muted small">секунд до начала</p>
       </div>
+
+      <div class="card">
+        <div class="name">${me2.roleIcon} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
+        <div class="gb-bars mt">
+          <div class="gb-bar">
+            <span class="gb-bar-l">❤ HP</span>
+            <span class="gb-bar-t"><i class="gb-bar-hp" style="width:100%"></i></span>
+            <span class="gb-bar-n">${UI.fmtNum(me2.maxHp)}</span>
+          </div>
+          <div class="gb-bar">
+            <span class="gb-bar-l">⚡ Энергия</span>
+            <span class="gb-bar-t"><i class="gb-bar-en" style="width:100%"></i></span>
+            <span class="gb-bar-n">${UI.fmtNum(me2.maxEnergy)}</span>
+          </div>
+          <div class="gb-bar">
+            <span class="gb-bar-l">🎯 Боеприпасы</span>
+            <span class="gb-bar-t"><i class="gb-bar-am" style="width:100%"></i></span>
+            <span class="gb-bar-n">${me2.maxAmmo}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         ${teamList(b.allies, '🟢 Ваша команда', 'prep-ally')}
         ${teamList(b.enemies, '🔴 Противники', 'prep-foe')}
@@ -1697,8 +1727,9 @@ App.renderGroupBattle = async () => {
     return;
   }
 
-  // Итог боя
+  // Итог боя — возвращаем обычный интерфейс
   if (b.finished) {
+    document.body.classList.remove('combat-fullscreen');
     box.innerHTML = `
       <div class="card center gb-result-head">
         ${b.winnerTeam === -1 ? '<p style="font-size:44px">🤝</p>' : `
@@ -1765,25 +1796,38 @@ App.renderGroupBattle = async () => {
     return;
   }
 
+  document.body.classList.add('combat-fullscreen');
+
+  // Карточка бойца: полоса здоровья во всю ширину, под ней — кнопка
+  // действия с живым отсчётом отката. Иконка-кнопка сбоку была мелкой
+  // и не показывала, когда снова можно бить.
   const rowOf = (f, enemy) => `
-    <div class="gb-row${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
-      <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
-      <span class="grow">
-        <span class="gb-row-name">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
+    <div class="gb-card${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
+      <div class="gb-card-top">
+        <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
+        <span class="grow gb-card-name">
+          ${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
           <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
-          ${f.guarded ? '<span class="gb-guarded" title="Прикрыт">🛡</span>' : ''}</span>
-        <span class="gb-hp"><i style="width:${pct(f.hp, f.maxHp)}%"></i></span>
-      </span>
-      <span class="small muted gb-hp-num">${UI.fmtNum(f.hp)}</span>
+          ${f.guarded ? '<span class="gb-guarded" title="Прикрыт">🛡</span>' : ''}
+        </span>
+        <span class="gb-card-hp">${UI.fmtNum(f.hp)} / ${UI.fmtNum(f.maxHp)}</span>
+      </div>
+      <div class="gb-hp gb-hp-wide"><i style="width:${pct(f.hp, f.maxHp)}%"></i></div>
       ${f.alive ? `
-        <span class="gb-acts">
-          ${enemy ? `<button class="btn btn-inline gb-act" data-act="attack" data-id="${f.id}"
-                       ${me.cooldownLeftMs > 0 || me.ammo < 1 ? 'disabled' : ''}>⚔</button>` : ''}
-          ${!enemy && b.canHeal && !f.isMe ? `<button class="btn btn-inline gb-act" data-act="heal" data-id="${f.id}"
-                       ${me.cooldownLeftMs > 0 || me.energy < 120 ? 'disabled' : ''}>💉</button>` : ''}
-          ${!enemy && b.canGuard && !f.isMe ? `<button class="btn btn-inline gb-act" data-act="guard" data-id="${f.id}"
-                       ${me.cooldownLeftMs > 0 || me.energy < 80 ? 'disabled' : ''}>🛡</button>` : ''}
-        </span>` : '<span class="small muted">выбыл</span>'}
+        <div class="gb-card-acts">
+          ${enemy ? `<button class="btn gb-act gb-act-wide" data-act="attack" data-id="${f.id}"
+                       data-cd-until="${Date.now() + me.cooldownLeftMs}"
+                       ${me.cooldownLeftMs > 0 || me.ammo < 1 ? 'disabled' : ''}>
+                       <span class="gb-act-label">⚔ Атаковать</span></button>` : ''}
+          ${!enemy && b.canHeal && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
+                       data-cd-until="${Date.now() + me.cooldownLeftMs}"
+                       ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
+                       <span class="gb-act-label">➕ Лечить</span></button>` : ''}
+          ${!enemy && b.canGuard && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="guard" data-id="${f.id}"
+                       data-cd-until="${Date.now() + me.cooldownLeftMs}"
+                       ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
+                       <span class="gb-act-label">🛡 Прикрыть</span></button>` : ''}
+        </div>` : '<div class="gb-card-dead">выбыл из боя</div>'}
     </div>`;
 
   box.innerHTML = `
@@ -1884,6 +1928,22 @@ App.renderGroupBattle = async () => {
       App.renderGroupBattle();
     };
   });
+
+  // Живой отсчёт отката на всех кнопках действий
+  clearInterval(App._gbBtnTimer);
+  App._gbBtnTimer = setInterval(() => {
+    const btns = box.querySelectorAll('.gb-act[data-cd-until]');
+    if (!btns.length) { clearInterval(App._gbBtnTimer); return; }
+    btns.forEach((b2) => {
+      const left = Math.max(0, Number(b2.dataset.cdUntil || 0) - Date.now());
+      const label = b2.querySelector('.gb-act-label');
+      if (!label) return;
+      const base = b2.dataset.act === 'attack' ? '⚔ Атаковать'
+        : (b2.dataset.act === 'heal' ? '➕ Лечить' : '🛡 Прикрыть');
+      label.textContent = left > 0 ? `${base.split(' ')[0]} ${(left / 1000).toFixed(1)}` : base;
+      b2.disabled = left > 0;
+    });
+  }, 100);
 
   const gbLeave = document.getElementById('gb-leave');
   if (gbLeave) gbLeave.onclick = async () => {
@@ -2187,8 +2247,10 @@ App.renderGroupBattle = async () => {
   const pct = (h, m) => Math.max(0, Math.round(h / m * 100));
   const me = b.me;
 
-  // Комната подготовки: бой ещё не начался, все занимают места
+  // Комната подготовки: бой ещё не начался, все занимают места.
+  // Открывается на весь экран — остального интерфейса не видно.
   if (b.preparing) {
+    document.body.classList.add('combat-fullscreen');
     const teamList = (arr, title, cls) => `
       <div class="prep-team ${cls}">
         <div class="prep-team-title">${title}</div>
@@ -2200,13 +2262,37 @@ App.renderGroupBattle = async () => {
             <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
           </div>`).join('')}
       </div>`;
+    const me2 = b.me;
     box.innerHTML = `
       <div class="card center prep-card">
-        <div class="arena-title">⏳ ПОДГОТОВКА К БОЮ</div>
-        <p class="muted small mt">Займите места — бой начнётся автоматически.</p>
+        <div class="arena-title">⏳ КОМНАТА ПОДГОТОВКИ</div>
+        <p class="muted small mt">Бой начнётся автоматически. Не уходите — за ушедших
+        будет играть бот, а поражение засчитают вам.</p>
         <div class="prep-timer" id="prep-left">${b.prepareLeftSec}</div>
         <p class="muted small">секунд до начала</p>
       </div>
+
+      <div class="card">
+        <div class="name">${me2.roleIcon} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
+        <div class="gb-bars mt">
+          <div class="gb-bar">
+            <span class="gb-bar-l">❤ HP</span>
+            <span class="gb-bar-t"><i class="gb-bar-hp" style="width:100%"></i></span>
+            <span class="gb-bar-n">${UI.fmtNum(me2.maxHp)}</span>
+          </div>
+          <div class="gb-bar">
+            <span class="gb-bar-l">⚡ Энергия</span>
+            <span class="gb-bar-t"><i class="gb-bar-en" style="width:100%"></i></span>
+            <span class="gb-bar-n">${UI.fmtNum(me2.maxEnergy)}</span>
+          </div>
+          <div class="gb-bar">
+            <span class="gb-bar-l">🎯 Боеприпасы</span>
+            <span class="gb-bar-t"><i class="gb-bar-am" style="width:100%"></i></span>
+            <span class="gb-bar-n">${me2.maxAmmo}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         ${teamList(b.allies, '🟢 Ваша команда', 'prep-ally')}
         ${teamList(b.enemies, '🔴 Противники', 'prep-foe')}
@@ -2224,8 +2310,9 @@ App.renderGroupBattle = async () => {
     return;
   }
 
-  // Итог боя
+  // Итог боя — возвращаем обычный интерфейс
   if (b.finished) {
+    document.body.classList.remove('combat-fullscreen');
     box.innerHTML = `
       <div class="card center gb-result-head">
         ${b.winnerTeam === -1 ? '<p style="font-size:44px">🤝</p>' : `
@@ -2292,25 +2379,38 @@ App.renderGroupBattle = async () => {
     return;
   }
 
+  document.body.classList.add('combat-fullscreen');
+
+  // Карточка бойца: полоса здоровья во всю ширину, под ней — кнопка
+  // действия с живым отсчётом отката. Иконка-кнопка сбоку была мелкой
+  // и не показывала, когда снова можно бить.
   const rowOf = (f, enemy) => `
-    <div class="gb-row${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
-      <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
-      <span class="grow">
-        <span class="gb-row-name">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
+    <div class="gb-card${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
+      <div class="gb-card-top">
+        <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
+        <span class="grow gb-card-name">
+          ${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
           <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
-          ${f.guarded ? '<span class="gb-guarded" title="Прикрыт">🛡</span>' : ''}</span>
-        <span class="gb-hp"><i style="width:${pct(f.hp, f.maxHp)}%"></i></span>
-      </span>
-      <span class="small muted gb-hp-num">${UI.fmtNum(f.hp)}</span>
+          ${f.guarded ? '<span class="gb-guarded" title="Прикрыт">🛡</span>' : ''}
+        </span>
+        <span class="gb-card-hp">${UI.fmtNum(f.hp)} / ${UI.fmtNum(f.maxHp)}</span>
+      </div>
+      <div class="gb-hp gb-hp-wide"><i style="width:${pct(f.hp, f.maxHp)}%"></i></div>
       ${f.alive ? `
-        <span class="gb-acts">
-          ${enemy ? `<button class="btn btn-inline gb-act" data-act="attack" data-id="${f.id}"
-                       ${me.cooldownLeftMs > 0 || me.ammo < 1 ? 'disabled' : ''}>⚔</button>` : ''}
-          ${!enemy && b.canHeal && !f.isMe ? `<button class="btn btn-inline gb-act" data-act="heal" data-id="${f.id}"
-                       ${me.cooldownLeftMs > 0 || me.energy < 120 ? 'disabled' : ''}>💉</button>` : ''}
-          ${!enemy && b.canGuard && !f.isMe ? `<button class="btn btn-inline gb-act" data-act="guard" data-id="${f.id}"
-                       ${me.cooldownLeftMs > 0 || me.energy < 80 ? 'disabled' : ''}>🛡</button>` : ''}
-        </span>` : '<span class="small muted">выбыл</span>'}
+        <div class="gb-card-acts">
+          ${enemy ? `<button class="btn gb-act gb-act-wide" data-act="attack" data-id="${f.id}"
+                       data-cd-until="${Date.now() + me.cooldownLeftMs}"
+                       ${me.cooldownLeftMs > 0 || me.ammo < 1 ? 'disabled' : ''}>
+                       <span class="gb-act-label">⚔ Атаковать</span></button>` : ''}
+          ${!enemy && b.canHeal && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
+                       data-cd-until="${Date.now() + me.cooldownLeftMs}"
+                       ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
+                       <span class="gb-act-label">➕ Лечить</span></button>` : ''}
+          ${!enemy && b.canGuard && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="guard" data-id="${f.id}"
+                       data-cd-until="${Date.now() + me.cooldownLeftMs}"
+                       ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
+                       <span class="gb-act-label">🛡 Прикрыть</span></button>` : ''}
+        </div>` : '<div class="gb-card-dead">выбыл из боя</div>'}
     </div>`;
 
   box.innerHTML = `
@@ -2411,6 +2511,22 @@ App.renderGroupBattle = async () => {
       App.renderGroupBattle();
     };
   });
+
+  // Живой отсчёт отката на всех кнопках действий
+  clearInterval(App._gbBtnTimer);
+  App._gbBtnTimer = setInterval(() => {
+    const btns = box.querySelectorAll('.gb-act[data-cd-until]');
+    if (!btns.length) { clearInterval(App._gbBtnTimer); return; }
+    btns.forEach((b2) => {
+      const left = Math.max(0, Number(b2.dataset.cdUntil || 0) - Date.now());
+      const label = b2.querySelector('.gb-act-label');
+      if (!label) return;
+      const base = b2.dataset.act === 'attack' ? '⚔ Атаковать'
+        : (b2.dataset.act === 'heal' ? '➕ Лечить' : '🛡 Прикрыть');
+      label.textContent = left > 0 ? `${base.split(' ')[0]} ${(left / 1000).toFixed(1)}` : base;
+      b2.disabled = left > 0;
+    });
+  }, 100);
 
   const gbLeave = document.getElementById('gb-leave');
   if (gbLeave) gbLeave.onclick = async () => {

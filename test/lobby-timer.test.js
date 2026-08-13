@@ -435,6 +435,121 @@ ok(/rt-badge/.test(warSrc5), 'рейтинг показан рядом с име
 const cssSrc5 = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
 ok(/\.arena-row \.arena-mini-hp \{ flex: 1/.test(cssSrc5), 'полосы здоровья во всю ширину');
 
+console.log('\n── 16. Полный путь: запись → комната → бой → итоги ──');
+{
+  const dir = '/tmp/generals-flow-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/groupBattle',
+                   '/dist/src/services/player', '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const a7 = require(ROOT + '/dist/src/services/auth');
+  const p7 = require(ROOT + '/dist/src/services/player');
+  const gb7 = require(ROOT + '/dist/src/services/groupBattle');
+  const db7 = require(ROOT + '/dist/src/core/db');
+
+  await a7.register('Пришёл', 'пароль123', 'c1@t.ru', 'ru', '1.1.1.1', 'UA');
+  await a7.register('Прогулял', 'пароль123', 'c2@t.ru', 'ru', '1.1.1.1', 'UA');
+  const U7 = p7.users();
+  const came = Object.values(U7).find((x) => x.name === 'Пришёл');
+  const skip7 = Object.values(U7).find((x) => x.name === 'Прогулял');
+
+  gb7.register(came, 'fighter', []);
+  gb7.register(skip7, 'fighter', []);
+  ok(gb7.view(came).secondsLeft > 0, 'после записи идёт отсчёт сбора');
+
+  const st7 = db7.load('groupBattle', {});
+  st7.slot = Date.now() - 1000;
+  db7.save('groupBattle');
+  gb7.tick();
+  const v7 = gb7.view(came);
+  ok(v7.battle && v7.battle.state === 'preparing', 'по истечении сбора открывается подготовка');
+  ok(v7.battle.needEnter === true, 'игрока зовут занять место');
+  ok(v7.battle.prepareLeftSec > 0 && v7.battle.prepareLeftSec <= 30,
+     `на подготовку ${v7.battle.prepareLeftSec} секунд`);
+
+  // Один заходит, второй только смотрит
+  gb7.enter(came, []);
+  gb7.battleState(skip7);
+  const raw7 = db7.load('groupBattle', {}).battle;
+  ok(raw7.fighters[came.id].seen === true, 'вошедший отмечен');
+  ok(!raw7.fighters[skip7.id].seen,
+     'простой просмотр не считается явкой — только нажатие «В бой»');
+
+  // Бой начался
+  raw7.prepareUntil = Date.now() - 1;
+  db7.save('groupBattle');
+  gb7.tick();
+  const b7 = db7.load('groupBattle', {}).battle;
+  const sk7 = b7.fighters[skip7.id];
+  ok(b7.state === 'running', 'бой пошёл');
+  ok(sk7.isBot && sk7.replaced, 'не явившегося заменил бот');
+  ok(sk7.alive === true, 'его место в команде занято, а не пустует');
+  ok(sk7.forfeited === true, 'человеку засчитано поражение');
+  ok(sk7.name === 'Прогулял', 'имя осталось прежним');
+  const stSk = gb7.battleState(skip7);
+  ok(stSk.forfeited === true, 'он видит, что выбыл');
+  ok((stSk.watchable || []).length === 0, 'следить за боем не может');
+
+  // Конец боя
+  const b8 = db7.load('groupBattle', {}).battle;
+  for (const f of Object.values(b8.fighters)) if (f.team === 1) { f.alive = false; f.hp = 0; }
+  db7.save('groupBattle');
+  gb7.tick();
+  const fin7 = gb7.battleState(came);
+  ok(fin7.finished === true, 'бой завершился');
+  const rowCame = fin7.result.find((r) => r.name === 'Пришёл');
+  const rowSkip = fin7.result.find((r) => r.name === 'Прогулял');
+  ok(rowCame.tokens > 0, `пришедший получил ${rowCame.tokens} очков`);
+  ok(rowSkip.tokens === 0 && rowSkip.ratingGained === 0,
+     'не явившийся не получил ни очков, ни рейтинга');
+  ok(rowSkip.forfeited === true, 'в итогах он помечен как не явившийся');
+  process.chdir(cwd);
+}
+
+console.log('\n── 17. Полноэкранный режим боя ──');
+const warF = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/document\.body\.classList\.add\('combat-fullscreen'\)/.test(warF),
+   'бой открывается на весь экран');
+ok((warF.match(/classList\.remove\('combat-fullscreen'\)/g) || []).length >= 3,
+   'при выходе режим снимается');
+const cssF = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+ok(/body\.combat-fullscreen #header[\s\S]{0,140}display: none/.test(cssF),
+   'шапка и меню скрыты — уйти всё равно нельзя');
+ok(/КОМНАТА ПОДГОТОВКИ/.test(warF), 'комната подписана');
+ok(/за ушедших[\s\S]{0,60}будет играть бот/.test(warF), 'игрока предупреждают о замене');
+
+console.log('\n── 18. Карточки бойцов ──');
+ok(/gb-card-acts/.test(warF), 'кнопки действий под каждым бойцом');
+ok(/gb-act-wide/.test(warF), 'кнопки во всю ширину, а не иконки');
+ok(/gb-hp-wide/.test(warF), 'полоса здоровья широкая');
+ok(/App\._gbBtnTimer = setInterval/.test(warF), 'на кнопках живой отсчёт отката');
+ok(/⚔ Атаковать/.test(warF) && /➕ Лечить/.test(warF) && /🛡 Прикрыть/.test(warF),
+   'у действий понятные подписи');
+
+console.log('\n── 19. Плашка зовёт в комнату ──');
+const appF = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+ok(/if \(c\.needEnter\)/.test(appF), 'плашка отличает подготовку от идущего боя');
+ok(/Подготовка к бою!/.test(appF), 'зовёт занять место');
+ok(/id="cb-left"/.test(appF), 'показывает, сколько осталось');
+const routesF = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
+ok(/needEnter: needArena \|\| needGroup/.test(routesF), 'признак приходит с сервера');
+
+console.log('\n── 20. Выдача в панели ──');
+const admF = fs.readFileSync(path.join(ROOT, 'src/services/admin.ts'), 'utf8');
+ok(/addInt\('levels'\)/.test(admF), 'можно выдать уровни');
+ok(/addInt\('battlePoints'\)/.test(admF), 'и боевые очки');
+ok(/addInt\('gbRating'\)/.test(admF), 'и рейтинг групповых боёв');
+ok(/config\.xpToNext\(target\.level\)/.test(admF),
+   'уровень выдаётся через опыт — запасы пересчитываются штатно');
+const admJs = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
+ok(/\$\{prefix\}-levels/.test(admJs) && /\$\{prefix\}-bp/.test(admJs) && /\$\{prefix\}-gbr/.test(admJs),
+   'поля есть в форме выдачи');
+ok(/levels: v\(prefix\+'-levels'\)/.test(admJs), 'значения уходят на сервер');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

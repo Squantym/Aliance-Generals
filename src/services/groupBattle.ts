@@ -92,6 +92,8 @@ type Fighter = {
   entered: boolean;
   seen: boolean;              // открывал ли игрок комнату боя
   isBot: boolean;
+  replaced?: boolean;         // место человека, которым управляет бот
+  forfeited?: boolean;        // не явился — награды не получит
   targetId: string | null;
   lastActionAt: number;
   guardedUntil: number;       // до какого времени прикрыт
@@ -219,11 +221,16 @@ function tick(): void {
     if (b.state === 'preparing' && now >= (b.prepareUntil || 0)) {
       b.state = 'running';
       b.startedAt = now;
+      // Кто не пришёл в комнату — за него играет бот. Имя и рейтинг
+      // остаются его, но человеку засчитывается поражение и наград он
+      // не получит. Так команда не остаётся в меньшинстве из-за одного
+      // отсутствующего, а прогульщик ничего не выигрывает.
       for (const f of Object.values(b.fighters)) {
         if (f.isBot || f.seen) continue;
-        f.alive = false;
-        f.hp = 0;
-        addLog(b, `⏰ ${f.name} не вышел на бой — поражение`, 'system', f.id);
+        f.isBot = true;          // дальше им управляет тот же код, что и ботами
+        f.replaced = true;       // но помним, что место человека
+        f.forfeited = true;      // поражение засчитано, награды не будет
+        addLog(b, `⏰ ${f.name} не вышел на бой — его заменил боец из резерва`, 'system', f.id);
       }
       addLog(b, '🔔 Бой начался!', 'system');
       checkEnd(s, b);
@@ -519,6 +526,20 @@ function awardRating(b: Battle, winnerTeam: -1 | 0 | 1): any[] {
     const total = teamPts + killPts + bestPts;
 
     let ratingTotal = 0;
+    // Не явившийся не получает ни рейтинга, ни очков — он проиграл
+    // ещё до начала боя
+    if (f.forfeited) {
+      rows.push({
+        id: f.id, name: f.name, flag: f.flag, team: f.team,
+        role: f.role, roleLabel: ROLES[f.role].label, isBot: false,
+        kills: 0, damage: 0, absorbed: 0, healed: 0,
+        alive: false, killedBy: '', forfeited: true,
+        teamPts: 0, killPts: 0, bestPts: 0, ratingGained: 0, ratingTotal: 0,
+        tokens: 0, bestFighter: false, bestGuard: false, bestMedic: false,
+        won: false,
+      });
+      continue;
+    }
     if (!f.isBot) {
       const rec = table[f.id] || (table[f.id] = {
         id: f.id, name: f.name, flag: f.flag, points: 0,
@@ -861,6 +882,11 @@ function view(user: User) {
              cooldownMs: ACTION_CD_MS, costHeal: COST.heal.energy, costGuard: COST.guard.energy },
     battle: b && b.state !== 'cancelled' ? {
       state: b.state,
+      // Идёт подготовка и игрок ещё не вошёл — показываем приглашение
+      needEnter: b.state === 'preparing' && !!b.fighters[user.id]
+        && !b.fighters[user.id].seen,
+      prepareLeftSec: b.state === 'preparing'
+        ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
       iAmIn: !!b.fighters[user.id],
       entered: !!(b.fighters[user.id] && b.fighters[user.id].entered),
       canEnter: !!(b.fighters[user.id] && !b.fighters[user.id].entered
@@ -887,9 +913,13 @@ function enter(user: User, notices: Notices) {
   if (Date.now() - b.startedAt > ENTER_WINDOW_MS) {
     throw new u.ApiError('Время на выход истекло');
   }
-  if (!me.entered) {
+  // Вход в комнату — осознанное действие: игрок нажал «В бой».
+  // Раньше присутствие отмечалось при простом просмотре, и человек,
+  // случайно открывший вкладку, считался явившимся.
+  if (!me.seen || !me.entered) {
+    me.seen = true;
     me.entered = true;
-    addLog(b, `➕ ${me.name} вступил в бой (${ROLES[me.role].label})`, 'system');
+    addLog(b, `➕ ${me.name} занял место (${ROLES[me.role].label})`, 'system');
     db.save('groupBattle');
   }
   return battleState(user);
@@ -925,6 +955,8 @@ function battleState(user: User, watchId?: string) {
     preparing: b.state === 'preparing',
     prepareLeftSec: b.state === 'preparing'
       ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
+    // Не явившийся не может следить за боем: он выбыл до начала
+    forfeited: !!me.forfeited,
     finished: b.state === 'done',
     winnerTeam: b.winnerTeam,
     result: (b as any).result || null,
@@ -953,7 +985,7 @@ function battleState(user: User, watchId?: string) {
       healed: watched.healed, absorbed: watched.absorbed, kills: watched.kills,
     },
     // Кого можно смотреть — свои, пока идёт бой
-    watchable: me.alive ? [] : Object.values(b.fighters)
+    watchable: (me.alive || me.forfeited) ? [] : Object.values(b.fighters)
       .filter((f) => f.team === me.team)
       .map((f) => ({ id: f.id, name: f.name, alive: f.alive, isMe: f.id === me.id,
                      roleLabel: ROLES[f.role].label, hp: f.hp, maxHp: f.maxHp })),

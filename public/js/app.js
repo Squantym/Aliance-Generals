@@ -2525,10 +2525,20 @@ const App = {
       bar.id = 'combat-bar';
       document.body.appendChild(bar);
     }
-    const where = c.fighting ? c.where : c.regWhere;
+    const where = c.needEnter ? c.enterWhere : (c.fighting ? c.where : c.regWhere);
     const label = where === 'arena' ? '🏟 Арена' : '🤝 Групповой бой';
 
-    if (c.fighting) {
+    if (c.needEnter) {
+      // Подготовка началась — зовём в комнату. Это самый важный момент:
+      // не зашёл вовремя — за тебя будет играть бот, а поражение твоё.
+      document.body.classList.remove('in-combat');
+      bar.className = 'combat-bar calling';
+      bar.innerHTML = `
+        <span class="cb-dot"></span>
+        <span class="grow"><b>Подготовка к бою!</b> Займите место:
+          <b id="cb-left">${c.prepareLeftSec || 0}</b> с</span>
+        <button class="btn btn-inline btn-orange" id="cb-go">В комнату</button>`;
+    } else if (c.fighting) {
       document.body.classList.add('in-combat');
       bar.className = 'combat-bar fighting';
       bar.innerHTML = `
@@ -2552,8 +2562,21 @@ const App = {
       App.rerender();
     };
 
-    // Живой отсчёт до начала боя
+    // Отсчёт подготовки: своя шкала, счёт в секундах
     clearInterval(App._combatTimer);
+    if (c.needEnter) {
+      const until = Date.now() + (c.prepareLeftSec || 0) * 1000;
+      const paintPrep = () => {
+        const el = document.getElementById('cb-left');
+        if (!el) { clearInterval(App._combatTimer); return; }
+        const left = Math.max(0, Math.round((until - Date.now()) / 1000));
+        el.textContent = left;
+        if (left <= 0) { clearInterval(App._combatTimer); App.refreshMe(); }
+      };
+      paintPrep();
+      App._combatTimer = setInterval(paintPrep, 1000);
+      return;
+    }
     if (!c.fighting && c.startsAt) {
       const paint = () => {
         const el = document.getElementById('cb-left');

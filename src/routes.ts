@@ -134,8 +134,17 @@ function registerRoutes(app: any) {
           const fighting = !!(arenaBattle.active && arenaBattle.me && arenaBattle.me.alive)
             || !!(groupBattle.active && groupBattle.me && groupBattle.me.alive);
           const regDiv = av.iAmRegistered ? 'elite' : (av2.iAmRegistered ? 'basic' : null);
+          // Идёт подготовка и место ещё не занято — зовём в комнату
+          const needArena = !!(av.battle && av.battle.needEnter) || !!(av2.battle && av2.battle.needEnter);
+          const needGroup = !!(gv.battle && gv.battle.needEnter);
+          const prepLeft = needArena
+            ? ((av.battle && av.battle.prepareLeftSec) || (av2.battle && av2.battle.prepareLeftSec) || 0)
+            : ((gv.battle && gv.battle.prepareLeftSec) || 0);
           return {
             fighting,
+            needEnter: needArena || needGroup,
+            prepareLeftSec: prepLeft,
+            enterWhere: needArena ? 'arena' : (needGroup ? 'group' : null),
             where: (arenaBattle.active && arenaBattle.me && arenaBattle.me.alive) ? 'arena'
               : ((groupBattle.active && groupBattle.me && groupBattle.me.alive) ? 'group' : null),
             registered: !!inArena || !!inGroup,
@@ -144,7 +153,10 @@ function registerRoutes(app: any) {
             startsAt: regDiv ? (regDiv === 'elite' ? av.nextStartAt : av2.nextStartAt)
               : (gv.iAmRegistered ? gv.nextStartAt : 0),
           };
-        } catch (e) { return { fighting: false, where: null, registered: false, regWhere: null, startsAt: 0 }; }
+        } catch (e) {
+          return { fighting: false, needEnter: false, prepareLeftSec: 0, enterWhere: null,
+                   where: null, registered: false, regWhere: null, startsAt: 0 };
+        }
       })(),
       accountLogin: (req.user as any).accountLogin || '',
       vipUntil: Number((req.user as any).vipUntil || 0),

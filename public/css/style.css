@@ -4113,3 +4113,39 @@ body:has(#combat-bar) { padding-top: 32px; }
   .sup-item { flex-wrap: wrap; }
   .sup-buy { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
 }
+
+/* ═══ Полноэкранный режим боя ════════════════════════════════════════
+   Пока идёт бой, прячем всё, кроме самого боя: шапку с ресурсами,
+   меню, подвал. Уйти всё равно нельзя, а лишние кнопки только
+   отвлекают и провоцируют попытки. */
+body.combat-fullscreen #header,
+body.combat-fullscreen #site-footer,
+body.combat-fullscreen .tabs,
+body.combat-fullscreen .title,
+body.combat-fullscreen #cabinet-btn { display: none !important; }
+body.combat-fullscreen #content { padding-top: 10px; }
+body.combat-fullscreen { padding-top: 0 !important; }
+
+/* Плашка «пора в комнату» */
+.combat-bar.calling {
+  background: linear-gradient(180deg, #3a2a12, #241a0c);
+  border-bottom-color: var(--orange-1);
+}
+.combat-bar.calling .cb-dot { background: var(--orange-1); }
+
+/* ═══ Карточка бойца в групповом бою ═════════════════════════════════ */
+.gb-card {
+  padding: 9px 11px; margin-bottom: 7px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--panel);
+}
+.gb-card:last-child { margin-bottom: 0; }
+.gb-card.gb-dead { opacity: .45; }
+.gb-card.gb-me { border-color: #4d7a3d; background: rgba(95,191,74,.07); }
+.gb-card.gb-target { box-shadow: inset 3px 0 0 var(--orange-1); }
+.gb-card-top { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.gb-card-name { font-weight: 600; }
+.gb-card-hp { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.gb-hp-wide { height: 14px; border-radius: 7px; margin-top: 6px; }
+.gb-card-acts { display: flex; gap: 6px; margin-top: 7px; }
+.gb-act-wide { flex: 1; padding: 7px 10px; font-size: 13px; }
+.gb-card-dead { margin-top: 6px; text-align: center; font-size: 12px; color: var(--dim); }

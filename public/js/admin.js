@@ -1790,6 +1790,9 @@ const Admin = {
         <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="${prefix}-ears" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="${prefix}-tokens" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🏦 В банке (только для списания)</label><input type="number" id="${prefix}-bank" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">🎚 Уровни (±)</label><input type="number" id="${prefix}-levels" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">🎗 Боевые очки</label><input type="number" id="${prefix}-bp" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">🏅 Рейтинг групп. боёв</label><input type="number" id="${prefix}-gbr" placeholder="0"></div>
       </div>
       <label style="font-size:11px;color:var(--dim);display:block;margin-top:8px"><span class="ic-mail"></span> Сообщение игрокам (необязательно)</label>
       <textarea id="${prefix}-note" placeholder="Текст сообщения от администратора…" maxlength="300" style="width:100%;box-sizing:border-box;margin-top:4px"></textarea>`;
@@ -1801,6 +1804,9 @@ const Admin = {
       dollars: v(prefix+'-dollars'), gold: v(prefix+'-gold'), xp: v(prefix+'-xp'),
       skillPoints: v(prefix+'-skill'), ears: v(prefix+'-ears'), tokens: v(prefix+'-tokens'),
       bank: v(prefix+'-bank'),
+      levels: v(prefix+'-levels'),
+      battlePoints: v(prefix+'-bp'),
+      gbRating: v(prefix+'-gbr'),
       giftNote: v(prefix+'-note'),
     };
   },

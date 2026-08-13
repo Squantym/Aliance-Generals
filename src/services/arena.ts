@@ -659,7 +659,13 @@ function view(user: User, divRaw?: any) {
       state: b.state,
       iAmIn: !!b.fighters[user.id],
       entered: !!(b.fighters[user.id] && b.fighters[user.id].entered),
-      canEnter: false,        // вход не требуется — все уже в бою
+      // Идёт подготовка и игрок ещё не занял место
+      needEnter: b.state === 'preparing' && !!b.fighters[user.id]
+        && !b.fighters[user.id].seen,
+      prepareLeftSec: b.state === 'preparing'
+        ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
+      canEnter: b.state === 'preparing' && !!b.fighters[user.id]
+        && !b.fighters[user.id].seen,
       enterLeftSec: 0,
       pot: b.pot,
       alive: Object.values(b.fighters).filter((f) => f.alive).length,
@@ -707,6 +713,7 @@ function enter(user: User, notices: Notices) {
   if (!f) throw new u.ApiError('Вы не записаны на этот бой');
   if (f.entered) return battleState(user);
   f.entered = true;
+  f.seen = true;      // явился в комнату — учитывается при старте
   addLog(f, '⚔ Вы вышли на арену');
 
   // Когда вышли все — начинаем, не дожидаясь окончания окна
@@ -725,10 +732,7 @@ function battleState(user: User) {
   const found = myBattle(user.id);
   const b = found ? found.b : null;
   if (!b) return { active: false };
-  // Отмечаем, что игрок открыл комнату: по этому признаку решаем, кто
-  // пропустил бой
-  const meF = b.fighters[user.id];
-  if (meF && !meF.seen) { meF.seen = true; db.save('arena'); }
+
   const me = b.fighters[user.id];
   if (!me) return { active: false };
 

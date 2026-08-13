@@ -204,6 +204,46 @@ function applyGrant(target: User, body: any): string[] {
   if (addInt('dollars'))    { player.addMoney(target, addInt('dollars'), false);             granted.push(`$${u.fmt(addInt('dollars'))}`); }
   if (addInt('gold'))       { player.addGold(target, addInt('gold'), 'admin');                        granted.push(`🪙 ${addInt('gold')}`); }
   if (addInt('skillPoints')){ target.skillPoints = Math.max(0, target.skillPoints + addInt('skillPoints')); granted.push(`${addInt('skillPoints')} оч. навыков`); }
+
+  // Уровень выдаём через опыт: просто поднять число нельзя — от уровня
+  // зависят запасы, вместимость и пороги, и они пересчитываются при
+  // штатном повышении
+  if (addInt('levels')) {
+    const n = addInt('levels');
+    for (let i = 0; i < Math.abs(n) && i < 500; i++) {
+      if (n > 0) {
+        const need = config.xpToNext(target.level) - target.xp;
+        if (need > 0) player.addXp(target, need, []);
+      } else if (target.level > 1) {
+        target.level -= 1;
+        target.xp = 0;
+        player.refresh(target);
+      }
+    }
+    granted.push(`${n > 0 ? '+' : ''}${n} ур.`);
+  }
+
+  // Боевые очки — валюта групповых боёв
+  if (addInt('battlePoints')) {
+    (target as any).battlePoints = Math.max(0, ((target as any).battlePoints || 0) + addInt('battlePoints'));
+    granted.push(`🎗 ${addInt('battlePoints')}`);
+  }
+
+  // Рейтинг групповых боёв: лежит не у игрока, а в таблице режима
+  if (addInt('gbRating')) {
+    try {
+      const st = db.load<any>('groupBattle', {});
+      if (!st.ratings) st.ratings = {};
+      const rec = st.ratings[target.id] || (st.ratings[target.id] = {
+        id: target.id, name: target.name, flag: '', points: 0,
+        wins: 0, losses: 0, kills: 0, battles: 0, damage: 0, absorbed: 0, healed: 0,
+      });
+      rec.name = target.name;
+      rec.points = Math.max(0, rec.points + addInt('gbRating'));
+      db.save('groupBattle');
+      granted.push(`🏅 ${addInt('gbRating')} рейтинга`);
+    } catch (e) {}
+  }
   if (addInt('ears'))       {
     // Уши от администратора — в отдельный кошелёк, не смешиваются с игровыми
     target.adminEars   = (target.adminEars   || 0) + addInt('ears');
