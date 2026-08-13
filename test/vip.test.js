@@ -132,8 +132,10 @@ ok(/total \*= require\('\.\/vip'\)\.upkeepMul\(user\)/.test(playerSrc), 'сод�
 ok(/total \*= require\('\.\/vip'\)\.incomeMul\(user\)/.test(playerSrc), 'доход учитывается');
 const battleSrc = fs.readFileSync(ROOT + '/src/services/battle.ts', 'utf8');
 ok(/function unitLossFor/.test(battleSrc), 'потери техники считаются с учётом подписки');
-ok(/tryFatalityImmunity\(victimCheck\)/.test(battleSrc), 'иммунитет к фаталити проверяется в бою');
-ok(/vipSaved \|\| Math\.random\(\) < dodgeChance/.test(battleSrc),
+// Иммунитет переехал в момент ПЛЕНЕНИЯ: ускользать надо там, а не на
+// шаге фаталити, когда игрок уже занёс клинок над пленным
+ok(/tryFatalityImmunity\(target\)/.test(battleSrc), 'иммунитет к фаталити проверяется при пленении');
+ok(/vipSaved \|\| Math\.random\(\) < escapeChance/.test(battleSrc),
    'иммунитет проверяется ДО броска на ловкость — иначе удачный бросок съедал бы попытку');
 const paySrc = fs.readFileSync(ROOT + '/src/services/payments.ts', 'utf8');
 ok(/bonusMul\('gold', user\)/.test(paySrc), 'бонус к покупке золота применяется');

@@ -46,7 +46,7 @@ console.log('\n── 1. Правила ──');
 ok(gb.TEAM_SIZE === 5, `команда до ${gb.TEAM_SIZE} человек`);
 ok(gb.HP === 1500, `здоровье в бою: ${gb.HP}`);
 ok(gb.ENERGY === 1000, `энергия: ${gb.ENERGY}`);
-ok(gb.AMMO === 50, `боеприпасы: ${gb.AMMO}`);
+ok(gb.AMMO === 70, `боеприпасы: ${gb.AMMO}`);
 ok(gb.ROLE_IDS.length === 3, `ролей: ${gb.ROLE_IDS.join(', ')}`);
 ok(!!gb.ROLES.fighter && !!gb.ROLES.guardian && !!gb.ROLES.medic, 'боец, защитник и медик на месте');
 ok(gb.BOT_FILL_BEFORE_MS === 20000, 'добор ботов идёт последние 20 секунд');
@@ -740,6 +740,94 @@ ok(/data-rules-body/.test(warR2), 'список правил помечен');
 ok(/style="display:none"/.test(warR2), 'по умолчанию свёрнуты');
 ok(/App\._bindRules/.test(warR2), 'разворачивание работает в обоих режимах');
 ok((warR2.match(/data-rules="/g) || []).length === 2, 'и на арене, и в групповых боях');
+
+console.log('\n── 33. История боёв и честный рейтинг ──');
+{
+  const dir = '/tmp/generals-hist-test';
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir + '/data', { recursive: true });
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const m of ['/dist/src/core/db', '/dist/src/services/groupBattle',
+                   '/dist/src/services/player', '/dist/src/services/auth']) {
+    delete require.cache[require.resolve(ROOT + m)];
+  }
+  const a8 = require(ROOT + '/dist/src/services/auth');
+  const p8 = require(ROOT + '/dist/src/services/player');
+  const gb8 = require(ROOT + '/dist/src/services/groupBattle');
+  const db8 = require(ROOT + '/dist/src/core/db');
+
+  await a8.register('Боец1', 'пароль123', 'h1@t.ru', 'ru', '1.1.1.1', 'UA');
+  await a8.register('Боец2', 'пароль123', 'h2@t.ru', 'ru', '1.1.1.1', 'UA');
+  const U8 = p8.users();
+  const one = Object.values(U8).find((x) => x.name === 'Боец1');
+  const two = Object.values(U8).find((x) => x.name === 'Боец2');
+
+  gb8.register(one, 'fighter', []);
+  gb8.register(two, 'fighter', []);
+  const s8 = db8.load('groupBattle', {});
+  s8.slot = Date.now() - 1000;
+  db8.save('groupBattle');
+  gb8.tick();
+  gb8.enter(one, []);
+  gb8.enter(two, []);
+  const bp = db8.load('groupBattle', {}).battle;
+  bp.prepareUntil = Date.now() - 1;
+  db8.save('groupBattle');
+  gb8.tick();
+
+  const bf = db8.load('groupBattle', {}).battle;
+  bf.fighters[two.id].team = bf.fighters[one.id].team === 0 ? 1 : 0;
+  bf.fighters[one.id].kills = 2;
+  bf.fighters[one.id].damageDealt = 800;
+  for (const f of Object.values(bf.fighters)) {
+    if (f.team !== bf.fighters[one.id].team) { f.alive = false; f.hp = 0; }
+  }
+  db8.save('groupBattle');
+  gb8.tick();
+
+  // Награда действительно начислена
+  const rt8 = (db8.load('groupBattle', {}).ratings || {})[one.id];
+  ok(!!rt8 && rt8.points > 0, `рейтинг начислен: ${rt8 ? rt8.points : 0}`);
+  ok((one.battlePoints || 0) > 0, `боевые очки начислены: ${one.battlePoints}`);
+  ok(rt8.wins === 1, 'победа записана в таблицу');
+
+  // История
+  const v8 = gb8.view(one);
+  ok((v8.myHistory || []).length === 1, `в истории ${(v8.myHistory || []).length} бой`);
+  const h8 = v8.myHistory[0];
+  ok(h8.result === 'win', `исход записан: ${h8.result}`);
+  ok(h8.rating > 0 && h8.tokens > 0, `награда в истории: +${h8.rating} рейтинга, +${h8.tokens} очков`);
+  ok(h8.kills === 2, 'убийства записаны');
+  // Проигравший тоже видит свой бой
+  const v9 = gb8.view(two);
+  ok((v9.myHistory || []).length === 1, 'проигравший видит бой в истории');
+  ok(v9.myHistory[0].result === 'lose', 'у него записано поражение');
+  process.chdir(cwd);
+}
+
+const srcH = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/ratingReal = rec\.points - beforePts/.test(srcH),
+   'показывается РЕАЛЬНОЕ изменение рейтинга, а не расчётное');
+ok(/playerHistory/.test(srcH), 'личная история ведётся');
+ok(/if \(list\.length > 15\) list\.length = 15/.test(srcH), 'хранятся последние 15 боёв');
+
+console.log('\n── 34. Интерфейс: плашка, карточки, ступени ──');
+const cssH = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+ok(/\.combat-bar \{[\s\S]{0,200}left: 50%; transform: translateX\(-50%\)/.test(cssH),
+   'плашка по центру экрана');
+ok(/width: max-content/.test(cssH), 'по ширине содержимого, а не во весь экран');
+ok(/@media \(max-width: 480px\)[\s\S]{0,160}\.combat-bar/.test(cssH), 'на телефоне мельче');
+ok(/\.gb-card-foe \.gb-hp i \{[\s\S]{0,80}#bf4a4a/.test(cssH), 'у врагов полоса красная');
+ok(/\.gb-card-ally \.gb-hp i \{[\s\S]{0,80}#5fbf4a/.test(cssH), 'у своих зелёная');
+ok(/\.gb-act-wide \{ flex: 1; padding: 4px 8px; font-size: 12px/.test(cssH), 'кнопки компактнее');
+const warH = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/enemy \? 'gb-card-foe' : 'gb-card-ally'/.test(warH), 'карточки размечены по командам');
+ok(/data-tier=/.test(warH) && /data-tier-body=/.test(warH), 'ступени сворачиваются');
+ok(/App\._tierOpen/.test(warH), 'открытая ступень запоминается');
+ok(/раскрыта текущая/.test(warH), 'по умолчанию открыта та, что качается сейчас');
+ok(/hist-row/.test(warH), 'история боёв выводится');
+ok(/Не явился/.test(warH), 'прогул тоже виден в истории');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

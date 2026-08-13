@@ -351,9 +351,14 @@ function startBattle(s: Store, list: any[], now: number): void {
     .map((r) => (table[r.id] ? table[r.id].points : 0));
   const loPts = humanPoints.length ? Math.min(...humanPoints) : 0;
   const hiPts = humanPoints.length ? Math.max(...humanPoints) : 0;
-  const botPoints = () => (hiPts > loPts)
-    ? loPts + Math.floor(Math.random() * (hiPts - loPts + 1))
-    : loPts;
+  // Рейтинг бота — вокруг среднего у живых, с разбросом до 30%.
+  // Раньше он брался из промежутка между минимумом и максимумом: при
+  // одном живом игроке все боты получали ровно его число, что выглядело
+  // подозрительно одинаково.
+  const avgPts = humanPoints.length
+    ? Math.round(humanPoints.reduce((a, b2) => a + b2, 0) / humanPoints.length) : 0;
+  const spread = Math.max(50, Math.round(Math.max(avgPts, hiPts - loPts) * 0.3));
+  const botPoints = () => Math.max(0, avgPts + Math.round((Math.random() * 2 - 1) * spread));
   for (const { rec, team } of split) {
     const role = ROLES[rec.role] ? rec.role : 'fighter';
     // Боты играют на базовых характеристиках, игроки — со своими
@@ -526,6 +531,7 @@ function awardRating(b: Battle, winnerTeam: -1 | 0 | 1): any[] {
     const total = teamPts + killPts + bestPts;
 
     let ratingTotal = 0;
+    let ratingReal = 0;      // насколько рейтинг изменился на самом деле
     // Не явившийся не получает ни рейтинга, ни очков — он проиграл
     // ещё до начала боя
     if (f.forfeited) {
@@ -554,8 +560,14 @@ function awardRating(b: Battle, winnerTeam: -1 | 0 | 1): any[] {
       rec.healed += f.healed;
       if (winnerTeam === f.team) rec.wins += 1;
       else if (winnerTeam !== -1) rec.losses += 1;
-      rec.points = Math.max(0, rec.points + total);   // ниже нуля не уходим
+      // Ниже нуля рейтинг не уходит. Показываем СКОЛЬКО реально
+      // изменилось: при рейтинге 0 и штрафе −3 в таблице остаётся 0, и
+      // без этого игрок видел «−3», а в таблице ничего не менялось —
+      // отсюда жалобы, что награда не начисляется.
+      const beforePts = rec.points;
+      rec.points = Math.max(0, rec.points + total);
       ratingTotal = rec.points;
+      ratingReal = rec.points - beforePts;
     }
 
     // Жетоны отряда
@@ -579,19 +591,56 @@ function awardRating(b: Battle, winnerTeam: -1 | 0 | 1): any[] {
         db.markUser(uu.id);
       }
     }
+    // Ботам показываем ту же арифметику, что и людям: без этого в
+    // таблице итогов половина строк была с прочерками, и бой выглядел
+    // ненастоящим. В базу это не пишется — рейтинг у ботов показной.
+    if (f.isBot) {
+      ratingTotal = Math.max(0, (f.rating || 0) + total);
+      f.rating = ratingTotal;
+    }
 
     rows.push({
       id: f.id, name: f.name, flag: f.flag, team: f.team,
       role: f.role, roleLabel: ROLES[f.role].label, isBot: f.isBot,
       kills: f.kills, damage: f.damageDealt, absorbed: f.absorbed, healed: f.healed,
       alive: f.alive, killedBy: f.killedBy || '',
-      teamPts, killPts, bestPts, ratingGained: total, ratingTotal,
+      teamPts, killPts, bestPts, ratingGained: total, ratingReal, ratingTotal,
       tokens,
       bestFighter, bestGuard, bestMedic,
       won,
     });
   }
   rows.sort((a, c) => (c.won ? 1 : 0) - (a.won ? 1 : 0) || c.tokens - a.tokens);
+
+  // Личная история: у каждого своя, чтобы показать его исход и награду.
+  // Общая история этого не даёт — в ней только победившая команда.
+  const root2 = store() as any;
+  if (!root2.playerHistory) root2.playerHistory = {};
+  for (const row of rows) {
+    if (row.isBot || row.forfeited) {
+      // Прогульщику пишем отдельной строкой: он должен видеть, что
+      // поражение засчитано, и почему наград нет
+      if (row.forfeited) {
+        const list = root2.playerHistory[row.id] || (root2.playerHistory[row.id] = []);
+        list.unshift({ at: Date.now(), result: 'forfeit', role: row.roleLabel,
+                       kills: 0, damage: 0, rating: 0, tokens: 0, players: rows.length });
+        if (list.length > 15) list.length = 15;
+      }
+      continue;
+    }
+    const list = root2.playerHistory[row.id] || (root2.playerHistory[row.id] = []);
+    list.unshift({
+      at: Date.now(),
+      result: winnerTeam === -1 ? 'draw' : (row.won ? 'win' : 'lose'),
+      role: row.roleLabel,
+      kills: row.kills, damage: row.damage,
+      rating: row.ratingReal, tokens: row.tokens,
+      players: rows.length,
+    });
+    if (list.length > 15) list.length = 15;   // храним последние 15 боёв
+  }
+  db.save('groupBattle');   // историю нужно записать на диск
+
   db.save('users');
   return rows;
 }
@@ -650,6 +699,50 @@ function finish(s: Store, b: Battle, winnerTeam: -1 | 0 | 1, reason: string): vo
   }
   s.history.unshift({ id: b.id, at: b.finishedAt, winnerTeam, players: Object.keys(b.fighters).length });
   if (s.history.length > 20) s.history.length = 20;
+
+  // Разбор боя храним ОТДЕЛЬНО от самого боя: бой удаляется через минуту
+  // после окончания, чтобы очередь шла дальше, и вместе с ним пропадал
+  // разбор — игрок видел нули вместо своих показателей.
+  const rootR = store() as any;
+  if (!rootR.results) rootR.results = {};
+  rootR.results[b.id] = {
+    id: b.id, at: b.finishedAt, winnerTeam,
+    rows: (b as any).result || [],
+  };
+  // Держим последние 30 разборов
+  const ids = Object.keys(rootR.results)
+    .sort((x, y) => (rootR.results[y].at || 0) - (rootR.results[x].at || 0));
+  for (const extra of ids.slice(30)) delete rootR.results[extra];
+  // Кто в каком бою участвовал — чтобы показать итог после удаления боя
+  if (!rootR.lastBattle) rootR.lastBattle = {};
+  for (const f of Object.values(b.fighters)) {
+    if (!f.isBot || f.replaced) rootR.lastBattle[f.id] = b.id;
+  }
+
+  // Личная история: игрок должен видеть, что именно получил за бой.
+  // Общая история этого не показывает — там только кто победил.
+  const root2 = store() as any;
+  if (!root2.personal) root2.personal = {};
+  for (const r of ((b as any).result || [])) {
+    if (r.isBot) continue;
+    const list = root2.personal[r.id] || (root2.personal[r.id] = []);
+    list.unshift({
+      at: b.finishedAt,
+      won: r.won,
+      draw: winnerTeam === -1,
+      forfeit: !!r.forfeited,      // не явился — видно и в истории
+      rating: r.ratingReal !== undefined ? r.ratingReal : r.ratingGained,
+      ratingRaw: r.ratingGained,
+      tokens: r.tokens,
+      kills: r.kills,
+      damage: r.damage,
+      role: r.role,
+      roleLabel: r.roleLabel,
+    });
+    if (list.length > 20) list.length = 20;
+  }
+
+
   try {
     auditLog.record({ userId: 'system', userName: 'system', path: '/system/group-battle',
       body: { id: b.id, winnerTeam, players: Object.keys(b.fighters).length } });
@@ -896,6 +989,7 @@ function view(user: User) {
       id: b.id,
     } : null,
     history: (s.history || []).slice(0, 5),
+    myHistory: (((store() as any).playerHistory || {})[user.id] || []).slice(0, 10),
     rating: ratingTable(user, 10),
   };
 }
@@ -930,7 +1024,33 @@ function battleState(user: User, watchId?: string) {
   tick();
   const s = store();
   const b = s.battle;
-  if (!b || !b.fighters[user.id]) return { active: false };
+  if (!b || !b.fighters[user.id]) {
+    // Бой уже убран из очереди — показываем сохранённый разбор, иначе
+    // игрок увидит пустой экран или нули вместо своих показателей
+    const root = s as any;
+    const lastId = (root.lastBattle || {})[user.id];
+    const saved = lastId && (root.results || {})[lastId];
+    if (saved) {
+      const mineRow = (saved.rows || []).find((r: any) => r.id === user.id);
+      return {
+        active: false, state: 'done', finished: true,
+        winnerTeam: saved.winnerTeam,
+        iWon: mineRow ? !!mineRow.won : false,
+        myTeam: mineRow ? mineRow.team : 0,
+        result: saved.rows || [],
+        me: mineRow ? {
+          id: user.id, name: mineRow.name, flag: mineRow.flag, team: mineRow.team,
+          role: mineRow.role, roleLabel: mineRow.roleLabel, roleIcon: ROLES[mineRow.role].icon,
+          hp: 0, maxHp: 0, alive: mineRow.alive, isBot: false,
+          damageDealt: mineRow.damage, healed: mineRow.healed, kills: mineRow.kills,
+          energy: 0, maxEnergy: 0, ammo: 0, maxAmmo: 0,
+          cooldownLeftMs: 0, targetId: null, rating: mineRow.ratingTotal || 0,
+        } : null,
+        allies: [], enemies: [], log: [], watchable: [],
+      };
+    }
+    return { active: false };
+  }
   const me = b.fighters[user.id];
   const now = Date.now();
 
@@ -1040,6 +1160,7 @@ function act(user: User, action: string, targetId: string, notices: Notices) {
     notices.push(doAttack(b, me, target));
   } else if (action === 'heal') {
     if (me.role !== 'medic') throw new u.ApiError('Лечить может только медик');
+    // Себя лечить можно: медик, оставшийся один, иначе просто погибал
     if (target.team !== me.team) throw new u.ApiError('Лечить можно только своих');
     if (me.energy < COST.heal.energy) throw new u.ApiError('Не хватает энергии');
     notices.push(doHeal(b, me, target));

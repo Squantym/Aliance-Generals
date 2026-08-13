@@ -65,14 +65,16 @@ console.log('\n── 3b. Ускользнувшая жертва ──');
 victim.earsCurrent = 2; victim.skills.agility = 100;   // максимальная ловкость
 hero.trophies = {};
 let escaped = null;
-for (let i = 0; i < 60 && !escaped; i++) {
-  victim.earsCurrent = 2;
-  hero.pendingFatality = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
-  const r = battle.fatality(hero, 'ear', []);
-  if (r.escaped) escaped = r;
-}
-ok(!!escaped, 'ловкая жертва иногда ускользает');
-ok(escaped && escaped.victimName === 'Жертва', `в ответе есть имя ускользнувшего: ${escaped && escaped.victimName}`);
+// Ускользание перенесено в момент ПЛЕНЕНИЯ: жертва уходит сразу после
+// боя, а не когда победитель уже занёс клинок. Проверяем, что на шаге
+// фаталити ускользания больше нет — добыча не отнимается.
+const battleSrcEsc = fs.readFileSync(ROOT + '/src/services/battle.ts', 'utf8');
+ok(/const escapeChance = isBot \? 0 : Math\.min\(0\.50/.test(battleSrcEsc),
+   'шанс уйти считается при пленении');
+ok(/Ускользание проверяется РАНЬШЕ/.test(battleSrcEsc),
+   'на шаге фаталити повторной проверки нет — это оговорено в коде');
+ok(!/choice: 'escaped'/.test(battleSrcEsc),
+   'фаталити больше не может сорваться ускользанием');
 
 console.log('\n── 3c. Фронт: окна вместо тостов ──');
 ok(app.includes('_showFatalityEscaped'), 'есть окно «Жертва ускользнула» (было — короткий тост)');

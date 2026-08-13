@@ -27,7 +27,7 @@ import type { User, Notices } from '../types';
 const BASE = {
   hp: 1500,
   energy: 1000,
-  ammo: 50,
+  ammo: 70,
   critChance: 0.20,
   dodgeChance: 0.20,
   healCritChance: 0.20,     // базовый шанс критического лечения

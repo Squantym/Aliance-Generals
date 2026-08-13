@@ -166,4 +166,34 @@ function send(user: User, toId: string, notices: Notices) {
   return view(user);
 }
 
-export = { view, send, prune, bonusPct, powerMul };
+// Отозвать подкрепления между игроком и его бывшими союзниками.
+// Вызывается при выходе из альянса и при исключении: иначе игрок
+// выходил, заходил обратно и слал второе подкрепление тому же союзнику,
+// а первое продолжало действовать.
+function revokeAllFor(userId: string, memberIds: string[]): number {
+  const users = player.users();
+  const me = users[userId];
+  let removed = 0;
+  const others = memberIds.filter((id) => id !== userId);
+
+  // Мои подкрепления у бывших союзников
+  for (const id of others) {
+    const other = users[id];
+    if (!other || !Array.isArray(other.reinforcements)) continue;
+    const before = other.reinforcements.length;
+    other.reinforcements = other.reinforcements.filter((r: any) => r && r.fromId !== userId);
+    if (other.reinforcements.length !== before) { removed += before - other.reinforcements.length; db.markUser(other.id); }
+  }
+
+  // И их подкрепления у меня
+  if (me && Array.isArray(me.reinforcements)) {
+    const before = me.reinforcements.length;
+    me.reinforcements = me.reinforcements.filter((r: any) => r && !others.includes(r.fromId));
+    if (me.reinforcements.length !== before) { removed += before - me.reinforcements.length; db.markUser(me.id); }
+  }
+
+  if (removed) db.save('users');
+  return removed;
+}
+
+export = { view, send, prune, bonusPct, powerMul, revokeAllFor };

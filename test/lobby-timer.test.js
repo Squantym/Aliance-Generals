@@ -583,6 +583,118 @@ ok(onlyClient.length === 0 && onlyServer.length === 0,
      ? `списки разошлись — только в браузере: ${onlyClient}, только на сервере: ${onlyServer}`
      : `браузер и сервер видят одни и те же ${clientSet.length} полей`);
 
+console.log('\n── 21. Кнопка ведёт в комнату, а не на витрину ──');
+const appR = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+ok(/if \(c\.needEnter\) \{[\s\S]{0,260}api\/group\/enter/.test(appR),
+   'нажатие на плашку сразу занимает место в комнате');
+ok(/Раньше кнопка вела на витрину/.test(appR), 'причина прежней ошибки записана в коде');
+const warR3 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/ВОЙТИ В КОМНАТУ/.test(warR3), 'на витрине кнопка названа понятно');
+ok(/d\.battle && d\.battle\.needEnter/.test(warR3), 'приглашение показывается по признаку с сервера');
+ok(/за вас будет играть бот/.test(warR3), 'игрока предупреждают о последствиях');
+
+console.log('\n── 22. Свои и чужие различимы ──');
+ok(/gb-card-ally/.test(warR3) && /gb-card-foe/.test(warR3), 'карточки помечены стороной');
+ok(/enemy \? 'hp-foe' : 'hp-ally'/.test(warR3), 'полоса здоровья красится по стороне');
+const cssR = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+ok(/\.gb-hp i\.hp-ally[\s\S]{0,80}#5fbf4a/.test(cssR), 'у своих зелёная');
+ok(/\.gb-hp i\.hp-foe[\s\S]{0,80}#bf4a4a/.test(cssR), 'у врагов красная');
+ok(/\.gb-act-wide \{ padding: 5px 8px; font-size: 12px/.test(cssR), 'кнопки стали компактнее');
+
+console.log('\n── 23. Плашка по центру ──');
+ok(/left: 50%; transform: translateX\(-50%\)/.test(cssR), 'плашка по центру экрана');
+ok(/width: max-content; max-width: calc\(100vw - 20px\)/.test(cssR),
+   'по ширине содержимого, но не шире экрана');
+
+console.log('\n── 24. Ступени улучшений сворачиваются ──');
+ok(/tier-toggle/.test(warR3), 'ступени раскрываются по нажатию');
+ok(/data-tier-body/.test(warR3), 'содержимое ступени помечено');
+ok(/App\._tierOpen/.test(warR3), 'открытая ступень запоминается');
+ok(/style="display:none"/.test(warR3), 'по умолчанию свёрнуты');
+
+console.log('\n── 25. История боёв ──');
+const gbSrcH = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/root2\.personal/.test(gbSrcH), 'личная история сохраняется');
+ok(/myHistory:/.test(gbSrcH), 'и отдаётся на экран');
+ok(/Ваши последние бои/.test(warR3), 'блок истории есть внизу');
+ok(/h\.won \? 'Победа' : \(h\.draw \? 'Ничья' : 'Поражение'\)/.test(warR3),
+   'показан исход боя');
+ok(/🏅 \$\{h\.rating > 0 \? '\+' : ''\}\$\{h\.rating\}/.test(warR3), 'и полученный рейтинг');
+ok(/🎗 \+\$\{UI\.fmtNum\(h\.tokens \|\| 0\)\}/.test(warR3), 'и боевые очки');
+// Рейтинг: показываем реально начисленное, а не расчётное
+ok(/ratingReal/.test(gbSrcH),
+   'запоминается фактически начисленный рейтинг — при нижней границе он меньше расчётного');
+
+console.log('\n── 26. Итоги переживают удаление боя ──');
+// Бой убирается из очереди через минуту после конца, и разбор пропадал
+// вместе с ним — игрок видел нули вместо своих показателей.
+const gbSrcR = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
+ok(/rootR\.results\[b\.id\] = \{/.test(gbSrcR), 'разбор сохраняется отдельно от боя');
+ok(/rootR\.lastBattle\[f\.id\] = b\.id/.test(gbSrcR), 'запоминается, кто в каком бою был');
+ok(/const saved = lastId && \(root\.results \|\| \{\}\)\[lastId\]/.test(gbSrcR),
+   'после удаления боя показывается сохранённый разбор');
+ok(/Держим последние 30 разборов/.test(gbSrcR), 'старые разборы не копятся бесконечно');
+
+console.log('\n── 27. Рейтинг у ботов ──');
+ok(/if \(f\.isBot\) \{[\s\S]{0,120}ratingTotal = Math\.max\(0, \(f\.rating \|\| 0\) \+ total\)/.test(gbSrcR),
+   'ботам показывается та же арифметика, что и людям');
+ok(/рейтинг у ботов показной/.test(gbSrcR), 'в код записано, что в базу это не идёт');
+ok(/const spread = Math\.max\(50, Math\.round\(Math\.max\(avgPts, hiPts - loPts\) \* 0\.3\)\)/.test(gbSrcR),
+   'рейтинг бота — вокруг среднего с разбросом до 30%');
+
+console.log('\n── 28. Боеприпасы и самолечение ──');
+const guSrcA = fs.readFileSync(path.join(ROOT, 'src/services/groupUpgrades.ts'), 'utf8');
+ok(/ammo: 70/.test(guSrcA), 'без прокачки 70 боеприпасов');
+ok(/Себя лечить можно/.test(gbSrcR), 'медик может лечить себя');
+const warSelf = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+ok(/!enemy && b\.canHeal \?/.test(warSelf), 'кнопка лечения есть и на своей карточке');
+
+console.log('\n── 29. Подкрепления не накапливаются ──');
+const reSrc = fs.readFileSync(path.join(ROOT, 'src/services/reinforcements.ts'), 'utf8');
+ok(/function revokeAllFor/.test(reSrc), 'есть отзыв подкреплений');
+ok(/Мои подкрепления у бывших союзников/.test(reSrc), 'отзываются в обе стороны');
+const paSrc = fs.readFileSync(path.join(ROOT, 'src/services/personalAlliance.ts'), 'utf8');
+ok(/revokeAllFor\(user\.id, \[memberId\]\)/.test(paSrc),
+   'при разрыве союза подкрепления отзываются');
+ok(/выйти, вернуться и отправить второе/.test(paSrc), 'причина записана в коде');
+
+console.log('\n── 30. Чат «Позывные» ──');
+const socialJs = fs.readFileSync(path.join(ROOT, 'public/js/screens/social.js'), 'utf8');
+ok(/API\.post\('\/api\/chat', \{ text, room: App\._chatRoom \|\| 'global' \}\)/.test(socialJs),
+   'отправляется прочитанный текст, а не несуществующая переменная');
+ok(!/text: txt, room:/.test(socialJs), 'прежняя опечатка убрана');
+
+console.log('\n── 31. Фаталити не срывается ──');
+const battleSrcF = fs.readFileSync(path.join(ROOT, 'src/services/battle.ts'), 'utf8');
+ok(!/choice: 'escaped'/.test(battleSrcF), 'жертва больше не ускользает на шаге фаталити');
+ok(/vipSaved \|\| Math\.random\(\) < escapeChance/.test(battleSrcF),
+   'уход проверяется при пленении');
+ok(/отнимать добычу на этом шаге — обман ожиданий/.test(battleSrcF),
+   'решение объяснено в коде');
+
+console.log('\n── 32. Значок VIP в чате ──');
+const socialJs2 = fs.readFileSync(path.join(ROOT, 'public/js/screens/social.js'), 'utf8');
+const chatBlock = socialJs2.slice(socialJs2.indexOf('async function loadChat'),
+                                  socialJs2.indexOf('async function loadChat') + 2500);
+const vipMarks = (chatBlock.match(/App\.vipMark\(msg\.vip\)/g) || []).length;
+ok(vipMarks === 1, `значок VIP выводится один раз (было два): ${vipMarks}`);
+ok(/chat-msg\$\{msg\.vip \? ' chat-msg-vip' : ''\}/.test(chatBlock),
+   'сообщение VIP помечается классом');
+
+console.log('\n── 33. Цвет чата у VIP ──');
+const cssV = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+ok(/\.chat-msg-vip \.chat-text \{ color: #c9a0ff/.test(cssV), 'у VIP свой цвет текста');
+ok(/\.chat-msg-vip \.who \{ color: #d9bcff/.test(cssV), 'и имени');
+ok(/\.chat-msg-vip \{[\s\S]{0,140}border-left: 2px solid #8b5fd6/.test(cssV),
+   'сообщение выделено полосой');
+// Персонал важнее: его цвет должен перебивать
+ok(/\.chat-msg-owner \.chat-text     \{ color: var\(--gold\) !important/.test(cssV),
+   'цвет владельца перебивает VIP');
+ok(/\.chat-msg-admin \.chat-text     \{ color: var\(--orange-1\) !important/.test(cssV),
+   'и администрации');
+ok(/золото уже[\s\S]{0,40}занято владельцем/.test(cssV),
+   'в коде объяснено, почему выбран сиреневый');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

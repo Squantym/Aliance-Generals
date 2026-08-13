@@ -1496,11 +1496,13 @@ App.renderGroup = async () => {
       </div>
     </div>
 
-    ${d.battle && d.battle.canEnter ? `
+    ${d.battle && d.battle.needEnter ? `
       <div class="card center arena-call">
-        <div class="name">⚔ Бой начался!</div>
-        <p class="muted small mt">Выходите на поле: <b class="gold">${d.battle.enterLeftSec} с</b></p>
-        <button class="btn btn-orange mt" id="gb-enter" style="width:100%">В БОЙ</button>
+        <div class="name">⏳ Идёт подготовка к бою!</div>
+        <p class="muted small mt">Займите место, иначе за вас будет играть бот,
+        а поражение засчитают вам. Осталось:
+        <b class="gold">${d.battle.prepareLeftSec}</b> с</p>
+        <button class="btn btn-orange mt" id="gb-enter" style="width:100%">ВОЙТИ В КОМНАТУ</button>
       </div>` : ''}
 
     <div class="card">
@@ -1560,6 +1562,26 @@ App.renderGroup = async () => {
         <button class="btn gb-section" data-section="supply">📦 База снабжения</button>
       </div>
     </div>
+
+    ${(d.myHistory || []).length ? `
+      <div class="card">
+        <div class="name">📜 Ваши последние бои</div>
+        <div class="mt">
+          ${d.myHistory.map((h) => `
+            <div class="hist-row ${h.won ? 'hist-win' : (h.draw ? '' : 'hist-lose')}">
+              <span class="hist-mark">${h.won ? '🏆' : (h.draw ? '🤝' : '⚔')}</span>
+              <span class="grow">
+                <b>${h.forfeit ? 'Не явился' : (h.won ? 'Победа' : (h.draw ? 'Ничья' : 'Поражение'))}</b>
+                <span class="muted small">${UI.esc(h.roleLabel || '')} ·
+                  ${h.kills} уб. · урон ${UI.fmtNum(h.damage || 0)}</span>
+              </span>
+              <span class="hist-rew">
+                <span class="${h.rating > 0 ? 'gold' : 'muted'}">🏅 ${h.rating > 0 ? '+' : ''}${h.rating}</span>
+                <span class="gold">🎗 +${UI.fmtNum(h.tokens || 0)}</span>
+              </span>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
 
     <div class="card">
       <div class="name">🏅 Рейтинг групповых боёв</div>
@@ -1627,8 +1649,11 @@ App.renderGroup = async () => {
   const entB = document.getElementById('gb-enter');
   if (entB) entB.onclick = async () => {
     entB.disabled = true;
-    try { await API.post('/api/group/enter', {}); App.renderGroupBattle(); }
-    catch (e) { UI.toast('⛔ ' + e.message); entB.disabled = false; }
+    try {
+      await API.post('/api/group/enter', {});
+      await App.refreshMe();
+      App.renderGroupBattle();          // сразу в комнату
+    } catch (e) { UI.toast('⛔ ' + e.message); entB.disabled = false; }
   };
 
   App._gbTimer = setInterval(() => {
@@ -1802,7 +1827,7 @@ App.renderGroupBattle = async () => {
   // действия с живым отсчётом отката. Иконка-кнопка сбоку была мелкой
   // и не показывала, когда снова можно бить.
   const rowOf = (f, enemy) => `
-    <div class="gb-card${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
+    <div class="gb-card ${enemy ? 'gb-card-foe' : 'gb-card-ally'}${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
       <div class="gb-card-top">
         <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
         <span class="grow gb-card-name">
@@ -1812,14 +1837,14 @@ App.renderGroupBattle = async () => {
         </span>
         <span class="gb-card-hp">${UI.fmtNum(f.hp)} / ${UI.fmtNum(f.maxHp)}</span>
       </div>
-      <div class="gb-hp gb-hp-wide"><i style="width:${pct(f.hp, f.maxHp)}%"></i></div>
+      <div class="gb-hp gb-hp-wide"><i class="${enemy ? 'hp-foe' : 'hp-ally'}" style="width:${pct(f.hp, f.maxHp)}%"></i></div>
       ${f.alive ? `
         <div class="gb-card-acts">
           ${enemy ? `<button class="btn gb-act gb-act-wide" data-act="attack" data-id="${f.id}"
                        data-cd-until="${Date.now() + me.cooldownLeftMs}"
                        ${me.cooldownLeftMs > 0 || me.ammo < 1 ? 'disabled' : ''}>
                        <span class="gb-act-label">⚔ Атаковать</span></button>` : ''}
-          ${!enemy && b.canHeal && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
+          ${!enemy && b.canHeal ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
                        data-cd-until="${Date.now() + me.cooldownLeftMs}"
                        ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
                        <span class="gb-act-label">➕ Лечить</span></button>` : ''}
@@ -2023,7 +2048,7 @@ App.renderUpgradesPage = async () => {
 
     ${up.tierSkills.map((t) => `
       <div class="card tier-card${t.unlocked ? '' : ' locked'}" style="--tier:${t.color}">
-        <div class="tier-head">
+        <button class="tier-head tier-toggle" data-tier="${t.rank}">
           <span class="tier-dot"></span>
           <span class="grow">
             <b class="tier-name">${UI.esc(t.name)}</b>
@@ -2032,8 +2057,9 @@ App.renderUpgradesPage = async () => {
           <span class="small ${t.unlocked ? 'gold' : 'muted'}">
             ${t.unlocked ? 'открыто' : '🔒 ещё ' + UI.fmtNum(t.left)}
           </span>
-        </div>
-        <div class="gb-skills mt">
+          <span class="rules-arrow">▾</span>
+        </button>
+        <div class="gb-skills mt" data-tier-body="${t.rank}" style="display:none">
           ${t.skills.map((sk) => `
             <div class="gb-skill${sk.atMaxTier ? ' maxed' : ''}">
               <div class="gb-skill-top">
@@ -2090,6 +2116,32 @@ App.renderUpgradesPage = async () => {
   if (b1) b1.onclick = back;
   const b2 = document.getElementById('gb-back-page2');
   if (b2) b2.onclick = back;
+
+  // Ступени свёрнуты: полсотни навыков разом занимали весь экран.
+  // По умолчанию раскрыта текущая — та, которую игрок качает сейчас;
+  // открытую запоминаем, чтобы после покупки она не схлопывалась.
+  if (App._tierOpen === undefined) {
+    const cur = up.tierSkills.find((t) => t.unlocked
+      && t.skills.some((sk) => sk.isCurrent && !sk.atMaxTier));
+    App._tierOpen = cur ? cur.rank : (up.tierSkills[0] && up.tierSkills[0].rank);
+  }
+  const paintTiers = () => {
+    box.querySelectorAll('[data-tier]').forEach((b2) => {
+      const key = b2.dataset.tier;
+      const body = box.querySelector(`[data-tier-body="${key}"]`);
+      const open = App._tierOpen === key;
+      if (body) body.style.display = open ? '' : 'none';
+      const arrow = b2.querySelector('.rules-arrow');
+      if (arrow) arrow.textContent = open ? '▴' : '▾';
+    });
+  };
+  box.querySelectorAll('[data-tier]').forEach((b2) => {
+    b2.onclick = () => {
+      App._tierOpen = (App._tierOpen === b2.dataset.tier) ? null : b2.dataset.tier;
+      paintTiers();
+    };
+  });
+  paintTiers();
 
   box.querySelectorAll('.gb-up').forEach((btn) => {
     btn.onclick = async () => {
@@ -2385,7 +2437,7 @@ App.renderGroupBattle = async () => {
   // действия с живым отсчётом отката. Иконка-кнопка сбоку была мелкой
   // и не показывала, когда снова можно бить.
   const rowOf = (f, enemy) => `
-    <div class="gb-card${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
+    <div class="gb-card ${enemy ? 'gb-card-foe' : 'gb-card-ally'}${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
       <div class="gb-card-top">
         <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
         <span class="grow gb-card-name">
@@ -2395,14 +2447,14 @@ App.renderGroupBattle = async () => {
         </span>
         <span class="gb-card-hp">${UI.fmtNum(f.hp)} / ${UI.fmtNum(f.maxHp)}</span>
       </div>
-      <div class="gb-hp gb-hp-wide"><i style="width:${pct(f.hp, f.maxHp)}%"></i></div>
+      <div class="gb-hp gb-hp-wide"><i class="${enemy ? 'hp-foe' : 'hp-ally'}" style="width:${pct(f.hp, f.maxHp)}%"></i></div>
       ${f.alive ? `
         <div class="gb-card-acts">
           ${enemy ? `<button class="btn gb-act gb-act-wide" data-act="attack" data-id="${f.id}"
                        data-cd-until="${Date.now() + me.cooldownLeftMs}"
                        ${me.cooldownLeftMs > 0 || me.ammo < 1 ? 'disabled' : ''}>
                        <span class="gb-act-label">⚔ Атаковать</span></button>` : ''}
-          ${!enemy && b.canHeal && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
+          ${!enemy && b.canHeal ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
                        data-cd-until="${Date.now() + me.cooldownLeftMs}"
                        ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
                        <span class="gb-act-label">➕ Лечить</span></button>` : ''}
@@ -2555,134 +2607,3 @@ App.renderGroupBattle = async () => {
     App.renderGroupBattle();
   }, 5000);
 };
-
-// ═══ УЛУЧШЕНИЯ: отдельная страница ══════════════════════════════════
-// Раньше раздел раскрывался прямо в витрине и мигал при каждом её
-// обновлении, повторяя запрос к серверу. Теперь это самостоятельная
-// страница со своей кнопкой «Назад».
-App.renderUpgradesPage = async () => {
-  clearInterval(App._gbTimer);
-  const box = document.getElementById('gb-box');
-  if (!box) return;
-  box.dataset.mode = 'upgrades';
-  box.innerHTML = '<div class="loading">Загружаю улучшения…</div>';
-
-  let up = null;
-  try { up = await API.get('/api/group/upgrades'); }
-  catch (e) {
-    box.innerHTML = `
-      <button class="btn mt" id="gb-back-page" style="width:100%">← Назад к групповым боям</button>
-      <div class="card mt"><p style="color:var(--red)">${UI.esc(e.message)}</p>
-        <button class="btn btn-inline mt" id="gb-up-retry">Повторить</button></div>`;
-    const b1 = document.getElementById('gb-back-page');
-    if (b1) b1.onclick = () => { App._gbPage = null; App.renderGroup(); };
-    const r = document.getElementById('gb-up-retry');
-    if (r) r.onclick = () => App.renderUpgradesPage();
-    return;
-  }
-
-  const cost = (c) => c ? `
-    <span class="gb-cost">
-      ${up.currencyIcon} ${UI.fmtNum(c.amount)}
-      <span class="gb-cost-sep">·</span> <span class="ic-ear"></span> ${c.ears}
-      <span class="gb-cost-sep">·</span> <span class="ic-token"></span> ${c.tokens}
-    </span>` : '';
-
-  box.innerHTML = `
-    <button class="btn" id="gb-back-page" style="width:100%">← Назад к групповым боям</button>
-
-    <div class="card mt">
-      <div class="title" style="margin:0">🔧 Улучшения</div>
-      <p class="muted small mt">Навыки прокачиваются по ступеням: на каждом ранге свои десять
-      уровней. Следующая ступень откроется, только когда предыдущая выкачана до конца.</p>
-      <p class="muted small">Платите ${up.currencyIcon} <b>боевыми очками</b> (их дают за бои),
-      <span class="ic-ear"></span> ушами и <span class="ic-token"></span> жетонами милосердия.</p>
-      <div class="gb-wallet mt">
-        <span title="${UI.esc(up.currencyName)}">${up.currencyIcon} ${UI.fmtNum(up.wallet.points)}</span>
-        <span title="Уши"><span class="ic-ear"></span> ${UI.fmtNum(up.wallet.ears)}</span>
-        <span title="Жетоны милосердия"><span class="ic-token"></span> ${UI.fmtNum(up.wallet.tokens)}</span>
-      </div>
-    </div>
-
-    ${up.tierSkills.map((t) => `
-      <div class="card tier-card${t.unlocked ? '' : ' locked'}" style="--tier:${t.color}">
-        <div class="tier-head">
-          <span class="tier-dot"></span>
-          <span class="grow">
-            <b class="tier-name">${UI.esc(t.name)}</b>
-            <span class="muted small">уровни ${t.from}–${t.to} · от ${UI.fmtNum(t.need)} очков</span>
-          </span>
-          <span class="small ${t.unlocked ? 'gold' : 'muted'}">
-            ${t.unlocked ? 'открыто' : '🔒 ещё ' + UI.fmtNum(t.left)}
-          </span>
-        </div>
-        <div class="gb-skills mt">
-          ${t.skills.map((sk) => `
-            <div class="gb-skill${sk.atMaxTier ? ' maxed' : ''}">
-              <div class="gb-skill-top">
-                <span class="gb-skill-icon">${sk.icon}</span>
-                <span class="grow">
-                  <b class="tier-name">${UI.esc(sk.name)}</b>
-                  <span class="muted small">${UI.esc(sk.desc)}</span>
-                </span>
-                <span class="gb-skill-lvl tier-name">${sk.inTier}<span class="muted">/${sk.tierMax}</span></span>
-              </div>
-              <div class="gb-skill-bar"><i style="width:${sk.inTier / sk.tierMax * 100}%;background:${t.color}"></i></div>
-              <div class="gb-skill-now">
-                Сейчас: <b class="tier-name">${sk.kind === 'flat' ? '+' + sk.value : '+' + sk.value + '%'}</b>
-                ${sk.isCurrent && !sk.atMaxTier
-                  ? `<span class="muted small">· уровень +${sk.kind === 'flat' ? sk.step : sk.step + '%'}</span>` : ''}
-              </div>
-              ${sk.atMaxTier
-                ? '<div class="gb-skill-max">Ступень пройдена</div>'
-                : (sk.isCurrent
-                  ? `<div class="gb-skill-buy">
-                       ${sk.nextCost ? `<span class="gb-cost">
-                         ${up.currencyIcon} ${UI.fmtNum(sk.nextCost.amount)}
-                         <span class="gb-cost-sep">·</span> <span class="ic-ear"></span> ${sk.nextCost.ears}
-                         <span class="gb-cost-sep">·</span> <span class="ic-token"></span> ${sk.nextCost.tokens}
-                       </span>` : ''}
-                       <button class="btn btn-inline gb-up" data-skill="${sk.id}"
-                               ${sk.canUpgrade ? '' : 'disabled'}>
-                         ${sk.blockedByRank ? '🔒 ранг' : 'Улучшить'}
-                       </button>
-                     </div>`
-                  : '<div class="muted small">Сначала пройдите предыдущую ступень</div>')}
-            </div>`).join('')}
-        </div>
-      </div>`).join('')}
-
-    <div class="card">
-      <div class="name">Ваши характеристики в бою</div>
-      <div class="gb-stats-grid mt">
-        <span>❤ ${UI.fmtNum(up.stats.hp)} HP</span>
-        <span>⚡ ${UI.fmtNum(up.stats.energy)}</span>
-        <span>🎯 ${up.stats.ammo}</span>
-        <span>💥 крит ${Math.round(up.stats.critChance * 100)}% (×${up.critMin}–×${up.critMax})</span>
-        <span>💨 уворот ${Math.round(up.stats.dodgeChance * 100)}%</span>
-        <span>🛡 −${Math.round(up.stats.damageReduce * 1000) / 10}% урона</span>
-        <span>💚 крит-лечение ${Math.round(up.stats.healCritChance * 100)}%</span>
-        <span>🪙 награда +${Math.round(up.stats.rewardBonus * 100)}%</span>
-      </div>
-    </div>
-
-    <button class="btn mt" id="gb-back-page2" style="width:100%">← Назад к групповым боям</button>`;
-
-  const back = () => { App._gbPage = null; App._resetSign('gbLobby'); App.renderGroup(); };
-  const b1 = document.getElementById('gb-back-page');
-  if (b1) b1.onclick = back;
-  const b2 = document.getElementById('gb-back-page2');
-  if (b2) b2.onclick = back;
-
-  box.querySelectorAll('.gb-up').forEach((btn) => {
-    btn.onclick = async () => {
-      btn.disabled = true;
-      try {
-        await API.post('/api/group/upgrade', { skill: btn.dataset.skill });
-        await App.refreshMe();
-        App.renderUpgradesPage();
-      } catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
-    };
-  });
-};
-

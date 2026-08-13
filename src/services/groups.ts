@@ -422,6 +422,11 @@ function kick(user: User, kind: string, memberId: string, notices: Notices) {
     member[def.userField] = null;
     notifications.push(member.id, 'group_kicked', 'Исключение из группы', { text: `Вы исключены из «${g.name}».` });
   }
+  // Подкрепления между исключённым и группой отзываем: иначе он уходил
+  // и возвращался, отправляя второе тому же союзнику
+  if (kind === 'alliance') {
+    try { require('./reinforcements').revokeAllFor(memberId, [...g.members, user.id]); } catch (e) {}
+  }
   db.save(def.coll);
   notices.push('Боец исключён.');
 }
@@ -436,6 +441,10 @@ function leave(user: User, kind: string, notices: Notices) {
   const i = g.members.indexOf(user.id);
   if (i >= 0) g.members.splice(i, 1);
   user[def.userField] = null;
+  // Отзываем подкрепления в обе стороны — см. пояснение в kick()
+  if (kind === 'alliance') {
+    try { require('./reinforcements').revokeAllFor(user.id, [...g.members, g.leaderId]); } catch (e) {}
+  }
 
   if (g.leaderId === user.id) {
     if (g.members.length === 0) {

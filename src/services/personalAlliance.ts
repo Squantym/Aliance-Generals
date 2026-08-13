@@ -239,8 +239,15 @@ function removeMember(user: User, memberId: string, notices: Notices) {
   user.allianceRoster = user.allianceRoster!.filter((m) => m.id !== memberId);
   if (user.allianceRoster.length < before) {
     user.allianceMembers = Math.max(0, user.allianceMembers! - 1);
+    // Разорвали союз — отзываем подкрепления в обе стороны. Иначе можно
+    // было выйти, вернуться и отправить второе тому же игроку, а первое
+    // продолжало действовать: подкреплений накапливалось сколько угодно.
+    let revoked = 0;
+    try { revoked = require('./reinforcements').revokeAllFor(user.id, [memberId]); } catch (e) {}
     db.save('users');
-    notices.push('Участник исключён из вашего альянса.');
+    notices.push(revoked
+      ? `Участник исключён. Подкреплений отозвано: ${revoked}.`
+      : 'Участник исключён из вашего альянса.');
   }
   return view(user);
 }

@@ -40,10 +40,10 @@ console.log('\n── 1. Базовые характеристики ──');
 const base = gu.statsFor(plain);
 ok(base.hp === 1500, `HP: ${base.hp}`);
 ok(base.energy === 1000, `энергия: ${base.energy}`);
-ok(base.ammo === 50, `боеприпасы: ${base.ammo}`);
+ok(base.ammo === 70, `боеприпасы: ${base.ammo}`);
 ok(base.critChance === 0.20, `крит: ${base.critChance * 100}%`);
 ok(base.dodgeChance === 0.20, `уворот: ${base.dodgeChance * 100}%`);
-ok(gb.HP === 1500 && gb.AMMO === 50, 'бой берёт те же базовые значения');
+ok(gb.HP === 1500 && gb.AMMO === 70, 'бой берёт те же базовые значения');
 
 console.log('\n── 2. Навыки ──');
 ok(gu.SKILLS.length === 8, `навыков: ${gu.SKILLS.length}`);
@@ -130,7 +130,7 @@ pro.gbUpgrades = { crit: 10, dodge: 10, reward: 10, healCrit: 10, armor: 10, hp:
 const up = gu.statsFor(pro);
 ok(up.hp === 1800, `HP: 1500 → ${up.hp} (+20%)`);
 ok(up.energy === 1300, `энергия: 1000 → ${up.energy} (+30%)`);
-ok(up.ammo === 80, `боеприпасы: 50 → ${up.ammo} (+30)`);
+ok(up.ammo === 100, `боеприпасы: 70 → ${up.ammo} (+30)`);
 ok(up.critChance === 0.30, `крит: 20% → ${Math.round(up.critChance * 100)}%`);
 ok(up.dodgeChance === 0.30, `уворот: 20% → ${Math.round(up.dodgeChance * 100)}%`);
 ok(Math.abs(up.damageReduce - 0.07) < 1e-6, `снижение урона: ${(up.damageReduce * 100).toFixed(1)}%`);
@@ -177,7 +177,7 @@ const bt = db.load('groupBattle', {}).battle;
 const fPro = bt.fighters[pro.id], fPlain = bt.fighters[plain.id];
 ok(fPro.maxHp === 1800, `в бою у прокачанного ${fPro.maxHp} HP`);
 ok(fPlain.maxHp === 1500, `у обычного ${fPlain.maxHp} HP`);
-ok(fPro.maxAmmo === 80 && fPlain.maxAmmo === 50, 'боеприпасы тоже различаются');
+ok(fPro.maxAmmo === 100 && fPlain.maxAmmo === 70, 'боеприпасы тоже различаются');
 ok(fPro.maxEnergy === 1300, 'и энергия');
 // Уворот
 const foe = Object.values(bt.fighters).find((f) => f.team !== fPro.team && f.alive);

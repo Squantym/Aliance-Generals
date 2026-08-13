@@ -2555,9 +2555,18 @@ const App = {
     }
 
     const go = document.getElementById('cb-go');
-    if (go) go.onclick = () => {
+    if (go) go.onclick = async () => {
       App._warTab = where === 'arena' ? 'arena' : 'group';
       App._gbPage = null;
+      // Зовут в комнату — сразу занимаем место, а не просто открываем
+      // вкладку. Раньше кнопка вела на витрину, вход не выполнялся, и
+      // человек считался не явившимся.
+      if (c.needEnter) {
+        try {
+          await API.post(where === 'arena' ? '/api/arena/enter' : '/api/group/enter', {});
+          await App.refreshMe();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      }
       location.hash = '#war/' + App._warTab;
       App.rerender();
     };

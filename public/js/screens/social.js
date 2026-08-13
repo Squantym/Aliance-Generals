@@ -1372,10 +1372,9 @@ App.screens.chat = async (c, param) => {
       const { messages } = await API.get('/api/chat?room=' + (App._chatRoom || 'global'));
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
-        <div class="chat-msg${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}${msg.deleted ? ' chat-msg-deleted' : ''}${msg.tombstone ? ' chat-msg-tomb' : ''}">
+        <div class="chat-msg${msg.vip ? ' chat-msg-vip' : ''}${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}${msg.deleted ? ' chat-msg-deleted' : ''}${msg.tombstone ? ' chat-msg-tomb' : ''}">
           ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
-          ${App.vipMark(msg.vip)}
           ${App.vipMark(msg.vip)}
           ${msg.staff ? `<sup class="role-tag role-tag-${msg.staff}" title="${UI.esc(msg.staffLabel || '')}">${UI.esc(msg.staffTag || '')}</sup>` : ''}
           ${msg.banned ? '<span class="chat-banned-mark" title="На игроке действует блокировка">🔇</span>' : ''}
@@ -1418,7 +1417,7 @@ App.screens.chat = async (c, param) => {
     const text = input.value.trim();
     if (!text) return;
     try {
-      await API.post('/api/chat', { text: txt, room: App._chatRoom || 'global' });
+      await API.post('/api/chat', { text, room: App._chatRoom || 'global' });
       input.value = '';
       await loadChat();
       box.scrollTop = box.scrollHeight;

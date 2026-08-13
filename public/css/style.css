@@ -4004,17 +4004,23 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
 .gb-enter-title { font-weight: 700; color: var(--orange-1); }
 
 /* ═══ Плашка боя поверх всех экранов ═════════════════════════════════ */
+/* Плашка боя. По центру и с ограниченной шириной: растянутая во весь
+   экран на широких мониторах смотрелась чужеродно, а текст уезжал к
+   левому краю. */
 .combat-bar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 18000;
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px; font-size: 13px;
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 18000;
+  display: flex; align-items: center; gap: 10px;
+  width: max-content; max-width: calc(100vw - 20px);
+  padding: 7px 14px; font-size: 13px;
+  border-radius: 10px;
   background: linear-gradient(180deg, #2a2416, #1a1610);
-  border-bottom: 1px solid var(--gold);
-  box-shadow: 0 3px 12px rgba(0,0,0,.5);
+  border: 1px solid var(--gold);
+  box-shadow: 0 4px 16px rgba(0,0,0,.55);
 }
 .combat-bar.fighting {
   background: linear-gradient(180deg, #3a1d1d, #241111);
-  border-bottom-color: #b04a4a;
+  border-color: #b04a4a;
 }
 .combat-bar .grow { flex: 1; }
 .combat-bar .btn { padding: 3px 10px; font-size: 12px; }
@@ -4024,7 +4030,11 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
 }
 .combat-bar.fighting .cb-dot { background: #ff6b6b; }
 @keyframes cbPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-body:has(#combat-bar) { padding-top: 32px; }
+body:has(#combat-bar) { padding-top: 46px; }
+@media (max-width: 480px) {
+  .combat-bar { font-size: 12px; padding: 6px 10px; gap: 7px; }
+  .combat-bar .btn { padding: 3px 8px; font-size: 11.5px; }
+}
 
 /* Полосы здоровья во всю ширину — так виднее, кто на грани */
 .arena-hp, .gb-hp { height: 14px; border-radius: 7px; }
@@ -4129,23 +4139,109 @@ body.combat-fullscreen { padding-top: 0 !important; }
 /* Плашка «пора в комнату» */
 .combat-bar.calling {
   background: linear-gradient(180deg, #3a2a12, #241a0c);
-  border-bottom-color: var(--orange-1);
+  border-color: var(--orange-1);
 }
 .combat-bar.calling .cb-dot { background: var(--orange-1); }
 
 /* ═══ Карточка бойца в групповом бою ═════════════════════════════════ */
 .gb-card {
-  padding: 9px 11px; margin-bottom: 7px; border-radius: 9px;
+  padding: 6px 9px; margin-bottom: 5px; border-radius: 7px;
   border: 1px solid var(--border); background: var(--panel);
 }
 .gb-card:last-child { margin-bottom: 0; }
 .gb-card.gb-dead { opacity: .45; }
 .gb-card.gb-me { border-color: #4d7a3d; background: rgba(95,191,74,.07); }
 .gb-card.gb-target { box-shadow: inset 3px 0 0 var(--orange-1); }
-.gb-card-top { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.gb-card-top { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
 .gb-card-name { font-weight: 600; }
 .gb-card-hp { color: var(--dim); font-size: 12px; white-space: nowrap; }
-.gb-hp-wide { height: 14px; border-radius: 7px; margin-top: 6px; }
-.gb-card-acts { display: flex; gap: 6px; margin-top: 7px; }
-.gb-act-wide { flex: 1; padding: 7px 10px; font-size: 13px; }
+/* Полоса здоровья: у своих зелёная, у врагов красная — на глаз видно,
+   кого можно бить, а кого лечить. Раньше все были зелёными, и в спешке
+   игроки путали союзников с противниками. */
+.gb-hp-wide { height: 10px; border-radius: 5px; margin-top: 5px; }
+.gb-card-foe .gb-hp i { background: linear-gradient(90deg, #bf4a4a, #e07a7a); }
+.gb-card-ally .gb-hp i { background: linear-gradient(90deg, #5fbf4a, #8fd47a); }
+.gb-card-foe { border-left: 3px solid #a83c3c; }
+.gb-card-ally { border-left: 3px solid #4d7a3d; }
+.gb-card-acts { display: flex; gap: 5px; margin-top: 5px; }
+.gb-act-wide { flex: 1; padding: 4px 8px; font-size: 12px; }
 .gb-card-dead { margin-top: 6px; text-align: center; font-size: 12px; color: var(--dim); }
+
+/* Раскрывающиеся ступени улучшений */
+.tier-head {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: none; border: none; color: var(--fg);
+  padding: 2px 0; cursor: pointer; text-align: left;
+}
+.tier-head .grow { display: flex; flex-direction: column; }
+.tier-head:hover .tier-name { filter: brightness(1.2); }
+
+/* История боёв */
+.hist-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 9px; margin-bottom: 4px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border-dim); font-size: 12.5px;
+}
+.hist-row:last-child { margin-bottom: 0; }
+.hist-win { border-left: 3px solid #4d7a3d; }
+.hist-lose { border-left: 3px solid #a83c3c; }
+.hist-forfeit { border-left: 3px solid var(--dim); opacity: .7; }
+.hist-res { font-weight: 700; white-space: nowrap; }
+.hist-rew { display: flex; gap: 8px; white-space: nowrap; font-size: 12px; }
+@media (max-width: 420px) {
+  .hist-row { flex-wrap: wrap; }
+  .hist-rew { width: 100%; justify-content: flex-end; }
+}
+
+/* Свои и чужие: цвет полосы здоровья и рамки */
+.gb-hp i.hp-ally { background: linear-gradient(90deg, #5fbf4a, #8fd47a); }
+.gb-hp i.hp-foe  { background: linear-gradient(90deg, #bf4a4a, #e07a7a); }
+.gb-card-ally { border-left: 3px solid #4d7a3d; }
+.gb-card-foe  { border-left: 3px solid #7a2e2e; }
+
+/* Компактнее: игроки жаловались, что всё крупное */
+.gb-card { padding: 7px 9px; margin-bottom: 5px; }
+.gb-card-top { font-size: 12.5px; gap: 6px; }
+.gb-hp-wide { height: 11px; margin-top: 5px; }
+.gb-card-acts { margin-top: 5px; gap: 5px; }
+.gb-act-wide { padding: 5px 8px; font-size: 12px; }
+.gb-card-hp { font-size: 11px; }
+.gb-role-icon { font-size: 15px; }
+
+/* Свёрнутые ступени улучшений */
+.tier-toggle {
+  width: 100%; background: none; border: none; cursor: pointer;
+  color: var(--fg); text-align: left; padding: 2px 0;
+}
+.tier-toggle .rules-arrow { margin-left: 6px; }
+
+/* История боёв */
+.hist-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; margin-bottom: 5px; border-radius: 7px;
+  background: var(--panel); border: 1px solid var(--border-dim); font-size: 13px;
+}
+.hist-row:last-child { margin-bottom: 0; }
+.hist-row .grow { display: flex; flex-direction: column; }
+.hist-win { border-left: 3px solid #4d7a3d; }
+.hist-lose { border-left: 3px solid #7a2e2e; }
+.hist-mark { font-size: 17px; }
+.hist-rew { display: flex; flex-direction: column; align-items: flex-end; font-size: 12px; white-space: nowrap; }
+
+/* ═══ Сообщения VIP в чате ═══════════════════════════════════════════
+   Цвет по той же схеме, что у персонала: красится текст, а не фон —
+   иначе лента пестрит и читать тяжело. Оттенок сиреневый: золото уже
+   занято владельцем, оранжевый — администрацией. */
+.chat-msg-vip .chat-text { color: #c9a0ff; }
+.chat-msg-vip .who { color: #d9bcff; }
+.chat-msg-vip {
+  border-left: 2px solid #8b5fd6;
+  padding-left: 6px;
+  background: linear-gradient(90deg, rgba(139,95,214,.10), transparent 60%);
+  border-radius: 4px;
+}
+/* У персонала свой цвет — он важнее и перебивает VIP */
+.chat-msg-vip.chat-msg-staff .chat-text { color: inherit; }
+.chat-msg-moderator .chat-text { color: #6fdcff !important; }
+.chat-msg-admin .chat-text     { color: var(--orange-1) !important; }
+.chat-msg-owner .chat-text     { color: var(--gold) !important; }

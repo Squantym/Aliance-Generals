@@ -840,7 +840,12 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       // Ловкость защитника даёт шанс «ускользнуть» от занесённого клинка:
       // 0.5% за уровень, максимум 50%. Применяется только к реальным игрокам.
       const escapeChance = isBot ? 0 : Math.min(0.50, target.skills.agility * 0.005);
-      if (Math.random() < escapeChance) {
+      // VIP: три гарантированных ухода в сутки, независимо от ловкости.
+      // Проверяем ДО броска — иначе удачный бросок «съедал» бы попытку.
+      // Раньше эта защита стояла на шаге фаталити, но там ускользание
+      // уже не проверяется: уходить надо в момент пленения.
+      const vipSaved = isBot ? false : require('./vip').tryFatalityImmunity(target);
+      if (vipSaved || Math.random() < escapeChance) {
         fatalityDodged = true;
         // Достижение «Неуловимый» — у ЦЕЛИ (реальный игрок ушёл от клинка)
         ach.bump(target, 'dodgesInFatality', 1, []);
@@ -953,22 +958,11 @@ function fatality(user: User, choice: string, notices: Notices) {
         user.pendingFatality = null;
         throw new u.ApiError(`У «${victimCheck.name}» уже нет ушей — фаталити невозможно совершить.`);
       }
-      // ЛОВКОСТЬ ЖЕРТВЫ: тем же шансом, что и уворот в бою (база макс 50% +
-      // допинг «Призрак» до +20%), жертва может ускользнуть от фаталити —
-      // и от отрезания уха, и от помилования. Окно просто закрывается.
-      const dodgeBase = Math.min(B.DODGE_MAX, victimCheck.skills.agility * B.DODGE_PER_AGILITY);
-      const dodgeChance = dodgeBase + (player.effMul(victimCheck, 'dodge_bonus') - 1);
-      // VIP: три гарантированных ухода в сутки — независимо от ловкости.
-      // Проверяем ДО броска: иначе удачный бросок «съедал» бы попытку.
-      const vipSaved = require('./vip').tryFatalityImmunity(victimCheck);
-      if (vipSaved || Math.random() < dodgeChance) {
-        user.pendingFatality = null;
-        notifications.push(victimCheck.id, 'fatality_escape', `Вы ускользнули от фаталити игрока ${user.name}!`, {
-          attackerName: user.name, attackerId: user.id, at: Date.now(),
-        });
-        notices.push(`💨 «${victimCheck.name}» ускользнул в последний момент — фаталити сорвалось!`);
-        return { choice: 'escaped', escaped: true, victimName: victimCheck.name, ears: user.ears, tokens: user.tokens };
-      }
+      // Ускользание проверяется РАНЬШЕ — в момент пленения, сразу после
+      // победы в бою (см. escapeChance выше). Здесь повторной проверки
+      // нет намеренно: игрок уже видит пленного и заносит клинок, и
+      // отнимать добычу на этом шаге — обман ожиданий. Кто увернулся,
+      // до окна фаталити просто не доходит.
     }
   }
   user.pendingFatality = null;
