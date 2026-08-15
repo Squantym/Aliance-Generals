@@ -74,10 +74,15 @@ function registerRoutes(app: any) {
   // регенерация, почасовой доход, чистка эффектов.
   app.setUserRefresher(player.refresh);
 
-  // Обёртка для действий: собирает notices и догоняет достижения
-  const act = (handler: any) => (req: any) => {
+  // Обёртка для действий: собирает notices и догоняет достижения.
+  // ВАЖНО: await обязателен. Обработчик может быть асинхронным (например,
+  // смена пароля — там scrypt считается в пуле потоков), и без await сюда
+  // попадал бы Promise: `{ ...Promise }` даёт пустой объект, то есть ответ
+  // игроку молча терял бы всё содержимое. Роутер сам ждёт результат
+  // обработчика, поэтому возвращать отсюда промис безопасно.
+  const act = (handler: any) => async (req: any) => {
     const notices: string[] = [];
-    const result = handler(req, notices) || {};
+    const result = (await handler(req, notices)) || {};
     ach.check(req.user, notices);
     return { ...result, notices };
   };
@@ -286,6 +291,13 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/silos/fuel-power',   act((req, n) => silos.fuelPower(req.user, req.body.siloId, req.body.amount, n)));
   app.add('POST', '/api/silos/launch',       act((req, n) => silos.launch(req.user, req.body.siloId, req.body.targetId, n)));
   app.add('POST', '/api/rockets/dismiss-hit', (req) => require('./services/silos').dismissRocketHit(req.user));
+  // История ракет: запущенные игроком и прилетевшие по нему.
+  // Перед выдачей добавляем долетевшие — иначе только что попавшая
+  // ракета появилась бы в журнале лишь после следующего тика.
+  app.add('GET',  '/api/silos/history',      (req) => {
+    try { silos.resolveInFlight(); } catch (e) {}
+    return silos.history(req.user);
+  });
   // ---------- Лазеры (ПВО) ----------
   app.add('GET',  '/api/lasers',             (req) => require('./services/lasers').view(req.user));
   app.add('POST', '/api/lasers/build',       act((req, n) => require('./services/lasers').buyLaser(req.user, n)));

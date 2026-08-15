@@ -34,17 +34,17 @@ async function main() {
 
   console.log('1. Регистрация и вход');
   // В dev-режиме (без RESEND_API_KEY) сервер сразу выдаёт токен
-  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'pass123', country: 'ru' });
+  const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: 'parol12345', country: 'ru' });
   check('первый игрок зарегистрирован', regA.status === 200 && (!!regA.data.token || regA.data.pending));
   const A = regA.data.token; // в dev-режиме есть сразу
-  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'pass123', country: 'ua' });
+  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'parol12345', country: 'ua' });
   check('второй игрок зарегистрирован', regB.status === 200);
   const B = regB.data.token;
   const dupe = await post('/api/register', null, { login: nameA, email: `dupe${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат позывного отклонён', dupe.status === 400);
   const dupeEmail = await post('/api/register', null, { login: 'ZZZ' + stamp, email: `admina${stamp}@test.ru`, password: 'x1234', country: 'ru' });
   check('дубликат email отклонён', dupeEmail.status === 400);
-  const login = await post('/api/login', null, { login: nameA, password: 'pass123' });
+  const login = await post('/api/login', null, { login: nameA, password: 'parol12345' });
   check('вход работает', login.status === 200 && !!login.data.token);
 
   console.log('2. Состояние игрока');
@@ -300,7 +300,7 @@ async function main() {
 
   console.log('23. Защита построек учитывается в power.def');
   // Берём C — нового игрока без построек
-  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'pass123', country: 'kz' });
+  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'parol12345', country: 'kz' });
   const C = regC.data.token;
   const idC = (await get('/api/me', C)).data.id;
   await post('/api/admin/grant', A, { userId: idC, setLevel: 35, dollars: 100000 });

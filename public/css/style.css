@@ -197,6 +197,31 @@ a:hover { text-decoration: underline; }
 .sab-tabs .sab-tab {
   min-width: 104px; padding: 11px 10px; font-size: 13.5px; border-radius: 7px;
 }
+
+/* ---------- ИСТОРИЯ РАКЕТ ---------- */
+/* Подвкладки внутри раздела — мельче основных, чтобы не спорить с ними */
+.rk-log-tabs { gap: 5px; margin-bottom: 8px; }
+.rk-log-tabs .rk-log-tab {
+  min-width: 0; padding: 6px 8px; font-size: 11.5px; border-radius: 4px;
+  letter-spacing: .02em; text-transform: none;
+}
+.rk-log-list { padding: 4px 0; }
+.rk-log-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+}
+.rk-log-row:last-child { border-bottom: none; }
+.rk-log-main { flex: 1; min-width: 0; }
+.rk-log-who { font-size: 13.5px; margin-bottom: 2px; }
+/* Длинный позывной не должен выдавливать кнопку за край карточки */
+.rk-log-who b { overflow-wrap: anywhere; }
+/* Итог отдельной строкой: вместе с датой он переносился рваным хвостом */
+.rk-log-res { font-size: 12.5px; margin-bottom: 2px; }
+.rk-log-btn { flex: 0 0 auto; padding: 6px 10px; font-size: 12px; }
+@media (max-width: 420px) {
+  .rk-log-row { flex-wrap: wrap; }
+  .rk-log-btn { width: 100%; }
+}
 /* Карточка вида диверсанта — крупнее шапка/иконка, но без перебора */
 .sab-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .sab-head .ic-sab { width: 156px; height: 156px; }  /* ×3 от прежних 52px */
@@ -2021,6 +2046,7 @@ body.theme-cyber .img-frame {
 .bw-body { padding: 8px 12px; }
 .bw-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
 .bw-card.tight { padding: 6px 10px; }
+
 .bw-me-res { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); margin-top: 5px; }
 .bw-me-res b { color: var(--text); }
 
@@ -3857,6 +3883,11 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
 
 .gb-fight { border-color: var(--orange-1); }
 .gb-fight-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+/* Переключатель порядка блоков (противники / своя команда) — прижат
+   вправо, чтобы не мешать взгляду, идущему по бойцам сверху вниз */
+.gb-order-row { display: flex; justify-content: flex-end; margin: 0 0 6px; }
+.gb-order-btn { padding: 5px 10px; font-size: 11.5px; opacity: .85; }
+.gb-order-btn:active { opacity: 1; }
 .gb-log-attack { color: #e0b0b0; }
 .gb-log-heal { color: #a8d18f; }
 .gb-log-guard { color: #9ec8e8; }

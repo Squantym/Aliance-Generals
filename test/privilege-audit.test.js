@@ -29,6 +29,13 @@ const denied = (fn, who, what) => {
   try { fn(); ok(false, `${who} смог: ${what}`); }
   catch (e) { ok(true, `${who} не может: ${what}`); }
 };
+// Асинхронный вариант: смена пароля считает scrypt в пуле потоков, поэтому
+// отказ доступа приходит отклонённым промисом, а не синхронным throw.
+// Без await такой отказ выглядел бы как «действие прошло» — ложная тревога.
+const deniedA = async (fn, who, what) => {
+  try { await fn(); ok(false, `${who} смог: ${what}`); }
+  catch (e) { ok(true, `${who} не может: ${what}`); }
+};
 // Действие должно быть РАЗРЕШЕНО
 const allowed = (fn, who, what) => {
   try { fn(); ok(true, `${who} может: ${what}`); }
@@ -52,7 +59,7 @@ clean();
 denied(() => roles.banAccount(mod, vic.id, 60, 'x', []), 'Дозор', 'блокировка аккаунта');
 denied(() => roles.unbanAccount(mod, vic.id, []), 'Дозор', 'снятие бана аккаунта');
 denied(() => admin.setBan(mod, { userId: vic.id, banned: true, reason: 'x' }, []), 'Дозор', 'бан через админку');
-denied(() => admin.setPassword(mod, { userId: vic.id, password: 'новый12345' }, []), 'Дозор', 'смена чужого пароля');
+await deniedA(() => admin.setPassword(mod, { userId: vic.id, password: 'новый12345' }, []), 'Дозор', 'смена чужого пароля');
 denied(() => admin.resetAccount(mod, { userId: vic.id }, []), 'Дозор', 'сброс аккаунта');
 denied(() => admin.deleteAccount(mod, { userId: vic.id, confirmName: vic.name }, []), 'Дозор', 'удаление аккаунта');
 denied(() => admin.grant(mod, { userId: vic.id, gold: 1000 }, []), 'Дозор', 'выдача ресурсов');

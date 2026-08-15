@@ -14,6 +14,9 @@ process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают иг�
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не было)'); } catch (e) { ok(String(e.message).includes(part), `${n} → «${e.message.slice(0, 48)}»`); } };
+// Асинхронный вариант: вход и смена пароля считают scrypt в пуле потоков,
+// поэтому бросают через отклонённый промис, а не синхронно.
+const failsA = async (fn, part, n) => { try { await fn(); ok(false, n + ' (ошибки не было)'); } catch (e) { ok(String(e.message).includes(part), `${n} → «${e.message.slice(0, 48)}»`); } };
 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
@@ -124,29 +127,29 @@ console.log('\n── 8. Логин аккаунта отдельно от по�
 // Персонажей трое, а вход один — логин не может быть привязан к имени
 const solo2 = other;
 const nl = [];
-auth.setAccountLogin(p1, 'komandir_7', 'пароль123', nl);
+await auth.setAccountLogin(p1, 'komandir_7', 'пароль123', nl);
 ok(p1.accountLogin === 'komandir_7', 'логин задан');
 ok(U[c2.id].accountLogin === 'komandir_7', 'у всех персонажей аккаунта логин общий');
 ok(/для всех/.test(nl[0]), `сообщение поясняет: «${nl[0].slice(0, 52)}…»`);
-fails(() => auth.setAccountLogin(p1, 'ab', 'пароль123', []), '4–20 символов', 'короткий логин отклонён');
-fails(() => auth.setAccountLogin(p1, 'логин', 'пароль123', []), 'латиница', 'кириллица отклонена');
-fails(() => auth.setAccountLogin(p1, 'novyi_login', 'неверный', []), 'Неверный пароль',
+await failsA(() => auth.setAccountLogin(p1, 'ab', 'пароль123', []), '4–20 символов', 'короткий логин отклонён');
+await failsA(() => auth.setAccountLogin(p1, 'логин', 'пароль123', []), 'латиница', 'кириллица отклонена');
+await failsA(() => auth.setAccountLogin(p1, 'novyi_login', 'неверный', []), 'Неверный пароль',
       'без пароля логин не сменить — иначе перехваченная сессия уводит аккаунт');
-fails(() => auth.setAccountLogin(solo2, 'komandir_7', 'пароль123', []), 'уже занят', 'занятый логин отклонён');
+await failsA(() => auth.setAccountLogin(solo2, 'komandir_7', 'пароль123', []), 'уже занят', 'занятый логин отклонён');
 // Логин не должен совпадать с чужим позывным — иначе вход неоднозначен
 await auth.register('Latinec', 'пароль123', 'z@t.ru', 'ru', '9.9.9.9', 'UA');
 const lat = by('Latinec');
-fails(() => auth.setAccountLogin(solo2, 'Latinec', 'пароль123', []), 'уже занят',
+await failsA(() => auth.setAccountLogin(solo2, 'Latinec', 'пароль123', []), 'уже занят',
       'логин не может совпасть с чужим позывным');
 
 console.log('\n── 9. Вход тремя способами ──');
 for (const [what, value] of [['логин аккаунта', 'komandir_7'], ['почта', 'a@t.ru'], ['позывной', 'Второй']]) {
   let entered = false;
-  try { auth.login(value, 'пароль123', '1.1.1.1', 'UA'); entered = true; } catch (e) {}
+  try { await auth.login(value, 'пароль123', '1.1.1.1', 'UA'); entered = true; } catch (e) {}
   ok(entered, `вход по «${what}» работает`);
 }
 let wrong = false;
-try { auth.login('komandir_7', 'неверный', '1.1.1.1', 'UA'); } catch (e) { wrong = /Неверный логин или пароль/.test(e.message); }
+try { await auth.login('komandir_7', 'неверный', '1.1.1.1', 'UA'); } catch (e) { wrong = /Неверный логин или пароль/.test(e.message); }
 ok(wrong, 'при неверном пароле сообщение не раскрывает, существует ли аккаунт');
 const asrc = fs.readFileSync(path.join(ROOT, 'src/services/auth.ts'), 'utf8');
 ok(/byAccountLogin\.length \? byAccountLogin/.test(asrc), 'логин аккаунта имеет приоритет');

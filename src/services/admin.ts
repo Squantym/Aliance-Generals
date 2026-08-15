@@ -916,7 +916,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
 // любой пароль (минимум 8 символов — единственное ограничение, чтобы
 // аккаунт не остался беззащитным). Все сессии игрока завершаются, а
 // висящая ссылка восстановления аннулируется.
-function setPassword(adminUser: User, body: any, notices: Notices) {
+async function setPassword(adminUser: User, body: any, notices: Notices) {
   assertZone(adminUser, 'security', 'Смена пароля игроку');
   const db = require('../core/db');
   const players: Record<string, User> = require('./player').users();
@@ -931,7 +931,7 @@ function setPassword(adminUser: User, body: any, notices: Notices) {
 
   const salt = u.uid(16);
   target.salt = salt;
-  target.passHash = u.hashPassword(pass, salt);
+  target.passHash = await u.hashPassword(pass, salt);
   (target as any).resetToken = null;      // старая ссылка из письма больше не нужна
   (target as any).resetTokenExp = 0;
 

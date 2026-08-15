@@ -29,6 +29,12 @@ function fails(fn, msgPart, name) {
   try { fn(); ok(false, name + ' (ошибки не было)'); }
   catch (e) { ok(String(e.message).includes(msgPart), `${name} → «${e.message}»`); }
 }
+// Асинхронный вариант: работа с паролями считает scrypt в пуле потоков,
+// поэтому ошибка приходит отклонённым промисом, а не синхронным throw.
+async function failsA(fn, msgPart, name) {
+  try { await fn(); ok(false, name + ' (ошибки не было)'); }
+  catch (e) { ok(String(e.message).includes(msgPart), `${name} → «${e.message}»`); }
+}
 
 const auth = require('../dist/src/services/auth');
 const admin = require('../dist/src/services/admin');
@@ -52,22 +58,22 @@ boss.isAdmin = true; boss.role = 'owner';   // прав по роли больш
 ok(boss.isAdmin && !victim.isAdmin, 'админ и обычные игроки созданы');
 
 console.log('\n── 1. Смена пароля игроком (Настройки → Аккаунт) ──');
-fails(() => auth.changePassword(victim, 'неверный1', 'новый12345', 'новый12345'),
+await failsA(() => auth.changePassword(victim, 'неверный1', 'новый12345', 'новый12345'),
       'Текущий пароль неверен', 'неверный старый пароль отклонён');
-fails(() => auth.changePassword(victim, 'старый123', 'новый12345', 'другой12345'),
+await failsA(() => auth.changePassword(victim, 'старый123', 'новый12345', 'другой12345'),
       'не совпадают', 'несовпадение новых паролей отклонено');
-fails(() => auth.changePassword(victim, 'старый123', 'кор1', 'кор1'),
+await failsA(() => auth.changePassword(victim, 'старый123', 'кор1', 'кор1'),
       'минимум 8', 'короткий пароль отклонён');
-fails(() => auth.changePassword(victim, 'старый123', 'толькобуквы', 'толькобуквы'),
+await failsA(() => auth.changePassword(victim, 'старый123', 'толькобуквы', 'толькобуквы'),
       'буквы и цифры', 'пароль без цифр отклонён');
-fails(() => auth.changePassword(victim, 'старый123', 'старый123', 'старый123'),
+await failsA(() => auth.changePassword(victim, 'старый123', 'старый123', 'старый123'),
       'совпадает со старым', 'повтор старого пароля отклонён');
 
 // Заводим две «живые» сессии, чтобы проверить их сброс
 const sess = db.load('sessions', {});
 sess['токен-телефон'] = victim.id;
 sess['токен-планшет'] = victim.id;
-const r = auth.changePassword(victim, 'старый123', 'новый12345', 'новый12345');
+const r = await auth.changePassword(victim, 'старый123', 'новый12345', 'новый12345');
 ok(r.ok && typeof r.token === 'string' && r.token.length > 10, 'смена прошла, выдан новый токен');
 const sessNow = db.load('sessions', {});
 ok(!sessNow['токен-телефон'] && !sessNow['токен-планшет'], 'старые сессии сброшены');
@@ -76,22 +82,22 @@ const sessRec = sessNow[r.token];
 const sessUid = typeof sessRec === 'string' ? sessRec : (sessRec && sessRec.u);
 ok(sessUid === victim.id, 'новый токен валиден — игрока не выкинуло из игры');
 ok(sessRec && sessRec.at > 0, 'у новой сессии проставлено время активности (для срока жизни)');
-ok(u.verifyPassword('новый12345', victim.salt, victim.passHash), 'новый пароль установлен');
-ok(!u.verifyPassword('старый123', victim.salt, victim.passHash), 'старый пароль больше не подходит');
-fails(() => auth.login('Жертва', 'старый123', ''), 'Неверный логин или пароль', 'вход по старому паролю невозможен');
-const okLogin = auth.login('Жертва', 'новый12345', '');
+ok(await u.verifyPassword('новый12345', victim.salt, victim.passHash), 'новый пароль установлен');
+ok(!await u.verifyPassword('старый123', victim.salt, victim.passHash), 'старый пароль больше не подходит');
+await failsA(() => auth.login('Жертва', 'старый123', ''), 'Неверный логин или пароль', 'вход по старому паролю невозможен');
+const okLogin = await auth.login('Жертва', 'новый12345', '');
 ok(!!okLogin.token, 'вход по новому паролю работает');
 
 console.log('\n── 2. Установка пароля админом ──');
 const n = [];
-fails(() => admin.setPassword(boss, { userId: victim.id, password: 'кор1' }, n),
+await failsA(() => admin.setPassword(boss, { userId: victim.id, password: 'кор1' }, n),
       'минимум 8', 'короткий пароль отклонён');
-fails(() => admin.setPassword(boss, { userId: 'нет-такого', password: 'пароль1234' }, n),
+await failsA(() => admin.setPassword(boss, { userId: 'нет-такого', password: 'пароль1234' }, n),
       'не найден', 'несуществующий игрок отклонён');
-const res = admin.setPassword(boss, { userId: victim.id, password: 'админский99' }, n);
+const res = await admin.setPassword(boss, { userId: victim.id, password: 'админский99' }, n);
 ok(res.sessionsKilled >= 1, `сессии игрока сброшены (${res.sessionsKilled})`);
-ok(!!auth.login('Жертва', 'админский99', '').token, 'вход с назначенным админом паролем работает');
-fails(() => auth.login('Жертва', 'новый12345', ''), 'Неверный логин или пароль', 'прежний пароль игрока аннулирован');
+ok(!!(await auth.login('Жертва', 'админский99', '')).token, 'вход с назначенным админом паролем работает');
+await failsA(() => auth.login('Жертва', 'новый12345', ''), 'Неверный логин или пароль', 'прежний пароль игрока аннулирован');
 ok(!n.join(' ').includes('админский99'), 'пароль НЕ утекает в уведомления админа');
 const logs = db.load('auditlog', []) || [];
 ok(JSON.stringify(logs).indexOf('админский99') === -1, 'пароль НЕ попадает в журнал действий');
@@ -99,7 +105,7 @@ ok(JSON.stringify(logs).indexOf('админский99') === -1, 'пароль Н
 // Пароль другого админа менять нельзя
 await auth.register('Второй', 'пароль123', 'a2@test.ru', 'ru', '4.4.4.4');
 const boss2 = byName('Второй'); boss2.isAdmin = true; boss2.role = 'owner';   // прав по роли больше нет — делаем владельцем
-fails(() => admin.setPassword(boss, { userId: boss2.id, password: 'пароль1234' }, n),
+await failsA(() => admin.setPassword(boss, { userId: boss2.id, password: 'пароль1234' }, n),
       'другого администратора', 'смена пароля другому админу запрещена');
 
 console.log('\n── 3. Полное удаление аккаунта ──');
@@ -139,8 +145,8 @@ ok(!player.users()[victimId], 'запись игрока стёрта из users
 
 // Вход невозможен — и ответ такой же, как для несуществующего игрока
 let msgDeleted = '', msgNever = '';
-try { auth.login('Жертва', 'админский99', ''); } catch (e) { msgDeleted = e.message; }
-try { auth.login('НетТакого', 'админский99', ''); } catch (e) { msgNever = e.message; }
+try { await auth.login('Жертва', 'админский99', ''); } catch (e) { msgDeleted = e.message; }
+try { await auth.login('НетТакого', 'админский99', ''); } catch (e) { msgNever = e.message; }
 ok(msgDeleted === 'Неверный логин или пароль', 'вход удалённого игрока невозможен');
 ok(msgDeleted === msgNever, 'ответ неотличим от «такого аккаунта не существует»');
 

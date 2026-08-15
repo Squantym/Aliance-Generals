@@ -541,7 +541,10 @@ App._renderSilos = async (c, tabsHtml) => {
     ${s.silos.map(siloCard).join('')}
     <div class="card center">
       <button class="btn btn-orange" id="silo-build">🚀 Построить ракетную шахту: <span class="ic-gold"></span> ${UI.fmtNum(s.nextSiloCostGold)}</button>
-    </div>`;
+    </div>
+    <div id="rocket-history"></div>`;
+
+  App._renderRocketHistory();
 
   document.getElementById('silo-build').onclick = async () => {
     try {
@@ -602,6 +605,69 @@ App._renderSilos = async (c, tabsHtml) => {
   const hasActive = s.silos.some((x) => x.building);
   if (hasActive) {
 }
+};
+
+// ---------- ИСТОРИЯ РАКЕТ (внизу вкладки «Ракетные шахты») ----------
+// Две подвкладки: свои пуски и прилёты по игроку. Данные тянем отдельным
+// запросом, чтобы переключение вкладок не дёргало весь экран шахт.
+App._siloHistTab = 'launched';
+
+App._renderRocketHistory = async () => {
+  const box = document.getElementById('rocket-history');
+  if (!box) return;
+
+  let hist;
+  try { hist = await API.get('/api/silos/history'); }
+  catch (e) { box.innerHTML = ''; return; }
+  // Экран мог смениться, пока шёл запрос
+  if (!document.getElementById('rocket-history')) return;
+  App._siloHist = hist;
+
+  const tab = App._siloHistTab === 'incoming' ? 'incoming' : 'launched';
+  const list = hist[tab] || [];
+
+  const row = (e, idx) => {
+    const shot = e.outcome === 'intercepted';
+    const mine = e.role === 'attack';
+    const who = mine ? (e.targetName || '—') : (e.attackerName || '—');
+    // Итог одной строкой: сбита — кем, попадание — сколько потерь
+    const result = shot
+      ? `<span style="color:#4a86c7">🛡 сбита${e.interceptedByName ? ` — ${UI.esc(e.interceptedByName)}` : ''}</span>`
+      : `<span class="dmg-take">💥 −${UI.fmtNum(e.techDestroyedCount || 0)} техн., −${UI.fmtNum(e.buildingsDestroyedCount || 0)} зд.</span>`;
+    return `
+      <div class="rk-log-row">
+        <div class="rk-log-main">
+          <div class="rk-log-who">${mine ? '🚀 по ' : '☄️ от '}<b>«${UI.esc(who)}»</b></div>
+          <div class="rk-log-res">${result}</div>
+          <div class="muted small">${UI.fmtDate(e.at)} · мощность ${e.powerPct || 0}%</div>
+        </div>
+        <button class="btn btn-inline rk-log-btn" data-rkdetail="${idx}">Подробнее</button>
+      </div>`;
+  };
+
+  const empty = tab === 'launched'
+    ? 'Вы ещё не запускали ракет.'
+    : 'По вам ещё не запускали ракет.';
+
+  box.innerHTML = `
+    <div style="font-weight:bold;margin:18px 4px 6px">📜 История ракет</div>
+    <div class="tabs rk-log-tabs">
+      <div class="tab rk-log-tab ${tab === 'launched' ? 'active' : ''}" data-histtab="launched">🚀 Мои пуски${hist.launched.length ? ` (${hist.launched.length})` : ''}</div>
+      <div class="tab rk-log-tab ${tab === 'incoming' ? 'active' : ''}" data-histtab="incoming">☄️ По мне${hist.incoming.length ? ` (${hist.incoming.length})` : ''}</div>
+    </div>
+    ${list.length
+      ? `<div class="card rk-log-list">${list.map(row).join('')}</div>`
+      : `<div class="card center muted">${empty}</div>`}`;
+
+  box.querySelectorAll('[data-histtab]').forEach((t) => {
+    t.onclick = () => { App._siloHistTab = t.dataset.histtab; App._renderRocketHistory(); };
+  });
+  box.querySelectorAll('[data-rkdetail]').forEach((b) => {
+    b.onclick = () => {
+      const cur = (App._siloHist && App._siloHist[App._siloHistTab]) || [];
+      App._showRocketLogDetail(cur[Number(b.dataset.rkdetail)]);
+    };
+  });
 };
 
 // ---------- ЛАЗЕРЫ (ПВО, вкладка внутри Производства) ----------

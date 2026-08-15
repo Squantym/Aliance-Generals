@@ -7,6 +7,7 @@
 // ===================================================================
 
 import crypto = require('crypto');
+import util = require('util');
 
 // Класс ошибки, которую роутер превращает в JSON-ответ { error: ... }
 class ApiError extends Error {
@@ -56,20 +57,53 @@ function toInt(v: unknown, def = 0): number {
   return Number.isFinite(n) ? n : def;
 }
 
-// Хэш пароля: scrypt + соль (без внешних библиотек)
-function hashPassword(password: string | number, salt: string): string {
-  return crypto.scryptSync(String(password), salt, 32).toString('hex');
+// ═══ ХЭШИРОВАНИЕ ПАРОЛЯ ═════════════════════════════════════════════
+// scrypt намеренно медленный (~45 мс) — это защита от перебора. Но у нас
+// ОДИН процесс Node на всю игру, и синхронный scryptSync останавливал
+// событийный цикл целиком: пока считается хэш одного входа, ВСЕ остальные
+// игроки ждут. На замерах волна из 200 входов занимала 8.1 с, и случайный
+// игрок в этот момент ждал ответа до 1.9 с.
+//
+// Асинхронный crypto.scrypt считает то же самое, но в пуле потоков libuv:
+// событийный цикл остаётся свободным и продолжает обслуживать бои, покупки
+// и всё остальное. Стоимость одного хэша та же — меняется только то, что
+// он больше никого не блокирует.
+//
+// Формат хэша не изменился (scrypt, 32 байта, та же соль) — старые пароли
+// проверяются как раньше, миграция базы не нужна.
+const scryptAsync = util.promisify(crypto.scrypt) as (
+  password: string, salt: string, keylen: number
+) => Promise<Buffer>;
+
+async function hashPassword(password: string | number, salt: string): Promise<string> {
+  const buf = await scryptAsync(String(password), salt, 32);
+  return buf.toString('hex');
 }
 
 // Проверка пароля в КОНСТАНТНОЕ время (защита от тайминг-атак на сравнение
 // хэшей). Обычный `a !== b` по строкам завершается на первом различии, и по
-// времени ответа теоретически можно восстанавливать хэш побайтно. scryptSync
-// сам по себе медленный, но сравнение результата должно быть постоянным.
-function verifyPassword(password: string | number, salt: string, expectedHex: string): boolean {
+// времени ответа теоретически можно восстанавливать хэш побайтно. Сам scrypt
+// медленный, но сравнение результата должно быть постоянным.
+async function verifyPassword(password: string | number, salt: string, expectedHex: string): Promise<boolean> {
+  let exp: Buffer;
+  try { exp = Buffer.from(String(expectedHex || ''), 'hex'); } catch (e) { return false; }
+  const got = await scryptAsync(String(password), salt, 32);
+  if (exp.length !== got.length) return false; // разной длины — точно не совпадает
+  return crypto.timingSafeEqual(got, exp);
+}
+
+// Синхронные версии — ТОЛЬКО для служебных скриптов (tools/, миграции),
+// где нет событийного цикла, который можно заблокировать. В коде сервера
+// использовать нельзя: остановят игру для всех игроков.
+function hashPasswordSync(password: string | number, salt: string): string {
+  return crypto.scryptSync(String(password), salt, 32).toString('hex');
+}
+
+function verifyPasswordSync(password: string | number, salt: string, expectedHex: string): boolean {
   const got = crypto.scryptSync(String(password), salt, 32);
   let exp: Buffer;
   try { exp = Buffer.from(String(expectedHex || ''), 'hex'); } catch (e) { return false; }
-  if (exp.length !== got.length) return false; // разной длины — точно не совпадает
+  if (exp.length !== got.length) return false;
   return crypto.timingSafeEqual(got, exp);
 }
 
@@ -78,4 +112,8 @@ function fmt(n: number): string {
   return Math.round(n).toLocaleString('ru-RU');
 }
 
-export = { ApiError, uid, rnd, pick, shuffle, clamp, toInt, hashPassword, verifyPassword, fmt };
+export = {
+  ApiError, uid, rnd, pick, shuffle, clamp, toInt, fmt,
+  hashPassword, verifyPassword,               // асинхронные — для кода сервера
+  hashPasswordSync, verifyPasswordSync,       // синхронные — только для tools/
+};

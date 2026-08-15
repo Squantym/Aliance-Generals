@@ -59,21 +59,52 @@ function checkHeavy(kind: string, ip: string): void {
   }
 }
 
-function checkRateLimit(ip: string): void {
+// ═══ ЛИМИТ ПОПЫТОК ВХОДА ════════════════════════════════════════════
+// Считаем ТОЛЬКО НЕУДАЧНЫЕ попытки, а не все подряд. Это принципиально:
+// проверка пароля стала асинхронной (scrypt считается в пуле потоков), и
+// несколько входов с одного адреса теперь идут ОДНОВРЕМЕННО, а не строго
+// по очереди, как было при синхронном scrypt. Если считать каждую попытку
+// на входе, то 10 игроков из-под общего адреса оператора, нажавших «Войти»
+// в одну секунду, накрутят счётчик до блокировки — и получат отказ, хотя
+// все ввели правильные пароли. Замер это подтвердил: из 20 одновременных
+// входов с верными паролями проходило 4.
+//
+// От брутфорса это не ослабляет: перебор состоит именно из неудачных
+// попыток, и каждая из них считается.
+function assertNotBlocked(ip: string): void {
+  const entry = loginAttempts.get(ip);
+  if (!entry) return;
   const now = Date.now();
-  let entry = loginAttempts.get(ip);
-  if (!entry) { entry = { count: 0, firstAt: now, blockedUntil: 0 }; loginAttempts.set(ip, entry); }
   if (entry.blockedUntil > now) {
     const mins = Math.ceil((entry.blockedUntil - now) / 60000);
     throw new u.ApiError(`Слишком много попыток. Попробуйте через ${mins} мин.`);
   }
+}
+
+// Засчитать НЕУДАЧНУЮ попытку входа и заблокировать адрес при переборе.
+function registerFailedLogin(ip: string): void {
+  if (!ip) return;
+  const now = Date.now();
+  let entry = loginAttempts.get(ip);
+  if (!entry) { entry = { count: 0, firstAt: now, blockedUntil: 0 }; loginAttempts.set(ip, entry); }
   if (now - entry.firstAt > RATE_LIMIT_WIN) { entry.count = 0; entry.firstAt = now; }
   entry.count++;
   if (entry.count >= RATE_LIMIT_MAX) {
     entry.blockedUntil = now + RATE_LIMIT_BLOCK;
     auditLog.record({ userId: 'system', userName: 'system', path: '/rate-limit-block', body: { ip } });
-    throw new u.ApiError(`Слишком много попыток. Аккаунт временно заблокирован на 15 минут.`);
   }
+  // Карта не должна расти бесконечно (адресов много, записи живут долго)
+  if (loginAttempts.size > 5000) {
+    for (const [k, v] of loginAttempts) {
+      if (v.blockedUntil < now && now - v.firstAt > RATE_LIMIT_WIN) loginAttempts.delete(k);
+    }
+  }
+}
+
+// Совместимость: имя checkRateLimit сохраняем — на него ссылается аудит
+// безопасности и внешний код. Смысл прежний: «пускать ли этот адрес».
+function checkRateLimit(ip: string): void {
+  assertNotBlocked(ip);
 }
 
 function clearRateLimit(ip: string): void {
@@ -185,10 +216,10 @@ function validateAccountLogin(raw: string): string {
   return v;
 }
 
-function setAccountLogin(user: User, raw: string, password: string, notices: Notices) {
+async function setAccountLogin(user: User, raw: string, password: string, notices: Notices) {
   // Смена логина — вход в аккаунт, поэтому подтверждаем паролем:
   // иначе перехваченная сессия позволила бы тихо увести аккаунт
-  if (!u.verifyPassword(String(password || ''), (user as any).salt, (user as any).passHash)) {
+  if (!await u.verifyPassword(String(password || ''), (user as any).salt, (user as any).passHash)) {
     throw new u.ApiError('Неверный пароль');
   }
   const login = validateAccountLogin(raw);
@@ -310,7 +341,7 @@ async function register(login: string, password: string, emailAddr: string, coun
   const salt = u.uid(16);
   const id = u.uid(12);
   const autoVerified = !email.isConfigured;
-  const newU = newUser(id, login, emailAddr, u.hashPassword(password, salt), salt, country, false, autoVerified);
+  const newU = newUser(id, login, emailAddr, await u.hashPassword(password, salt), salt, country, false, autoVerified);
   all[id] = newU;
   db.save('users');
 
@@ -371,9 +402,10 @@ async function resendVerification(loginName: string, ip?: string) {
   return { message: `Письмо повторно отправлено` };
 }
 
-function login(loginName: string, password: string, ip: string, ua?: string, hints?: any) {
-  // БАГ 1: rate limiting
-  if (ip) checkRateLimit(ip);
+async function login(loginName: string, password: string, ip: string, ua?: string, hints?: any) {
+  // БАГ 1: rate limiting. Здесь только проверка «адрес не заблокирован»;
+  // счётчик накручивают неудачные попытки ниже (см. registerFailedLogin).
+  if (ip) assertNotBlocked(ip);
 
   // Вход по логину аккаунта, почте или позывному любого персонажа.
   //
@@ -394,8 +426,11 @@ function login(loginName: string, password: string, ip: string, ua?: string, hin
 
   // БАГ 11: единое сообщение — не раскрывать существование пользователя
   const WRONG_CREDS = 'Неверный логин или пароль';
-  if (!found) throw new u.ApiError(WRONG_CREDS);
-  if (!u.verifyPassword(password, found.salt, found.passHash)) throw new u.ApiError(WRONG_CREDS);
+  if (!found) { registerFailedLogin(ip); throw new u.ApiError(WRONG_CREDS); }
+  if (!await u.verifyPassword(password, found.salt, found.passHash)) {
+    registerFailedLogin(ip);
+    throw new u.ApiError(WRONG_CREDS);
+  }
   if (!found.emailVerified) {
     throw new u.ApiError(`Подтвердите почту — письмо отправлено при регистрации. Не пришло? Нажмите «Отправить повторно».`);
   }
@@ -473,7 +508,7 @@ async function requestPasswordReset(loginOrEmail: string, ip?: string) {
 }
 
 // Сброс пароля по токену из письма
-function resetPassword(token: string, newPassword: string, ip?: string) {
+async function resetPassword(token: string, newPassword: string, ip?: string) {
   checkHeavy('reset', String(ip || ''));
   const t = String(token || '');
   if (!t) throw new u.ApiError('Неверная ссылка восстановления');
@@ -486,7 +521,7 @@ function resetPassword(token: string, newPassword: string, ip?: string) {
     throw new u.ApiError('Пароль должен содержать буквы и цифры');
   }
   const salt = u.uid(16);
-  found.passHash = u.hashPassword(newPassword, salt);
+  found.passHash = await u.hashPassword(newPassword, salt);
   found.salt = salt;
   found.resetToken = null;
   found.resetTokenExp = 0;
@@ -506,13 +541,13 @@ function resetPassword(token: string, newPassword: string, ip?: string) {
 // дважды (страховка от опечатки). После смены завершаем ВСЕ сессии —
 // если пароль увели, чужой доступ обрывается, — но текущему игроку
 // сразу выдаём свежий токен, чтобы его самого не выкинуло из игры.
-function changePassword(user: User, oldPassword: string, newPassword: string, newPassword2: string) {
+async function changePassword(user: User, oldPassword: string, newPassword: string, newPassword2: string) {
   const oldP = String(oldPassword || '');
   const newP = String(newPassword || '');
   const newP2 = String(newPassword2 || '');
 
   if (!oldP) throw new u.ApiError('Введите текущий пароль');
-  if (!u.verifyPassword(oldP, user.salt, user.passHash)) {
+  if (!await u.verifyPassword(oldP, user.salt, user.passHash)) {
     throw new u.ApiError('Текущий пароль неверен');
   }
   if (!newP) throw new u.ApiError('Введите новый пароль');
@@ -525,7 +560,7 @@ function changePassword(user: User, oldPassword: string, newPassword: string, ne
 
   const salt = u.uid(16);
   user.salt = salt;
-  user.passHash = u.hashPassword(newP, salt);
+  user.passHash = await u.hashPassword(newP, salt);
   (user as any).resetToken = null;
   (user as any).resetTokenExp = 0;
 

@@ -1142,6 +1142,21 @@ const App = {
     popup.querySelector('#gear-pick-cancel').onclick = () => popup.remove();
   },
 
+  // ── Порядок блоков: враги сверху или свои сверху ─────────────────
+  // Живёт в App, потому что групповой бой (war.js) рисуется отдельно от
+  // боёв легиона и использует те же помощники. Выбор запоминается между
+  // боями: это про удобство руки, а не про конкретный бой. localStorage
+  // может быть недоступен (приватный режим) — обращения обёрнуты.
+  _gbAlliesFirst() {
+    try { return localStorage.getItem('gbAlliesFirst') === '1'; }
+    catch (e) { return !!App._gbAlliesFirstMem; }
+  },
+
+  _gbSetAlliesFirst(v) {
+    App._gbAlliesFirstMem = !!v;   // запасной вариант, если хранилище закрыто
+    try { localStorage.setItem('gbAlliesFirst', v ? '1' : '0'); } catch (e) {}
+  },
+
   _renderBattleContent(win, b) {
     const ROLE_ICON = { assault: App.roleImg('assault'), guardian: App.roleImg('guardian'), medic: App.roleImg('medic') };
 
@@ -1342,9 +1357,10 @@ const App = {
       const aliveAllies = dirData ? (dirData.allies||[]).filter(a=>a.userId!==me.userId && a.alive) : [];
       const aliveEn = dirData ? (dirData.enemies||[]).filter(e=>e.alive) : [];
 
-      // ── ВРАГИ — сразу после лога (чтобы на телефоне не прокручивать вниз) ──
+      // ── ВРАГИ ──
+      let enemiesHtml = '';
       if (dirData && aliveEn.length > 0) {
-        html += `<div class="bw-card" style="border-left:3px solid var(--red)">
+        enemiesHtml = `<div class="bw-card bw-side-enemies" style="border-left:3px solid var(--red)">
           <div style="color:var(--red);font-weight:bold;font-size:12.5px;margin-bottom:4px">🔴 Враги — ${dirData.name}</div>
           ${aliveEn.map(en => `
             <div class="bw-fighter">
@@ -1362,7 +1378,7 @@ const App = {
       }
 
       // ── СОЮЗНИКИ, включая САМОГО ИГРОКА, в одном поле ──
-      html += `<div class="bw-card" style="border-left:3px solid var(--green)">
+      const alliesHtml = `<div class="bw-card bw-side-allies" style="border-left:3px solid var(--green)">
         <div style="color:var(--green);font-weight:bold;font-size:12.5px;margin-bottom:4px">🟢 Ваш отряд${dirData?` — ${dirData.name}`:''}</div>
         <div class="bw-fighter" style="background:rgba(0,200,0,.07);border-radius:6px;padding:6px">
           <div class="bw-fighter-head">
@@ -1395,6 +1411,8 @@ const App = {
             </div>
           </div>`).join('')}
       </div>`;
+
+      html += enemiesHtml + alliesHtml;
 
       if (me.direction === null) {
         html += `<p class="muted center small">Выберите направление ниже, чтобы вступить в бой ⬇</p>`;
@@ -1943,6 +1961,80 @@ const App = {
             ${sab ? `<div style="margin-bottom:14px"><b>${App.menuImg('saboteurs', 20)} ${rep.asAttacker ? 'Уничтожено диверсантов врага' : 'Погибшие диверсанты'}:</b>${sab}</div>` : ''}
             <button class="btn btn-orange" id="rocket-hit-close" style="width:100%">Закрыть</button>
           </div>`;
+  },
+
+  // ── Окно «Подробнее» для записи из истории ракет ─────────────────
+  // Показывает то, чего не видно в строке списка: поимённые потери
+  // техники и построек, а для сбитой ракеты — кто её сбил.
+  // Запись приходит из /api/silos/history; поле role говорит, с чьей
+  // стороны мы на неё смотрим: 'attack' — пускал я, 'defense' — по мне.
+  _rocketLogDetailHtml(e) {
+    const mine = e.role === 'attack';
+    const shot = e.outcome === 'intercepted';
+    const rows = (obj, empty) => {
+      const list = Object.entries(obj || {});
+      if (!list.length) return `<p class="muted small">${empty}</p>`;
+      return list.map(([nm, cnt]) =>
+        `<div class="kv"><span class="k">${UI.esc(nm)}</span><span class="v dmg-take">−${UI.fmtNum(cnt)}</span></div>`).join('');
+    };
+    const SAB_RU = { ground: 'Наземные диверсанты', sea: 'Морские диверсанты', air: 'Воздушные диверсанты',
+      secret: 'Секретные диверсанты', building: 'Диверсанты по постройкам', suicide: 'Смертники' };
+    const sab = e.lostSaboteurs && Object.keys(e.lostSaboteurs).length
+      ? Object.entries(e.lostSaboteurs).map(([t, c]) =>
+          `<div class="kv"><span class="k">${App.sabImg(t, 22)} ${UI.esc(SAB_RU[t] || t)}</span><span class="v dmg-take">−${UI.fmtNum(c)}</span></div>`).join('')
+      : '';
+
+    // Рамка и заголовок: сбитая — синяя, свой успешный удар — зелёная,
+    // прилёт по игроку — красная.
+    const color = shot ? '#4a86c7' : (mine ? 'var(--money)' : 'var(--red)');
+    const title = shot
+      ? (mine ? '🛡 Вашу ракету сбили' : '🛡 Ракету, летевшую в вас, сбили')
+      : (mine ? '🚀 Ваша ракета поразила цель' : '🚀 По вам нанесён ракетный удар');
+
+    const body = shot
+      ? `<div class="card" style="margin:0 0 12px">
+           <div class="kv"><span class="k">🔦 Кто сбил</span><span class="v gold">${UI.esc(e.interceptedByName || 'неизвестно')}</span></div>
+           <p class="muted small mt">Ракета уничтожена в полёте и не нанесла урона.</p>
+         </div>`
+      : `<div style="display:flex;gap:10px;margin-bottom:14px">
+           <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
+             <div style="font-size:24px;font-weight:bold;color:var(--red)">${UI.fmtNum(e.techDestroyedCount || 0)}</div>
+             <div class="muted small">единиц техники</div>
+           </div>
+           <div style="flex:1;text-align:center;padding:12px;border:1px solid var(--red);border-radius:8px">
+             <div style="font-size:24px;font-weight:bold;color:var(--red)">${UI.fmtNum(e.buildingsDestroyedCount || 0)}</div>
+             <div class="muted small">зданий</div>
+           </div>
+         </div>
+         <div style="margin-bottom:10px"><b>🔧 ${mine ? 'Уничтожено техники врага' : 'Потерянная техника'}:</b>${rows(e.techLost, 'Техника уцелела')}</div>
+         <div style="margin-bottom:10px"><b>🏚 ${mine ? 'Разрушено зданий врага' : 'Разрушенные постройки'}:</b>${rows(e.destroyedBuildings, 'Постройки уцелели')}</div>
+         ${sab ? `<div style="margin-bottom:10px"><b>${App.menuImg('saboteurs', 20)} ${mine ? 'Уничтожено диверсантов врага' : 'Погибшие диверсанты'}:</b>${sab}</div>` : ''}`;
+
+    return `
+      <div style="background:var(--card);border:2px solid ${color};border-radius:12px;max-width:440px;width:100%;padding:20px;max-height:85vh;overflow-y:auto">
+        <div style="font-size:18px;font-weight:bold;text-align:center;margin-bottom:12px">${title}</div>
+        <div class="card" style="margin:0 0 12px">
+          ${mine
+            ? `<div class="kv"><span class="k">По кому запущена</span><span class="v">${UI.esc(e.targetName || '—')}</span></div>`
+            : `<div class="kv"><span class="k">Кто атаковал</span><span class="v">${UI.esc(e.attackerName || '—')}</span></div>`}
+          <div class="kv"><span class="k">Мощность</span><span class="v">${e.powerPct || 0}%</span></div>
+          ${e.launchedAt ? `<div class="kv"><span class="k">Запущена</span><span class="v">${UI.fmtDate(e.launchedAt)}</span></div>` : ''}
+          <div class="kv"><span class="k">${shot ? 'Сбита' : 'Попадание'}</span><span class="v">${UI.fmtDate(e.at)}</span></div>
+        </div>
+        ${body}
+        <button class="btn btn-orange" id="rocket-log-close" style="width:100%">Закрыть</button>
+      </div>`;
+  },
+
+  _showRocketLogDetail(e) {
+    if (!e || document.getElementById('rocket-log-window')) return;
+    const popup = document.createElement('div');
+    popup.id = 'rocket-log-window';
+    popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:10003;display:flex;align-items:center;justify-content:center;padding:16px';
+    popup.innerHTML = App._rocketLogDetailHtml(e);
+    document.body.appendChild(popup);
+    popup.onclick = (ev) => { if (ev.target === popup) popup.remove(); };
+    popup.querySelector('#rocket-log-close').onclick = () => popup.remove();
   },
 
   // Показать ОДИН отчёт по ракете (из уведомления). Не трогает очередь

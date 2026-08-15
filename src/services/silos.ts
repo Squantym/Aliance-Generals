@@ -36,6 +36,86 @@ function silos(user: User): any[] {
   return user.silos;
 }
 
+// ═══ ИСТОРИЯ РАКЕТ ══════════════════════════════════════════════════
+// Раньше след ракеты не сохранялся нигде: коллекция летящих ракет
+// чистится через час после долёта, а отчёт из pendingRocketHits
+// исчезает, как только игрок закрыл окно. Игрок не мог ни вспомнить,
+// кто по нему бил, ни посмотреть, чем кончился его собственный пуск.
+//
+// Пишем запись ОБЕИМ сторонам, каждому в свой журнал: у атакующего она
+// ляжет как 'attack', у цели — как 'defense'. Так каждый видит событие
+// со своей стороны и не получает доступа к чужому журналу.
+//
+// Храним у игрока, а не в общей коллекции: игроки в базе лежат
+// отдельными записями и сохраняются точечно, а общая коллекция
+// переписывалась бы целиком при каждом ударе.
+const LOG_PER_SIDE = 25;   // сколько записей держим в КАЖДОЙ вкладке
+
+function rocketLog(user: any): any[] {
+  if (!Array.isArray(user.rocketLog)) user.rocketLog = [];
+  return user.rocketLog;
+}
+
+// Добавить запись в журнал игрока. Ограничение считаем ПО КАЖДОЙ
+// стороне отдельно: иначе серия своих пусков вытеснила бы всю историю
+// прилётов, и вкладка «По мне» опустела бы без единого перехвата.
+function pushRocketLog(user: any, entry: any): void {
+  if (!user) return;
+  const log = rocketLog(user);
+  log.push(entry);
+  const keep = (role: string) => log.filter((e) => e.role === role).slice(-LOG_PER_SIDE);
+  user.rocketLog = keep('attack').concat(keep('defense')).sort((a: any, b: any) => (a.at || 0) - (b.at || 0));
+  db.markUser(user.id);
+}
+
+// Общая часть записи — одинакова для обеих сторон.
+function logBase(rk: any): any {
+  return {
+    id: rk.id,
+    attackerId: rk.attackerId, attackerName: rk.attackerName,
+    targetId: rk.targetId, targetName: rk.targetName,
+    powerPct: Math.round((rk.powerFrac || 0) * 100),
+    launchedAt: rk.launchedAt,
+    at: Date.now(),
+  };
+}
+
+// Записать РЕЗУЛЬТАТ ракеты обеим сторонам.
+// report — отчёт из applyRocketDamage (при перехвате его нет).
+function recordRocketResult(rk: any, outcome: 'hit' | 'intercepted', report?: any, interceptor?: any): void {
+  const users = player.users();
+  const base = logBase(rk);
+  const losses = outcome === 'hit' && report ? {
+    techDestroyedCount: report.techDestroyedCount || 0,
+    buildingsDestroyedCount: report.buildingsDestroyedCount || 0,
+    techLost: report.techLost || {},
+    destroyedBuildings: report.destroyedBuildings || {},
+    lostSaboteurs: report.lostSaboteurs || null,
+  } : {};
+  const interceptedBy = interceptor ? interceptor.id : (rk.interceptedBy || null);
+  const intercept = outcome === 'intercepted' ? {
+    interceptedById: interceptedBy,
+    interceptedByName: interceptor
+      ? interceptor.name
+      : ((users[interceptedBy] && users[interceptedBy].name) || null),
+  } : {};
+
+  const attacker = users[rk.attackerId];
+  const target = users[rk.targetId];
+  if (attacker) pushRocketLog(attacker, { ...base, ...losses, ...intercept, role: 'attack', outcome });
+  if (target)   pushRocketLog(target,   { ...base, ...losses, ...intercept, role: 'defense', outcome });
+}
+
+// Журнал для экрана: две вкладки, новые записи сверху.
+function history(user: User) {
+  const log = rocketLog(user);
+  const sort = (a: any, b: any) => (b.at || 0) - (a.at || 0);
+  return {
+    launched: log.filter((e: any) => e.role === 'attack').sort(sort),
+    incoming: log.filter((e: any) => e.role === 'defense').sort(sort),
+  };
+}
+
 function nextSiloCost(user: User): number {
   const built = user.silosBuiltTotal || 0;
   const base = Math.round(S.FIRST_PRICE_GOLD * Math.pow(S.PRICE_MULT, built));
@@ -325,6 +405,8 @@ function resolveInFlight(): void {
       continue;
     }
     if (rk.intercepted) {
+      // Сбитая ракета: перехват уже записал историю обеим сторонам
+      // (в lasers.intercept), здесь только закрываем полёт.
       rk.resolved = true; rk.resolvedAt = now; changed = true;
       continue;
     }
@@ -348,6 +430,9 @@ function resolveInFlight(): void {
           notifications.push(attacker.id, 'rocket_result',
             `🚀 Ваша ракета поразила «${target.name}»`, myReport);
         }
+
+        // Постоянная история — переживает закрытие окна отчёта
+        recordRocketResult(rk, 'hit', report);
       }
       rk.resolved = true; rk.resolvedAt = now; changed = true;
     }
@@ -364,4 +449,8 @@ function dismissRocketHit(user: User): any {
   return { left: (user.pendingRocketHits || []).length };
 }
 
-export = { view, build, boost, fuelReady, fuelPower, launch, applyRocketDamage, resolveInFlight, dismissRocketHit, inFlight };
+export = {
+  view, build, boost, fuelReady, fuelPower, launch, applyRocketDamage,
+  resolveInFlight, dismissRocketHit, inFlight,
+  history, recordRocketResult, LOG_PER_SIDE,
+};

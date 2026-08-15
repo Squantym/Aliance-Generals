@@ -75,7 +75,7 @@ ok(true, 'и чат легиона');
 
 console.log('\n── 4. Бан аккаунта: вход разрешён, чтобы показать окно ──');
 admin.setBan(owner, { userId: bad.id, banned: true, reason: 'Использование ботов', minutes: 120 }, []);
-const login = auth.login('Болтун', 'пароль123', '1.1.1.1');
+const login = await auth.login('Болтун', 'пароль123', '1.1.1.1');
 ok(login.token && login.banned === true, 'забаненный игрок ВХОДИТ (получает токен) — иначе он не увидел бы причину');
 ok(login.banInfo && login.banInfo.reason === 'Использование ботов', `в ответе причина: ${login.banInfo.reason}`);
 ok(login.banInfo.until > Date.now(), 'и срок окончания');
@@ -83,7 +83,7 @@ ok(login.isAdmin === false, 'права при этом не выдаются');
 
 console.log('\n── 5. Истёкший бан снимается при входе ──');
 bad.banUntil = Date.now() - 1000;
-const login2 = auth.login('Болтун', 'пароль123', '1.1.1.1');
+const login2 = await auth.login('Болтун', 'пароль123', '1.1.1.1');
 ok(!login2.banned, 'просроченный бан снят автоматически при входе');
 ok(bad.banned === false, 'флаг блокировки очищен');
 

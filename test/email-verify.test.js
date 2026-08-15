@@ -14,6 +14,8 @@ process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают иг�
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 const fails = (fn, part, n) => { try { fn(); ok(false, n + ' (ошибки не было)'); } catch (e) { ok(String(e.message).includes(part), `${n} → «${e.message.slice(0, 46)}»`); } };
+// Вход считает scrypt в пуле потоков — ошибка приходит отклонённым промисом.
+const failsA = async (fn, part, n) => { try { await fn(); ok(false, n + ' (ошибки не было)'); } catch (e) { ok(String(e.message).includes(part), `${n} → «${e.message.slice(0, 46)}»`); } };
 
 const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
@@ -48,13 +50,13 @@ await auth.register('Игрок', 'пароль123', 'a@t.ru', 'ru', '1.1.1.1', 
 const U = player.users();
 const p1 = U[Object.keys(U).find((id) => U[id].name === 'Игрок')];
 p1.emailVerified = false;
-fails(() => auth.login('Игрок', 'пароль123', '1.1.1.1', 'UA'), 'Подтвердите почту',
+await failsA(() => auth.login('Игрок', 'пароль123', '1.1.1.1', 'UA'), 'Подтвердите почту',
       'без подтверждения вход не выполняется');
 ok(/if \(!found\.emailVerified\) \{/.test(authSrc), 'проверка стоит на сервере');
 ok(/Нажмите «Отправить повторно»/.test(authSrc), 'игроку подсказано, что делать');
 p1.emailVerified = true;
 let entered = false;
-try { auth.login('Игрок', 'пароль123', '1.1.1.1', 'UA'); entered = true; } catch (e) {}
+try { await auth.login('Игрок', 'пароль123', '1.1.1.1', 'UA'); entered = true; } catch (e) {}
 ok(entered, 'после подтверждения вход открывается');
 
 console.log('\n── 4. Повторная отправка письма ──');

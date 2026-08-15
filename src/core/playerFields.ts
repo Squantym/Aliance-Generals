@@ -184,6 +184,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // Постройки и вооружение
   silos:              { owner: 'lasers',     note: 'шахты' },
   silosBuiltTotal:    { owner: 'lasers',     note: 'всего построено шахт' },
+  rocketLog:          { owner: 'silos',      note: 'история ракет: запущенные игроком и прилетевшие по нему' },
   lasersBuiltTotal:   { owner: 'lasers',     note: 'всего построено лазеров' },
   mines:              { owner: 'features',   note: 'мины' },
   minesBuiltTotal:    { owner: 'features',   note: 'всего заложено мин' },

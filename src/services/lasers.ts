@@ -189,6 +189,10 @@ function intercept(user: User, laserId: string, rocketId: string, notices: Notic
   if (hit) {
     rk.intercepted = true; rk.interceptedBy = user.id; rk.resolved = true; rk.resolvedAt = Date.now();
     db.save('rockets');
+    // История обеим сторонам: у атакующего — «мою ракету сбили», у цели —
+    // «летевшую в меня сбили». Записываем ИМЕННО ЗДЕСЬ: имя стрелка
+    // известно только в этот момент, resolveInFlight его уже не увидит.
+    try { require('./silos').recordRocketResult(rk, 'intercepted', null, user); } catch (e) {}
     // Уведомляем цель (спасена) и атакующего (ракету сбили)
     notifications.push(rk.targetId, 'rocket_intercepted', `🛡 Ракету, летевшую в вас, сбил ${user.name}!`, { by: user.name, attackerName: rk.attackerName });
     notifications.push(rk.attackerId, 'rocket_shot_down', `🔦 Вашу ракету по «${rk.targetName}» сбил лазер (${user.name}).`, { by: user.name, targetName: rk.targetName });
