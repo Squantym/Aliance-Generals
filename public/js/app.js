@@ -2621,13 +2621,13 @@ const App = {
     const label = where === 'arena' ? '🏟 Арена' : '🤝 Групповой бой';
 
     if (c.needEnter) {
-      // Подготовка началась — зовём в комнату. Это самый важный момент:
-      // не зашёл вовремя — за тебя будет играть бот, а поражение твоё.
+      // Состав собран — зовём в комнату подготовки. Не открыл вовремя —
+      // за тебя будет играть бот, а поражение твоё.
       document.body.classList.remove('in-combat');
       bar.className = 'combat-bar calling';
       bar.innerHTML = `
         <span class="cb-dot"></span>
-        <span class="grow"><b>Подготовка к бою!</b> Займите место:
+        <span class="grow"><b>Состав собран!</b> До боя:
           <b id="cb-left">${c.prepareLeftSec || 0}</b> с</span>
         <button class="btn btn-inline btn-orange" id="cb-go">В комнату</button>`;
     } else if (c.fighting) {
@@ -2650,12 +2650,12 @@ const App = {
     if (go) go.onclick = async () => {
       App._warTab = where === 'arena' ? 'arena' : 'group';
       App._gbPage = null;
-      // Зовут в комнату — сразу занимаем место, а не просто открываем
-      // вкладку. Раньше кнопка вела на витрину, вход не выполнялся, и
-      // человек считался не явившимся.
-      if (c.needEnter) {
+      // На арене вход в комнату — по-прежнему отдельное действие.
+      // В групповом бою его нет: сервер отмечает явку сам, когда игрок
+      // запрашивает состояние боя, а бой стартует по таймеру.
+      if (c.needEnter && where === 'arena') {
         try {
-          await API.post(where === 'arena' ? '/api/arena/enter' : '/api/group/enter', {});
+          await API.post('/api/arena/enter', {});
           await App.refreshMe();
         } catch (e) { UI.toast('⛔ ' + e.message); }
       }

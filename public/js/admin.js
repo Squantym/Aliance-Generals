@@ -996,6 +996,64 @@ const Admin = {
     if (Admin._econTab === 'buffs')     return Admin.renderBuffs(body);
   },
 
+  // ── История сохранений базы ──────────────────────────────────────
+  // Раньше показывалось только ЧИСЛО копий. По числу нельзя понять
+  // главного: когда была последняя, не оборвалось ли расписание и есть ли
+  // копия за нужную дату. Теперь виден список: когда, чем создана, размер.
+  _backupHistoryHtml(list) {
+    const arr = Array.isArray(list) ? list : [];
+    if (!arr.length) {
+      return `<p class="muted small mt">Копий пока нет — первая появится по расписанию.</p>`;
+    }
+    const KIND = {
+      auto:          { icon: '🕒', label: 'по расписанию' },
+      manual:        { icon: '🖐', label: 'вручную' },
+      'pre-restore': { icon: '♻️', label: 'перед откатом' },
+      'pre-deploy':  { icon: '🚀', label: 'перед деплоем' },
+    };
+    const mbv = (n) => (n / 1024 / 1024).toFixed(1) + ' МБ';
+    const when = (ts) => new Date(ts).toLocaleString('ru-RU',
+      { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const last = arr[0];
+    const total = arr.reduce((s, b) => s + (b.size || 0), 0);
+    return `
+      <details class="db-more mt" open>
+        <summary>История сохранений (${arr.length}) — последняя ${UI.esc(when(last.at))}</summary>
+        <div class="mt bk-list">
+          ${arr.map((b) => {
+            const k = KIND[b.kind] || KIND.auto;
+            return `<div class="bk-row">
+              <span class="bk-kind" title="${k.label}">${k.icon}</span>
+              <span class="bk-when">${UI.esc(when(b.at))}</span>
+              <span class="muted small grow">${k.label}</span>
+              <span class="muted small">${mbv(b.size || 0)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        <p class="muted small mt">Всего копий занимают ${mbv(total)}. Хранятся последние ${arr.length},
+        старые вытесняются автоматически.</p>
+      </details>`;
+  },
+
+  // ── Срок хранения журнала действий ───────────────────────────────
+  _logKeepHtml(logs) {
+    if (!logs) return '';
+    const days = logs.keepDays || 90;
+    const when = (ts) => (ts ? new Date(ts).toLocaleDateString('ru-RU',
+      { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
+    // Насколько глубоко уже накопилась история — по ней видно, что срок
+    // соблюдается, а не что записи молча подрезаются
+    const depthDays = logs.oldestAt
+      ? Math.max(0, Math.round((Date.now() - logs.oldestAt) / 86400000)) : 0;
+    return `
+      <div class="db-line mt">
+        <span class="small">📜 Журнал действий</span>
+        <span class="muted small grow">${UI.fmtNum(logs.count || 0)} записей ·
+          с ${UI.esc(when(logs.oldestAt))} · глубина ${depthDays} дн.</span>
+        <span class="muted small">хранится ${days} дн.</span>
+      </div>`;
+  },
+
   // ═══ БАЗА ДАННЫХ — компактный блок внутри «Техники» ══════════════
   // Прежде это была отдельная вкладка на полтора десятка карточек ради
   // трёх действий. Копии и так делаются автоматически каждые 6 часов,
@@ -1030,6 +1088,8 @@ const Admin = {
         <button class="btn btn-inline" id="db-backup" style="margin-left:auto">💾 Копия</button>
       </div>
       <p class="muted small mt">Копии создаются сами каждые 6 часов. Кнопка нужна перед рискованными действиями.</p>
+      ${Admin._backupHistoryHtml(d.backups)}
+      ${Admin._logKeepHtml(d.logs)}
       ${(snaps.snapshots || []).length ? `
         <details class="db-more mt">
           <summary>Снимки коллекций (${snaps.snapshots.length})</summary>

@@ -506,7 +506,11 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/group/register',   act((req, n) => gb.register(req.user, String(req.body.role || ''), n)));
   app.add('POST', '/api/group/unregister', act((req, n) => gb.unregister(req.user, n)));
   app.add('POST', '/api/group/role',       act((req, n) => gb.setRole(req.user, String(req.body.role || ''), n)));
-  app.add('POST', '/api/group/enter',      act((req, n) => gb.enter(req.user, n)));
+  // Отдельного «вступить в бой» в ГБ больше нет: бой стартует сам через
+  // полминуты подготовки, и все в нём с первой секунды. Маршрут оставлен
+  // совместимости ради — старые вкладки в браузере ещё могут его дёрнуть,
+  // и падать с 404 им незачем. Просто отдаём состояние боя.
+  app.add('POST', '/api/group/enter',      (req) => gb.battleState(req.user));
   app.add('GET',  '/api/group/battle',     (req) => gb.battleState(req.user, String(req.query.watch || '')));
   app.add('POST', '/api/group/act',        act((req, n) =>
     gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
@@ -1306,7 +1310,17 @@ function registerRoutes(app: any) {
   // админской сессии. Наружу отдаются только конкретные операции.
   app.add('GET', '/api/admin/db/stats', () => {
     const st = db.dbStats();
-    return { stats: st, backups: db.backupsList ? db.backupsList() : [] };
+    const backups = db.backupsList ? db.backupsList() : [];
+    // Копии различаем по метке в имени файла: авто по расписанию,
+    // ручная из админки, предохранительная перед откатом снимка.
+    const kindOf = (f: string) => (/^manual/.test(f) ? 'manual'
+      : (/^pre-restore/.test(f) ? 'pre-restore'
+      : (/^pre-deploy/.test(f) ? 'pre-deploy' : 'auto')));
+    return {
+      stats: st,
+      backups: backups.map((b: any) => ({ ...b, kind: kindOf(String(b.file || '')) })),
+      logs: db.logStats ? db.logStats() : null,
+    };
   }, { admin: true });
 
   app.add('POST', '/api/admin/db/backup', act((req, n) => {

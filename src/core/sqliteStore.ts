@@ -229,15 +229,51 @@ function deletePlayer(id: string): boolean {
 }
 
 // ---------- Аудит ----------
-function appendLog(entry: any, keepMax = 50000): void {
+// СРОК ХРАНЕНИЯ — 3 МЕСЯЦА, по времени, а не по числу записей.
+// Раньше держали последние 50 000 строк: при активной игре это всего
+// несколько дней, и разбирательство по жалобе недельной давности упиралось
+// в пустоту. Теперь старое удаляется по дате, а сколько записей накопится —
+// столько и лежит.
+const LOG_KEEP_MS = 90 * 24 * 3600 * 1000;
+
+// Чистку делаем не на каждой записи (это лишняя работа на горячем пути),
+// а раз в час: за час лишнего накапливается пренебрежимо мало.
+let lastLogPrune = 0;
+const LOG_PRUNE_EVERY_MS = 3600 * 1000;
+
+function appendLog(entry: any, keepMs = LOG_KEEP_MS): void {
+  const now = Date.now();
   db.prepare('INSERT INTO action_logs (at, user_id, data) VALUES (?, ?, ?)')
-    .run(entry.at || Date.now(), entry.userId || null, JSON.stringify(entry));
-  // Вытеснение старых: держим не больше keepMax записей
-  if (Math.random() < 0.01) {
-    db.prepare(
-      'DELETE FROM action_logs WHERE seq <= (SELECT MAX(seq) - ? FROM action_logs)'
-    ).run(keepMax);
+    .run(entry.at || now, entry.userId || null, JSON.stringify(entry));
+  if (now - lastLogPrune > LOG_PRUNE_EVERY_MS) {
+    lastLogPrune = now;
+    try { db.prepare('DELETE FROM action_logs WHERE at < ?').run(now - keepMs); } catch (e) {}
   }
+}
+
+// Сколько записей и за какой срок лежит в журнале — для админки
+function logStats(): any {
+  try {
+    const r: any = db.prepare(
+      'SELECT COUNT(*) AS n, MIN(at) AS oldest, MAX(at) AS newest FROM action_logs'
+    ).get();
+    return {
+      count: r ? r.n || 0 : 0,
+      oldestAt: r ? r.oldest || 0 : 0,
+      newestAt: r ? r.newest || 0 : 0,
+      keepDays: Math.round(LOG_KEEP_MS / 86400000),
+    };
+  } catch (e) { return { count: 0, oldestAt: 0, newestAt: 0, keepDays: Math.round(LOG_KEEP_MS / 86400000) }; }
+}
+
+// Записи за период (для выгрузки и разбирательств). from/to — метки времени.
+function logsBetween(from: number, to: number, userId?: string, limit = 5000): any[] {
+  const rows = userId
+    ? db.prepare('SELECT data FROM action_logs WHERE at >= ? AND at <= ? AND user_id = ? ORDER BY seq DESC LIMIT ?')
+        .all(from, to, userId, limit)
+    : db.prepare('SELECT data FROM action_logs WHERE at >= ? AND at <= ? ORDER BY seq DESC LIMIT ?')
+        .all(from, to, limit);
+  return rows.map((r: any) => { try { return JSON.parse(r.data); } catch (e) { return null; } }).filter(Boolean);
 }
 
 function tailLogs(limit: number, userId?: string): any[] {
@@ -333,7 +369,7 @@ export = {
   open, isOpen, file, close, driver,
   loadAllPlayers, loadAllCollections,
   writeBatch, deletePlayer,
-  appendLog, tailLogs,
+  appendLog, tailLogs, logStats, logsBetween, LOG_KEEP_MS,
   backup, snapshot, snapshotList, snapshotGet,
   query, stats,
 };

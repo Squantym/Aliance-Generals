@@ -1447,10 +1447,14 @@ App.renderGroup = async () => {
   }
   box.dataset.mode = 'lobby';
 
-  // Игрок вышел в бой — показываем боевое окно
-  // Боевое окно показываем СРАЗУ, как только бой пошёл: игрок уже на
-  // поле и его бьют, даже если он не нажал «В бой»
-  if (d.battle && d.battle.iAmIn && d.battle.state === 'running') {
+  // Игрок в составе — открываем боевой экран СРАЗУ, не показывая витрину.
+  // Во время подготовки это комната со списком обеих команд, после старта —
+  // сам бой. Раньше при подготовке здесь рисовалась витрина с кнопкой
+  // «войти в комнату», то есть нажимать приходилось дважды: пока игрок
+  // искал вторую кнопку, полминуты подготовки истекали, и он попадал уже
+  // в идущий бой — мимо комнаты.
+  if (d.battle && d.battle.iAmIn
+      && (d.battle.state === 'preparing' || d.battle.state === 'running')) {
     return App.renderGroupBattle();
   }
 
@@ -1489,7 +1493,7 @@ App.renderGroup = async () => {
       <div class="gb-roles mt">
         ${d.roles.map((x) => `
           <button class="gb-role${x.id === d.myRole ? ' active' : ''}" data-role="${x.id}">
-            <span class="gb-role-icon">${x.icon}</span>
+            <span class="gb-role-icon">${App._gbRoleImg(x.id, x.icon, 26)}</span>
             <span class="gb-role-name">${UI.esc(x.label)}</span>
             <span class="gb-role-desc">${UI.esc(x.desc)}</span>
           </button>`).join('')}
@@ -1498,11 +1502,11 @@ App.renderGroup = async () => {
 
     ${d.battle && d.battle.needEnter ? `
       <div class="card center arena-call">
-        <div class="name">⏳ Идёт подготовка к бою!</div>
-        <p class="muted small mt">Займите место, иначе за вас будет играть бот,
-        а поражение засчитают вам. Осталось:
-        <b class="gold">${d.battle.prepareLeftSec}</b> с</p>
-        <button class="btn btn-orange mt" id="gb-enter" style="width:100%">ВОЙТИ В КОМНАТУ</button>
+        <div class="name">⏳ Состав собран!</div>
+        <p class="muted small mt">Откройте комнату и посмотрите, кто с вами и против вас.
+        Бой начнётся сам через <b class="gold">${d.battle.prepareLeftSec}</b> с.
+        Не открыли — за вас будет играть бот, а поражение засчитают вам.</p>
+        <button class="btn btn-orange mt" id="gb-enter" style="width:100%">ОТКРЫТЬ КОМНАТУ</button>
       </div>` : ''}
 
     <div class="card">
@@ -1646,13 +1650,16 @@ App.renderGroup = async () => {
     try { await API.post('/api/group/unregister', {}); App.renderGroup(); }
     catch (e) { UI.toast('⛔ ' + e.message); outB.disabled = false; }
   };
+  // Открыть комнату подготовки. Отдельного запроса «вступить» больше нет:
+  // явка отмечается сервером при запросе состояния боя, а сам бой стартует
+  // по таймеру. Достаточно открыть страницу комнаты.
   const entB = document.getElementById('gb-enter');
   if (entB) entB.onclick = async () => {
     entB.disabled = true;
     try {
-      await API.post('/api/group/enter', {});
+      App._resetSign('gbBattle');
+      await App.renderGroupBattle();
       await App.refreshMe();
-      App.renderGroupBattle();          // сразу в комнату
     } catch (e) { UI.toast('⛔ ' + e.message); entB.disabled = false; }
   };
 
@@ -1938,6 +1945,105 @@ App.renderSupplyPage = async () => {
   }, 1000);
 };
 
+// ---------- ИКОНКИ РОЛЕЙ ----------
+// Те же картинки, что в боях легиона: роли по смыслу совпадают, и разные
+// значки в двух режимах путали бы. Отличается только название бойца —
+// в ГБ роль зовётся fighter, в легионе assault, картинка одна.
+// Если файла нет, показываем прежний значок — карточка не поедет.
+App._gbRoleImg = (roleId, fallback, size) => {
+  const FILE = { fighter: 'assault', guardian: 'guardian', medic: 'medic' };
+  const f = FILE[roleId];
+  if (!f) return fallback || '';
+  const s = size || 22;
+  // Запасной значок лежит соседним спаном и прячется стилем — тот же приём,
+  // что у остальных картинок в проекте. Подставлять эмодзи прямо в onerror
+  // нельзя: кавычки и вариационные селекторы внутри атрибута ломают разметку.
+  return `<img class="ic-role gb-role-pic" src="/img/legion/roles/${f}.webp"
+    width="${s}" height="${s}" alt="" loading="lazy"
+    onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"
+    ><span class="gb-role-fallback" style="display:none">${fallback || ''}</span>`;
+};
+
+// ---------- СВОИ ХАРАКТЕРИСТИКИ В КОМНАТЕ ПОДГОТОВКИ ----------
+// Показываются ТОЛЬКО их владельцу: сервер отдаёт их отдельным ключом
+// myStats, в карточках других игроков этих полей нет.
+//
+// Смысл разбивки: по одному числу «2250 HP» непонятно, что сработало —
+// прокачка или множитель роли. Поэтому под каждой полосой перечислены
+// слагаемые, и их сумма в точности равна итогу.
+App._gbMyStatsHtml = (b, me2) => {
+  const m = b.myStats;
+  if (!m) {
+    // Бой начат до появления разбивки — показываем как раньше
+    return `
+      <div class="card">
+        <div class="name">${App._gbRoleImg(me2.role, me2.roleIcon, 22)} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
+        <div class="gb-bars mt">
+          <div class="gb-bar"><span class="gb-bar-l">❤ HP</span>
+            <span class="gb-bar-t"><i class="gb-bar-hp" style="width:100%"></i></span>
+            <span class="gb-bar-n">${UI.fmtNum(me2.maxHp)}</span></div>
+          <div class="gb-bar"><span class="gb-bar-l">⚡ Энергия</span>
+            <span class="gb-bar-t"><i class="gb-bar-en" style="width:100%"></i></span>
+            <span class="gb-bar-n">${UI.fmtNum(me2.maxEnergy)}</span></div>
+          <div class="gb-bar"><span class="gb-bar-l">🎯 Боеприпасы</span>
+            <span class="gb-bar-t"><i class="gb-bar-am" style="width:100%"></i></span>
+            <span class="gb-bar-n">${me2.maxAmmo}</span></div>
+        </div>
+      </div>`;
+  }
+
+  // Слагаемые: показываем только ненулевые, иначе у новичка сплошные «+0»
+  const part = (label, val, cls) => (val > 0
+    ? `<span class="gbs-part ${cls || ''}">${label} <b>+${UI.fmtNum(val)}</b></span>` : '');
+  const rowOf = (icon, title, data, barCls, extra) => `
+    <div class="gbs-row">
+      <div class="gbs-head">
+        <span class="gbs-title">${icon} ${title}</span>
+        <span class="gbs-total">${UI.fmtNum(data.total)}</span>
+      </div>
+      <div class="gb-bar-t gbs-bar"><i class="${barCls}" style="width:100%"></i></div>
+      <div class="gbs-parts">
+        <span class="gbs-part gbs-base">база ${UI.fmtNum(data.base)}</span>
+        ${part('улучшения', data.fromUpgrades, 'gbs-up')}
+        ${extra || ''}
+        ${part('роль', data.fromRole, 'gbs-role')}
+      </div>
+    </div>`;
+
+  // Проценты показываем только те, что отличны от нуля — пустые строки
+  // в карточке новичка выглядели бы как поломка
+  const chip = (label, val, suffix) => (val > 0
+    ? `<div class="gbs-chip"><span class="gbs-chip-l">${label}</span><b>${val}${suffix || '%'}</b></div>` : '');
+
+  const roleNote = [
+    m.role.hpMul !== 1 ? `HP ×${m.role.hpMul}` : '',
+    m.role.energyMul !== 1 ? `энергия ×${m.role.energyMul}` : '',
+    m.role.atkMul !== 1 ? `урон ×${m.role.atkMul}` : '',
+    m.role.dmgReducePct > 0 ? `броня +${m.role.dmgReducePct}%` : '',
+  ].filter(Boolean).join(' · ');
+
+  return `
+    <div class="card gbs-card">
+      <div class="name">${App._gbRoleImg(me2.role, me2.roleIcon, 22)} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
+      ${roleNote ? `<p class="muted small gbs-rolenote">Роль даёт: ${roleNote}</p>` : ''}
+      <div class="gbs-rows mt">
+        ${rowOf('❤', 'HP', m.hp, 'gb-bar-hp')}
+        ${rowOf('⚡', 'Энергия', m.energy, 'gb-bar-en',
+                part('снабжение', m.energy.fromSupply, 'gbs-sup'))}
+        ${rowOf('🎯', 'Боеприпасы', m.ammo, 'gb-bar-am')}
+      </div>
+      ${(m.critPct || m.dodgePct || m.armorPct || m.healCritPct || m.atkBonusPct || m.rewardBonusPct) ? `
+        <div class="gbs-chips">
+          ${chip('💥 крит', m.critPct)}
+          ${chip('💨 уворот', m.dodgePct)}
+          ${chip('🛡 броня', m.armorPct)}
+          ${chip('➕ крит лечения', m.healCritPct)}
+          ${chip('⚔ бонус урона', m.atkBonusPct)}
+          ${chip('🎁 к награде', m.rewardBonusPct)}
+        </div>` : ''}
+    </div>`;
+};
+
 
 // Боевое окно группового боя. Раскладка как в боях легиона: логи
 // сверху, под ними свои ресурсы, дальше списки команд с выбором цели.
@@ -1951,11 +2057,11 @@ App.renderGroupBattle = async () => {
   try { b = await API.get('/api/group/battle' + (App._gbWatch ? '?watch=' + encodeURIComponent(App._gbWatch) : '')); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
-  // Отсчёт до конца входа меняется каждую секунду — из отпечатка его
-  // убираем, иначе смысла в проверке нет
-  if (box.dataset.mode === 'battle' && App._sameAsBefore('gbBattle', { ...b, enterLeftSec: undefined })) {
-    const t = document.getElementById('gb-enter-left');
-    if (t) t.textContent = b.enterLeftSec;
+  // Отсчёт подготовки тикает каждую секунду и своим таймером — из
+  // отпечатка его убираем, иначе перерисовка шла бы вхолостую ежесекундно
+  if (box.dataset.mode === 'battle' && App._sameAsBefore('gbBattle', { ...b, prepareLeftSec: undefined })) {
+    const t = document.getElementById('prep-left');
+    if (t) t.textContent = b.prepareLeftSec;
     return;
   }
   box.dataset.mode = 'battle';
@@ -1974,7 +2080,7 @@ App.renderGroupBattle = async () => {
         <div class="prep-team-title">${title}</div>
         ${arr.map((f) => `
           <div class="prep-row${f.isMe ? ' gb-me' : ''}">
-            <span class="gb-role-icon">${f.roleIcon}</span>
+            <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${App._gbRoleImg(f.role, f.roleIcon, 20)}</span>
             <span class="grow">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}
               ${f.isMe ? '<span class="muted small">(вы)</span>' : ''}</span>
             <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
@@ -1990,26 +2096,7 @@ App.renderGroupBattle = async () => {
         <p class="muted small">секунд до начала</p>
       </div>
 
-      <div class="card">
-        <div class="name">${me2.roleIcon} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
-        <div class="gb-bars mt">
-          <div class="gb-bar">
-            <span class="gb-bar-l">❤ HP</span>
-            <span class="gb-bar-t"><i class="gb-bar-hp" style="width:100%"></i></span>
-            <span class="gb-bar-n">${UI.fmtNum(me2.maxHp)}</span>
-          </div>
-          <div class="gb-bar">
-            <span class="gb-bar-l">⚡ Энергия</span>
-            <span class="gb-bar-t"><i class="gb-bar-en" style="width:100%"></i></span>
-            <span class="gb-bar-n">${UI.fmtNum(me2.maxEnergy)}</span>
-          </div>
-          <div class="gb-bar">
-            <span class="gb-bar-l">🎯 Боеприпасы</span>
-            <span class="gb-bar-t"><i class="gb-bar-am" style="width:100%"></i></span>
-            <span class="gb-bar-n">${me2.maxAmmo}</span>
-          </div>
-        </div>
-      </div>
+      ${App._gbMyStatsHtml(b, me2)}
 
       <div class="card">
         ${teamList(b.allies, '🟢 Ваша команда', 'prep-ally')}
@@ -2105,7 +2192,7 @@ App.renderGroupBattle = async () => {
   const rowOf = (f, enemy) => `
     <div class="gb-card ${enemy ? 'gb-card-foe' : 'gb-card-ally'}${f.alive ? '' : ' gb-dead'}${f.isMe ? ' gb-me' : ''}${me.targetId === f.id ? ' gb-target' : ''}">
       <div class="gb-card-top">
-        <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${f.roleIcon}</span>
+        <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${App._gbRoleImg(f.role, f.roleIcon, 20)}</span>
         <span class="grow gb-card-name">
           ${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
           <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
@@ -2154,14 +2241,6 @@ App.renderGroupBattle = async () => {
         <span class="muted small">${b.state === 'waiting' ? 'ждём остальных' : 'идёт'}</span>
       </div>
 
-      ${(b.entered === false && me.alive) ? `
-        <div class="gb-enter-now">
-          <div class="gb-enter-title">⚠ Вы ещё не вступили в бой!</div>
-          <div class="small">Вас уже могут атаковать. Осталось
-            <b id="gb-enter-left">${b.enterLeftSec}</b> с</div>
-          <button class="btn btn-orange mt" id="gb-enter-fight" style="width:100%">В БОЙ</button>
-        </div>` : ''}
-
       ${!me.alive ? `
         <div class="gb-dead-panel">
           <div class="gb-dead-title">☠ Вы выведены из боя</div>
@@ -2193,7 +2272,7 @@ App.renderGroupBattle = async () => {
 
       <div class="gb-self">
         <div class="gb-self-top">
-          <b>${me.roleIcon} ${UI.esc(me.name)}</b>
+          <b>${App._gbRoleImg(me.role, me.roleIcon, 20)} ${UI.esc(me.name)}</b>
           <span class="muted small">${UI.esc(me.roleLabel)} · команда ${me.team + 1}</span>
         </div>
         <div class="gb-bars">
@@ -2237,13 +2316,6 @@ App.renderGroupBattle = async () => {
     App._gbSetAlliesFirst(!App._gbAlliesFirst());
     App._resetSign('gbBattle');
     App.renderGroupBattle();
-  };
-
-  const enterNow = document.getElementById('gb-enter-fight');
-  if (enterNow) enterNow.onclick = async () => {
-    enterNow.disabled = true;
-    try { await API.post('/api/group/enter', {}); App._resetSign('gbBattle'); App.renderGroupBattle(); }
-    catch (e) { UI.toast('⛔ ' + e.message); enterNow.disabled = false; }
   };
 
   box.querySelectorAll('[data-watch]').forEach((btn) => {

@@ -100,7 +100,7 @@ s2.slot = Date.now() - 1000;
 db.save('groupBattle');
 gb.tick();
 skipPrepare("groupBattle");
-for (const p of ps) gb.enter(p, []);
+for (const p of ps) gb.battleState(p);
 const st = gb.battleState(ps[0]);
 ok(st.state === 'running', 'бой идёт');
 ok(st.allies.length + st.enemies.length === 10, `в бою ${st.allies.length + st.enemies.length} бойцов`);
@@ -262,7 +262,7 @@ gb.register(ps[2], 'medic', []);
 const sx = db.load('groupBattle', {}); sx.slot = Date.now() + 10000; db.save('groupBattle'); gb.tick();
 const sy = db.load('groupBattle', {}); sy.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
 skipPrepare("groupBattle");
-for (const p of ps) gb.enter(p, []);
+for (const p of ps) gb.battleState(p);
 const bx = db.load('groupBattle', {}).battle;
 for (const p of ps) bx.fighters[p.id].team = 0;
 bx.fighters[ps[0].id].damageDealt = 5000;
@@ -302,7 +302,7 @@ gb.register(ps[0], 'fighter', []); gb.register(ps[1], 'guardian', []);
 const s1 = db.load('groupBattle', {}); s1.slot = Date.now() + 10000; db.save('groupBattle'); gb.tick();
 const s2b = db.load('groupBattle', {}); s2b.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
 skipPrepare("groupBattle");
-gb.enter(ps[0], []); gb.enter(ps[1], []);
+gb.battleState(ps[0]); gb.battleState(ps[1]);
 const bz = db.load('groupBattle', {}).battle;
 const attacker = bz.fighters[ps[0].id];
 const victim = Object.values(bz.fighters).find((f) => f.team !== attacker.team && f.alive);
@@ -429,7 +429,7 @@ gb.register(ps[1], 'fighter', []);
 const sw1 = db.load('groupBattle', {}); sw1.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const sw2 = db.load('groupBattle', {}); sw2.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
 skipPrepare("groupBattle");
-gb.enter(ps[0], []); gb.enter(ps[1], []);
+gb.battleState(ps[0]); gb.battleState(ps[1]);
 const bw = db.load('groupBattle', {}).battle;
 bw.fighters[ps[1].id].team = bw.fighters[ps[0].id].team;
 // Добиваем напрямую: ход бота зависит от отката и мог бы не случиться
@@ -508,51 +508,57 @@ const css3 = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
 ok(/\.gb-banner \{[\s\S]{0,160}aspect-ratio: 900 \/ 507/.test(css3),
    'пропорция задана заранее — страница не прыгает при загрузке');
 
-console.log('\n── 23. Вход в бой: 30 секунд, но бьют сразу ──');
-ok(gb.ENTER_WINDOW_MS === 30000, `на выход даётся ${gb.ENTER_WINDOW_MS / 1000} секунд`);
+console.log('\n── 23. Комната подготовки: бой стартует сам, все бьются сразу ──');
+ok(gb.PREPARE_MS === 30000, `комната длится ${gb.PREPARE_MS / 1000} секунд`);
+ok(typeof gb.enter !== 'function', 'отдельного «вступить в бой» больше нет');
+ok(gb.ENTER_WINDOW_MS === undefined, 'окно входа убрано');
 const se = db.load('groupBattle', {});
 se.registered = {}; se.battle = null; se.slot = 0; db.save('groupBattle');
 gb.register(ps[0], 'fighter', []);
 gb.register(ps[1], 'fighter', []);
 const e1 = db.load('groupBattle', {}); e1.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const e2 = db.load('groupBattle', {}); e2.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
+
+// Сначала — комната: бить ещё нельзя
+const bePrep = db.load('groupBattle', {}).battle;
+ok(bePrep.state === 'preparing', 'сперва открывается комната подготовки');
+fails(() => gb.act(ps[0], 'attack', ps[1].id, []), 'Бой не идёт',
+      'в комнате подготовки бить нельзя');
+
+// Оба открыли комнату — значит явились
+gb.battleState(ps[0]);
+gb.battleState(ps[1]);
+const beSeen = db.load('groupBattle', {}).battle;
+ok(beSeen.fighters[ps[0].id].seen && beSeen.fighters[ps[1].id].seen,
+   'открывшие комнату отмечены как пришедшие');
+
 skipPrepare("groupBattle");
 const be = db.load('groupBattle', {}).battle;
-ok(be.state === 'running', 'бой идёт сразу, без ожидания');
-const slow = be.fighters[ps[1].id];
-ok(slow.alive && !slow.entered, 'не нажавший «В бой» жив, но ещё не вступил');
-// Его можно бить
+ok(be.state === 'running', 'по истечении подготовки бой начался САМ');
+
+// Ставим их по разные стороны и отключаем уворот, иначе удар мог бы
+// случайно пройти мимо и проверка падала бы через раз
 be.fighters[ps[1].id].team = be.fighters[ps[0].id].team === 0 ? 1 : 0;
+be.fighters[ps[1].id].st = { ...(be.fighters[ps[1].id].st || {}), dodgeChance: 0 };
+be.fighters[ps[0].id].st = { ...(be.fighters[ps[0].id].st || {}), dodgeChance: 0 };
 db.save('groupBattle');
-gb.enter(ps[0], []);
-// Уворот отключаем: удар мог бы случайно пройти мимо, и проверка
-// падала бы через раз
-const beX = db.load('groupBattle', {}).battle;
-beX.fighters[ps[1].id].st = { ...(beX.fighters[ps[1].id].st || {}), dodgeChance: 0 };
-db.save('groupBattle');
+
 const hpBefore2 = db.load('groupBattle', {}).battle.fighters[ps[1].id].hp;
 gb.act(ps[0], 'attack', ps[1].id, []);
 const hpAfter2 = db.load('groupBattle', {}).battle.fighters[ps[1].id].hp;
-ok(hpAfter2 < hpBefore2, `не вступившего бьют: ${hpBefore2} → ${hpAfter2}`);
-// А он ответить не может
-fails(() => gb.act(ps[1], 'attack', ps[0].id, []), 'Сначала нажмите',
-      'не вступивший не может действовать');
-// После входа — может
-gb.enter(ps[1], []);
-const be2 = db.load('groupBattle', {}).battle;
-be2.fighters[ps[1].id].lastActionAt = 0;
+ok(hpAfter2 < hpBefore2, `бьют сразу после старта: ${hpBefore2} → ${hpAfter2}`);
+
+// И отвечать можно без всяких «вступлений»
+const beR = db.load('groupBattle', {}).battle;
+beR.fighters[ps[1].id].lastActionAt = 0;
 db.save('groupBattle');
 let acted = false;
 try { gb.act(ps[1], 'attack', ps[0].id, []); acted = true; } catch (e) {}
-ok(acted, 'после нажатия «В бой» действует нормально');
-// Опоздал — не пустят
-const be3 = db.load('groupBattle', {}).battle;
-be3.fighters[ps[1].id].entered = false;
-be3.startedAt = Date.now() - 40000;
-db.save('groupBattle');
-fails(() => gb.enter(ps[1], []), 'Время на выход истекло', 'после 30 секунд вход закрыт');
+ok(acted, 'ответить можно сразу — нажимать «В бой» не требуется');
+
 const srcE = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
-ok(/боец УЖЕ на поле с первой/.test(srcE), 'решение объяснено в коде');
+ok(/бой стартует сам|начинается САМ/.test(srcE), 'решение объяснено в коде');
+ok(!/ENTER_WINDOW_MS/.test(srcE), 'следов окна входа в сервисе не осталось');
 
 console.log('\n── 24. Обновление без мигания ──');
 const warE = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
@@ -570,9 +576,9 @@ const intervals = [...warE.matchAll(/_(?:gb|arena)Timer = setInterval\([\s\S]{0,
   .map((m) => Number(m[1]));
 ok(intervals.length > 0 && intervals.every((x) => x >= 5000),
    `все обновления не чаще 5 секунд: ${intervals.join(', ')} мс`);
-ok(/id="gb-enter-fight"/.test(warE), 'кнопка «В бой» есть в боевом окне');
-ok(/gb-enter-left/.test(warE), 'отсчёт до конца входа обновляется точечно');
-ok(/Вы ещё не вступили в бой/.test(warE), 'игрока предупреждают, что его уже бьют');
+ok(!/id="gb-enter-fight"/.test(warE), 'кнопки «В бой» в боевом окне больше нет');
+ok(!/Вы ещё не вступили в бой/.test(warE), 'панели «вы не вступили» больше нет');
+ok(/prep-left/.test(warE), 'вместо неё точечно обновляется отсчёт подготовки');
 
 console.log('\n── 25. Живой отсчёт до боя ──');
 const warT = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
@@ -617,7 +623,7 @@ gb.register(ps[0], 'fighter', []);
 const c1t = db.load('groupBattle', {}); c1t.slot = Date.now() + 1000; db.save('groupBattle'); gb.tick();
 const c2t = db.load('groupBattle', {}); c2t.slot = Date.now() - 1000; db.save('groupBattle'); gb.tick();
 skipPrepare("groupBattle");
-gb.enter(ps[0], []);
+gb.battleState(ps[0]);
 // Три «хода» с интервалом больше отката
 let botActs = 0;
 for (let i = 0; i < 3; i++) {
@@ -769,8 +775,8 @@ console.log('\n── 33. История боёв и честный рейтин
   s8.slot = Date.now() - 1000;
   db8.save('groupBattle');
   gb8.tick();
-  gb8.enter(one, []);
-  gb8.enter(two, []);
+  gb8.battleState(one);
+  gb8.battleState(two);
   const bp = db8.load('groupBattle', {}).battle;
   bp.prepareUntil = Date.now() - 1;
   db8.save('groupBattle');

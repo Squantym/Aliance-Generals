@@ -22,6 +22,45 @@ const SKILL_NAMES: Record<string, string> = {
   cruelty: 'жестокость', agility: 'ловкость',
 };
 function skillName(id: string): string { return SKILL_NAMES[id] || id || '?'; }
+
+// Роли и улучшения групповых боёв: в журнале должно стоять «Защитник»,
+// а не «guardian» — иначе владелец читает журнал как программист.
+const GB_ROLES: Record<string, string> = {
+  fighter: 'Штурмовик', guardian: 'Защитник', medic: 'Медик',
+};
+function gbRole(id: string): string { return GB_ROLES[id] || id || '?'; }
+
+const GB_SKILLS: Record<string, string> = {
+  hp: 'запас HP', energy: 'запас энергии', ammo: 'боеприпасы',
+  crit: 'шанс крита', dodge: 'уворот', armor: 'броня',
+  healCrit: 'крит лечения', reward: 'прибавка к награде',
+};
+function gbSkill(id: string): string { return GB_SKILLS[id] || id || '?'; }
+
+const GB_BUFFS: Record<string, string> = {
+  attack: 'усиление урона', energy: 'запас энергии',
+  crit: 'шанс крита', dodge: 'уворот',
+};
+function gbBuff(id: string): string { return GB_BUFFS[id] || id || '?'; }
+
+// Что именно восстанавливали в бою легиона
+const RESTORE_RU: Record<string, string> = {
+  hp: 'здоровье', energy: 'энергия', ammo: 'боеприпасы',
+};
+
+// Перечень выданного/изъятого администратором — только непустое
+function resourceList(b: any): string {
+  const NAMES: Record<string, string> = {
+    dollars: '$', gold: '🪙', exp: 'опыт', energy: 'энергия',
+    health: 'здоровье', ammo: 'боеприпасы', tokens: 'жетоны',
+  };
+  const parts: string[] = [];
+  for (const k of Object.keys(NAMES)) {
+    const v = Number(b && b[k]);
+    if (v) parts.push(`${NAMES[k]} ${money(Math.abs(v))}`);
+  }
+  return parts.length ? parts.join(', ') : 'ничего';
+}
 function unitName(id: string): string { const x = config.UNIT_BY_ID[id]; return x ? x.name : id; }
 function buildingName(id: string): string { const x = config.BUILDING_BY_ID[id]; return x ? x.name : id; }
 function itemName(id: string): string { const x = config.MARKET_ITEM_BY_ID[id]; return x ? x.name : id; }
@@ -51,6 +90,41 @@ function describe(path: string, body?: any, result?: any): string | null {
     // запросе, и там switch матчится по строке напрямую.
     if (/^\/api\/notifications\/[^/]+\/read$/.test(path)) {
       return '🔔 Прочитал уведомление';
+    }
+
+    // ── Пути с подстановкой в середине ──────────────────────────
+    // Объединения: один и тот же набор действий для альянса и легиона,
+    // в адресе :kind подставляется буквально ('alliance' / 'legion').
+    const gm = /^\/api\/group\/(alliance|legion)\/([a-z-]+)$/.exec(path);
+    if (gm) {
+      const what = gm[1] === 'legion' ? 'легион' : 'альянс';
+      // Родительный падеж — для «исключил ИЗ легионА». Без него в журнале
+      // получалось «Исключил из легион», что читается как машинный перевод.
+      const whatGen = gm[1] === 'legion' ? 'легиона' : 'альянса';
+      const who = body.name || body.targetName || body.userName || body.userId || '';
+      switch (gm[2]) {
+        case 'create':   return `🏛 Создал ${what} «${body.name || '—'}»`;
+        case 'apply':    return `📨 Подал заявку в ${what}${body.name ? ` «${body.name}»` : ''}`;
+        case 'decide':   return `${body.accept ? '✅ Принял' : '❌ Отклонил'} заявку в ${what}${who ? `: ${who}` : ''}`;
+        case 'invite':   return `✉️ Пригласил в ${what}${who ? `: ${who}` : ''}`;
+        case 'diplomat': return `🕊 Назначил дипломата в ${what}${who ? `: ${who}` : ''}`;
+        case 'respond':  return `${body.accept ? '✅ Принял' : '❌ Отклонил'} приглашение в ${what}`;
+        case 'kick':     return `👢 Исключил из ${whatGen}${who ? `: ${who}` : ''}`;
+        case 'leave':    return `🚪 Покинул ${what}`;
+        default:         return `🏛 Действие в ${what}: ${gm[2]}`;
+      }
+    }
+    if (/^\/api\/admin\/tournaments\/[^/]+\/cancel$/.test(path)) {
+      return '🏆 Отменил турнир';
+    }
+    if (/^\/api\/rewards\/[^/]+\/claim$/.test(path)) {
+      return '🎁 Забрал начисленную награду';
+    }
+    if (/^\/api\/rewards\/[^/]+\/delete$/.test(path)) {
+      return '🗑 Удалил награду из списка';
+    }
+    if (/^\/api\/mail\/[^/]+\/delete$/.test(path)) {
+      return '🗑 Удалил письмо';
     }
     // Лоты дня и подписка: без этих строк журнал показывал сырые адреса
     // вида «/api/lots/buy», по которым ничего не понять
@@ -304,6 +378,211 @@ function describe(path: string, body?: any, result?: any): string | null {
         return '🏁 Принудительно завершил рейтинговую неделю';
       case '/api/admin/legion/deposit':
         return `💰 Пополнил казну легиона ${body.legionId} на $${money(body.amount)} (админ)`;
+
+      // ══════════════════════════════════════════════════════════
+      // Ниже — действия, которые до этого показывались сырым адресом
+      // вида «/api/lasers/fuel-power». Разбирать по ним жалобы было
+      // невозможно: видно, что игрок что-то нажал, а что именно — нет.
+      // ══════════════════════════════════════════════════════════
+
+      // ── Учётная запись и вход ──────────────────────────────────
+      case '/api/logout':                 return '🚪 Вышел из игры';
+      case '/api/change-password':        return '🔑 Сменил пароль';
+      case '/api/reset-password':         return '🔑 Задал новый пароль по ссылке восстановления';
+      case '/api/request-password-reset': return '✉️ Запросил восстановление пароля';
+      case '/api/resend-verification':    return '✉️ Запросил повторное письмо подтверждения';
+      case '/api/verify-human':           return '🤖 Прошёл проверку «не бот»';
+      case '/api/avatar':                 return '🖼 Сменил аватар';
+      case '/api/rename':                 return `✏️ Сменил позывной на «${body.name || '—'}»`;
+      case '/api/passport/name':          return `📇 Изменил имя в паспорте на «${body.name || '—'}»`;
+      case '/api/passport/country':       return `🏳 Сменил страну на «${body.country || '—'}»`;
+      case '/api/account/create':         return `👥 Создал нового персонажа «${body.nick || body.name || '—'}»`;
+      case '/api/account/switch':         return '🔄 Переключился на другого персонажа';
+      case '/api/account/login':          return `🆔 Задал логин аккаунта «${body.login || '—'}»`;
+      case '/api/skill/reset':            return '♻️ Сбросил навыки';
+
+      // ── Уведомления, почта, награды ────────────────────────────
+      case '/api/notifications/read-all': return '🔔 Отметил все уведомления прочитанными';
+      case '/api/mail/read-all':          return '📬 Прочитал всю почту';
+      case '/api/push/subscribe':         return '📲 Включил push-уведомления';
+      case '/api/push/unsubscribe':       return '📴 Отключил push-уведомления';
+      case '/api/login-reward/claim':     return '🎁 Забрал награду за вход';
+      case '/api/war-report/ack':         return '📄 Закрыл сводку «пока вас не было»';
+      case '/api/achievements/ack':       return '🏅 Закрыл окно достижения';
+      case '/api/rockets/dismiss-hit':    return '🚀 Закрыл отчёт о ракетном ударе';
+
+      // ── Война и разведка ───────────────────────────────────────
+      case '/api/spy':
+        return `🔍 Разведал игрока${result.targetName ? ` «${result.targetName}»` : ''}`;
+      case '/api/war/bank-hack/guess':
+        return `🔐 Взлом сейфа: назвал ${body.digit != null ? `цифру ${body.digit}` : 'вариант'}`;
+      case '/api/war/bank-hack/skip':     return '🔐 Пропустил попытку взлома сейфа';
+      case '/api/war/bank-hack/cancel':   return '🔐 Отказался от взлома сейфа';
+      case '/api/war/ear-message':        return '👂 Отправил сообщение вместе с ухом';
+      case '/api/sanctions/declare':
+        return `⚖️ Объявил санкции против «${body.targetName || body.targetId || '—'}»`;
+      case '/api/reinforcements/send':
+        return `🤝 Отправил подкрепление «${body.targetName || body.targetId || '—'}»`;
+      case '/api/missions/buy-required':
+        return '🛒 Докупил технику, которой не хватало для спецоперации';
+
+      // ── Ракетные шахты и лазеры ────────────────────────────────
+      case '/api/silos/build':      return '🚀 Заложил ракетную шахту';
+      case '/api/silos/boost':      return '⚡ Ускорил постройку ракеты за золото';
+      case '/api/silos/fuel-power':
+        return `💪 Залил ${body.amount || 0} боеприпасов в мощность ракеты`;
+      case '/api/silos/launch':
+        return `🚀 Запустил ракету по «${result.targetName || body.targetId || '—'}»` +
+               `${result.powerPct != null ? ` (мощность ${result.powerPct}%)` : ''}`;
+      case '/api/lasers/build':     return '🔦 Построил лазерную установку';
+      case '/api/lasers/boost':     return '⚡ Ускорил постройку лазера за золото';
+      case '/api/lasers/fuel-ready':
+        return `🔋 Залил ${body.amount || 0} энергии в готовность лазера`;
+      case '/api/lasers/fuel-power':
+        return `🎯 Залил ${body.amount || 0} боеприпасов в точность лазера`;
+      case '/api/lasers/intercept':
+        return result.hit ? '🎯 Сбил ракету лазером' : '💨 Промахнулся лазером по ракете';
+
+      // ── Шахты ──────────────────────────────────────────────────
+      case '/api/mines/buy-plot':   return '⛏ Купил участок под шахту';
+      case '/api/mines/build':      return '⛏ Заложил шахту';
+      case '/api/mines/rebuild':    return '🔨 Восстановил разрушенную шахту';
+      case '/api/mines/descend':    return '⬇️ Спустился на уровень глубже в шахте';
+      case '/api/mines/fight':      return '👊 Бой с охраной в шахте';
+      case '/api/mines/dismiss':    return '🚪 Закрыл окно шахты';
+      case '/api/market/mines/buy': return '⛏ Купил снаряжение для шахт';
+
+      // ── Поручения ──────────────────────────────────────────────
+      case '/api/daily/accept':     return '📋 Взял ежедневное поручение';
+      case '/api/daily/accept-all': return '📋 Взял все ежедневные поручения разом';
+      case '/api/daily/claim-all':  return '🎁 Забрал награды за ежедневные поручения';
+      case '/api/daily/reroll':     return '🎲 Заменил ежедневное поручение';
+      case '/api/weekly/accept':    return '🗓 Взял недельное задание';
+      case '/api/weekly/claim':     return '🎁 Забрал награду за недельное задание';
+      case '/api/weekly/bonus':     return '🎁 Забрал недельный бонус';
+
+      // ── Арена ──────────────────────────────────────────────────
+      case '/api/arena/register':   return `🏟 Записался на арену (дивизион ${body.div || '—'})`;
+      case '/api/arena/unregister': return '🏟 Снялся с записи на арену';
+      case '/api/arena/enter':      return '🏟 Вышел на арену';
+      case '/api/arena/attack':     return '⚔️ Удар на арене';
+      case '/api/arena/switch':     return '🎯 Сменил цель на арене';
+      case '/api/arena/skill':      return `✨ Применил умение на арене${body.skill ? ` «${body.skill}»` : ''}`;
+      case '/api/arena/leave':      return '🚪 Покинул бой на арене';
+
+      // ── Групповые бои ──────────────────────────────────────────
+      case '/api/group/register':
+        return `🤝 Записался на групповой бой${body.role ? ` (роль: ${gbRole(body.role)})` : ''}`;
+      case '/api/group/unregister': return '🤝 Снялся с записи на групповой бой';
+      case '/api/group/role':       return `🤝 Сменил роль в групповом бою на «${gbRole(body.role)}»`;
+      case '/api/group/enter':      return '⚔️ Открыл комнату подготовки группового боя';
+      case '/api/group/leave':      return '🚪 Покинул групповой бой';
+      case '/api/group/act': {
+        const A: Record<string, string> = {
+          attack: '⚔️ Атаковал в групповом бою',
+          heal:   '➕ Лечил союзника в групповом бою',
+          guard:  '🛡 Прикрыл союзника в групповом бою',
+        };
+        return A[String(body.action)] || `🤝 Действие в групповом бою: ${body.action || '?'}`;
+      }
+      case '/api/group/upgrade':
+        return `📈 Прокачал улучшение групповых боёв «${gbSkill(body.id || body.skill)}»`;
+      case '/api/group/supply/buy':
+        return `📦 Купил усиление в базе снабжения «${gbBuff(body.kind || body.id)}»`;
+
+      // ── Легион ─────────────────────────────────────────────────
+      case '/api/legion/rank':
+        return `🎖 Изменил звание в легионе${body.targetName ? `: ${body.targetName}` : ''}`;
+      case '/api/legion/chat':          return '💬 Написал в чат легиона';
+      case '/api/legion/admin-join':    return '🛡 Вступил в легион (админ)';
+      case '/api/legion/admin-deposit': return `💰 Пополнил казну легиона на $${money(body.amount)}`;
+      case '/api/legion/battle/direction':
+        return `🧭 Перешёл на направление «${body.dirName || body.direction || '—'}»`;
+      case '/api/legion/battle/chat':    return '💬 Написал в чат боя легиона';
+      case '/api/legion/battle/leave':   return '🚪 Покинул бой легиона';
+      case '/api/legion/battle/restore':
+        return `♻️ Восстановил в бою: ${RESTORE_RU[String(body.kind)] || body.kind || '—'}`;
+
+      // ── Форум ──────────────────────────────────────────────────
+      case '/api/forum/topic':          return `📝 Создал тему «${body.title || '—'}»`;
+      case '/api/forum/comment':        return '💬 Оставил комментарий на форуме';
+      case '/api/forum/close':          return '🔒 Закрыл тему на форуме';
+      case '/api/forum/pin':            return '📌 Закрепил тему на форуме';
+      case '/api/forum/delete':         return '🗑 Удалил тему с форума';
+      case '/api/forum/delete-comment': return '🗑 Удалил комментарий на форуме';
+      case '/api/forum/ban':            return `⛔ Запретил писать на форуме: ${body.targetName || body.userId || '—'}`;
+      case '/api/forum/unban':          return `✅ Вернул право писать на форуме: ${body.targetName || body.userId || '—'}`;
+
+      // ── Новости ────────────────────────────────────────────────
+      case '/api/news/create': return `📰 Опубликовал новость «${body.title || '—'}»`;
+      case '/api/news/update': return `📰 Изменил новость «${body.title || body.id || '—'}»`;
+      case '/api/news/delete': return '🗑 Удалил новость';
+      case '/api/news/pin':    return '📌 Закрепил новость';
+
+      // ── Поддержка и модерация ──────────────────────────────────
+      case '/api/support/create': return `🛟 Создал обращение в поддержку «${body.subject || '—'}»`;
+      case '/api/support/reply':  return '🛟 Ответил в своём обращении';
+      case '/api/mod/chat-ban':
+        return `🔇 Заблокировал чат игроку ${body.targetName || body.userId || '—'}` +
+               `${body.minutes ? ` на ${body.minutes} мин` : ''}`;
+      case '/api/mod/chat-unban':
+        return `🔊 Снял блокировку чата с ${body.targetName || body.userId || '—'}`;
+      case '/api/staff/role':
+        return `👔 Назначил роль «${body.role || '—'}» сотруднику ${body.targetName || body.userId || '—'}`;
+      case '/api/staff/permissions':
+        return `🔧 Изменил права сотрудника ${body.targetName || body.userId || '—'}`;
+      case '/api/staff/permissions/reset':
+        return `♻️ Сбросил права сотрудника ${body.targetName || body.userId || '—'} к роли`;
+
+      // ── Альянс (личный) ────────────────────────────────────────
+      case '/api/alliance/invite':     return `✉️ Позвал в альянс ${body.targetName || body.userId || '—'}`;
+      case '/api/alliance/invite-bot': return '🤖 Добавил бота в альянс';
+      case '/api/alliance/accept':     return '✅ Принял приглашение в альянс';
+      case '/api/alliance/decline':    return '❌ Отклонил приглашение в альянс';
+      case '/api/alliance/remove':     return `👢 Убрал из альянса ${body.targetName || body.userId || '—'}`;
+      case '/api/alliance/diplomat':   return '🕊 Назначил дипломата альянса';
+
+      // ── Администрирование ──────────────────────────────────────
+      case '/api/admin/take':
+        return `➖ Изъял у «${body.targetName || body.userId || '—'}»: ${resourceList(body)}`;
+      case '/api/admin/rewards/grant':
+        return `🎁 Начислил награду «${body.title || body.kind || '—'}»` +
+               `${body.targetName ? ` игроку ${body.targetName}` : ' всем'}`;
+      case '/api/admin/account-ban':
+        return `⛔ Заблокировал аккаунт ${body.targetName || body.userId || '—'}` +
+               `${body.minutes ? ` на ${body.minutes} мин` : ' навсегда'}` +
+               `${body.reason ? ` — ${body.reason}` : ''}`;
+      case '/api/admin/account-unban':
+        return `✅ Разблокировал аккаунт ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/verify-email':
+        return `✉️ Подтвердил почту игроку ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/set-password':
+        return `🔑 Назначил новый пароль игроку ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/delete-account':
+        return `🗑 Удалил аккаунт ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/mines/wipe':
+        return `🗑 Очистил шахты игрока ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/lobby-reset':
+        return '🔄 Сбросил очередь записи на бои';
+      case '/api/admin/merc/grant':
+        return `⭐ Выдал наёмника «${body.mercName || body.mercId || '—'}» игроку ${body.targetName || '—'}`;
+      case '/api/admin/merc/revoke':
+        return `⭐ Забрал наёмника у ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/event/look':   return '🐉 Изменил внешний вид события-босса';
+      case '/api/admin/event/image':  return '🖼 Заменил картинку события-босса';
+      case '/api/admin/legion/set':   return `🛡 Изменил настройки легиона ${body.legionId || '—'}`;
+      case '/api/admin/legion/battle': return '⚔️ Вмешался в бой легионов';
+      case '/api/admin/tournaments/create':
+        return `🏆 Создал турнир «${body.name || '—'}»`;
+      case '/api/admin/push/broadcast':
+        return `📣 Разослал push всем: «${body.title || body.text || '—'}»`;
+      case '/api/admin/support/claim':   return `🛟 Взял в работу тикет ${body.ticketId || '—'}`;
+      case '/api/admin/support/release': return `🛟 Вернул тикет ${body.ticketId || '—'} в общую очередь`;
+      case '/api/admin/db/backup':   return '🗄 Создал копию базы вручную';
+      case '/api/admin/db/snapshot':
+        return `📸 Сделал снимок коллекции «${body.collection || '—'}»`;
+      case '/api/admin/db/restore':
+        return `♻️ Откатил коллекцию «${body.collection || '—'}» из снимка #${body.seq || '—'}`;
 
       default:
         return null;

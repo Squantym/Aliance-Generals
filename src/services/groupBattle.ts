@@ -27,13 +27,12 @@ const TEAM_SIZE = 5;                    // сколько в команде
 const LOBBY_MS = 5 * 60 * 1000;         // сколько ждём остальных
 const BOT_FILL_BEFORE_MS = 20 * 1000;   // за сколько до старта начинаем добор
 const TOTAL_SLOTS = 10;                 // сколько мест в бою всего
-// Тридцать секунд на нажатие «В бой». Но боец УЖЕ на поле с первой
-// секунды: его можно бить, пока он не зашёл. Не успел — может погибнуть,
-// так и не сделав ни одного удара. Это осознанно: бой начинается сразу
-// для всех, иначе вошедшие первыми стояли бы и ждали.
-const ENTER_WINDOW_MS = 30 * 1000;
-// Подготовка: после сбора даётся полминуты, чтобы все успели войти в
-// комнату. Бой начинается только по её истечении.
+// ── Комната подготовки ────────────────────────────────────────────
+// После сбора состава открывается отдельная страница: обе команды
+// поимённо, роли и рейтинги. Полминуты на осмотреться — и бой
+// начинается САМ, сразу для всех. Никаких «вступить в бой» нажимать
+// не нужно: раньше боец стоял на поле неактивным, пока не нажмёт, и
+// его успевали убить, так и не дав сделать ход.
 const PREPARE_MS = 30 * 1000;
 const BATTLE_MAX_MS = 20 * 60 * 1000;   // предел длительности
 
@@ -89,8 +88,14 @@ type Fighter = {
   energy: number; maxEnergy: number;
   ammo: number; maxAmmo: number;
   alive: boolean;
-  entered: boolean;
-  seen: boolean;              // открывал ли игрок комнату боя
+  seen: boolean;              // открывал ли игрок комнату подготовки
+  // Откуда взялись запасы: база → прокачка → снабжение → множитель роли.
+  // Нужна только для показа игроку его собственных характеристик.
+  breakdown?: {
+    hp: { base: number; upgraded: number; final: number };
+    energy: { base: number; upgraded: number; supplied?: number; final: number };
+    ammo: { base: number; final: number };
+  };
   isBot: boolean;
   replaced?: boolean;         // место человека, которым управляет бот
   forfeited?: boolean;        // не явился — награды не получит
@@ -215,13 +220,12 @@ function tick(): void {
 
   const b = s.battle;
   if (b && (b.state === 'preparing' || b.state === 'waiting' || b.state === 'running')) {
-    // Подготовка окончена — бой начинается.
-    // Кто не открыл комнату, выбывает с поражением: держать его живым
-    // нечестно к тем, кто пришёл.
+    // Полминуты подготовки вышли — бой начинается САМ, сразу для всех.
+    // Нажимать ничего не нужно: кто открыл комнату, тот уже в строю.
     if (b.state === 'preparing' && now >= (b.prepareUntil || 0)) {
       b.state = 'running';
       b.startedAt = now;
-      // Кто не пришёл в комнату — за него играет бот. Имя и рейтинг
+      // Кто не открыл комнату — за него играет бот. Имя и рейтинг
       // остаются его, но человеку засчитывается поражение и наград он
       // не получит. Так команда не остаётся в меньшинстве из-за одного
       // отсутствующего, а прогульщик ничего не выигрывает.
@@ -367,8 +371,13 @@ function startBattle(s: Store, list: any[], now: number): void {
     // Купленные в базе снабжения усиления действуют по времени и
     // применяются поверх улучшений
     const SUP = require('./groupSupply');
+    // Промежуточные значения запоминаем: в комнате подготовки игрок
+    // должен видеть, ОТКУДА взялась итоговая цифра — сколько дала
+    // прокачка, сколько снабжение, сколько роль. По готовому числу
+    // этого уже не восстановить (снабжение временное и вшито в st).
+    const upStats = owner ? UP.statsFor(owner) : null;
     const st = owner ? (() => {
-      const base = UP.statsFor(owner);
+      const base = upStats!;
       const atkB = SUP.bonus(owner, 'attack');
       const enB = SUP.bonus(owner, 'energy');
       const critB = SUP.bonus(owner, 'crit');
@@ -377,6 +386,7 @@ function startBattle(s: Store, list: any[], now: number): void {
         ...base,
         energy: Math.round(base.energy * (1 + enB)),
         atkBonus: atkB,
+        supEnergy: enB,          // доля прибавки от снабжения — для расшифровки
         critChance: Math.min(0.95, base.critChance + critB),
         healCritChance: Math.min(0.95, base.healCritChance + critB),
         dodgeChance: Math.min(0.75, base.dodgeChance + dodgeB),
@@ -384,19 +394,25 @@ function startBattle(s: Store, list: any[], now: number): void {
     })() : {
       hp: HP, energy: ENERGY, ammo: AMMO,
       critChance: UP.BASE.critChance, dodgeChance: UP.BASE.dodgeChance,
-      healCritChance: 0, damageReduce: 0, rewardBonus: 0,
+      healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0,
     };
     // Запасы с учётом роли: защитник крепче, медик выносливее
     const roleDef = ROLES[role];
     const roleHp = Math.round(st.hp * (roleDef.hpMul || 1));
     const roleEnergy = Math.round(st.energy * (roleDef.energyMul || 1));
+    // Разбивка «база → прокачка → снабжение → роль» для карточки в комнате
+    const breakdown = {
+      hp:     { base: UP.BASE.hp,     upgraded: st.hp,     final: roleHp },
+      energy: { base: UP.BASE.energy, upgraded: upStats ? upStats.energy : ENERGY,
+                supplied: st.energy,  final: roleEnergy },
+      ammo:   { base: UP.BASE.ammo,   final: st.ammo },
+    };
     fighters[rec.id] = {
-      id: rec.id, name: rec.name, flag: rec.flag, team, role, st,
+      id: rec.id, name: rec.name, flag: rec.flag, team, role, st, breakdown,
       hp: roleHp, maxHp: roleHp,
       energy: roleEnergy, maxEnergy: roleEnergy,
       ammo: st.ammo, maxAmmo: st.ammo,
       alive: true, seen: String(rec.id).startsWith('gbot_'),
-      entered: String(rec.id).startsWith('gbot_'),
       isBot: String(rec.id).startsWith('gbot_'),
       targetId: null, lastActionAt: 0,
       guardedUntil: 0, guardedBy: '',
@@ -418,7 +434,7 @@ function startBattle(s: Store, list: any[], now: number): void {
     if (f.isBot) continue;
     try {
       require('./notifications').push(f.id, 'gb_start',
-        `⚔ Групповой бой начался! Вы уже на поле — вас могут бить. Заходите скорее: ${Math.round(ENTER_WINDOW_MS / 1000)} секунд на выход.`, {});
+        `⚔ Состав собран! Комната подготовки открыта — посмотрите, кто с вами и против вас. Бой начнётся через ${Math.round(PREPARE_MS / 1000)} секунд.`, {});
     } catch (e) {}
   }
 }
@@ -975,17 +991,13 @@ function view(user: User) {
              cooldownMs: ACTION_CD_MS, costHeal: COST.heal.energy, costGuard: COST.guard.energy },
     battle: b && b.state !== 'cancelled' ? {
       state: b.state,
-      // Идёт подготовка и игрок ещё не вошёл — показываем приглашение
+      // Идёт подготовка, а игрок ещё не открывал комнату — зовём его
+      // туда плашкой. Как только откроет, приглашение исчезает.
       needEnter: b.state === 'preparing' && !!b.fighters[user.id]
         && !b.fighters[user.id].seen,
       prepareLeftSec: b.state === 'preparing'
         ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
       iAmIn: !!b.fighters[user.id],
-      entered: !!(b.fighters[user.id] && b.fighters[user.id].entered),
-      canEnter: !!(b.fighters[user.id] && !b.fighters[user.id].entered
-        && b.state === 'running' && b.fighters[user.id].alive
-        && now - b.startedAt <= ENTER_WINDOW_MS),
-      enterLeftSec: Math.max(0, Math.round((b.startedAt + ENTER_WINDOW_MS - now) / 1000)),
       id: b.id,
     } : null,
     history: (s.history || []).slice(0, 5),
@@ -994,29 +1006,66 @@ function view(user: User) {
   };
 }
 
-// ---------- Вход в бой ----------
-function enter(user: User, notices: Notices) {
-  tick();
-  const s = store();
-  const b = s.battle;
-  // Входить можно и во время подготовки: комната для того и нужна
-  if (!b || (b.state !== 'running' && b.state !== 'preparing')) throw new u.ApiError('Бой не идёт');
-  const me = b.fighters[user.id];
-  if (!me) throw new u.ApiError('Вы не записаны на этот бой');
-  if (!me.alive) throw new u.ApiError('Вы уже выведены из боя');
-  if (Date.now() - b.startedAt > ENTER_WINDOW_MS) {
-    throw new u.ApiError('Время на выход истекло');
-  }
-  // Вход в комнату — осознанное действие: игрок нажал «В бой».
-  // Раньше присутствие отмечалось при простом просмотре, и человек,
-  // случайно открывший вкладку, считался явившимся.
-  if (!me.seen || !me.entered) {
-    me.seen = true;
-    me.entered = true;
-    addLog(b, `➕ ${me.name} занял место (${ROLES[me.role].label})`, 'system');
-    db.save('groupBattle');
-  }
-  return battleState(user);
+// ---------- Отметка присутствия в комнате подготовки ----------
+// Кнопки «В бой» больше нет: бой стартует сам через полминуты. Явка
+// отмечается тем, что игрок ОТКРЫЛ комнату — этого достаточно, чтобы
+// считать его пришедшим и не подменять ботом. Вызывается из
+// battleState на каждом запросе состояния во время подготовки.
+function markSeen(b: any, userId: string): void {
+  const me = b && b.fighters && b.fighters[userId];
+  if (!me || me.isBot || me.seen) return;
+  me.seen = true;
+  addLog(b, `➕ ${me.name} в строю (${ROLES[me.role].label})`, 'system');
+  db.save('groupBattle');
+}
+
+// ---------- Свои характеристики с расшифровкой ----------
+// Показываются ТОЛЬКО их владельцу. Роль и улучшения дают разный вклад,
+// и по итоговому числу непонятно, что именно сработало: 2250 HP — это
+// прокачка или множитель защитника? Поэтому отдаём и слагаемые.
+function myStatsOf(f: Fighter): any {
+  const roleDef = ROLES[f.role] || ROLES.fighter;
+  const st: any = f.st || {};
+  // У боёв, начатых до этой правки, разбивки в базе нет — считаем от
+  // итоговых значений, чтобы старый бой не уронил экран.
+  const bd: NonNullable<Fighter['breakdown']> = f.breakdown || {
+    hp:     { base: UP.BASE.hp,     upgraded: f.maxHp,     final: f.maxHp },
+    energy: { base: UP.BASE.energy, upgraded: f.maxEnergy, final: f.maxEnergy },
+    ammo:   { base: UP.BASE.ammo,   final: f.maxAmmo },
+  };
+  const pct = (v: number) => Math.round((v || 0) * 1000) / 10;   // 0.305 → 30.5
+  return {
+    role: {
+      id: f.role, label: roleDef.label, icon: roleDef.icon,
+      hpMul: roleDef.hpMul || 1, energyMul: roleDef.energyMul || 1,
+      atkMul: roleDef.atkMul || 1, dmgReducePct: pct(roleDef.dmgReduce || 0),
+    },
+    hp: {
+      base: bd.hp.base,
+      fromUpgrades: Math.max(0, (bd.hp.upgraded || 0) - bd.hp.base),
+      fromRole: Math.max(0, (bd.hp.final || 0) - (bd.hp.upgraded || 0)),
+      total: bd.hp.final,
+    },
+    energy: {
+      base: bd.energy.base,
+      fromUpgrades: Math.max(0, (bd.energy.upgraded || 0) - bd.energy.base),
+      fromSupply: Math.max(0, (bd.energy.supplied || bd.energy.upgraded || 0) - (bd.energy.upgraded || 0)),
+      fromRole: Math.max(0, (bd.energy.final || 0) - (bd.energy.supplied || bd.energy.upgraded || 0)),
+      total: bd.energy.final,
+    },
+    ammo: {
+      base: bd.ammo.base,
+      fromUpgrades: Math.max(0, (bd.ammo.final || 0) - bd.ammo.base),
+      total: bd.ammo.final,
+    },
+    // Боевые проценты: в бою работают, но раньше нигде не показывались
+    critPct: pct(st.critChance),
+    dodgePct: pct(st.dodgeChance),
+    healCritPct: pct(st.healCritChance),
+    armorPct: pct((st.damageReduce || 0) + (roleDef.dmgReduce || 0)),
+    atkBonusPct: pct(st.atkBonus),
+    rewardBonusPct: pct(st.rewardBonus),
+  };
 }
 
 // ---------- Состояние боя ----------
@@ -1024,6 +1073,9 @@ function battleState(user: User, watchId?: string) {
   tick();
   const s = store();
   const b = s.battle;
+  // Открыл комнату во время подготовки — значит явился. Отмечаем здесь,
+  // потому что отдельного действия «вступить в бой» больше нет.
+  if (b && b.state === 'preparing') markSeen(b, user.id);
   if (!b || !b.fighters[user.id]) {
     // Бой уже убран из очереди — показываем сохранённый разбор, иначе
     // игрок увидит пустой экран или нули вместо своих показателей
@@ -1082,8 +1134,6 @@ function battleState(user: User, watchId?: string) {
     result: (b as any).result || null,
     iWon: b.state === 'done' && b.winnerTeam === me.team,
     myTeam: me.team,
-    entered: me.entered,
-    enterLeftSec: Math.max(0, Math.round((b.startedAt + ENTER_WINDOW_MS - now) / 1000)),
     me: {
       ...card(me),
       energy: me.energy, maxEnergy: me.maxEnergy,
@@ -1092,6 +1142,12 @@ function battleState(user: User, watchId?: string) {
       damageDealt: me.damageDealt, healed: me.healed, kills: me.kills,
       targetId: me.targetId,
     },
+    // ── СВОИ характеристики, только владельцу ────────────────────────
+    // Отдаём под отдельным ключом, а НЕ через card(): карточка рисуется
+    // и для союзников, и для врагов, и любое поле в ней утекло бы всем.
+    // Здесь же — разбивка «база → прокачка → снабжение → роль», чтобы
+    // игрок видел отдачу от вложений, а не одно итоговое число.
+    myStats: myStatsOf(me),
     allies: Object.values(b.fighters).filter((f) => f.team === me.team).map(card),
     enemies: Object.values(b.fighters).filter((f) => f.team !== me.team).map(card),
     // Логи от лица наблюдаемого: только то, что касается лично его
@@ -1124,7 +1180,6 @@ function requireFight(user: User): { s: Store; b: Battle; me: Fighter } {
   const me = b.fighters[user.id];
   if (!me) throw new u.ApiError('Вы не участвуете в бою');
   if (!me.alive) throw new u.ApiError('Вы выведены из боя');
-  if (!me.entered) throw new u.ApiError('Сначала нажмите «В бой»');
   const now = Date.now();
   if (now - me.lastActionAt < ACTION_CD_MS) {
     throw new u.ApiError(`Перезарядка ${((ACTION_CD_MS - (now - me.lastActionAt)) / 1000).toFixed(1)} с`);
@@ -1181,10 +1236,10 @@ function act(user: User, action: string, targetId: string, notices: Notices) {
 }
 
 export = {
-  view, register, unregister, setRole, enter, battleState, act, tick, nextSlot, busyState, leave,
+  view, register, unregister, setRole, battleState, act, tick, nextSlot, busyState, leave,
   ratingTable, rankOf, awardRating, tokensFor, RANKS, CONTRIB_CAP,
   RATING_WIN, RATING_LOSS, RATING_KILL, RATING_BEST,
   ROLES, ROLE_IDS, TEAM_SIZE, HP, ENERGY, AMMO, BASE_DMG, HEAL_AMOUNT,
-  GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, COST, BOT_THINK_MS, BOT_FILL_BEFORE_MS, ENTER_WINDOW_MS,
+  GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, COST, BOT_THINK_MS, BOT_FILL_BEFORE_MS, PREPARE_MS,
   splitTeams, fillWithBots, botTurn,
 };

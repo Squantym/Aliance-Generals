@@ -163,7 +163,7 @@ const g2 = db.load('groupBattle', {}); g2.slot = Date.now() - 1000; db.save('gro
     gb.tick();
   }
 }
-gb.enter(pro, []); gb.enter(plain, []);
+gb.battleState(pro); gb.battleState(plain);
 // Усыпляем ботов: здесь проверяются улучшения игрока, а агрессивные
 // боты успевали добить проверяющего до конца проверки
 {

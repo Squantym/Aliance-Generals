@@ -471,13 +471,13 @@ console.log('\n── 16. Полный путь: запись → комната
   ok(v7.battle.prepareLeftSec > 0 && v7.battle.prepareLeftSec <= 30,
      `на подготовку ${v7.battle.prepareLeftSec} секунд`);
 
-  // Один заходит, второй только смотрит
-  gb7.enter(came, []);
-  gb7.battleState(skip7);
+  // Один открыл комнату, второй так и не заглянул.
+  // Кнопки «В бой» больше нет: сам факт открытия комнаты и есть явка.
+  gb7.battleState(came);
   const raw7 = db7.load('groupBattle', {}).battle;
-  ok(raw7.fighters[came.id].seen === true, 'вошедший отмечен');
+  ok(raw7.fighters[came.id].seen === true, 'открывший комнату отмечен как пришедший');
   ok(!raw7.fighters[skip7.id].seen,
-     'простой просмотр не считается явкой — только нажатие «В бой»');
+     'не открывавший комнату — не отмечен');
 
   // Бой начался
   raw7.prepareUntil = Date.now() - 1;
@@ -533,7 +533,7 @@ ok(/⚔ Атаковать/.test(warF) && /➕ Лечить/.test(warF) && /🛡
 console.log('\n── 19. Плашка зовёт в комнату ──');
 const appF = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
 ok(/if \(c\.needEnter\)/.test(appF), 'плашка отличает подготовку от идущего боя');
-ok(/Подготовка к бою!/.test(appF), 'зовёт занять место');
+ok(/Состав собран!/.test(appF), 'зовёт открыть комнату подготовки');
 ok(/id="cb-left"/.test(appF), 'показывает, сколько осталось');
 const routesF = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
 ok(/needEnter: needArena \|\| needGroup/.test(routesF), 'признак приходит с сервера');
@@ -585,13 +585,18 @@ ok(onlyClient.length === 0 && onlyServer.length === 0,
 
 console.log('\n── 21. Кнопка ведёт в комнату, а не на витрину ──');
 const appR = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
-ok(/if \(c\.needEnter\) \{[\s\S]{0,260}api\/group\/enter/.test(appR),
-   'нажатие на плашку сразу занимает место в комнате');
-ok(/Раньше кнопка вела на витрину/.test(appR), 'причина прежней ошибки записана в коде');
+// В ГБ отдельного «занять место» больше нет: явку отмечает сервер, когда
+// игрок запрашивает состояние боя. На арене прежний вход сохранён.
+ok(!/api\/group\/enter/.test(appR), 'плашка не дёргает удалённый вход ГБ');
+ok(/api\/arena\/enter/.test(appR), 'на арене вход остался отдельным действием');
 const warR3 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
-ok(/ВОЙТИ В КОМНАТУ/.test(warR3), 'на витрине кнопка названа понятно');
+ok(/ОТКРЫТЬ КОМНАТУ/.test(warR3), 'на витрине кнопка названа понятно');
 ok(/d\.battle && d\.battle\.needEnter/.test(warR3), 'приглашение показывается по признаку с сервера');
 ok(/за вас будет играть бот/.test(warR3), 'игрока предупреждают о последствиях');
+// Главное: во время подготовки экран группы открывает саму комнату, а не
+// витрину с кнопкой. Из-за двойного нажатия игрок не успевал за 30 секунд.
+ok(/state === 'preparing' \|\| d\.battle\.state === 'running'/.test(warR3),
+   'при подготовке сразу открывается комната, без промежуточной витрины');
 
 console.log('\n── 22. Свои и чужие различимы ──');
 ok(/gb-card-ally/.test(warR3) && /gb-card-foe/.test(warR3), 'карточки помечены стороной');

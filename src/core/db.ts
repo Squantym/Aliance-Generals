@@ -526,18 +526,55 @@ function startPeriodicFlush(): void {
 }
 
 // ── Аудит-лог: append-only (одна запись = один документ) ───────────
-// В mongo — вставка в capped-коллекцию (быстро, ~200 байт, авто-вытеснение).
-// В json — дописываем в массив в кэше и лениво пишем файл (локальная разработка).
+// СРОК ХРАНЕНИЯ — 3 МЕСЯЦА. Раньше держали последние 50 000 записей, а это
+// при живой игре всего несколько дней: разобраться по жалобе недельной
+// давности было уже не по чему. Теперь вытесняем по дате.
+const LOG_KEEP_MS = 90 * 24 * 3600 * 1000;
+
 function appendLog(entry: any): void {
   if (mode === 'sqlite') { try { sqlite.appendLog(entry); } catch (e) {} return; }
   if (mode === 'mongo') {
     if (logsColl) logsColl.insertOne(entry).catch((e: any) => console.error('Ошибка записи лога:', e.message));
     return;
   }
+  // JSON-режим (локальная разработка): срок тот же, но остаётся и потолок по
+  // числу записей — здесь журнал целиком лежит в памяти процесса, и
+  // трёхмесячная история боевого сервера её бы не пережила.
   const arr = load<any[]>('actionLogs', []);
   arr.push(entry);
+  const cutoff = Date.now() - LOG_KEEP_MS;
+  let cut = 0;
+  while (cut < arr.length && (arr[cut].at || 0) < cutoff) cut++;
+  if (cut) arr.splice(0, cut);
   if (arr.length > 20000) arr.splice(0, arr.length - 20000);
   save('actionLogs');
+}
+
+// Сводка по журналу: сколько записей и за какой срок. Нужна админке, чтобы
+// владелец видел, что история действительно копится, а не подрезается.
+function logStats(): any {
+  if (mode === 'sqlite') {
+    try { return sqlite.logStats(); } catch (e) { /* дальше общий путь */ }
+  }
+  const arr = load<any[]>('actionLogs', []) as any[];
+  let oldest = 0, newest = 0;
+  for (const e of arr) {
+    const t = e && e.at ? e.at : 0;
+    if (!t) continue;
+    if (!oldest || t < oldest) oldest = t;
+    if (t > newest) newest = t;
+  }
+  return { count: arr.length, oldestAt: oldest, newestAt: newest, keepDays: Math.round(LOG_KEEP_MS / 86400000) };
+}
+
+// Записи за период — для разбирательств по давним жалобам
+function logsBetween(from: number, to: number, userId?: string, limit?: number): any[] {
+  const n = Math.max(1, Math.min(5000, limit || 1000));
+  if (mode === 'sqlite') { try { return sqlite.logsBetween(from, to, userId, n); } catch (e) { return []; } }
+  const arr = load<any[]>('actionLogs', []) as any[];
+  return arr
+    .filter((e) => (e.at || 0) >= from && (e.at || 0) <= to && (!userId || e.userId === userId))
+    .slice(-n).reverse();
 }
 
 // Последние N записей лога (опционально по игроку). Async — читает из БД.
@@ -596,6 +633,7 @@ async function flushAllNow(): Promise<string[]> {
 
 export = {
   init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
+  logStats, logsBetween, LOG_KEEP_MS,
   dropUser, findDuplicateUsers,
   // Своя база: защита данных и аналитика
   backupNow, backupsList, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats, closeDb,
