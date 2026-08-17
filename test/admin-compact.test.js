@@ -15,7 +15,7 @@ const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
 console.log('\n── 1. Вкладок стало меньше ──');
 const tabsBlock = /const tabs = \[([\s\S]*?)\];/.exec(adminJs)[1];
 const count = (tabsBlock.match(/id:'/g) || []).length;
-ok(count === 13, `вкладок в панели: ${count} (было 14; добавлены «Жалобы» и «Аналитика»)`);
+ok(count === 11, `вкладок в панели: ${count} (было 14)`);
 ok(/id:'econ'/.test(tabsBlock), 'экономические разделы объединены во вкладку «Экономика»');
 for (const gone of ["id:'tools'", "id:'mercs'", "id:'discounts'", "id:'buffs'", "id:'db'"]) {
   ok(!tabsBlock.includes(gone), `отдельной вкладки ${gone} больше нет`);
@@ -59,8 +59,8 @@ ok(/id="db-block"/.test(adminJs), 'блок живёт внутри вкладк
 ok(/Admin\.can\('database'\)/.test(dbBlock), 'виден только при праве на базу');
 ok(/db-backup/.test(dbBlock), 'кнопка копии осталась');
 ok(/data-restore/.test(dbBlock), 'откат из снимка остался');
-ok(/Копии создаются сами/.test(dbBlock) && /каждые 15 минут/.test(dbBlock) && /раз в 6 часов/.test(dbBlock),
-   'объяснено, что копии делаются автоматически: быстрые каждые 15 минут, полные раз в 6 часов');
+ok(/Копии создаются сами каждые 6 часов/.test(dbBlock),
+   'объяснено, что копии делаются автоматически — кнопка нужна редко');
 
 console.log('\n── 5. Оформление ──');
 ok(/#tab-content \.card \{ padding: 11px 13px/.test(css), 'карточки панели ужаты');

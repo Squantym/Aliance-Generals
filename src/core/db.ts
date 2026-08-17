@@ -50,7 +50,6 @@ let shuttingDown = false;
 
 let sqlite: any = null;          // модуль SQLite-хранилища (если выбран драйвер)
 let backupTimer: any = null;
-let lightTimer: any = null;
 let lockFile = '';
 
 // ═══ ЗАЩИТА ОТ ВТОРОГО ПРОЦЕССА ═══════════════════════════════════
@@ -451,19 +450,6 @@ function startPeriodicBackup(): void {
     catch (e: any) { console.error('⚠️  Бэкап не удался:', e.message); }
   }, hours * 3600 * 1000);
   if (backupTimer.unref) backupTimer.unref();
-
-  // ── Лёгкие копии: только прогресс игроков, без журнала ───────────
-  // Полная копия весит сотни мегабайт из-за журнала, поэтому её нельзя
-  // делать часто — и точность восстановления упиралась в 6 часов.
-  // Прогресс игроков весит единицы мегабайт: такую копию можно снимать
-  // каждые 15 минут. Именно она нужна почти во всех разборах.
-  const lightMin = Math.max(5, Number(process.env.BACKUP_LIGHT_MINUTES || 15));
-  const lightKeep = Math.max(4, Number(process.env.BACKUP_LIGHT_KEEP || 192));  // 48 часов
-  lightTimer = setInterval(() => {
-    try { sqlite.backupLight('light', lightKeep); }
-    catch (e: any) { console.error('⚠️  Лёгкая копия не удалась:', e.message); }
-  }, lightMin * 60 * 1000);
-  if (lightTimer.unref) lightTimer.unref();
 }
 
 // Копия базы прямо сейчас (админка, перед миграцией). Возвращает путь.
@@ -475,12 +461,6 @@ function backupNow(label = 'manual'): string | null {
 // Снимок ОДНОЙ коллекции перед рискованной операцией. Дешевле полного
 // бэкапа, поэтому вызывается автоматически — например, перед сбросом
 // недельного сезона: если что-то пойдёт не так, метрики можно вернуть.
-function backupLightNow(): string | null {
-  if (mode !== 'sqlite') return null;
-  try { return sqlite.backupLight('light', Number(process.env.BACKUP_LIGHT_KEEP || 192)); }
-  catch (e) { return null; }
-}
-
 function snapshotCollection(name: string, label: string): boolean {
   if (mode !== 'sqlite' || store[name] === undefined) return false;
   try { sqlite.snapshot(name, store[name], label); return true; } catch (e) { return false; }
@@ -514,19 +494,11 @@ function sql(query: string, params: any[] = []): any[] {
 // пригодным для копирования.
 function closeDb(): void {
   if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
-  if (lightTimer) { clearInterval(lightTimer); lightTimer = null; }
   if (mode === 'sqlite' && sqlite) { try { sqlite.close(); } catch (e) {} }
   releaseLock();
 }
 
 // Список имеющихся копий базы — для админки
-// Состояние игрока на момент копии — главный инструмент разбирательства
-// после сбоя. Копия открывается только на чтение, боевая база не трогается.
-function playerFromBackup(fileName: string, query: string): any {
-  if (mode !== 'sqlite') throw new Error('Доступно только на своей базе (DB_DRIVER=sqlite)');
-  return sqlite.playerFromBackup(fileName, query);
-}
-
 function backupsList(): any[] {
   if (mode !== 'sqlite') return [];
   try {
@@ -538,88 +510,6 @@ function backupsList(): any[] {
       .sort((a, b) => b.at - a.at)
       .slice(0, 40);
   } catch (e) { return []; }
-}
-
-// ── Состояние вывоза копий за пределы сервера ─────────────────────
-// tools/backup-offsite.sh пишет отчёт в data/backups/offsite-status.json.
-// Читаем его здесь, чтобы панель показывала состояние вывоза, а не
-// молчала. Молчание — худший вид отчёта о бэкапах: пока никто не
-// смотрит, вывоз может не работать месяцами, и это выясняется ровно
-// в тот момент, когда копия понадобилась.
-function offsiteStatus(): any {
-  const dir = path.join(process.env.SQLITE_DIR || path.join(process.cwd(), 'data'), 'backups');
-  const file = path.join(dir, 'offsite-status.json');
-  try {
-    const st = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const ageMs = Date.now() - (st.at || 0);
-    return {
-      configured: true,
-      ok: !!st.ok,
-      at: st.at || 0,
-      ageHours: Math.floor(ageMs / 3600000),
-      // Вывоз раз в сутки: 48 часов без отчёта — расписание не работает
-      stale: ageMs > 48 * 3600 * 1000,
-      file: String(st.file || ''),
-      bytes: Number(st.bytes || 0),
-      players: Number(st.players || 0),
-      remote: String(st.remote || ''),
-      error: String(st.error || ''),
-    };
-  } catch (e) {
-    // Отчёта нет вообще — значит скрипт ни разу не отработал
-    return { configured: false, ok: false, at: 0, ageHours: 0, stale: true,
-             file: '', bytes: 0, players: 0, remote: '', error: '' };
-  }
-}
-
-// Упаковка старого журнала. Зовётся из фонового тика небольшими порциями:
-// разом ужать двухмесячный хвост — это секунды работы в единственном
-// потоке, то есть заметная для игроков пауза.
-function packLogs(maxPacks = 6): any {
-  if (mode !== 'sqlite') return { packed: 0, rows: 0 };
-  try {
-    const r = sqlite.packOldLogs(maxPacks);
-    // Упаковка освобождает страницы внутри базы. Отдаём их файловой
-    // системе тут же, порциями: иначе файл остаётся прежнего размера и
-    // экономия видна только внутри базы, а не на диске и в копиях.
-    if (r.packed) r.reclaimed = sqlite.reclaimSpace(2000);
-    return r;
-  } catch (e) { return { packed: 0, rows: 0 }; }
-}
-
-// ── История состояния игрока ──────────────────────────────────────
-// Ответ на вопрос «что было у игрока до сбоя» с точностью до 5 минут, а
-// не до последней копии базы. Копии остаются — они про другое: про
-// потерю базы целиком.
-function playerHistory(id: string, limit = 200): any[] {
-  if (mode !== 'sqlite') return [];
-  try { return sqlite.playerHistoryList(String(id), limit); } catch (e) { return []; }
-}
-function playerHistoryGet(seq: number): any | null {
-  if (mode !== 'sqlite') return null;
-  try { return sqlite.playerHistoryGet(Number(seq)); } catch (e) { return null; }
-}
-function playerHistoryAt(id: string, at: number): any | null {
-  if (mode !== 'sqlite') return null;
-  try { return sqlite.playerHistoryAt(String(id), Number(at)); } catch (e) { return null; }
-}
-// Снимок ПЕРЕД действием сотрудника: пишется всегда, минуя задержку в
-// 5 минут, и прореживание его не удаляет. Именно по нему разбираются,
-// когда сотрудник ошибся.
-function snapshotPlayer(user: any, label: string, actor = ''): boolean {
-  if (mode !== 'sqlite' || !user || !user.id) return false;
-  try {
-    const { id, ...rest } = user;
-    return sqlite.savePlayerHistory(user.id, rest, label || 'до изменения', actor);
-  } catch (e) { return false; }
-}
-function thinHistory(): any {
-  if (mode !== 'sqlite') return { removed: 0 };
-  try { return sqlite.thinPlayerHistory(); } catch (e) { return { removed: 0 }; }
-}
-function historyStats(): any {
-  if (mode !== 'sqlite') return null;
-  try { return sqlite.historyStats(); } catch (e) { return null; }
 }
 
 function dbStats(): any {
@@ -712,7 +602,6 @@ async function flushAllNow(): Promise<string[]> {
   shuttingDown = true;
   if (periodicTimer) { clearInterval(periodicTimer); periodicTimer = null; }
   if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
-  if (lightTimer) { clearInterval(lightTimer); lightTimer = null; }
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = null;
   const failed: string[] = [];
@@ -744,11 +633,9 @@ async function flushAllNow(): Promise<string[]> {
 
 export = {
   init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
-  logStats, logsBetween, LOG_KEEP_MS, playerFromBackup,
+  logStats, logsBetween, LOG_KEEP_MS,
   dropUser, findDuplicateUsers,
   // Своя база: защита данных и аналитика
   backupNow, backupsList, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats, closeDb,
-  offsiteStatus, packLogs, backupLightNow,
-  playerHistory, playerHistoryGet, playerHistoryAt, snapshotPlayer, thinHistory, historyStats,
   get mode() { return mode; },
 };

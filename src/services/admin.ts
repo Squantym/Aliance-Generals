@@ -361,7 +361,6 @@ function applyTake(target: User, body: any): string[] {
 function take(adminUser: User, body: any, notices: Notices) {
   const target = player.users()[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  snapBefore(adminUser, target, 'перед списанием ресурсов');
 
   const taken = applyTake(target, body);
   if (!taken.length) throw new u.ApiError('Не указано, что списывать');
@@ -380,21 +379,6 @@ function take(adminUser: User, body: any, notices: Notices) {
 // роуте. Аудит показал, что модератор мог вызвать setBan, setPassword и
 // resetAccount напрямую — роут их закрывал, но сама функция никого не
 // спрашивала, и любой внутренний вызов обходил защиту.
-// ═══ СНИМОК ПЕРЕД ДЕЙСТВИЕМ СОТРУДНИКА ═══════════════════════════════
-// Любое административное изменение игрока сначала сохраняет его полное
-// состояние. Раньше откатывать ошибку сотрудника можно было только до
-// последней копии базы, то есть с потерей до шести часов чужой игры —
-// а «выдал 10 миллионов не тому» случается чаще любого сбоя.
-//
-// Стоит это 1,2 КБ на снимок, поэтому экономить здесь не на чем: снимок
-// делается перед КАЖДЫМ действием, включая безобидные. Снимки с пометкой
-// прореживание не удаляет — они живут весь срок хранения, 3 месяца.
-function snapBefore(actor: User, target: User, what: string): void {
-  try {
-    require('../core/db').snapshotPlayer(target, what, actor && actor.name ? actor.name : '');
-  } catch (e) { /* страховка не должна ломать само действие */ }
-}
-
 function assertZone(actor: User, zone: string, what: string): void {
   const roles = require('./roles');
   if (!roles.canAccessZone(actor, zone)) {
@@ -408,7 +392,6 @@ function grant(adminUser: User, body: any, notices: Notices) {
   assertZone(adminUser, 'economy', 'Выдача ресурсов');
   const target = player.users()[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  snapBefore(adminUser, target, 'перед выдачей ресурсов');
 
   const granted = applyGrant(target, body);
   if (!granted.length) throw new u.ApiError('Не указано, что выдавать');
@@ -529,7 +512,6 @@ function setBan(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  snapBefore(adminUser, target, body.unban ? 'перед разблокировкой' : 'перед блокировкой аккаунта');
   // Сотрудников проекта банит только владелец
   const rolesSrv = require('./roles');
   const targetRole = rolesSrv.roleOf(target);
@@ -602,9 +584,6 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  // Обнуление стирает всё нажитое. Снимок ДО — единственный способ
-  // вернуть игрока, если обнулили не того или передумали.
-  snapBefore(adminUser, target, 'перед обнулением аккаунта');
   if (target.isAdmin && target.id !== adminUser.id) {
     throw new u.ApiError('Нельзя обнулить аккаунт другого администратора');
   }
@@ -703,16 +682,11 @@ function resetParam(adminUser: User, body: any, notices: Notices) {
     if (target.isAdmin && target.id !== adminUser.id) {
       throw new u.ApiError('Нельзя сбрасывать параметры другого администратора');
     }
-    snapBefore(adminUser, target, `перед сбросом «${param}»`);
     fn(target);
     count = 1;
   } else {
-    // Массовый сброс: снимок каждому. 500 игроков — это 600 КБ, и это
-    // единственный способ откатить массовую операцию, если параметр
-    // выбрали не тот. Дешевле любой попытки восстановить вручную.
     for (const t of Object.values(players)) {
       if (t.isAdmin) continue;
-      snapBefore(adminUser, t, `перед массовым сбросом «${param}»`);
       fn(t);
       count++;
     }
@@ -790,9 +764,6 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  // Аккаунт исчезает из базы целиком — снимок остаётся единственным
-  // следом того, что у человека было.
-  snapBefore(adminUser, target, 'перед удалением аккаунта');
   if (target.id === adminUser.id) throw new u.ApiError('Нельзя удалить собственный аккаунт');
   if (target.isAdmin) throw new u.ApiError('Нельзя удалить аккаунт администратора. Сначала снимите права.');
 
@@ -951,7 +922,6 @@ async function setPassword(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  snapBefore(adminUser, target, 'перед сменой пароля');
   if (target.isAdmin && target.id !== adminUser.id) {
     throw new u.ApiError('Нельзя менять пароль другого администратора');
   }

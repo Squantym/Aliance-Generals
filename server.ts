@@ -53,7 +53,6 @@ import legion = require('./src/services/legion');
 import fame = require('./src/services/fame');
 
 const PORT = Number(process.env.PORT) || 3000;
-let lastThin = Date.now();
 
 async function main() {
   // Сначала подключаемся к базе данных (или к локальным файлам) —
@@ -124,17 +123,6 @@ async function main() {
       require('./src/services/seasons').rolloverIfNeeded(); // смена недели: наградить топ-3 ДО любых сбросов
       require('./src/services/mines').tickAll(); // шахты: уведомления о нападении вовремя + финализация спусков
       fame.resetDailyIfNeeded();
-      // Срез аналитики за сутки. Сам пропускает работу, если сегодняшний
-      // день уже записан, — дёргать его каждые 30 секунд безопасно.
-      require('./src/services/analytics').snapshotDaily();
-      // Упаковка журнала старше недели — понемногу за раз, чтобы не
-      // занимать единственный поток надолго. Когда хвост упакован,
-      // вызов не делает ничего.
-      db.packLogs(6);
-      // Прореживание истории игроков: свежее подробно, старое обзорно.
-      // Дешёвая операция, но и делать её каждые 30 секунд незачем —
-      // раз в час достаточно.
-      if (Date.now() - lastThin > 3600 * 1000) { lastThin = Date.now(); db.thinHistory(); }
       db.saveAll();
     } catch (e) {
       console.error('Ошибка фонового тика:', e);
