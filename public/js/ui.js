@@ -245,6 +245,14 @@ const UI = {
   toast(msg) {
     const box = document.getElementById('toasts');
     if (!box) return;
+    // aria-live: экранный диктор произносит сообщение, не уводя фокус.
+    // Без этого результат действия существовал только визуально и на
+    // 1,8 секунды — слепой сотрудник о нём просто не узнавал.
+    if (!box.getAttribute('aria-live')) {
+      box.setAttribute('aria-live', 'polite');
+      box.setAttribute('aria-atomic', 'true');
+      box.setAttribute('role', 'status');
+    }
     // В ряд не больше 2: при появлении нового старые досрочно убираются
     while (box.children.length >= 2) box.firstChild.remove();
     const el = document.createElement('div');
@@ -257,6 +265,52 @@ const UI = {
       el.classList.add('toast-out');
       setTimeout(() => el.remove(), 200);
     }, 1800);
+  },
+
+  // ═══ ДОСТУПНОСТЬ МОДАЛЬНЫХ ОКОН ══════════════════════════════════
+  // Раньше окна были обычными div: с клавиатуры Tab уводил фокус на
+  // страницу ПОД окном, диктор не объявлял, что открылось окно, а после
+  // закрытия фокус терялся в начале документа. Для сотрудника, который
+  // работает с клавиатуры, это означало, что панелью пользоваться нельзя.
+  //
+  // Здесь три вещи, которые это чинят:
+  //   • role=dialog + aria-modal — окно объявляется как окно;
+  //   • ловушка Tab — фокус ходит по кругу внутри окна;
+  //   • возврат фокуса на элемент, с которого окно открыли.
+  _a11yDialog(overlay, dialogEl, titleText) {
+    const returnTo = document.activeElement;
+    dialogEl.setAttribute('role', 'dialog');
+    dialogEl.setAttribute('aria-modal', 'true');
+    if (titleText) dialogEl.setAttribute('aria-label', titleText);
+
+    // Видимость НЕ проверяем через offsetParent: у элементов внутри
+    // position:fixed он равен null, а оверлей окна как раз fixed —
+    // проверка отсекала бы вообще всё, и ловушка молча не работала.
+    // Достаточно исключить выключенные и скрытые.
+    const focusable = () => Array.from(dialogEl.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )).filter((el) => !el.disabled && !el.hidden
+      && el.getAttribute('aria-hidden') !== 'true'
+      && (el.style ? el.style.display !== 'none' : true));
+
+    const onKey = (e) => {
+      if (e.key !== 'Tab') return;
+      const list = focusable();
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      // Ловушка: с последнего Tab уводит на первый, с первого Shift+Tab —
+      // на последний. Наружу фокус не уходит, пока окно открыто.
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    overlay.addEventListener('keydown', onKey);
+
+    return () => {
+      overlay.removeEventListener('keydown', onKey);
+      // Возвращаем фокус туда, откуда пришли: иначе после закрытия он
+      // оказывается в начале страницы и человек теряет место работы
+      try { if (returnTo && returnTo.focus) returnTo.focus(); } catch (e) {}
+    };
   },
 
   // Игровое окно подтверждения (замена браузерного confirm).
@@ -287,7 +341,8 @@ const UI = {
           </div>
         </div>`;
       document.body.appendChild(m);
-      const close = (val) => { m.remove(); resolve(val); };
+      const release = UI._a11yDialog(m, m.querySelector('.game-dialog'), opts.title || 'Подтверждение');
+      const close = (val) => { release(); m.remove(); resolve(val); };
       m.querySelector('#gd-ok').onclick = () => close(true);
       m.querySelector('#gd-cancel').onclick = () => close(false);
       m.onclick = (e) => { if (e.target === m) close(false); };
@@ -329,8 +384,9 @@ const UI = {
           </div>
         </div>`;
       document.body.appendChild(m);
+      const release = UI._a11yDialog(m, m.querySelector('.game-dialog'), opts.title || 'Ввод');
       const input = m.querySelector('#gd-input');
-      const close = (val) => { m.remove(); resolve(val); };
+      const close = (val) => { release(); m.remove(); resolve(val); };
       m.querySelector('#gd-ok').onclick = () => close(input.value);
       m.querySelector('#gd-cancel').onclick = () => close(null);
       m.onclick = (e) => { if (e.target === m) close(null); };

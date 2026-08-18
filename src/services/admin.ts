@@ -361,6 +361,7 @@ function applyTake(target: User, body: any): string[] {
 function take(adminUser: User, body: any, notices: Notices) {
   const target = player.users()[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  snapBefore(adminUser, target, 'перед списанием ресурсов');
 
   const taken = applyTake(target, body);
   if (!taken.length) throw new u.ApiError('Не указано, что списывать');
@@ -379,6 +380,21 @@ function take(adminUser: User, body: any, notices: Notices) {
 // роуте. Аудит показал, что модератор мог вызвать setBan, setPassword и
 // resetAccount напрямую — роут их закрывал, но сама функция никого не
 // спрашивала, и любой внутренний вызов обходил защиту.
+// ═══ СНИМОК ПЕРЕД ДЕЙСТВИЕМ СОТРУДНИКА ═══════════════════════════════
+// Любое административное изменение игрока сначала сохраняет его полное
+// состояние. Раньше откатывать ошибку сотрудника можно было только до
+// последней копии базы, то есть с потерей до шести часов чужой игры —
+// а «выдал 10 миллионов не тому» случается чаще любого сбоя.
+//
+// Стоит это 1,2 КБ на снимок, поэтому экономить здесь не на чем: снимок
+// делается перед КАЖДЫМ действием, включая безобидные. Снимки с пометкой
+// прореживание не удаляет — они живут весь срок хранения, 3 месяца.
+function snapBefore(actor: User, target: User, what: string): void {
+  try {
+    require('../core/db').snapshotPlayer(target, what, actor && actor.name ? actor.name : '');
+  } catch (e) { /* страховка не должна ломать само действие */ }
+}
+
 function assertZone(actor: User, zone: string, what: string): void {
   const roles = require('./roles');
   if (!roles.canAccessZone(actor, zone)) {
@@ -392,6 +408,7 @@ function grant(adminUser: User, body: any, notices: Notices) {
   assertZone(adminUser, 'economy', 'Выдача ресурсов');
   const target = player.users()[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  snapBefore(adminUser, target, 'перед выдачей ресурсов');
 
   const granted = applyGrant(target, body);
   if (!granted.length) throw new u.ApiError('Не указано, что выдавать');
@@ -403,6 +420,15 @@ function grant(adminUser: User, body: any, notices: Notices) {
     ? customNote
     : `Администратор ${adminUser.name} выдал вам: ${granted.join(', ')}.`;
   notifications.push(target.id, 'admin_gift', customNote ? '🎁 Подарок от администрации' : '📦 Подарок администрации', { text: mailText });
+
+  // ЗАПИСЬ НА ДИСК. Без этой строки выдача оставалась только в памяти:
+  // http.ts помечает на сохранение лишь ТОГО, КТО СДЕЛАЛ запрос (то есть
+  // сотрудника), а страховочный saveAll раз в 30 секунд коллекцию users
+  // намеренно пропускает. При штатном рестарте выдача уцелевала — при
+  // выходе сохраняются все игроки, — но при аварийном завершении
+  // (kill -9, OOM, отключение питания) пропадала. Воспроизведено:
+  // 10 000 золота исчезли после падения процесса.
+  db.markUser(target.id);
 
   notices.push(`✅ Выдано игроку ${target.name}: ${granted.join(', ')}`);
   return { player: brief(target) };
@@ -435,6 +461,7 @@ function grantAll(adminUser: User, body: any, notices: Notices) {
         : `Администратор ${adminUser.name} выдал всем игрокам: ${granted.join(', ')}.`;
       notifications.push(target.id, 'admin_gift', '🎁 Подарок всем игрокам', { text: mailText });
       if (!sampleGranted.length) sampleGranted = granted;
+      db.markUser(target.id);   // см. пояснение в grant()
       count++;
     }
   }
@@ -498,12 +525,54 @@ function setGlobalBuff(adminUser: User, body: any, notices: Notices) {
 // ──────────────────────────────────────────────────────────────────
 // Журнал действий
 // ──────────────────────────────────────────────────────────────────
+// Категории журнала. Фильтр применяется НА СЕРВЕРЕ.
+//
+// Раньше панель забирала последние 200 записей и фильтровала их в
+// браузере. Это выглядело как работающий фильтр, но означало другое:
+// «Покупки» показывали покупки только среди последних 200 действий, а
+// если игрок за это время воевал, экран оставался пустым — при том что
+// покупки в журнале есть, просто глубже. Сотрудник делал вывод
+// «покупок не было», и это был неверный вывод.
+//
+// Теперь категория уходит на сервер, и лимит применяется К ОТОБРАННЫМ
+// записям, а не к сырому потоку.
+const LOG_CATEGORIES: Record<string, RegExp> = {
+  buy:    /\/(buy|build|container|bid|workshop|deposit|heal|modern)/,
+  battle: /\/(attack|fatality|war|battle|arena|group)/,
+  legion: /\/(legion|alliance|group)/,
+  auth:   /\/(login|register|change-password|reset-password)/,
+  admin:  /^\/api\/(admin|mod|staff)\//,
+};
+
 async function listLogs(query: any) {
   const limit = Math.min(1000, Math.max(1, u.toInt(query.limit, 200)));
-  const entries = query.userId
-    ? await auditLog.listForUser(String(query.userId), limit)
-    : await auditLog.listAll(limit);
-  return { logs: entries };
+  const cat = String(query.category || 'all');
+  const re = LOG_CATEGORIES[cat];
+
+  // Без категории — как раньше: просто последние записи.
+  if (!re) {
+    const entries = query.userId
+      ? await auditLog.listForUser(String(query.userId), limit)
+      : await auditLog.listAll(limit);
+    return { logs: entries, category: 'all', scanned: entries.length };
+  }
+
+  // С категорией берём запас пошире и отбираем нужное, пока не наберём
+  // limit. Запас ограничен, чтобы один экран не поднимал весь журнал:
+  // если подходящих записей меньше — так и покажем, но честно сообщим,
+  // сколько записей просмотрено.
+  const DEEP = Math.min(20000, limit * 40);
+  const raw = query.userId
+    ? await auditLog.listForUser(String(query.userId), DEEP)
+    : await auditLog.listAll(DEEP);
+  const picked = raw.filter((e: any) => re.test(String(e.path || '')));
+  return {
+    logs: picked.slice(0, limit),
+    category: cat,
+    scanned: raw.length,
+    // Нашлось больше, чем поместилось: значит есть смысл поднять лимит
+    more: picked.length > limit,
+  };
 }
 
 // ── Бан / разбан игрока ───────────────────────────────────────────
@@ -512,6 +581,7 @@ function setBan(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  snapBefore(adminUser, target, body.unban ? 'перед разблокировкой' : 'перед блокировкой аккаунта');
   // Сотрудников проекта банит только владелец
   const rolesSrv = require('./roles');
   const targetRole = rolesSrv.roleOf(target);
@@ -584,6 +654,9 @@ function resetAccount(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  // Обнуление стирает всё нажитое. Снимок ДО — единственный способ
+  // вернуть игрока, если обнулили не того или передумали.
+  snapBefore(adminUser, target, 'перед обнулением аккаунта');
   if (target.isAdmin && target.id !== adminUser.id) {
     throw new u.ApiError('Нельзя обнулить аккаунт другого администратора');
   }
@@ -676,17 +749,34 @@ function resetParam(adminUser: User, body: any, notices: Notices) {
   if (!fn) throw new u.ApiError(`Неизвестный параметр: ${param}`);
 
   let count = 0;
+  // ПУСТОЙ userId — не «у всех», а вопрос без ответа.
+  // Раньше пустое поле молча означало массовую операцию: опечатка при
+  // вводе позывного превращалась в сброс параметра у ВСЕХ игроков.
+  // Теперь массовость нужно заявить отдельным флагом — случайно его не
+  // передать, а панель ставит его только когда сотрудник впечатал слово
+  // подтверждения с явно указанным охватом.
+  if (!userId && !body.applyToAll) {
+    throw new u.ApiError(
+      'Укажите игрока. Если нужно сбросить параметр у ВСЕХ игроков — ' +
+      'это отдельная массовая операция, её надо подтвердить явно.'
+    );
+  }
   if (userId) {
     const target = players[userId];
     if (!target) throw new u.ApiError('Игрок не найден');
     if (target.isAdmin && target.id !== adminUser.id) {
       throw new u.ApiError('Нельзя сбрасывать параметры другого администратора');
     }
+    snapBefore(adminUser, target, `перед сбросом «${param}»`);
     fn(target);
     count = 1;
   } else {
+    // Массовый сброс: снимок каждому. 500 игроков — это 600 КБ, и это
+    // единственный способ откатить массовую операцию, если параметр
+    // выбрали не тот. Дешевле любой попытки восстановить вручную.
     for (const t of Object.values(players)) {
       if (t.isAdmin) continue;
+      snapBefore(adminUser, t, `перед массовым сбросом «${param}»`);
       fn(t);
       count++;
     }
@@ -699,7 +789,14 @@ function resetParam(adminUser: User, body: any, notices: Notices) {
 
 // ── Сброс ВСЕХ миссий (у всех или у одного игрока) ────────────────
 function resetMissions(adminUser: User, body: any, notices: Notices) {
-  return resetParam(adminUser, { param: 'missions', userId: body.userId }, notices);
+  // Это отдельная кнопка «Сбросить ВСЕ миссии у ВСЕХ игроков» — массовость
+  // здесь заявлена самим действием, а не пустым полем ввода. Поэтому флаг
+  // ставится явно, когда игрок не указан.
+  return resetParam(adminUser, {
+    param: 'missions',
+    userId: body.userId,
+    applyToAll: !body.userId,
+  }, notices);
 }
 
 // ── Полная очистка всех групп (альянсов и легионов) ──────────────
@@ -764,6 +861,9 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  // Аккаунт исчезает из базы целиком — снимок остаётся единственным
+  // следом того, что у человека было.
+  snapBefore(adminUser, target, 'перед удалением аккаунта');
   if (target.id === adminUser.id) throw new u.ApiError('Нельзя удалить собственный аккаунт');
   if (target.isAdmin) throw new u.ApiError('Нельзя удалить аккаунт администратора. Сначала снимите права.');
 
@@ -922,6 +1022,7 @@ async function setPassword(adminUser: User, body: any, notices: Notices) {
   const players: Record<string, User> = require('./player').users();
   const target = players[body.userId];
   if (!target) throw new u.ApiError('Игрок не найден');
+  snapBefore(adminUser, target, 'перед сменой пароля');
   if (target.isAdmin && target.id !== adminUser.id) {
     throw new u.ApiError('Нельзя менять пароль другого администратора');
   }

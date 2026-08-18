@@ -33,6 +33,10 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   salt:               { owner: 'auth',       note: 'соль пароля — НИКОГДА не отдавать в API' },
   emailVerified:      { owner: 'auth',       note: 'почта подтверждена' },
   emailVerifyToken:   { owner: 'auth',       note: 'токен подтверждения почты' },
+  // Второй фактор сотрудника: секрет приложения-аутентификатора и хеши
+  // кодов восстановления. Секрет — такая же тайна, как пароль: у кого
+  // он есть, тот генерирует коды.
+  totp:               { owner: 'twoFactor',  note: 'второй фактор входа — НИКОГДА не отдавать в API' },
   emailVerifySentAt:  { owner: 'auth',       note: 'когда отправлено письмо подтверждения' },
   resetToken:         { owner: 'auth',       note: 'токен сброса пароля' },
   resetTokenExp:      { owner: 'auth',       note: 'срок действия токена сброса' },
@@ -139,6 +143,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   pendingBankHack:    { owner: 'battle',     note: 'взлом сейфа в процессе' },
   pendingMineDefuse:  { owner: 'battle',     note: 'разминирование в процессе' },
   pendingRocketHits:  { owner: 'lasers',     note: 'входящие ракетные удары' },
+  bankLog:            { owner: 'bankHack',   note: 'история сейфа: кто вскрывал меня и кого вскрывал я' },
   bankHackCountToday: { owner: 'battle',     note: 'сколько сейфов вскрыто за день' },
   bankHackVictimsToday: { owner: 'battle',   note: 'по кому уже был взлом сегодня' },
 
@@ -223,7 +228,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
 };
 
 // Поля, которые НИКОГДА не должны попадать в ответы API
-const SECRET_FIELDS = ['passHash', 'salt', 'resetToken', 'emailVerifyToken'];
+const SECRET_FIELDS = ['passHash', 'salt', 'resetToken', 'emailVerifyToken', 'totp'];
 
 // Поле занято? Используется тестом и может вызываться из кода перед
 // добавлением новой сущности.

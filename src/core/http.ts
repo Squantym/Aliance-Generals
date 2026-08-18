@@ -173,17 +173,70 @@ function readBody(req: http.IncomingMessage): Promise<any> {
   });
 }
 
+
+// ═══ ЗАГОЛОВКИ БЕЗОПАСНОСТИ ═══════════════════════════════════════
+// Одна функция на все ответы. Раньше набор был разложен по трём местам
+// и успел разойтись: у одного пути отдачи файлов политика CSP была,
+// у второго (из кэша) — не было вовсе. То есть защита зависела от того,
+// первый ли это запрос файла. Такие расхождения не находят глазами.
+//
+// Про 'unsafe-inline' в script-src честно: он остаётся. В коде игры
+// 113 обработчиков вида onclick="…" прямо в разметке, и запрет
+// инлайна выключил бы половину интерфейса. Убирать их нужно, но это
+// отдельная работа с проверкой каждого экрана, а не строчка в политике.
+// Всё остальное закрыто: чужие скрипты не подгрузятся, объекты и
+// плагины запрещены, форму никуда не отправить, <base> не подменить.
+function securityHeaders(opts?: { csp?: boolean; noFrame?: boolean }): Headers {
+  const o = opts || {};
+  const h: Headers = {
+    'X-Content-Type-Options': 'nosniff',
+    // Панель нельзя показывать в чужом окне вообще: иначе поверх её
+    // кнопок можно положить прозрачный слой и заставить сотрудника
+    // нажать «удалить» своими руками.
+    'X-Frame-Options': o.noFrame ? 'DENY' : 'SAMEORIGIN',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    // Игре не нужны ни камера, ни микрофон, ни местоположение. Запрет
+    // означает, что даже подсунутый скрипт не сможет их запросить.
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=()',
+  };
+  // HSTS включается ЯВНО: на домене без сертификата этот заголовок
+  // закрывает доступ к сайту месяцами, и откатить его нельзя — браузер
+  // запомнил. Поэтому только по осознанному HSTS=1.
+  if (String(process.env.HSTS || '') === '1') {
+    h['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+  }
+  if (o.csp) {
+    h['Content-Security-Policy'] = [
+      "default-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline'",
+      // Картинки разрешаем и с чужих сайтов: администратор указывает
+      // ссылку на фото босса, а игроки прикрепляют изображения к темам
+      // форума. Прежняя политика (только 'self') молча их блокировала.
+      "img-src 'self' data: https: http:",
+      "media-src 'self' https:",
+      "connect-src 'self'",
+      "object-src 'none'",          // Flash/Java-плагинов быть не должно
+      "base-uri 'self'",            // подмена <base> уводила бы все ссылки
+      "form-action 'self'",         // форму не отправить на чужой сервер
+      o.noFrame ? "frame-ancestors 'none'" : "frame-ancestors 'self'",
+    ].join('; ') + ';';
+  }
+  return h;
+}
+
 // Отправка JSON. Сжимаем gzip/brotli если клиент поддерживает и тело
 // достаточно крупное — экономит трафик на «толстых» ответах (/api/me,
 // /api/legion, зал славы и т.п.), которые игроки запрашивают часто.
 function sendJson(res: http.ServerResponse, status: number, obj: any, acceptEncoding?: string): void {
   const raw = Buffer.from(JSON.stringify(obj), 'utf8');
-  const headers: Headers = {
+  const headers: Headers = Object.assign({
     'Content-Type': 'application/json; charset=utf-8',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
+    // Ответы API не должны оседать в общих кэшах: там профиль игрока,
+    // почта и списки сотрудников.
+    'Cache-Control': 'no-store',
     'Vary': 'Accept-Encoding',
-  };
+  }, securityHeaders());
 
   const enc = compress.pickEncoding(acceptEncoding);
   if (enc && compress.shouldCompress('application/json', raw.length)) {
@@ -236,6 +289,23 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     console.warn(`⚠️  ADMIN_PATH=${ADMIN_PATH} занят игрой — маскировка отключена, панель на /admin`);
     ADMIN_PATH = '';
   }
+  // ── Панель v2 ─────────────────────────────────────────────────────
+  // Живёт по ТОМУ ЖЕ секретному адресу с хвостом /v2. Отдельный файл
+  // /admin2.html закрыт так же, как /admin.html: иначе новая панель
+  // сама выдала бы существование старой — маскировка ADMIN_PATH
+  // обходилась бы одной строкой в адресе.
+  const isAdmin2File = rel === '/admin2' || rel === '/admin2/' || rel === '/admin2.html';
+  const v2Path = (ADMIN_PATH || '/admin') + '/v2';
+  if (rel === v2Path || rel === v2Path + '/') {
+    rel = '/admin2.html';
+  } else if (isAdmin2File) {
+    const ip = clientIp(req);
+    console.warn(`🛡  Попытка открыть админ-панель по стандартному адресу ${rel} с ${ip}`);
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
+
   const isAdminFile = rel === '/admin' || rel === '/admin/' || rel === '/admin.html';
   if (ADMIN_PATH && (rel === ADMIN_PATH || rel === ADMIN_PATH + '/')) {
     rel = '/admin.html';
@@ -255,6 +325,13 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     res.end('Not found');
     return;
   }
+  // Панель (и старая, и новая) не должна открываться внутри чужого окна
+  // ВООБЩЕ. Игру во фрейме держат легально — виджеты, встраивание в
+  // сообщество; панель — никогда, и разница здесь принципиальная: поверх
+  // её кнопок можно положить прозрачный слой и заставить сотрудника
+  // нажать «удалить аккаунт» своими руками.
+  const isPanelPage = rel === '/admin.html' || rel === '/admin2.html';
+
   // Короткие адреса правовых документов: /terms и /privacy. Нужны, чтобы
   // ссылку можно было дать платёжному сервису или магазину приложений
   // без расширения в конце.
@@ -312,15 +389,11 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
       return;
     }
 
-    const headers: Headers = {
+    const headers: Headers = Object.assign({
       'Content-Type': contentType,
       'Cache-Control': 'no-cache',
       'ETag': etag,
       'Vary': 'Accept-Encoding',
-      'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'SAMEORIGIN',
-      'X-XSS-Protection': '1; mode=block',
-      'Referrer-Policy': 'strict-origin-when-cross-origin',
       // Просим браузер присылать модель устройства и версию системы.
       // Chrome с версии 110 подставляет в обычную строку «Android 10; K»
       // вместо настоящей модели — это защита приватности, и получить
@@ -328,15 +401,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
       // запросы, поэтому первый вход останется без модели.
       'Accept-CH': 'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Platform',
       'Critical-CH': 'Sec-CH-UA-Model',
-      // Картинки разрешаем и с чужих сайтов: администратор указывает
-      // ссылку на фото босса, а игроки прикрепляют изображения к темам
-      // форума. Прежняя политика (только 'self') молча блокировала их —
-      // ссылка сохранялась, но картинка не показывалась.
-      // Скрипты и стили по-прежнему только свои: именно они опасны.
-      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-        + "script-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; "
-        + "media-src 'self' https:; connect-src 'self'; frame-ancestors 'self';",
-    };
+    }, securityHeaders({ csp: true, noFrame: isPanelPage }));
 
     const enc = compress.pickEncoding(acceptEncoding);
     if (enc && compress.shouldCompress(contentType, body.length)) {
@@ -381,17 +446,16 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     }
   }
 
-  const headers: Headers = {
+  // Тот же набор, что и на первом пути отдачи: раньше здесь заголовков
+  // безопасности почти не было, и файл, отданный из кэша, приезжал без
+  // политики CSP. Защита зависела от того, первый ли это запрос.
+  const headers: Headers = Object.assign({
     'Content-Type': contentType,
     'Cache-Control': cacheControlFor(ext, hasHashParam, rel),
     'ETag': etag,
     'Vary': 'Accept-Encoding',
     'Content-Length': cached.buf.length,
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
-    'X-XSS-Protection': '1; mode=block',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-  };
+  }, securityHeaders({ csp: true, noFrame: isPanelPage }));
   if (wantCompress && enc) headers['Content-Encoding'] = enc;
 
   res.writeHead(200, headers);
@@ -566,7 +630,10 @@ function createApp() {
           // коллекции целиком в Atlas и давал терабайты трафика.
           if (reqCtx.user) db.markUser(reqCtx.user.id);
 
-          // Журнал действий: фиксируем только POST-запросы авторизованных игроков
+          // Журнал действий: фиксируем только POST-запросы авторизованных игроков.
+          // user передаём, чтобы записать срез счёта ПОСЛЕ действия: по нему
+          // потом видно, что у игрока было в любой момент — без этого после
+          // сбоя не с чем сверять возврат.
           if (reqCtx.user && req.method === 'POST') {
             auditLog.record({
               userId: reqCtx.user.id,
@@ -575,6 +642,7 @@ function createApp() {
               desc: logTranslate.describe(pathname, reqCtx.body, result),
               params,
               body: reqCtx.body,
+              user: reqCtx.user,
             });
           }
 

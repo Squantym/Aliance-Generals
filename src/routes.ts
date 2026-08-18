@@ -10,6 +10,7 @@ import u = require('./core/utils');
 import db = require('./core/db');
 import player = require('./services/player');
 import auth = require('./services/auth');
+import twoFactor = require('./services/twoFactor');
 import battle = require('./services/battle');
 import sanctions = require('./services/sanctions');
 import missions = require('./services/missions');
@@ -44,12 +45,56 @@ import worldEvent = require('./services/worldEvent');
 // Записи журнала приходят с сырым адресом запроса. Переводим их в
 // человеческий вид ОДИН РАЗ на сервере: иначе каждый экран панели
 // показывал бы «/api/war/attack» вместо «Атаковал игрока».
+// Журнал наружу — БЕЗ сырого тела запроса.
+//
+// Раньше здесь был `...l`, то есть в ответ уходило поле body целиком. Это
+// значило, что уже записанные в журнал секреты (см. sanitizeBody в
+// auditLog: до исправления туда попадали oldPassword/newPassword) мог
+// прочитать любой сотрудник с зоной «Игроки» — достаточно посмотреть ответ
+// запроса в браузере. Вырезание секретов при ЗАПИСИ закрывает будущее,
+// а это — доступ к тому, что уже лежит.
+//
+// body используется только внутри, чтобы собрать человеческое описание,
+// и дальше не отдаётся. Если сотруднику нужны подробности действия — они
+// в самом описании, а не в сыром теле запроса.
 function humanizeLogs(logs: any[]): any[] {
   const translate = require('./services/logTranslate');
-  return (logs || []).map((l: any) => ({
-    ...l,
-    human: l.human || translate.describe(l.path, l.body, l.result) || l.path,
-  }));
+  return (logs || []).map((l: any) => {
+    const { body, params, ...safe } = l;
+    return {
+      ...safe,
+      human: l.human || translate.describe(l.path, body, l.result) || l.path,
+    };
+  });
+}
+
+// Поимённая разница по технике: что было в копии и чего не хватает сейчас.
+// Возвращаем только недостачу — прибыль после сбоя разбирательству не мешает.
+function unitDiff(was: any, now: any): any[] {
+  const out: any[] = [];
+  for (const id of Object.keys(was || {})) {
+    const w = was[id] || {}, n = (now && now[id]) || {};
+    for (let mk = 0; mk <= 2; mk++) {
+      const lost = (w[mk] || 0) - (n[mk] || 0);
+      if (lost > 0) {
+        const def = config.UNIT_BY_ID[id];
+        out.push({ id, mk, name: (def ? def.name : id) + (mk ? ` Mk${mk}` : ''), lost });
+      }
+    }
+  }
+  return out.sort((a, b) => b.lost - a.lost).slice(0, 60);
+}
+
+function buildDiff(was: any, now: any): any[] {
+  const out: any[] = [];
+  for (const id of Object.keys(was || {})) {
+    const lost = (was[id] || 0) - ((now && now[id]) || 0);
+    if (lost > 0) {
+      const def = config.BUILDING_BY_ID[id];
+      out.push({ id, name: def ? def.name : id, lost });
+    }
+  }
+  return out.sort((a, b) => b.lost - a.lost).slice(0, 60);
 }
 
 function saveForumImage(dataUrl: any): string | null {
@@ -93,7 +138,42 @@ function registerRoutes(app: any) {
     auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua, (req as any).hints), { open: true });
   app.add('POST', '/api/login', (req) =>
     auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints), { open: true });
+  // Второй шаг входа: код из приложения-аутентификатора либо код
+  // восстановления. Открытый роут — пароль уже проверен на первом шаге,
+  // а сам пропуск живёт 5 минут и сгорает после пяти неверных попыток.
+  app.add('POST', '/api/login/totp', (req) =>
+    auth.loginTotp(req.body.challengeId, req.body.code, req.ip, req.ua, (req as any).hints), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
+
+  // ═══ ВТОРОЙ ФАКТОР: подключение и управление ═════════════════════
+  // Только для сотрудников. У обычного игрока красть, кроме его же
+  // прогресса, нечего, а потерянный телефон обернулся бы потоком
+  // обращений в поддержку — цена защиты превысила бы пользу.
+  const staffOnly2fa = (user: any) => {
+    if (!roles.zonesFor(user).length) {
+      throw new u.ApiError('Второй фактор подключается сотрудникам — у вашей учётной записи нет доступа к панели');
+    }
+  };
+  app.add('GET',  '/api/2fa/status', (req) => {
+    staffOnly2fa(req.user);
+    return twoFactor.status(req.user);
+  });
+  app.add('POST', '/api/2fa/setup', (req) => {
+    staffOnly2fa(req.user);
+    return twoFactor.setup(req.user, 'Генералы');
+  });
+  app.add('POST', '/api/2fa/enable', act((req, n) => {
+    staffOnly2fa(req.user);
+    return twoFactor.enable(req.user, String(req.body.code || ''), n);
+  }));
+  app.add('POST', '/api/2fa/disable', act((req, n) => {
+    staffOnly2fa(req.user);
+    return twoFactor.disable(req.user, String(req.body.code || ''), n);
+  }));
+  app.add('POST', '/api/2fa/recovery', act((req, n) => {
+    staffOnly2fa(req.user);
+    return twoFactor.regenerateRecovery(req.user, String(req.body.code || ''), n);
+  }));
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login, req.ip), { open: true });
   app.add('POST', '/api/request-password-reset', (req) => auth.requestPasswordReset(req.body.loginOrEmail), { open: true });
@@ -403,6 +483,9 @@ function registerRoutes(app: any) {
     return { dollars: req.user.dollars, bank: req.user.bank };
   }));
   app.add('POST', '/api/bank/reserve',         act((req, n) => player.reserveForLegion(req.user, req.body.dollars, n)));
+  // История сейфа: кто лез ко мне и к кому лез я. Без неё пропажа денег
+  // из хранилища выглядела для игрока необъяснимой.
+  app.add('GET',  '/api/bank/history', (req) => require('./services/bankHack').history(req.user));
   app.add('GET',  '/api/bank/gold-packages', (req) => ({ packages: player.goldPackages() }));
   app.add('POST', '/api/bank/buy-gold',      act((req) => player.buyGold(req.user, req.body.packId)));
 
@@ -971,6 +1054,18 @@ function registerRoutes(app: any) {
     return {
       me: { name: me.name, role: roles.roleOf(me), label: roles.roleLabel(me) },
       zones,
+      // Что сотруднику РАЗРЕШЕНО и что нет — человеческими словами.
+      // Раньше он видел только вкладки и догадывался о границах сам;
+      // из-за этого приходили вопросы «почему у меня не работает».
+      myAccess: roles.ZONE_INFO.map((z: any) => ({
+        id: z.id, name: z.name, note: z.note,
+        allowed: zones.indexOf(z.id) >= 0,
+        ownerOnly: roles.OWNER_ONLY_ZONES.indexOf(z.id) >= 0,
+      })),
+      // Новые жалобы — счётчик на «Требует внимания»
+      reportsNew: has('moderation') ? (() => {
+        try { return require('./services/reports').pendingCount(); } catch (e) { return 0; }
+      })() : 0,
       tickets,
       players: { total: live.length, online, newToday },
       chatBans: chatBans.slice(0, 20),
@@ -1190,6 +1285,33 @@ function registerRoutes(app: any) {
   }, { admin: true });
 
   // Сводка: с каких адресов заходит по несколько аккаунтов
+  // ═══ АНТИЧИТ ═════════════════════════════════════════════════════
+  // Ничего не банит автоматически — только показывает подозрительное с
+  // доказательствами. Решение всегда за человеком.
+  app.add('GET', '/api/admin/anticheat', async (req) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const ac = require('./services/antiCheat');
+    return ac.scan(u.clamp(u.toInt(req.query.hours, 24), 1, 720),
+                   u.clamp(u.toInt(req.query.limit, 40), 1, 200));
+  }, { admin: true });
+
+  app.add('GET', '/api/admin/anticheat/player', async (req) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const ac = require('./services/antiCheat');
+    const r = await ac.scanOne(String(req.query.id || ''), u.clamp(u.toInt(req.query.hours, 72), 1, 2160));
+    if (!r) throw new u.ApiError('Игрок не найден');
+    return r;
+  }, { admin: true });
+
+  // ═══ АНАЛИТИКА ПРОЕКТА ═══════════════════════════════════════════
+  // Удержание, воронка новичка, экономика. Считается на лету по объектам
+  // игроков плюс ежедневный срез — он копит историю для динамики.
+  app.add('GET', '/api/admin/analytics', (req) => {
+    if (!roles.canAccessZone(req.user, 'analytics')) throw new u.ApiError('Недостаточно прав');
+    const an = require('./services/analytics');
+    return an.overview();
+  }, { admin: true });
+
   app.add('GET', '/api/admin/multi-check', (req) => {
     if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
     const access = require('./services/access');
@@ -1311,15 +1433,19 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/admin/db/stats', () => {
     const st = db.dbStats();
     const backups = db.backupsList ? db.backupsList() : [];
-    // Копии различаем по метке в имени файла: авто по расписанию,
-    // ручная из админки, предохранительная перед откатом снимка.
-    const kindOf = (f: string) => (/^manual/.test(f) ? 'manual'
-      : (/^pre-restore/.test(f) ? 'pre-restore'
-      : (/^pre-deploy/.test(f) ? 'pre-deploy' : 'auto')));
+    // Копии различаем по метке ВНУТРИ имени: файл называется
+    // «generals-{метка}-{дата}.db», поэтому искать метку надо не в
+    // начале строки, а после названия игры.
+    const kindOf = (f: string) => (/-manual-/.test(f) ? 'manual'
+      : (/-pre-restore-/.test(f) ? 'pre-restore'
+      : (/pre-deploy/.test(f) ? 'pre-deploy'
+      : (/-light-/.test(f) ? 'light' : 'auto'))));
     return {
       stats: st,
       backups: backups.map((b: any) => ({ ...b, kind: kindOf(String(b.file || '')) })),
       logs: db.logStats ? db.logStats() : null,
+      // Вывоз копий за пределы сервера: работает ли расписание
+      offsite: db.offsiteStatus ? db.offsiteStatus() : null,
     };
   }, { admin: true });
 
@@ -1329,6 +1455,103 @@ function registerRoutes(app: any) {
     n.push(`🗄 Копия базы создана: ${require('path').basename(file)}`);
     return { file };
   }), { admin: true });
+
+  // ── Что было у игрока до сбоя ─────────────────────────────────────
+  // Открывает выбранную копию базы на чтение и отдаёт состояние игрока
+  // на тот момент вместе с разницей против текущего. По этой разнице и
+  // видно, что именно возвращать.
+  app.add('GET', '/api/admin/db/player-at', (req) => {
+    const file = String(req.query.file || '');
+    const q = String(req.query.q || '').trim();
+    if (!q) throw new u.ApiError('Укажите позывной или id игрока');
+    // Ошибки чтения копии (нет файла, недопустимое имя) — это ошибка
+    // ввода, а не сбой сервера: отвечаем 400 с понятным текстом, иначе
+    // в логи сыплется стектрейс, а админ видит «внутренняя ошибка».
+    let was: any = null;
+    try { was = db.playerFromBackup(file, q); }
+    catch (e: any) { throw new u.ApiError(e && e.message ? e.message : 'Не удалось прочитать копию'); }
+    if (!was) return { found: false };
+
+    const audit = require('./services/auditLog');
+    const players: Record<string, any> = player.users();
+    const now = players[was.id] || null;
+
+    const snap = (p: any) => (p ? audit.expandBalance(audit.balanceOf(p)) : null);
+    const a = snap(was), b = snap(now);
+    const diff = a && b ? {
+      dollars: b.dollars - a.dollars, gold: b.gold - a.gold,
+      level: b.level - a.level, exp: b.exp - a.exp,
+      units: b.units - a.units, buildings: b.buildings - a.buildings,
+    } : null;
+
+    return {
+      found: true,
+      file,
+      player: { id: was.id, name: was.name },
+      wasBalance: a,
+      nowBalance: b,
+      diff,
+      existsNow: !!now,
+      // Поимённо: чего именно не хватает сейчас против копии
+      lostUnits: unitDiff(was.units, now && now.units),
+      lostBuildings: buildDiff(was.buildings, now && now.buildings),
+    };
+  }, { admin: true });
+
+  // ═══ ИСТОРИЯ СОСТОЯНИЯ ИГРОКА ════════════════════════════════════
+  // Копии базы отвечают на вопрос «что было в 4 утра». История отвечает
+  // на «что было в 14:35» — с точностью до пяти минут и с полным составом
+  // имущества. Именно она нужна в разборе почти всегда.
+  // Зона «Игроки», а не «База данных». Сначала было наоборот, и получалось
+  // абсурдно: самая частая задача сотрудника — разобрать «у меня всё
+  // пропало» — оказывалась доступна только владельцу. При этом полное
+  // досье игрока с тем же имуществом сотрудник и так видит по зоне
+  // «Игроки»; история показывает ТО ЖЕ САМОЕ, только в прошлом, и ничего
+  // не меняет. Копии базы и восстановление остаются владельческими.
+  app.add('GET', '/api/admin/player-history', (req) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const q = String(req.query.q || '').trim();
+    if (!q) throw new u.ApiError('Укажите позывной или id игрока');
+    const users = player.users();
+    const target = users[q] || Object.values(users).find(
+      (p: any) => String(p.name || '').toLowerCase() === q.toLowerCase());
+    if (!target) throw new u.ApiError('Игрок не найден');
+    return {
+      player: { id: (target as any).id, name: (target as any).name },
+      list: db.playerHistory((target as any).id, u.clamp(u.toInt(req.query.limit, 100), 1, 500)),
+      stats: db.historyStats(),
+    };
+  }, { admin: true });
+
+  // Один срез с разницей против текущего состояния: сразу видно, что
+  // именно возвращать, а не «вот два больших объекта, сравнивайте сами»
+  app.add('GET', '/api/admin/player-history/at', (req) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const snapRec = db.playerHistoryGet(u.toInt(req.query.seq, 0));
+    if (!snapRec) throw new u.ApiError('Срез не найден');
+    const was = snapRec.player;
+    const now = player.users()[snapRec.id] || null;
+    const audit = require('./services/auditLog');
+    const bal = (p: any) => (p ? audit.expandBalance(audit.balanceOf(p)) : null);
+    const a = bal(was), b = bal(now);
+    return {
+      // found — чтобы панель отрисовала это той же функцией, что и сверку
+      // с копией базы: разница выглядит одинаково, откуда бы ни пришла
+      found: true,
+      seq: snapRec.seq, at: snapRec.at, label: snapRec.label, actor: snapRec.actor,
+      player: { id: was.id, name: was.name },
+      existsNow: !!now,
+      wasBalance: a,
+      nowBalance: b,
+      diff: a && b ? {
+        dollars: b.dollars - a.dollars, gold: b.gold - a.gold,
+        level: b.level - a.level, exp: b.exp - a.exp,
+        units: b.units - a.units, buildings: b.buildings - a.buildings,
+      } : null,
+      lostUnits: unitDiff(was.units, now && (now as any).units),
+      lostBuildings: buildDiff(was.buildings, now && (now as any).buildings),
+    };
+  }, { admin: true });
 
   app.add('GET', '/api/admin/db/snapshots', (req) => ({
     snapshots: db.snapshotsList(req.query.collection || undefined, u.toInt(req.query.limit, 30)),
@@ -1377,7 +1600,17 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/global-buffs', () => admin.listGlobalBuffs(), { admin: true });
   app.add('POST', '/api/admin/global-buff',  act((req, n) => admin.setGlobalBuff(req.user, req.body, n)), { admin: true });
-  app.add('GET',  '/api/admin/logs',      (req) => admin.listLogs(req.query), { admin: true });
+  // Журнал действий игроков. humanizeLogs здесь ОБЯЗАТЕЛЕН, и его тут
+  // не было: этот роут отдавал сырое тело каждого запроса в браузер.
+  // Секреты вычищаются ещё при записи, поэтому паролей там нет, но
+  // остальное тело (почты при регистрации, тексты сообщений, параметры
+  // покупок) уезжало сотруднику пачками по 200 строк — при том что
+  // панель его не показывает. Отдавать в браузер то, что там не нужно, —
+  // это лишний путь утечки и лишний трафик на ровном месте.
+  app.add('GET',  '/api/admin/logs', async (req) => {
+    const r = await admin.listLogs(req.query);
+    return { ...r, logs: humanizeLogs(r.logs) };
+  }, { admin: true });
   // Бан и обнуление аккаунтов
   app.add('POST', '/api/admin/ban',   act((req, n) => admin.setBan(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });
@@ -1394,6 +1627,30 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/support',        (req) => support.myTickets(req.user));
   app.add('POST', '/api/support/create', act((req, n) => support.createTicket(req.user, req.body.category, req.body.subject, req.body.text, n)));
   app.add('POST', '/api/support/reply',  act((req, n) => support.replyTicket(req.user, req.body.ticketId, req.body.text, n)));
+
+  // ═══ ЖАЛОБЫ НА ИГРОКОВ ═══════════════════════════════════════════
+  // Игрок жалуется прямо из профиля обидчика, сотрудник разбирает
+  // очередь, сгруппированную по нарушителю. Санкции — только вручную.
+  const reports = require('./services/reports');
+  app.add('GET',  '/api/reports/mine', (req) => reports.mine(req.user));
+  app.add('POST', '/api/reports/create', act((req, n) =>
+    reports.create(req.user, String(req.body.targetId || ''), req.body.reason,
+                   req.body.text, req.body.where, n)));
+
+  app.add('GET', '/api/mod/reports', (req) => {
+    if (!roles.canAccessZone(req.user, 'moderation')) throw new u.ApiError('Недостаточно прав');
+    return reports.queue(String(req.query.status || 'new'), u.clamp(u.toInt(req.query.limit, 60), 1, 200));
+  }, { admin: true });
+
+  app.add('POST', '/api/mod/report/resolve', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'moderation')) throw new u.ApiError('Недостаточно прав');
+    return reports.resolve(req.user, String(req.body.id || ''), !!req.body.accept, req.body.verdict, n);
+  }), { admin: true });
+
+  app.add('POST', '/api/mod/report/resolve-all', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'moderation')) throw new u.ApiError('Недостаточно прав');
+    return reports.resolveAll(req.user, String(req.body.targetId || ''), !!req.body.accept, req.body.verdict, n);
+  }), { admin: true });
 
   // Push-уведомления на телефон
   const push = require('./services/push');

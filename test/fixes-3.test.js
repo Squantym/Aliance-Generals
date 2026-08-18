@@ -120,7 +120,7 @@ ok(/const players = live/.test(gl), 'отдаётся список игроко�
 const adminJs = fs.readFileSync(ROOT + '/public/js/admin.js', 'utf8');
 ok(/id:'gold'/.test(adminJs), 'вкладка «Золото» есть в панели');
 ok(/ownerOnly:true/.test(adminJs), 'помечена как владельческая');
-ok(/t\.ownerOnly\|\|\(Admin\.me&&Admin\.me\.staffRole==='owner'\)/.test(adminJs),
+ok(/t\.ownerOnly \|\| \(Admin\.me && Admin\.me\.staffRole === 'owner'\)/.test(adminJs),
    'администратору вкладка не показывается');
 
 console.log('\n── 5. Счётчик онлайна ──');

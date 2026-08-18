@@ -20,7 +20,11 @@ const src = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 console.log('\n── 1. Обработчики только на существующие кнопки ──');
 ok(/const btn = document\.getElementById\('tab-' \+ t\.id\);\s*\n\s*if \(btn\) btn\.onclick/.test(src),
    'перед назначением обработчика вкладки проверяется её наличие');
-ok(/tabs\.filter\(t=>\(!t\.zone\|\|Admin\.can\(t\.zone\)\)/.test(src), 'в разметку попадают только доступные вкладки');
+// Вкладки собраны в группы, поэтому фильтр вынесен в visible(): проверяем
+// сам предикат, а не старую строчку с inline-условием
+ok(/const byZone = t\.zones \? t\.zones\.some\(\(z\) => Admin\.can\(z\)\)/.test(src)
+   && /\.filter\(\(t\) => t\.group === name && visible\(t\)\)/.test(src),
+   'в разметку попадают только доступные вкладки');
 ok(/Admin\._tabIds = tabs\.filter/.test(src), 'список активных вкладок тоже фильтруется по правам');
 
 if (JSDOM) {

@@ -36,7 +36,7 @@ roles.setRole(owner, mod.id, 'moderator', []);
 
 console.log('\n── 1. Настройки по умолчанию ──');
 const v0 = roles.permissionsView();
-ok(v0.zones.length === 14, `разделов для настройки: ${v0.zones.length}`);
+ok(v0.zones.length === 15, `разделов для настройки: ${v0.zones.length}`);
 ok(v0.zones.every((z) => z.name && z.note), 'у каждого раздела есть название и пояснение');
 const admDef = v0.roles.find((r) => r.id === 'admin');
 ok(admDef.zones.length === 0, 'у роли НЕТ прав по умолчанию — всё выдаёт владелец');
@@ -74,7 +74,7 @@ roles.setRoleZone(owner, 'moderator', 'players', false, []);
 console.log('\n── 5. Защита от самоблокировки ──');
 fails(() => roles.setRoleZone(owner, 'owner', 'database', false, []), 'всегда полный доступ',
       'владельцу нельзя отключить свои разделы');
-ok(roles.zonesFor(owner).length === 14, 'у владельца по-прежнему все 14 разделов');
+ok(roles.zonesFor(owner).length === 15, 'у владельца по-прежнему все 15 разделов');
 fails(() => roles.setRoleZone(adm, 'admin', 'database', true, []), 'только владелец',
       'администратор не может расширить себе права');
 fails(() => roles.setRoleZone(mod, 'admin', 'players', false, []), 'только владелец',
@@ -105,7 +105,32 @@ const adminJs = fs.readFileSync(ROOT + '/public/js/admin.js', 'utf8');
 ok(adminJs.includes('Возможности ролей'), 'блок настройки есть во вкладке «Роли»');
 ok(/data-perm-zone/.test(adminJs), 'разделы переключаются галочками');
 ok(/data-perm-reset/.test(adminJs), 'есть кнопка сброса к исходным');
-ok(/iAmOwner \? `/.test(adminJs), 'блок виден только владельцу');
+// Раньше здесь сверялась точная строка `iAmOwner ? \``. Она ломалась от
+// любой правки условия и при этом не проверяла главного — что не
+// владелец блок НЕ получает. Проверяем поведение: собираем разметку
+// для владельца и для администратора и смотрим, есть ли в ней блок.
+const { JSDOM } = require('jsdom');
+const dom = new JSDOM('<!DOCTYPE html><body><div id="toasts"></div><div id="content"></div></body>',
+  { url: 'http://localhost/admin' });
+Object.assign(global, { window: dom.window, document: dom.window.document,
+  localStorage: dom.window.localStorage, location: dom.window.location });
+global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+const evalFile = (f, n) => eval(fs.readFileSync(path.join(ROOT, f), 'utf8') + ';' + n);
+global.UI = evalFile('public/js/ui.js', 'UI');
+global.API = evalFile('public/js/api.js', 'API');
+global.App = { me: null, go() {} };
+const AdminUI = evalFile('public/js/admin.js', 'Admin');
+const staffData = (role) => ({
+  me: { id: 'u_me', name: 'Кто-то', role, label: role },
+  staff: [{ id: 'u_5', name: 'Помощник', role: 'admin', label: 'Администратор', level: 20 }],
+});
+const all = { staff: 1, log: 1, perms: 1, assign: 1 };
+ok(AdminUI._rolesHtml(staffData('owner'), all).includes('perm-box'),
+   'блок настройки прав есть у владельца');
+ok(!AdminUI._rolesHtml(staffData('admin'), all).includes('perm-box'),
+   'блок виден только владельцу');
+ok(!AdminUI._rolesHtml(staffData('admin'), all).includes('staff-log-box'),
+   'журнал сотрудников тоже только владельцу — чужой журнал не показываем');
 ok(/cb\.checked = !enabled;/.test(adminJs), 'при ошибке галочка возвращается в прежнее положение');
 const css = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
 ok(css.includes('.perm-item'), 'стили добавлены');

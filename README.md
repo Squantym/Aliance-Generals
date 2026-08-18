@@ -36,33 +36,31 @@ node server.js
 
 ---
 
-## ☁️ Деплой на Render + MongoDB Atlas (бесплатно)
+## 🖥 Боевой сервер: своя база (SQLite)
 
-### Шаг 1 — MongoDB Atlas
-
-1. Зарегистрируйся на [cloud.mongodb.com](https://cloud.mongodb.com)
-2. Создай кластер **Free / M0**
-3. Connect → Drivers → Node.js — скопируй строку подключения
-4. Добавь `/generals` перед `?`:
-   ```
-   mongodb+srv://user:password@cluster.mongodb.net/generals?...
-   ```
-
-### Шаг 2 — Render
-
-1. [render.com](https://render.com) → New → Web Service → подключи этот репозиторий
-2. Build Command: `npm install`
-3. Start Command: `npm start`
-4. Environment Variables:
+Облачной MongoDB в проекте больше нет. Игра работает на своей базе —
+один файл `data/generals.db` на том же сервере, что и процесс.
 
 | Переменная | Значение |
 |---|---|
-| `MONGODB_URI` | Строка из MongoDB Atlas |
-| `APP_URL` | `https://твой-сервис.onrender.com` |
-| `RESEND_API_KEY` | Ключ с resend.com (email-подтверждение, необязательно) |
+| `DB_DRIVER` | `sqlite` — своя база. Если не задана, но рядом лежит `data/generals.db`, база откроется всё равно |
+| `SQLITE_DIR` | папка базы (по умолчанию `./data`) |
+| `SQLITE_FILE` | имя файла (по умолчанию `generals.db`) |
+| `APP_URL` | публичный адрес игры (для ссылок в письмах) |
+| `RESEND_API_KEY` | ключ resend.com (подтверждение почты, необязательно) |
 | `EMAIL_FROM` | `Генералы <noreply@твойдомен.com>` |
 
-5. Deploy — через 2-3 минуты игра живёт онлайн
+Запуск и обновление на сервере:
+
+```bash
+cd ~/Aliance-Generals && git pull && rm -rf dist && npm run build && pm2 restart generals-game
+```
+
+Что даёт своя база вместо облачной: транзакции, копии каждые 15 минут,
+история состояния каждого игрока за 3 месяца, откат отдельной коллекции,
+журнал действий на 90 дней в сжатых суточных блоках. Ничего из этого
+в облачном режиме не было. Как этим пользоваться — `ВОССТАНОВЛЕНИЕ.md`
+и `РУКОВОДСТВО-АДМИНА.md`.
 
 > **Без `RESEND_API_KEY`** почта подтверждается автоматически (удобно для тестов).
 > Для реальных писем — бесплатный ключ на [resend.com](https://resend.com) (3000 писем/мес).
@@ -85,13 +83,13 @@ node server.js
 ```
 aliance-generals/
 ├── server.js              # точка входа (async: сначала база, потом сервер)
-├── package.json           # зависимости (только mongodb)
+├── package.json           # зависимости (web-push + better-sqlite3)
 ├── .env.example           # шаблон переменных окружения
 ├── config/
 │   └── gameConfig.js      # весь игровой баланс в одном файле
 ├── src/
 │   ├── core/
-│   │   ├── db.js          # MongoDB или JSON-файлы — переключается по ENV
+│   │   ├── db.js          # своя база (SQLite) или JSON-файлы для разработки
 │   │   ├── http.js        # мини-роутер (без Express)
 │   │   └── utils.js       # ApiError, uid, hashPassword
 │   ├── services/          # вся игровая логика (20+ модулей)

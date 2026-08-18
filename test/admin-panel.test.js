@@ -47,7 +47,8 @@ try { roles.setRoleZone(own, 'commissar', 'chat', true, []); roles.setRoleZone(o
 
 console.log('\n── 1. Панель открывается сводкой, а не списком ──');
 ok(/tab: 'home'/.test(adminJs), 'стартовая вкладка — «Сводка»');
-ok(/\{ id:'home', *label:'📊 Сводка' \}/.test(adminJs), 'вкладка есть и без ограничения по зоне — доступна всем сотрудникам');
+ok(/\{ id:'home', *label:'📊 Сводка', *group:'Люди' \}/.test(adminJs),
+   'вкладка есть и без ограничения по зоне — доступна всем сотрудникам');
 ok(/renderHome/.test(adminJs), 'у неё свой экран');
 ok(adminJs.indexOf("id:'home'") < adminJs.indexOf("id:'players'"), 'сводка стоит первой');
 

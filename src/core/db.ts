@@ -1,21 +1,22 @@
 // ===================================================================
-// src/core/db.ts — гибридная база данных
+// src/core/db.ts — база данных
 //
-// Если задана переменная окружения MONGODB_URI — все данные хранятся
-// в MongoDB (постоянно, переживает перезапуски и переезды хостинга).
-// Если переменная не задана — используются локальные JSON-файлы в /data
-// (как раньше). Это удобно для разработки и для дымового теста: ничего
-// не нужно поднимать дополнительно.
+// Два режима, оба на своём железе:
+//   sqlite — боевой. Файл data/generals.db, транзакции, WAL, свои копии,
+//            история состояния игроков, упаковка журнала.
+//   json   — локальные файлы в /data. Только для разработки и тестов:
+//            ничего поднимать не нужно, база — это папка с .json.
 //
-// Игроки (коллекция "users") хранятся В MONGO КАЖДЫЙ ОТДЕЛЬНЫМ ДОКУМЕНТОМ
-// (один документ = один игрок), чтобы не упереться в лимит размера
-// документа MongoDB (16 МБ) при большом числе игроков. Остальные
-// коллекции (sessions, world, market, mail, ...) — один документ на
-// коллекцию, как и раньше в JSON.
+// Облачной MongoDB в проекте БОЛЬШЕ НЕТ. Она была снята вместе со всеми
+// ветками кода: каждая такая ветка — это второй, никем не проверяемый
+// путь записи в самом опасном файле проекта (именно в такой ветке жила
+// потеря прогресса в flushUsers). Один путь записи — один путь ошибок.
+// Если в окружении остался MONGODB_URI, сервер об этом скажет и всё
+// равно поднимется на своей базе.
 //
-// ВАЖНО: интерфейс load()/save() остался СИНХРОННЫМ — все игровые
-// сервисы (player, battle и т.д.) не нужно переписывать. Запись
-// в реальную базу происходит асинхронно «под капотом» через debounce.
+// ВАЖНО: интерфейс load()/save() СИНХРОННЫЙ — все игровые сервисы
+// (player, battle и т.д.) переписывать не нужно. Запись в базу идёт
+// асинхронно «под капотом» через debounce.
 // ===================================================================
 
 import fs = require('fs');
@@ -34,13 +35,8 @@ const dirtyUsers = new Set<string>();   // id игроков для точечн
 let allUsersDirty = false;               // флаг «сохранить всех игроков»
 let saveTimer: NodeJS.Timeout | null = null;
 
-// Режим работы: 'json' (по умолчанию) или 'mongo'
-let mode: 'json' | 'mongo' | 'sqlite' = 'json';
-// mongodb-пакет грузится динамически и опционален, поэтому типы any
-let mongoClient: any = null;
-let usersColl: any = null; // коллекция игроков: один документ = один игрок
-let collColl: any = null;  // коллекция «прочих» данных: один документ = одна коллекция
-let logsColl: any = null;  // аудит-лог: отдельная capped-коллекция, один документ = одна запись
+// Режим работы: 'sqlite' (боевой) или 'json' (разработка и тесты)
+let mode: 'json' | 'sqlite' = 'json';
 let periodicTimer: NodeJS.Timeout | null = null;
 // Идёт остановка процесса: новые записи больше не планируем. Без этого
 // автосохранение (раз в 30 с) успевало запланировать запись ПОСЛЕ того, как
@@ -50,6 +46,7 @@ let shuttingDown = false;
 
 let sqlite: any = null;          // модуль SQLite-хранилища (если выбран драйвер)
 let backupTimer: any = null;
+let lightTimer: any = null;
 let lockFile = '';
 
 // ═══ ЗАЩИТА ОТ ВТОРОГО ПРОЦЕССА ═══════════════════════════════════
@@ -71,24 +68,48 @@ function acquireLock(dir: string): void {
   try {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     lockFile = path.join(dir, '.db-lock');
-    if (fs.existsSync(lockFile)) {
-      const raw = fs.readFileSync(lockFile, 'utf8').trim();
-      const oldPid = Number(String(raw).split(/\s+/)[0]);
-      if (oldPid && oldPid !== process.pid && isAlive(oldPid)) {
-        throw new Error(
-          `База уже используется процессом PID ${oldPid}.\n` +
-          `Два процесса на одной базе затирают данные друг друга — запуск прерван.\n` +
-          `Проверьте: pm2 list — и оставьте ОДИН процесс игры (pm2 delete <лишний>; pm2 save).\n` +
-          `Если процесс ${oldPid} уже мёртв, удалите файл замка: ${lockFile}`
-        );
-      }
-      // Замок остался от упавшего процесса — забираем себе
+
+    // АТОМАРНО: 'wx' создаёт файл и падает, если он уже есть, одной
+    // операцией ядра. Раньше здесь были existsSync, а затем writeFileSync
+    // отдельно — между двумя вызовами оба процесса успевали увидеть
+    // «замка нет» и оба его создавали. Именно этот зазор и приводит к
+    // двум процессам на одной базе, а два процесса затирают данные друг
+    // друга целиком: каждый сохраняет свою копию памяти поверх чужой.
+    try {
+      fs.writeFileSync(lockFile, `${process.pid} ${new Date().toISOString()}\n`, { flag: 'wx' });
+      return;                                     // замок наш
+    } catch (e: any) {
+      if (e.code !== 'EEXIST') throw e;           // не «занято» — разбираем ниже
     }
+
+    // Файл есть. Смотрим, жив ли владелец.
+    const raw = fs.readFileSync(lockFile, 'utf8').trim();
+    const oldPid = Number(String(raw).split(/\s+/)[0]);
+    if (oldPid && oldPid !== process.pid && isAlive(oldPid)) {
+      throw new Error(
+        `База уже используется процессом PID ${oldPid}.\n` +
+        `Два процесса на одной базе затирают данные друг друга — запуск прерван.\n` +
+        `Проверьте: pm2 list — и оставьте ОДИН процесс игры (pm2 delete <лишний>; pm2 save).\n` +
+        `Если процесс ${oldPid} уже мёртв, удалите файл замка: ${lockFile}`
+      );
+    }
+    // Замок остался от упавшего процесса — забираем себе
     fs.writeFileSync(lockFile, `${process.pid} ${new Date().toISOString()}\n`);
   } catch (e: any) {
     if (String(e.message).includes('База уже используется')) throw e;
-    // Не смогли поставить замок по другой причине (права и т.п.) — не
-    // блокируем запуск игры из-за этого, но предупреждаем в логе
+    // Не смогли поставить замок по другой причине: нет прав на папку,
+    // диск только для чтения. В РАБОТЕ это повод остановиться — без
+    // замка нельзя гарантировать, что процесс один, а цена ошибки —
+    // потеря данных всех игроков. Раньше здесь было предупреждение в
+    // лог и запуск продолжался: защита выглядела включённой, но не
+    // работала. В разработке остаётся мягкое поведение.
+    if (String(process.env.NODE_ENV) === 'production') {
+      throw new Error(
+        `Не удалось поставить замок базы (${e.message}).\n` +
+        'Запуск прерван: без замка два процесса на одной базе затрут данные.\n' +
+        `Проверьте права на папку ${dir}.`
+      );
+    }
     console.warn('⚠️  Не удалось поставить замок базы:', e.message);
     lockFile = '';
   }
@@ -116,22 +137,35 @@ function fileOf(name: string): string {
 }
 
 // ---------- Инициализация ----------
-// Вызывается один раз при старте сервера (до app.listen). Если задан
-// MONGODB_URI — подключается и предзагружает все коллекции в кэш.
-// При ошибке подключения — откатывается на локальные файлы, чтобы
-// сервер всё равно запустился (а не упал из-за временной сети).
+// Вызывается один раз при старте сервера (до app.listen).
+//
+// Выбор режима:
+//   1. DB_DRIVER=sqlite      — своя база, явно. Не открылась → падаем.
+//   2. рядом лежит .db-файл  — своя база, без переменных. Это защита от
+//      самой дорогой ошибки: раньше при потерянном окружении сервер
+//      молча поднимался в JSON-режиме на ПУСТОЙ базе и начинал в неё
+//      писать, а игроки видели «все аккаунты пропали».
+//   3. иначе                 — JSON-файлы (разработка, тесты).
 async function init(): Promise<void> {
   // ── SQLite: своя база на своём сервере ────────────────────────────
-  // Включается DB_DRIVER=sqlite. Проверяется ПЕРВЫМ: если выбран этот
-  // драйвер, к облаку не подключаемся вообще, даже когда MONGODB_URI
-  // остался в окружении (удобно на время переезда — переменную можно
-  // не удалять, а просто переключить драйвер обратно при откате).
-  if (String(process.env.DB_DRIVER || '').toLowerCase() === 'sqlite') {
+  const driver = String(process.env.DB_DRIVER || '').toLowerCase();
+  const sqliteDir = process.env.SQLITE_DIR || path.join(process.cwd(), 'data');
+  const sqliteFile = process.env.SQLITE_FILE || 'generals.db';
+  // Файл базы на месте — работаем с ним, даже если DB_DRIVER не задан.
+  const dbFileExists = (() => {
+    try { return fs.existsSync(path.join(sqliteDir, sqliteFile)); } catch (e) { return false; }
+  })();
+  const explicit = driver === 'sqlite';
+
+  if (explicit || (driver === '' && dbFileExists)) {
+    if (!explicit) {
+      console.log(`💾 DB_DRIVER не задан, но рядом найден ${sqliteFile} — открываю свою базу (а не пустую JSON).`);
+    }
     try {
       sqlite = require('./sqliteStore');
-      const dir = process.env.SQLITE_DIR || path.join(process.cwd(), 'data');
+      const dir = sqliteDir;
       acquireLock(dir);                         // один процесс на базу
-      sqlite.open(dir, process.env.SQLITE_FILE || 'generals.db');
+      sqlite.open(dir, sqliteFile);
       store.users = sqlite.loadAllPlayers();
       const colls = sqlite.loadAllCollections();
       for (const k of Object.keys(colls)) store[k] = colls[k];
@@ -146,81 +180,28 @@ async function init(): Promise<void> {
       // базе и начал писать в неё, а служебные скрипты показывали бы
       // «игроков: 0». Если драйвер выбран явно — падаем с внятной причиной.
       console.error('\n⛔ Не удалось открыть базу SQLite:', e.message);
-      console.error('   DB_DRIVER=sqlite задан явно, поэтому переход на пустую');
+      console.error(explicit
+        ? '   DB_DRIVER=sqlite задан явно, поэтому переход на пустую'
+        : `   Рядом лежит ${sqliteFile}, поэтому переход на пустую`);
       console.error('   JSON-базу отменён — иначе данные игроков были бы перезаписаны.\n');
       throw e;
     }
   }
 
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    mode = 'json';
-    acquireLock(DATA_DIR);                      // один процесс на файлы базы
-    console.log('💾 База данных: локальные JSON-файлы (папка /data)');
-    return;
+  // ── Осталась переменная от облачной базы ──────────────────────────
+  // MongoDB из проекта убрана. Молча игнорировать переменную нельзя:
+  // владелец думал бы, что игра работает на облаке, и не понимал бы,
+  // почему копии и история лежат на сервере.
+  if (process.env.MONGODB_URI) {
+    console.warn('\n⚠️  В окружении осталась переменная MONGODB_URI.');
+    console.warn('   MongoDB из проекта убрана — игра работает на своей базе.');
+    console.warn('   Уберите строку из .env: пока она там, утёкший пароль');
+    console.warn('   продолжает лежать открытым текстом на сервере.\n');
   }
-  try {
-    const { MongoClient } = require('mongodb');
 
-    // На Render SSL-стек OpenSSL конфликтует с сертификатами Atlas.
-    // Решение: tlsInsecure:true — шифрование остаётся, но не проверяем
-    // подлинность сертификата сервера (стандартная практика для PaaS).
-    const tryConnect = async (opts: any) => {
-      const client = new MongoClient(uri, opts);
-      await client.connect();
-      return client;
-    };
-
-    // Попытка 1: стандартное подключение
-    try {
-      mongoClient = await tryConnect({ serverSelectionTimeoutMS: 10000 });
-    } catch (e1: any) {
-      console.warn('Попытка 1 (стандарт):', String(e1.message).slice(0, 100));
-      // Попытка 2: явный TLS без строгой проверки сертификата
-      mongoClient = await tryConnect({
-        serverSelectionTimeoutMS: 10000,
-        tlsInsecure: true,
-      });
-    }
-    await mongoClient.connect();
-    const dbName = process.env.MONGODB_DB || 'generals';
-    const database = mongoClient.db(dbName);
-    usersColl = database.collection('users');
-    collColl = database.collection('collections');
-
-    // Аудит-лог: отдельная capped-коллекция (FIFO, авто-вытеснение старых
-    // записей). Одна запись = один документ → вставка стоит ~200 байт вместо
-    // перезаписи всего массива при каждом действии (это и был источник
-    // терабайтного трафика к Atlas).
-    try {
-      await database.createCollection('actionLogs', { capped: true, size: 64 * 1024 * 1024, max: 50000 });
-    } catch (e) { /* уже существует — ок */ }
-    logsColl = database.collection('actionLogs');
-    try { await logsColl.createIndex({ userId: 1, at: -1 }); } catch (e) {}
-
-    // Предзагрузка игроков: каждый — отдельный документ
-    const userDocs = await usersColl.find({}).toArray();
-    const usersObj: Record<string, any> = {};
-    for (const doc of userDocs) {
-      const { _id, ...rest } = doc;
-      usersObj[_id] = { ...rest, id: _id };
-    }
-    store.users = usersObj;
-
-    // Предзагрузка остальных коллекций: один документ = одна коллекция
-    const collDocs = await collColl.find({}).toArray();
-    for (const doc of collDocs) {
-      store[doc._id] = doc.data;
-    }
-
-    mode = 'mongo';
-    console.log(`💾 База данных: MongoDB (${dbName}). Игроков загружено: ${userDocs.length}, прочих коллекций: ${collDocs.length}.`);
-    startPeriodicFlush();
-  } catch (e: any) {
-    console.error('⚠️  Не удалось подключиться к MongoDB, использую локальные JSON-файлы:', e.message);
-    mongoClient = null;
-    mode = 'json';
-  }
+  mode = 'json';
+  acquireLock(DATA_DIR);                        // один процесс на файлы базы
+  console.log('💾 База данных: локальные JSON-файлы (папка /data)');
 }
 
 // ---------- Чтение ----------
@@ -229,11 +210,6 @@ async function init(): Promise<void> {
 function load<T = any>(name: string, def?: T): T {
   // null считаем «сброшенным» — позволяет переинициализировать коллекцию
   if (store[name] !== undefined && store[name] !== null) return store[name];
-
-  if (mode === 'mongo') {
-    store[name] = (def !== undefined ? def : {});
-    return store[name];
-  }
 
   // Режим json: читаем файл с диска
   ensureDir();
@@ -267,14 +243,14 @@ function save(name: string): void {
 }
 
 // ═══ УДАЛЕНИЕ ИГРОКА ИЗ БАЗЫ ════════════════════════════════════════
-// КРИТИЧНО: flushUsers умеет только replaceOne по существующим id, то есть
-// НИКОГДА не удаляет документы. Раньше admin.deleteAccount делал только
+// КРИТИЧНО: flushUsers только перезаписывает существующие записи и
+// НИКОГДА не удаляет. Раньше admin.deleteAccount делал только
 // `delete players[id]` — в JSON-режиме этого хватало (файл перезаписывается
-// целиком), а в mongo документ оставался в базе, и после рестарта процесса
-// db.load() поднимал удалённого игрока обратно. Отсюда «воскресшие»
+// целиком), а в настоящей базе строка игрока оставалась, и после рестарта
+// процесса db.load() поднимал удалённого игрока обратно. Отсюда «воскресшие»
 // аккаунты и одинаковые позывные на нескольких местах в рейтинге: игрок
-// освобождал имя, регистрировался заново, и в базе оказывались два
-// документа с разными _id и одним именем.
+// освобождал имя, регистрировался заново, и в базе оказывались две записи
+// с разными id и одним именем.
 function dropUser(id: string): void {
   if (mode === 'sqlite') {
     const players = store.users || {};
@@ -287,14 +263,10 @@ function dropUser(id: string): void {
   const usersObj = store.users || {};
   delete usersObj[id];
   dirtyUsers.delete(id);
-  if (mode === 'mongo' && usersColl) {
-    usersColl.deleteOne({ _id: id }).catch((e: any) => {
-      console.error('❌ Не удалось удалить документ игрока из mongo:', id, e && e.message);
-    });
-  } else {
-    allUsersDirty = true;
-    scheduleFlush();
-  }
+  // JSON-режим: файл игроков перезаписывается целиком, поэтому достаточно
+  // пометить «сохранить всех» — удалённого в новом файле просто не будет.
+  allUsersDirty = true;
+  scheduleFlush();
 }
 
 // Диагностика: игроки с одинаковыми позывными или email — следствие старой
@@ -349,41 +321,41 @@ async function flushOne(name: string): Promise<void> {
     sqlite.writeBatch([], [{ id: name, obj: store[name] }]);
     return;
   }
-  if (mode === 'mongo') {
-    await collColl.updateOne({ _id: name }, { $set: { data: store[name] } }, { upsert: true });
-  } else {
-    ensureDir();
-    fs.writeFileSync(fileOf(name), JSON.stringify(store[name]));
-  }
+  ensureDir();
+  fs.writeFileSync(fileOf(name), JSON.stringify(store[name]));
 }
 
 // Записать игроков. Если allUserIds=true — пишем всех (миграции),
 // иначе только тех, кто помечен через markUser (обычный случай).
-async function flushUsers(allUserIds: boolean): Promise<void> {
+// ВАЖНО про параметр ids.
+// Раньше эта функция сама читала dirtyUsers — но flush() очищает его
+// ДО вызова, чтобы не потерять пометки, пришедшие во время записи. В
+// результате на точечном пути список всегда оказывался ПУСТЫМ, и
+// flushUsers молча выходила, ничего не записав. То есть markUser() не
+// работал вообще: прогресс игроков доживал до диска только за счёт
+// сохранения «всех» при штатной остановке сервера.
+//
+// Наружу это вылезало как «после падения процесса пропала выдача» — но
+// пропадало не только она, а ВСЁ, что игроки сделали с момента старта.
+// Поэтому список теперь передаётся явно, а чтение dirtyUsers оставлено
+// лишь как страховка для прямых вызовов.
+async function flushUsers(allUserIds: boolean, ids?: string[]): Promise<void> {
   const usersObj = store.users || {};
+  const targetIds = allUserIds
+    ? Object.keys(usersObj)
+    : (ids && ids.length ? ids : Array.from(dirtyUsers));
   if (mode === 'sqlite') {
     // Точечно: только те игроки, что менялись (или все — при миграциях).
     // Всё уходит одной транзакцией внутри writeBatch.
-    const ids = allUserIds ? Object.keys(usersObj) : Array.from(dirtyUsers);
+    const ids = targetIds;
     if (!ids.length) return;
     sqlite.writeBatch(ids.filter((id) => usersObj[id]).map((id) => ({ id, obj: usersObj[id] })), []);
     return;
   }
-  if (mode === 'mongo') {
-    const ids = allUserIds ? Object.keys(usersObj) : Array.from(dirtyUsers);
-    if (ids.length === 0) return;
-    const ops = ids
-      .filter((id) => usersObj[id])
-      .map((id) => ({
-        replaceOne: { filter: { _id: id }, replacement: { ...usersObj[id], _id: id }, upsert: true },
-      }));
-    if (ops.length) await usersColl.bulkWrite(ops, { ordered: false });
-  } else {
-    // JSON-режим: пишем весь файл (один файл на коллекцию). Дёшево до
-    // ~неск. тысяч игроков; в проде всё равно используется mongo.
-    ensureDir();
-    fs.writeFileSync(fileOf('users'), JSON.stringify(usersObj));
-  }
+  // JSON-режим: пишем весь файл (один файл на коллекцию). Дёшево до
+  // ~неск. тысяч игроков; в бою работает ветка sqlite выше.
+  ensureDir();
+  fs.writeFileSync(fileOf('users'), JSON.stringify(usersObj));
 }
 
 // Сбросить все «грязные» коллекции на диск/в базу
@@ -411,7 +383,7 @@ async function flush(): Promise<void> {
 
   if (hadDirtyUsers) {
     try {
-      await flushUsers(needAllUsers);
+      await flushUsers(needAllUsers, userIds);
     } catch (e: any) {
       console.error('Не удалось сохранить игроков:', e.message);
       // Возвращаем id обратно в очередь
@@ -450,6 +422,19 @@ function startPeriodicBackup(): void {
     catch (e: any) { console.error('⚠️  Бэкап не удался:', e.message); }
   }, hours * 3600 * 1000);
   if (backupTimer.unref) backupTimer.unref();
+
+  // ── Лёгкие копии: только прогресс игроков, без журнала ───────────
+  // Полная копия весит сотни мегабайт из-за журнала, поэтому её нельзя
+  // делать часто — и точность восстановления упиралась в 6 часов.
+  // Прогресс игроков весит единицы мегабайт: такую копию можно снимать
+  // каждые 15 минут. Именно она нужна почти во всех разборах.
+  const lightMin = Math.max(5, Number(process.env.BACKUP_LIGHT_MINUTES || 15));
+  const lightKeep = Math.max(4, Number(process.env.BACKUP_LIGHT_KEEP || 192));  // 48 часов
+  lightTimer = setInterval(() => {
+    try { sqlite.backupLight('light', lightKeep); }
+    catch (e: any) { console.error('⚠️  Лёгкая копия не удалась:', e.message); }
+  }, lightMin * 60 * 1000);
+  if (lightTimer.unref) lightTimer.unref();
 }
 
 // Копия базы прямо сейчас (админка, перед миграцией). Возвращает путь.
@@ -461,6 +446,12 @@ function backupNow(label = 'manual'): string | null {
 // Снимок ОДНОЙ коллекции перед рискованной операцией. Дешевле полного
 // бэкапа, поэтому вызывается автоматически — например, перед сбросом
 // недельного сезона: если что-то пойдёт не так, метрики можно вернуть.
+function backupLightNow(): string | null {
+  if (mode !== 'sqlite') return null;
+  try { return sqlite.backupLight('light', Number(process.env.BACKUP_LIGHT_KEEP || 192)); }
+  catch (e) { return null; }
+}
+
 function snapshotCollection(name: string, label: string): boolean {
   if (mode !== 'sqlite' || store[name] === undefined) return false;
   try { sqlite.snapshot(name, store[name], label); return true; } catch (e) { return false; }
@@ -473,11 +464,24 @@ function snapshotsList(name?: string, limit = 20): any[] {
 
 // Восстановить коллекцию из снимка. Игроков не трогает — только
 // коллекции (сезон, мир, санкции), чтобы случайно не откатить прогресс.
+// Откат коллекции из снимка.
+//
+// СВЕРКА КОЛЛЕКЦИИ обязательна. Раньше снимок брался по одному seq и
+// писался в ту коллекцию, которую назвал вызывающий, без проверки, что
+// снимок вообще от неё. Одним запросом с перепутанной парой можно было
+// записать данные мира в рынок и испортить обе коллекции сразу.
+// Теперь несовпадение — отказ с внятной причиной, а не тихая порча.
 function snapshotRestore(seq: number, name: string): boolean {
   if (mode !== 'sqlite' || name === 'users') return false;
-  const data = sqlite.snapshotGet(seq);
-  if (data === null) return false;
-  store[name] = data;
+  const snap = sqlite.snapshotGetFull(seq);
+  if (!snap || snap.data === null || snap.data === undefined) return false;
+  if (snap.collection !== name) {
+    throw new Error(
+      `Снимок #${seq} сделан с коллекции «${snap.collection}», а восстановить просят в «${name}». ` +
+      'Откат отменён: запись снимка в чужую коллекцию испортила бы обе.'
+    );
+  }
+  store[name] = snap.data;
   save(name);
   return true;
 }
@@ -494,11 +498,19 @@ function sql(query: string, params: any[] = []): any[] {
 // пригодным для копирования.
 function closeDb(): void {
   if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
+  if (lightTimer) { clearInterval(lightTimer); lightTimer = null; }
   if (mode === 'sqlite' && sqlite) { try { sqlite.close(); } catch (e) {} }
   releaseLock();
 }
 
 // Список имеющихся копий базы — для админки
+// Состояние игрока на момент копии — главный инструмент разбирательства
+// после сбоя. Копия открывается только на чтение, боевая база не трогается.
+function playerFromBackup(fileName: string, query: string): any {
+  if (mode !== 'sqlite') throw new Error('Доступно только на своей базе (DB_DRIVER=sqlite)');
+  return sqlite.playerFromBackup(fileName, query);
+}
+
 function backupsList(): any[] {
   if (mode !== 'sqlite') return [];
   try {
@@ -510,6 +522,92 @@ function backupsList(): any[] {
       .sort((a, b) => b.at - a.at)
       .slice(0, 40);
   } catch (e) { return []; }
+}
+
+// ── Состояние вывоза копий за пределы сервера ─────────────────────
+// tools/backup-offsite.sh пишет отчёт в data/backups/offsite-status.json.
+// Читаем его здесь, чтобы панель показывала состояние вывоза, а не
+// молчала. Молчание — худший вид отчёта о бэкапах: пока никто не
+// смотрит, вывоз может не работать месяцами, и это выясняется ровно
+// в тот момент, когда копия понадобилась.
+function offsiteStatus(): any {
+  const dir = path.join(process.env.SQLITE_DIR || path.join(process.cwd(), 'data'), 'backups');
+  const file = path.join(dir, 'offsite-status.json');
+  try {
+    const st = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const ageMs = Date.now() - (st.at || 0);
+    return {
+      configured: true,
+      ok: !!st.ok,
+      at: st.at || 0,
+      ageHours: Math.floor(ageMs / 3600000),
+      // Вывоз раз в сутки: 48 часов без отчёта — расписание не работает
+      stale: ageMs > 48 * 3600 * 1000,
+      file: String(st.file || ''),
+      bytes: Number(st.bytes || 0),
+      players: Number(st.players || 0),
+      remote: String(st.remote || ''),
+      // Зашифрована ли вывезенная копия. В ней почты и хеши паролей всех
+      // игроков, а лежит она на чужом хосте — незашифрованная копия там
+      // это утечка, просто отложенная.
+      encrypted: !!st.encrypted,
+      error: String(st.error || ''),
+    };
+  } catch (e) {
+    // Отчёта нет вообще — значит скрипт ни разу не отработал
+    return { configured: false, ok: false, at: 0, ageHours: 0, stale: true,
+             file: '', bytes: 0, players: 0, remote: '', encrypted: false, error: '' };
+  }
+}
+
+// Упаковка старого журнала. Зовётся из фонового тика небольшими порциями:
+// разом ужать двухмесячный хвост — это секунды работы в единственном
+// потоке, то есть заметная для игроков пауза.
+function packLogs(maxPacks = 6): any {
+  if (mode !== 'sqlite') return { packed: 0, rows: 0 };
+  try {
+    const r = sqlite.packOldLogs(maxPacks);
+    // Упаковка освобождает страницы внутри базы. Отдаём их файловой
+    // системе тут же, порциями: иначе файл остаётся прежнего размера и
+    // экономия видна только внутри базы, а не на диске и в копиях.
+    if (r.packed) r.reclaimed = sqlite.reclaimSpace(2000);
+    return r;
+  } catch (e) { return { packed: 0, rows: 0 }; }
+}
+
+// ── История состояния игрока ──────────────────────────────────────
+// Ответ на вопрос «что было у игрока до сбоя» с точностью до 5 минут, а
+// не до последней копии базы. Копии остаются — они про другое: про
+// потерю базы целиком.
+function playerHistory(id: string, limit = 200): any[] {
+  if (mode !== 'sqlite') return [];
+  try { return sqlite.playerHistoryList(String(id), limit); } catch (e) { return []; }
+}
+function playerHistoryGet(seq: number): any | null {
+  if (mode !== 'sqlite') return null;
+  try { return sqlite.playerHistoryGet(Number(seq)); } catch (e) { return null; }
+}
+function playerHistoryAt(id: string, at: number): any | null {
+  if (mode !== 'sqlite') return null;
+  try { return sqlite.playerHistoryAt(String(id), Number(at)); } catch (e) { return null; }
+}
+// Снимок ПЕРЕД действием сотрудника: пишется всегда, минуя задержку в
+// 5 минут, и прореживание его не удаляет. Именно по нему разбираются,
+// когда сотрудник ошибся.
+function snapshotPlayer(user: any, label: string, actor = ''): boolean {
+  if (mode !== 'sqlite' || !user || !user.id) return false;
+  try {
+    const { id, ...rest } = user;
+    return sqlite.savePlayerHistory(user.id, rest, label || 'до изменения', actor);
+  } catch (e) { return false; }
+}
+function thinHistory(): any {
+  if (mode !== 'sqlite') return { removed: 0 };
+  try { return sqlite.thinPlayerHistory(); } catch (e) { return { removed: 0 }; }
+}
+function historyStats(): any {
+  if (mode !== 'sqlite') return null;
+  try { return sqlite.historyStats(); } catch (e) { return null; }
 }
 
 function dbStats(): any {
@@ -533,10 +631,6 @@ const LOG_KEEP_MS = 90 * 24 * 3600 * 1000;
 
 function appendLog(entry: any): void {
   if (mode === 'sqlite') { try { sqlite.appendLog(entry); } catch (e) {} return; }
-  if (mode === 'mongo') {
-    if (logsColl) logsColl.insertOne(entry).catch((e: any) => console.error('Ошибка записи лога:', e.message));
-    return;
-  }
   // JSON-режим (локальная разработка): срок тот же, но остаётся и потолок по
   // числу записей — здесь журнал целиком лежит в памяти процесса, и
   // трёхмесячная история боевого сервера её бы не пережила.
@@ -581,12 +675,6 @@ function logsBetween(from: number, to: number, userId?: string, limit?: number):
 async function tailLogs(limit: number, userId?: string): Promise<any[]> {
   if (mode === 'sqlite') { try { return sqlite.tailLogs(limit, userId); } catch (e) { return []; } }
   const n = Math.max(1, Math.min(1000, limit || 200));
-  if (mode === 'mongo') {
-    if (!logsColl) return [];
-    const q = userId ? { userId } : {};
-    const docs = await logsColl.find(q).sort({ at: -1 }).limit(n).toArray();
-    return docs.map((d: any) => { const { _id, ...rest } = d; return rest; });
-  }
   const arr = load<any[]>('actionLogs', []) as any[];
   const filtered = userId ? arr.filter((e) => e.userId === userId) : arr;
   return filtered.slice(-n).reverse();
@@ -602,6 +690,7 @@ async function flushAllNow(): Promise<string[]> {
   shuttingDown = true;
   if (periodicTimer) { clearInterval(periodicTimer); periodicTimer = null; }
   if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
+  if (lightTimer) { clearInterval(lightTimer); lightTimer = null; }
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = null;
   const failed: string[] = [];
@@ -624,18 +713,16 @@ async function flushAllNow(): Promise<string[]> {
     failed.push('users');
     console.error('Не удалось сохранить игроков при выходе:', e.message);
   }
-  if (mongoClient) {
-    await mongoClient.close();
-    mongoClient = null;
-  }
   return failed;
 }
 
 export = {
   init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
-  logStats, logsBetween, LOG_KEEP_MS,
+  logStats, logsBetween, LOG_KEEP_MS, playerFromBackup,
   dropUser, findDuplicateUsers,
   // Своя база: защита данных и аналитика
   backupNow, backupsList, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats, closeDb,
+  offsiteStatus, packLogs, backupLightNow,
+  playerHistory, playerHistoryGet, playerHistoryAt, snapshotPlayer, thinHistory, historyStats,
   get mode() { return mode; },
 };

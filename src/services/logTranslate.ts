@@ -177,6 +177,21 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `📝 Регистрация (страна: ${body.country || '?'}, email: ${body.email || '?'})`;
       case '/api/login':
         return '🔑 Вход в игру';
+      // Второй фактор. Сами коды в журнал не попадают и попасть не
+      // должны: тело запроса вычищается при записи, а описание строится
+      // без него — иначе в журнале лежал бы годный код.
+      case '/api/login/2fa-required':
+        return '🔐 Вход: запрошен код второго фактора';
+      case '/api/login/totp':
+        return '🔐 Вход подтверждён вторым фактором';
+      case '/api/2fa/setup':
+        return '🔐 Получил ключ для приложения-аутентификатора';
+      case '/api/2fa/enable':
+        return '🔐 Включил второй фактор входа';
+      case '/api/2fa/disable':
+        return '🔓 Выключил второй фактор входа';
+      case '/api/2fa/recovery':
+        return '🔐 Перевыпустил коды восстановления';
       case '/api/verify-email':
         return '✉️ Подтвердил почту';
 
@@ -522,6 +537,13 @@ function describe(path: string, body?: any, result?: any): string | null {
       // ── Поддержка и модерация ──────────────────────────────────
       case '/api/support/create': return `🛟 Создал обращение в поддержку «${body.subject || '—'}»`;
       case '/api/support/reply':  return '🛟 Ответил в своём обращении';
+      case '/api/reports/create':
+        return `📨 Пожаловался на игрока ${body.targetName || body.targetId || '—'}`;
+      case '/api/mod/report/resolve':
+        return body.accept ? '✅ Подтвердил жалобу' : '📭 Отклонил жалобу';
+      case '/api/mod/report/resolve-all':
+        return `${body.accept ? '✅ Подтвердил' : '📭 Отклонил'} все жалобы на игрока ` +
+               `${body.targetName || body.targetId || '—'}`;
       case '/api/mod/chat-ban':
         return `🔇 Заблокировал чат игроку ${body.targetName || body.userId || '—'}` +
                `${body.minutes ? ` на ${body.minutes} мин` : ''}`;

@@ -1442,7 +1442,9 @@ App.screens.mail = async (c, param) => {
       <div class="card" id="mail-thread" style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto">
         ${thread.messages.map((m) => `
           <div style="align-self:${m.dir === 'out' ? 'flex-end' : 'flex-start'};max-width:80%;background:${m.dir === 'out' ? 'var(--orange-10, rgba(255,150,50,.12))' : 'rgba(255,255,255,.06)'};border-radius:10px;padding:8px 12px">
-            ${m.subject ? `<div class="small" style="opacity:.7;margin-bottom:2px"><b>${UI.esc(m.subject)}</b></div>` : ''}
+            <div class="ml-who">${m.dir === 'out' ? 'Вы' : UI.esc(thread.otherName)}</div>
+            ${(m.subject && m.subject !== '(без темы)')
+              ? `<div class="small" style="opacity:.7;margin-bottom:2px"><b>${UI.esc(m.subject)}</b></div>` : ''}
             <div style="white-space:pre-wrap">${UI.esc(m.text)}</div>
             <div class="muted small" style="margin-top:4px;display:flex;justify-content:space-between;align-items:center;gap:10px">
               <span style="cursor:pointer;color:var(--red)" data-del-mail="${m.id}" title="Удалить сообщение">🗑 удалить</span>

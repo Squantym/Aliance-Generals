@@ -29,6 +29,76 @@ import trophies = require('./trophies');
 import player = require('./player');
 import type { User, Notices } from '../types';
 
+// ═══ ИСТОРИЯ СЕЙФА ══════════════════════════════════════════════════
+// Раньше о взломе узнавал только сам взломщик — жертве не приходило
+// ничего. Деньги пропадали из хранилища молча, и понять, куда они
+// делись и кто их взял, было нельзя. Теперь пишем событие ОБЕИМ
+// сторонам и шлём жертве уведомление.
+const BANK_LOG_PER_SIDE = 25;   // сколько записей держим в каждой вкладке
+
+// Порядковый номер события. Нужен потому, что метка времени в
+// миллисекундах не различает события одной секунды: два взломщика могут
+// уложиться в одну миллисекунду, и тогда сортировка по времени ставит их
+// в произвольном порядке — в истории они прыгали бы местами.
+let bankSeq = 0;
+
+function bankLog(user: any): any[] {
+  if (!Array.isArray(user.bankLog)) user.bankLog = [];
+  return user.bankLog;
+}
+
+// Сравнение «сначала новые»: по времени, при равенстве — по номеру
+function byNewest(a: any, b: any): number {
+  return (b.at || 0) - (a.at || 0) || (b.seq || 0) - (a.seq || 0);
+}
+
+// Ограничение считаем по каждой стороне отдельно: серия своих взломов
+// не должна вытеснять историю тех, кто лез ко мне.
+function pushBankLog(user: any, entry: any): void {
+  if (!user) return;
+  const log = bankLog(user);
+  log.push(entry);
+  const keep = (role: string) => log.filter((e: any) => e.role === role).slice(-BANK_LOG_PER_SIDE);
+  user.bankLog = keep('attack').concat(keep('defense'))
+    .sort((a: any, b: any) => (a.at || 0) - (b.at || 0) || (a.seq || 0) - (b.seq || 0));
+  db.markUser(user.id);
+}
+
+// Записать исход обеим сторонам и уведомить жертву.
+// outcome: 'stolen' — унёс деньги, 'alarm' — код подобран, но сработала
+// сигнализация, 'failed' — код так и не разгадан.
+function recordHack(attacker: any, target: any, outcome: string, stolen: number): void {
+  const at = Date.now();
+  const base = {
+    at, seq: ++bankSeq, outcome, stolen: stolen || 0,
+    attackerId: attacker.id, attackerName: attacker.name,
+    targetId: target ? target.id : null, targetName: target ? target.name : '—',
+  };
+  pushBankLog(attacker, { ...base, role: 'attack' });
+  if (!target) return;
+  pushBankLog(target, { ...base, role: 'defense' });
+
+  const notifications = require('./notifications');
+  if (outcome === 'stolen') {
+    notifications.push(target.id, 'bank_hacked',
+      `🔓 Ваш сейф вскрыл «${attacker.name}» — похищено $${u.fmt(stolen)}`,
+      { attackerName: attacker.name, attackerId: attacker.id, stolen });
+  } else {
+    notifications.push(target.id, 'bank_hack_failed',
+      `🚨 «${attacker.name}» пытался вскрыть ваш сейф, но не смог — деньги на месте`,
+      { attackerName: attacker.name, attackerId: attacker.id, stolen: 0 });
+  }
+}
+
+// История для экрана банка: две вкладки, новые сверху
+function history(user: User) {
+  const log = bankLog(user);
+  return {
+    incoming: log.filter((e: any) => e.role === 'defense').sort(byNewest),
+    outgoing: log.filter((e: any) => e.role === 'attack').sort(byNewest),
+  };
+}
+
 function today(): string {
   // День по МСК (UTC+3): новый день наступает в 00:00 МСК
   return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -175,6 +245,9 @@ function guess(user: User, guessRaw: string, notices: Notices): { targetId: stri
     } else {
       notices.push('🚨 Код верный, но сработала сигнализация — взлом сорван!');
     }
+    // Событие в историю обеим сторонам + уведомление жертве: раньше о
+    // пропаже денег она не узнавала никак
+    recordHack(user, target, succeeded ? 'stolen' : 'alarm', stolen);
     user.pendingBankHack = null;
     return {
       targetId, finished: true,
@@ -185,6 +258,7 @@ function guess(user: User, guessRaw: string, notices: Notices): { targetId: stri
   if (p.triesLeft <= 0) {
     // Код так и не разгадан — попытка тоже расходуется (провал = попытка)
     consumeAttempt(user, targetId);
+    recordHack(user, player.users()[targetId], 'failed', 0);
     user.pendingBankHack = null;
     notices.push('⛔ Попытки закончились — код сейфа не разгадан.');
     return { targetId, finished: true, result: { code: p.code, bulls, cows, cracked: false, outOfTries: true } };
@@ -193,4 +267,4 @@ function guess(user: User, guessRaw: string, notices: Notices): { targetId: stri
   return { targetId, finished: false, result: { bulls, cows, triesLeft: p.triesLeft, cracked: false, history: p.history } };
 }
 
-export = { tryOffer, skip, cancel, guess, generateCode, evaluateGuess, ensureDay };
+export = { tryOffer, skip, cancel, guess, generateCode, evaluateGuess, ensureDay, history, recordHack, BANK_LOG_PER_SIDE };

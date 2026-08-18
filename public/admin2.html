@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ГЕНЕРАЛЫ — штаб</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/admin2.css">
+</head>
+<body>
+  <!-- Панель v2 занимает весь экран сама: игровой #wrap с его шапкой
+       здесь не нужен, боковое меню и верхняя полоса — часть оболочки. -->
+  <main id="content"><div class="loading">Загрузка…</div></main>
+  <div id="toasts"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <!-- Заглушка App: api.js при 401 дёргает App.me и location.hash -->
+  <script>
+    const App = { me: null, go() {} };
+    document.body.className = 'theme-' + (localStorage.getItem('gtheme') || 'classic');
+  </script>
+  <!-- Старая панель грузится целиком: она пока поставляет экраны,
+       которые ещё не перенесены (см. A2.NAV → legacy). -->
+  <script src="/js/admin.js"></script>
+  <script src="/js/admin2/router.js"></script>
+  <script src="/js/admin2/shell.js"></script>
+  <script src="/js/admin2/queue.js"></script>
+  <script src="/js/admin2/players.js"></script>
+  <script src="/js/admin2/player.js"></script>
+  <script src="/js/admin2/reports.js"></script>
+  <script src="/js/admin2/support.js"></script>
+  <script src="/js/admin2/logs.js"></script>
+  <script src="/js/admin2/tech.js"></script>
+  <script src="/js/admin2/roles.js"></script>
+  <script src="/js/admin2/gold.js"></script>
+  <script src="/js/admin2/econ.js"></script>
+  <script src="/js/admin2/tournament.js"></script>
+  <script src="/js/admin2/legions.js"></script>
+  <script src="/js/admin2/security.js"></script>
+  <script>A2.init();</script>
+</body>
+</html>

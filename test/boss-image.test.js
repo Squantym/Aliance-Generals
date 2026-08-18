@@ -50,15 +50,20 @@ for (const bad of ['javascript:alert(1)', 'data:image/png;base64,AAA', 'vbscript
 console.log('\n── 3. Политика безопасности пропускает картинки ──');
 // Главная причина, по которой внешние ссылки не работали: заголовок
 // разрешал картинки только со своего домена, и браузер молча их блокировал
-const csp = /'Content-Security-Policy': ([\s\S]*?);\n/.exec(http);
-ok(!!csp, 'заголовок политики задан');
-const cspText = csp[0];
+// Политика собирается списком строк в securityHeaders() — раньше она
+// была одной длинной строкой в объекте заголовков. Регулярка искала
+// старую форму и не находила ничего, из-за чего падали разом все
+// проверки ниже, включая «картинки с чужих сайтов разрешены».
+const cspAt = http.indexOf("h['Content-Security-Policy']");
+ok(cspAt > 0, 'заголовок политики задан');
+const cspText = http.slice(cspAt, cspAt + 900);
 ok(/img-src 'self' data: https: http:/.test(cspText), 'картинки разрешены с любых сайтов');
 ok(!/img-src 'self' data:;/.test(cspText), 'прежнее ограничение снято');
 ok(/script-src 'self'/.test(cspText), 'скрипты по-прежнему только свои — это и есть защита');
 ok(/style-src 'self'/.test(cspText), 'стили тоже');
 ok(/connect-src 'self'/.test(cspText), 'запросы к чужим серверам запрещены');
-ok(/frame-ancestors 'self'/.test(cspText), 'встраивание в чужие страницы запрещено');
+ok(/frame-ancestors 'self'/.test(cspText), 'игру можно встроить только на своём домене');
+ok(/frame-ancestors 'none'/.test(cspText), 'панель нельзя встроить вообще — у неё политика строже');
 
 console.log('\n── 4. Показ в игре ──');
 const core = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');

@@ -197,5 +197,35 @@ for (const f of jsFiles) {
 }
 ok(rawInterp.length === 0, `нет окон с html:true, где имя игрока подставляется без экранирования${rawInterp.length ? ': ' + rawInterp.join(', ') : ''}`);
 
+console.log('\n── 9. Заголовки безопасности: один набор на все ответы ──');
+const httpSrc3 = fs.readFileSync(ROOT + '/src/core/http.ts', 'utf8');
+ok(/function securityHeaders\(/.test(httpSrc3), 'набор заголовков собран в одной функции');
+// Раньше он был разложен по трём местам и успел разойтись: файл,
+// отданный из кэша, приезжал вообще без политики CSP — то есть защита
+// зависела от того, первый ли это запрос файла.
+const usages = (httpSrc3.match(/securityHeaders\(/g) || []).length;
+ok(usages >= 4, `функция используется во всех путях отдачи (вызовов: ${usages - 1})`);
+
+const cspAt = httpSrc3.indexOf("h['Content-Security-Policy']");
+const csp = httpSrc3.slice(cspAt, cspAt + 900);
+for (const [needle, why] of [
+  ["object-src 'none'", 'плагины и объекты запрещены'],
+  ["base-uri 'self'", 'подменить <base> и увести все ссылки нельзя'],
+  ["form-action 'self'", 'форму не отправить на чужой сервер'],
+  ["connect-src 'self'", 'запросы только к своему серверу'],
+]) {
+  ok(csp.includes(needle), why);
+}
+ok(/noFrame \? "frame-ancestors 'none'"/.test(csp),
+   'панель нельзя показать в чужом окне — защита от прозрачного слоя поверх её кнопок');
+ok(/const isPanelPage = rel === '\/admin\.html' \|\| rel === '\/admin2\.html'/.test(httpSrc3),
+   'обе панели считаются панелью — новая не осталась без этой защиты');
+ok(/geolocation=\(\), microphone=\(\), camera=\(\)/.test(httpSrc3),
+   'камера, микрофон и геолокация запрещены — игре они не нужны');
+// HSTS на домене без сертификата закрывает доступ месяцами, и откатить
+// его нельзя: браузер запомнил. Поэтому только по явному согласию.
+ok(/process\.env\.HSTS \|\| ''\) === '1'/.test(httpSrc3), 'HSTS включается осознанно, а не по умолчанию');
+ok(/'Cache-Control': 'no-store'/.test(httpSrc3), 'ответы API помечены no-store — не оседают в общих кэшах');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

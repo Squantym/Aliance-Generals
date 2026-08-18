@@ -104,7 +104,7 @@ allowed(() => roles.setRole(own, vic.id, 'moderator', []), 'Владелец', '
 allowed(() => roles.setRoleZone(own, 'admin', 'economy', true, []), 'Владелец', 'настройка прав ролей');
 roles.setRoleZone(own, 'admin', 'economy', false, []);
 roles.setRole(own, vic.id, null, []);
-ok(roles.zonesFor(own).length === 14, 'у владельца все 14 разделов');
+ok(roles.zonesFor(own).length === 15, `у владельца все 15 разделов`);
 
 console.log('\n── 5. Обычный игрок ──');
 clean();

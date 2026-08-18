@@ -128,7 +128,10 @@ ok(mig.includes('--dry'), 'у скрипта переезда есть холо�
 ok(mig.includes('сверка профилей'), 'скрипт сверяет перенесённые данные поштучно и падает при расхождении');
 ok(mig.includes('Источник НЕ изменяется'), 'источник не трогается — откат возможен в любой момент');
 const dbSrc = fs.readFileSync(ROOT + '/src/core/db.ts', 'utf8');
-ok(dbSrc.includes("DB_DRIVER || '').toLowerCase() === 'sqlite'"), 'драйвер переключается переменной DB_DRIVER — откат без правки кода');
+ok(dbSrc.includes("DB_DRIVER || '').toLowerCase()") && dbSrc.includes("driver === 'sqlite'"),
+   'драйвер переключается переменной DB_DRIVER — без правки кода');
+ok(dbSrc.includes('dbFileExists') && dbSrc.includes("driver === '' && dbFileExists"),
+   'без DB_DRIVER, но с файлом базы рядом — открывается своя база, а не пустая JSON');
 ok(dbSrc.includes('startPeriodicBackup'), 'автобэкап по расписанию включается сам');
 ok(dbSrc.includes('snapshotRestore'), 'есть восстановление коллекции из снимка');
 const seasonsSrc = fs.readFileSync(ROOT + '/src/services/seasons.ts', 'utf8');

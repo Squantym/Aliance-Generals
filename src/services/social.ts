@@ -137,7 +137,11 @@ function pushMailEntry(userId: string, entry: any): void {
 // (dir:'out'), чтобы у обоих была полная история переписки.
 function mailBetween(fromUser: User, toUser: User, subject: string, text: string): void {
   const at = Date.now();
-  const s = String(subject || '(без темы)').slice(0, 80);
+  // Пустая тема остаётся пустой. Раньше подставлялось «(без темы)», и в
+  // переписке над КАЖДЫМ сообщением висела эта заглушка — интерфейс
+  // писем вообще не спрашивает тему, так что она была пустой всегда.
+  // Кто написал, теперь видно по позывному над сообщением.
+  const s = String(subject || '').slice(0, 80);
   const t = String(text || '').slice(0, config.MAIL.MAX_LEN);
   pushMailEntry(toUser.id, { id: u.uid(10), dir: 'in', otherId: fromUser.id, otherName: fromUser.name, subject: s, text: t, at, read: false });
   pushMailEntry(fromUser.id, { id: u.uid(10), dir: 'out', otherId: toUser.id, otherName: toUser.name, subject: s, text: t, at, read: true });

@@ -71,7 +71,7 @@ fails(() => roles.banAccount(mod, pl.id, 60, 'x', []), 'Нет права «Ба
       'но бан аккаунта ему не выдавали — недоступен');
 
 console.log('\n── 3б. Старое поведение ролей ──');
-ok(roles.zonesFor(own).length === 14, 'у владельца по-прежнему все разделы');
+ok(roles.zonesFor(own).length === 15, 'у владельца по-прежнему все разделы');
 fails(() => roles.setRoleZone(own, 'admin', 'database', true, []), 'нельзя открыть',
       'управление базой не выдаётся никому, кроме владельца');
 // Для дальнейших проверок выдаём ролям права
@@ -128,8 +128,42 @@ ok(/arbiter: *\{ tag: 'arbiter'/.test(app) && /commissar: *\{ tag: 'commissar'/.
 console.log('\n── 8. Панель знает о новых ролях ──');
 const adminJs = fs.readFileSync(ROOT + '/public/js/admin.js', 'utf8');
 ok(/arbiter: 'Арбитр'/.test(adminJs) && /commissar: 'Комиссар'/.test(adminJs), 'подписи в панели');
-ok(/CAN = \{ owner: \['arbiter','admin','commissar','moderator'\]/.test(adminJs),
-   'кнопки назначения совпадают с правами на сервере');
+// Раньше здесь сверялась точная строка кода панели — проверка ломалась
+// от переименования константы, а расхождение с сервером не ловила.
+// Теперь сверяем СОДЕРЖИМОЕ: кого панель предлагает назначить и кому
+// это разрешает сервер. Расходятся — кнопка ведёт в отказ.
+const panelCan = (() => {
+  const m = adminJs.match(/ROLE_CAN:\s*\{([\s\S]*?)\n  \}/);
+  if (!m) return null;
+  const out = {};
+  // Разбираем весь блок, а не построчно: две роли могут стоять в одной
+  // строке, и построчный разбор молча терял вторую — проверка «сходится
+  // ли с сервером» тогда падала на ровном месте.
+  const re = /(\w+):\s*\[([^\]]*)\]/g;
+  let mm;
+  while ((mm = re.exec(m[1]))) {
+    out[mm[1]] = mm[2].split(',').map((x) => x.trim().replace(/'/g, '')).filter(Boolean);
+  }
+  return out;
+})();
+const srvSrc = fs.readFileSync(ROOT + '/src/services/roles.ts', 'utf8');
+const srvCan = (() => {
+  const m = srvSrc.match(/const CAN_ASSIGN[^=]*=\s*\{([\s\S]*?)\n\};/);
+  const out = {};
+  const re = /(\w+):\s*\[([^\]]*)\]/g;
+  let mm;
+  while ((mm = re.exec(m[1]))) {
+    out[mm[1]] = mm[2].split(',').map((x) => x.trim().replace(/'/g, ''))
+      .filter((x) => x && x !== 'null');   // null = «снять роль», кнопки для него отдельные
+  }
+  return out;
+})();
+ok(!!panelCan, 'в панели есть таблица «кого можно назначать»');
+const mismatch = Object.keys(srvCan).filter((role) =>
+  (panelCan[role] || []).join(',') !== srvCan[role].join(','));
+ok(mismatch.length === 0,
+   'кнопки назначения совпадают с правами на сервере'
+   + (mismatch.length ? ` — расходятся: ${mismatch.join(', ')}` : ''));
 const perms = roles.permissionsView();
 ok(perms.roles.length === 4, `настраиваются возможности всех четырёх ролей (${perms.roles.map((r) => r.name).join(', ')})`);
 

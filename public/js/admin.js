@@ -33,6 +33,58 @@ const Admin = {
   // Есть ли доступ к разделу
   can(zone) { return Admin.zones.indexOf(zone) !== -1; },
 
+  // ── Подтверждение необратимого действия ─────────────────────────
+  // Раньше здесь стоял браузерный confirm(): один случайный Enter — и
+  // легионы всех игроков стёрты. Просить нажать «ОК» дважды тоже не
+  // защита: вторым нажатием человек подтверждает не понимание, а
+  // раздражение. Поэтому просим ВПЕЧАТАТЬ слово: набрать «СТЕРЕТЬ»
+  // машинально невозможно.
+  //
+  // opts: { title, what — что произойдёт, scope — кого затронет,
+  //         word — что впечатать (по умолчанию «УДАЛИТЬ») }
+  // Возвращает Promise<boolean>.
+  danger(opts) {
+    const word = (opts.word || 'УДАЛИТЬ').toUpperCase();
+    return new Promise((resolve) => {
+      const old = document.getElementById('game-dialog');
+      if (old) old.remove();
+      const m = document.createElement('div');
+      m.id = 'game-dialog';
+      m.className = 'game-dialog-overlay';
+      m.innerHTML = `
+        <div class="game-dialog">
+          <div class="game-dialog-icon">⚠️</div>
+          <div class="game-dialog-title">${UI.esc(opts.title || 'Необратимое действие')}</div>
+          <div class="game-dialog-body">${UI.esc(opts.what || '')}
+            ${opts.scope ? `<div style="color:var(--red);font-weight:600;margin-top:6px">Затронет: ${UI.esc(opts.scope)}</div>` : ''}
+            <div style="margin-top:6px">Отменить это будет нельзя. Копия базы поможет,
+              только если она свежая — проверьте вкладку «Техника».</div>
+          </div>
+          <div class="game-dialog-hint">Впечатайте <b>${UI.esc(word)}</b>, чтобы подтвердить</div>
+          <input id="dg-word" class="game-dialog-input" autocomplete="off" placeholder="${UI.esc(word)}">
+          <div class="game-dialog-actions">
+            <button class="btn btn-red" id="dg-ok" disabled>Выполнить</button>
+            <button class="btn btn-inline" id="dg-cancel">Отмена</button>
+          </div>
+        </div>`;
+      document.body.appendChild(m);
+      const release = UI._a11yDialog(m, m.querySelector('.game-dialog'),
+        opts.title || 'Необратимое действие');
+      const input = m.querySelector('#dg-word');
+      const okBtn = m.querySelector('#dg-ok');
+      const close = (v) => { release(); m.remove(); resolve(v); };
+      input.oninput = () => { okBtn.disabled = input.value.trim().toUpperCase() !== word; };
+      okBtn.onclick = () => { if (!okBtn.disabled) close(true); };
+      m.querySelector('#dg-cancel').onclick = () => close(false);
+      m.onclick = (e) => { if (e.target === m) close(false); };
+      input.focus();
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') close(false);
+        if (e.key === 'Enter' && !okBtn.disabled) close(true);
+      });
+    });
+  },
+
   renderLogin() {
     document.getElementById('content').innerHTML = `
       <div class="card" style="max-width:380px;margin:40px auto">
@@ -48,6 +100,22 @@ const Admin = {
           login: document.getElementById('ad-name').value,
           password: document.getElementById('ad-pass').value,
         });
+        // Второй фактор: пароля мало. Токен сервер ещё не выдал —
+        // пока не введён код, входа нет.
+        if (r.needTotp) {
+          const code = await UI.prompt(
+            'Введите код из приложения-аутентификатора.\n\n'
+            + 'Потеряли телефон — введите код восстановления.',
+            { title: 'Подтверждение входа', icon: '🔐', okText: 'Войти', maxLength: 20,
+              placeholder: '123 456' });
+          if (code === null) return;
+          const r2 = await API.post('/api/login/totp', { challengeId: r.challengeId, code });
+          API.setToken(r2.token);
+          const me2 = await API.get('/api/me');
+          if (!me2.staffZones || !me2.staffZones.length) return UI.toast('⛔ Нет доступа к панели');
+          Admin.me = me2; Admin.zones = me2.staffZones;
+          return Admin.render();
+        }
         API.setToken(r.token);
         const me = await API.get('/api/me');
         if (!me.staffZones || !me.staffZones.length) {
@@ -64,27 +132,71 @@ const Admin = {
     document.getElementById('ad-pass').onkeydown = e => { if(e.key==='Enter') go(); };
   },
 
+  // Ссылка на панель v2. Адрес панели секретный (ADMIN_PATH), поэтому
+  // строим от ТЕКУЩЕГО пути, а не от жёсткого «/admin»: иначе кнопка
+  // вела бы на 404 у всех, кто маскировку включил.
+  // location проверяем: рендер гоняется и в тестах без окна браузера,
+  // и падение здесь роняло бы всю панель целиком.
+  _v2Href() {
+    try { return String(location.pathname).replace(/\/$/, '') + '/v2'; }
+    catch (e) { return '/admin/v2'; }
+  },
+
   // ── Главный рендер с вкладками ──────────────────────────────────
   render() {
     // У каждой вкладки своя зона: разделы, недоступные сотруднику, просто
     // не показываются — он не видит того, чем не может пользоваться
+    // Вкладки разложены по трём смысловым группам. Тринадцать кнопок
+    // подряд читались как сплошная лента, в которой «Жалобы» стояли
+    // рядом с «Турнирами»: глаз каждый раз искал нужную заново.
+    //   ЛЮДИ      — всё, что про игроков и разбор их дел
+    //   ИГРА      — содержимое мира: экономика, события, легионы
+    //   СЛУЖЕБНОЕ — то, чем пользуются редко и осторожно
     const tabs = [
-      { id:'home',      label:'📊 Сводка' },
-      { id:'players',   label:'👥 Игроки',      zone:'players' },
-      { id:'econ',      label:'🛠 Экономика',   zone:'economy' },
-      { id:'events',    label:'🐉 Событие',     zone:'event' },
-      { id:'tournament',label:'⚔️ Турниры',     zone:'legions' },
-      { id:'legions',   label:'🎖 Легионы',     zone:'legions' },
-      { id:'logs',      label:'📋 Журнал',      zone:'players' },
-      { id:'support',   label:'🛟 Заявки',   zone:'support' },
-      { id:'tech',      label:'🔧 Техника', zone:'security' },
-      { id:'roles',     label:'🛡 Роли',        zone:'roles' },
-      { id:'gold',      label:'🪙 Золото',      zone:'roles', ownerOnly:true },
+      { id:'home',      label:'📊 Сводка',      group:'Люди' },
+      { id:'players',   label:'👥 Игроки',      zone:'players',    group:'Люди' },
+      { id:'reports',   label:'📨 Жалобы',      zone:'moderation', group:'Люди' },
+      { id:'support',   label:'🛟 Заявки',      zone:'support',    group:'Люди' },
+      // Вход по ЛЮБОМУ из экономических прав. Раньше вкладка требовала
+      // «Ресурсы», а подвкладка «Акции» — право «Акции»: сотруднику,
+      // которому выдали только акции, вкладка не показывалась вообще, и
+      // выданное право не имело входа в интерфейс.
+      { id:'econ',      label:'🛠 Экономика',   zones:['economy', 'discounts'], group:'Игра' },
+      { id:'events',    label:'🐉 Событие',     zone:'event',      group:'Игра' },
+      { id:'tournament',label:'⚔️ Турниры',     zone:'legions',    group:'Игра' },
+      { id:'legions',   label:'🎖 Легионы',     zone:'legions',    group:'Игра' },
+      { id:'analytics', label:'📈 Аналитика',   zone:'analytics',  group:'Служебное' },
+      { id:'logs',      label:'📋 Журнал',      zone:'players',    group:'Служебное' },
+      { id:'tech',      label:'🔧 Техника',     zone:'security',   group:'Служебное' },
+      { id:'roles',     label:'🛡 Роли',        zone:'roles',      group:'Служебное' },
+      { id:'gold',      label:'🪙 Золото',      zone:'roles',      group:'Служебное', ownerOnly:true },
     ];
+    const visible = (t) => {
+      // zone — одна зона, zones — любая из перечисленных
+      const byZone = t.zones ? t.zones.some((z) => Admin.can(z)) : (!t.zone || Admin.can(t.zone));
+      return byZone && (!t.ownerOnly || (Admin.me && Admin.me.staffRole === 'owner'));
+    };
+    const btnHtml = (t) => `<button class="btn btn-inline ${Admin.tab === t.id ? 'btn-orange' : ''}"
+      id="tab-${t.id}">${t.label}</button>`;
+    // Пустые группы не рисуем совсем: сотрудник с одной зоной не должен
+    // видеть три подписи, две из которых ни к чему не ведут
+    const groupHtml = (name) => {
+      const list = tabs.filter((t) => t.group === name && visible(t));
+      if (!list.length) return '';
+      return `<div class="adm-tabgroup">
+        <span class="adm-tabgroup-name">${name}</span>
+        ${list.map(btnHtml).join('')}
+      </div>`;
+    };
     document.getElementById('content').innerHTML = `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
-        ${tabs.filter(t=>(!t.zone||Admin.can(t.zone)) && (!t.ownerOnly||(Admin.me&&Admin.me.staffRole==='owner'))).map(t=>`<button class="btn btn-inline ${Admin.tab===t.id?'btn-orange':''}" id="tab-${t.id}">${t.label}</button>`).join('')}
-        <a href="/" class="btn btn-inline" style="margin-left:auto">← В игру</a>
+      <div class="adm-tabs">
+        ${['Люди', 'Игра', 'Служебное'].map(groupHtml).join('')}
+        <span style="margin-left:auto;align-self:center;display:flex;gap:6px">
+          <a href="${Admin._v2Href()}" class="btn btn-inline"
+             style="border-color:var(--gold);color:var(--gold)"
+             title="Новая панель: боковое меню, адрес у каждого экрана, очередь работ">✨ Панель v2</a>
+          <a href="/" class="btn btn-inline">← В игру</a>
+        </span>
       </div>
       <div id="tab-content" style="padding:8px 0"></div>`;
 
@@ -95,7 +207,7 @@ const Admin = {
       const btn = document.getElementById('tab-' + t.id);
       if (btn) btn.onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
     });
-    Admin._tabIds = tabs.filter(t => (!t.zone || Admin.can(t.zone)) && (!t.ownerOnly || (Admin.me && Admin.me.staffRole === 'owner'))).map(t => t.id);
+    Admin._tabIds = tabs.filter(visible).map((t) => t.id);
     // Если открыт раздел, к которому доступа нет — уводим на первый доступный
     if (Admin._tabIds.length && Admin._tabIds.indexOf(Admin.tab) === -1) {
       Admin.tab = Admin._tabIds[0];
@@ -122,6 +234,8 @@ const Admin = {
     if (Admin.tab === 'roles')     return Admin.renderRoles(c);
     if (Admin.tab === 'gold')      return Admin.renderGold(c);
     if (Admin.tab === 'logs')      return Admin.renderLogs(c);
+    if (Admin.tab === 'analytics') return Admin.renderAnalytics(c);
+    if (Admin.tab === 'reports')   return Admin.renderReports(c);
     if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
     if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
   },
@@ -142,10 +256,12 @@ const Admin = {
           Admin.can('economy') ? 'выдать ресурсы' : null,
           Admin.can('moderation') ? 'заблокировать' : null,
           Admin.can('security') ? 'обнулить аккаунт' : null,
-        ].filter(Boolean).join(', ')}.` : 'Найдите игрока, чтобы посмотреть досье.'}${Admin.can('economy') ? ' Массовые операции — во вкладке «🛠 Инструменты».' : ''}</p>
+        ].filter(Boolean).join(', ')}.` : 'Найдите игрока, чтобы посмотреть досье.'}${Admin.can('economy') ? ' Массовые операции — во вкладке «🛠 Экономика».' : ''}</p>
       </div>
+      ${Admin._historyHtml()}
       <div id="ad-list"><div class="loading">Загрузка…</div></div>
       <div id="ad-grant-wrap"></div>`;
+    Admin._bindHistoryForm();
     document.getElementById('ad-search').onclick = () => Admin.loadPlayers();
     document.getElementById('ad-q').onkeydown = e => { if(e.key==='Enter') Admin.loadPlayers(); };
     Admin.loadPlayers();
@@ -197,6 +313,34 @@ const Admin = {
       alerts.push({ kind: 'info', icon: '🔇',
         text: `Действующих блокировок чата: <b>${d.chatBansTotal}</b>`, tab: null });
     }
+    if (has('moderation') && d.reportsNew) {
+      alerts.push({ kind: d.reportsNew >= 5 ? 'hot' : 'warn', icon: '📨',
+        text: `Неразобранных жалоб на игроков: <b>${d.reportsNew}</b>`,
+        tab: 'reports', btn: 'Разобрать' });
+    }
+
+    // Что сотруднику можно, а что нет — списком, без догадок по вкладкам
+    const acc = d.myAccess || [];
+    const allowed = acc.filter((z) => z.allowed), denied = acc.filter((z) => !z.allowed);
+    const accessHtml = `
+      <details class="card">
+        <summary style="cursor:pointer"><b>🔑 Мои права</b>
+          <span class="muted small"> — открыто ${allowed.length} из ${acc.length}</span></summary>
+        <p class="muted small mt">Панель показывает только доступные разделы, поэтому «пропавшей» кнопки
+          не существует — есть закрытый раздел. Здесь видно, какой именно и что он даёт.
+          Права выдаёт владелец во вкладке «Роли».</p>
+        <div class="mt">
+          ${allowed.map((z) => `<div class="adm-measure">
+            <span class="adm-measure-tag" style="background:var(--green)">есть</span>
+            <span class="grow"><b>${UI.esc(z.name)}</b> <span class="muted small">— ${UI.esc(z.note)}</span></span>
+          </div>`).join('')}
+          ${denied.map((z) => `<div class="adm-measure" style="opacity:.65">
+            <span class="adm-measure-tag">нет</span>
+            <span class="grow">${UI.esc(z.name)} <span class="muted small">— ${UI.esc(z.note)}</span></span>
+            ${z.ownerOnly ? '<span class="muted small">только владелец</span>' : ''}
+          </div>`).join('')}
+        </div>
+      </details>`;
 
     c.innerHTML = `
       <div class="adm-hello">
@@ -264,7 +408,9 @@ const Admin = {
                 </div>`).join('')
             : '<p class="muted small">Пока ничего не делали.</p>'}
         </div>
-      </div>`;
+      </div>
+
+      ${accessHtml}`;
 
     c.querySelectorAll('[data-goto-tab]').forEach((b) => {
       b.onclick = () => { Admin.tab = b.dataset.gotoTab; Admin.renderTab(); };
@@ -557,23 +703,19 @@ const Admin = {
   // Через панель роль меняется в памяти работающего сервера и сразу
   // сохраняется — в отличие от скрипта на сервере, правку которого
   // затирает сохранение памяти при перезапуске.
-  async renderRoles(c) {
-    c.innerHTML = '<div class="loading">Загружаю сотрудников…</div>';
-    let data = null;
-    try { data = await API.get('/api/staff'); } catch (e) {
-      c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
-      return;
-    }
+  // ── Экран «Роли»: разметка ───────────────────────────────────────
+  // Вынесено из renderRoles, чтобы панель v2 собирала из этих же частей
+  // свои подстраницы. Копировать разметку прав сотрудников нельзя:
+  // разойдись две копии — и один экран начнёт врать про полномочия.
+  // show: { staff, log, perms, assign } — какие карточки показывать.
+  _rolesHtml(data, show) {
+    show = show || { staff: 1, log: 1, perms: 1, assign: 1 };
     const iAmOwner = data.me && data.me.role === 'owner';
-    const label = { owner: 'Владелец', arbiter: 'Арбитр', admin: 'Администратор',
-                    commissar: 'Комиссар', moderator: 'Дозор' };
-    // Кого может назначать текущий сотрудник — совпадает с проверкой на сервере
+    const label = Admin.ROLE_LABEL;
     const myRole = (data.me && data.me.role) || '';
-    const CAN = { owner: ['arbiter','admin','commissar','moderator'], arbiter: ['admin','commissar','moderator'],
-                  admin: ['moderator'], commissar: ['moderator'] };
-    const canAssign = CAN[myRole] || [];
-
-    c.innerHTML = `
+    const canAssign = Admin.ROLE_CAN[myRole] || [];
+    return `
+      ${show.staff ? `
       <div class="card">
         <div class="name">🛡 Сотрудники проекта</div>
         <p class="muted small mt">Ваша роль: <b>${UI.esc((data.me && data.me.label) || '—')}</b>.
@@ -597,9 +739,9 @@ const Admin = {
                 : ''}
             </div>`).join('') || '<p class="muted small">Пока только вы.</p>'}
         </div>
-      </div>
+      </div>` : ''}
 
-      ${iAmOwner ? `
+      ${(show.log && iAmOwner) ? `
       <div class="card">
         <div class="name">📜 Журнал действий сотрудников</div>
         <p class="muted small mt">Все действия администраторов и модераторов. Это единственная проверка того,
@@ -614,7 +756,7 @@ const Admin = {
         <div id="staff-log-box" class="mt"></div>
       </div>` : ''}
 
-      ${iAmOwner ? `
+      ${(show.perms && iAmOwner) ? `
       <div class="card">
         <div class="name">⚙️ Возможности ролей</div>
         <p class="muted small mt">Отметьте, что доступно каждой роли. <b>Новые роли не имеют прав вообще</b> —
@@ -623,6 +765,7 @@ const Admin = {
         <div id="perm-box" class="mt"><div class="loading">Загружаю…</div></div>
       </div>` : ''}
 
+      ${show.assign ? `
       <div class="card">
         <div class="name">➕ Назначить роль</div>
         <p class="muted small mt">Найдите игрока по позывному и выберите роль.
@@ -632,17 +775,36 @@ const Admin = {
           <button class="btn btn-orange btn-inline" id="role-find">🔍 Найти</button>
         </div>
         <div id="role-results" class="mt"></div>
-      </div>`;
+      </div>` : ''}`;
+  },
 
+  // Подписи и права назначения — рядом с разметкой, потому что
+  // используются и ею, и обработчиками, и панелью v2.
+  ROLE_LABEL: { owner: 'Владелец', arbiter: 'Арбитр', admin: 'Администратор',
+                commissar: 'Комиссар', moderator: 'Дозор' },
+  // Кого может назначать текущий сотрудник — совпадает с проверкой на сервере
+  ROLE_CAN: { owner: ['arbiter', 'admin', 'commissar', 'moderator'],
+              arbiter: ['admin', 'commissar', 'moderator'],
+              admin: ['moderator'], commissar: ['moderator'] },
+
+  // ── Экран «Роли»: обработчики ────────────────────────────────────
+  // Каждый блок привязывается, только если он на экране: набор карточек
+  // зависит и от прав, и от того, какую подстраницу открыли в v2.
+  // refresh() — как перерисовать экран после изменения.
+  _bindRoles(data, root, refresh) {
+    const iAmOwner = data.me && data.me.role === 'owner';
+    const label = Admin.ROLE_LABEL;
+    const myRole = (data.me && data.me.role) || '';
+    const canAssign = Admin.ROLE_CAN[myRole] || [];
     // Снятие роли
-    c.querySelectorAll('[data-role-off]').forEach((b) => {
+    root.querySelectorAll('[data-role-off]').forEach((b) => {
       b.onclick = async () => {
         if (!await UI.confirm(`Снять все роли с игрока <b>${UI.esc(b.dataset.name)}</b>?`,
             { title: 'Снятие роли', icon: '🛡', okText: 'Снять', danger: true, html: true })) return;
         try {
           await API.post('/api/staff/role', { userId: b.dataset.roleOff, role: 'none' });
           UI.toast('✅ Роль снята');
-          Admin.renderRoles(c);
+          refresh();
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });
@@ -671,9 +833,9 @@ const Admin = {
       const opt = sel.options[sel.selectedIndex];
       showStaffLog(sel.value, sel.value ? opt.textContent : '');
     };
-    if (iAmOwner) showStaffLog('', '');
+    if (iAmOwner && document.getElementById('staff-log-box')) showStaffLog('', '');
 
-    c.querySelectorAll('[data-staff-log]').forEach((b) => {
+    root.querySelectorAll('[data-staff-log]').forEach((b) => {
       b.onclick = () => {
         const sel = document.getElementById('staff-log-who');
         if (sel) sel.value = b.dataset.staffLog;
@@ -682,11 +844,11 @@ const Admin = {
         if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
       };
     });
-    c.querySelectorAll('[data-staff-ban]').forEach((b) => {
+    root.querySelectorAll('[data-staff-ban]').forEach((b) => {
       b.onclick = async () => {
         // Сотрудника банит только владелец — проверка и на сервере
         if (await Admin.banAccountDialog(b.dataset.staffBan, b.dataset.name, false)) {
-          Admin.renderRoles(c);
+          refresh();
         }
       };
     });
@@ -762,7 +924,7 @@ const Admin = {
         };
       });
     };
-    if (iAmOwner) renderPerms();
+    if (iAmOwner && document.getElementById('perm-box')) renderPerms();
 
     // Поиск и назначение
     const doFind = async () => {
@@ -791,7 +953,7 @@ const Admin = {
             try {
               await API.post('/api/staff/role', { userId: b.dataset.set, role: b.dataset.r });
               UI.toast('✅ Роль назначена');
-              Admin.renderRoles(c);
+              refresh();
             } catch (e) { UI.toast('⛔ ' + e.message); }
           };
         });
@@ -802,6 +964,18 @@ const Admin = {
     const qi = document.getElementById('role-q');
     if (qi) qi.onkeydown = (ev) => { if (ev.key === 'Enter') doFind(); };
   },
+
+  async renderRoles(c) {
+    c.innerHTML = '<div class="loading">Загружаю сотрудников…</div>';
+    let data = null;
+    try { data = await API.get('/api/staff'); } catch (e) {
+      c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
+      return;
+    }
+    c.innerHTML = Admin._rolesHtml(data, { staff: 1, log: 1, perms: 1, assign: 1 });
+    Admin._bindRoles(data, c, () => Admin.renderRoles(c));
+  },
+
 
   // ═══ ЖУРНАЛ НАЧИСЛЕНИЙ ЗОЛОТА (только владелец) ══════════════════
   // Золото — премиум-валюта, и владелец должен видеть каждый источник:
@@ -816,10 +990,17 @@ const Admin = {
   // конкретного человека понятными строками.
   _goldPlayer: null,
 
-  async renderGold(c) {
+  // opts: { player — чей журнал открыт, open(id) — как перейти к игроку }.
+  // Раньше выбранный игрок жил только в Admin._goldPlayer, то есть в
+  // памяти вкладки: ссылку на разбор было не переслать, а F5 возвращал
+  // к общему списку. Панель v2 передаёт то же самое из адреса.
+  async renderGold(c, opts) {
+    opts = opts || {};
+    const picked = opts.player !== undefined ? opts.player : Admin._goldPlayer;
+    const open = opts.open || ((id) => { Admin._goldPlayer = id; Admin.renderGold(c); });
     c.innerHTML = '<div class="loading">Собираю журнал…</div>';
     let d = null;
-    const q = Admin._goldPlayer ? '?userId=' + encodeURIComponent(Admin._goldPlayer) : '';
+    const q = picked ? '?userId=' + encodeURIComponent(picked) : '';
     try { d = await API.get('/api/admin/gold-log' + q); }
     catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
 
@@ -870,7 +1051,7 @@ const Admin = {
           </div>
         </div>`;
       c.querySelectorAll('[data-gp]').forEach((row) => {
-        row.onclick = () => { Admin._goldPlayer = row.dataset.gp; Admin.renderGold(c); };
+        row.onclick = () => open(row.dataset.gp);
       });
       return;
     }
@@ -960,7 +1141,7 @@ const Admin = {
         </div>
       </div>`;
 
-    document.getElementById('gold-back').onclick = () => { Admin._goldPlayer = null; Admin.renderGold(c); };
+    document.getElementById('gold-back').onclick = () => open('');
   },
 
   // ═══ БАЗА ДАННЫХ: состояние, копии, снимки, восстановление ═══════
@@ -1010,6 +1191,9 @@ const Admin = {
       manual:        { icon: '🖐', label: 'вручную' },
       'pre-restore': { icon: '♻️', label: 'перед откатом' },
       'pre-deploy':  { icon: '🚀', label: 'перед деплоем' },
+      // Лёгкая копия — только прогресс игроков, без журнала. Именно
+      // поэтому её можно делать раз в 15 минут, а полную — нет.
+      light:         { icon: '⚡', label: 'быстрая, без журнала' },
     };
     const mbv = (n) => (n / 1024 / 1024).toFixed(1) + ' МБ';
     const when = (ts) => new Date(ts).toLocaleString('ru-RU',
@@ -1035,10 +1219,200 @@ const Admin = {
       </details>`;
   },
 
+  // ── Что было у игрока до сбоя ────────────────────────────────────
+  // Отвечает на главный вопрос разбирательства: игрок пишет «у меня всё
+  // пропало» — надо понять, что именно было и сколько возвращать.
+  // Раньше для этого лезли на сервер по SSH и читали копию руками.
+  _recoverHtml(backups) {
+    const arr = Array.isArray(backups) ? backups : [];
+    if (!arr.length) return '';
+    const when = (ts) => new Date(ts).toLocaleString('ru-RU',
+      { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `
+      <details class="db-more mt">
+        <summary>🔎 Что было у игрока до сбоя</summary>
+        <p class="muted small mt">Выберите копию ДО происшествия и укажите позывной.
+        Покажем состояние на тот момент и разницу с текущим — по ней и возвращать.</p>
+        <div class="rec-form mt">
+          <select id="rec-file">
+            ${arr.map((b) => `<option value="${UI.esc(b.file)}">${UI.esc(when(b.at))}</option>`).join('')}
+          </select>
+          <input type="text" id="rec-q" placeholder="Позывной игрока" autocomplete="off">
+          <button class="btn btn-inline" id="rec-go">Показать</button>
+        </div>
+        <div id="rec-out" class="mt"></div>
+      </details>`;
+  },
+
+  // Отрисовать результат сверки. Отдельной функцией — её же зовём из теста.
+  _recoverResultHtml(r) {
+    if (!r || !r.found) {
+      return `<p class="muted small">В этой копии такого игрока нет. Возможно, копия сделана
+      до его регистрации — возьмите более свежую.</p>`;
+    }
+    const m = (n) => {
+      const a = Math.abs(n);
+      if (a >= 1e9) return (n / 1e9).toFixed(2) + ' Bn';
+      if (a >= 1e6) return (n / 1e6).toFixed(2) + ' M';
+      return UI.fmtNum(n);
+    };
+    // Отрицательная разница = столько ПРОПАЛО и подлежит возврату
+    const row = (label, was, now, d, fmt) => {
+      const f = fmt || UI.fmtNum;
+      const lost = d < 0;
+      return `<div class="rec-row${lost ? ' rec-lost' : ''}">
+        <span class="rec-l">${label}</span>
+        <span class="rec-was">${f(was)}</span>
+        <span class="rec-arrow">→</span>
+        <span class="rec-now">${f(now)}</span>
+        <span class="rec-d">${d === 0 ? '' : (d > 0 ? '+' + f(d) : '−' + f(Math.abs(d)))}</span>
+      </div>`;
+    };
+    const w = r.wasBalance, n = r.nowBalance, df = r.diff;
+    if (!r.existsNow) {
+      return `<p class="rec-gone">⚠ Сейчас такого игрока в базе НЕТ — аккаунт удалён.
+      В копии он был: $${m(w.dollars)}, 🪙 ${UI.fmtNum(w.gold)}, ур. ${w.level},
+      техники ${UI.fmtNum(w.units)}, зданий ${UI.fmtNum(w.buildings)}.</p>`;
+    }
+    const lostUnits = r.lostUnits || [], lostB = r.lostBuildings || [];
+    return `
+      <div class="rec-head"><b>${UI.esc(r.player.name)}</b>
+        <span class="muted small">в копии → сейчас</span></div>
+      <div class="rec-table">
+        ${row('💵 Деньги', w.dollars, n.dollars, df.dollars, m)}
+        ${row('🪙 Золото', w.gold, n.gold, df.gold)}
+        ${row('⭐ Уровень', w.level, n.level, df.level)}
+        ${row('📈 Опыт', w.exp, n.exp, df.exp, m)}
+        ${row('🚜 Техника', w.units, n.units, df.units)}
+        ${row('🏗 Здания', w.buildings, n.buildings, df.buildings)}
+      </div>
+      ${lostUnits.length ? `
+        <div class="rec-sub mt"><b>Пропавшая техника:</b>
+          ${lostUnits.map((x) => `<span class="rec-chip">${UI.esc(x.name)} −${UI.fmtNum(x.lost)}</span>`).join('')}
+        </div>` : ''}
+      ${lostB.length ? `
+        <div class="rec-sub mt"><b>Пропавшие здания:</b>
+          ${lostB.map((x) => `<span class="rec-chip">${UI.esc(x.name)} −${UI.fmtNum(x.lost)}</span>`).join('')}
+        </div>` : ''}
+      ${(!lostUnits.length && !lostB.length && df.dollars >= 0 && df.gold >= 0) ? `
+        <p class="muted small mt">Потерь против этой копии нет — всё на месте или прибавилось.</p>` : `
+        <p class="muted small mt">Возврат — вкладка «Игроки»: найдите ${UI.esc(r.player.name)} и выдайте
+        недостающее. Каждая выдача попадёт в журнал.</p>`}`;
+  },
+
+  // Обработчик формы сверки. Вынесен из renderDbBlock намеренно: блок
+  // базы держим тонким, иначе он снова разрастётся в то полотно, ради
+  // сжатия которого его когда-то переделывали (см. admin-compact.test).
+  _bindRecoverForm() {
+    const go = document.getElementById('rec-go');
+    if (!go) return;
+    go.onclick = async () => {
+      const out = document.getElementById('rec-out');
+      const q = (document.getElementById('rec-q').value || '').trim();
+      if (!q) { UI.toast('⛔ Укажите позывной'); return; }
+      go.disabled = true;
+      out.innerHTML = '<span class="muted small">Читаю копию…</span>';
+      try {
+        const file = document.getElementById('rec-file').value;
+        const r = await API.get('/api/admin/db/player-at?file=' + encodeURIComponent(file) +
+                                '&q=' + encodeURIComponent(q));
+        out.innerHTML = Admin._recoverResultHtml(r);
+      } catch (e) {
+        out.innerHTML = `<span style="color:var(--red)">${UI.esc(e.message)}</span>`;
+      }
+      go.disabled = false;
+    };
+  },
+
+  // ── Таймлайн состояния игрока ────────────────────────────────────
+  // Копии базы отвечают «что было в 4 утра». Здесь — «что было в 14:35»,
+  // с шагом 5 минут и полным составом имущества. Помеченные срезы (перед
+  // действиями сотрудников) выделены: с них обычно и начинается разбор.
+  _historyHtml() {
+    return `
+      <details class="db-more mt">
+        <summary>🕘 История состояния игрока — «у меня всё пропало»</summary>
+        <p class="muted small mt">Точность 5 минут: срез состояния пишется при каждом изменении,
+        тогда как копии базы делаются раз в 6 часов. В срезе лежит полный состав имущества —
+        какая именно техника и какие постройки, чего в журнале действий нет.
+        Снимки перед действиями сотрудников помечены золотым и хранятся все 3 месяца.
+        Только просмотр: ничего изменить отсюда нельзя.</p>
+        <div class="rec-form mt">
+          <input type="text" id="hist-q" placeholder="Позывной игрока" autocomplete="off">
+          <button class="btn btn-inline" id="hist-go">Показать историю</button>
+        </div>
+        <div id="hist-list" class="mt"></div>
+        <div id="hist-out" class="mt"></div>
+      </details>`;
+  },
+
+  _historyListHtml(r) {
+    const when = (ts) => new Date(ts).toLocaleString('ru-RU',
+      { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    if (!r.list.length) {
+      return `<p class="muted small">Срезов пока нет. История копится с момента обновления —
+      у давно неактивного игрока её может не быть вовсе.</p>`;
+    }
+    const st = r.stats || {};
+    return `<div class="small muted">Игрок <b>${UI.esc(r.player.name)}</b>: срезов ${r.list.length}.
+      Всего в базе ${UI.fmtNum(st.count || 0)} срезов по ${st.players || 0} игрокам,
+      ${((st.bytes || 0) / 1048576).toFixed(1)} МБ.</div>
+      <div class="mt" style="max-height:260px;overflow-y:auto">
+        ${r.list.map((h) => `<div class="adm-measure">
+          <span class="grow small">${when(h.at)}
+            ${h.label ? `<b style="color:var(--gold)">${UI.esc(h.label)}</b>` : '<span class="muted">обычный срез</span>'}
+            ${h.actor ? `<span class="muted">· ${UI.esc(h.actor)}</span>` : ''}</span>
+          <span class="muted small">${h.size} Б</span>
+          <button class="btn btn-inline" data-hseq="${h.seq}">Сравнить с текущим</button>
+        </div>`).join('')}
+      </div>`;
+  },
+
+  _bindHistoryForm() {
+    const go = document.getElementById('hist-go');
+    if (!go) return;
+    go.onclick = async () => {
+      const box = document.getElementById('hist-list');
+      const out = document.getElementById('hist-out');
+      const q = (document.getElementById('hist-q').value || '').trim();
+      if (!q) { UI.toast('⛔ Укажите позывной'); return; }
+      go.disabled = true; out.innerHTML = '';
+      box.innerHTML = '<span class="muted small">Читаю историю…</span>';
+      try {
+        const r = await API.get('/api/admin/player-history?q=' + encodeURIComponent(q) + '&limit=100');
+        box.innerHTML = Admin._historyListHtml(r);
+        box.querySelectorAll('[data-hseq]').forEach((b) => b.onclick = async () => {
+          out.innerHTML = '<span class="muted small">Сравниваю…</span>';
+          try {
+            const d = await API.get('/api/admin/player-history/at?seq=' + b.dataset.hseq);
+            // Та же отрисовка, что и у сверки с копией базы: разница
+            // выглядит одинаково, откуда бы срез ни пришёл
+            out.innerHTML = Admin._recoverResultHtml(d);
+          } catch (e) { out.innerHTML = `<span style="color:var(--red)">${UI.esc(e.message)}</span>`; }
+        });
+      } catch (e) {
+        box.innerHTML = `<span style="color:var(--red)">${UI.esc(e.message)}</span>`;
+      }
+      go.disabled = false;
+    };
+  },
+
   // ── Срок хранения журнала действий ───────────────────────────────
   _logKeepHtml(logs) {
     if (!logs) return '';
     const days = logs.keepDays || 90;
+    // Упакованная часть журнала: показываем и объём, и во сколько раз
+    // сжалось. Без этого «3 месяца логов» звучит как угроза диску, хотя
+    // на деле занимает десятки мегабайт.
+    const packLine = logs.packs ? `<div class="db-line mt">
+      <span class="small">📦 Упаковано</span>
+      <span class="muted small grow">${UI.fmtNum(logs.packedRows || 0)} записей в ${logs.packs} блоках ·
+        ${((logs.packedRaw || 0) / 1048576).toFixed(1)} МБ → ${((logs.packedGz || 0) / 1048576).toFixed(1)} МБ${
+        // Коэффициент печатаем, только когда он есть: иначе выходило
+        // «в 0x меньше» — число, которого не бывает.
+        logs.packRatio ? ` (в ${logs.packRatio}x меньше)` : ''}</span>
+      <span class="muted small">свежие ${logs.hotDays || 7} дн. — обычными строками</span>
+    </div>` : '';
     const when = (ts) => (ts ? new Date(ts).toLocaleDateString('ru-RU',
       { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
     // Насколько глубоко уже накопилась история — по ней видно, что срок
@@ -1051,7 +1425,45 @@ const Admin = {
         <span class="muted small grow">${UI.fmtNum(logs.count || 0)} записей ·
           с ${UI.esc(when(logs.oldestAt))} · глубина ${depthDays} дн.</span>
         <span class="muted small">хранится ${days} дн.</span>
+      </div>
+      ${packLine}`;
+  },
+
+  // Вывоз копий за пределы сервера. Строка нарочно громкая, когда вывоз
+  // не работает: копии на том же диске, что и база, от смерти диска не
+  // спасают, а «тишина» в этом месте раньше читалась как «всё хорошо».
+  _offsiteHtml(o) {
+    if (!o) return '';
+    const cmd = 'tools/backup-offsite.sh';
+    if (!o.configured) {
+      return `<div class="db-line mt" style="border-left:3px solid var(--red);padding-left:8px">
+        <span class="small" style="color:var(--red)">🚚 Вывоз копий не настроен</span>
+        <span class="muted small grow">Все копии лежат на том же диске, что и база.
+          Умрёт диск — потеряется всё сразу.</span>
+        <span class="muted small">см. ${cmd}</span>
       </div>`;
+    }
+    const bad = !o.ok || o.stale;
+    const color = bad ? 'var(--red)' : 'var(--green)';
+    const when = o.ageHours < 1 ? 'меньше часа назад'
+      : (o.ageHours < 48 ? `${o.ageHours} ч назад` : `${Math.floor(o.ageHours / 24)} дн назад`);
+    return `<div class="db-line mt" style="border-left:3px solid ${color};padding-left:8px">
+      <span class="small" style="color:${color}">🚚 Вывоз копий ${o.ok ? 'работает' : 'сломан'}</span>
+      <span class="muted small grow">
+        последний ${when}${o.file ? ' · ' + UI.esc(o.file) : ''}
+        ${o.players ? ' · игроков в копии ' + UI.fmtNum(o.players) : ''}
+        ${o.bytes ? ' · ' + (o.bytes / 1024 / 1024).toFixed(1) + ' МБ' : ''}
+      </span>
+      <span class="muted small">${UI.esc(o.remote || '')}</span>
+    </div>
+    ${o.error ? `<div class="small" style="color:var(--red);padding-left:11px">⚠️ ${UI.esc(o.error)}</div>` : ''}
+    ${o.ok && !o.encrypted ? `<div class="small" style="color:var(--gold);padding-left:11px">
+      🔓 Копия уезжает НЕзашифрованной. В ней почты и хеши паролей всех игроков,
+      а лежит она на чужом хосте. Задайте BACKUP_KEY_FILE — см. tools/backup-offsite.sh.</div>` : ''}
+    ${o.ok && o.encrypted ? `<div class="small" style="color:var(--green);padding-left:11px">
+      🔒 Зашифрована, расшифровка проверена перед отправкой.</div>` : ''}
+    ${o.stale && o.configured ? `<div class="small" style="color:var(--red);padding-left:11px">
+      ⚠️ Отчёта нет больше двух суток — расписание (cron) не срабатывает.</div>` : ''}`;
   },
 
   // ═══ БАЗА ДАННЫХ — компактный блок внутри «Техники» ══════════════
@@ -1059,192 +1471,37 @@ const Admin = {
   // трёх действий. Копии и так делаются автоматически каждые 6 часов,
   // поэтому здесь осталось только нужное руками: состояние, кнопка
   // копии и откат коллекции из снимка.
-  async renderDbBlock() {
-    const box = document.getElementById('db-block');
-    if (!box) return;
-    if (!Admin.can('database')) { box.style.display = 'none'; return; }
-
-    let d = null;
-    try { d = await API.get('/api/admin/db/stats'); }
-    catch (e) { box.innerHTML = `<div class="muted small">База: ${UI.esc(e.message)}</div>`; return; }
-    const st = d.stats || {};
-    const mb = (n) => (n / 1024 / 1024).toFixed(1) + ' МБ';
-
-    if (st.driver !== 'sqlite') {
-      box.innerHTML = `<div class="name">🗄 База данных</div>
-        <p class="muted small mt">Сейчас <b>${UI.esc(String(st.driver || '—'))}</b>.
-        Копии и снимки доступны после перехода на свою базу.</p>`;
-      return;
-    }
-
-    let snaps = { snapshots: [] };
-    try { snaps = await API.get('/api/admin/db/snapshots?limit=8'); } catch (e) {}
-
-    box.innerHTML = `
-      <div class="db-line">
-        <div class="name" style="margin:0">🗄 База данных</div>
-        <span class="db-ok">${st.integrity === 'ok' ? '● в порядке' : '● ' + UI.esc(String(st.integrity))}</span>
-        <span class="muted small">${mb(st.sizeBytes || 0)} · игроков ${UI.fmtNum(st.players || 0)} · копий ${(d.backups || []).length}</span>
-        <button class="btn btn-inline" id="db-backup" style="margin-left:auto">💾 Копия</button>
-      </div>
-      <p class="muted small mt">Копии создаются сами каждые 6 часов. Кнопка нужна перед рискованными действиями.</p>
-      ${Admin._backupHistoryHtml(d.backups)}
-      ${Admin._logKeepHtml(d.logs)}
-      ${(snaps.snapshots || []).length ? `
-        <details class="db-more mt">
-          <summary>Снимки коллекций (${snaps.snapshots.length})</summary>
-          <div class="mt">
-            ${snaps.snapshots.map((sn) => `
-              <div class="adm-measure">
-                <span class="grow small">#${sn.seq} <b>${UI.esc(sn.collection)}</b> <span class="muted">${UI.esc(sn.label)}</span></span>
-                <span class="muted small">${new Date(sn.at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
-                <button class="btn btn-red btn-inline" data-restore="${sn.seq}" data-coll="${UI.esc(sn.collection)}">Откатить</button>
-              </div>`).join('')}
-          </div>
-        </details>` : ''}`;
-
-    const bb = document.getElementById('db-backup');
-    if (bb) bb.onclick = async () => {
-      bb.disabled = true;
-      try { await API.post('/api/admin/db/backup', {}); UI.toast('💾 Копия создана'); Admin.renderDbBlock(); }
-      catch (e) { UI.toast('⛔ ' + e.message); bb.disabled = false; }
-    };
-    box.querySelectorAll('[data-restore]').forEach((b) => {
-      b.onclick = async () => {
-        if (!await UI.confirm(
-          `Откатить коллекцию <b>${UI.esc(b.dataset.coll)}</b> к снимку #${b.dataset.restore}?<br>` +
-          `<span class="muted small">Перед откатом создаётся копия всей базы — действие можно отменить.</span>`,
-          { title: 'Откат из снимка', icon: '♻️', html: true, okText: 'Откатить', danger: true })) return;
-        try {
-          await API.post('/api/admin/db/restore', { seq: Number(b.dataset.restore), collection: b.dataset.coll });
-          UI.toast('♻️ Откачено');
-          Admin.renderDbBlock();
-        } catch (e) { UI.toast('⛔ ' + e.message); }
-      };
-    });
-  },
-
-  renderTech(c) {
-    const t = Admin.techTarget;
-    // Блок базы данных доезжает следом отдельным запросом — он нужен
-    // редко, и грузить его при каждом открытии вкладки незачем
-    setTimeout(() => Admin.renderDbBlock(), 0);
-    c.innerHTML = `
-      <div class="card">
-        <div class="name">🔎 Выбор аккаунта</div>
-        <p class="muted small mt">Найдите игрока по позывному — он станет целью операций ниже.</p>
-        <div class="field-row mt">
-          <input type="text" id="tech-q" class="field" placeholder="Позывной игрока…" style="flex:1"
-                 value="${t ? UI.esc(t.name) : ''}">
-          <button class="btn btn-orange btn-inline" id="tech-search">🔍 Найти</button>
-        </div>
-        <div id="tech-results" class="mt"></div>
-        ${t ? `
-        <div class="card mt" style="border-color:var(--gold);background:rgba(255,180,0,.06)">
-          <div class="name">Выбран: ${UI.esc(t.name)} ${t.isAdmin ? '<span class="badge">👑 админ</span>' : ''} ${t.banned ? '<span class="badge" style="background:var(--red)">заблокирован</span>' : ''}</div>
-          <div class="muted small mt">ID: <code>${UI.esc(t.id)}</code> · Ур. ${t.level} · ${t.online ? 'онлайн' : 'не в сети'}</div>
-        </div>` : '<p class="muted small mt">Аккаунт не выбран.</p>'}
-      </div>
-
-      <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
-        <div class="name">🔑 Установить пароль</div>
-        <p class="muted small mt">Для случаев, когда игрок забыл пароль, а почта недоступна. Старый пароль не нужен. Минимум 8 символов. Все активные сессии игрока будут сброшены — войти можно будет только с новым паролем.</p>
-        <label class="field-label">Новый пароль для игрока</label>
-        <div class="field-row">
-          <input type="password" id="tech-pass" class="field" placeholder="новый пароль…" style="flex:1" autocomplete="new-password" ${t ? '' : 'disabled'}>
-          <button class="btn btn-inline" id="tech-pass-eye" title="Показать пароль">👁</button>
-        </div>
-        <button class="btn btn-orange mt" id="tech-pass-go" style="width:100%" ${t ? '' : 'disabled'}>
-          🔑 Установить пароль${t ? ` игроку «${UI.esc(t.name)}»` : ''}
-        </button>
-      </div>
-
-      <div class="card" style="margin-top:16px;border-color:var(--red)">
-        <div class="name" style="color:var(--red)">🗑 Полное удаление аккаунта</div>
-        <p class="muted small mt">Аккаунт стирается из игры целиком: почта, уведомления, санкции, награды, обращения, участие в боях и сообщения в чате. Позывной и email освобождаются, вход становится невозможен — сервер отвечает так, будто такого игрока никогда не было. <b style="color:var(--red)">Необратимо.</b> Если нужно лишь обнулить прогресс — используйте «Обнулить аккаунт» во вкладке «Игроки».</p>
-        <label class="field-label">Подтверждение: введите позывной игрока точь-в-точь</label>
-        <input type="text" id="tech-del-confirm" class="field" placeholder="${t ? UI.esc(t.name) : 'сначала выберите аккаунт'}" ${t ? '' : 'disabled'}>
-        <button class="btn btn-red mt" id="tech-del-go" style="width:100%" ${t ? '' : 'disabled'}>
-          🗑 Удалить аккаунт навсегда
-        </button>
-      </div>
-
-      <!-- База данных: копии и снимки. Отдельная вкладка ради трёх
-           кнопок не нужна — блок живёт здесь и грузится отдельно -->
-      ${Admin.can('security') ? `
-      <div class="card">
-        <div class="name">📧 Подтверждение почты</div>
-        <p class="muted small mt">Состояние отправки писем и игроки, застрявшие на подтверждении.</p>
-        <button class="btn btn-inline mt" id="mail-check">Проверить</button>
-        <div id="mail-box" class="mt"></div>
-      </div>` : ''}
-
-      ${(Admin.me && Admin.me.staffRole === 'owner') ? `
-      <div class="card">
-        <div class="name">📧 Подтверждение почты</div>
-        <p class="muted small mt">Состояние отправки писем и список тех, кто ещё не подтвердил адрес.</p>
-        <button class="btn btn-inline mt" id="mail-check">Проверить</button>
-        <div id="mail-box" class="mt"></div>
-      </div>` : ''}
-
-      ${(Admin.me && Admin.me.staffRole === 'owner') ? `
-      <div class="card">
-        <div class="name">⚔ Проверка очередей боёв</div>
-        <p class="muted small mt">Состояние арены и групповых боёв. Если участники висят,
-        а таймер стоит — смотрите сюда.</p>
-        <div class="mt">
-          <button class="btn btn-inline" id="lobby-check">Проверить</button>
-          <button class="btn btn-inline btn-red" id="lobby-reset">Сбросить очереди</button>
-        </div>
-        <div id="lobby-box" class="mt"></div>
-      </div>
-      <div class="card">
-        <div class="name">🌐 Проверка сети</div>
-        <p class="muted small mt">Показывает, что сервер получает от прокси. Если у всех игроков
-        один и тот же адрес — смотрите сюда.</p>
-        <button class="btn btn-inline mt" id="net-check">Проверить</button>
-        <div id="net-box" class="mt"></div>
-      </div>` : ''}
-
-      ${Admin.can('security') ? `
-      <div class="card">
-        <div class="name">👥 Несколько аккаунтов с одного адреса</div>
-        <p class="muted small mt">Помогает заметить мультоводов. Но помните: за одним домашним
-        роутером сидит семья, а мобильные операторы выдают общий адрес сотням абонентов —
-        совпадение само по себе ничего не доказывает.</p>
-        <div class="field-row mt">
-          <select id="mc-min" class="field">
-            <option value="2">от 2 аккаунтов</option>
-            <option value="3" selected>от 3 аккаунтов</option>
-            <option value="5">от 5 аккаунтов</option>
-          </select>
-          <button class="btn btn-inline" id="mc-go">Показать</button>
-        </div>
-        <div id="mc-box" class="mt"></div>
-      </div>` : ''}
-
-      <div class="card" id="db-block"><div class="muted small">База данных…</div></div>`;
-
-    // Поиск игрока
-    const doSearch = async () => {
-      const q = document.getElementById('tech-q').value.trim();
-      const box = document.getElementById('tech-results');
-      box.innerHTML = '<div class="loading">Поиск…</div>';
+  // Обработчики карточек проверок. Каждый живёт по своему id и молча
+  // пропускается, если карточки нет: набор зависит от прав сотрудника,
+  // и обращение к отсутствующей кнопке роняло бы весь экран.
+  _bindTechChecks() {
+    // Античит: сводка находок
+    const acGo = document.getElementById('ac-go');
+    if (acGo) acGo.onclick = async () => {
+      const box = document.getElementById('ac-box');
+      box.innerHTML = '<div class="loading">Смотрю журнал…</div>';
       try {
-        const { players } = await API.get('/api/admin/players?q=' + encodeURIComponent(q));
-        if (!players.length) { box.innerHTML = '<p class="muted small">Никого не найдено.</p>'; return; }
-        box.innerHTML = players.slice(0, 20).map((p) => `
-          <div class="list-row" style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
-            <div class="grow">${UI.esc(p.name)} ${p.isAdmin ? '<span class="badge">👑</span>' : ''}
-              <span class="muted small">Ур. ${p.level} · ${p.id}</span></div>
-            <button class="btn btn-inline" data-pick="${p.id}">Выбрать</button>
+        const hours = document.getElementById('ac-hours').value;
+        const r = await API.get('/api/admin/anticheat?hours=' + hours + '&limit=40');
+        if (!r.players.length) {
+          box.innerHTML = `<p class="small" style="color:var(--green)">✅ Ничего подозрительного.
+            Просмотрено игроков: ${r.scannedPlayers}.</p>`;
+          return;
+        }
+        const col = (s) => s === 'high' ? 'var(--red)' : (s === 'mid' ? 'var(--gold)' : 'var(--muted)');
+        box.innerHTML = `<p class="small muted">Просмотрено игроков: ${r.scannedPlayers}.
+          С находками: ${r.players.length}. Сверху — самые тяжёлые.</p>` +
+          r.players.map((p) => `
+          <div class="card mt" style="border-color:${col(p.findings[0].severity)}">
+            <div class="name">${UI.esc(p.name)} <span class="muted small">· вес ${p.score} · ${p.findings.length} находок</span></div>
+            ${p.findings.map((f) => `<div class="mt small">
+              <b style="color:${col(f.severity)}">${UI.esc(f.title)}</b>
+              <div class="muted">${UI.esc(f.detail)}</div>
+            </div>`).join('')}
           </div>`).join('');
-        box.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
-          Admin.techTarget = players.find((x) => x.id === b.dataset.pick);
-          Admin.renderTab();
-        });
       } catch (e) { box.innerHTML = `<p class="small" style="color:var(--red)">⛔ ${UI.esc(e.message)}</p>`; }
     };
+
     // Состояние подтверждения почты
     const mailGo = document.getElementById('mail-check');
     if (mailGo) {
@@ -1371,7 +1628,229 @@ const Admin = {
           : '<p class="muted small">Совпадений не найдено.</p>';
       } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
     };
+  },
 
+  // ── Карточки проверок («Техника») ────────────────────────────────
+  // Вынесено из renderTech, чтобы панель v2 показывала ТЕ ЖЕ карточки
+  // тем же кодом. Дублировать их было нельзя: это диагностика, которую
+  // правят по факту аварии, и две расходящиеся копии означали бы, что
+  // однажды чинишь не тот экран.
+  _techChecksHtml() {
+    return `
+      ${(Admin.can('security') || (Admin.me && Admin.me.staffRole === 'owner')) ? `
+      <div class="card">
+        <div class="name">📧 Подтверждение почты</div>
+        <p class="muted small mt">Состояние отправки писем и игроки, застрявшие на подтверждении.</p>
+        <button class="btn btn-inline mt" id="mail-check">Проверить</button>
+        <div id="mail-box" class="mt"></div>
+      </div>` : ''}
+
+      ${(Admin.me && Admin.me.staffRole === 'owner') ? `
+      <div class="card">
+        <div class="name">⚔ Проверка очередей боёв</div>
+        <p class="muted small mt">Состояние арены и групповых боёв. Если участники висят,
+        а таймер стоит — смотрите сюда.</p>
+        <div class="mt">
+          <button class="btn btn-inline" id="lobby-check">Проверить</button>
+          <button class="btn btn-inline btn-red" id="lobby-reset">Сбросить очереди</button>
+        </div>
+        <div id="lobby-box" class="mt"></div>
+      </div>
+      <div class="card">
+        <div class="name">🌐 Проверка сети</div>
+        <p class="muted small mt">Показывает, что сервер получает от прокси. Если у всех игроков
+        один и тот же адрес — смотрите сюда.</p>
+        <button class="btn btn-inline mt" id="net-check">Проверить</button>
+        <div id="net-box" class="mt"></div>
+      </div>` : ''}
+
+      ${Admin.can('security') ? `
+      <div class="card">
+        <div class="name">👥 Несколько аккаунтов с одного адреса</div>
+        <p class="muted small mt">Помогает заметить мультоводов. Но помните: за одним домашним
+        роутером сидит семья, а мобильные операторы выдают общий адрес сотням абонентов —
+        совпадение само по себе ничего не доказывает.</p>
+        <div class="field-row mt">
+          <select id="mc-min" class="field">
+            <option value="2">от 2 аккаунтов</option>
+            <option value="3" selected>от 3 аккаунтов</option>
+            <option value="5">от 5 аккаунтов</option>
+          </select>
+          <button class="btn btn-inline" id="mc-go">Показать</button>
+        </div>
+        <div id="mc-box" class="mt"></div>
+      </div>` : ''}
+
+      ${Admin.can('security') ? `
+      <div class="card" style="border-color:var(--red)">
+        <div class="name">🛡 Античит: подозрительные приросты</div>
+        <p class="muted small mt">Сверяет журнал действий со снимками счёта: откуда взялось золото,
+        не выросли ли деньги быстрее любого законного источника, нет ли машинной плотности действий,
+        не сломалась ли формула. <b>Никого не банит</b> — только показывает доказательства,
+        решение за вами.</p>
+        <div class="field-row mt">
+          <select id="ac-hours" class="field">
+            <option value="6">за 6 часов</option>
+            <option value="24" selected>за сутки</option>
+            <option value="72">за 3 дня</option>
+            <option value="168">за неделю</option>
+          </select>
+          <button class="btn btn-inline btn-orange" id="ac-go">Проверить</button>
+        </div>
+        <div id="ac-box" class="mt"></div>
+      </div>` : ''}`;
+  },
+
+  async renderDbBlock() {
+    const box = document.getElementById('db-block');
+    if (!box) return;
+    if (!Admin.can('database')) { box.style.display = 'none'; return; }
+
+    let d = null;
+    try { d = await API.get('/api/admin/db/stats'); }
+    catch (e) { box.innerHTML = `<div class="muted small">База: ${UI.esc(e.message)}</div>`; return; }
+    const st = d.stats || {};
+    const mb = (n) => (n / 1024 / 1024).toFixed(1) + ' МБ';
+
+    if (st.driver !== 'sqlite') {
+      box.innerHTML = `<div class="name">🗄 База данных</div>
+        <p class="muted small mt">Сейчас <b>${UI.esc(String(st.driver || '—'))}</b>.
+        Копии и снимки доступны после перехода на свою базу.</p>`;
+      return;
+    }
+
+    let snaps = { snapshots: [] };
+    try { snaps = await API.get('/api/admin/db/snapshots?limit=8'); } catch (e) {}
+
+    box.innerHTML = `
+      <div class="db-line">
+        <div class="name" style="margin:0">🗄 База данных</div>
+        <span class="db-ok">${st.integrity === 'ok' ? '● в порядке' : '● ' + UI.esc(String(st.integrity))}</span>
+        <span class="muted small">${mb(st.sizeBytes || 0)} · игроков ${UI.fmtNum(st.players || 0)} · копий ${(d.backups || []).length}</span>
+        <button class="btn btn-inline" id="db-backup" style="margin-left:auto">💾 Копия</button>
+      </div>
+      <p class="muted small mt">Копии создаются сами: <b>быстрые</b> (только прогресс игроков, без журнала) —
+      каждые 15 минут, <b>полные</b> — раз в 6 часов. Кнопка нужна перед рискованными действиями.
+      Для разбора по одному игроку точнее любой копии — «История состояния игрока»
+      в разделе «Игроки»: там точность 5 минут и полный состав имущества.</p>
+      ${Admin._backupHistoryHtml(d.backups)}
+      ${Admin._recoverHtml(d.backups)}
+      ${Admin._logKeepHtml(d.logs)}
+      ${Admin._offsiteHtml(d.offsite)}
+      ${(snaps.snapshots || []).length ? `
+        <details class="db-more mt">
+          <summary>Снимки коллекций (${snaps.snapshots.length})</summary>
+          <div class="mt">
+            ${snaps.snapshots.map((sn) => `
+              <div class="adm-measure">
+                <span class="grow small">#${sn.seq} <b>${UI.esc(sn.collection)}</b> <span class="muted">${UI.esc(sn.label)}</span></span>
+                <span class="muted small">${new Date(sn.at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                <button class="btn btn-red btn-inline" data-restore="${sn.seq}" data-coll="${UI.esc(sn.collection)}">Откатить</button>
+              </div>`).join('')}
+          </div>
+        </details>` : ''}`;
+
+    Admin._bindRecoverForm();
+
+    const bb = document.getElementById('db-backup');
+    if (bb) bb.onclick = async () => {
+      bb.disabled = true;
+      try { await API.post('/api/admin/db/backup', {}); UI.toast('💾 Копия создана'); Admin.renderDbBlock(); }
+      catch (e) { UI.toast('⛔ ' + e.message); bb.disabled = false; }
+    };
+    box.querySelectorAll('[data-restore]').forEach((b) => {
+      b.onclick = async () => {
+        if (!await UI.confirm(
+          `Откатить коллекцию <b>${UI.esc(b.dataset.coll)}</b> к снимку #${b.dataset.restore}?<br>` +
+          `<span class="muted small">Перед откатом создаётся копия всей базы — действие можно отменить.</span>`,
+          { title: 'Откат из снимка', icon: '♻️', html: true, okText: 'Откатить', danger: true })) return;
+        try {
+          await API.post('/api/admin/db/restore', { seq: Number(b.dataset.restore), collection: b.dataset.coll });
+          UI.toast('♻️ Откачено');
+          Admin.renderDbBlock();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+  },
+
+  renderTech(c) {
+    const t = Admin.techTarget;
+    // Блок базы данных доезжает следом отдельным запросом — он нужен
+    // редко, и грузить его при каждом открытии вкладки незачем
+    setTimeout(() => Admin.renderDbBlock(), 0);
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🔎 Выбор аккаунта</div>
+        <p class="muted small mt">Найдите игрока по позывному — он станет целью операций ниже.</p>
+        <div class="field-row mt">
+          <input type="text" id="tech-q" class="field" placeholder="Позывной игрока…" style="flex:1"
+                 value="${t ? UI.esc(t.name) : ''}">
+          <button class="btn btn-orange btn-inline" id="tech-search">🔍 Найти</button>
+        </div>
+        <div id="tech-results" class="mt"></div>
+        ${t ? `
+        <div class="card mt" style="border-color:var(--gold);background:rgba(255,180,0,.06)">
+          <div class="name">Выбран: ${UI.esc(t.name)} ${t.isAdmin ? '<span class="badge">👑 админ</span>' : ''} ${t.banned ? '<span class="badge" style="background:var(--red)">заблокирован</span>' : ''}</div>
+          <div class="muted small mt">ID: <code>${UI.esc(t.id)}</code> · Ур. ${t.level} · ${t.online ? 'онлайн' : 'не в сети'}</div>
+        </div>` : '<p class="muted small mt">Аккаунт не выбран.</p>'}
+      </div>
+
+      <div class="card" style="margin-top:16px;border-color:var(--orange-1)">
+        <div class="name">🔑 Установить пароль</div>
+        <p class="muted small mt">Для случаев, когда игрок забыл пароль, а почта недоступна. Старый пароль не нужен. Минимум 8 символов. Все активные сессии игрока будут сброшены — войти можно будет только с новым паролем.</p>
+        <label class="field-label">Новый пароль для игрока</label>
+        <div class="field-row">
+          <input type="password" id="tech-pass" class="field" placeholder="новый пароль…" style="flex:1" autocomplete="new-password" ${t ? '' : 'disabled'}>
+          <button class="btn btn-inline" id="tech-pass-eye" title="Показать пароль">👁</button>
+        </div>
+        <button class="btn btn-orange mt" id="tech-pass-go" style="width:100%" ${t ? '' : 'disabled'}>
+          🔑 Установить пароль${t ? ` игроку «${UI.esc(t.name)}»` : ''}
+        </button>
+      </div>
+
+      <div class="card" style="margin-top:16px;border-color:var(--red)">
+        <div class="name" style="color:var(--red)">🗑 Полное удаление аккаунта</div>
+        <p class="muted small mt">Аккаунт стирается из игры целиком: почта, уведомления, санкции, награды, обращения, участие в боях и сообщения в чате. Позывной и email освобождаются, вход становится невозможен — сервер отвечает так, будто такого игрока никогда не было. <b style="color:var(--red)">Необратимо.</b> Если нужно лишь обнулить прогресс — используйте «Обнулить аккаунт» во вкладке «Игроки».</p>
+        <label class="field-label">Подтверждение: введите позывной игрока точь-в-точь</label>
+        <input type="text" id="tech-del-confirm" class="field" placeholder="${t ? UI.esc(t.name) : 'сначала выберите аккаунт'}" ${t ? '' : 'disabled'}>
+        <button class="btn btn-red mt" id="tech-del-go" style="width:100%" ${t ? '' : 'disabled'}>
+          🗑 Удалить аккаунт навсегда
+        </button>
+      </div>
+
+      <!-- База данных: копии и снимки. Отдельная вкладка ради трёх
+           кнопок не нужна — блок живёт здесь и грузится отдельно -->
+      <!-- ОДИН блок почты. Раньше их было два: один по праву
+           «Безопасность», второй для владельца. Владелец подходит под оба
+           условия, поэтому у него рендерились оба — с ОДИНАКОВЫМИ id.
+           getElementById возвращает первый элемент, и вторая кнопка была
+           мёртвой: нажатие не делало ничего. Условие теперь одно. -->
+      ${Admin._techChecksHtml()}
+      <div class="card" id="db-block"><div class="muted small">База данных…</div></div>`;
+
+    // Обработчики карточек проверок — общие с панелью v2
+    Admin._bindTechChecks();
+
+    // Поиск игрока
+    const doSearch = async () => {
+      const q = document.getElementById('tech-q').value.trim();
+      const box = document.getElementById('tech-results');
+      box.innerHTML = '<div class="loading">Поиск…</div>';
+      try {
+        const { players } = await API.get('/api/admin/players?q=' + encodeURIComponent(q));
+        if (!players.length) { box.innerHTML = '<p class="muted small">Никого не найдено.</p>'; return; }
+        box.innerHTML = players.slice(0, 20).map((p) => `
+          <div class="list-row" style="padding:6px 0;border-bottom:1px solid var(--border-dim)">
+            <div class="grow">${UI.esc(p.name)} ${p.isAdmin ? '<span class="badge">👑</span>' : ''}
+              <span class="muted small">Ур. ${p.level} · ${p.id}</span></div>
+            <button class="btn btn-inline" data-pick="${p.id}">Выбрать</button>
+          </div>`).join('');
+        box.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
+          Admin.techTarget = players.find((x) => x.id === b.dataset.pick);
+          Admin.renderTab();
+        });
+      } catch (e) { box.innerHTML = `<p class="small" style="color:var(--red)">⛔ ${UI.esc(e.message)}</p>`; }
+    };
     document.getElementById('tech-search').onclick = doSearch;
     document.getElementById('tech-q').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
 
@@ -1387,7 +1866,13 @@ const Admin = {
     document.getElementById('tech-pass-go').onclick = async () => {
       const password = passInput.value;
       if (password.length < 8) return UI.toast('⛔ Пароль: минимум 8 символов');
-      if (!confirm(`Установить новый пароль игроку «${t.name}»?\n\nВсе его активные сессии будут сброшены.`)) return;
+      // Здесь оставался браузерный confirm() — единственный в панели.
+      // Его убрали отовсюду не из вкусовщины: он выглядит как системное
+      // окно, подтверждается случайным Enter и не объясняет последствий.
+      if (!await UI.confirm(`Установить новый пароль игроку «${t.name}»?\n\n`
+        + 'Все активные сессии игрока будут сброшены — войти можно будет только с новым паролем.', {
+        title: 'Смена пароля', icon: '🔑', okText: 'Установить', danger: true,
+      })) return;
       try {
         const r = await API.post('/api/admin/set-password', { userId: t.id, password });
         UI.toast((r.notices && r.notices[0]) || '🔑 Пароль установлен');
@@ -1401,7 +1886,9 @@ const Admin = {
       if (confirmName.toLowerCase() !== String(t.name).toLowerCase()) {
         return UI.toast('⛔ Позывной в поле подтверждения не совпадает');
       }
-      if (!confirm(`УДАЛИТЬ аккаунт «${t.name}» навсегда?\n\nВосстановить будет невозможно. Игрок не сможет войти в игру, позывной освободится.`)) return;
+      if (!await Admin.danger({ title: `Удалить «${t.name}» навсегда`, word: 'УДАЛИТЬ',
+        what: 'Аккаунт стирается из игры целиком. Позывной и почта освободятся, вход станет невозможен.',
+        scope: `игрока «${t.name}»` })) return;
       try {
         const r = await API.post('/api/admin/delete-account', { userId: t.id, confirmName });
         UI.toast((r.notices && r.notices[0]) || '🗑 Аккаунт удалён');
@@ -1469,7 +1956,9 @@ const Admin = {
       </div>`;
     document.getElementById('grant-all-go').onclick = () => Admin.submitGrantAll();
     const wipe = async (what, label) => {
-      if (!confirm(`${label}\n\nЭто затронет ВСЕХ игроков и необратимо. Продолжить?`)) return;
+      if (!await Admin.danger({ title: label, word: 'СТЕРЕТЬ',
+        what: 'Группы стираются целиком: состав, звания, казна, история боёв. Игроки создают их заново с нуля.',
+        scope: 'всех игроков сервера' })) return;
       try { const r = await API.post('/api/admin/wipe-groups', { what }); UI.toast('🧹 Очищено: ' + (r.cleared || []).join(', ')); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
@@ -1480,14 +1969,21 @@ const Admin = {
       const param = document.getElementById('rp-param').value;
       const userId = document.getElementById('rp-userid').value.trim();
       const scope = userId ? `у игрока ${userId}` : 'у ВСЕХ игроков';
-      if (!confirm(`Сбросить «${param}» ${scope}?\n\nЭто необратимо. Продолжить?`)) return;
+      if (!await Admin.danger({ title: `Сбросить «${param}»`, word: 'СБРОСИТЬ',
+        what: 'Значение параметра вернётся к начальному.', scope })) return;
       try {
-        const r = await API.post('/api/admin/reset-param', userId ? { param, userId } : { param });
+        // applyToAll передаём ТОЛЬКО когда охват действительно «все» и
+        // сотрудник это подтвердил: на сервере пустой userId больше не
+        // означает массовую операцию, чтобы опечатка не задела всех
+        const r = await API.post('/api/admin/reset-param',
+          userId ? { param, userId } : { param, applyToAll: true });
         UI.toast(`♻️ «${param}» сброшен (${r.count})`);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     document.getElementById('rm-all').onclick = async () => {
-      if (!confirm('Сбросить ВСЕ миссии у ВСЕХ игроков?\n\nНеобратимо. Продолжить?')) return;
+      if (!await Admin.danger({ title: 'Сбросить все миссии', word: 'СБРОСИТЬ',
+        what: 'Прогресс по спецоперациям обнулится, награды за уже пройденное не вернутся.',
+        scope: 'всех игроков сервера' })) return;
       try { const r = await API.post('/api/admin/reset-missions', {}); UI.toast(`📋 Миссии сброшены у ${r.count} игроков`); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
@@ -1797,7 +2293,10 @@ const Admin = {
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     document.getElementById('ev-stop').onclick = async () => {
-      if (!confirm('Остановить событие без награды?')) return;
+      if (!await UI.confirm('Остановить событие без награды?\n\n'
+        + 'Игроки, бившие босса, не получат ничего — урон просто пропадёт.', {
+        title: 'Остановка события', icon: '🛑', okText: 'Остановить', danger: true,
+      })) return;
       try { await API.post('/api/admin/event/stop'); UI.toast('🛑 Событие остановлено'); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
@@ -1831,7 +2330,9 @@ const Admin = {
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     document.getElementById('se-end').onclick = async () => {
-      if (!confirm('Завершить ТЕКУЩУЮ неделю сейчас?\n\nТоп-3 каждой категории получат награды, все метрики обнулятся. Продолжить?')) return;
+      if (!await Admin.danger({ title: 'Завершить неделю досрочно', word: 'ЗАВЕРШИТЬ',
+        what: 'Топ-3 каждой категории получат награды, все недельные метрики обнулятся.',
+        scope: 'сезонный рейтинг всех игроков' })) return;
       try {
         const r = await API.post('/api/admin/season/end', {});
         const n = Object.values(r.winners || {}).reduce((s, a) => s + a.length, 0);
@@ -1951,7 +2452,10 @@ const Admin = {
           const isBanned = btn.dataset.banned === '1';
           const name = btn.dataset.name;
           if (isBanned) {
-            if (!confirm(`Разбанить игрока «${name}»?`)) return;
+            if (!await UI.confirm(`Разбанить игрока «${name}»?\n\n`
+              + 'Он сразу сможет войти. Запись о снятии бана попадёт в журнал сотрудников.', {
+              title: 'Снятие блокировки', icon: '🔓', okText: 'Разбанить',
+            })) return;
             try { await API.post('/api/admin/ban', { userId: btn.dataset.ban, banned: false }); Admin.loadPlayers(); }
             catch (e) { UI.toast('⛔ ' + e.message); }
           } else {
@@ -2010,8 +2514,10 @@ const Admin = {
       box.querySelectorAll('[data-reset]').forEach(btn => {
         btn.onclick = async () => {
           const name = btn.dataset.name;
-          if (!confirm(`⚠️ ОБНУЛИТЬ аккаунт «${name}»?\n\nВсе характеристики, техника, постройки, прогресс будут сброшены к началу игры. Учётные данные (логин/пароль) сохранятся. Действие необратимо!`)) return;
-          if (!confirm(`Точно обнулить «${name}»? Это нельзя отменить.`)) return;
+          if (!await Admin.danger({ title: `Обнулить аккаунт «${name}»`, word: 'ОБНУЛИТЬ',
+            what: 'Характеристики, техника, постройки и весь прогресс вернутся к началу игры. ' +
+                  'Логин и пароль сохранятся — игрок сможет войти, но начнёт заново.',
+            scope: `игрока «${name}»` })) return;
           try {
             await API.post('/api/admin/reset', { userId: btn.dataset.reset });
             UI.toast(`♻️ Аккаунт «${name}» обнулён`);
@@ -2140,7 +2646,13 @@ const Admin = {
   },
 
   // ── Вкладка «Легионы»: ресурсы, уровень, слава, постройки ──
-  async renderLegions(c) {
+  // opts: { legion — какой легион открыт, open(id) — как переходить }.
+  // Раньше выбранный легион жил в Admin._legEdit, в памяти вкладки:
+  // ссылку на редактор конкретного легиона было не переслать.
+  async renderLegions(c, opts) {
+    opts = opts || {};
+    const picked = opts.legion !== undefined ? opts.legion : Admin._legEdit;
+    const open = opts.open || ((id) => { Admin._legEdit = id || null; Admin.renderLegions(c); });
     c.innerHTML = '<p class="muted center">Загрузка…</p>';
     let data;
     try { data = await API.get('/api/admin/groups/legion'); }
@@ -2148,8 +2660,8 @@ const Admin = {
     const legions = (data.groups || []);
 
     // Если выбран конкретный легион — показываем редактор
-    if (Admin._legEdit) {
-      return Admin._renderLegionEditor(c, Admin._legEdit);
+    if (picked) {
+      return Admin._renderLegionEditor(c, picked, open);
     }
 
     if (!legions.length) {
@@ -2168,16 +2680,20 @@ const Admin = {
         </div>`).join('')}`;
 
     c.querySelectorAll('[data-leg]').forEach(el => {
-      el.onclick = () => { Admin._legEdit = el.dataset.leg; Admin.renderLegions(c); };
+      el.onclick = () => open(el.dataset.leg);
     });
   },
 
-  async _renderLegionEditor(c, legionId) {
+  async _renderLegionEditor(c, legionId, open) {
+    // open(id) — как переходить между списком и редактором. По умолчанию
+    // работаем как раньше, через переменную в памяти; панель v2 передаёт
+    // переход через адрес, чтобы ссылка на конкретный легион жила.
+    open = open || ((id) => { Admin._legEdit = id || null; Admin.renderLegions(c); });
     c.innerHTML = '<p class="muted center">Загрузка…</p>';
     let s;
     try { s = await API.get('/api/admin/legion/' + legionId + '/state'); }
     catch (e) { c.innerHTML = `<p class="muted center">Не удалось загрузить легион. <a href="#" id="leg-back">Назад</a></p>`;
-      const b = document.getElementById('leg-back'); if (b) b.onclick = (ev) => { ev.preventDefault(); Admin._legEdit = null; Admin.renderLegions(c); };
+      const b = document.getElementById('leg-back'); if (b) b.onclick = (ev) => { ev.preventDefault(); open(''); };
       return; }
 
     const numField = (id, label, val, hint) => `
@@ -2222,7 +2738,7 @@ const Admin = {
         <p class="muted small mt center">Пустые поля не меняются. Значения задаются абсолютно.</p>
       </div>`;
 
-    document.getElementById('leg-back').onclick = () => { Admin._legEdit = null; Admin.renderLegions(c); };
+    document.getElementById('leg-back').onclick = () => open('');
 
     document.getElementById('leg-save').onclick = async () => {
       const g = (id) => { const el = document.getElementById('leg-' + id); return el ? el.value : ''; };
@@ -2236,7 +2752,7 @@ const Admin = {
       try {
         await API.post('/api/admin/legion/set', { legionId, patch });
         UI.toast('✅ Легион обновлён');
-        Admin._renderLegionEditor(c, legionId);
+        Admin._renderLegionEditor(c, legionId, open);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   },
@@ -2305,8 +2821,15 @@ const Admin = {
   },
 
   // ── Вкладка «Турниры»: назначить бой между двумя легионами ──
-  async renderTournament(c) {
+  // opts: { mode — какой режим открыт, setMode(id) — как переключать }.
+  // Режим хранился в Admin._trnMode, то есть в памяти вкладки: ссылку
+  // на расписание турниров было не переслать. Панель v2 передаёт его
+  // из адреса, старая панель — как раньше, из своей переменной.
+  async renderTournament(c, opts) {
+    opts = opts || {};
+    if (opts.mode) Admin._trnMode = opts.mode;
     Admin._trnMode = Admin._trnMode || 'quick';
+    const setMode = opts.setMode || ((id) => { Admin._trnMode = id; Admin.renderTournament(c); });
     c.innerHTML = '<p class="muted center">Загрузка…</p>';
     let legData, listData;
     try {
@@ -2399,7 +2922,7 @@ const Admin = {
       ${listHtml}`;
 
     // Переключение режимов
-    c.querySelectorAll('[data-trn-mode]').forEach(b => b.onclick = () => { Admin._trnMode = b.dataset.trnMode; Admin.renderTournament(c); });
+    c.querySelectorAll('[data-trn-mode]').forEach(b => b.onclick = () => setMode(b.dataset.trnMode));
 
     // Быстрый бой
     if (Admin._trnMode === 'quick' && withFighters.length >= 2) {
@@ -2761,6 +3284,266 @@ const Admin = {
       };
     });
   },
+  // ═══ ВКЛАДКА: ЖАЛОБЫ ═════════════════════════════════════════════
+  // Очередь сгруппирована по НАРУШИТЕЛЮ, а не по жалобе: одна жалоба —
+  // шум, пять от разных людей — сигнал. Наверху те, на кого пожаловалось
+  // больше всего РАЗНЫХ игроков (сговором такое накрутить труднее).
+
+  _rpAgo(ms) {
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 60) return `${m} мин назад`;
+    const h = Math.round(m / 60);
+    return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
+  },
+
+  // Одна жалоба внутри группы
+  _rpItemHtml(r) {
+    // Много отклонённых жалоб у автора — повод отнестись к сигналу спокойнее
+    const bad = r.rejectedByAuthor >= 3
+      ? `<span class="badge" style="background:var(--red)" title="Столько жалоб этого игрока уже отклонили">
+           ложных: ${r.rejectedByAuthor}</span>` : '';
+    const state = r.status === 'new' ? ''
+      : `<span class="badge">${r.status === 'accepted' ? '✅ подтверждена' : '📭 отклонена'}${r.handledBy ? ' · ' + UI.esc(r.handledBy) : ''}</span>`;
+    return `<div class="mt" style="border-top:1px solid var(--border-dim);padding-top:6px">
+      <div class="small"><b>${UI.esc(r.reason)}</b> ${UI.esc(r.where)} ·
+        от <a href="#" data-card="${UI.esc(r.fromId)}">${UI.esc(r.fromName)}</a> ${bad}
+        <span class="muted">${Admin._rpAgo(r.at)}</span> ${state}</div>
+      <div class="small" style="white-space:pre-wrap">${UI.esc(r.text)}</div>
+      ${r.verdict ? `<div class="small muted">Комментарий: ${UI.esc(r.verdict)}</div>` : ''}
+      ${r.status === 'new' ? `<div class="mt">
+        <button class="btn btn-inline btn-green" data-acc="${UI.esc(r.id)}">✅ Подтвердить</button>
+        <button class="btn btn-inline" data-rej="${UI.esc(r.id)}">📭 Отклонить</button>
+      </div>` : ''}
+    </div>`;
+  },
+
+  _rpGroupHtml(g) {
+    // Цвет рамки по числу разных жалобщиков: 1 — обычная, 3+ — красная
+    const hot = g.uniqueReporters >= 3 ? 'var(--red)' : (g.uniqueReporters >= 2 ? 'var(--gold)' : 'var(--border)');
+    return `<div class="card mt" style="border-color:${hot}">
+      <div class="name">
+        <a href="#" data-card="${UI.esc(g.targetId)}">${UI.esc(g.targetName)}</a>
+        ${g.banned ? '<span class="badge" style="background:var(--red)">заблокирован</span>' : ''}
+        ${!g.exists ? '<span class="badge">аккаунт удалён</span>' : ''}
+        <span class="muted small">· ур. ${g.level} · жалоб ${g.total} от ${g.uniqueReporters} разных игроков
+        · последняя ${Admin._rpAgo(g.lastAt)}</span>
+      </div>
+      ${g.uniqueReporters >= 3 ? `<div class="small" style="color:var(--red)">
+        ⚠️ На этого игрока жалуются много и независимо — стоит посмотреть в первую очередь.</div>` : ''}
+      ${g.reports.map((r) => Admin._rpItemHtml(r)).join('')}
+      ${g.reports.some((r) => r.status === 'new') ? `<div class="mt">
+        <button class="btn btn-inline" data-all-rej="${UI.esc(g.targetId)}">📭 Отклонить все по этому игроку</button>
+      </div>` : ''}
+    </div>`;
+  },
+
+  async renderReports(c) {
+    c.innerHTML = '<div class="loading">Загружаю очередь…</div>';
+    const status = Admin._rpStatus || 'new';
+    let d = null;
+    try { d = await API.get('/api/mod/reports?status=' + status + '&limit=60'); }
+    catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+
+    const filt = [['new', `🆕 Новые (${d.counts.new})`], ['accepted', `✅ Подтверждённые (${d.counts.accepted})`],
+                  ['rejected', `📭 Отклонённые (${d.counts.rejected})`], ['all', `Все (${d.counts.total})`]];
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">📨 Жалобы игроков</div>
+        <p class="muted small mt">Сгруппированы по тому, на кого жалуются. Сверху — те, на кого пожаловалось
+        больше всего <b>разных</b> игроков: сговором такое накрутить труднее, чем пять жалоб с одного аккаунта.
+        <b>Санкции здесь не выдаются</b> — решение по жалобе только помечает её разобранной,
+        наказание выдаётся во вкладке «Игроки» осознанно и отдельно.</p>
+        <div class="mt" style="display:flex;gap:6px;flex-wrap:wrap">
+          ${filt.map(([id, label]) => `<button class="btn btn-inline ${status === id ? 'btn-orange' : ''}"
+            data-filt="${id}">${label}</button>`).join('')}
+        </div>
+      </div>
+      ${d.groups.length ? d.groups.map((g) => Admin._rpGroupHtml(g)).join('')
+        : `<div class="card mt"><p class="muted">${status === 'new'
+            ? '✅ Новых жалоб нет — очередь разобрана.' : 'Здесь пусто.'}</p></div>`}`;
+
+    c.querySelectorAll('[data-filt]').forEach((b) => b.onclick = () => {
+      Admin._rpStatus = b.dataset.filt; Admin.renderReports(c);
+    });
+    c.querySelectorAll('[data-card]').forEach((a) => a.onclick = (ev) => {
+      ev.preventDefault(); Admin.showPlayerCard(a.dataset.card);
+    });
+    const decide = async (body, question) => {
+      const verdict = await UI.prompt(question,
+        { title: 'Решение по жалобе', icon: '📨', multiline: true, maxLength: 300,
+          placeholder: 'Комментарий жалобщику (можно оставить пустым)', okText: 'Применить' });
+      if (verdict === null) return;
+      try {
+        await API.post(body.url, { ...body.data, verdict });
+        Admin.renderReports(c);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    c.querySelectorAll('[data-acc]').forEach((b) => b.onclick = () => decide(
+      { url: '/api/mod/report/resolve', data: { id: b.dataset.acc, accept: true } },
+      'Жалоба обоснована. Жалобщик получит уведомление. Наказание нарушителю выдаётся отдельно.'));
+    c.querySelectorAll('[data-rej]').forEach((b) => b.onclick = () => decide(
+      { url: '/api/mod/report/resolve', data: { id: b.dataset.rej, accept: false } },
+      'Жалоба не подтвердилась. Жалобщик получит уведомление — объясните почему, это учит жаловаться по делу.'));
+    c.querySelectorAll('[data-all-rej]').forEach((b) => b.onclick = () => decide(
+      { url: '/api/mod/report/resolve-all', data: { targetId: b.dataset.allRej, accept: false } },
+      'Отклонить ВСЕ новые жалобы на этого игрока разом.'));
+  },
+
+  // ═══ ВКЛАДКА: АНАЛИТИКА ══════════════════════════════════════════
+  // Не «сколько всего игроков», а «доживают ли новички до второго дня»
+  // и «где они отваливаются». По этим цифрам правится баланс.
+
+  // Число с разделителями разрядов: 1234567 → «1 234 567».
+  // Разделитель — НЕРАЗРЫВНЫЙ пробел ( ): на телефоне обычный пробел
+  // ломал «1 284 500 000» на две строки посреди числа, и одна сумма
+  // читалась как две разные.
+  _anNum(n) {
+    if (n === null || n === undefined || !isFinite(n)) return '—';
+    return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  },
+  // Цвет показателя: зелёный — хорошо, жёлтый — терпимо, красный — беда
+  _anTone(pct, good, soso) {
+    if (pct === null || pct === undefined) return 'var(--muted)';
+    if (pct >= good) return 'var(--green)';
+    return pct >= soso ? 'var(--gold)' : 'var(--red)';
+  },
+
+  _anRetentionHtml(r) {
+    // Ориентиры для браузерных игр: d1 40%+ хорошо, d7 15%+ хорошо
+    const rows = [
+      { k: 'd1',  name: 'Второй день',   good: 40, soso: 25, why: 'вернулся ли игрок хотя бы раз после первого дня' },
+      { k: 'd3',  name: 'Третий день',   good: 25, soso: 15, why: 'пережил ли интерес первых часов' },
+      { k: 'd7',  name: 'Неделя',        good: 15, soso: 8,  why: 'втянулся ли в цикл игры' },
+      { k: 'd30', name: 'Месяц',         good: 8,  soso: 4,  why: 'стал ли постоянным игроком' },
+    ];
+    return `<div class="card">
+      <div class="name">🔁 Удержание новичков</div>
+      <p class="muted small mt">Главная метрика проекта. Если новички не возвращаются на второй день,
+        всё остальное — приток, реклама, баланс поздней игры — не имеет значения.
+        В знаменателе только те, у кого этот день уже наступил.</p>
+      <table class="access-table mt"><tr><th>Рубеж</th><th>Вернулось</th><th>Из скольких</th><th>Доля</th></tr>
+      ${rows.map((x) => { const v = r[x.k] || {}; return `<tr title="${x.why}">
+        <td>${x.name}</td><td>${v.returned || 0}</td><td>${v.eligible || 0}</td>
+        <td style="color:${Admin._anTone(v.pct, x.good, x.soso)};font-weight:600">
+          ${v.pct === null || v.pct === undefined ? '<span class="muted">нет данных</span>' : v.pct + '%'}</td>
+      </tr>`; }).join('')}</table>
+    </div>`;
+  },
+
+  _anFunnelHtml(f) {
+    const max = Math.max(1, ...f.map((s) => s.count));
+    // Самая большая потеря между соседними ступенями — это и есть узкое место
+    let worst = -1, worstDrop = 0;
+    for (let i = 1; i < f.length - 1; i++) {
+      const drop = f[i - 1].count - f[i].count;
+      if (drop > worstDrop) { worstDrop = drop; worst = i; }
+    }
+    return `<div class="card" style="margin-top:16px">
+      <div class="name">🪜 Воронка новичка</div>
+      <p class="muted small mt">Где именно теряются люди. Самая широкая ступенька вниз подсвечена —
+        с неё и стоит начинать правки.</p>
+      ${f.map((s, i) => `<div class="mt" ${i === worst ? 'style="outline:1px solid var(--red);border-radius:6px;padding:4px"' : ''}>
+        <div class="small" style="display:flex;justify-content:space-between">
+          <span>${UI.esc(s.name)} <span class="muted">— ${UI.esc(s.note)}</span></span>
+          <span><b>${s.count}</b> <span class="muted">(${s.pct}%)</span></span>
+        </div>
+        <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden">
+          <div style="height:100%;width:${Math.round(s.count / max * 100)}%;background:${i === worst ? 'var(--red)' : 'var(--orange-1)'}"></div>
+        </div>
+        ${i === worst ? `<div class="small" style="color:var(--red)">⚠️ здесь теряется больше всего: −${worstDrop} чел.</div>` : ''}
+      </div>`).join('')}
+    </div>`;
+  },
+
+  _anLevelsHtml(lv) {
+    const max = Math.max(1, ...lv.map((b) => b.count));
+    return `<div class="card" style="margin-top:16px">
+      <div class="name">📶 Уровни живых игроков</div>
+      <p class="muted small mt">Только те, кто заходил за последние 30 дней: «мёртвые души» искажают
+        картину прогрессии. Провал в середине означает стену в развитии.</p>
+      <div class="mt" style="display:flex;align-items:flex-end;gap:6px;height:110px">
+        ${lv.map((b) => `<div style="flex:1;text-align:center" title="${b.label}: ${b.count}">
+          <div class="small"><b>${b.count}</b></div>
+          <div style="height:${Math.round(b.count / max * 80)}px;background:var(--orange-1);border-radius:3px 3px 0 0;min-height:2px"></div>
+          <div class="small muted">${b.label}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  },
+
+  _anEconomyHtml(e) {
+    const conc = (v) => v === null ? '—' : `<span style="color:${Admin._anTone(100 - v, 60, 40)};font-weight:600">${v}%</span>`;
+    return `<div class="card" style="margin-top:16px">
+      <div class="name">💰 Экономика</div>
+      <p class="muted small mt">Инфляция видна не по среднему, а по концентрации: если верхние 10%
+        держат больше половины денег, новичку в такой экономике делать нечего.
+        Медиана честнее среднего — среднее задирают несколько богачей.</p>
+      <table class="access-table mt"><tr><th></th><th>Всего</th><th>Среднее</th><th>Медиана</th><th>Верх. 10%</th></tr>
+        <tr><td>💵 Деньги</td><td>${Admin._anNum(e.money.total)}</td><td>${Admin._anNum(e.money.avg)}</td>
+            <td>${Admin._anNum(e.money.median)}</td><td>${conc(e.money.top10Pct)}</td></tr>
+        <tr><td>🪙 Золото</td><td>${Admin._anNum(e.gold.total)}</td><td>${Admin._anNum(e.gold.avg)}</td>
+            <td>${Admin._anNum(e.gold.median)}</td><td>${conc(e.gold.top10Pct)}</td></tr>
+      </table>
+      <p class="muted small mt">Считается по ${e.players} игрокам, заходившим за 30 дней. Наличные и банк вместе.</p>
+    </div>`;
+  },
+
+  // График по дням: рисуем polyline руками, без библиотек
+  _anHistoryHtml(h) {
+    if (!h || h.length < 2) {
+      return `<div class="card" style="margin-top:16px"><div class="name">📉 Динамика по дням</div>
+        <p class="muted small mt">История копится с первого дня после обновления: один срез в сутки.
+          Пока записей ${h ? h.length : 0} — график появится, когда наберётся хотя бы два дня.</p></div>`;
+    }
+    const W = 600, H = 120, pad = 4;
+    const line = (key, color) => {
+      const vals = h.map((d) => d[key] || 0);
+      const max = Math.max(1, ...vals);
+      const pts = vals.map((v, i) => {
+        const x = pad + i * (W - 2 * pad) / (vals.length - 1);
+        const y = H - pad - (v / max) * (H - 2 * pad);
+        return `${Math.round(x)},${Math.round(y)}`;
+      }).join(' ');
+      return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>`;
+    };
+    const last = h[h.length - 1];
+    return `<div class="card" style="margin-top:16px">
+      <div class="name">📉 Динамика по дням</div>
+      <p class="muted small mt">Один срез в сутки. <span style="color:var(--orange-1)">■</span> заходило за день ·
+        <span style="color:var(--green)">■</span> заходило за месяц. Важен наклон, а не абсолютные числа.</p>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:120px;margin-top:8px">
+        ${line('mau', 'var(--green)')}${line('dau', 'var(--orange-1)')}
+      </svg>
+      <div class="small muted">${UI.esc(h[0].day)} → ${UI.esc(last.day)} · сегодня DAU ${last.dau}, MAU ${last.mau}, всего ${last.total}</div>
+    </div>`;
+  },
+
+  async renderAnalytics(c) {
+    c.innerHTML = '<div class="loading">Считаю…</div>';
+    let d = null;
+    try { d = await API.get('/api/admin/analytics'); }
+    catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+    const a = d.activity;
+    const tile = (label, value, note) => `<div class="card" style="flex:1;min-width:120px;text-align:center">
+      <div class="muted small">${label}</div><div style="font-size:22px;font-weight:700">${value}</div>
+      <div class="muted small">${note}</div></div>`;
+    c.innerHTML = `
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${tile('Сейчас в игре', a.online, 'за 5 минут')}
+        ${tile('За сутки', a.dau, 'DAU')}
+        ${tile('За неделю', a.wau, 'WAU')}
+        ${tile('За месяц', a.mau, 'MAU')}
+        ${tile('Липкость', a.stickiness === null ? '—' : a.stickiness + '%', 'DAU / MAU')}
+        ${tile('Новых сегодня', a.newToday, `за неделю ${a.newWeek}`)}
+      </div>
+      ${Admin._anRetentionHtml(d.retention)}
+      ${Admin._anFunnelHtml(d.funnel)}
+      ${Admin._anLevelsHtml(d.levels)}
+      ${Admin._anEconomyHtml(d.economy)}
+      ${Admin._anHistoryHtml(d.history)}
+      <p class="muted small mt">Всего аккаунтов: ${a.total}. Боты в расчёт не идут.</p>`;
+  },
+
   renderLogs(c) {
     c.innerHTML = `
       <div class="card">
@@ -2775,11 +3558,20 @@ const Admin = {
           <button class="btn btn-inline" data-filter="battle">⚔️ Бои</button>
           <button class="btn btn-inline" data-filter="legion">🏛 Легион</button>
           <button class="btn btn-inline" data-filter="auth">🔑 Входы</button>
+          <button class="btn btn-inline" data-filter="admin">🛡 Действия сотрудников</button>
         </div>
+        <p class="muted small mt">Здесь действия <b>игроков</b>. Действия сотрудников — выдачи, баны,
+        сбросы — ведутся отдельным журналом во вкладке «Роли»: смешивать их с игровым потоком нельзя,
+        иначе в тысяче строк «купил танк» бан теряется.${(Admin.me && Admin.me.staffRole === 'owner')
+          ? ' <a href="#" id="log-to-staff">Открыть журнал сотрудников →</a>' : ''}</p>
       </div>
       <div id="ad-logs"><p class="muted center">Нажмите «Загрузить».</p></div>`;
 
     Admin._logFilter = 'all';
+    const toStaff = document.getElementById('log-to-staff');
+    if (toStaff) toStaff.onclick = (ev) => {
+      ev.preventDefault(); Admin.tab = 'roles'; Admin.renderTab();
+    };
     document.getElementById('log-load').onclick = () => Admin.loadLogs();
     document.getElementById('log-filters').querySelectorAll('[data-filter]').forEach(btn => {
       btn.onclick = () => {
@@ -2798,20 +3590,23 @@ const Admin = {
     const limit = (document.getElementById('log-limit') || {}).value || 200;
     box.innerHTML = '<div class="loading">Загрузка журнала…</div>';
     try {
-      const { logs } = await API.get(`/api/admin/logs?limit=${limit}${uid ? '&userId=' + encodeURIComponent(uid) : ''}`);
+      // Категория уходит НА СЕРВЕР. Раньше фильтр применялся в браузере к
+      // уже загруженным 200 строкам: «Покупки» показывали пусто, если
+      // игрок за это время воевал, — и это читалось как «покупок не было».
+      const cat = Admin._logFilter || 'all';
+      const r = await API.get(`/api/admin/logs?limit=${limit}&category=${encodeURIComponent(cat)}` +
+                              `${uid ? '&userId=' + encodeURIComponent(uid) : ''}`);
+      const filtered = r.logs || [];
 
-      // Фильтрация по категории
-      const filterFn = {
-        all:    () => true,
-        buy:    e => /\/(buy|build|container|bid|workshop|deposit|heal)/.test(e.path),
-        battle: e => /\/(attack|fatality|war|battle)/.test(e.path),
-        legion: e => /\/legion/.test(e.path),
-        auth:   e => /\/(login|register)/.test(e.path),
-      }[Admin._logFilter || 'all'];
-
-      const filtered = logs.filter(filterFn || (() => true));
-
-      if (!filtered.length) { box.innerHTML = '<p class="muted center">Записей нет.</p>'; return; }
+      if (!filtered.length) {
+        box.innerHTML = `<p class="muted center">Записей нет.` +
+          (r.scanned ? ` Просмотрено ${UI.fmtNum(r.scanned)} записей журнала.` : '') + `</p>`;
+        return;
+      }
+      // Если подходящих записей больше, чем влезло в лимит, об этом надо
+      // сказать: иначе сотрудник решит, что видит всё
+      Admin._logMore = r.more ? `Показаны первые ${filtered.length}. Подходящих записей больше — ` +
+        `увеличьте лимит, чтобы увидеть остальные.` : '';
 
       const fmtDate = ts => {
         const d = new Date(ts);
@@ -2837,7 +3632,9 @@ const Admin = {
 
       box.innerHTML = `
         <div class="card adm-log-wrap" style="padding:0;overflow-x:auto">
-          <div style="padding:8px 12px;color:var(--dim);font-size:12px">${filtered.length} записей</div>
+          <div style="padding:8px 12px;color:var(--dim);font-size:12px">${filtered.length} записей${
+            r.scanned && r.category !== 'all' ? ` · отобрано из ${UI.fmtNum(r.scanned)} просмотренных` : ''}${
+            Admin._logMore ? ` · <span style="color:var(--gold)">${UI.esc(Admin._logMore)}</span>` : ''}</div>
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead>
               <tr style="border-bottom:1px solid var(--border);background:var(--card)">

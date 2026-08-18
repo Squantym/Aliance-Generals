@@ -98,6 +98,19 @@ App.screens.auth = async (c) => {
         login: document.getElementById('li-name').value,
         password: document.getElementById('li-pass').value,
       });
+      // Второй фактор: токена ещё нет, есть только пропуск на второй шаг.
+      // Спрашиваем код здесь же, не уводя человека на другой экран.
+      if (r.needTotp) {
+        const code = await UI.prompt(
+          'Введите код из приложения-аутентификатора.\n\n'
+          + 'Потеряли телефон — введите код восстановления.',
+          { title: 'Подтверждение входа', icon: '🔐', okText: 'Войти', maxLength: 20,
+            placeholder: '123 456' });
+        if (code === null) return;
+        const r2 = await API.post('/api/login/totp', { challengeId: r.challengeId, code });
+        await finish(r2.token);
+        return;
+      }
       // Заблокированного впускаем, но показываем только окно с причиной
       // и сроком — так он понимает, что произошло и когда это кончится
       if (r.banned && r.banInfo) {
@@ -615,6 +628,59 @@ App.screens.vip = async (c) => {
   };
 };
 
+// ── Жалоба на игрока ──────────────────────────────────────────────
+// Окно с причиной и описанием. Кнопка есть в профиле обидчика, поэтому
+// «на кого» подставляется само — игроку не нужно вспоминать позывной.
+// Заранее показываем остаток жалоб на сутки: лимит не должен всплывать
+// сюрпризом уже после того, как человек написал текст.
+App._reportPlayer = async (targetId, targetName, where) => {
+  let info;
+  try { info = await API.get('/api/reports/mine'); }
+  catch (e) { UI.toast('⛔ ' + e.message); return; }
+  if (info.left <= 0) {
+    UI.toast(`⛔ Сегодня жалобы закончились (${info.dayLimit} в сутки). Лимит обновится завтра.`);
+    return;
+  }
+  const old = document.getElementById('game-dialog');
+  if (old) old.remove();
+  const m = document.createElement('div');
+  m.id = 'game-dialog';
+  m.className = 'game-dialog-overlay';
+  m.innerHTML = `
+    <div class="game-dialog">
+      <div class="game-dialog-icon">📨</div>
+      <div class="game-dialog-title">Жалоба на «${UI.esc(targetName)}»</div>
+      <div class="game-dialog-body">Выберите причину и коротко опишите, что произошло.
+        Сотрудник увидит вашу жалобу и ответит уведомлением.</div>
+      <select id="rp-reason" class="game-dialog-input">
+        ${info.reasons.map((r) => `<option value="${UI.esc(r.id)}">${r.icon} ${UI.esc(r.label)}</option>`).join('')}
+      </select>
+      <textarea id="rp-text" class="game-dialog-input" rows="3" maxlength="500"
+        placeholder="Что случилось, когда и где. Чем конкретнее — тем быстрее разберутся."></textarea>
+      <div class="game-dialog-hint">Осталось жалоб сегодня: ${info.left} из ${info.dayLimit}.
+        Ложные жалобы видны сотрудникам и портят доверие к следующим вашим сигналам.</div>
+      <div class="game-dialog-actions">
+        <button class="btn btn-orange" id="rp-ok">Отправить</button>
+        <button class="btn btn-inline" id="rp-cancel">Отмена</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+  const release = UI._a11yDialog(m, m.querySelector('.game-dialog'), 'Жалоба на игрока');
+  const close = () => { release(); m.remove(); };
+  m.querySelector('#rp-cancel').onclick = close;
+  m.onclick = (e) => { if (e.target === m) close(); };
+  m.querySelector('#rp-ok').onclick = async () => {
+    const reason = m.querySelector('#rp-reason').value;
+    const text = m.querySelector('#rp-text').value.trim();
+    if (text.length < 10) { UI.toast('⛔ Опишите подробнее: хотя бы 10 символов'); return; }
+    m.querySelector('#rp-ok').disabled = true;
+    try {
+      await API.post('/api/reports/create', { targetId, reason, text, where: where || 'profile' });
+      close();
+    } catch (e) { UI.toast('⛔ ' + e.message); m.querySelector('#rp-ok').disabled = false; }
+  };
+};
+
 App.screens.profile = async (c, param) => {
   const id = param || App.me.id;
   const { profile: p } = await API.get('/api/profile/' + encodeURIComponent(id));
@@ -780,6 +846,7 @@ App.screens.profile = async (c, param) => {
       ${!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-msg"><span class="ic-mail"></span> Написать сообщение</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-sanction" style="border-color:var(--red);color:var(--red)">🎯 Объявить санкции</button>` : ''}
+      ${(!own && !isBot) ? `<button class="btn btn-inline mt" id="pf-report" style="width:100%">📨 Пожаловаться на игрока</button>` : ''}
       ${(!own && !isBot && App.me && App.me.staffRole) ? `
         <div class="pf-mod-block mt" id="pf-mod-block">
           <div class="pf-mod-title">🛡 Инструменты «Дозора»</div>
@@ -1044,6 +1111,9 @@ App.screens.profile = async (c, param) => {
     };
   }
 
+  const btnReport = document.getElementById('pf-report');
+  if (btnReport) btnReport.onclick = () => App._reportPlayer(p.id, p.name, 'profile');
+
   // Приглашения в альянс/легион (доступно лидерам соответствующих групп)
   const invite = (kind) => async () => {
     try {
@@ -1238,7 +1308,10 @@ App.screens.bank = async (c, param) => {
         <input type="number" id="bk-wd" min="1" placeholder="Сумма">
         <button class="btn btn-inline" id="bk-wd-go">Снять</button>
       </div>
-    </div>`;
+    </div>
+    <div id="bank-history"></div>`;
+
+  App._renderBankHistory();
 
   const op = (action, inputId) => async () => {
     try {
@@ -1249,6 +1322,64 @@ App.screens.bank = async (c, param) => {
   };
   document.getElementById('bk-dep-go').onclick = op('deposit', 'bk-dep');
   document.getElementById('bk-wd-go').onclick  = op('withdraw', 'bk-wd');
+};
+
+// ---------- ИСТОРИЯ СЕЙФА ----------
+// Уведомление говорит «вас вскрыли», а подробности — здесь: кто, когда
+// и сколько унёс. Отдельным запросом, чтобы переключение вкладок не
+// перезагружало весь экран банка.
+App._bankHistTab = 'incoming';
+
+App._renderBankHistory = async () => {
+  const box = document.getElementById('bank-history');
+  if (!box) return;
+  let h;
+  try { h = await API.get('/api/bank/history'); }
+  catch (e) { box.innerHTML = ''; return; }
+  if (!document.getElementById('bank-history')) return;   // экран сменился
+  App._bankHist = h;
+
+  const tab = App._bankHistTab === 'outgoing' ? 'outgoing' : 'incoming';
+  const list = h[tab] || [];
+
+  const row = (e) => {
+    const mine = e.role === 'attack';
+    const who = mine ? (e.targetName || '—') : (e.attackerName || '—');
+    // Три исхода: унёс деньги, попался на сигнализации, не подобрал код
+    const R = {
+      stolen: mine
+        ? `<span class="dmg-give">💰 украдено $${UI.fmtNum(e.stolen || 0)}</span>`
+        : `<span class="dmg-take">💸 украдено $${UI.fmtNum(e.stolen || 0)}</span>`,
+      alarm:  `<span style="color:var(--orange-1)">🚨 сигнализация — денег не унёс</span>`,
+      failed: `<span class="muted">🔒 код не подобран</span>`,
+    };
+    return `
+      <div class="bh-row">
+        <div class="bh-main">
+          <div class="bh-who">${mine ? '🔓 сейф ' : '🛡 взломщик '}<b>«${UI.esc(who)}»</b></div>
+          <div class="bh-res">${R[e.outcome] || R.failed}</div>
+          <div class="muted small">${UI.fmtDate(e.at)}</div>
+        </div>
+      </div>`;
+  };
+
+  const empty = tab === 'incoming'
+    ? 'К вашему сейфу пока никто не подбирался.'
+    : 'Вы ещё не пытались вскрывать чужие сейфы.';
+
+  box.innerHTML = `
+    <div style="font-weight:bold;margin:18px 4px 6px">🏦 История сейфа</div>
+    <div class="tabs bh-tabs">
+      <div class="tab bh-tab ${tab === 'incoming' ? 'active' : ''}" data-bhtab="incoming">🛡 По мне${h.incoming.length ? ` (${h.incoming.length})` : ''}</div>
+      <div class="tab bh-tab ${tab === 'outgoing' ? 'active' : ''}" data-bhtab="outgoing">🔓 Мои взломы${h.outgoing.length ? ` (${h.outgoing.length})` : ''}</div>
+    </div>
+    ${list.length
+      ? `<div class="card bh-list">${list.map(row).join('')}</div>`
+      : `<div class="card center muted">${empty}</div>`}`;
+
+  box.querySelectorAll('[data-bhtab]').forEach((t) => {
+    t.onclick = () => { App._bankHistTab = t.dataset.bhtab; App._renderBankHistory(); };
+  });
 };
 
 App.screens.settings = async (c) => {

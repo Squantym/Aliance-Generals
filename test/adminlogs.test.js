@@ -66,7 +66,23 @@ ok(/ничего/.test(tr.describe('/api/admin/take', { targetName: 'Х' })), '�
 console.log('\n── 6. Пароли в журнал не попадают ──');
 const audit = require(ROOT + '/dist/src/services/auditLog');
 const clean = audit.sanitizeBody({ login: 'x', password: 'секрет123' });
-ok(clean.password === undefined, 'пароль вырезается из тела запроса');
+// Значение затирается, а поле ОСТАЁТСЯ с пометкой: по журналу должно быть
+// видно, что пароль в запросе был, иначе непонятно, что произошло.
+ok(clean.password === '[скрыто]', 'значение пароля затёрто, поле помечено');
+ok(clean.login === 'x', 'обычные поля не тронуты');
+// Главное — самого секрета в журнале нет ни в каком виде
+ok(!JSON.stringify(clean).includes('секрет123'), 'секрета в записи нет');
+// Раньше вырезалось ТОЛЬКО поле password верхнего уровня, из-за чего
+// oldPassword/newPassword с маршрута смены пароля уходили открытым текстом
+const deep = audit.sanitizeBody({
+  oldPassword: 'старый', newPassword: 'новый', newPassword2: 'новый',
+  nested: { api_token: 'т', inner: { passHash: 'х' } }, qty: 3,
+});
+ok(!JSON.stringify(deep).includes('старый') && !JSON.stringify(deep).includes('новый'),
+   'oldPassword/newPassword тоже вырезаны — это была дыра на 90 дней журнала');
+ok(deep.nested.api_token === '[скрыто]' && deep.nested.inner.passHash === '[скрыто]',
+   'секреты вырезаются и во вложенных объектах');
+ok(deep.qty === 3, 'вырезано только секретное');
 ok(clean.login === 'x', 'остальные поля сохраняются');
 
 console.log('\n── 7. Срок хранения журнала — 3 месяца ──');

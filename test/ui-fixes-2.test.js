@@ -55,7 +55,7 @@ ok(/\$\{\(h\.holders \|\| \[\]\)\.length/.test(adminJs), 'владельцы н�
 console.log('\n── 5. Состав панели ──');
 const tabsBlock = /const tabs = \[([\s\S]*?)\];/.exec(adminJs)[1];
 const ids = [...tabsBlock.matchAll(/id:'(\w+)'/g)].map((m) => m[1]);
-ok(ids.length === 11, `вкладок: ${ids.length}`);
+ok(ids.length === 13, `вкладок: ${ids.length}`);
 for (const id of ['home', 'players', 'econ', 'events', 'tournament', 'legions', 'logs', 'support', 'tech', 'roles', 'gold']) {
   ok(ids.includes(id), `вкладка «${id}» на месте`);
 }

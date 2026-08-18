@@ -107,7 +107,7 @@ ok(roles.zonesFor(mod).length === 0, 'у модератора зон админ-
 ok(roles.zonesFor(pl).length === 0, 'у обычного игрока тоже');
 roles.setRoleZone(owner, 'moderator', 'chat', true, []);
 ok(roles.isModerator(mod) === true, 'после выдачи права модерация чатов доступна');
-ok(roles.zonesFor(adm).length === 9 && roles.zonesFor(owner).length === 14,
+ok(roles.zonesFor(adm).length === 9 && roles.zonesFor(owner).length === 15,
    `зон у админа: ${roles.zonesFor(adm).length}, у владельца: ${roles.zonesFor(owner).length}`);
 
 console.log('\n── 4. Границы при назначении ролей ──');

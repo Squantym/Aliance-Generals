@@ -314,15 +314,24 @@ App.screens.war = async (c) => {
   }
   if (enc && enc.type === 'bank_hack') wireBankHackHandlers();
   if (enc && enc.type === 'mine_defuse') {
+    // Здесь стояли браузерные confirm() — последние два в игре.
+    // Их убрали не ради единообразия: системное окно подтверждается
+    // случайным Enter, а цена ошибки тут — техника игрока.
+    //
+    // Спешка этим не создаётся: растяжка ждёт в состоянии игрока
+    // (pendingMineDefuse) и сервером по времени не ограничена, поэтому
+    // своё окно ничего не сдвигает.
     c.querySelectorAll('[data-wire]').forEach((btn) => {
-      btn.onclick = () => {
-        if (!confirm('Перерезать этот провод? Отменить будет нельзя.')) return;
+      btn.onclick = async () => {
+        if (!await UI.confirm('Перерезать этот провод?\n\nОтменить будет нельзя: ошибка — взрыв и потеря техники.',
+            { title: 'Обезвреживание', icon: '✂️', okText: 'Перерезать', danger: true })) return;
         mineDefuseWire(Number(btn.dataset.wire));
       };
     });
     const sacrificeBtn = document.getElementById('minedefuse-sacrifice');
-    if (sacrificeBtn) sacrificeBtn.onclick = () => {
-      if (!confirm('Пожертвовать смертником? Он погибнет, но вы гарантированно избежите взрыва.')) return;
+    if (sacrificeBtn) sacrificeBtn.onclick = async () => {
+      if (!await UI.confirm('Пожертвовать смертником?\n\nОн погибнет, но взрыва вы гарантированно избежите.',
+          { title: 'Жертва смертника', icon: '💀', okText: 'Пожертвовать', danger: true })) return;
       mineSacrifice();
     };
   }

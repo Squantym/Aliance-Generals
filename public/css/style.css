@@ -2388,6 +2388,49 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 }
 .conf-locked { filter: grayscale(.8) brightness(.55); }
 
+/* ============ Видимый фокус для работы с клавиатуры ============ */
+/* Раньше системная обводка фокуса гасилась общими стилями кнопок, и
+   человек, идущий по панели Tab'ом, не видел, где находится. Для
+   сотрудника это означало, что панелью нельзя пользоваться без мыши.
+   :focus-visible показывает обводку только при клавиатурной навигации —
+   при клике мышью она не появляется и вид не меняется. */
+:focus-visible {
+  outline: 2px solid var(--orange-1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* В модальных окнах фон тёмный — обводка нужна поконтрастнее */
+.game-dialog :focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+/* Элементы, которые ведут себя как кнопки, но кнопками не являются:
+   с role="button" и tabindex они попадают в обход Tab'ом */
+[role="button"] { cursor: pointer; }
+
+/* ============ Админ-панель: вкладки, разложенные по группам ============ */
+/* Тринадцать кнопок подряд читались как сплошная лента. Теперь они
+   собраны в три подписанные группы: «Люди», «Игра», «Служебное». */
+.adm-tabs {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
+  padding: 10px 16px 8px; position: sticky; top: 0; z-index: 10;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.adm-tabgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.adm-tabgroup + .adm-tabgroup { border-left: 1px solid var(--border); padding-left: 14px; }
+.adm-tabgroup-name {
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--dim); margin-right: 2px; white-space: nowrap;
+}
+/* На телефоне разделители между группами мешают переносу — подпись
+   уходит на свою строку и работает как заголовок */
+@media (max-width: 760px) {
+  .adm-tabs { gap: 8px; }
+  .adm-tabgroup { width: 100%; }
+  .adm-tabgroup + .adm-tabgroup { border-left: none; padding-left: 0; }
+  .adm-tabgroup-name { width: 100%; margin: 4px 0 0; }
+}
+
 /* ==================== АДМИН-ПАНЕЛЬ: адаптив под телефоны ==================== */
 /* Таблица игроков на широком экране остаётся таблицей; на узком превращается
    в карточки — иначе колонки и кнопки («бан», «обнулить») уезжают за экран. */
@@ -3288,6 +3331,35 @@ body.theme-noir .field-hint { color: #8a8a92; }
 .bk-row:last-child { border-bottom: none; }
 .bk-kind { flex: 0 0 auto; font-size: 13px; }
 .bk-when { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Сверка с копией: что было у игрока до сбоя */
+.rec-form { display: flex; gap: 6px; flex-wrap: wrap; }
+.rec-form > select, .rec-form > input { flex: 1 1 140px; min-width: 0; width: auto; }
+.rec-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.rec-table { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.rec-row {
+  display: grid; grid-template-columns: 96px 1fr 16px 1fr 88px;
+  gap: 6px; align-items: center; padding: 5px 8px; font-size: 12px;
+  border-bottom: 1px solid var(--border-dim);
+}
+.rec-row:last-child { border-bottom: none; }
+.rec-l { color: var(--dim); }
+.rec-was, .rec-now { font-variant-numeric: tabular-nums; text-align: right; }
+.rec-arrow { color: var(--dim); text-align: center; }
+.rec-d { font-variant-numeric: tabular-nums; text-align: right; font-weight: 700; }
+/* Строка, где стало МЕНЬШЕ, — это и есть кандидат на возврат */
+.rec-row.rec-lost { background: rgba(200,60,60,.10); }
+.rec-row.rec-lost .rec-d { color: #ff6b6b; }
+.rec-sub { font-size: 12px; }
+.rec-chip {
+  display: inline-block; margin: 3px 3px 0 0; padding: 2px 7px;
+  border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border);
+  font-size: 11px;
+}
+.rec-gone { color: var(--orange-1); font-size: 12.5px; }
+@media (max-width: 480px) {
+  .rec-row { grid-template-columns: 76px 1fr 12px 1fr 70px; font-size: 11px; }
+}
 
 @media (max-width: 480px) {
   .grant-grid { grid-template-columns: 1fr 1fr; }
@@ -4326,3 +4398,22 @@ body.combat-fullscreen { padding-top: 0 !important; }
 .chat-msg-moderator .chat-text { color: #6fdcff !important; }
 .chat-msg-admin .chat-text     { color: var(--orange-1) !important; }
 .chat-msg-owner .chat-text     { color: var(--gold) !important; }
+
+/* Позывной над сообщением в переписке. Раньше здесь печаталась заглушка
+   «(без темы)» — интерфейс писем тему не спрашивает, поэтому она была
+   пустой у всех, и строка только мешала. */
+.ml-who { font-size: 11px; font-weight: 700; opacity: .75; margin-bottom: 3px; }
+
+/* ---------- ИСТОРИЯ СЕЙФА (банк) ---------- */
+.bh-tabs { gap: 5px; margin-bottom: 8px; }
+.bh-tabs .bh-tab {
+  min-width: 0; padding: 6px 8px; font-size: 11.5px; border-radius: 4px;
+  letter-spacing: .02em; text-transform: none;
+}
+.bh-list { padding: 4px 0; }
+.bh-row { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.bh-row:last-child { border-bottom: none; }
+.bh-main { min-width: 0; }
+.bh-who { font-size: 13.5px; margin-bottom: 2px; }
+.bh-who b { overflow-wrap: anywhere; }
+.bh-res { font-size: 12.5px; margin-bottom: 2px; }

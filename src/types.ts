@@ -277,6 +277,7 @@ export interface User {
   lasersBuiltTotal?: number;
   pendingRocketHits?: any[];     // отчёты о долетевших ракетах (окно у цели)
   rocketLog?: any[];             // история ракет: свои пуски и прилёты (см. silos.ts)
+  bankLog?: any[];               // история сейфа: взломы по мне и мои (см. bankHack.ts)
   offlineWar?: any;              // сводка «пока вас не было»: атаки, потери, санкции (см. warReport.ts)
   pendingAchievements?: any[];   // очередь окон о новых достижениях (показываются по одному)
   modernProcesses?: any[];

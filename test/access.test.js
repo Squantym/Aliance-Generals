@@ -202,8 +202,19 @@ for (const [needle, label] of [
   ok(ipFn.includes(needle), `отбрасывается ${label}`);
 }
 ok(/replace\(\/\^::ffff:\/, ''\)/.test(httpSrc2), 'адреса IPv4 в обёртке IPv6 приводятся к обычному виду');
-ok((httpSrc2.match(/clientIp\(req\)/g) || []).length === 2,
-   'обе точки получения адреса используют общую функцию');
+// Раньше здесь стояло «ровно две точки». Точек стало больше (панель v2
+// тоже пишет в лог, кто стучится по стандартному адресу), а жёсткое
+// число ловило бы не подмену адреса, а сам факт правки. Проверяем то,
+// ради чего оно писалось: адрес нигде не достают в обход общей функции.
+ok((httpSrc2.match(/clientIp\(req\)/g) || []).length >= 2,
+   'все точки получения адреса используют общую функцию');
+const ipRaw = (httpSrc2.match(/remoteAddress/g) || []).length;
+const ciAt = httpSrc2.indexOf('function clientIp');
+const inClientIp = (httpSrc2.slice(ciAt, ciAt + 900).match(/remoteAddress/g) || []).length;
+// Одно обращение вне clientIp законно: сырой адрес кладётся в rawHeaders
+// для проверки доверенного прокси. Больше — значит кто-то снова достаёт
+// адрес руками, а вместе с ним теряет отбрасывание внутренних диапазонов.
+ok(ipRaw - inClientIp <= 1, `сырой socket.remoteAddress вне общей функции: ${ipRaw - inClientIp} раз`);
 // Проверяем саму логику отбора
 const pick = (chain) => {
   const usable = (v) => v && v !== 'unknown' && !/^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^169\.254\./.test(v);

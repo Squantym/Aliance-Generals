@@ -461,7 +461,51 @@ async function login(loginName: string, password: string, ip: string, ua?: strin
       },
     };
   }
+  // ── Второй фактор ────────────────────────────────────────────────
+  // Если он включён, сессия здесь НЕ выдаётся: возвращаем одноразовый
+  // пропуск на второй шаг. Токен, выданный до проверки кода, — это уже
+  // доступ, и второй фактор превратился бы в украшение.
+  try {
+    const tf = require('./twoFactor');
+    if (tf.required(found)) {
+      auditLog.record({ userId: found.id, userName: found.name, path: '/api/login/2fa-required' });
+      return {
+        needTotp: true,
+        challengeId: tf.startChallenge(found),
+        name: found.name,
+      };
+    }
+  } catch (e: any) {
+    // Ошибка в модуле второго фактора не должна закрывать вход всем —
+    // но и молча пускать без него нельзя. Пускаем только если фактор
+    // у человека не включён (проверка выше не отработала — значит и
+    // включать было нечего).
+    if (e && e.message && /включ/i.test(String(e.message))) throw e;
+  }
+
   try { require('./access').recordLogin(found, ip, ua, 'вход', hints); } catch (e) {}
+  return { token: issueToken(found.id), isAdmin: !!found.isAdmin };
+}
+
+// ── Второй шаг входа: код из приложения ───────────────────────────
+// Отдельная функция, потому что первый шаг уже проверил пароль, а этот
+// проверяет владение телефоном. Смешивать их в одном запросе нельзя:
+// тогда пароль пришлось бы держать на фронте до ввода кода.
+async function loginTotp(challengeId: string, code: string, ip: string, ua?: string, hints?: any) {
+  if (ip) assertNotBlocked(ip);
+  const tf = require('./twoFactor');
+  let userId: string;
+  try {
+    userId = tf.completeChallenge(challengeId, code, users());
+  } catch (e) {
+    registerFailedLogin(ip);      // подбор кода считается так же, как подбор пароля
+    throw e;
+  }
+  const found: any = users()[userId];
+  if (!found) throw new u.ApiError('Игрок не найден');
+  if (ip) clearRateLimit(ip);
+  auditLog.record({ userId: found.id, userName: found.name, path: '/api/login/totp' });
+  try { require('./access').recordLogin(found, ip, ua, 'вход (второй фактор)', hints); } catch (e) {}
   return { token: issueToken(found.id), isAdmin: !!found.isAdmin };
 }
 
@@ -576,4 +620,4 @@ async function changePassword(user: User, oldPassword: string, newPassword: stri
   return { ok: true, token };
 }
 
-export = { register, login, logout, issueToken, checkHeavy, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};
+export = { register, login, loginTotp, logout, issueToken, checkHeavy, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};
