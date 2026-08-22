@@ -76,7 +76,7 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   s[targetId].targetName = target.name; // актуализируем имя
 
   db.save('sanctions');
-  db.save('users');
+  db.markUser(user.id); db.markUser(target.id);
 
   // Если цель оффлайн — добавляем санкцию в сводку «пока вас не было»
   // (окно «События» при первом заходе цели в игру)

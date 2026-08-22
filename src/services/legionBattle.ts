@@ -420,8 +420,14 @@ function attack(user: User, targetUserId: string, notices: Notices) {
   if (!targetUser) throw new u.ApiError('Игрок не найден');
 
   const { dmg, crit, dodged } = calcDamage(c, tc, user, targetUser);
-  const res = applyDamage(battle, targetUserId, dmg, user.id);
-  const { actual, guardedBy } = res;
+  // Промах не доводим до applyDamage. Урона в нём ноль, но внутри стоят
+  // одноразовые вещи: отражающий щит снимается ФАКТОМ попадания, а не
+  // уроном. Из-за этого чужой промах сжигал щит цели впустую — купленная
+  // защита исчезала от удара, которого не было.
+  const res = dodged
+    ? { actual: 0, hitId: targetUserId }
+    : applyDamage(battle, targetUserId, dmg, user.id);
+  const { actual, guardedBy } = res as any;
   // Урон мог уйти не в цель: её прикрыл защитник или сработало отражение.
   // Статистику и гибель считаем по тому, кто РЕАЛЬНО получил удар.
   const hit = battle.combatants[res.hitId] || tc;
@@ -433,7 +439,10 @@ function attack(user: User, targetUserId: string, notices: Notices) {
   c.stats.dmgDealt += actual;
   hit.stats.dmgTaken += actual;
 
-  addActivity(battle, user.id, 'attack_hit');
+  // Очки активности за «нанёс урон» — только если урон реально прошёл.
+  // Раньше они начислялись за КАЖДЫЙ удар, включая промах и удар в купол:
+  // выгоднее было молотить в непробиваемую цель, чем искать живую.
+  if (actual > 0) addActivity(battle, user.id, 'attack_hit');
 
   let msg = dodged
     ? `⚔️ ${user.name} → ${tc.name} [${DIR_NAMES[(c.direction || 1)-1]}]: 🌀 ПРОМАХ — ${tc.name} увернулся!`
@@ -448,7 +457,10 @@ function attack(user: User, targetUserId: string, notices: Notices) {
     addActivity(battle, user.id, 'kill');
     msg += ` 💀 ${hit.name} ВЫБЫЛ!`;
     const deadUser = users[hit.userId];
-    if (deadUser) deadUser.res.hp.cur = 1;
+    // Выбывшему обнуляем здоровье до 1 — это правка ЧУЖОГО игрока, а http
+    // сохраняет только автора запроса. Без явной пометки выбывший после
+    // перезапуска оказывался с полным здоровьем.
+    if (deadUser) { deadUser.res.hp.cur = 1; db.markUser(deadUser.id); }
   }
 
   log(battle, msg, crit ? 'crit' : 'attack');
@@ -508,6 +520,7 @@ function heal(user: User, targetUserId: string, notices: Notices) {
   const targetUser = allUsers()[targetUserId];
   if (targetUser) {
     targetUser.res.hp.cur = Math.min(player.maxima(targetUser).hp, targetUser.res.hp.cur + actual);
+    db.markUser(targetUser.id);   // лечим ЧУЖОГО игрока — помечаем к записи явно
   }
 
   const msg = `💊 ${user.name} → ${tc.name}: +${actual} HP${critHeal ? ' ✨ КРИТ!' : ''}`;
@@ -684,7 +697,10 @@ function useItem(user: User, itemId: string, targetUserId: string, notices: Noti
       const actual = healTarget.hp - before;
       c.stats.healed += actual;
       const healedUser = allUsers()[healTarget.userId];
-      if (healedUser) healedUser.res.hp.cur = Math.min(player.maxima(healedUser).hp, healedUser.res.hp.cur + actual);
+      if (healedUser) {
+        healedUser.res.hp.cur = Math.min(player.maxima(healedUser).hp, healedUser.res.hp.cur + actual);
+        db.markUser(healedUser.id);   // чужой игрок — помечаем к записи явно
+      }
       resultMsg = `🩹 ${user.name}: Аптечка → ${healTarget.name}: +${actual} HP (${pct}%)`;
       break;
     }
@@ -919,6 +935,12 @@ function finalizeBattle(battle: Battle, all: any, users: any, winningSide: strin
       if (st.guardedDmg > 0) ach.bump(u2, 'legionDamageCovered', st.guardedDmg, []);
       if (st.healed > 0)     ach.bump(u2, 'legionHpHealed',      st.healed, []);
     } catch (e) {}
+    // Итоги боя раздаёт тот, чей удар оказался последним (или фоновый
+    // таймер) — все остальные участники для http «чужие» и не сохраняются.
+    // Без этой пометки опыт и достижения за бой легиона держались только
+    // в памяти процесса: перезапуск сервера стирал награду у всех, кроме
+    // одного человека.
+    db.markUser(u2.id);
     notif.push(c.userId, 'legion_battle_result',
       won
         ? `🏆 Победа легиона! +${gloryGain} ⭐ ${wResult.levelUp ? '🎉 Новый уровень легиона!' : ''}`
@@ -984,7 +1006,11 @@ function advancePhase(battle: Battle, all: any, users: any): boolean {
     // «Готов» или не выбрал направление — проставляем автоматически.
     for (const [uid, c] of Object.entries(battle.combatants)) {
       if (!c.direction) {
-        const counts = [1, 2, 3].map((d) => ({
+        // Направлений ПЯТЬ (DIR_NAMES), а сюда были вписаны только три:
+        // все, кто не выбрал сам, сваливались на первые три направления,
+        // два оставались пустыми, и при полном составе автораздача
+        // упихивала людей сверх лимита в 5 человек на направление.
+        const counts = DIR_NAMES.map((_, i) => i + 1).map((d) => ({
           d, n: Object.values(battle.combatants).filter((x) => x.side === c.side && x.direction === d).length,
         }));
         counts.sort((a, b) => a.n - b.n);
@@ -1429,7 +1455,7 @@ function restoreForBattle(user: User, kind: string, notices: Notices) {
     const c = battle.combatants[user.id];
     if (c) c.hp = c.maxHp;
   }
-  db.save('users'); db.save('battles');
+  db.markUser(user.id); db.save('battles');
   notices.push(`${item.label} восстановлено за 🪙 ${item.cost}.`);
   return { ok: true, cost: item.cost, kind };
 }

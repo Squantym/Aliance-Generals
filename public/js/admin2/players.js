@@ -43,7 +43,8 @@
           ${p.accountBan ? '<span class="a2-pill is-bad">заблокирован</span>' : ''}
           ${p.chatBan ? '<span class="a2-pill is-warn">чат закрыт</span>' : ''}
           <div class="a2-item-when">ур. ${p.level} ·
-            ${UI.fmtMoney ? UI.fmtMoney(p.dollars) : p.dollars} · 🪙 ${UI.fmtNum ? UI.fmtNum(p.gold) : p.gold} ·
+            ${Admin.ICD} ${UI.fmtMoney ? UI.fmtMoney(p.dollars) : p.dollars} ·
+            ${Admin.ICG} ${UI.fmtNum ? UI.fmtNum(p.gold) : p.gold} ·
             заходил ${ago(p.lastSeen)} назад</div></div>
         <span class="a2-muted">Открыть →</span>
       </a>`).join('');

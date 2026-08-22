@@ -583,7 +583,7 @@ function depositResources(user: User, ears: number, tokens: number, useAdmin: bo
   recordContribution(l, user.name, useAdmin ? null : user.id, { ears, tokens });
 
   db.save('legions');
-  db.save('users');
+  db.markUser(user.id);
   const parts: any[] = [];
   if (ears   > 0) parts.push(`${ears} 👂`);
   if (tokens > 0) parts.push(`${tokens} 🎖`);

@@ -30,6 +30,15 @@ const Admin = {
     Admin.renderLogin();
   },
 
+  // ── Иконки валют: ровно те же, что в игре ────────────────────────
+  // В игре доллары и золото показываются картинками (.ic-dollar,
+  // .ic-gold), а в панели половина мест рисовала эмодзи 🪙 и 💵.
+  // Разница мелкая, но именно из-за таких мелочей панель читается как
+  // «другая программа»: глаз ищет знакомый значок и не находит.
+  // Эмодзи оставлены только в уведомлениях — там разметки нет.
+  ICG: '<span class="ic-gold"></span>',
+  ICD: '<span class="ic-dollar"></span>',
+
   // Есть ли доступ к разделу
   can(zone) { return Admin.zones.indexOf(zone) !== -1; },
 
@@ -169,7 +178,7 @@ const Admin = {
       { id:'logs',      label:'📋 Журнал',      zone:'players',    group:'Служебное' },
       { id:'tech',      label:'🔧 Техника',     zone:'security',   group:'Служебное' },
       { id:'roles',     label:'🛡 Роли',        zone:'roles',      group:'Служебное' },
-      { id:'gold',      label:'🪙 Золото',      zone:'roles',      group:'Служебное', ownerOnly:true },
+      { id:'gold',      label:'<span class="ic-gold"></span> Золото',      zone:'roles',      group:'Служебное', ownerOnly:true },
     ];
     const visible = (t) => {
       // zone — одна зона, zones — любая из перечисленных
@@ -566,7 +575,7 @@ const Admin = {
         <div class="adm-card-rows">
           <div><span>Уровень</span><b>${p.level}</b></div>
           <div><span>В игре с</span><b>${dt(p.createdAt)}</b></div>
-          ${p.can.resources ? `<div><span>Баланс</span><b>$${UI.fmtNum(p.dollars)} · 🪙 ${UI.fmtNum(p.gold)}</b></div>` : ''}
+          ${p.can.resources ? `<div><span>Баланс</span><b>$${UI.fmtNum(p.dollars)} · ${Admin.ICG} ${UI.fmtNum(p.gold)}</b></div>` : ''}
           <div><span>ID</span><b class="muted small">${UI.esc(p.id)}</b></div>
         </div>
 
@@ -622,7 +631,10 @@ const Admin = {
 
     const dt = (ms) => ms ? new Date(ms).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
 
-    await UI.confirm(`
+    // Окно строится синхронно, поэтому обещание НЕ ждём сразу: сначала
+    // навешиваем обработчики на кнопки внутри него (закрыть сессию,
+    // посмотреть, кто ещё с устройства), и только потом ждём закрытия.
+    const dialog = UI.confirm(`
       <div class="access-box">
         <div class="access-sec">
           <div class="access-title">📧 Почта</div>
@@ -667,6 +679,64 @@ const Admin = {
         </div>
 
         <div class="access-sec">
+          <div class="access-title">💻 Устройства (${(d.devices || []).length})</div>
+          <p class="muted small">С чего заходили в этот аккаунт — с адресами по каждому.
+          Устройство узнаётся по браузеру и отпечатку (экран, часовой пояс, ядра);
+          смена браузера или переустановка системы даёт новую запись.</p>
+          ${(d.devices || []).length ? d.devices.map((v) => `
+            <div class="access-dev">
+              <div class="access-dev-head">
+                <b>${UI.esc(v.label)}</b>
+                ${v.isReg ? '<span class="badge" style="background:rgba(200,160,40,.2);color:var(--gold)">регистрация</span>' : ''}
+                <span class="muted small">входов: ${v.count}</span>
+              </div>
+              <div class="muted small">${dt(v.firstAt)} → ${dt(v.lastAt)}</div>
+              <div class="small mt">Адреса: ${(v.ips || []).map((x) =>
+                `<span class="mono">${UI.esc(x.ip)}</span> <span class="muted">×${x.count}</span>`).join(' · ') || '—'}</div>
+              <button class="btn btn-inline mt" data-dev-key="${UI.esc(v.key)}">👥 Кто ещё с этого устройства</button>
+            </div>`).join('')
+            : '<p class="muted small">Данных пока нет — появятся при следующем входе.</p>'}
+        </div>
+
+        <div class="access-sec">
+          <div class="access-title">🚪 Открытые входы (${(d.sessions || []).length})</div>
+          <p class="muted small">Кабинет открыт прямо сейчас с этих устройств. Закрыть — значит
+          потребовать вход заново по паролю; на самом аккаунте это не сказывается.</p>
+          ${(d.sessions || []).length ? `
+            <table class="access-table">
+              <tbody>
+                ${d.sessions.map((s) => `
+                  <tr>
+                    <td class="small">${UI.esc(s.device || 'неизвестное устройство')}</td>
+                    <td class="mono small">${UI.esc(s.ip || '—')}</td>
+                    <td class="small muted nowrap">${dt(s.at)}</td>
+                    <td><button class="btn btn-inline" data-kick-token="${UI.esc(s.token)}">Закрыть</button></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+            <button class="btn btn-red mt" data-kick-user="${UI.esc(d.id)}" style="width:100%">
+              🚪 Выкинуть из кабинета совсем (${d.sessions.length})</button>`
+            : '<p class="muted small">Сейчас входов нет — игрок не в игре либо уже выброшен.</p>'}
+        </div>
+
+        <div class="access-sec">
+          <div class="access-title">🛡 Журнал безопасности</div>
+          ${(d.security || []).length ? `
+            <table class="access-table">
+              <tbody>
+                ${d.security.map((s) => `
+                  <tr>
+                    <td class="small muted nowrap">${dt(s.at)}</td>
+                    <td class="small">${UI.esc(Admin.SEC_LABEL[s.kind] || s.kind)}</td>
+                    <td class="small muted">${UI.esc(s.detail || '')}</td>
+                    <td class="mono small">${UI.esc(s.ip || '')}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>`
+            : '<p class="muted small">Событий не было: пароль не менялся, новых устройств не появлялось.</p>'}
+        </div>
+
+        <div class="access-sec">
           <div class="access-title">📜 История входов</div>
           ${(d.logins || []).length ? `
             <table class="access-table">
@@ -697,6 +767,76 @@ const Admin = {
           </div>` : ''}
       </div>`,
       { title: `Входы: ${d.name}`, icon: '🔎', html: true, okText: 'Закрыть', cancelText: '' });
+
+    Admin._bindAccess(userId);
+    await dialog;
+  },
+
+  // Расшифровка событий журнала безопасности. Держим отдельно от разметки:
+  // в коде событие называется коротким кодом, а сотруднику нужно понятное.
+  SEC_LABEL: {
+    new_device:     '💻 Вход с нового устройства',
+    password_change:'🔑 Смена пароля',
+    password_reset: '📧 Пароль изменён по письму',
+    email_change:   '📧 Смена почты',
+    email_verified: '✅ Почта подтверждена',
+    rename:         '✍️ Смена позывного',
+    totp_on:        '🔒 Включён второй фактор',
+    totp_off:       '🔓 Отключён второй фактор',
+    kicked:         '🚪 Выброшен из кабинета',
+  },
+
+  // Кнопки внутри окна «Входы и устройства».
+  _bindAccess(userId) {
+    const box = document.querySelector('#game-dialog .access-box');
+    if (!box) return;
+
+    box.querySelectorAll('[data-dev-key]').forEach((btn) => {
+      btn.onclick = async () => {
+        const key = btn.getAttribute('data-dev-key');
+        let r = null;
+        try { r = await API.get('/api/admin/by-device?key=' + encodeURIComponent(key)); }
+        catch (e) { return UI.toast('⛔ ' + e.message); }
+        const list = r.players || [];
+        // Сам игрок в списке тоже есть — это правильно: видно, что
+        // устройство действительно его, а не только чужое.
+        UI.confirm(`
+          <p class="muted small">Совпадение устройства — сильный признак, но не приговор:
+          общий компьютер в семье или в клубе даёт ровно такое же совпадение честно.</p>
+          ${list.length ? `
+            <table class="access-table">
+              <tbody>
+                ${list.map((p) => `
+                  <tr>
+                    <td><b>${UI.esc(p.name)}</b> <span class="muted small">ур. ${p.level}</span></td>
+                    <td class="small muted">${UI.esc(p.email || '—')}</td>
+                    <td class="num small">входов: ${p.count}</td>
+                    <td class="small muted">${p.isReg ? 'здесь регистрировался' : ''}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>` : '<p class="muted">Больше никто с этого устройства не заходил.</p>'}`,
+          { title: `С этого устройства: ${list.length}`, icon: '👥', html: true, okText: 'Понятно', cancelText: '' });
+      };
+    });
+
+    box.querySelectorAll('[data-kick-token]').forEach((btn) => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await API.post('/api/admin/sessions/kick', { token: btn.getAttribute('data-kick-token') });
+          btn.closest('tr').remove();
+        } catch (e) { UI.toast('⛔ ' + e.message); btn.disabled = false; }
+      };
+    });
+
+    const kickAllBtn = box.querySelector('[data-kick-user]');
+    if (kickAllBtn) kickAllBtn.onclick = async () => {
+      kickAllBtn.disabled = true;
+      try {
+        await API.post('/api/admin/sessions/kick', { userId: kickAllBtn.getAttribute('data-kick-user') });
+        kickAllBtn.textContent = '🚪 Выброшен — войдёт заново по паролю';
+      } catch (e) { UI.toast('⛔ ' + e.message); kickAllBtn.disabled = false; }
+    };
   },
 
   // ═══ РОЛИ: выдача прав без остановки сервера ═════════════════════
@@ -1012,7 +1152,7 @@ const Admin = {
     if (!sel) {
       c.innerHTML = `
         <div class="card">
-          <div class="name">🪙 Начисления золота</div>
+          <div class="name">${Admin.ICG} Начисления золота</div>
           <p class="muted small mt">Раздел виден только вам. Нажмите на игрока, чтобы увидеть,
           откуда у него золото и на что он его тратил.</p>
           ${d.totals ? `
@@ -1271,7 +1411,7 @@ const Admin = {
     const w = r.wasBalance, n = r.nowBalance, df = r.diff;
     if (!r.existsNow) {
       return `<p class="rec-gone">⚠ Сейчас такого игрока в базе НЕТ — аккаунт удалён.
-      В копии он был: $${m(w.dollars)}, 🪙 ${UI.fmtNum(w.gold)}, ур. ${w.level},
+      В копии он был: $${m(w.dollars)}, ${Admin.ICG} ${UI.fmtNum(w.gold)}, ур. ${w.level},
       техники ${UI.fmtNum(w.units)}, зданий ${UI.fmtNum(w.buildings)}.</p>`;
     }
     const lostUnits = r.lostUnits || [], lostB = r.lostBuildings || [];
@@ -1279,8 +1419,8 @@ const Admin = {
       <div class="rec-head"><b>${UI.esc(r.player.name)}</b>
         <span class="muted small">в копии → сейчас</span></div>
       <div class="rec-table">
-        ${row('💵 Деньги', w.dollars, n.dollars, df.dollars, m)}
-        ${row('🪙 Золото', w.gold, n.gold, df.gold)}
+        ${row(Admin.ICD + ' Деньги', w.dollars, n.dollars, df.dollars, m)}
+        ${row(Admin.ICG + ' Золото', w.gold, n.gold, df.gold)}
         ${row('⭐ Уровень', w.level, n.level, df.level)}
         ${row('📈 Опыт', w.exp, n.exp, df.exp, m)}
         ${row('🚜 Техника', w.units, n.units, df.units)}
@@ -1615,7 +1755,29 @@ const Admin = {
       box.innerHTML = '<div class="loading">Ищу…</div>';
       try {
         const r = await API.get('/api/admin/multi-check?min=' + encodeURIComponent(min));
-        box.innerHTML = (r.groups || []).length
+        // Если прокси не передаёт адрес игрока, сервер видит у ВСЕХ один
+        // и тот же 127.0.0.1. Показывать это как «36 аккаунтов с одного
+        // адреса» нельзя: выглядит убедительно, а означает лишь то, что
+        // проверка слепа. По такому «доказательству» банят невиновных.
+        const broken = r.proxyBroken
+          ? `<div class="card" style="border-color:var(--red)">
+               <div class="name" style="color:var(--red)">⚠️ Проверка сейчас слепа</div>
+               <p class="small mt">Сервер не видит адресов игроков: у ${UI.fmtNum(r.blind)} из
+                 ${UI.fmtNum(r.players)} записан только внутренний адрес. Значит, обратный прокси
+                 (nginx) не передаёт настоящий адрес, и сравнивать не по чему —
+                 совпадения ниже <b>ничего не доказывают</b>.</p>
+               <p class="small mt">Чинится одной правкой в nginx, в каждом блоке
+                 <code>location</code>, который проксирует на игру:</p>
+               <pre class="small" style="white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header Host $host;</pre>
+               <p class="small muted">Затем <code>sudo nginx -t && sudo nginx -s reload</code>.
+                 Готовый пример — в файле <code>nginx.example.conf</code> в проекте.
+                 Адреса начнут записываться с этого момента; у тех, кто зашёл раньше,
+                 останется старая запись, пока они не зайдут снова.</p>
+             </div>`
+          : '';
+        box.innerHTML = broken + ((r.groups || []).length
           ? r.groups.map((gr) => `
               <div class="mc-group">
                 <div class="mc-ip"><span class="mono">${UI.esc(gr.ip)}</span>
@@ -1625,7 +1787,7 @@ const Admin = {
                     <span class="muted small">ур. ${p.level}</span></span>`).join('')}
                 </div>
               </div>`).join('')
-          : '<p class="muted small">Совпадений не найдено.</p>';
+          : (r.proxyBroken ? '' : '<p class="muted small">Совпадений не найдено.</p>'));
       } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
     };
   },
@@ -2307,7 +2469,7 @@ const Admin = {
           addGoldPool: evVal('evd-pool'),
           dropMin: evVal('evd-min'), dropMax: evVal('evd-max'),
         });
-        UI.toast(`🔧 Дроп обновлён: шанс ${r.dropChance}%, ${r.dropMin}–${r.dropMax}, пул 🪙 ${UI.fmtNum(r.goldPoolLeft)}`);
+        UI.toast(`🔧 Дроп обновлён: шанс ${r.dropChance}%, ${r.dropMin}–${r.dropMax}, пул ${Admin.ICG} ${UI.fmtNum(r.goldPoolLeft)}`);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     const setHpBtn = document.getElementById('ev-sethp-apply');
@@ -2407,8 +2569,8 @@ const Admin = {
                 ${p.online ? ' <span style="color:var(--green);font-size:10px">● онлайн</span>' : ''}
                 <br><span class="muted small">Ур.${p.level} · ID: ${p.id}</span>
               </td>
-              <td class="adm-stat" data-l="💵" style="padding:8px;text-align:right;font-size:12px">${UI.fmtMoney(p.dollars)}</td>
-              <td class="adm-stat" data-l="🪙" style="padding:8px;text-align:right;font-size:12px">${UI.fmtNum(p.gold)}</td>
+              <td class="adm-stat" data-l="$" style="padding:8px;text-align:right;font-size:12px">${UI.fmtMoney(p.dollars)}</td>
+              <td class="adm-stat" data-l="🪙" style="padding:8px;text-align:right;font-size:12px">${Admin.ICG} ${UI.fmtNum(p.gold)}</td>
               <td class="adm-stat" data-l="👂" style="padding:8px;text-align:right;font-size:12px">${p.earsCurrent ?? p.ears}</td>
               <td class="adm-stat" data-l="🎖" style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
               <td class="adm-acts" style="padding:8px;white-space:nowrap">
@@ -2717,7 +2879,7 @@ const Admin = {
       </div>
 
       <div class="card">
-        <div class="name">💰 Ресурсы казны</div>
+        <div class="name">${Admin.ICD} Ресурсы казны</div>
         ${numField('reserves', 'Резервы (РЕЗ)', s.reserves)}
         ${numField('ears', 'Уши', s.treasuryEars)}
         ${numField('tokens', 'Жетоны', s.treasuryTokens)}
@@ -2842,8 +3004,8 @@ const Admin = {
     const prizeFields = (pre) => `
       <div class="muted small mt">🏆 Приз чемпиону (каждому бойцу победившего легиона, письмом «Забрать»):</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
-        <div><label style="font-size:11px;color:var(--dim)">🪙 Золото</label><input type="number" id="${pre}-pgold" placeholder="0"></div>
-        <div><label style="font-size:11px;color:var(--dim)">💵 Доллары</label><input type="number" id="${pre}-pdollars" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">${Admin.ICG} Золото</label><input type="number" id="${pre}-pgold" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">${Admin.ICD} Доллары</label><input type="number" id="${pre}-pdollars" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="${pre}-ptokens" placeholder="0"></div>
       </div>`;
 
@@ -3044,13 +3206,13 @@ const Admin = {
       <div class="grant-panel">
         <div class="grant-head">
           <b>🎁 ${p.flag} ${UI.esc(p.name)}</b>
-          <span class="muted small">ур. ${p.level} · <span class="ic-dollar"></span>${UI.fmtMoney(p.dollars)} · 🪙 ${UI.fmtNum(p.gold)}</span>
+          <span class="muted small">ур. ${p.level} · <span class="ic-dollar"></span>${UI.fmtMoney(p.dollars)} · ${Admin.ICG} ${UI.fmtNum(p.gold)}</span>
           <button class="btn btn-inline" id="g-cancel" style="margin-left:auto">✕</button>
         </div>
 
         <div class="grant-grid">
           <label><span><span class="ic-dollar"></span> Доллары</span><input type="number" id="g-dollars" placeholder="0"></label>
-          <label><span>🪙 Золото</span><input type="number" id="g-gold" placeholder="0"></label>
+          <label><span>${Admin.ICG} Золото</span><input type="number" id="g-gold" placeholder="0"></label>
           <label><span>⭐ Опыт</span><input type="number" id="g-xp" placeholder="0"></label>
           <label><span>📈 Очки</span><input type="number" id="g-skill" placeholder="0"></label>
           <label><span>👂 Уши</span><input type="number" id="g-ears" placeholder="0"></label>
@@ -3059,10 +3221,10 @@ const Admin = {
 
         <div class="grant-quick">
           <span class="muted small">Быстро:</span>
-          <button class="btn btn-inline" data-q="gold:100">🪙 100</button>
-          <button class="btn btn-inline" data-q="gold:500">🪙 500</button>
-          <button class="btn btn-inline" data-q="dollars:1000000">💵 1 млн</button>
-          <button class="btn btn-inline" data-q="dollars:1000000000">💵 1 млрд</button>
+          <button class="btn btn-inline" data-q="gold:100">${Admin.ICG} 100</button>
+          <button class="btn btn-inline" data-q="gold:500">${Admin.ICG} 500</button>
+          <button class="btn btn-inline" data-q="dollars:1000000">${Admin.ICD} 1 млн</button>
+          <button class="btn btn-inline" data-q="dollars:1000000000">${Admin.ICD} 1 млрд</button>
           <button class="btn btn-inline" data-q="clear">Сброс</button>
         </div>
 
@@ -3479,9 +3641,9 @@ const Admin = {
         держат больше половины денег, новичку в такой экономике делать нечего.
         Медиана честнее среднего — среднее задирают несколько богачей.</p>
       <table class="access-table mt"><tr><th></th><th>Всего</th><th>Среднее</th><th>Медиана</th><th>Верх. 10%</th></tr>
-        <tr><td>💵 Деньги</td><td>${Admin._anNum(e.money.total)}</td><td>${Admin._anNum(e.money.avg)}</td>
+        <tr><td>${Admin.ICD} Деньги</td><td>${Admin._anNum(e.money.total)}</td><td>${Admin._anNum(e.money.avg)}</td>
             <td>${Admin._anNum(e.money.median)}</td><td>${conc(e.money.top10Pct)}</td></tr>
-        <tr><td>🪙 Золото</td><td>${Admin._anNum(e.gold.total)}</td><td>${Admin._anNum(e.gold.avg)}</td>
+        <tr><td>${Admin.ICG} Золото</td><td>${Admin._anNum(e.gold.total)}</td><td>${Admin._anNum(e.gold.avg)}</td>
             <td>${Admin._anNum(e.gold.median)}</td><td>${conc(e.gold.top10Pct)}</td></tr>
       </table>
       <p class="muted small mt">Считается по ${e.players} игрокам, заходившим за 30 дней. Наличные и банк вместе.</p>
@@ -3533,7 +3695,7 @@ const Admin = {
         ${tile('За сутки', a.dau, 'DAU')}
         ${tile('За неделю', a.wau, 'WAU')}
         ${tile('За месяц', a.mau, 'MAU')}
-        ${tile('Липкость', a.stickiness === null ? '—' : a.stickiness + '%', 'DAU / MAU')}
+        ${tile('Липкость', a.stickiness == null ? '—' : a.stickiness + '%', 'DAU / MAU')}
         ${tile('Новых сегодня', a.newToday, `за неделю ${a.newWeek}`)}
       </div>
       ${Admin._anRetentionHtml(d.retention)}

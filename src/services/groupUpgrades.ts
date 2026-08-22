@@ -289,7 +289,7 @@ function upgrade(user: User, skillId: string, notices: Notices) {
   lv[def.id] = next;
 
   db.markUser(user.id);
-  db.save('users');
+  db.markUser(user.id);
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/group/upgrade',
     body: { skill: def.id, level: next, cost },

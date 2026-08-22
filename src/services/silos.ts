@@ -277,7 +277,7 @@ function launch(user: User, siloId: string, targetId: string, notices: Notices) 
     intercepted: false, interceptedBy: null, resolved: false,
   };
   db.save('rockets');
-  db.save('users');
+  db.markUser(user.id); if (target) db.markUser(target.id);
 
   // Предупреждаем цель (баннер + таймер долёта из конфига)
   notifications.push(target.id, 'rocket_incoming',
@@ -415,6 +415,7 @@ function resolveInFlight(): void {
       if (target) {
         const report = applyRocketDamage(rk.attackerName, target, rk.powerFrac);
         target.pendingRocketHits = (target.pendingRocketHits || []).concat(report).slice(-10);
+        db.markUser(target.id);
         // Если цель оффлайн — ущерб идёт и в общую сводку «События»,
         // чтобы игрок увидел ВЕСЬ урон за время отсутствия в одном окне
         try { require('./warReport').onRocket(target, report); } catch (e) {}
@@ -427,6 +428,7 @@ function resolveInFlight(): void {
         if (attacker) {
           const myReport = { ...report, asAttacker: true, targetName: target.name, targetId: target.id };
           attacker.pendingRocketHits = (attacker.pendingRocketHits || []).concat(myReport).slice(-10);
+          db.markUser(attacker.id);
           notifications.push(attacker.id, 'rocket_result',
             `🚀 Ваша ракета поразила «${target.name}»`, myReport);
         }
@@ -437,14 +439,18 @@ function resolveInFlight(): void {
       rk.resolved = true; rk.resolvedAt = now; changed = true;
     }
   }
-  if (changed) { db.save('rockets'); db.save('users'); }
+  // Игроков помечаем поштучно выше (цель и стрелявший). db.save('users')
+  // здесь означало «перезаписать ВСЕХ игроков», а функция вызывается на
+  // каждом заходе в игру: одна долетевшая ракета останавливала сервер на
+  // время полной перезаписи таблицы.
+  if (changed) db.save('rockets');
 }
 
 // Закрыть одно окно результата ракетного удара (у цели)
 function dismissRocketHit(user: User): any {
   if (user.pendingRocketHits && user.pendingRocketHits.length) {
     user.pendingRocketHits.shift();
-    db.save('users');
+    db.markUser(user.id);
   }
   return { left: (user.pendingRocketHits || []).length };
 }

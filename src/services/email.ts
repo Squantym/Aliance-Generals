@@ -176,6 +176,25 @@ function resetHtml(name: string, link: string): string {
     </div>`;
 }
 
+// Шаблон письма из панели. mailer подключается через require ВНУТРИ
+// функции, а не импортом сверху: mailer сам зависит от email, и на
+// верхнем уровне это дало бы круговую зависимость — один из модулей
+// оказался бы наполовину пустым в момент загрузки.
+//
+// Если с шаблоном что-то не так (нет базы, битая запись), отправляем
+// заводской текст. Письмо подтверждения важнее аккуратности: без него
+// человек просто не войдёт в игру.
+function tpl(id: string, name: string, link: string): { subject: string; html: string } {
+  try {
+    return require('./mailer').render(id, { имя: name, ссылка: link });
+  } catch (e: any) {
+    console.error('📧 Шаблон письма недоступен, беру заводской:', e && e.message);
+    const html = id === 'reset' ? resetHtml(name, link) : verifyHtml(name, link);
+    const subject = id === 'reset' ? 'Восстановление пароля — Генералы' : 'Подтверждение почты — Генералы';
+    return { subject, html };
+  }
+}
+
 // Письмо подтверждения почты. Возвращает { sent, link, status, error }.
 async function sendVerificationEmail(toEmail: string, name: string, token: string):
   Promise<{ sent: boolean; link: string; status?: number; error?: string }> {
@@ -185,7 +204,11 @@ async function sendVerificationEmail(toEmail: string, name: string, token: strin
     console.log(`📧 [DEV] Ссылка подтверждения для «${name}» <${toEmail}>: ${link}`);
     return { sent: false, link };
   }
-  const r = await sendMail(toEmail, 'Подтверждение почты — Генералы', verifyHtml(name, link));
+  // Тема и текст берутся из шаблона, который владелец правит в панели
+  // («Почта» → «Шаблоны писем»). Заводской текст лежит там же, в
+  // mailer.DEFAULTS, и совпадает с прежним вшитым.
+  const t = tpl('verify', name, link);
+  const r = await sendMail(toEmail, t.subject, t.html);
   if (!r.sent) console.error(`📧 Не удалось отправить подтверждение <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
 }
@@ -199,7 +222,8 @@ async function sendPasswordResetEmail(toEmail: string, name: string, token: stri
     console.log(`📧 [DEV] Ссылка сброса пароля для «${name}» <${toEmail}>: ${link}`);
     return { sent: false, link };
   }
-  const r = await sendMail(toEmail, 'Восстановление пароля — Генералы', resetHtml(name, link));
+  const t = tpl('reset', name, link);
+  const r = await sendMail(toEmail, t.subject, t.html);
   if (!r.sent) console.error(`📧 Не удалось отправить сброс пароля <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
 }
@@ -212,10 +236,19 @@ function status() {
     from: EMAIL_FROM,
     appUrl: APP_URL,
     usingTestSender,               // true = onboarding@resend.dev (шлёт только владельцу)
-    keyMasked: RESEND_API_KEY ? RESEND_API_KEY.slice(0, 5) + '…' + RESEND_API_KEY.slice(-3) : null,
+    provider,
+    // Маскируем именно ТОТ ключ, который работает: раньше показывался
+    // только Resend, и при живом Unisender поле выглядело пустым — как
+    // будто почта не настроена.
+    keyMasked: (() => {
+      const k = provider === 'unisender' ? UNISENDER_API_KEY : RESEND_API_KEY;
+      return k ? k.slice(0, 5) + '…' + k.slice(-3) : null;
+    })(),
     // Подсказки о вероятной проблеме
     hint: !isConfigured
-      ? 'RESEND_API_KEY не задан — письма не отправляются (dev-режим).'
+      ? 'Ключ почтового сервиса не задан: UNISENDER_API_KEY (основной) или '
+        + 'RESEND_API_KEY (запасной). Письма не отправляются, у новых игроков '
+        + 'почта подтверждается сама — иначе они не смогли бы войти.'
       : (usingTestSender
         ? 'EMAIL_FROM = resend.dev: письма дойдут ТОЛЬКО на почту владельца аккаунта Resend. Подключите свой домен.'
         : 'Конфигурация выглядит рабочей. Проверьте тест-отправкой и папку «Спам».'),

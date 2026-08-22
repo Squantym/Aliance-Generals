@@ -119,7 +119,7 @@ function createCharacter(user: User, name: string, country: string, notices: Not
   }
   all[id] = fresh;
   db.markUser(id);
-  db.save('users');
+  db.markUser(user.id);
 
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/account/create',

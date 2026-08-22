@@ -115,7 +115,7 @@ function claim(user: User, rewardId: string, notices: Notices) {
   r.claimed = true;
   r.claimedAt = Date.now();
   db.save('rewards');
-  db.save('users');
+  db.markUser(user.id);
 
   const parts = describe(r.reward);
   notices.push(parts.length ? `🎁 Получено: ${parts.join(', ')}` : '🎁 Награда получена');

@@ -137,6 +137,7 @@ function enable(user: any, code: string, notices: Notices): any {
   s.recovery = hashed;
   s.pendingSince = 0;
   db.markUser(user.id);
+  try { require('./access').securityEvent(user, 'totp_on', 'Второй фактор включён'); } catch (e) {}
   notices.push('🔐 Второй фактор включён. Сохраните коды восстановления — они показываются один раз.');
   // Сами коды отдаём ОДИН раз: в базе только их хеши, повторить показ
   // невозможно даже владельцу. Это не строгость ради строгости — база
@@ -153,6 +154,9 @@ function disable(user: any, code: string, notices: Notices): any {
   if (!okCode && !(rec && rec.ok)) throw new u.ApiError('Нужен действующий код — из приложения или код восстановления');
   user.totp = null;
   db.markUser(user.id);
+  // Отключение второго фактора — событие безопасности не меньшее, чем
+  // включение: именно с него начинается захват учётной записи сотрудника.
+  try { require('./access').securityEvent(user, 'totp_off', 'Второй фактор выключен'); } catch (e) {}
   notices.push('🔓 Второй фактор выключен.');
   return { enabled: false };
 }

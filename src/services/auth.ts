@@ -171,12 +171,76 @@ function newUser(id: string, name: string, email_: string, passHash: string, sal
 // удалялась. Теперь у сессии есть срок, и он продлевается при активности.
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;   // 30 дней бездействия
 
-function issueToken(userId: string): string {
+// meta — откуда открыт кабинет: адрес, устройство, отпечаток. Без этого
+// список активных сессий в панели показывал бы одни безымянные токены, и
+// вопрос «какую из трёх сессий выкинуть» не имел бы ответа.
+function issueToken(userId: string, meta?: { ip?: string; ua?: string; hints?: any; fp?: string }): string {
   const token = u.uid(40);
-  sessions()[token] = { u: userId, at: Date.now() } as any;
+  const now = Date.now();
+  let device = '';
+  try { device = require('./access').parseDevice((meta && meta.ua) || '', meta && meta.hints).label; } catch (e) {}
+  sessions()[token] = {
+    u: userId, at: now, startedAt: now,
+    ip: String((meta && meta.ip) || ''),
+    device,
+    fp: String((meta && meta.fp) || '').slice(0, 200),
+  } as any;
   pruneSessions();
   db.save('sessions');
   return token;
+}
+
+// ── Активные сессии игрока ────────────────────────────────────────
+// Формат записи знает только этот модуль (см. killSessions), поэтому и
+// разбор списка живёт здесь же: разойдись две реализации — и выброс из
+// кабинета начнёт промахиваться, как уже было со строковым сравнением.
+function sessionsOf(userId: string) {
+  const all: any = sessions();
+  const out: any[] = [];
+  for (const tok of Object.keys(all)) {
+    const rec = all[tok];
+    const uid = typeof rec === 'string' ? rec : (rec && rec.u);
+    if (uid !== userId) continue;
+    out.push({
+      token: tok,
+      short: tok.slice(0, 6) + '…',
+      at: (typeof rec === 'object' && rec.at) || 0,
+      startedAt: (typeof rec === 'object' && rec.startedAt) || 0,
+      ip: (typeof rec === 'object' && rec.ip) || '',
+      device: (typeof rec === 'object' && rec.device) || '',
+    });
+  }
+  return out.sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+
+// Сколько сейчас открытых сессий у каждого игрока (для общей сводки)
+function sessionCounts(): Record<string, number> {
+  const all: any = sessions();
+  const out: Record<string, number> = {};
+  for (const tok of Object.keys(all)) {
+    const rec = all[tok];
+    const uid = typeof rec === 'string' ? rec : (rec && rec.u);
+    if (uid) out[uid] = (out[uid] || 0) + 1;
+  }
+  return out;
+}
+
+// Выбросить ОДНУ сессию (конкретное устройство), не трогая остальные
+function killOne(token: string): boolean {
+  const all: any = sessions();
+  if (!all[token]) return false;
+  delete all[token];
+  db.save('sessions');
+  return true;
+}
+
+// Выбросить ВСЕХ разом. Возвращает, сколько сессий закрыто.
+function killEverySession(): number {
+  const all: any = sessions();
+  const n = Object.keys(all).length;
+  for (const tok of Object.keys(all)) delete all[tok];
+  db.save('sessions');
+  return n;
 }
 
 // Чистка протухших сессий. Вызывается при входе — этого достаточно,
@@ -290,13 +354,13 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   user.name = name;
   vipSrv.markRenameUsed(user);
   db.markUser(user.id);
-  db.save('users');
+  try { require('./access').securityEvent(user, 'rename', `${old} → ${name}`); } catch (e) {}
   auditLog.record({ userId: user.id, userName: name, path: '/api/rename', body: { from: old, to: name } });
   notices.push(`✏️ Позывной изменён: «${old}» → «${name}»`);
   return { name };
 }
 
-async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any) {
+async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any, fp?: string) {
   checkHeavy('register', ip);
   // БАГ 24: очистка управляющих символов
   login = sanitizeInput(login).trim();
@@ -355,11 +419,11 @@ async function register(login: string, password: string, emailAddr: string, coun
   // Адрес и устройство запоминаем ДО развилки: игрок мог зарегистрироваться
   // с подтверждением почты и войти позже — данные регистрации нужны в обоих
   // случаях, иначе половина аккаунтов осталась бы без «паспорта» входа
-  try { require('./access').recordLogin(newU, ip, ua, 'регистрация', hints); } catch (e) {}
+  try { require('./access').recordLogin(newU, ip, ua, 'регистрация', hints, fp); } catch (e) {}
   db.save('users');
 
   if (autoVerified) {
-    return { token: issueToken(id), isAdmin: false, emailVerified: true };
+    return { token: issueToken(id, { ip, ua, hints, fp }), isAdmin: false, emailVerified: true };
   }
   const sendRes = await email.sendVerificationEmail(emailAddr, login, newU.emailVerifyToken || '');
   if (!sendRes.sent) {
@@ -375,7 +439,8 @@ function verifyEmail(token: string) {
   if (!found) throw new u.ApiError('Ссылка подтверждения недействительна или уже использована');
   found.emailVerified = true;
   found.emailVerifyToken = null;
-  db.save('users');
+  db.markUser(found.id);
+  try { require('./access').securityEvent(found, 'email_verified', found.email || ''); } catch (e) {}
   auditLog.record({ userId: found.id, userName: found.name, path: '/api/verify-email' });
   return { token: issueToken(found.id), isAdmin: !!found.isAdmin, name: found.name };
 }
@@ -402,7 +467,7 @@ async function resendVerification(loginName: string, ip?: string) {
   return { message: `Письмо повторно отправлено` };
 }
 
-async function login(loginName: string, password: string, ip: string, ua?: string, hints?: any) {
+async function login(loginName: string, password: string, ip: string, ua?: string, hints?: any, fp?: string) {
   // БАГ 1: rate limiting. Здесь только проверка «адрес не заблокирован»;
   // счётчик накручивают неудачные попытки ниже (см. registerFailedLogin).
   if (ip) assertNotBlocked(ip);
@@ -451,7 +516,7 @@ async function login(loginName: string, password: string, ip: string, ua?: strin
   auditLog.record({ userId: found.id, userName: found.name, path: '/api/login' });
   if (found.banned) {
     return {
-      token: issueToken(found.id), isAdmin: false, banned: true,
+      token: issueToken(found.id, { ip, ua, hints, fp }), isAdmin: false, banned: true,
       banInfo: {
         banned: true,
         reason: found.banReason || 'Нарушение правил',
@@ -483,15 +548,15 @@ async function login(loginName: string, password: string, ip: string, ua?: strin
     if (e && e.message && /включ/i.test(String(e.message))) throw e;
   }
 
-  try { require('./access').recordLogin(found, ip, ua, 'вход', hints); } catch (e) {}
-  return { token: issueToken(found.id), isAdmin: !!found.isAdmin };
+  try { require('./access').recordLogin(found, ip, ua, 'вход', hints, fp); } catch (e) {}
+  return { token: issueToken(found.id, { ip, ua, hints, fp }), isAdmin: !!found.isAdmin };
 }
 
 // ── Второй шаг входа: код из приложения ───────────────────────────
 // Отдельная функция, потому что первый шаг уже проверил пароль, а этот
 // проверяет владение телефоном. Смешивать их в одном запросе нельзя:
 // тогда пароль пришлось бы держать на фронте до ввода кода.
-async function loginTotp(challengeId: string, code: string, ip: string, ua?: string, hints?: any) {
+async function loginTotp(challengeId: string, code: string, ip: string, ua?: string, hints?: any, fp?: string) {
   if (ip) assertNotBlocked(ip);
   const tf = require('./twoFactor');
   let userId: string;
@@ -505,8 +570,8 @@ async function loginTotp(challengeId: string, code: string, ip: string, ua?: str
   if (!found) throw new u.ApiError('Игрок не найден');
   if (ip) clearRateLimit(ip);
   auditLog.record({ userId: found.id, userName: found.name, path: '/api/login/totp' });
-  try { require('./access').recordLogin(found, ip, ua, 'вход (второй фактор)', hints); } catch (e) {}
-  return { token: issueToken(found.id), isAdmin: !!found.isAdmin };
+  try { require('./access').recordLogin(found, ip, ua, 'вход (второй фактор)', hints, fp); } catch (e) {}
+  return { token: issueToken(found.id, { ip, ua, hints, fp }), isAdmin: !!found.isAdmin };
 }
 
 // Сбросить ВСЕ сессии игрока (смена пароля, удаление аккаунта, бан).
@@ -569,13 +634,20 @@ async function resetPassword(token: string, newPassword: string, ip?: string) {
   found.salt = salt;
   found.resetToken = null;
   found.resetTokenExp = 0;
-  // Сбрасываем все сессии — на случай компрометации
-  const ss = sessions();
-  for (const [tok, uid] of Object.entries(ss)) {
-    if (uid === found.id) delete ss[tok];
-  }
-  db.save('sessions');
+  // Сбрасываем все сессии — ради этого сброс пароля и делают.
+  //
+  // ЗДЕСЬ БЫЛА ДЫРА. Сессия давно хранится объектом { u, at }, а сравнение
+  // осталось строковым: `uid === found.id` не совпадало НИКОГДА, и цикл
+  // не удалял ничего. Человек, у которого угнали аккаунт, менял пароль по
+  // письму — и угонщик оставался внутри с прежним токеном ещё 30 дней.
+  // Ровно об этом предупреждает комментарий у killSessions: формат сессии
+  // знает только он, и сравнивать записи вручную нельзя.
+  const killed = killSessions(found.id);
   db.save('users');
+  try {
+    require('./access').securityEvent(found, 'password_reset',
+      `Пароль изменён по письму, закрыто сессий: ${killed}`, ip);
+  } catch (e) {}
   auditLog.record({ userId: found.id, userName: found.name, path: '/api/reset-password' });
   return { ok: true };
 }
@@ -612,12 +684,17 @@ async function changePassword(user: User, oldPassword: string, newPassword: stri
   // Порядок важен: сначала сброс, потом выдача — иначе новый токен
   // удалялся бы вместе со старыми, и игрока выкидывало бы из игры
   // сразу после смены собственного пароля.
-  killSessions(user.id);
+  const closed = killSessions(user.id);
   const token = issueToken(user.id);
   db.save('sessions');
-  db.save('users');
+  db.markUser(user.id);
+  try {
+    require('./access').securityEvent(user, 'password_change',
+      `Пароль изменён самим игроком, закрыто прежних сессий: ${Math.max(0, closed)}`);
+  } catch (e) {}
   auditLog.record({ userId: user.id, userName: user.name, path: '/api/change-password' });
   return { ok: true, token };
 }
 
-export = { register, login, loginTotp, logout, issueToken, checkHeavy, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};
+export = { register, login, loginTotp, logout, issueToken, checkHeavy,
+  sessionsOf, sessionCounts, killOne, killEverySession, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};

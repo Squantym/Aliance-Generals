@@ -642,11 +642,21 @@ async function renderGroupScreen(c, kind) {
 
       // Таймер активного боя (1 час)
       const battleTimerEl = document.getElementById('battle-timer');
+      // Как и рядом с таймером вызова: гасим прошлый, иначе каждый заход на
+      // вкладку легиона добавлял ещё один секундный таймер, и в часовом бою
+      // они копились десятками.
+      if (App._legionBattleTimer) { clearInterval(App._legionBattleTimer); App._legionBattleTimer = null; }
       if (battleTimerEl) {
         let secs = parseInt(battleTimerEl.textContent) || 0;
-        const bt = setInterval(() => {
+        App._legionBattleTimer = setInterval(() => {
+          if (!document.getElementById('battle-timer')) {
+            clearInterval(App._legionBattleTimer); App._legionBattleTimer = null; return;
+          }
           secs--;
-          if (secs <= 0) { clearInterval(bt); battleTimerEl.textContent = '⏱ 00:00'; return; }
+          if (secs <= 0) {
+            clearInterval(App._legionBattleTimer); App._legionBattleTimer = null;
+            battleTimerEl.textContent = '⏱ 00:00'; return;
+          }
           battleTimerEl.textContent = UI.fmtTimer(secs);
         }, 1000);
       }

@@ -82,9 +82,9 @@
       <div class="a2-grid">
         <div class="a2-card">
           <h3>Счёт</h3>
-          <div class="a2-item"><div class="a2-item-ico">💵</div>
+          <div class="a2-item"><div class="a2-item-ico">${Admin.ICD}</div>
             <div class="a2-item-txt">Доллары: <b>${UI.fmtMoney ? UI.fmtMoney(p.dollars) : p.dollars}</b></div></div>
-          <div class="a2-item"><div class="a2-item-ico">🪙</div>
+          <div class="a2-item"><div class="a2-item-ico">${Admin.ICG}</div>
             <div class="a2-item-txt">Золото: <b>${UI.fmtNum ? UI.fmtNum(p.gold) : p.gold}</b></div></div>
           ${p.legionId ? `<div class="a2-item"><div class="a2-item-ico">🎖</div>
             <div class="a2-item-txt">Состоит в легионе</div></div>` : ''}

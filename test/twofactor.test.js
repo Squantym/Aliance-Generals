@@ -128,26 +128,46 @@ ok(tf.status(user).enabled === false, 'с верным кодом фактор �
 ok(tf.required(user) === false, 'выключенный фактор больше не требуется при входе');
 
 console.log('\n── 11. Вход через HTTP: два шага ──');
-// Здесь проверяется главное: /api/login при включённом факторе НЕ
-// отдаёт токен. Это ровно та ошибка, из-за которой второй фактор
-// в чужих проектах оказывается декоративным.
-const routesSrc = fs.readFileSync(path.join(ROOT, 'src/services/auth.ts'), 'utf8');
-const loginBody = routesSrc.slice(routesSrc.indexOf('async function login('), routesSrc.indexOf('async function loginTotp('));
-const tfIdx = loginBody.indexOf('tf.required(found)');
-const tokenIdx = loginBody.indexOf('return { token: issueToken(found.id), isAdmin: !!found.isAdmin }');
-ok(tfIdx > 0 && tokenIdx > tfIdx, 'проверка фактора стоит ДО выдачи токена');
-ok(/needTotp: true/.test(loginBody), 'вместо токена возвращается признак «нужен код»');
-ok(!/token: issueToken[\s\S]{0,200}needTotp/.test(loginBody), 'токен не выдаётся вместе с требованием кода');
+  // Проверяем ПОВЕДЕНИЕ, а не текст функции: раньше здесь сравнивались
+  // позиции двух строк в исходнике, и правка сигнатуры issueToken роняла
+  // тест, не сказав ничего о самой защите.
+  const auth = require(ROOT + '/dist/src/services/auth');
+  const um = require(ROOT + '/dist/src/services/player').users();
+  const utils = require(ROOT + '/dist/src/core/utils');
+  process.env.DISABLE_RATE_LIMIT = '1';
 
-const routes = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
-ok(/'\/api\/login\/totp'/.test(routes), 'есть отдельный роут второго шага');
-ok(/staffOnly2fa/.test(routes), 'подключение доступно только сотрудникам');
-const secBlock = routes.slice(routes.indexOf('/api/2fa/status'), routes.indexOf('/api/2fa/status') + 900);
-ok((secBlock.match(/staffOnly2fa\(req\.user\)/g) || []).length >= 3,
-   'проверка прав стоит в каждом обработчике второго фактора, а не в одном');
+  for (const k of Object.keys(um)) delete um[k];
+  const salt2 = utils.uid(16);
+  const guard = {
+    id: 'tf1', name: 'ФакторБоец', email: 'tf@test.ru', emailVerified: true,
+    salt: salt2, passHash: await utils.hashPassword('пароль123', salt2),
+    isAdmin: true, staffRole: 'admin', access: {},
+  };
+  um['tf1'] = guard;
 
-console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
-process.exit(failed ? 1 : 0);
+  const plain = await auth.login('ФакторБоец', 'пароль123', '1.2.3.4', 'UA', null, 'fp');
+  ok(!!plain.token, 'без второго фактора вход выдаёт токен');
+
+  tf.setup(guard, []);
+  tf.enable(guard, totp.codeAt(guard.totp.secret), []);
+  const step1 = await auth.login('ФакторБоец', 'пароль123', '1.2.3.4', 'UA', null, 'fp');
+  ok(!step1.token, 'при включённом факторе токен НЕ выдаётся');
+  ok(step1.needTotp === true, 'вместо токена приходит требование кода');
+  ok(!!step1.challengeId, 'выдан номер запроса для второго шага');
+
+  const step2 = await auth.loginTotp(step1.challengeId, totp.codeAt(guard.totp.secret), '1.2.3.4', 'UA', null, 'fp');
+  ok(!!step2.token, 'после верного кода токен выдаётся');
+  ok(step2.token !== plain.token, 'это новая сессия, а не старая');
+
+  const routes = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
+  ok(/'\/api\/login\/totp'/.test(routes), 'есть отдельный роут второго шага');
+  ok(/staffOnly2fa/.test(routes), 'подключение доступно только сотрудникам');
+  const secBlock = routes.slice(routes.indexOf('/api/2fa/status'), routes.indexOf('/api/2fa/status') + 900);
+  ok((secBlock.match(/staffOnly2fa\(req\.user\)/g) || []).length >= 3,
+     'проверка прав стоит в каждом обработчике второго фактора, а не в одном');
+
+  console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
+  process.exit(failed ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

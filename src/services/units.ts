@@ -33,6 +33,23 @@ function list(user: User) {
       const highestMk = (m[2] || 0) > 0 ? 2 : ((m[1] || 0) > 0 ? 1 : 0);
       const mult = config.MK_MULT[highestMk];
       const total = (m[0] || 0) + (m[1] || 0) + (m[2] || 0);
+      // Разбивка по уровням модернизации: сколько единиц на каждом и с
+      // какими характеристиками они реально идут в бой.
+      //
+      // Раньше карточка показывала атаку по САМОМУ ВЫСОКОМУ имеющемуся
+      // уровню: одна модернизированная единица из пятисот — и весь стек
+      // выглядел как +60%. Ошибка в сторону завышения силы, то есть
+      // игрок планировал бой по числам, которых у него нет.
+      const mkRows = [0, 1, 2]
+        .map((k) => ({
+          mk: k,
+          count: m[k] || 0,
+          mult: config.MK_MULT[k],
+          bonusPct: Math.round((config.MK_MULT[k] - 1) * 100),
+          attack: Math.round(cu.attack * config.MK_MULT[k]),
+          defense: Math.round(cu.defense * config.MK_MULT[k]),
+        }))
+        .filter((r) => r.count > 0);
       return {
         id: cu.id, type: cu.type, typeName: config.UNIT_TYPE_NAMES[cu.type],
         name: cu.name, unlock: cu.unlock, locked: cu.unlock > user.level,
@@ -43,6 +60,11 @@ function list(user: User) {
         price: priceFor(user, cu),
         owned: total,
         ownedMk: { 0: m[0] || 0, 1: m[1] || 0, 2: m[2] || 0 },
+        mkRows,
+        // Суммарная сила стека с учётом того, что уровни разные. Это то
+        // число, которое действительно участвует в бою.
+        stackAttack: mkRows.reduce((sum, r) => sum + r.attack * r.count, 0),
+        stackDefense: mkRows.reduce((sum, r) => sum + r.defense * r.count, 0),
       };
     });
   return {

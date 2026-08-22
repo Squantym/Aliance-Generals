@@ -57,11 +57,19 @@ App.screens.units = async (c, param) => {
           ${x.isNext ? '<span class="badge">скоро</span>' : ''}
           <span class="muted">(всего: ${UI.fmtNum(x.owned)})</span>
         </div>
-        ${(x.ownedMk && (x.ownedMk[1] > 0 || x.ownedMk[2] > 0)) ? `
-          <div class="muted small mt">
-            Mk0: <b>${UI.fmtNum(x.ownedMk[0])}</b>
-            ${x.ownedMk[1] > 0 ? ` · Mk1: <b>${UI.fmtNum(x.ownedMk[1])}</b>` : ''}
-            ${x.ownedMk[2] > 0 ? ` · Mk2: <b>${UI.fmtNum(x.ownedMk[2])}</b>` : ''}
+        ${(x.mkRows && x.mkRows.length) ? `
+          <div class="mk-rows mt">
+            ${x.mkRows.map((r) => `
+              <div class="mk-row mk-${r.mk}">
+                <span class="mk-tag">${r.mk === 0 ? 'без модернизации' : 'Mk' + r.mk}</span>
+                <span class="mk-count">×${UI.fmtNum(r.count)}</span>
+                <span class="mk-stats">атака <b>${UI.fmtNum(r.attack)}</b> ·
+                  защита <b>${UI.fmtNum(r.defense)}</b></span>
+                ${r.bonusPct > 0 ? `<span class="mk-bonus">+${r.bonusPct}%</span>` : ''}
+              </div>`).join('')}
+            ${x.mkRows.length > 1 ? `<div class="mk-total">
+              в бою суммарно: атака <b>${UI.fmtNum(x.stackAttack)}</b> ·
+              защита <b>${UI.fmtNum(x.stackDefense)}</b></div>` : ''}
           </div>` : ''}
         <div class="kv mt"><span class="k">база: атака <b>${UI.fmtNum(x.baseAttack)}</b> · защита <b>${UI.fmtNum(x.baseDefense)}</b></span>
           <span class="k">содержание: <b style="color:var(--red)"><span class="ic-dollar"></span> ${UI.fmtMoney(x.upkeep)}</b>/ч</span></div>

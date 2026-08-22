@@ -319,7 +319,11 @@ function cleanupBotsFromAlliances(): void {
     removed += before - g.members.length;
   }
   if (removed > 0) {
-    db.save('alliance');
+    // Коллекция называется 'alliances' (см. defOf выше). Здесь стояло
+    // 'alliance' — такой коллекции нет, и db.save молча выходил, ничего
+    // не сохранив. Спасала только страховочная запись раз в 30 секунд:
+    // упади процесс раньше — чистка откатилась бы, а она разовая.
+    db.save('alliances');
     console.log(`🧹 Удалено ${removed} фейковых ботов из альянсов`);
   }
 }

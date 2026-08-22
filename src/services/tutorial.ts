@@ -14,7 +14,12 @@ import type { User, Notices } from '../types';
 // event — кодовое имя события: attack, buy_unit, mission_step,
 // build_income, skill_spent (см. config.TUTORIAL)
 function notify(user: User, event: string, notices: Notices): void {
-  if (user.tutorial.done) return;
+  // Проверка «поле вообще есть» обязательна: обучение появилось позже
+  // самой игры, и у аккаунтов, заведённых до него или служебными
+  // скриптами, его нет. Обращение к user.tutorial.done роняло ВЕСЬ бой
+  // уже ПОСЛЕ того, как обе стороны изменены — техника списана, добыча
+  // начислена, — а игрок получал «внутреннюю ошибку сервера».
+  if (!user.tutorial || user.tutorial.done) return;
   const quest = config.TUTORIAL[user.tutorial.step];
   if (!quest || quest.event !== event) return; // событие не из текущего задания
 

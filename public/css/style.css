@@ -3737,6 +3737,17 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
 .access-table .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .access-table .nowrap { white-space: nowrap; }
 
+/* Карточка устройства в разделе «Входы и устройства».
+   Отдельная рамка, а не строка таблицы: у устройства есть свой список
+   адресов и своя кнопка, и в таблице это разъезжается на телефоне. */
+.access-dev {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 8px;
+  background: rgba(255,255,255,.02);
+}
+.access-dev-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.access-dev .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+
 /* Несколько аккаунтов с одного адреса */
 .mc-group { padding: 7px 0; border-bottom: 1px solid var(--border-dim); }
 .mc-group:last-child { border-bottom: none; }
@@ -4417,3 +4428,49 @@ body.combat-fullscreen { padding-top: 0 !important; }
 .bh-who { font-size: 13.5px; margin-bottom: 2px; }
 .bh-who b { overflow-wrap: anywhere; }
 .bh-res { font-size: 12.5px; margin-bottom: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   УРОВНИ МОДЕРНИЗАЦИИ ТЕХНИКИ (Mk0 / Mk1 / Mk2)
+   Раньше это была одна серая строка «Mk0: 12 · Mk1: 3», из которой не
+   видно ни разницы в силе, ни того, что модернизация вообще что-то
+   даёт. Теперь каждый уровень — отдельная строка со своим цветом:
+   обычная техника серая, Mk1 стальной-синий, Mk2 золотой.
+   Цвет несёт смысл, а не украшает: по нему видно, чего в стеке больше.
+   =================================================================== */
+.mk-rows { display: flex; flex-direction: column; gap: 4px; }
+.mk-row {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 12px; padding: 4px 8px; border-radius: 6px;
+  border-left: 3px solid var(--border);
+  background: rgba(255, 255, 255, .03);
+}
+.mk-row .mk-tag { font-weight: 700; letter-spacing: .04em; }
+.mk-row .mk-count { color: var(--text); font-weight: 700; }
+.mk-row .mk-stats { color: var(--dim); }
+.mk-row .mk-stats b { color: var(--text); }
+.mk-row .mk-bonus {
+  margin-left: auto; font-weight: 700; white-space: nowrap;
+  padding: 1px 6px; border-radius: 9px; font-size: 11px;
+}
+
+/* Без модернизации — нарочно тусклая: это точка отсчёта */
+.mk-row.mk-0 { border-left-color: var(--border); }
+.mk-row.mk-0 .mk-tag { color: var(--dim); font-weight: 600; }
+
+/* Mk1 — сталь */
+.mk-row.mk-1 { border-left-color: #6fa8dc; background: rgba(111, 168, 220, .08); }
+.mk-row.mk-1 .mk-tag { color: #8ec4f0; }
+.mk-row.mk-1 .mk-bonus { color: #8ec4f0; border: 1px solid #6fa8dc; }
+
+/* Mk2 — золото: верхний уровень должен читаться с одного взгляда */
+.mk-row.mk-2 { border-left-color: var(--gold); background: rgba(233, 199, 92, .10); }
+.mk-row.mk-2 .mk-tag { color: var(--gold); }
+.mk-row.mk-2 .mk-bonus { color: var(--gold); border: 1px solid var(--gold); }
+
+.mk-total { font-size: 11px; color: var(--dim); padding: 2px 8px; }
+.mk-total b { color: var(--green); }
+
+@media (max-width: 480px) {
+  .mk-row .mk-stats { width: 100%; order: 3; }
+  .mk-row .mk-bonus { margin-left: 0; }
+}

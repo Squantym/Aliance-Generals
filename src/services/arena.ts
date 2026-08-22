@@ -306,8 +306,12 @@ function tickDiv(div: DivId): void {
         return;
       }
       if (stillAlive.length === 0) {
-        b.state = 'done';
-        b.finishedAt = now;
+        // Живых не осталось ни одного — это не «бой закончился», а «бой не
+        // состоялся»: на арену не вышел НИКТО, и всех разом пометили
+        // выбывшими выше. Раньше бой просто закрывался, и банк из взносов
+        // исчезал вместе с ним — деньги списаны у всех, победителя нет,
+        // возврата нет. Отменяем бой и возвращаем взносы.
+        cancelBattle(div, s, 'Бой не состоялся: на арену никто не вышел');
         db.save('arena');
         return;
       }
@@ -595,7 +599,7 @@ function register(user: User, divRaw: any, notices: Notices) {
     level: user.level, at: Date.now(),
   };
   db.save('arena');
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`⚔ Вы записаны на бой (${DIVISIONS[div].short}). Взнос ${fmtEntry(div)} списан.`);
   return view(user, div);
 }
@@ -608,7 +612,7 @@ function unregister(user: User, divRaw: any, notices: Notices) {
   delete s.registered[user.id];
   refundEntry(user, div);
   db.save('arena');
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`Запись отменена, взнос ${fmtEntry(div)} возвращён.`);
   return view(user, div);
 }
@@ -666,7 +670,12 @@ function view(user: User, divRaw?: any) {
         ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
       canEnter: b.state === 'preparing' && !!b.fighters[user.id]
         && !b.fighters[user.id].seen,
-      enterLeftSec: 0,
+      // Сколько осталось на выход в комнату — это и есть остаток подготовки:
+      // не вышел до её конца — засчитано поражение. Поле стояло жёстким
+      // нулём, а экран печатает его дословно: игрок читал «выйдите на
+      // арену, пока не истекло время: 0 с» и не понимал, успел он или нет.
+      enterLeftSec: b.state === 'preparing'
+        ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
       pot: b.pot,
       alive: Object.values(b.fighters).filter((f) => f.alive).length,
       total: Object.keys(b.fighters).length,
@@ -716,9 +725,12 @@ function enter(user: User, notices: Notices) {
   f.seen = true;      // явился в комнату — учитывается при старте
   addLog(f, '⚔ Вы вышли на арену');
 
-  // Когда вышли все — начинаем, не дожидаясь окончания окна
+  // Когда вышли все — начинаем, не дожидаясь окончания окна.
+  // Состояния 'waiting' у боя не существует (оно бывает 'preparing',
+  // 'running', 'done', 'cancelled') — условие не срабатывало никогда, и
+  // полностью собравшийся бой всё равно дожидался конца подготовки.
   const all = Object.values(b.fighters);
-  if (b.state === 'waiting' && all.every((x) => x.entered)) {
+  if (b.state === 'preparing' && all.every((x) => x.entered)) {
     b.state = 'running';
     assignTargets(b);
   }

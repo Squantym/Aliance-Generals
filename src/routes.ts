@@ -135,14 +135,14 @@ function registerRoutes(app: any) {
   // ---------- Авторизация (открытые маршруты) ----------
   app.add('GET', '/api/countries', () => ({ countries: config.COUNTRIES }), { open: true });
   app.add('POST', '/api/register', (req) =>
-    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua, (req as any).hints), { open: true });
+    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
   app.add('POST', '/api/login', (req) =>
-    auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints), { open: true });
+    auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
   // Второй шаг входа: код из приложения-аутентификатора либо код
   // восстановления. Открытый роут — пароль уже проверен на первом шаге,
   // а сам пропуск живёт 5 минут и сгорает после пяти неверных попыток.
   app.add('POST', '/api/login/totp', (req) =>
-    auth.loginTotp(req.body.challengeId, req.body.code, req.ip, req.ua, (req as any).hints), { open: true });
+    auth.loginTotp(req.body.challengeId, req.body.code, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
   app.add('POST', '/api/logout', (req) => { auth.logout(req.body.token || ''); return { ok: true }; }, { open: true });
 
   // ═══ ВТОРОЙ ФАКТОР: подключение и управление ═════════════════════
@@ -1171,6 +1171,49 @@ function registerRoutes(app: any) {
   // Включать обязательное подтверждение вслепую опасно: если отправка
   // настроена неверно, новые игроки не смогут войти вообще. Эта проверка
   // показывает состояние ДО того, как игроки столкнутся с проблемой.
+  // ═══ ШАБЛОНЫ ПИСЕМ И РАССЫЛКА ════════════════════════════════════
+  // Правит только владелец: письмо уходит от имени игры, и текст в нём —
+  // такая же ответственность, как объявление на главной.
+  app.add('GET', '/api/admin/mail/templates', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const mailer = require('./services/mailer');
+    return {
+      ...mailer.list(),
+      audience: mailer.audience(player.users()),
+      broadcast: mailer.broadcastStatus(),
+    };
+  }, { admin: true });
+
+  app.add('POST', '/api/admin/mail/template', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/mailer').save(
+      req.user.name, String(req.body.id || ''), String(req.body.subject || ''), String(req.body.html || ''), n);
+  }), { admin: true });
+
+  app.add('POST', '/api/admin/mail/template/default', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/mailer').resetToDefault(String(req.body.id || ''), n);
+  }), { admin: true });
+
+  app.add('POST', '/api/admin/mail/preview', async (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/mailer').sendPreview(
+      String(req.body.id || ''), String(req.body.to || ''), req.user.name);
+  }, { admin: true });
+
+  app.add('POST', '/api/admin/mail/broadcast', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const mailer = require('./services/mailer');
+    if (req.body.stop) return mailer.broadcastStop(n);
+    auditLog.record({ userId: req.user.id, userName: req.user.name, path: '/api/admin/mail/broadcast' });
+    return mailer.broadcastStart(req.user.name, player.users(), n);
+  }), { admin: true });
+
+  app.add('GET', '/api/admin/mail/broadcast', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/mailer').broadcastStatus();
+  }, { admin: true });
+
   app.add('GET', '/api/admin/email-check', (req) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
     const email = require('./services/email');
@@ -1281,8 +1324,88 @@ function registerRoutes(app: any) {
       // Показываем отдельно, чтобы не путать с подозрительными совпадениями.
       characters: access.sameAccountChars(target, player.users()),
       accountLogin: (target as any).accountLogin || '',
+      // Открытые прямо сейчас входы: с какого устройства и адреса.
+      // По ним же работают кнопки «выкинуть».
+      sessions: auth.sessionsOf(target.id),
     };
   }, { admin: true });
+
+  // ═══ УСТРОЙСТВА И СЕССИИ ═════════════════════════════════════════
+
+  // Кто ещё заходил с этого же устройства. Сигнал сильнее совпадения
+  // адреса, но тоже не доказательство: общий компьютер в семье или
+  // интернет-клуб дают ровно такое же совпадение честно.
+  app.add('GET', '/api/admin/by-device', (req) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const access = require('./services/access');
+    const key = String(req.query.key || '');
+    if (!key) throw new u.ApiError('Не указано устройство');
+    return { key, players: access.byDevice(key, player.users()) };
+  }, { admin: true });
+
+  // Все открытые сессии сервера — сводка по игрокам
+  app.add('GET', '/api/admin/sessions', (req) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const counts = auth.sessionCounts();
+    const users = player.users();
+    const rows = Object.entries(counts)
+      .map(([id, n]) => {
+        const p: any = users[id];
+        return {
+          id, n,
+          name: p ? p.name : '(удалён)',
+          level: p ? p.level : 0,
+          lastSeen: p ? (p.lastSeen || 0) : 0,
+          sessions: auth.sessionsOf(id),
+        };
+      })
+      .sort((a, b) => b.n - a.n || (b.lastSeen || 0) - (a.lastSeen || 0));
+    return { total: rows.reduce((s, r) => s + r.n, 0), players: rows.length, rows };
+  }, { admin: true });
+
+  // Выброс из кабинета: одна сессия, все сессии игрока или все сразу.
+  // Три случая — один адрес: разные кнопки для одного и того же действия
+  // расходятся при первой же правке.
+  app.add('POST', '/api/admin/sessions/kick', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    const access = require('./services/access');
+    const users = player.users();
+
+    if (req.body.all) {
+      const killed = auth.killEverySession();
+      auditLog.record({ userId: req.user.id, userName: req.user.name,
+        path: '/api/admin/sessions/kick', body: { all: true, killed } });
+      n.push(`🚪 Из кабинетов выброшены все: закрыто сессий — ${killed}. Игроки войдут заново по паролю.`);
+      return { killed };
+    }
+
+    if (req.body.token) {
+      const token = String(req.body.token);
+      // Кого именно выкинули — нужно для журнала безопасности игрока,
+      // поэтому владельца ищем ДО удаления записи.
+      const owner: any = Object.values(users)
+        .find((p: any) => auth.sessionsOf(p.id).some((s: any) => s.token === token));
+      const ok = auth.killOne(token);
+      if (!ok) throw new u.ApiError('Эта сессия уже закрыта');
+      if (owner) {
+        try { access.securityEvent(owner, 'kicked', `Сессия закрыта сотрудником ${req.user.name}`); } catch (e) {}
+      }
+      auditLog.record({ userId: req.user.id, userName: req.user.name,
+        path: '/api/admin/sessions/kick',
+        body: { token: token.slice(0, 6) + '…', target: owner ? owner.name : '' } });
+      n.push('🚪 Сессия закрыта — с этого устройства придётся войти заново.');
+      return { killed: 1 };
+    }
+
+    const target: any = users[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    const killed = auth.killSessions(target.id);
+    try { access.securityEvent(target, 'kicked', `Все сессии закрыты сотрудником ${req.user.name}`); } catch (e) {}
+    auditLog.record({ userId: req.user.id, userName: req.user.name,
+      path: '/api/admin/sessions/kick', body: { userId: target.id, name: target.name, killed } });
+    n.push(`🚪 «${target.name}» выброшен из кабинета: закрыто сессий — ${killed}.`);
+    return { killed };
+  }), { admin: true });
 
   // Сводка: с каких адресов заходит по несколько аккаунтов
   // ═══ АНТИЧИТ ═════════════════════════════════════════════════════
@@ -1315,7 +1438,11 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/admin/multi-check', (req) => {
     if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
     const access = require('./services/access');
-    return { groups: access.ipSummary(player.users(), u.toInt(req.query.min, 2)) };
+    // Отдаём не только группы, но и признак «прокси не передаёт адрес»:
+    // без него панель показывала бы 36 игроков под одним 127.0.0.1 как
+    // готовый список мультоводов — и это худший вид ложного сигнала,
+    // потому что он выглядит убедительно.
+    return access.ipSummary(player.users(), u.toInt(req.query.min, 2));
   }, { admin: true });
 
   // ═══ ЖУРНАЛ НАЧИСЛЕНИЙ ЗОЛОТА (только владелец) ══════════════════

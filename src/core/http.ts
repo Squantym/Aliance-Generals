@@ -41,6 +41,7 @@ interface ReqCtx {
   ip: string;
   ua: string;          // строка браузера — для определения устройства
   hints?: any;         // подсказки браузера: модель, система (Client Hints)
+  fp?: string;         // отпечаток устройства от клиента (экран, пояс, ядра)
   rawHeaders?: any;    // сырые заголовки — только для диагностики
 }
 
@@ -116,6 +117,42 @@ function clientIp(req: any): string {
   // Ничего не нашли: возвращаем первое непустое из цепочки, чтобы
   // хотя бы что-то было видно администратору
   return chain.find(Boolean) || 'unknown';
+}
+
+
+// ═══ ТИХАЯ ПРОБЛЕМА: ПРОКСИ НЕ ПЕРЕДАЁТ АДРЕС ═══════════════════════
+// Если nginx настроен без proxy_set_header, сервер видит 127.0.0.1 у
+// ВСЕХ игроков. Снаружи это никак не проявляется: игра работает, а
+// журнал входов, проверка на мультоводов и блокировка по адресу тихо
+// становятся бесполезными. Такие поломки живут годами именно потому,
+// что ничего не ломают заметно.
+//
+// Поэтому сервер следит за этим сам: считает первые запросы и, если
+// среди них НИ ОДНОГО с настоящим адресом, один раз громко пишет в лог.
+// Один раз — чтобы не засорять его: повторяющееся предупреждение
+// перестают читать так же быстро, как красный тест.
+let proxyChecked = 0;
+let proxyWatchDone = false;      // проверять больше не нужно: либо всё
+                                 // хорошо, либо уже предупредили
+const PROXY_SAMPLE = 50;
+function watchProxyHealth(ip: string): void {
+  if (proxyWatchDone) return;
+  // На своей машине адрес и должен быть локальным — ругаться незачем.
+  // Предупреждение имеет смысл только на боевом сервере.
+  if (String(process.env.NODE_ENV) !== 'production') { proxyWatchDone = true; return; }
+  proxyChecked++;
+  if (isUsableIp(ip)) { proxyWatchDone = true; return; }   // всё в порядке
+  if (proxyChecked >= PROXY_SAMPLE) {
+    proxyWatchDone = true;
+    console.warn('\n⚠️  ПРОКСИ НЕ ПЕРЕДАЁТ АДРЕС ИГРОКА.');
+    console.warn(`   Из первых ${PROXY_SAMPLE} запросов ни один не принёс внешнего адреса —`);
+    console.warn('   сервер видит только себя. Журнал входов, поиск мультоводов и');
+    console.warn('   блокировка по адресу сейчас бесполезны.');
+    console.warn('   Диагностика: bash tools/check-proxy.sh');
+    console.warn('   Коротко: в каждый location с proxy_pass добавить');
+    console.warn('     proxy_set_header X-Real-IP $remote_addr;');
+    console.warn('     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n');
+  }
 }
 
 function cacheControlFor(ext: string, hasHashParam: boolean, relPath?: string): string {
@@ -503,7 +540,7 @@ function createApp() {
             query: Object.fromEntries(new URLSearchParams(qs || '')),
             body: req.method === 'POST' ? await readBody(req) : {},
             user: null,
-            ip: clientIp(req),
+            ip: (() => { const _ip = clientIp(req); watchProxyHealth(_ip); return _ip; })(),
             // Строка браузера: по ней определяем устройство. Нужна и роутам
             // (регистрация, вход), и учёту активности ниже.
             ua: String(req.headers['user-agent'] || '').slice(0, 400),
@@ -517,6 +554,10 @@ function createApp() {
               platform: String(req.headers['sec-ch-ua-platform'] || '').replace(/^"|"$/g, '').slice(0, 30),
               platformVersion: String(req.headers['sec-ch-ua-platform-version'] || '').replace(/^"|"$/g, '').slice(0, 30),
             },
+            // Отпечаток устройства от клиента (см. api.js): экран, часовой
+            // пояс, язык, ядра. Строка браузера у половины игроков
+            // одинаковая — без отпечатка их устройства неразличимы.
+            fp: String(req.headers['x-fp'] || '').slice(0, 200),
           };
 
           // Авторизация (если маршрут не открытый)
@@ -539,6 +580,11 @@ function createApp() {
                 return sendJson(res, 401, { error: 'Сессия истекла — войдите заново' }, acceptEncoding);
               }
               userId = rec.u;
+              // Адрес сессии обновляем сразу, как только он сменился: по
+              // нему в панели видно, откуда сейчас открыт кабинет, и
+              // смена адреса посреди живой сессии — первый признак того,
+              // что токеном пользуется кто-то ещё.
+              if (rec.ip && reqCtx.ip && rec.ip !== reqCtx.ip) { rec.ip = reqCtx.ip; db.save('sessions'); }
               // Продлеваем при активности, но пишем не чаще раза в час,
               // чтобы не дёргать сохранение на каждый запрос
               if (Date.now() - (rec.at || 0) > 3600 * 1000) {
@@ -615,7 +661,7 @@ function createApp() {
             // месяцами, и данных о нём просто не появлялось бы. Внутри
             // стоит защита от лишних записей — см. touch().
             try {
-              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua, reqCtx.hints);
+              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua, reqCtx.hints, reqCtx.fp);
             } catch (e) {}
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов

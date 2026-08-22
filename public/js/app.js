@@ -48,10 +48,11 @@ const App = {
         const res = await API.post('/api/war/fatality', { choice });
         App._lastBattle = null;
         overlay.remove();
-        if (res && res.escaped) {
-          App._showFatalityEscaped(res);
-          return;
-        }
+        // Ветка res.escaped убрана: ускользание происходит РАНЬШЕ,
+        // в момент пленения, и приходит в ответе на атаку полем
+        // fatalityDodged. Здесь она читала несуществующее поле и не
+        // срабатывала ни разу — а окно «жертва ускользнула» из-за
+        // этого не видел никто.
         App._showFatalityResult(choice, res);
       } catch (e) {
         UI.toast('⛔ ' + e.message);
@@ -1680,17 +1681,27 @@ const App = {
   },
 
   _startBattleWindowTimer(b) {
-    // Запускаем обратный отсчёт в шапке окна
+    // Гасим прошлый отсчёт. Функция вызывается на КАЖДОЙ отрисовке окна боя,
+    // а окно перерисовывается раз в 4 секунды, пока бой открыт. Без этой
+    // строки каждый опрос добавлял ещё один секундный таймер: за час боя их
+    // набиралось под тысячу, все писали в одно поле своё значение (цифра
+    // прыгала), и вкладка постепенно начинала тормозить. Соседний
+    // _startActionCdTicker гасит свой таймер именно так — здесь забыли.
+    if (App._bwTimeTimer) { clearInterval(App._bwTimeTimer); App._bwTimeTimer = null; }
     const timerEl = document.getElementById('bw-timer');
     if (!timerEl) return;
     const isPrep = b.phase === 'prep';
     let secs = isPrep ? (b.prepSecsLeft || 0) : (b.timeLeft || 0);
-    const t = setInterval(() => {
+    App._bwTimeTimer = setInterval(() => {
+      // Окно закрыли — отсчёт больше не нужен
+      if (!document.getElementById('bw-timer')) {
+        clearInterval(App._bwTimeTimer); App._bwTimeTimer = null; return;
+      }
       secs--;
       if (secs < 0) secs = 0;
       timerEl.textContent = UI.fmtTimer(secs);
       if (secs <= 0) {
-        clearInterval(t);
+        clearInterval(App._bwTimeTimer); App._bwTimeTimer = null;
         // Таймер подготовки истёк — не ждём следующий 4-сек poll, сразу
         // запрашиваем состояние (сервер лениво переведёт prep→active).
         if (isPrep) setTimeout(() => App._renderBattleWindow(), 300);

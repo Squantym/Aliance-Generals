@@ -578,6 +578,20 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `✅ Разблокировал аккаунт ${body.targetName || body.userId || '—'}`;
       case '/api/admin/verify-email':
         return `✉️ Подтвердил почту игроку ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/sessions/kick':
+        return body.all
+          ? `🚪 Выкинул из кабинетов ВСЕХ (закрыто сессий: ${body.killed || 0})`
+          : (body.token
+            ? `🚪 Закрыл одну сессию${body.target ? ` игрока ${body.target}` : ''} (${body.token})`
+            : `🚪 Выкинул из кабинета ${body.name || body.userId || '—'} (закрыто сессий: ${body.killed || 0})`);
+      case '/api/admin/mail/template':
+        return `✉️ Изменил шаблон письма «${body.id || '—'}»`;
+      case '/api/admin/mail/template/default':
+        return `↩️ Вернул заводской текст письма «${body.id || '—'}»`;
+      case '/api/admin/mail/preview':
+        return `✉️ Отправил образец письма «${body.id || '—'}» на ${body.to || '—'}`;
+      case '/api/admin/mail/broadcast':
+        return body.stop ? '⏹ Остановил рассылку писем' : '✉️ Запустил рассылку писем всем игрокам';
       case '/api/admin/set-password':
         return `🔑 Назначил новый пароль игроку ${body.targetName || body.userId || '—'}`;
       case '/api/admin/delete-account':

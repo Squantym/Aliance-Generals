@@ -18,7 +18,9 @@ ok('таблица имеет класс adm-players', /class="adm-players"/.tes
 ok('обёртка имеет класс adm-players-wrap', /adm-players-wrap/.test(js));
 ok('ячейка действий помечена adm-acts', /class="adm-acts"/.test(js));
 ok('ресурсные ячейки помечены adm-stat', (js.match(/class="adm-stat"/g) || []).length === 4);
-ok('у ресурсных ячеек есть подписи data-l', /data-l="💵"/.test(js) && /data-l="🪙"/.test(js) && /data-l="👂"/.test(js) && /data-l="🎖"/.test(js));
+// Подпись столбца долларов — «$»: на узком экране она выводится через
+// ::before, а картинку-иконку туда не подставить.
+ok('у ресурсных ячеек есть подписи data-l', /data-l="\$"/.test(js) && /data-l="🪙"/.test(js) && /data-l="👂"/.test(js) && /data-l="🎖"/.test(js));
 ok('ячейка имени помечена adm-p-name', /class="adm-p-name"/.test(js));
 
 console.log('\n[2] CSS: карточная раскладка на узком экране');

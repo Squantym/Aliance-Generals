@@ -369,7 +369,7 @@ function reroll(user: User, questId: string, notices: Notices) {
   // способом мгновенно получить награду за уже выполненное
   if (d.accepted) delete d.accepted[questId];
   db.markUser(user.id);
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`🔄 Поручение заменено на «${pick.name}». Осталось замен: ${vipSrv.left(user, 'reroll')}`);
   return list(user);
 }

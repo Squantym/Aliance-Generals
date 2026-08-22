@@ -165,12 +165,17 @@ function safeStart(user: User) {
 function safeTry(user: User, guess: string, notices: Notices) {
   const c = clubState(user);
   if (!c.safe) throw new u.ApiError('Сначала подойдите к сейфу');
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
   const g = String(guess || '').replace(/\D/g, '');
   if (g.length !== C.SAFE_DIGITS) throw new u.ApiError(`Введите ${C.SAFE_DIGITS} цифры`);
   if (new Set(g.split('')).size !== C.SAFE_DIGITS) {
     throw new u.ApiError('Цифры в коде не повторяются — введите разные');
   }
+  // Поручение засчитываем только за НАСТОЯЩУЮ попытку. Раньше строка
+  // стояла выше проверок: запрос с мусором вместо кода падал ошибкой,
+  // попытка сейфа не тратилась — а «сыграл в клубе» засчитывалось.
+  // Отменённый запрос не откатывает уже изменённого игрока, поэтому
+  // поручение закрывалось вообще без игры.
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
   const code = c.safe.code;
   let bulls = 0, cows = 0;
   for (let i = 0; i < code.length; i++) {
@@ -240,12 +245,13 @@ function artyStart(user: User) {
 function artyShoot(user: User, distance: number | string, notices: Notices) {
   const c = clubState(user);
   if (!c.arty) throw new u.ApiError('Сначала займите огневую позицию');
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
   const guess = u.toInt(distance);
   if (guess < C.ARTY_MIN || guess > C.ARTY_MAX) {
     throw new u.ApiError(`Дистанция должна быть от ${C.ARTY_MIN} до ${C.ARTY_MAX}`);
   }
+  // Только после проверки дистанции — см. пояснение в safeTry
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
   c.arty.shots++;
   c.arty.shotsLeft--;
@@ -398,12 +404,13 @@ function rivalBids(): number[] {
 function bidsPlay(user: User, bids: any, notices: Notices) {
   const c = clubState(user);
   if (cdLeft(c, 'bids') > 0) throw new u.ApiError('Аукцион уже закрыт. Загляните позже.');
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
   const arr = (Array.isArray(bids) ? bids : []).map((x: any) => Math.max(0, u.toInt(x, 0)));
   if (arr.length !== C.BIDS_LOTS) throw new u.ApiError(`Нужно указать ставку по каждому из ${C.BIDS_LOTS} лотов`);
   const total = arr.reduce((s, x) => s + x, 0);
   if (total > C.BIDS_POINTS) throw new u.ApiError(`Всего очков влияния: ${C.BIDS_POINTS}, вы распределили ${total}`);
+  // Только после проверки ставок — см. пояснение в safeTry
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
   // Ставки соперников
   const rivals: number[][] = [];

@@ -255,7 +255,7 @@ function bid(user: User, devId: string, gold: number, notices: Notices) {
 
   db.markUser(user.id);
   db.save('lots');
-  db.save('users');
+  db.markUser(user.id);
   const dev: any = config.SECRET_DEVS.find((x: any) => x.id === devId);
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/lots/bid',
@@ -294,7 +294,7 @@ function buyBuff(user: User, itemId: string, qty: number, notices: Notices) {
     else market.pushEffect(user, item);
   }
   db.markUser(user.id);
-  db.save('users');
+  db.markUser(user.id);
 
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/lots/buy',

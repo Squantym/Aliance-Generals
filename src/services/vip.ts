@@ -172,7 +172,7 @@ function buy(user: any, notices: Notices) {
   const base = Math.max(Date.now(), Number(user.vipUntil || 0));
   user.vipUntil = base + PRICE_DAYS * 86400000;
   db.markUser(user.id);
-  db.save('users');
+  db.markUser(user.id);
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/vip/buy',
     body: { days: PRICE_DAYS, gold: price },

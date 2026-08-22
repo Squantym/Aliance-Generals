@@ -725,10 +725,16 @@ function refresh(user: User): void {
       if (net >= 0) { addMoney(user, net, true); continue; }
       const debt = -net;
       if (user.dollars >= debt) { user.dollars -= debt; continue; }
-      // Денег не хватает — распродаём технику по 50% цены ровно
-      // столько, чтобы закрыть часовое содержание
-      user.dollars = Math.max(0, user.dollars - debt);
-      sellUnitsForDebt(user, debt - Math.max(0, user.dollars));
+      // Денег не хватает — забираем всё, что есть, а недостачу закрываем
+      // распродажей техники по 50% цены.
+      // ВАЖНО: остаток долга считаем по деньгам ДО списания. Раньше здесь
+      // сначала обнулялся счёт, а потом остаток считался от уже нулевого
+      // счёта — то есть долг за час снимался ДВАЖДЫ: деньгами и техникой.
+      // При долгой отлучке это съедало армию примерно вдвое быстрее, чем
+      // положено, и объяснить игроку пропажу было нечем.
+      const have = user.dollars;
+      user.dollars = 0;
+      sellUnitsForDebt(user, debt - have);
     }
     user.lastIncomeAt += hours * HOUR;
   }
@@ -983,7 +989,9 @@ function resView(user: User) {
 }
 
 function tutorialView(user: User) {
-  if (user.tutorial.done) return { done: true, total: config.TUTORIAL.length };
+  // Нет поля обучения — считаем курс пройденным (см. tutorial.notify):
+  // иначе главный экран старого аккаунта падал бы на ровном месте.
+  if (!user.tutorial || user.tutorial.done) return { done: true, total: config.TUTORIAL.length };
   const q = config.TUTORIAL[user.tutorial.step];
   return {
     done: false,
@@ -1305,10 +1313,10 @@ function renameSelf(user: User, newName: string, notices: Notices) {
 }
 
 function setAvatar(user: User, avatarId: string) {
-  if (avatarId === '' || avatarId === null) { user.avatar = undefined; db.save('users'); return { avatar: null }; }
+  if (avatarId === '' || avatarId === null) { user.avatar = undefined; db.markUser(user.id); return { avatar: null }; }
   if (!config.AVATAR_IDS.includes(avatarId)) throw new u.ApiError('Неизвестный аватар');
   user.avatar = avatarId;
-  db.save('users');
+  db.markUser(user.id);
   return { avatar: avatarId };
 }
 

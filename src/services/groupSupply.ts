@@ -195,7 +195,7 @@ function buy(user: User, itemId: string, notices: Notices) {
   };
 
   db.markUser(user.id);
-  db.save('users');
+  db.markUser(user.id);
   auditLog.record({
     userId: user.id, userName: user.name, path: '/api/group/supply/buy',
     body: { item: item.id, price: item.price, minutes: item.minutes },

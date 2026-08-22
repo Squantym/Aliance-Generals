@@ -189,7 +189,7 @@ const rel = access.related(p1, U);
 ok(!rel.some((r) => acc.sameAccount(p1, U[r.id])),
    'свои персонажи не попадают в список подозрительных');
 ok(rel.some((r) => r.name === 'Чужой'), 'чужой аккаунт с того же адреса — попадает');
-const sum = access.ipSummary(U, 2).find((g) => g.ip === '95.1.1.1');
+const sum = access.ipSummary(U, 2).groups.find((g) => g.ip === '95.1.1.1');
 ok(sum && sum.accounts === 2 && sum.chars === 3,
    `на адресе ${sum.chars} персонажа, но ${sum.accounts} аккаунта — считаются аккаунты`);
 const accSrc = fs.readFileSync(path.join(ROOT, 'src/services/access.ts'), 'utf8');

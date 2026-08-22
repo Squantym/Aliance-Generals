@@ -60,7 +60,7 @@ function claimDailyIfDue(user: User, notices?: Notices): any | null {
     jackpot: streak === 7,
     at: Date.now(),
   };
-  db.save('users');
+  db.markUser(user.id);
   try { checkTitles(user, notices || { push: () => {} } as any); } catch (e) {}
   return { streak, reward: r, pending: true };
 }
@@ -73,7 +73,7 @@ function claimLoginReward(user: User, notices: Notices) {
   if (p.dollars) player.addMoney(user, p.dollars, false);
   if (p.gold) player.addGold(user, p.gold);
   (user as any).pendingLoginReward = null;
-  db.save('users');
+  db.markUser(user.id);
   const parts: string[] = [];
   if (p.dollars) parts.push(`$ ${u.fmt(p.dollars)}`);
   if (p.gold) parts.push(`🪙 ${p.gold}`);
@@ -137,7 +137,7 @@ function titlesView(user: User) {
 function setTitle(user: User, titleId: string, notices: Notices) {
   if (titleId === '' || titleId === null) {
     user.activeTitle = null;
-    db.save('users');
+    db.markUser(user.id);
     return titlesView(user);
   }
   // Проверяем, что титул разблокирован
@@ -149,7 +149,7 @@ function setTitle(user: User, titleId: string, notices: Notices) {
     throw new u.ApiError('Этот титул ещё не разблокирован');
   }
   user.activeTitle = titleId;
-  db.save('users');
+  db.markUser(user.id);
   return titlesView(user);
 }
 
@@ -178,7 +178,7 @@ function rollContracts(user: User): void {
       baseCounter: snapshotCounter(user, c.counter) } as any;
   });
   user.contractsDay = day;
-  db.save('users');
+  db.markUser(user.id);
 }
 
 function snapshotCounter(user: User, counter: string): number {
@@ -228,7 +228,7 @@ function claimContract(user: User, contractId: string, notices: Notices) {
   const reward = config.contractReward(def.rewardGold[tier], user.level);
   player.addGold(user, reward);
   ct.claimed = true;
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`📋 Контракт «${def.name}» выполнен! +🪙 ${reward}`);
   return contractsView(user);
 }
@@ -257,7 +257,7 @@ function buyCosmetic(user: User, cosmeticId: string, notices: Notices) {
   user.gold -= item.priceGold;
   try { require('./stats').track(user, 'goldSpent', 'market', item.priceGold); } catch (e) {}
   user.ownedCosmetics.push(cosmeticId);
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`🎨 Куплено: «${item.name}»! Наденьте в настройках профиля.`);
   return cosmeticsView(user);
 }
@@ -272,14 +272,14 @@ function equipCosmetic(user: User, cosmeticId: string, notices: Notices) {
   if (!item || !user.ownedCosmetics.includes(cosmeticId)) throw new u.ApiError('Предмет не куплен');
   if (item.type === 'frame') user.profileFrame = cosmeticId;
   else if (item.type === 'bg') user.profileBg = cosmeticId;
-  db.save('users');
+  db.markUser(user.id);
   return cosmeticsView(user);
 }
 
 function unequipCosmetic(user: User, type: string) {
   if (type === 'frame') user.profileFrame = '';
   else if (type === 'bg') user.profileBg = '';
-  db.save('users');
+  db.markUser(user.id);
   return cosmeticsView(user);
 }
 
@@ -289,7 +289,7 @@ function unequipCosmetic(user: User, type: string) {
 function ensureRefCode(user: User): string {
   if (!user.refCode) {
     user.refCode = (user.name.slice(0, 4).toUpperCase().replace(/[^A-ZА-Я0-9]/gi, '') || 'GEN') + u.uid(4).toUpperCase();
-    db.save('users');
+    db.markUser(user.id);
   }
   return user.refCode;
 }
@@ -330,7 +330,7 @@ function applyReferral(user: User, code: string, notices: Notices) {
   player.addGold(user, config.REFERRAL.inviteeGold);
 
   inviter.refCount = (inviter.refCount || 0) + 1;
-  db.save('users');
+  db.markUser(user.id); db.markUser(inviter.id);
   try {
     require('./notifications').push(inviter.id, 'referral_joined',
       `🤝 Игрок ${user.name} вошёл по вашему коду! Награда придёт, когда он достигнет 50 уровня, плюс вы будете получать 10% от его покупок золота.`, {});
@@ -349,7 +349,7 @@ function onReferralLevelUp(user: User): void {
   user.refLevel50Paid = true;
   player.addGold(inviter, config.REFERRAL.level50Reward);
   inviter.tokens = (inviter.tokens || 0) + config.REFERRAL.level50Tokens;
-  db.save('users');
+  db.markUser(user.id); db.markUser(inviter.id);
   try {
     require('./notifications').push(inviter.id, 'referral_level50',
       `🎉 Ваш друг ${user.name} достиг 50 уровня! Награда: 🪙 ${config.REFERRAL.level50Reward}, 🎖 ${config.REFERRAL.level50Tokens}`, {});
@@ -366,7 +366,7 @@ function onReferralPurchase(user: User, goldBought: number): void {
   if (share <= 0) return;
   player.addGold(inviter, share);
   inviter.refEarnings = (inviter.refEarnings || 0) + share;
-  db.save('users');
+  db.markUser(user.id); db.markUser(inviter.id);
   try {
     require('./notifications').push(inviter.id, 'referral_purchase',
       `💰 Ваш реферал ${user.name} купил золото — вам начислено 🪙 ${share} (10%).`, {});
@@ -506,7 +506,7 @@ function spyOn(user: User, targetId: string, notices: Notices) {
     db.markUser(target.id);
   } catch (e) {}
 
-  db.save('users');
+  db.markUser(user.id);
 
   notices.push(reveal.live
     ? `🛰 Спутник-шпион ведёт цель «${target.name}» в реальном времени (3 дня).`
@@ -527,7 +527,7 @@ function spyReport(user: User, targetId: string) {
   if (rep.live && rep.liveUntil) {
     if (Date.now() >= rep.liveUntil) {
       delete user.spyReports![targetId];
-      db.save('users');
+      db.markUser(user.id);
       return null;
     }
     const target = users()[targetId];

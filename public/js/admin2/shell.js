@@ -38,10 +38,15 @@ const A2 = {
     { id: 'logs',       label: 'Журнал',        icon: '📋', group: 'Служебное', zone: 'players',   legacy: 'renderLogs' },
     { id: 'tech',       label: 'Техника',       icon: '🔧', group: 'Служебное', zone: 'security',  legacy: 'renderTech' },
     { id: 'roles',      label: 'Роли',          icon: '🛡', group: 'Служебное', zone: 'roles',     legacy: 'renderRoles' },
-    { id: 'gold',       label: 'Золото',        icon: '🪙', group: 'Служебное', zone: 'roles',     legacy: 'renderGold', ownerOnly: true },
+    // Значок валюты — картинкой, как в игре: сотрудник ищет глазом
+    // знакомую монету, а не эмодзи, которое в каждой системе своё.
+    { id: 'gold',       label: 'Золото',        icon: '<span class="ic-gold"></span>', group: 'Служебное', zone: 'roles', legacy: 'renderGold', ownerOnly: true },
     // Защита собственного входа доступна КАЖДОМУ сотруднику независимо
     // от зон: это его учётная запись, а не раздел игры.
     { id: 'security',   label: 'Защита входа',  icon: '🔐', group: 'Служебное' },
+    { id: 'sessions',   label: 'Открытые входы', icon: '🚪', group: 'Служебное', zone: 'security' },
+    // Письма уходят от имени игры — правит только владелец
+    { id: 'mail',       label: 'Письма',        icon: '✉️', group: 'Служебное', zone: 'roles', ownerOnly: true },
   ],
   GROUPS: ['Работа', 'Игра', 'Служебное'],
 

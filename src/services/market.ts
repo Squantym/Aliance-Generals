@@ -110,10 +110,19 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
   if (!item) throw new u.ApiError('Такого товара нет на рынке');
   const price = marketGold(item, user);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
-  require('./dailyQuests').bump(user, 'marketBought', 1);
-  // Отдельный счётчик по КОНКРЕТНОМУ товару: поручения на контрабанду
-  // называют товар явно, поэтому общего счётчика покупок им мало
-  require('./dailyQuests').bump(user, 'buy:' + item.id, 1);
+
+  // Счётчики поручений двигаем ТОЛЬКО после того, как покупка состоялась.
+  // Раньше они стояли здесь, до проверки жертвы: запрос с несуществующим
+  // именем падал ошибкой, золото не списывалось — а прогресс поручения
+  // засчитывался. Отменённый запрос не откатывает уже изменённого игрока,
+  // поэтому «Скупщик» и контрабандные поручения закрывались бесплатно,
+  // одной и той же неудачной покупкой подряд.
+  const countBuy = () => {
+    require('./dailyQuests').bump(user, 'marketBought', 1);
+    // Отдельный счётчик по КОНКРЕТНОМУ товару: поручения на контрабанду
+    // называют товар явно, поэтому общего счётчика покупок им мало
+    require('./dailyQuests').bump(user, 'buy:' + item.id, 1);
+  };
 
   if (item.kind === 'debuff') {
     // Падлянка применяется к другому игроку по имени
@@ -123,8 +132,13 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     // И своему же второму персонажу — тоже: это способ обнулить эффект
     require('./account').assertNotSelfAccount(user, target, 'Применение падлянки');
     user.gold -= price;
+    countBuy();
   try { require('./stats').track(user, 'goldSpent', 'market', price); } catch (e) {}
     pushEffect(target, item, user);
+    // Жертву помечаем к записи явно: слой http сохраняет только автора
+    // запроса. Без этого падлянка жила лишь в памяти процесса и исчезала
+    // при перезапуске — золото у покупателя списано, эффекта нет.
+    db.markUser(target.id);
     notifications.push(target.id, 'debuff_applied', 'Диверсия!',
       { text: `Игрок ${user.name} устроил вам «${item.name}»: ${item.desc}`, byId: user.id, byName: user.name });
     notices.push(`😈 «${item.name}» применена к игроку ${target.name}.`);
@@ -132,6 +146,7 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
   }
 
   user.gold -= price;
+  countBuy();
   const mx = player.maxima(user);
   switch (item.kind) {
     case 'refill_energy':
@@ -316,6 +331,11 @@ function tick(): void {
       const winner = users[lot.best.userId];
       if (winner) {
         applyCommanderEffect(winner, commander, now);
+        // Лот закрывает ФОНОВЫЙ тик, а не запрос победителя: пометить его
+        // к записи некому. Без этой строки выигранный наёмник существовал
+        // только в памяти — перезапуск процесса стирал его вместе с
+        // потраченным золотом.
+        db.markUser(winner.id);
         notifications.push(winner.id, 'auction_won', 'Аукцион выигран!',
           { text: `${commander.name} поступает в ваше распоряжение на ${config.AUCTION.RENT_HOURS} часа. ${commander.desc}.` });
       }
@@ -399,6 +419,11 @@ function bid(user: User, lotId: string, amount: number, notices: Notices) {
     const prev = player.users()[lot.best.userId];
     if (prev) {
       prev.gold += lot.best.amount;
+      // Возврат золота — правка ЧУЖОГО игрока, а http сохраняет только
+      // того, кто перебил ставку. Прежний лидер терял возврат при
+      // перезапуске: его ставка уже списана, а вернувшееся золото жило
+      // в памяти. Помечаем явно.
+      db.markUser(prev.id);
       notifications.push(prev.id, 'auction_outbid', 'Аукцион: ставку перебили',
         { text: `Вашу ставку 🪙 ${lot.best.amount} перебил ${user.name}. Золото возвращено.` });
     }

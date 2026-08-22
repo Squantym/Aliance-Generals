@@ -104,7 +104,7 @@ function buyLaser(user: User, notices: Notices) {
   (user as any).lasersBuiltTotal = ((user as any).lasersBuiltTotal || 0) + 1;
   const laser = freshLaser();
   lasers(user).push(laser);
-  db.save('users');
+  db.markUser(user.id);
   const h = Math.round(L.BUILD_TIME_MS / 3600000);
   notices.push(`🔦 Лазер куплен за 🪙 ${cost}. Постройка займёт ${h} ч, затем заряжайте его.`);
   return laserView(laser);
@@ -120,7 +120,7 @@ function boost(user: User, laserId: string, notices: Notices) {
   user.gold -= cost;
   try { require('./stats').track(user, 'goldSpent', 'boost', cost); } catch (e) {}
   laser.readyAt = Date.now();
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`⚡ ${laser.phase === 'cooling' ? 'Охлаждение' : 'Постройка'} ускорено за 🪙 ${cost}. Лазер готов.`);
   return laserView(laser);
 }
@@ -138,7 +138,7 @@ function fuelReady(user: User, laserId: string, amount: number, notices: Notices
   if (used <= 0) throw new u.ApiError('Готовность уже полная');
   user.res.en.cur -= used;
   laser.readyEnergy += used;
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`🔋 Готовность лазера: ${laser.readyEnergy} / ${L.READY_ENERGY_NEEDED} (+${used})`);
   return laserView(laser);
 }
@@ -156,7 +156,7 @@ function fuelPower(user: User, laserId: string, amount: number, notices: Notices
   if (used <= 0) throw new u.ApiError('Точность уже максимальная');
   user.res.am.cur -= used;
   laser.powerAmmo += used;
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`🎯 Точность лазера: ${Math.round((laser.powerAmmo / L.POWER_AMMO_NEEDED) * 100)}% (+${used} боеприпасов)`);
   return laserView(laser);
 }
@@ -201,7 +201,7 @@ function intercept(user: User, laserId: string, rocketId: string, notices: Notic
     db.save('rockets');
     notices.push(`💨 Промах (шанс был ${chancePct}%). Ракета летит дальше — её ещё можно сбить другим лазером. Лазер на охлаждении.`);
   }
-  db.save('users');
+  db.markUser(user.id);
   return { hit, chancePct, laser: laserView(laser) };
 }
 

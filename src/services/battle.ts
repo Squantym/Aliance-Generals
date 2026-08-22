@@ -296,6 +296,15 @@ function unitLossFor(owner: any, damage: number, crit: boolean, reduce: number =
   return final;
 }
 
+// Потери техники — массив ОБЪЕКТОВ {name, count, id, unitType}.
+// В уведомлении защитнику стояло enemyLosses.join(', '), а join по массиву
+// объектов даёт «[object Object], [object Object]» — именно это и читал
+// человек вместо списка своей потерянной техники.
+function lossesToText(list: any[]): string | null {
+  if (!list || !list.length) return null;
+  return list.map((l) => `${l.name} ×${l.count}`).join(', ');
+}
+
 function unitLossCount(damage: number, crit: boolean, reduce: number = 0): number {
   if (!damage || damage <= 0) return 0;      // уворот / нет урона — техника цела
   const lo = crit ? B.UNIT_LOSS_CRIT_MIN : B.UNIT_LOSS_MIN;
@@ -755,7 +764,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       } catch (e) {}
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
-        loot, lossesText: enemyLosses.join(', ') || null,
+        loot, lossesText: lossesToText(enemyLosses),
         dealt, at: Date.now(),
       });
     }
@@ -789,7 +798,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       } catch (e) {}
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
-        lossesText: enemyLosses.join(', ') || null,
+        lossesText: lossesToText(enemyLosses),
         received, at: Date.now(),
       });
     }
@@ -1008,9 +1017,18 @@ function fatality(user: User, choice: string, notices: Notices) {
           const slot = Math.max(0, Math.min(config.EARS.MAX - 1, cutIndex));
           victim.earCutters[slot] = { id: user.id, name: user.name };
           player.addRating(victim, -3); // рейтинг жертвы: тебе отрезали ухо −3
+          // Явно помечаем ЖЕРТВУ к записи. Слой http сохраняет только
+          // того, кто сделал запрос, — то есть атакующего. Сейчас жертву
+          // спасает то, что addRating помечает её сам, но это побочный
+          // эффект: уберут штраф рейтинга — и потеря уха перестанет
+          // доживать до диска, оставаясь только в памяти процесса.
+          db.markUser(victim.id);
         }
-        // При двойном срезе нападавший получает +3 и за второе ухо
-        if (doubleCut) player.addRating(user, 3);
+        // Рейтинг за второе ухо (+3) начисляется ВЫШЕ, в блоке doubleCut,
+        // вместе с коллекцией, поручением и сезонным зачётом. Здесь стояло
+        // второе такое же начисление — оставшееся от прежней версии, когда
+        // блока выше ещё не было. Владелец «Тесака мясника» получал за
+        // двойной срез +9 вместо +6 и тихо обгонял всех в рейтинге.
 
         // Трофей жертвы «Полевой хирург»: шанс мгновенно восстановить ухо.
         // Восстанавливает ОДНО ухо (последнее отрезанное). Если восстановил —
@@ -1114,10 +1132,16 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
     return { ok: true, left: false };
   }
   victim.earMessage = { byId: user.id, byName: user.name, text: clean };
+  // Послание пишется в ЧУЖОЙ профиль, а http сохраняет только автора
+  // запроса. Без явной пометки надпись жила до перезапуска процесса и
+  // пропадала — причём повторно оставить её уже нельзя, оба уха срезаны
+  // один раз.
+  db.markUser(victim.id);
   notices.push('✍️ Послание оставлено на профиле жертвы.');
   return { ok: true, left: true };
 }
 
 export = {
   opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits,
-  bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice, unitLossCount,};
+  bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice, unitLossCount,
+  lossesToText,};

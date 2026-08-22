@@ -86,11 +86,31 @@ ok(rel.length >= 1, `у «Второго» найдены связанные: ${
 ok(rel.some((r) => r.name === 'Первый'), 'совпадение по адресу регистрации найдено');
 ok(rel.every((r) => r.id !== p2.id), 'сам игрок в список не попадает');
 ok(access.related(p3, U).length === 0, 'у игрока с уникальным адресом связей нет');
-const groups = access.ipSummary(U, 2);
-ok(groups.length >= 1, 'сводка по адресам собирается');
+// ipSummary теперь возвращает не голый список, а сводку с диагностикой:
+// без неё панель не могла отличить «совпадений нет» от «прокси не
+// передаёт адрес, и сравнивать не по чему».
+const summary = access.ipSummary(U, 2);
+const groups = summary.groups;
+ok(Array.isArray(groups) && groups.length >= 1, 'сводка по адресам собирается');
+ok(typeof summary.proxyBroken === 'boolean', 'сводка сообщает, слепа ли проверка');
+
+// Внутренние адреса никого не опознают: если прокси не настроен, сервер
+// видит 127.0.0.1 у ВСЕХ, и такая «группа» — ложный список мультоводов.
+ok(access.isIdentifyingIp('203.0.113.7'), 'внешний адрес годится для сравнения');
+for (const bad of ['127.0.0.1', '::1', '10.1.2.3', '192.168.0.5', '172.16.0.9', '169.254.1.1', 'unknown']) {
+  ok(!access.isIdentifyingIp(bad), `адрес ${bad} для сравнения не годится`);
+}
+const blindUsers = {
+  a: { id: 'a', name: 'А', level: 1, access: { ips: { '127.0.0.1': { count: 5 } } } },
+  b: { id: 'b', name: 'Б', level: 1, access: { ips: { '127.0.0.1': { count: 3 } } } },
+  c: { id: 'c', name: 'В', level: 1, access: { ips: { '127.0.0.1': { count: 1 } } } },
+};
+const blind = access.ipSummary(blindUsers, 2);
+ok(blind.groups.length === 0, 'при слепой проверке ложных групп не выдаётся');
+ok(blind.proxyBroken === true, 'и прямо сообщается, что прокси не передаёт адрес');
 const g = groups.find((x) => x.ip === '95.24.1.7');
 ok(g && g.count === 2, `на адресе ${g.ip} два аккаунта: ${g.players.map((p) => p.name).join(', ')}`);
-ok(access.ipSummary(U, 5).length === 0, 'порог в 5 аккаунтов отсекает мелкие совпадения');
+ok(access.ipSummary(U, 5).groups.length === 0, 'порог в 5 аккаунтов отсекает мелкие совпадения');
 
 console.log('\n── 5. Права доступа ──');
 ok(/canAccessZone\(req\.user, 'players'\)/.test(routes.slice(routes.indexOf("'/api/admin/access/:id'"),
@@ -249,11 +269,15 @@ ok(/'Critical-CH': 'Sec-CH-UA-Model'/.test(httpSrc3), 'помечено как �
 ok(/sec-ch-ua-platform-version/.test(httpSrc3), 'запрашивается и версия системы');
 ok(/replace\(\/\^"\|"\$\/g, ''\)/.test(httpSrc3), 'кавычки вокруг значений снимаются');
 const authSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/auth.ts'), 'utf8');
-ok(/recordLogin\(newU, ip, ua, 'регистрация', hints\)/.test(authSrc2),
-   'подсказки доходят до регистрации');
-ok(/recordLogin\(found, ip, ua, 'вход', hints\)/.test(authSrc2), 'и до входа');
-ok(/touch\(user, reqCtx\.ip, reqCtx\.ua, reqCtx\.hints\)/.test(httpSrc3),
+// Подсказки браузера И отпечаток устройства должны доходить до учёта
+// входов: без первых не видно модель телефона, без второго два разных
+// компьютера с одинаковым Chrome сливаются в одно устройство.
+ok(/recordLogin\(newU, ip, ua, 'регистрация', hints, fp\)/.test(authSrc2),
+   'подсказки и отпечаток доходят до регистрации');
+ok(/recordLogin\(found, ip, ua, 'вход', hints, fp\)/.test(authSrc2), 'и до входа');
+ok(/touch\(user, reqCtx\.ip, reqCtx\.ua, reqCtx\.hints, reqCtx\.fp\)/.test(httpSrc3),
    'и до учёта на каждом запросе');
+ok(/x-fp/.test(httpSrc3), 'сервер читает отпечаток из заголовка x-fp');
 
 console.log('\n── 13. Диагностика сети ──');
 const routesSrc2 = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
@@ -268,6 +292,48 @@ const adminSrc2 = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8')
 ok(/id="net-check"/.test(adminSrc2), 'кнопка проверки есть в панели');
 ok(/Если у всех игроков[\s\S]{0,40}один и тот же адрес/.test(adminSrc2),
    'подписано, когда ей пользоваться');
+
+console.log('\n── 14. Панель объясняет слепую проверку, а не показывает ложный список ──');
+// Это самое опасное место всей проверки на мультоводов: при неверно
+// настроенном прокси у ВСЕХ игроков записан 127.0.0.1, и «36 аккаунтов
+// с одного адреса» выглядит как готовый список для банов.
+const mcBlock = adminJs.slice(adminJs.indexOf("multi-check?min="), adminJs.indexOf("multi-check?min=") + 2500);
+ok(/r\.proxyBroken/.test(mcBlock), 'панель смотрит на признак «проверка слепа»');
+ok(/ничего не доказыва/.test(mcBlock), 'и прямо говорит, что совпадения ничего не доказывают');
+ok(/proxy_set_header X-Real-IP \$remote_addr/.test(mcBlock), 'показывает точную строку для nginx');
+ok(/nginx\.example\.conf/.test(mcBlock), 'отсылает к готовому примеру в проекте');
+// Пример конфигурации обязан содержать эти заголовки — иначе совет
+// в панели расходится с тем, что лежит в репозитории.
+const nginxConf = fs.readFileSync(ROOT + '/nginx.example.conf', 'utf8');
+const locBlocks = (nginxConf.match(/proxy_pass\s+http:\/\/127\.0\.0\.1:3000;/g) || []).length;
+const realIp = (nginxConf.match(/proxy_set_header\s+X-Real-IP\s+\$remote_addr;/g) || []).length;
+const fwd = (nginxConf.match(/proxy_set_header\s+X-Forwarded-For\s+\$proxy_add_x_forwarded_for;/g) || []).length;
+ok(locBlocks > 0 && realIp >= locBlocks && fwd >= locBlocks,
+   `в примере nginx адрес передаётся в каждом проксирующем блоке (${locBlocks} блоков, X-Real-IP ${realIp}, X-Forwarded-For ${fwd})`);
+
+console.log('\n── 15. Сервер сам замечает, что прокси молчит ──');
+// Поломка тихая: игра работает, а журнал входов и поиск мультоводов
+// бесполезны. Такое живёт годами именно потому, что не ломает ничего
+// заметного, — поэтому сервер обязан сказать об этом сам.
+const httpSrcP = fs.readFileSync(ROOT + '/src/core/http.ts', 'utf8');
+ok(/function watchProxyHealth/.test(httpSrcP), 'сервер следит за адресами входящих запросов');
+ok(/PROXY_SAMPLE = 50/.test(httpSrcP), 'решение принимается по выборке, а не по одному запросу');
+ok(/NODE_ENV\) !== 'production'/.test(httpSrcP), 'на своей машине не ругается — там локальный адрес нормален');
+ok(/tools\/check-proxy\.sh/.test(httpSrcP), 'в предупреждении указана команда диагностики');
+ok((httpSrcP.match(/proxyWatchDone = true/g) || []).length >= 3, 'предупреждает один раз, а не каждый запрос');
+
+// Скрипт диагностики есть, исполняемый и ничего не меняет сам
+const sh = fs.readFileSync(ROOT + '/tools/check-proxy.sh', 'utf8');
+ok(/proxy_set_header X-Real-IP \$remote_addr;/.test(sh), 'скрипт печатает готовые строки для nginx');
+ok(/НИЧЕГО не меняет/.test(sh), 'скрипт заявлен как только читающий');
+ok(!/\bsed -i\b|>>\s*"\$f"|nginx -s reload\s*$/m.test(sh.replace(/say .*/g, '')),
+   'и правда ничего не правит и не перезапускает сам');
+ok(/NGINX_DIR/.test(sh), 'папку конфигов можно подменить — иначе сам скрипт не проверить');
+
+// В очереди работ это должно быть ЗАДАЧЕЙ, а не сноской
+const queueSrc = fs.readFileSync(ROOT + '/public/js/admin2/queue.js', 'utf8');
+ok(/proxyBroken/.test(queueSrc), 'очередь работ показывает слепоту сервера как задачу');
+ok(/не видит адресов игроков/.test(queueSrc), 'формулировка говорит о последствии, а не о заголовке');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

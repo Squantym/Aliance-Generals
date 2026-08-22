@@ -106,7 +106,15 @@ function builtinDriver(h: any): any {
 }
 
 // ---------- Инициализация ----------
+// Что у каждого игрока лежало в базе на момент последней записи.
+// Нужно, чтобы не переписывать строку, которая не изменилась (см.
+// writeBatch). Живёт только в памяти процесса и сбрасывается при
+// открытии базы — иначе после восстановления из копии кэш считал бы
+// записанным то, чего в файле уже нет.
+const lastWritten: Record<string, string> = {};
+
 function open(dataDir: string, fileName = 'generals.db'): any {
+  for (const k of Object.keys(lastWritten)) delete lastWritten[k];
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   dbPath = path.join(dataDir, fileName);
   backupDir = path.join(dataDir, 'backups');
@@ -288,29 +296,38 @@ function writeBatch(players: Array<{ id: string; obj: any }>, colls: Array<{ id:
     'INSERT INTO collections (id, data, updated_at) VALUES (?, ?, ?) ' +
     'ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
   );
+  // Готовим строки ОДИН раз: раньше каждый игрок сериализовался дважды —
+  // здесь и ещё раз внутри savePlayerHistory.
+  const rows: Array<{ id: string; json: string; obj: any }> = [];
+  for (const p of players) {
+    if (!p.obj) continue;
+    const { id, ...rest } = p.obj;
+    const json = JSON.stringify(rest);
+    // Игрок, который с прошлой записи не изменился, пропускается.
+    // Это не «оптимизация ради оптимизации»: db.save('users') означает
+    // «сохранить ВСЕХ», и таких вызовов в коде почти сотня. Каждый
+    // перезаписывал всю таблицу игроков, а better-sqlite3 синхронный —
+    // на это время встаёт весь сервер, для всех сразу. При 3000 игроков
+    // это ~80 мс заморозки на ровном месте, и цифра растёт линейно.
+    if (lastWritten[p.id] === json) continue;
+    rows.push({ id: p.id, json, obj: rest });
+  }
   const tx = db.transaction(() => {
-    for (const p of players) {
-      if (!p.obj) continue;
-      const { id, ...rest } = p.obj;
-      upPlayer.run(p.id, JSON.stringify(rest), now);
-    }
+    for (const r of rows) upPlayer.run(r.id, r.json, now);
     for (const c of colls) {
       if (c.obj === undefined) continue;
       upColl.run(c.id, JSON.stringify(c.obj), now);
     }
   });
   tx();
+  for (const r of rows) lastWritten[r.id] = r.json;
 
   // Срез состояния — здесь же, на уже происходящем сохранении: отдельного
   // обхода игроков нет. Сам решает, писать ли (не чаще раза в 5 минут и
   // только если объект изменился), поэтому вызывать можно свободно.
   // Вне транзакции намеренно: история — страховка, и её сбой не должен
   // откатывать сохранение самих игроков.
-  for (const p of players) {
-    if (!p.obj) continue;
-    const { id, ...rest } = p.obj;
-    savePlayerHistory(p.id, rest);
-  }
+  for (const r of rows) savePlayerHistory(r.id, r.obj, '', '', 0, r.json);
 }
 
 // ═══ ИСТОРИЯ СОСТОЯНИЯ ИГРОКА ════════════════════════════════════════
@@ -338,10 +355,12 @@ function fingerprint(s: string): string {
 // at указывается, только когда срез относится к ДРУГОМУ моменту, а не к
 // «сейчас»: перенос истории из копии базы, засев данных в тестах. В
 // обычной работе не передаётся.
-function savePlayerHistory(id: string, obj: any, label = '', actor = '', at = 0): boolean {
+function savePlayerHistory(id: string, obj: any, label = '', actor = '', at = 0, ready?: string): boolean {
   if (!id || !obj) return false;
   try {
-    const json = JSON.stringify(obj);
+    // ready — уже готовая строка от writeBatch: там объект только что
+    // сериализовали, второй раз делать ту же работу незачем.
+    const json = ready !== undefined ? ready : JSON.stringify(obj);
     const hash = fingerprint(json + (at || ''));
     const now = at || Date.now();
     const prev = at ? null : histLast[id];
@@ -449,6 +468,9 @@ function historyStats(): any {
 // «воскресали» после рестарта, а их позывные дублировались в рейтинге.
 function deletePlayer(id: string): boolean {
   const r = db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  // Забываем, что писали этого игрока: иначе аккаунт с тем же id
+  // (восстановление, повторный засев) не записался бы как «не изменился».
+  delete lastWritten[id];
   return r.changes > 0;
 }
 

@@ -158,7 +158,7 @@ function buyPack(user: User, type: LimitedType, packs: number, notices: Notices)
   require('./dailyQuests').bump(user, 'saboteursBought', n * S.packSize); // поручение «Тихие люди»
   // Статистика: покупка диверсантов по типам
   try { require('./stats').track(user, 'sabBought', type, n * S.packSize); } catch (e) {}
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`🥷 Куплено ${RU_NAME[type].toLowerCase()}: ${n * S.packSize} шт. (за $${u.fmt(totalDollars)}${totalGold ? ` + 🪙 ${totalGold}` : ''}). В наличии: ${user.saboteurs![type]} (работает: ${active(user, type)}/${user.saboteurLimits![type]}).`);
   return view(user);
 }
@@ -173,7 +173,7 @@ function buySuicide(user: User, qty: number, notices: Notices) {
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   user.gold -= cost;
   user.saboteurs!.suicide += n;
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`💀 Куплено смертников: ${n} (за 🪙 ${cost}). В наличии: ${user.saboteurs!.suicide}/${S.suicide.fixedLimit}.`);
   return view(user);
 }
@@ -188,7 +188,7 @@ function upgradeLimit(user: User, type: LimitedType, notices: Notices) {
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   user.gold -= cost;
   user.saboteurLimits![type] = Math.min(cfg.maxLimit, user.saboteurLimits![type] + 10);
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`📈 Лимит «${RU_NAME[type]}» повышен до ${user.saboteurLimits![type]} (за 🪙 ${cost}).`);
   return view(user);
 }
@@ -233,7 +233,7 @@ function destroyRegular(user: User, count: number, notices: Notices | null): Rec
     const parts = Object.entries(lost).map(([t, n]) => `${RU_NAME[t].toLowerCase()} ×${n}`);
     notices.push(`🥷 Погибло диверсантов: ${parts.join(', ')}.`);
   }
-  db.save('users');
+  db.markUser(user.id);
   return lost;
 }
 

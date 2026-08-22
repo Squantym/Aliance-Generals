@@ -139,7 +139,7 @@ function buyPlot(user: User, notices: Notices) {
   user.gold -= cost;
   const plot = { id: u.uid(10), status: 'empty', dailyKey: todayMskKey(), minutesUsedToday: 0 };
   plots(user).push(plot);
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`📍 Участок куплен за 🪙 ${cost}. Теперь постройте на нём шахту за деньги.`);
   return mineView(plot);
 }
@@ -167,7 +167,7 @@ function build(user: User, plotId: string, notices: Notices) {
   mine.terror = null;
   mine.dailyKey = todayMskKey();
   mine.minutesUsedToday = 0;
-  db.save('users');
+  db.markUser(user.id);
   const days = Math.round(M.BUILD_TIME_MS / (24 * 3600 * 1000));
   notices.push(`⛏ Шахта строится за $${u.fmt(cost)}. Готовность через ${days} суток. Запас золота откроется после постройки.`);
   return mineView(mine);
@@ -218,7 +218,7 @@ function descend(user: User, plotId: string, minutes: number, notices: Notices) 
     mine.terror = { at, deadline: at + M.TERRORIST_REACT_MS, timing: atEnd ? 'end' : 'mid', repelled: false, resolved: false, failed: false, notified: false };
   }
 
-  db.save('users');
+  db.markUser(user.id);
   notices.push(`⬇ Спуск на ${minutes} мин. начался. Осталось спусков: ${mine.descentsLeft}/${M.MAX_DESCENTS}.`);
   return mineView(mine);
 }
@@ -304,7 +304,7 @@ function refreshAll(user: User): void {
       }
     }
   }
-  if (changed) db.save('users');
+  if (changed) db.markUser(user.id);
 }
 
 // Бой с террористом: мощь игрока против HP террориста (= половина HP игрока).
@@ -354,7 +354,7 @@ function fightTerrorists(user: User, plotId: string, notices: Notices) {
   if (!mine) throw new u.ApiError('Шахта не найдена');
   const t = mine.terror;
   if (mine.status !== 'descending' || !t || t.resolved || Date.now() < t.at) throw new u.ApiError('Сейчас нет активного нападения');
-  if (Date.now() > t.deadline) { t.resolved = true; t.failed = true; db.save('users'); throw new u.ApiError('Время на реакцию истекло — атаку отбить не успели'); }
+  if (Date.now() > t.deadline) { t.resolved = true; t.failed = true; db.markUser(user.id); throw new u.ApiError('Время на реакцию истекло — атаку отбить не успели'); }
   if (user.res.am.cur < 1) throw new u.ApiError('Нет боеприпасов для боя с террористом');
   if (user.res.hp.cur < config.PLAYER.MIN_HP_TO_FIGHT) throw new u.ApiError(`Здоровье ниже ${config.PLAYER.MIN_HP_TO_FIGHT} — сначала подлечитесь`);
 
@@ -373,7 +373,7 @@ function fightTerrorists(user: User, plotId: string, notices: Notices) {
     notices.push(`💥 Бой с террористом проигран (потеряно HP: ${res.hpLost}). Спуск и золото пропали.`);
     if (Date.now() >= mine.descentEndsAt) finalizeDescent(user, mine);
   }
-  db.save('users');
+  db.markUser(user.id);
   return mineView(mine);
 }
 
@@ -382,7 +382,7 @@ function dismissResult(user: User, plotId: string, notices: Notices) {
   const mine = plots(user).find((m) => m.id === plotId);
   if (!mine) throw new u.ApiError('Шахта не найдена');
   mine.pendingResult = null;
-  db.save('users');
+  db.markUser(user.id);
   return mineView(mine);
 }
 

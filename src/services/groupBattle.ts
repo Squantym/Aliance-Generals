@@ -735,28 +735,18 @@ function finish(s: Store, b: Battle, winnerTeam: -1 | 0 | 1, reason: string): vo
     if (!f.isBot || f.replaced) rootR.lastBattle[f.id] = b.id;
   }
 
-  // Личная история: игрок должен видеть, что именно получил за бой.
-  // Общая история этого не показывает — там только кто победил.
-  const root2 = store() as any;
-  if (!root2.personal) root2.personal = {};
-  for (const r of ((b as any).result || [])) {
-    if (r.isBot) continue;
-    const list = root2.personal[r.id] || (root2.personal[r.id] = []);
-    list.unshift({
-      at: b.finishedAt,
-      won: r.won,
-      draw: winnerTeam === -1,
-      forfeit: !!r.forfeited,      // не явился — видно и в истории
-      rating: r.ratingReal !== undefined ? r.ratingReal : r.ratingGained,
-      ratingRaw: r.ratingGained,
-      tokens: r.tokens,
-      kills: r.kills,
-      damage: r.damage,
-      role: r.role,
-      roleLabel: r.roleLabel,
-    });
-    if (list.length > 20) list.length = 20;
-  }
+  // Личная история пишется ОДИН раз — в awardRating(), в коллекцию
+  // playerHistory, полем result ('win' | 'lose' | 'draw' | 'forfeit').
+  //
+  // Здесь раньше стоял ВТОРОЙ писатель той же истории: он складывал
+  // записи в другую коллекцию (personal) и в другом формате (won/draw/
+  // forfeit отдельными флагами). Экран читал именно этот формат, а
+  // отдавался ему первый — поэтому каждый бой показывался поражением,
+  // даже выигранный: полей won и draw в отданных записях просто не было.
+  //
+  // Две реализации одного и того же — это не лишний код, а гарантия
+  // расхождения: правишь одну, вторая тихо продолжает жить своей жизнью.
+  // Оставлен один писатель, тот, что действительно доходит до игрока.
 
 
   try {

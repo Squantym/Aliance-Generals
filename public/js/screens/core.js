@@ -387,11 +387,19 @@ App.screens.home = async (c) => {
 
   // Обратный отсчёт таймера вызова на главном экране
   const lcgTimer = document.getElementById('lcg-timer');
+  // Прошлый отсчёт гасим: главный экран перерисовывается часто, и каждая
+  // отрисовка заводила ещё один секундный таймер. Мало того что они копились
+  // — каждый на своём нуле дёргал App.rerender(), то есть десяток накопленных
+  // таймеров устраивал экрану серию перерисовок подряд.
+  if (App._lcgTimer) { clearInterval(App._lcgTimer); App._lcgTimer = null; }
   if (lcgTimer) {
     let secs = parseInt(lcgTimer.textContent) || 0;
-    const lcgT = setInterval(() => {
+    App._lcgTimer = setInterval(() => {
+      if (!document.getElementById('lcg-timer')) {
+        clearInterval(App._lcgTimer); App._lcgTimer = null; return;
+      }
       secs--;
-      if (secs <= 0) { clearInterval(lcgT); App.rerender(); return; }
+      if (secs <= 0) { clearInterval(App._lcgTimer); App._lcgTimer = null; App.rerender(); return; }
       lcgTimer.textContent = UI.fmtTimer(secs);
     }, 1000);
   }

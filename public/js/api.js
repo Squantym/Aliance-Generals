@@ -13,10 +13,46 @@ const API = {
     else localStorage.removeItem('gtoken');
   },
 
+  // ═══ ОТПЕЧАТОК УСТРОЙСТВА ═════════════════════════════════════════
+  // Строка браузера различает устройства плохо: у половины игроков там
+  // одно и то же «Chrome на Windows 10», и в панели они выглядят как
+  // одно устройство. Добавляем то, что браузер отдаёт без разрешений:
+  // размер экрана, часовой пояс, язык, число ядер, глубину цвета.
+  // Вместе это различает устройства заметно лучше, а по отдельности не
+  // говорит ни о чём — ни имени, ни адреса, ни истории здесь нет.
+  //
+  // Считаем ОДИН раз за загрузку страницы: значения не меняются, а
+  // обращение к screen и Intl на каждом запросе — лишняя работа.
+  _fp: null,
+  fp() {
+    if (this._fp !== null) return this._fp;
+    try {
+      const s = window.screen || {};
+      const tz = (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || '';
+      const parts = [
+        (s.width || 0) + 'x' + (s.height || 0),
+        (s.colorDepth || 0) + 'bit',
+        (window.devicePixelRatio || 1).toFixed(2),
+        tz,
+        (navigator.language || ''),
+        'cpu' + (navigator.hardwareConcurrency || 0),
+        'mem' + (navigator.deviceMemory || 0),
+        (navigator.platform || ''),
+        (navigator.maxTouchPoints || 0) + 'tp',
+      ];
+      this._fp = parts.join('|').slice(0, 200);
+    } catch (e) { this._fp = ''; }
+    return this._fp;
+  },
+
   async req(method, url, body) {
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', 'x-token': this.token() || '' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-token': this.token() || '',
+        'x-fp': this.fp(),
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     let data = {};

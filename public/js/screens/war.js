@@ -390,6 +390,18 @@ App.screens.war = async (c) => {
   // прошёл: сохраняем результат и, если ПОСЛЕ боя выпал сейф, показываем его
   // поверх итога боя.
   function handleAttackOutcome(r) {
+    // Жертва ускользнула от клинка (ловкость или защита VIP). Сервер
+    // сообщает об этом полем fatalityDodged, но раньше его никто не
+    // читал: код на клиенте ждал res.escaped, а такого поля нет.
+    // Получалось, что событие происходит, за него даже выдаётся
+    // достижение «Неуловимый» — а атакующий не видит ничего и думает,
+    // что фаталити просто не выпало.
+    if (r.fatalityDodged) {
+      // Показываем то самое окно, которое уже было написано для этого
+      // события: с картинкой и объяснением. Оно висело мёртвым, потому
+      // что ждало сигнала, который приходит под другим именем.
+      App._showFatalityEscaped({ victimName: r.targetName });
+    }
     if (r.encounter === 'mine_defuse') {
       App._warEncounter = { type: 'mine_defuse', wires: r.wires, canSacrifice: r.canSacrifice };
       App._lastBattle = null;
@@ -513,10 +525,9 @@ App.screens.war = async (c) => {
     try {
       const res = await API.post('/api/war/fatality', { choice });
       App._lastBattle = null;
-      // Жертва ускользнула благодаря ловкости
-      if (res && res.escaped) {
-        UI.toast('💨 Жертва ускользнула — фаталити сорвалось!');
-      }
+      // Ветка «жертва ускользнула» отсюда убрана намеренно: ускользание
+      // проверяется в момент пленения, а не на шаге фаталити. Здесь она
+      // читала несуществующее поле res.escaped и не срабатывала никогда.
       // Если игрок отрезал ОБА уха одной жертве — предлагаем оставить послание
       if (res && res.canLeaveMessage && res.victimId) {
         App._showEarMessagePrompt(res.victimId);
@@ -1580,19 +1591,29 @@ App.renderGroup = async () => {
       <div class="card">
         <div class="name">📜 Ваши последние бои</div>
         <div class="mt">
-          ${d.myHistory.map((h) => `
-            <div class="hist-row ${h.won ? 'hist-win' : (h.draw ? '' : 'hist-lose')}">
-              <span class="hist-mark">${h.won ? '🏆' : (h.draw ? '🤝' : '⚔')}</span>
+          ${d.myHistory.map((h) => {
+            // Сервер пишет ИСХОД одним полем result: 'win' | 'lose' |
+            // 'draw' | 'forfeit'. Раньше здесь читались h.won / h.draw /
+            // h.forfeit — таких полей нет, все три давали undefined, и
+            // КАЖДЫЙ бой показывался как поражение, даже выигранный.
+            // Роль тоже приходит в h.role, а не h.roleLabel.
+            const won = h.result === 'win';
+            const draw = h.result === 'draw';
+            const forfeit = h.result === 'forfeit';
+            return `
+            <div class="hist-row ${won ? 'hist-win' : (draw ? '' : 'hist-lose')}">
+              <span class="hist-mark">${won ? '🏆' : (draw ? '🤝' : '⚔')}</span>
               <span class="grow">
-                <b>${h.forfeit ? 'Не явился' : (h.won ? 'Победа' : (h.draw ? 'Ничья' : 'Поражение'))}</b>
-                <span class="muted small">${UI.esc(h.roleLabel || '')} ·
+                <b>${forfeit ? 'Не явился' : (won ? 'Победа' : (draw ? 'Ничья' : 'Поражение'))}</b>
+                <span class="muted small">${UI.esc(h.role || h.roleLabel || '')} ·
                   ${h.kills} уб. · урон ${UI.fmtNum(h.damage || 0)}</span>
               </span>
               <span class="hist-rew">
                 <span class="${h.rating > 0 ? 'gold' : 'muted'}">🏅 ${h.rating > 0 ? '+' : ''}${h.rating}</span>
                 <span class="gold">🎗 +${UI.fmtNum(h.tokens || 0)}</span>
               </span>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>` : ''}
 
