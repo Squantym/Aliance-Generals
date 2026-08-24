@@ -41,6 +41,12 @@
             : '<b style="color:var(--red)">Отправка не настроена.</b> Письма никуда не уходят, а новым игрокам почта подтверждается сама. Пока это так, правка шаблонов ни на что не влияет.'}
         </p>
         ${mail.hint ? `<p class="a2-muted" style="margin-top:6px">${UI.esc(mail.hint)}</p>` : ''}
+        ${mail.provider === 'unisender' ? `
+          <div class="a2-row" style="margin-top:10px">
+            <button class="btn btn-inline" id="mail-diag">🔎 Проверить сервис</button>
+            <span class="a2-muted small">ничего не отправляет, лимит писем не тратит</span>
+          </div>
+          <div id="mail-diag-out"></div>` : ''}
       </div>
 
       ${(d.templates || []).map((t) => `
@@ -151,6 +157,55 @@
     };
     const refresh = document.getElementById('bc-refresh');
     if (refresh) refresh.onclick = () => render(el);
+
+    // ── Проверка площадки Unisender ────────────────────────────────
+    // Ошибка «User with id … not found» читается как поломка аккаунта, а
+    // на деле обычно значит, что ключ выдан на другой площадке сервиса.
+    // Без этой кнопки владелец идёт в поддержку и ждёт сутками то, что
+    // чинится одной строчкой в .env.
+    const diag = document.getElementById('mail-diag');
+    if (diag) diag.onclick = async () => {
+      const out = document.getElementById('mail-diag-out');
+      diag.disabled = true;
+      out.innerHTML = '<p class="a2-muted" style="margin-top:8px">Спрашиваю площадки…</p>';
+      let r = null;
+      try { r = await API.post('/api/admin/mail/diagnose', {}); }
+      catch (e) {
+        diag.disabled = false;
+        out.innerHTML = `<p class="a2-muted" style="margin-top:8px;color:var(--red)">⛔ ${UI.esc(e.message)}</p>`;
+        return;
+      }
+      diag.disabled = false;
+
+      if (r.skipped) {
+        out.innerHTML = `<p class="a2-muted" style="margin-top:8px">${UI.esc(r.verdict)}</p>`;
+        return;
+      }
+
+      const rows = (r.hosts || []).map((h) => {
+        const mark = h.recognized === true ? '✅' : (h.recognized === false ? '⛔' : '⚠️');
+        const now = h.current ? ' <span class="a2-pill">сюда шлём сейчас</span>' : '';
+        const doms = (h.domains || []).map((d) =>
+          `<div class="a2-muted small" style="margin-left:18px">• ${UI.esc(d.name)}${d.verified ? ' — подтверждён' : ' — НЕ подтверждён'}</div>`).join('');
+        return `<div style="margin-top:4px">${mark} <code>${UI.esc(h.host)}</code>${now}
+          <div class="a2-muted small" style="margin-left:18px">${UI.esc(h.message)}</div>${doms}</div>`;
+      }).join('');
+
+      out.innerHTML = `
+        <div class="a2-card" style="margin-top:8px;background:rgba(255,255,255,.03)">
+          <div class="a2-muted small">Ключ: <code>${UI.esc(r.keyMasked || '—')}</code> · длина ${r.keyLength || 0}
+            ${r.keyDirty ? ' · <b style="color:var(--red)">в ключе посторонние символы (пробел, кавычка, перенос)</b>' : ''}</div>
+          ${rows}
+          <p style="margin:10px 0 0"><b>${UI.esc(r.verdict || '')}</b></p>
+          ${r.fix ? `
+            <p class="a2-muted" style="margin:8px 0 4px">Впишите строку в <code>.env</code> и перезапустите
+              (<code>pm2 restart generals-game</code>):</p>
+            <input readonly value="${UI.esc(r.fix)}" onclick="this.select()"
+              style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);color:var(--text);
+                     border:1px solid var(--border);border-radius:8px;
+                     font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">` : ''}
+        </div>`;
+    };
   }
 
   A2.screens.mail = render;

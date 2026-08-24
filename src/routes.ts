@@ -1195,6 +1195,14 @@ function registerRoutes(app: any) {
     return require('./services/mailer').resetToDefault(String(req.body.id || ''), n);
   }), { admin: true });
 
+  // Проверка площадки Unisender: справочными методами, БЕЗ отправки.
+  // Иначе диагностика тратила бы тот самый лимит писем, из-за которого
+  // её и запускают.
+  app.add('POST', '/api/admin/mail/diagnose', async (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/email').diagnose();
+  }, { admin: true });
+
   app.add('POST', '/api/admin/mail/preview', async (req) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
     return require('./services/mailer').sendPreview(

@@ -61,32 +61,66 @@ function escapeHtml(s: string): string {
 // Формат ответа у него свой: HTTP 200 приходит и при частичном отказе,
 // поэтому обязательно смотрим failed_emails в теле — иначе сбой
 // выглядел бы успехом, и мы не узнали бы, что письма не доходят.
+// Можно ли просить «письмо без отписки». Право на это выдаётся отдельно
+// (флаг allow_skip_unsubscribe у аккаунта), и на бесплатном тарифе его
+// обычно нет. Запрашивать разрешение хорошо: письмо о подтверждении
+// почты — служебное, ссылка «отписаться» в нём вредна (игрок отпишется —
+// и не получит ни сброса пароля, ни подтверждения). Но если права нет,
+// сервис отклоняет письмо ЦЕЛИКОМ, и лучше отправить со ссылкой
+// отписки, чем не отправить совсем.
+//
+// Поэтому: пробуем с флагом, а на отказ именно по нему — повторяем без
+// него и запоминаем. Один лишний запрос за весь запуск, дальше сразу
+// правильно. UNISENDER_SKIP_UNSUBSCRIBE=0 выключает попытку заранее.
+let skipUnsubscribeAllowed = String(process.env.UNISENDER_SKIP_UNSUBSCRIBE || '1') !== '0';
+
+function isSkipUnsubscribeRefusal(msg: string): boolean {
+  return /skip_unsubscribe/i.test(msg) || /allow_skip_unsubscribe/i.test(msg);
+}
+
+async function unisenderRequest(to: string, subject: string, html: string, withSkip: boolean) {
+  const from = splitFrom(EMAIL_FROM);
+  const message: any = {
+    recipients: [{ email: to }],
+    body: { html },
+    subject,
+    from_email: from.email,
+    from_name: from.name,
+  };
+  if (withSkip) message.skip_unsubscribe = 1;
+
+  const res = await fetch(UNISENDER_URL, {
+    method: 'POST',
+    headers: {
+      'X-API-KEY': UNISENDER_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message }),
+  });
+  const bodyText = await res.text().catch(() => '');
+  let parsed: any = {};
+  try { parsed = JSON.parse(bodyText); } catch (e) {}
+  return { res, bodyText, parsed };
+}
+
 async function sendViaUnisender(to: string, subject: string, html: string):
   Promise<{ sent: boolean; status: number; error: string; id?: string }> {
-  const from = splitFrom(EMAIL_FROM);
   try {
-    const res = await fetch(UNISENDER_URL, {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': UNISENDER_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: {
-          recipients: [{ email: to }],
-          body: { html },
-          subject,
-          from_email: from.email,
-          from_name: from.name,
-          // Отписка от служебных писем не нужна и мешает: без неё
-          // письмо о подтверждении не превращается в рассылку
-          skip_unsubscribe: 1,
-        },
-      }),
-    });
-    const bodyText = await res.text().catch(() => '');
-    let parsed: any = {};
-    try { parsed = JSON.parse(bodyText); } catch (e) {}
+    let { res, bodyText, parsed } = await unisenderRequest(to, subject, html, skipUnsubscribeAllowed);
+
+    // Отказ именно из-за «без отписки» — повторяем обычным письмом.
+    // Иначе владелец видел бы загадочное «письмо не ушло» и чинил бы
+    // домен, ключ и площадку, хотя дело в праве на один флаг.
+    if (skipUnsubscribeAllowed) {
+      const reason = String(parsed.message || parsed.error || bodyText || '');
+      if ((!res.ok || parsed.status === 'error') && isSkipUnsubscribeRefusal(reason)) {
+        console.warn('📧 Unisender: у аккаунта нет права на письма без ссылки отписки — '
+          + 'шлём обычным письмом. Чтобы убрать отписку из служебных писем, '
+          + 'попросите поддержку включить allow_skip_unsubscribe.');
+        skipUnsubscribeAllowed = false;
+        ({ res, bodyText, parsed } = await unisenderRequest(to, subject, html, false));
+      }
+    }
 
     if (!res.ok || parsed.status === 'error') {
       const reason = parsed.message || parsed.error || bodyText || `HTTP ${res.status}`;
@@ -271,4 +305,122 @@ async function sendTest(toEmail: string):
   return { sent: r.sent, status: r.status, error: r.error, from: EMAIL_FROM, configured: true };
 }
 
-export = { sendVerificationEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, sendMail, UNISENDER_URL,};
+// ── Где живёт ключ Unisender ───────────────────────────────────────
+// Unisender Go — это несколько независимых площадок с одинаковым API,
+// но РАЗНЫМИ базами пользователей. Ключ, выданный на одной, на другой не
+// опознаётся: сервер разбирает ключ, достаёт из него внутренний номер
+// владельца и не находит такого у себя. Наружу это выглядит как
+//   «User with id '8316838' not found»
+// то есть как поломка аккаунта, хотя аккаунт цел — мы стучимся не в ту
+// дверь. Без этой проверки владелец идёт в поддержку и ждёт ответа
+// сутками, хотя чинится строчкой в .env.
+//
+// Проверяем СПРАВОЧНЫМИ методами: они только читают и лимит писем не
+// тратят. Иначе диагностика съедала бы то, ради чего её запускают.
+// Список площадок можно переопределить через UNISENDER_HOSTS (через
+// запятую): если сервис заведёт третью, владельцу не придётся ждать
+// правки кода. Этим же пользуется тест, подставляя свои сервера.
+const UNISENDER_HOSTS = (process.env.UNISENDER_HOSTS || '')
+  ? String(process.env.UNISENDER_HOSTS).split(',').map((s) => s.trim()).filter(Boolean)
+  : ['https://go1.unisender.ru', 'https://go2.unisender.ru'];
+const PROBE_METHODS = [
+  '/ru/transactional/api/v1/domain/list.json',
+  '/ru/transactional/api/v1/template/list.json',
+];
+
+// Признак «это не наша площадка»: ключ разобран, владелец не найден.
+function isUserNotFound(msg: string): boolean {
+  return /user with id/i.test(msg) && /not found/i.test(msg);
+}
+
+type ProbeResult = {
+  host: string;
+  current: boolean;              // сюда игра шлёт письма сейчас
+  recognized: boolean | null;    // true — ключ свой, false — чужой, null — непонятно
+  message: string;
+  domains?: Array<{ name: string; verified: boolean }>;
+};
+
+async function probeHost(host: string): Promise<ProbeResult> {
+  const current = UNISENDER_URL.startsWith(host);
+  let lastMsg = '';
+  for (const method of PROBE_METHODS) {
+    try {
+      const res = await fetch(host + method, {
+        method: 'POST',
+        headers: { 'X-API-KEY': UNISENDER_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50, offset: 0 }),
+      });
+      const text = await res.text().catch(() => '');
+      let parsed: any = {};
+      try { parsed = JSON.parse(text); } catch (e) {}
+      const msg = String(parsed.message || parsed.error || text.slice(0, 200) || '');
+
+      if (res.status === 200) {
+        const list = Array.isArray(parsed.domains)
+          ? parsed.domains.map((d: any) => ({
+            name: String(d.domain || d.name || '?'),
+            verified: !!(d.domain_verified || d.verified),
+          }))
+          : undefined;
+        return { host, current, recognized: true, message: 'ключ признан', domains: list };
+      }
+      if (isUserNotFound(msg)) {
+        return { host, current, recognized: false, message: msg };
+      }
+      // Ни успеха, ни «не найден» — возможно, метод переименован.
+      // Пробуем следующий, иначе спутали бы «нет метода» с «нет ключа».
+      lastMsg = msg;
+    } catch (e: any) {
+      return { host, current, recognized: null, message: 'сеть недоступна: ' + (e.message || '') };
+    }
+  }
+  return { host, current, recognized: null, message: lastMsg || '(пустой ответ)' };
+}
+
+// Полная диагностика для панели. Ничего не отправляет.
+async function diagnose(): Promise<any> {
+  if (provider !== 'unisender') {
+    return {
+      ok: false,
+      skipped: true,
+      verdict: provider === 'resend'
+        ? 'Сейчас работает запасной сервис (Resend) — проверять площадку Unisender нечего.'
+        : 'Ключ почтового сервиса не задан, проверять нечего.',
+      hosts: [],
+    };
+  }
+
+  // Мусор в ключе виден до всякой сети: лишний пробел или кавычка
+  // ломают заголовок, а глазом в редакторе это не заметно.
+  const dirty = !/^[A-Za-z0-9]+$/.test(UNISENDER_API_KEY);
+
+  const hosts = await Promise.all(UNISENDER_HOSTS.map(probeHost));
+  const winner = hosts.find((h) => h.recognized === true) || null;
+
+  let verdict = '';
+  let fix = '';
+  if (winner && winner.current) {
+    verdict = 'Ключ признан той площадкой, куда игра и шлёт письма. Если письма не уходят — причина не в площадке.';
+  } else if (winner) {
+    verdict = `Ключ принадлежит другой площадке — ${winner.host}. Игра сейчас стучится не туда, поэтому сервис отвечает «User with id … not found».`;
+    fix = `UNISENDER_URL=${winner.host}/ru/transactional/api/v1/email/send.json`;
+  } else if (hosts.some((h) => h.recognized === false)) {
+    verdict = 'Ключ не признан ни одной площадкой. Дело не в адресе, а в самом ключе: создайте новый в панели Unisender и проверьте, включён ли у него доступ к API.';
+  } else {
+    verdict = 'Ни одна площадка не ответила понятно — похоже на проблему с сетью сервера, а не с ключом.';
+  }
+
+  return {
+    ok: !!(winner && winner.current),
+    keyMasked: UNISENDER_API_KEY.slice(0, 5) + '…' + UNISENDER_API_KEY.slice(-3),
+    keyLength: UNISENDER_API_KEY.length,
+    keyDirty: dirty,
+    currentUrl: UNISENDER_URL,
+    hosts,
+    verdict,
+    fix,
+  };
+}
+
+export = { sendVerificationEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, sendMail, UNISENDER_URL, diagnose,};
