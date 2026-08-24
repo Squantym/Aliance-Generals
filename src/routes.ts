@@ -6,6 +6,7 @@
 // ===================================================================
 
 import config = require('../config/gameConfig');
+import brand = require('./core/brand');
 import u = require('./core/utils');
 import db = require('./core/db');
 import player = require('./services/player');
@@ -160,7 +161,7 @@ function registerRoutes(app: any) {
   });
   app.add('POST', '/api/2fa/setup', (req) => {
     staffOnly2fa(req.user);
-    return twoFactor.setup(req.user, 'Генералы');
+    return twoFactor.setup(req.user, brand.GAME_NAME);
   });
   app.add('POST', '/api/2fa/enable', act((req, n) => {
     staffOnly2fa(req.user);
@@ -175,6 +176,11 @@ function registerRoutes(app: any) {
     return twoFactor.regenerateRecovery(req.user, String(req.body.code || ''), n);
   }));
   app.add('POST', '/api/verify-email', (req) => auth.verifyEmail(req.body.token), { open: true });
+  // Подтверждение кодом из письма. Открыт без входа — в этом и смысл:
+  // игрок ещё не в игре. Перебор ограничен внутри auth.verifyCode.
+  app.add('POST', '/api/verify-code', (req) => auth.verifyCode(
+    String(req.body.login || ''), String(req.body.code || ''),
+    req.ip, (req as any).ua, (req as any).hints, (req as any).fp), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login, req.ip), { open: true });
   app.add('POST', '/api/request-password-reset', (req) => auth.requestPasswordReset(req.body.loginOrEmail), { open: true });
   app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password, req.ip), { open: true });

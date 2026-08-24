@@ -62,9 +62,12 @@ if (!clean) {
 const HOSTS = (process.env.UNISENDER_PROBE_HOSTS || '')
   ? process.env.UNISENDER_PROBE_HOSTS.split(',').map((s) => s.trim()).filter(Boolean)
   : [
+    // Универсальный адрес первым: он работает при любой площадке
+    'https://goapi.unisender.ru',
     'https://go1.unisender.ru',
     'https://go2.unisender.ru',
   ];
+const ANY = 'https://goapi.unisender.ru';
 // Справочные методы: только читают, лимит писем не тратят. Пробуем
 // несколько — если один метод у сервиса переименован, останутся другие,
 // и мы не спутаем «нет такого метода» с «нет такого пользователя».
@@ -112,7 +115,7 @@ async function probe(host) {
 }
 
 (async () => {
-  let winner = null;
+  const working = [];
 
   for (const host of HOSTS) {
     const r = await probe(host);
@@ -125,8 +128,8 @@ async function probe(host) {
 
     const p = r.parsed || {};
     if (r.recognized === true) {
-      winner = host;
-      console.log('   ✅ КЛЮЧ РАБОТАЕТ на этой площадке.');
+      working.push(host);
+      console.log('   ✅ КЛЮЧ РАБОТАЕТ на этом адресе.');
       if (Array.isArray(p.domains)) {
         console.log(`   Доменов в аккаунте: ${p.domains.length}`);
         for (const d of p.domains) {
@@ -146,19 +149,29 @@ async function probe(host) {
     }
   }
 
+  // Что советовать: адрес по умолчанию, если он работает; иначе
+  // универсальный — он переживёт переезд аккаунта между площадками;
+  // иначе любой рабочий.
+  const winner = working.includes(HOSTS[0]) ? HOSTS[0]
+    : (working.includes(ANY) ? ANY : (working[0] || null));
+
   console.log('\n' + '─'.repeat(56));
   if (winner) {
-    console.log(`Ваша площадка: ${winner}`);
+    console.log(`Рабочий адрес: ${winner}`);
+    const others = working.filter((h) => h !== ANY);
     if (winner !== HOSTS[0]) {
-      console.log('\nЭто НЕ та, куда игра стучится по умолчанию. Допишите в .env:');
+      console.log('\nИгра стучится не туда. Допишите в .env:');
       console.log(`UNISENDER_URL=${winner}/ru/transactional/api/v1/email/send.json`);
       console.log('и перезапустите: pm2 restart generals-game');
+      if (winner === ANY && others.length) {
+        console.log(`(ваш аккаунт живёт на ${others.join(', ')}, но универсальный адрес надёжнее)`);
+      }
     } else {
-      console.log('Это площадка по умолчанию — адрес в .env менять не нужно.');
-      console.log('Если письма всё равно не уходят, причина не в адресе площадки.');
+      console.log('Это адрес по умолчанию — менять в .env ничего не нужно.');
+      console.log('Если письма всё равно не уходят, причина не в адресе сервиса.');
     }
   } else {
-    console.log('Ключ не опознан НИ НА ОДНОЙ площадке.');
+    console.log('Ключ не опознан НИ НА ОДНОМ адресе.');
     console.log('Значит дело не в адресе, а в самом ключе или аккаунте:');
     console.log('  • ключ скопирован не целиком или с лишним символом;');
     console.log('  • ключ отозван либо создан в другом аккаунте;');

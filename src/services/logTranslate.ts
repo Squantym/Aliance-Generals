@@ -588,6 +588,8 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `✉️ Изменил шаблон письма «${body.id || '—'}»`;
       case '/api/admin/mail/template/default':
         return `↩️ Вернул заводской текст письма «${body.id || '—'}»`;
+      case '/api/verify-code':
+        return '✅ Подтвердил почту кодом из письма';
       case '/api/admin/mail/diagnose':
         return '🔎 Проверил площадку почтового сервиса';
       case '/api/admin/mail/preview':

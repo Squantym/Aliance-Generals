@@ -53,7 +53,11 @@ p1.emailVerified = false;
 await failsA(() => auth.login('Игрок', 'пароль123', '1.1.1.1', 'UA'), 'Подтвердите почту',
       'без подтверждения вход не выполняется');
 ok(/if \(!found\.emailVerified\) \{/.test(authSrc), 'проверка стоит на сервере');
-ok(/Нажмите «Отправить повторно»/.test(authSrc), 'игроку подсказано, что делать');
+// Фразу ловит клиент и открывает поле для кода. Разъедутся — игрок
+// упрётся в вечное «подтвердите» без способа что-то ввести.
+ok(/Подтвердите почту — введите код из письма/.test(authSrc), 'игроку подсказано, что делать');
+ok(/Подтвердите почту/.test(fs.readFileSync(path.join(ROOT, 'public/js/screens/core.js'), 'utf8')),
+   'клиент ищет эту же фразу и открывает поле кода');
 p1.emailVerified = true;
 let entered = false;
 try { await auth.login('Игрок', 'пароль123', '1.1.1.1', 'UA'); entered = true; } catch (e) {}
@@ -91,7 +95,11 @@ ok(/data-verify=/.test(adminJs), 'кнопка есть у каждого в с�
 console.log('\n── 7. Отправка через Unisender Go ──');
 const emailSrc = fs.readFileSync(path.join(ROOT, 'src/services/email.ts'), 'utf8');
 ok(/async function sendViaUnisender/.test(emailSrc), 'отправка через Unisender реализована');
-ok(/go1\.unisender\.ru/.test(emailSrc), 'по умолчанию российская площадка');
+// По умолчанию — универсальный адрес. Прибитый go1 означал, что любой
+// аккаунт со второй площадки получал стопроцентный отказ на все письма
+// с невнятным «User with id ... not found».
+ok(/goapi\.unisender\.ru\/ru\/transactional/.test(emailSrc),
+   'по умолчанию универсальный адрес — он сам найдёт площадку аккаунта');
 ok(/'X-API-KEY': UNISENDER_API_KEY/.test(emailSrc), 'ключ передаётся заголовком, как требует сервис');
 ok(/from_email: from\.email/.test(emailSrc) && /from_name: from\.name/.test(emailSrc),
    'отправитель разбирается на имя и адрес — Unisender требует их отдельно');

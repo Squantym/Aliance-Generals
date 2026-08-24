@@ -113,6 +113,12 @@ export interface User {
   emailVerified: boolean;
   emailVerifyToken: string | null;
   emailVerifySentAt: number;
+  // Код из письма: 6 цифр, вводится прямо в форме регистрации. Нужен
+  // потому, что игрок часто регистрируется на телефоне, а почту читает
+  // на компьютере — ссылка тогда открывает чужой браузер.
+  emailVerifyCode?: string | null;
+  emailVerifyCodeExp?: number;     // до какого времени код годен
+  emailVerifyTries?: number;       // сколько раз ошибся — защита от перебора
   country: string;
   status: string;
   createdAt: number;

@@ -27,7 +27,21 @@ App.screens.auth = async (c) => {
       <label for="li-pass">Пароль</label>
       <input type="password" id="li-pass" autocomplete="current-password" required placeholder="Пароль от аккаунта">
       <button class="btn btn-orange mt" id="li-go">Войти в строй</button>
-      <button class="btn mt" id="li-resend">Не пришло письмо с подтверждением? Отправить повторно</button>
+
+      <!-- Появляется, только если сервер ответил «подтвердите почту».
+           Иначе форма входа обрастала бы полями, которые нужны раз в
+           жизни и путают всех остальных. -->
+      <div id="li-code-box" style="display:none">
+        <div class="card mt" style="background:rgba(233,199,92,.06);border-color:var(--gold)">
+          <p class="small" style="margin:0 0 8px">Почта ещё не подтверждена. Введите код из письма:</p>
+          <input type="text" id="li-code" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" placeholder="000000"
+                 style="letter-spacing:8px;text-align:center;font-size:22px;font-family:ui-monospace,Menlo,Consolas,monospace">
+          <button class="btn btn-orange mt" id="li-code-go">Подтвердить и войти</button>
+          <button class="btn mt" id="li-code-resend">Прислать код заново</button>
+        </div>
+      </div>
+
       <p class="center mt"><a href="javascript:void 0" id="li-forgot" class="small">Забыли пароль?</a></p>
     </div>
 
@@ -45,6 +59,27 @@ App.screens.auth = async (c) => {
       <input type="text" id="rg-name" maxlength="16" autocomplete="username" required placeholder="Например: ShadowGeneral">
       <label for="rg-email">Email (для подтверждения регистрации)</label>
       <input type="email" id="rg-email" autocomplete="email" required placeholder="your@email.com">
+
+      <!-- Появляется сразу после «Подписать контракт», без перезагрузки
+           страницы: игрок остаётся в форме, где уже всё заполнено. -->
+      <div id="rg-code-box" style="display:none">
+        <div class="card mt" style="background:rgba(233,199,92,.06);border-color:var(--gold)">
+          <p class="small" style="margin:0 0 8px">
+            Код из 6 цифр отправлен на <b id="rg-code-email"></b>. Впишите его сюда —
+            и сразу в игру.
+          </p>
+          <label for="rg-code">Код из письма</label>
+          <input type="text" id="rg-code" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" placeholder="000000"
+                 style="letter-spacing:8px;text-align:center;font-size:22px;font-family:ui-monospace,Menlo,Consolas,monospace">
+          <button class="btn btn-orange mt" id="rg-code-go">Подтвердить и войти</button>
+          <button class="btn mt" id="rg-code-resend">Прислать код заново</button>
+          <p class="muted small mt" style="margin-bottom:0">
+            Письма нет? Загляните в «Спам» — отправитель <b>noreply@aliance-general.ru</b>.
+            Код действует 30 минут.
+          </p>
+        </div>
+      </div>
       <label for="rg-pass">Пароль (минимум 8 символов, буквы + цифры)</label>
       <input type="password" id="rg-pass" autocomplete="new-password" required placeholder="Не менее 8 символов" minlength="8">
       <label for="rg-country">Страна (даёт постоянный бонус)</label>
@@ -119,22 +154,50 @@ App.screens.auth = async (c) => {
         return;
       }
       await finish(r.token);
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+    } catch (e) {
+      UI.toast('⛔ ' + e.message);
+      // «Подтвердите почту» — не тупик, а недоделанный шаг регистрации.
+      // Раньше здесь была кнопка «отправить письмо повторно», игрок
+      // уходил в почту, жал ссылку в другом браузере и возвращался к
+      // той же надписи. Теперь код вводится прямо здесь.
+      if (/Подтвердите почту/i.test(e.message || '')) {
+        showLoginCode(document.getElementById('li-name').value.trim());
+      }
+    }
   };
 
-  // Повторная отправка письма подтверждения
-  document.getElementById('li-resend').onclick = async () => {
-    const login = document.getElementById('li-name').value.trim();
-    if (!login) { UI.toast('Введите позывной'); return; }
-    try {
-      const r = await API.post('/api/resend-verification', { login });
-      if (r.autoVerified) {
-        UI.toast('✅ Почта подтверждена автоматически — можете войти');
-      } else {
-        UI.toast('📧 Письмо отправлено на вашу почту');
-      }
-    } catch (e) { UI.toast('⛔ ' + e.message); }
-  };
+  // Поле кода в форме входа — для тех, кто зарегистрировался раньше и
+  // до игры так и не дошёл.
+  function showLoginCode(login) {
+    const box = document.getElementById('li-code-box');
+    if (!box || !login) return;
+    box.style.display = '';
+    const input = document.getElementById('li-code');
+    input.focus();
+
+    const send = async () => {
+      const code = input.value.replace(/\D/g, '');
+      if (code.length !== 6) { UI.toast('⛔ Код состоит из 6 цифр'); return; }
+      try {
+        const r = await API.post('/api/verify-code', { login, code });
+        UI.toast('✅ Почта подтверждена');
+        await finish(r.token);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('li-code-go').onclick = send;
+    input.onkeydown = (ev) => { if (ev.key === 'Enter') send(); };
+    input.oninput = () => {
+      input.value = input.value.replace(/\D/g, '').slice(0, 6);
+      if (input.value.length === 6) send();
+    };
+    document.getElementById('li-code-resend').onclick = async () => {
+      try {
+        const rr = await API.post('/api/resend-verification', { login });
+        if (rr.autoVerified) UI.toast('✅ Почта подтверждена автоматически — войдите ещё раз');
+        else UI.toast('📧 Новый код отправлен на вашу почту');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
 
   // Восстановление пароля
   const showForgot = (on) => {
@@ -174,23 +237,56 @@ App.screens.auth = async (c) => {
       });
       if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора');
       if (r.token) {
-        // Dev-режим: почта подтверждена автоматически
+        // Отправка писем не настроена — почта считается подтверждённой,
+        // иначе новые игроки вообще не смогли бы войти
         await finish(r.token);
-      } else {
-        // Боевой режим: ждём подтверждения почты
-        c.innerHTML = `
-          <div class="title">📧 Подтвердите почту</div>
-          <div class="card center">
-            <p><span class="ic-mail" style="width:40px;height:40px"></span></p>
-            <p class="mt">Регистрация прошла успешно!</p>
-            <p class="mt">Письмо со ссылкой активации отправлено на <b>${UI.esc(r.email)}</b>.</p>
-            <p class="muted small mt">📁 Если письмо не пришло в течение 5 минут — проверьте папку <b>Спам</b>.</p>
-            <p class="muted small mt">Отправитель: <b>noreply@aliance-general.ru</b></p>
-            <button class="btn btn-orange mt" onclick="App.go('auth')">✅ Уже подтвердил — войти</button>
-          </div>`;
+        return;
       }
+      // Страницу НЕ перезагружаем: игрок остаётся в форме, где уже всё
+      // заполнено, и просто дописывает код из письма. Раньше здесь
+      // рисовался экран «идите в почту», игрок уходил по ссылке в другой
+      // браузер — и возвращался к форме входа, которая его не пускала.
+      showCodeBox(name, email);
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
+
+  // ── Ввод кода из письма ──────────────────────────────────────────
+  function showCodeBox(login, mail) {
+    const box = document.getElementById('rg-code-box');
+    if (!box) return;
+    box.style.display = '';
+    document.getElementById('rg-code-email').textContent = mail;
+    document.getElementById('rg-go').style.display = 'none';
+    const input = document.getElementById('rg-code');
+    input.value = '';
+    input.focus();
+
+    const send = async () => {
+      const code = input.value.replace(/\D/g, '');
+      if (code.length !== 6) { UI.toast('⛔ Код состоит из 6 цифр'); return; }
+      try {
+        const r = await API.post('/api/verify-code', { login, code });
+        UI.toast('✅ Почта подтверждена');
+        await finish(r.token);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+
+    document.getElementById('rg-code-go').onclick = send;
+    // Ввод шести цифр и Enter — привычнее, чем тянуться к кнопке
+    input.onkeydown = (ev) => { if (ev.key === 'Enter') send(); };
+    input.oninput = () => {
+      input.value = input.value.replace(/\D/g, '').slice(0, 6);
+      if (input.value.length === 6) send();
+    };
+
+    document.getElementById('rg-code-resend').onclick = async () => {
+      try {
+        const rr = await API.post('/api/resend-verification', { login });
+        if (rr.autoVerified) UI.toast('✅ Почта подтверждена автоматически — можете войти');
+        else UI.toast('📧 Новый код отправлен');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
 };
 
 // ---------- ГЛАВНАЯ ----------

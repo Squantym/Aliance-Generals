@@ -7,7 +7,7 @@
 // Переменные окружения:
 //   RESEND_API_KEY — ключ API (resend.com → API Keys)
 //   EMAIL_FROM     — адрес отправителя, например
-//                    "Генералы <noreply@ваш-домен>". Тестовый
+//                    "Альянс Генералов <noreply@ваш-домен>". Тестовый
 //                    onboarding@resend.dev шлёт ТОЛЬКО на почту владельца
 //                    аккаунта Resend — реальным игрокам письма не дойдут!
 //   APP_URL        — публичный адрес игры (для ссылок в письме)
@@ -24,15 +24,25 @@
 //
 // Resend оставлен запасным: если ключа Unisender нет, а ключ Resend
 // есть, работает он. Так переход не ломает уже настроенные серверы.
+import brand = require('../core/brand');
+
 const UNISENDER_API_KEY = process.env.UNISENDER_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 
-// Unisender Go разводит клиентов по площадкам: у российской и
-// европейской разные адреса. По умолчанию российская.
+// Unisender Go разводит клиентов по нескольким площадкам (go1, go2, …) с
+// одинаковым API, но РАЗНЫМИ базами пользователей. Ключ, выданный на
+// одной, на другой не опознаётся: сервер разбирает ключ, достаёт из него
+// внутренний номер владельца и не находит такого у себя. Наружу это
+// выглядит как «User with id '…' not found» — то есть как поломка
+// аккаунта, хотя аккаунт цел и стучимся мы просто не в ту дверь.
+//
+// Поэтому по умолчанию берём УНИВЕРСАЛЬНЫЙ адрес: он сам направляет
+// запрос на площадку владельца ключа. Раньше здесь был прибит go1, и
+// любой аккаунт с go2 получал стопроцентный отказ на все письма.
 const UNISENDER_URL = process.env.UNISENDER_URL
-  || 'https://go1.unisender.ru/ru/transactional/api/v1/email/send.json';
+  || 'https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json';
 
-const EMAIL_FROM = process.env.EMAIL_FROM || 'Генералы <onboarding@resend.dev>';
+const EMAIL_FROM = process.env.EMAIL_FROM || `${brand.GAME_NAME_EN} <onboarding@resend.dev>`;
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 // Какой сервис используем на самом деле
@@ -47,8 +57,8 @@ const usingTestSender = /resend\.dev/i.test(EMAIL_FROM);
 // Разбираем «Имя <адрес>» — Unisender требует имя и адрес отдельно
 function splitFrom(raw: string): { name: string; email: string } {
   const m = /^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/.exec(String(raw || ''));
-  if (m) return { name: m[1].replace(/^["']|["']$/g, '') || 'Генералы', email: m[2] };
-  return { name: 'Генералы', email: String(raw || '').trim() };
+  if (m) return { name: m[1].replace(/^["']|["']$/g, '') || brand.GAME_NAME_EN, email: m[2] };
+  return { name: brand.GAME_NAME_EN, email: String(raw || '').trim() };
 }
 
 function escapeHtml(s: string): string {
@@ -182,7 +192,7 @@ function verifyHtml(name: string, link: string): string {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 480px; color: #222;">
       <h2 style="color:#2e5b1f">Привет, ${escapeHtml(name)}!</h2>
-      <p>Чтобы активировать аккаунт в игре «Генералы», подтвердите свою почту по кнопке ниже:</p>
+      <p>Чтобы активировать аккаунт в игре «${brand.GAME_NAME}», подтвердите свою почту по кнопке ниже:</p>
       <p style="margin: 24px 0;">
         <a href="${link}" style="display:inline-block;padding:12px 24px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold;">
           Подтвердить почту
@@ -190,7 +200,7 @@ function verifyHtml(name: string, link: string): string {
       </p>
       <p style="color:#666;font-size:13px">Если кнопка не работает, перейдите по ссылке:<br>
         <a href="${link}">${link}</a></p>
-      <p style="color:#999;font-size:12px;margin-top:24px">Если вы не регистрировались в игре «Генералы» — просто проигнорируйте это письмо.</p>
+      <p style="color:#999;font-size:12px;margin-top:24px">Если вы не регистрировались в игре «${brand.GAME_NAME}» — просто проигнорируйте это письмо.</p>
     </div>`;
 }
 
@@ -198,7 +208,7 @@ function resetHtml(name: string, link: string): string {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 480px; color: #222;">
       <h2 style="color:#2e5b1f">Привет, ${escapeHtml(name)}!</h2>
-      <p>Вы запросили сброс пароля в игре «Генералы». Нажмите кнопку, чтобы задать новый пароль:</p>
+      <p>Вы запросили сброс пароля в игре «${brand.GAME_NAME}». Нажмите кнопку, чтобы задать новый пароль:</p>
       <p style="margin: 24px 0;">
         <a href="${link}" style="display:inline-block;padding:12px 24px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold;">
           Сбросить пароль
@@ -218,33 +228,51 @@ function resetHtml(name: string, link: string): string {
 // Если с шаблоном что-то не так (нет базы, битая запись), отправляем
 // заводской текст. Письмо подтверждения важнее аккуратности: без него
 // человек просто не войдёт в игру.
-function tpl(id: string, name: string, link: string): { subject: string; html: string } {
+function tpl(id: string, name: string, link: string, code?: string): { subject: string; html: string } {
   try {
-    return require('./mailer').render(id, { имя: name, ссылка: link });
+    return require('./mailer').render(id, { имя: name, ссылка: link, код: code || '' });
   } catch (e: any) {
     console.error('📧 Шаблон письма недоступен, беру заводской:', e && e.message);
     const html = id === 'reset' ? resetHtml(name, link) : verifyHtml(name, link);
-    const subject = id === 'reset' ? 'Восстановление пароля — Генералы' : 'Подтверждение почты — Генералы';
+    const subject = id === 'reset' ? `Восстановление пароля — ${brand.GAME_NAME}` : `Подтверждение почты — ${brand.GAME_NAME}`;
     return { subject, html };
   }
 }
 
 // Письмо подтверждения почты. Возвращает { sent, link, status, error }.
-async function sendVerificationEmail(toEmail: string, name: string, token: string):
+async function sendVerificationEmail(toEmail: string, name: string, token: string, code?: string):
   Promise<{ sent: boolean; link: string; status?: number; error?: string }> {
   const link = `${APP_URL}/#verify/${token}`;
   if (!isConfigured) {
-    console.log('📧 [DEV] Почта не настроена (нет RESEND_API_KEY).');
-    console.log(`📧 [DEV] Ссылка подтверждения для «${name}» <${toEmail}>: ${link}`);
+    console.log('📧 [DEV] Почта не настроена — письмо не отправлено.');
+    console.log(`📧 [DEV] Код подтверждения для «${name}» <${toEmail}>: ${code || '—'}`);
+    console.log(`📧 [DEV] Ссылка подтверждения: ${link}`);
     return { sent: false, link };
   }
   // Тема и текст берутся из шаблона, который владелец правит в панели
   // («Почта» → «Шаблоны писем»). Заводской текст лежит там же, в
   // mailer.DEFAULTS, и совпадает с прежним вшитым.
-  const t = tpl('verify', name, link);
+  const t = tpl('verify', name, link, code);
   const r = await sendMail(toEmail, t.subject, t.html);
   if (!r.sent) console.error(`📧 Не удалось отправить подтверждение <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
+}
+
+// Приветственное письмо — уходит само после подтверждения почты.
+// Отправку НЕ ждём на месте вызова: если сервис почты тормозит, игрок не
+// должен стоять у окна регистрации. Не дошло — не беда, аккаунт активен.
+async function sendWelcomeEmail(toEmail: string, name: string):
+  Promise<{ sent: boolean; error?: string }> {
+  if (!isConfigured) return { sent: false, error: 'почта не настроена' };
+  try {
+    const t = tpl('welcome', name, APP_URL);
+    const r = await sendMail(toEmail, t.subject, t.html);
+    if (!r.sent) console.error(`📧 Приветственное письмо не ушло <${toEmail}>: ${r.error}`);
+    return { sent: r.sent, error: r.error };
+  } catch (e: any) {
+    console.error('📧 Приветственное письмо: сбой', e && e.message);
+    return { sent: false, error: e && e.message };
+  }
 }
 
 // Письмо восстановления пароля. Возвращает { sent, link, status, error }.
@@ -299,9 +327,9 @@ async function sendTest(toEmail: string):
   if (!isConfigured) {
     return { sent: false, status: 0, error: 'RESEND_API_KEY не задан (dev-режим)', from: EMAIL_FROM, configured: false };
   }
-  const html = `<div style="font-family:Arial,sans-serif"><h3>Проверка почты «Генералы»</h3>
+  const html = `<div style="font-family:Arial,sans-serif"><h3>Проверка почты «${brand.GAME_NAME}»</h3>
     <p>Если вы видите это письмо — отправка настроена верно ✅</p></div>`;
-  const r = await sendMail(to, 'Проверка почты — Генералы', html);
+  const r = await sendMail(to, `Проверка почты — ${brand.GAME_NAME}`, html);
   return { sent: r.sent, status: r.status, error: r.error, from: EMAIL_FROM, configured: true };
 }
 
@@ -320,9 +348,16 @@ async function sendTest(toEmail: string):
 // Список площадок можно переопределить через UNISENDER_HOSTS (через
 // запятую): если сервис заведёт третью, владельцу не придётся ждать
 // правки кода. Этим же пользуется тест, подставляя свои сервера.
+// Универсальный адрес идёт первым: он работает при любой площадке, и
+// советовать в первую очередь нужно именно его. Остальные проверяем
+// ради ответа на вопрос «а где вообще живёт аккаунт» — это видно в
+// панели и помогает разговаривать с поддержкой предметно.
+// UNISENDER_ANY_HOST переопределяется только тестом: настоящий
+// универсальный адрес в проверках дёргать нельзя.
+const UNISENDER_ANY = process.env.UNISENDER_ANY_HOST || 'https://goapi.unisender.ru';
 const UNISENDER_HOSTS = (process.env.UNISENDER_HOSTS || '')
   ? String(process.env.UNISENDER_HOSTS).split(',').map((s) => s.trim()).filter(Boolean)
-  : ['https://go1.unisender.ru', 'https://go2.unisender.ru'];
+  : [UNISENDER_ANY, 'https://go1.unisender.ru', 'https://go2.unisender.ru'];
 const PROBE_METHODS = [
   '/ru/transactional/api/v1/domain/list.json',
   '/ru/transactional/api/v1/template/list.json',
@@ -396,14 +431,26 @@ async function diagnose(): Promise<any> {
   const dirty = !/^[A-Za-z0-9]+$/.test(UNISENDER_API_KEY);
 
   const hosts = await Promise.all(UNISENDER_HOSTS.map(probeHost));
-  const winner = hosts.find((h) => h.recognized === true) || null;
+  const working = hosts.filter((h) => h.recognized === true);
+  // Что советовать. Если нынешний адрес работает — не трогаем ничего.
+  // Иначе universal-адрес предпочтительнее конкретной площадки: он
+  // переживёт переезд аккаунта, а прибитая площадка — нет.
+  const winner = working.find((h) => h.current)
+    || working.find((h) => h.host === UNISENDER_ANY)
+    || working[0]
+    || null;
 
   let verdict = '';
   let fix = '';
   if (winner && winner.current) {
-    verdict = 'Ключ признан той площадкой, куда игра и шлёт письма. Если письма не уходят — причина не в площадке.';
+    verdict = 'Ключ признан тем адресом, куда игра и шлёт письма. Если письма не уходят — причина не в адресе сервиса.';
   } else if (winner) {
-    verdict = `Ключ принадлежит другой площадке — ${winner.host}. Игра сейчас стучится не туда, поэтому сервис отвечает «User with id … not found».`;
+    const where = working.filter((h) => h.host !== UNISENDER_ANY).map((h) => h.host).join(', ');
+    verdict = (winner.host === UNISENDER_ANY
+      ? 'Игра стучится не туда, поэтому сервис отвечает «User with id … not found». '
+        + 'Ниже — универсальный адрес: он сам направляет запрос на площадку вашего аккаунта'
+        + (where ? ` (у вас это ${where})` : '') + '.'
+      : `Ключ принадлежит площадке ${winner.host}, а игра стучится не туда — отсюда «User with id … not found».`);
     fix = `UNISENDER_URL=${winner.host}/ru/transactional/api/v1/email/send.json`;
   } else if (hosts.some((h) => h.recognized === false)) {
     verdict = 'Ключ не признан ни одной площадкой. Дело не в адресе, а в самом ключе: создайте новый в панели Unisender и проверьте, включён ли у него доступ к API.';
@@ -423,4 +470,4 @@ async function diagnose(): Promise<any> {
   };
 }
 
-export = { sendVerificationEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, sendMail, UNISENDER_URL, diagnose,};
+export = { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, sendMail, UNISENDER_URL, diagnose,};

@@ -79,23 +79,23 @@ function runProbe(hosts, key) {
 
   console.log('\n── 1. Ключ живёт на второй площадке ──');
   let r = await runProbe([a.url, b.url]);
-  ok('скрипт нашёл рабочую площадку', /КЛЮЧ РАБОТАЕТ/.test(r.out));
+  ok('скрипт нашёл рабочий адрес', /КЛЮЧ РАБОТАЕТ/.test(r.out));
   ok('чужая площадка помечена как чужая', /ключ не принадлежит/.test(r.out));
-  ok('назван правильный адрес', r.out.includes('Ваша площадка: ' + b.url));
+  ok('назван правильный адрес', r.out.includes('Рабочий адрес: ' + b.url));
   ok('подсказана строка UNISENDER_URL', r.out.includes(`UNISENDER_URL=${b.url}/ru/transactional/api/v1/email/send.json`));
   ok('показан домен из ответа', /aliance-general\.ru — подтверждён/.test(r.out));
   ok('успешный выход', r.code === 0);
 
   console.log('\n── 2. Ключ живёт на первой (адрес по умолчанию) ──');
   r = await runProbe([b.url, a.url]);
-  ok('менять адрес не советует', /менять не нужно/.test(r.out));
+  ok('менять адрес не советует', /менять в \.env ничего не нужно/.test(r.out));
   ok('и не подсовывает UNISENDER_URL', !/UNISENDER_URL=/.test(r.out));
   ok('успешный выход', r.code === 0);
 
   console.log('\n── 3. Ключа нет нигде ──');
   const c = await fakeUnisender('notfound');
   r = await runProbe([a.url, c.url]);
-  ok('честно говорит, что дело не в адресе', /не опознан НИ НА ОДНОЙ/.test(r.out));
+  ok('честно говорит, что дело не в адресе', /не опознан НИ НА ОДНОМ/.test(r.out));
   ok('советует пересоздать ключ', /новый ключ/.test(r.out));
   ok('код возврата — ошибка', r.code === 1);
 
@@ -109,7 +109,7 @@ function runProbe(hosts, key) {
   console.log('\n── 5. Первый справочный метод отсутствует ──');
   const d = await fakeUnisender('nomethod');
   r = await runProbe([d.url]);
-  ok('скрипт дошёл до второго метода и опознал площадку', /КЛЮЧ РАБОТАЕТ/.test(r.out));
+  ok('скрипт дошёл до второго метода и опознал адрес', /КЛЮЧ РАБОТАЕТ/.test(r.out));
   ok('и не назвал её чужой', !/ключ не принадлежит/.test(r.out));
 
   a.srv.close(); b.srv.close(); c.srv.close(); d.srv.close();

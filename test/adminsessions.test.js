@@ -149,7 +149,8 @@ const UA_PHONE = 'Mozilla/5.0 (Linux; Android 13; SM-A536E) Chrome/120.0 Mobile 
   console.log('\n── 9. Шаблоны писем через панель ──');
   const owner2 = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
   const tpls = await get('/api/admin/mail/templates', owner2);
-  ok('шаблоны отдаются', tpls.status === 200 && (tpls.data.templates || []).length === 3);
+  ok(`шаблоны отдаются (${(tpls.data.templates || []).length})`,
+     tpls.status === 200 && (tpls.data.templates || []).length === 4);
   ok('видно, кому уйдёт рассылка', typeof (tpls.data.audience || {}).ready === 'number');
   const bad = await post('/api/admin/mail/template', owner2, { id: 'verify', subject: 'Тема', html: '<p>без ссылки</p>' });
   ok('шаблон без {{ссылка}} отклонён', bad.status >= 400 && /ссылка/.test(bad.data.error || ''));

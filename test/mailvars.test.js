@@ -68,9 +68,9 @@ const mailer = require(path.join(ROOT, 'dist/src/services/mailer.js'));
       '<p>Привет, {{имя}}! <a href="{{ссылка}}">Подтвердить</a> · {{сайт}}</p>', notices);
   } catch (e) { err = e; }
   ok('отказа нет', !err);
-  const good = mailer.render('verify', { имя: 'Генерал', ссылка: 'https://aliance-general.ru/#verify/abc' });
-  ok('название игры подставилось', good.subject === 'Подтверждение почты — Генералы');
-  ok('имя подставилось', /Привет, Генерал!/.test(good.html));
+  const good = mailer.render('verify', { имя: 'Боец', код: '123456', ссылка: 'https://aliance-general.ru/#verify/abc' });
+  ok('название игры подставилось', good.subject === 'Подтверждение почты — Альянс Генералов');
+  ok('имя подставилось', /Привет, Боец!/.test(good.html));
   ok('ссылка не сломана экранированием', good.html.includes('https://aliance-general.ru/#verify/abc'));
   ok('скобок в готовом письме не осталось', !/\{\{|\}\}/.test(good.subject + good.html));
 

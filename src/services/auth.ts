@@ -12,6 +12,28 @@ import type { User, Notices } from '../types';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
+// ── Код подтверждения почты ────────────────────────────────────────
+// Шесть цифр вместо только ссылки. Причина простая: игрок регистрируется
+// на телефоне, а почту открывает на компьютере — ссылка из письма
+// приводит его в другой браузер, где он не регистрировался, и кажется,
+// что подтверждение не сработало. Код переносится глазами.
+//
+// Раз код короткий, его можно подобрать. Поэтому три ограничителя:
+// срок жизни, счётчик неверных попыток и общий лимит на отправку писем
+// с одного адреса (checkHeavy('mail')). Миллион вариантов против пяти
+// попыток — перебор бессмысленен.
+const CODE_TTL_MS = 30 * 60 * 1000;   // полчаса
+const CODE_MAX_TRIES = 5;
+
+function newCode(): string {
+  // Первая цифра не ноль: ведущий ноль теряется при копировании в поля,
+  // которые почтовые клиенты и браузеры считают числовыми.
+  const first = 1 + Math.floor(Math.random() * 9);
+  let rest = '';
+  for (let i = 0; i < 5; i++) rest += Math.floor(Math.random() * 10);
+  return String(first) + rest;
+}
+
 // БАГ 5: Запрещённые имена
 const RESERVED_NAMES = new Set([
   'admin', 'administrator', 'root', 'superuser', 'moderator', 'moder',
@@ -127,6 +149,9 @@ function newUser(id: string, name: string, email_: string, passHash: string, sal
     emailVerified: !!emailVerified,
     emailVerifyToken: emailVerified ? null : u.uid(32),
     emailVerifySentAt: now,
+    emailVerifyCode: emailVerified ? null : newCode(),
+    emailVerifyCodeExp: emailVerified ? 0 : now + CODE_TTL_MS,
+    emailVerifyTries: 0,
     country, status: '', createdAt: now, lastSeen: now,
     level: 1, xp: 0,
     dollars: config.PLAYER.START_DOLLARS,
@@ -425,11 +450,69 @@ async function register(login: string, password: string, emailAddr: string, coun
   if (autoVerified) {
     return { token: issueToken(id, { ip, ua, hints, fp }), isAdmin: false, emailVerified: true };
   }
-  const sendRes = await email.sendVerificationEmail(emailAddr, login, newU.emailVerifyToken || '');
+  const sendRes = await email.sendVerificationEmail(
+    emailAddr, login, newU.emailVerifyToken || '', newU.emailVerifyCode || '');
   if (!sendRes.sent) {
     console.error(`📧 ВНИМАНИЕ: письмо подтверждения для «${login}» <${emailAddr}> НЕ отправлено (${sendRes.error || '—'}). Игрок не сможет войти, пока не подтвердит почту. Проверьте настройки почты в админке.`);
   }
-  return { pending: true, email: emailAddr, emailVerified: false, emailSent: sendRes.sent };
+  // needCode говорит клиенту: страницу не перезагружаем, показываем поле
+  // для кода прямо под адресом почты.
+  return {
+    pending: true, needCode: true, login,
+    email: emailAddr, emailVerified: false, emailSent: sendRes.sent,
+  };
+}
+
+// Подтверждение кодом из письма. Возвращает то же, что и переход по
+// ссылке, — токен входа: игрок сразу оказывается в игре, без второго
+// ввода пароля.
+async function verifyCode(loginName: string, code: string, ip?: string, ua?: string, hints?: any, fp?: string) {
+  const name = String(loginName || '').trim().toLowerCase();
+  const given = String(code || '').replace(/\D/g, '');
+  const found = Object.values(users()).find((p) => p.name.toLowerCase() === name);
+
+  // Единый ответ на «нет такого игрока» и «неверный код»: иначе форма
+  // регистрации превращается в проверялку занятых позывных.
+  const wrong = () => new u.ApiError('Код неверный или устарел. Проверьте письмо или запросите новый.');
+  if (!found) throw wrong();
+  if (found.emailVerified) throw new u.ApiError('Почта уже подтверждена — просто войдите');
+  if (!found.emailVerifyCode) throw wrong();
+
+  // Перебор: пять неверных попыток — и код сгорает целиком. Иначе шесть
+  // цифр подбираются машиной за вечер.
+  if ((found.emailVerifyTries || 0) >= CODE_MAX_TRIES) {
+    throw new u.ApiError('Слишком много неверных попыток. Запросите новый код.');
+  }
+  if (Date.now() > (found.emailVerifyCodeExp || 0)) {
+    throw new u.ApiError('Код устарел. Запросите новый — придёт новое письмо.');
+  }
+  if (given !== found.emailVerifyCode) {
+    found.emailVerifyTries = (found.emailVerifyTries || 0) + 1;
+    db.markUser(found.id);
+    const left = CODE_MAX_TRIES - found.emailVerifyTries;
+    throw new u.ApiError(left > 0
+      ? `Код неверный. Осталось попыток: ${left}.`
+      : 'Код неверный, попытки кончились. Запросите новый код.');
+  }
+
+  found.emailVerified = true;
+  found.emailVerifyToken = null;
+  found.emailVerifyCode = null;
+  found.emailVerifyTries = 0;
+  db.markUser(found.id);
+  try { require('./access').securityEvent(found, 'email_verified', found.email || ''); } catch (e) {}
+  auditLog.record({ userId: found.id, userName: found.name, path: '/api/verify-code' });
+
+  // Приветственное письмо шлём вдогонку и НЕ ждём: почтовый сервис может
+  // отвечать секундами, а игрок в это время смотрит на кнопку. Не дошло —
+  // не страшно, аккаунт уже активен.
+  email.sendWelcomeEmail(found.email, found.name).catch(() => {});
+
+  return {
+    token: issueToken(found.id, { ip, ua, hints, fp }),
+    isAdmin: !!found.isAdmin,
+    name: found.name,
+  };
 }
 
 function verifyEmail(token: string) {
@@ -439,9 +522,12 @@ function verifyEmail(token: string) {
   if (!found) throw new u.ApiError('Ссылка подтверждения недействительна или уже использована');
   found.emailVerified = true;
   found.emailVerifyToken = null;
+  found.emailVerifyCode = null;      // код и ссылка гасят друг друга
+  found.emailVerifyTries = 0;
   db.markUser(found.id);
   try { require('./access').securityEvent(found, 'email_verified', found.email || ''); } catch (e) {}
   auditLog.record({ userId: found.id, userName: found.name, path: '/api/verify-email' });
+  email.sendWelcomeEmail(found.email, found.name).catch(() => {});
   return { token: issueToken(found.id), isAdmin: !!found.isAdmin, name: found.name };
 }
 
@@ -452,19 +538,33 @@ async function resendVerification(loginName: string, ip?: string) {
   );
   // БАГ 11: не раскрываем существование — единое сообщение
   if (!found || found.emailVerified) throw new u.ApiError('Если аккаунт существует и почта не подтверждена — письмо отправлено');
-  if (Date.now() - (found.emailVerifySentAt || 0) < RESEND_COOLDOWN_MS) {
+  // Пауза между письмами защищает от долбёжки по кнопке и от выжигания
+  // месячной квоты. Но если код УЖЕ негоден — попытки кончились или он
+  // просрочен, — пауза превращается в тупик: игрок сделал всё правильно,
+  // а получает «подождите минуту» и остаётся без единого рабочего кода.
+  // В этом случае письмо шлём сразу.
+  const codeDead = !found.emailVerifyCode
+    || (found.emailVerifyTries || 0) >= CODE_MAX_TRIES
+    || Date.now() > (found.emailVerifyCodeExp || 0);
+  if (!codeDead && Date.now() - (found.emailVerifySentAt || 0) < RESEND_COOLDOWN_MS) {
     throw new u.ApiError('Письмо уже отправлено недавно — подождите минуту');
   }
   if (!found.emailVerifyToken) found.emailVerifyToken = u.uid(32);
+  // Новый код на каждое письмо. Иначе «запросите новый» после исчерпания
+  // попыток не помогало бы: в письме приходил бы тот же сгоревший код.
+  found.emailVerifyCode = newCode();
+  found.emailVerifyCodeExp = Date.now() + CODE_TTL_MS;
+  found.emailVerifyTries = 0;
   found.emailVerifySentAt = Date.now();
   db.save('users');
-  const result = await email.sendVerificationEmail(found.email, found.name, found.emailVerifyToken);
+  const result = await email.sendVerificationEmail(
+    found.email, found.name, found.emailVerifyToken, found.emailVerifyCode);
   if (!result.sent && !email.isConfigured) {
     found.emailVerified = true;
     db.save('users');
     return { autoVerified: true, message: 'Почта подтверждена автоматически (режим разработки)' };
   }
-  return { message: `Письмо повторно отправлено` };
+  return { message: 'Письмо отправлено — введите код из него', needCode: true };
 }
 
 async function login(loginName: string, password: string, ip: string, ua?: string, hints?: any, fp?: string) {
@@ -497,7 +597,11 @@ async function login(loginName: string, password: string, ip: string, ua?: strin
     throw new u.ApiError(WRONG_CREDS);
   }
   if (!found.emailVerified) {
-    throw new u.ApiError(`Подтвердите почту — письмо отправлено при регистрации. Не пришло? Нажмите «Отправить повторно».`);
+    // Текст ловится клиентом по слову «Подтвердите почту»: он открывает
+    // поле для кода прямо в форме входа. Меняя формулировку, поправьте и
+    // public/js/screens/core.js — иначе игрок останется без способа
+    // ввести код и упрётся в вечное «подтвердите».
+    throw new u.ApiError('Подтвердите почту — введите код из письма ниже.');
   }
   // Забаненного ВПУСКАЕМ: он войдёт и увидит окно с причиной и сроком.
   // Раньше вход отклонялся с текстом ошибки на форме — человек не понимал,
@@ -696,5 +800,5 @@ async function changePassword(user: User, oldPassword: string, newPassword: stri
   return { ok: true, token };
 }
 
-export = { register, login, loginTotp, logout, issueToken, checkHeavy,
+export = { register, login, loginTotp, logout, issueToken, checkHeavy, verifyCode,
   sessionsOf, sessionCounts, killOne, killEverySession, validateName, validateAccountLogin, setAccountLogin, killSessions, pruneSessions, SESSION_TTL_MS, verifyEmail, resendVerification, checkRateLimit, requestPasswordReset, resetPassword, changePassword, newUser, renameSelf, RESERVED_NAMES,};

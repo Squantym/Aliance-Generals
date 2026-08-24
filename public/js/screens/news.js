@@ -114,7 +114,7 @@
 
     c.innerHTML = `
       <div class="title">📰 Новости</div>
-      <p class="muted small" style="margin:-4px 4px 12px">Обновления, события и объявления по игре «Генералы».</p>
+      <p class="muted small" style="margin:-4px 4px 12px">Обновления, события и объявления по игре «Альянс Генералов».</p>
       ${adminBar}
       ${postsHtml}`;
 

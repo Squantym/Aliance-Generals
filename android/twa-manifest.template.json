@@ -2,7 +2,7 @@
   "packageId": "game.generals.alliance",
   "host": "ЗАМЕНИ_НА_ДОМЕН",
   "name": "Альянс Генералов",
-  "launcherName": "Генералы",
+  "launcherName": "Альянс Генералов",
   "display": "standalone",
   "orientation": "portrait",
   "themeColor": "#0a0d08",

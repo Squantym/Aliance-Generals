@@ -146,12 +146,35 @@ const post = (p, t, b) => api('POST', p, t, b || {});
   const r3 = await post('/api/admin/mail/diagnose', owner3);
   ok('посторонние символы замечены', r3.data.keyDirty === true);
 
-  console.log('\n── 4. Права: чужому проверка закрыта ──');
+  console.log('\n── 4. Универсальный адрес советуем раньше конкретной площадки ──');
+  // Поддержка Unisender подтвердила: есть адрес, который сам направляет
+  // запрос на площадку владельца ключа. Он и должен быть советом по
+  // умолчанию — прибитая площадка перестанет работать, если аккаунт
+  // переедет, и всё повторится сначала.
+  await stopServer(srv);
+  const universal = await fakePlatform('ok');   // «goapi»: ключ признаёт
+  srv = await startServer(Object.assign({}, mailEnv, {
+    UNISENDER_ANY_HOST: universal.url,
+    // Универсальный СПЕЦИАЛЬНО не первый в списке: иначе «первый рабочий»
+    // совпал бы с ним случайно, и проверка ничего бы не проверяла —
+    // такой тест зеленеет и при выкинутом приоритете.
+    UNISENDER_HOSTS: [alien.url, home.url, universal.url].join(','),
+    UNISENDER_URL: alien.url + '/ru/transactional/api/v1/email/send.json',
+  }));
+  const owner4 = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
+  const r4 = await post('/api/admin/mail/diagnose', owner4);
+  ok('советует именно универсальный адрес',
+     r4.data.fix === `UNISENDER_URL=${universal.url}/ru/transactional/api/v1/email/send.json`);
+  ok('а не конкретную площадку', !String(r4.data.fix).includes(home.url));
+  ok('но говорит, где живёт аккаунт', String(r4.data.verdict).includes(home.url));
+  ok('и объясняет причину отказов', /User with id/.test(r4.data.verdict || ''));
+
+  console.log('\n── 5. Права: чужому проверка закрыта ──');
   const plain = (await post('/api/login', null, { login: 'Игрок', password: 'пароль123' })).data.token;
   ok('обычный игрок получает отказ', (await post('/api/admin/mail/diagnose', plain)).status >= 400);
 
   await stopServer(srv);
-  alien.s.close(); home.s.close();
+  alien.s.close(); home.s.close(); universal.s.close();
   try { fsx.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);

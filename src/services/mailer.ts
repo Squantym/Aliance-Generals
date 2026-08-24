@@ -6,10 +6,11 @@
 // перезапуска сервера. Теперь текст живёт в базе и меняется из панели,
 // а код только подставляет значения.
 //
-// Три шаблона:
-//   verify — подтверждение почты при регистрации;
-//   reset  — восстановление пароля;
-//   news   — новостная рассылка (шлётся вручную из панели).
+// Четыре шаблона:
+//   verify  — код подтверждения почты при регистрации;
+//   welcome — приветственное письмо после подтверждения;
+//   reset   — восстановление пароля;
+//   news    — новостная рассылка (шлётся вручную из панели).
 //
 // Подстановки в тексте пишутся фигурными скобками: {{имя}}, {{ссылка}},
 // {{игра}}, {{сайт}}. Именно по-русски: шаблон правит владелец игры, а
@@ -23,10 +24,11 @@
 import db = require('../core/db');
 import u = require('../core/utils');
 import email = require('./email');
+import brand = require('../core/brand');
 import type { Notices } from '../types';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
-const GAME_NAME = 'Генералы';
+const GAME_NAME = brand.GAME_NAME;
 
 // ── Заводские шаблоны ──────────────────────────────────────────────
 // Они же — то, что уходит игрокам, пока владелец ничего не менял.
@@ -34,39 +36,70 @@ const GAME_NAME = 'Генералы';
 const DEFAULTS: Record<string, { name: string; subject: string; html: string; vars: string[]; about: string }> = {
   verify: {
     name: 'Подтверждение почты',
-    about: 'Уходит сразу после регистрации. Без перехода по ссылке игрок не сможет войти.',
-    vars: ['{{имя}}', '{{ссылка}}', '{{игра}}', '{{сайт}}'],
-    subject: 'Подтверждение почты — {{игра}}',
-    html: `<h2 style="color:#2e5b1f">Привет, {{имя}}!</h2>
-<p>Чтобы активировать аккаунт в игре «{{игра}}», подтвердите почту по кнопке ниже:</p>
-<p style="margin:24px 0">
-  <a href="{{ссылка}}" style="display:inline-block;padding:12px 24px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold">Подтвердить почту</a>
+    about: 'Уходит сразу после регистрации. Пока почта не подтверждена, игрок в игру не попадёт.',
+    vars: ['{{имя}}', '{{код}}', '{{ссылка}}', '{{игра}}', '{{сайт}}'],
+    subject: 'Код подтверждения {{код}} — {{игра}}',
+    // Код стоит первым и крупно: игрок регистрируется на одном
+    // устройстве, а почту часто открывает на другом, и ссылка тогда
+    // приводит его в чужой браузер, где он не зарегистрирован. Код
+    // переносится глазами и работает в любом случае.
+    html: `<h2 style="margin:0 0 14px;color:#2e5b1f;font-size:22px">Привет, {{имя}}!</h2>
+<p style="margin:0 0 18px">Вот код подтверждения для входа в игру «{{игра}}». Впишите его в окно регистрации:</p>
+<p style="margin:0 0 22px;padding:14px 10px;background:#efe6d2;border:1px dashed #b8892f;border-radius:8px;text-align:center;font-family:'Courier New',Courier,monospace;font-size:32px;font-weight:bold;letter-spacing:8px;color:#26221c">{{код}}</p>
+<p style="margin:0 0 10px;font-size:14px;color:#5c564c">Код действует 30 минут. Если окно регистрации закрылось — откройте игру и нажмите «Ввести код с почты».</p>
+<p style="margin:22px 0 0;font-size:14px;color:#5c564c">Можно и просто перейти по ссылке:<br>
+  <a href="{{ссылка}}" style="color:#a8761f">{{ссылка}}</a></p>
+<p style="margin:22px 0 0;font-size:13px;color:#8b8578">Если вы не регистрировались — просто не отвечайте на это письмо, аккаунт не активируется.</p>`,
+  },
+
+  welcome: {
+    name: 'Приветственное письмо',
+    about: 'Уходит само, сразу после успешного подтверждения почты. Это первое впечатление об игре.',
+    vars: ['{{имя}}', '{{игра}}', '{{сайт}}'],
+    subject: 'Добро пожаловать в «{{игра}}», {{имя}}!',
+    html: `<h2 style="margin:0 0 14px;color:#2e5b1f;font-size:22px">В строю, {{имя}}!</h2>
+<p style="margin:0 0 18px">Аккаунт активирован. Ниже — коротко о том, что вас ждёт.</p>
+
+<p style="margin:0 0 16px"><b style="color:#a8761f">⚔ Армия и бои</b><br>
+Нанимайте технику, качайте характеристики и деритесь с другими игроками. Победа приносит трофеи, поражение — опыт и повод пересобрать состав.</p>
+
+<p style="margin:0 0 16px"><b style="color:#a8761f">🏭 Хозяйство</b><br>
+Стройте базу, добывайте ресурсы в шахтах, торгуйте на рынке. Экономика кормит армию — без неё воевать не на что.</p>
+
+<p style="margin:0 0 16px"><b style="color:#a8761f">🛡 Легион</b><br>
+Вступайте в легион или соберите свой. Групповые сражения, общая казна, совместные постройки — в одиночку столько не вытянуть.</p>
+
+<p style="margin:0 0 4px"><b style="color:#a8761f">🎖 Задания и сезоны</b><br>
+Ежедневные задания, турниры и сезонный рейтинг. Награды в конце сезона получают те, кто играл, а не те, кто больше заплатил.</p>
+
+<p style="margin:26px 0 8px;text-align:center">
+  <a href="{{сайт}}" style="display:inline-block;padding:14px 34px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:8px;font-weight:bold;font-size:17px">В игру</a>
 </p>
-<p style="color:#666;font-size:13px">Если кнопка не работает, откройте ссылку:<br><a href="{{ссылка}}">{{ссылка}}</a></p>
-<p style="color:#999;font-size:12px;margin-top:24px">Если вы не регистрировались — просто не отвечайте на это письмо.</p>`,
+<p style="margin:18px 0 0;font-size:13px;color:#8b8578">Совет напоследок: не сливайте весь стартовый капитал в технику. Первые постройки окупаются быстрее, чем кажется.</p>`,
   },
   reset: {
     name: 'Восстановление пароля',
     about: 'Уходит по кнопке «Забыли пароль». Ссылка действует ограниченное время.',
     vars: ['{{имя}}', '{{ссылка}}', '{{игра}}', '{{сайт}}'],
     subject: 'Восстановление пароля — {{игра}}',
-    html: `<h2 style="color:#2e5b1f">Привет, {{имя}}!</h2>
-<p>Вы запросили смену пароля в игре «{{игра}}». Нажмите кнопку, чтобы задать новый:</p>
-<p style="margin:24px 0">
-  <a href="{{ссылка}}" style="display:inline-block;padding:12px 24px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold">Задать новый пароль</a>
+    html: `<h2 style="margin:0 0 14px;color:#2e5b1f;font-size:22px">Привет, {{имя}}!</h2>
+<p style="margin:0 0 18px">Вы запросили смену пароля в игре «{{игра}}». Нажмите кнопку, чтобы задать новый:</p>
+<p style="margin:26px 0;text-align:center">
+  <a href="{{ссылка}}" style="display:inline-block;padding:14px 30px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px">Задать новый пароль</a>
 </p>
-<p style="color:#666;font-size:13px">Если кнопка не работает, откройте ссылку:<br><a href="{{ссылка}}">{{ссылка}}</a></p>
-<p style="color:#999;font-size:12px;margin-top:24px">Если вы не запрашивали смену — просто не отвечайте: пароль останется прежним.</p>`,
+<p style="margin:0 0 6px;font-size:14px;color:#5c564c">Если кнопка не работает, откройте ссылку:<br>
+  <a href="{{ссылка}}" style="color:#a8761f">{{ссылка}}</a></p>
+<p style="margin:22px 0 0;font-size:13px;color:#8b8578">Если вы не запрашивали смену — просто не отвечайте: пароль останется прежним, а все открытые входы в аккаунт закроются только после реальной смены.</p>`,
   },
   news: {
     name: 'Новостная рассылка',
     about: 'Ничего не отправляет сама по себе — только когда вы нажмёте «Разослать».',
     vars: ['{{имя}}', '{{игра}}', '{{сайт}}'],
     subject: 'Новости игры {{игра}}',
-    html: `<h2 style="color:#2e5b1f">Привет, {{имя}}!</h2>
-<p>Здесь текст новости. Его можно менять целиком — это обычная разметка письма.</p>
-<p style="margin:24px 0">
-  <a href="{{сайт}}" style="display:inline-block;padding:12px 24px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold">Играть</a>
+    html: `<h2 style="margin:0 0 14px;color:#2e5b1f;font-size:22px">Привет, {{имя}}!</h2>
+<p style="margin:0 0 18px">Здесь текст новости. Замените его своим — оформление письма подставится само.</p>
+<p style="margin:26px 0 0;text-align:center">
+  <a href="{{сайт}}" style="display:inline-block;padding:14px 34px;background:#d9a546;color:#1a1a1a;text-decoration:none;border-radius:8px;font-weight:bold;font-size:17px">Играть</a>
 </p>`,
   },
 };
@@ -213,19 +246,87 @@ function stripUnknownVars(text: string): string {
   return String(text || '').replace(/\{\{([^{}]*)\}\}/g, (_m, inner) => escapeHtml(String(inner).trim()));
 }
 
-// Готовое письмо: тема и разметка. Обёртку вокруг текста добавляем здесь,
-// чтобы владелец правил только содержание и не следил за вёрсткой.
+// ── Оформление письма ──────────────────────────────────────────────
+// Владелец правит только содержание, вёрстку конверта берём на себя.
+//
+// Почему таблицами, а не div с flex: почтовые клиенты — не браузеры.
+// Outlook рисует письмо движком Word, Gmail вырезает <style> из <head>,
+// у половины клиентов нет ни flex, ни grid, ни медиазапросов. Таблица с
+// шириной 100% и внутренней колонкой фиксированной ширины — это то, что
+// одинаково понимают все с девяностых: на широком экране письмо стоит
+// по центру, на телефоне занимает ширину экрана целиком.
+//
+// Все стили — прямо на тегах. Общий CSS почта выбрасывает.
+const MAIL_BG = '#141210';        // тёмный фон-подложка, как в игре
+const MAIL_CARD = '#f7f3ea';      // светлая «бумага» письма: читать легче
+const MAIL_GOLD = '#d9a546';      // акцент игры
+const MAIL_INK = '#26221c';
+
+function envelope(inner: string, preheader: string): string {
+  return `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>${escapeHtml(GAME_NAME)}</title></head>
+<body style="margin:0;padding:0;background:${MAIL_BG};">
+<!-- Строка-подсказка в списке писем: без неё почтовик показывает
+     первые слова разметки. -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;height:0;width:0">
+${escapeHtml(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:${MAIL_BG};margin:0;padding:0">
+  <tr><td align="center" style="padding:24px 12px">
+
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+           style="width:100%;max-width:600px;border-collapse:collapse">
+
+      <!-- Шапка -->
+      <tr><td align="center" style="padding:0 0 18px">
+        <div style="font-family:Georgia,'Times New Roman',serif;font-size:22px;letter-spacing:3px;
+                    color:${MAIL_GOLD};text-transform:uppercase;font-weight:bold">
+          ★ ${escapeHtml(GAME_NAME)} ★
+        </div>
+      </td></tr>
+
+      <!-- Само письмо -->
+      <tr><td style="background:${MAIL_CARD};border-radius:10px;
+                     border-top:3px solid ${MAIL_GOLD};padding:28px 26px;
+                     font-family:Arial,Helvetica,sans-serif;font-size:16px;
+                     line-height:1.55;color:${MAIL_INK}">
+${inner}
+      </td></tr>
+
+      <!-- Подвал -->
+      <tr><td align="center" style="padding:18px 10px 0;
+                     font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                     line-height:1.5;color:#8b8578">
+        <a href="${escapeHtml(APP_URL)}" style="color:${MAIL_GOLD};text-decoration:none">${escapeHtml(APP_URL.replace(/^https?:\/\//, ''))}</a><br>
+        Это письмо пришло, потому что на этот адрес заводили аккаунт в игре.
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
+// Первые слова письма — их почтовик показывает в списке рядом с темой.
+// Берём из текста, сняв разметку: иначе игрок увидит «h2 style color».
+function preheaderOf(html: string): string {
+  return String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 110);
+}
+
+// Готовое письмо: тема и разметка.
 function render(id: string, vars: Record<string, string>): { subject: string; html: string } {
   const t = tplOf(id);
   const all = { игра: GAME_NAME, сайт: APP_URL, ...vars };
   // stripUnknownVars — последний рубеж: шаблон мог быть сохранён до того,
   // как появилась проверка при сохранении. Лучше отправить письмо с
   // текстом без скобок, чем не отправить совсем.
+  const body = stripUnknownVars(fill(t.html, all));
   return {
     subject: stripUnknownVars(fill(t.subject, all)),
-    html: `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;color:#222;line-height:1.5">
-${stripUnknownVars(fill(t.html, all))}
-</div>`,
+    html: envelope(body, preheaderOf(body)),
   };
 }
 
@@ -263,8 +364,14 @@ function save(actorName: string, id: string, subject: string, html: string, noti
   // письмо вообще отправляется. Шаблон без неё бесполезен, и молча
   // сохранять такой нельзя: игроки просто не смогут ни подтвердить
   // почту, ни сменить пароль, а узнаете вы об этом по жалобам.
-  if ((id === 'verify' || id === 'reset') && !h.includes('{{ссылка}}')) {
+  // Без этих подстановок письмо бесполезно, и молча сохранять такой
+  // шаблон нельзя: игрок не сможет ни подтвердить почту, ни сменить
+  // пароль, а узнаете вы об этом по жалобам через неделю.
+  if (id === 'reset' && !h.includes('{{ссылка}}')) {
     throw new u.ApiError('В этом письме обязательна подстановка {{ссылка}} — без неё игроку некуда переходить');
+  }
+  if (id === 'verify' && !h.includes('{{код}}') && !h.includes('{{ссылка}}')) {
+    throw new u.ApiError('В письме подтверждения нужна хотя бы одна подстановка — {{код}} или {{ссылка}}, иначе игроку нечем подтвердить почту');
   }
   // Выдуманная подстановка вроде {{Альянс Генералов}} — самая обидная
   // ошибка: сохранилась бы молча, а письмо отклонил бы уже почтовый
@@ -301,7 +408,7 @@ async function sendPreview(id: string, to: string, playerName: string) {
   if (!DEFAULTS[id]) throw new u.ApiError('Неизвестный шаблон письма');
   const addr = String(to || '').trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) throw new u.ApiError('Укажите адрес, куда отправить образец');
-  const r = render(id, { имя: playerName || 'Генерал', ссылка: `${APP_URL}/#пример-ссылки` });
+  const r = render(id, { имя: playerName || 'Боец', код: '482913', ссылка: `${APP_URL}/#пример-ссылки` });
   const res = await email.sendMail(addr, '[образец] ' + r.subject, r.html);
   if (!res.sent) throw new u.ApiError('Письмо не ушло: ' + (res.error || 'причина неизвестна'));
   return { ok: true, to: addr };
@@ -395,7 +502,7 @@ function broadcastStart(actorName: string, allUsers: Record<string, any>, notice
   const list = recipients(allUsers);
   if (!list.length) throw new u.ApiError('Некому отправлять: нет игроков с подтверждённой почтой');
 
-  const r = render('news', { имя: 'Генерал' });
+  const r = render('news', { имя: 'Боец' });
   const s: any = db.load<any>('broadcast', {});
   s.startedAt = Date.now();
   s.finishedAt = 0;

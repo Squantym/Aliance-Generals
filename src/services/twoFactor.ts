@@ -119,7 +119,7 @@ function setup(user: any, issuer: string): any {
   db.markUser(user.id);
   return {
     secret,
-    otpauth: totp.otpauthUrl(secret, user.name || user.id, issuer || 'Генералы'),
+    otpauth: totp.otpauthUrl(secret, user.name || user.id, issuer || require('../core/brand').GAME_NAME),
     step: totp.STEP_SEC,
     digits: totp.DIGITS,
   };

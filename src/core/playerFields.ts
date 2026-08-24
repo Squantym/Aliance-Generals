@@ -38,6 +38,9 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // он есть, тот генерирует коды.
   totp:               { owner: 'twoFactor',  note: 'второй фактор входа — НИКОГДА не отдавать в API' },
   emailVerifySentAt:  { owner: 'auth',       note: 'когда отправлено письмо подтверждения' },
+  emailVerifyCode:    { owner: 'auth',       note: 'код из письма (6 цифр) — вводится в форме регистрации' },
+  emailVerifyCodeExp: { owner: 'auth',       note: 'до какого времени код годен' },
+  emailVerifyTries:   { owner: 'auth',       note: 'неверных попыток ввода кода — защита от перебора' },
   resetToken:         { owner: 'auth',       note: 'токен сброса пароля' },
   resetTokenExp:      { owner: 'auth',       note: 'срок действия токена сброса' },
   country:            { owner: 'auth',       note: 'флаг/страна' },
@@ -228,7 +231,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
 };
 
 // Поля, которые НИКОГДА не должны попадать в ответы API
-const SECRET_FIELDS = ['passHash', 'salt', 'resetToken', 'emailVerifyToken', 'totp'];
+const SECRET_FIELDS = ['passHash', 'salt', 'resetToken', 'emailVerifyToken', 'emailVerifyCode', 'totp'];
 
 // Поле занято? Используется тестом и может вызываться из кода перед
 // добавлением новой сущности.

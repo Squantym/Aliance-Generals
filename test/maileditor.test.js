@@ -146,8 +146,8 @@ const roundTrip = (html) => ME.toHtml(editorWith(html));
   try { await win.A2.screens.mail(host); } catch (e) { renderErr = e; }
   ok('экран отрисовался без ошибки', !renderErr);
   const editors = host.querySelectorAll('.mail-editor');
-  ok(`редактор у каждого шаблона (${editors.length})`, editors.length === 3);
-  ok('панель кнопок на месте', host.querySelectorAll('.mail-toolbar').length === 3);
+  ok(`редактор у каждого шаблона (${editors.length})`, editors.length === 4);
+  ok('панель кнопок на месте', host.querySelectorAll('.mail-toolbar').length === 4);
   ok('метки подстановок вставлены в редактор', host.querySelectorAll('.mail-editor .mail-var').length > 0);
   ok('окно разметки спрятано за кнопкой «Код»', Array.from(host.querySelectorAll('.mail-code')).every((c) => c.hidden));
   ok('кнопка «Проверить сервис» рядом', !!host.querySelector('#mail-diag'));
