@@ -4474,3 +4474,74 @@ body.combat-fullscreen { padding-top: 0 !important; }
   .mk-row .mk-stats { width: 100%; order: 3; }
   .mk-row .mk-bonus { margin-left: 0; }
 }
+
+/* ── Визуальный редактор письма (панель → «Письма») ───────────────
+   Владелец правит письмо как обычный текст, а не разметку: теги руками
+   приводили к выдуманным подстановкам, из-за которых почтовый сервис
+   отклонял письмо целиком. */
+.mail-subject-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0 10px; }
+.mail-subject-row .tpl-subject {
+  flex: 1 1 260px; box-sizing: border-box; padding: 7px 10px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+
+.mail-toolbar {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  padding: 6px; margin: 4px 0 0;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--border); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+}
+.mail-tb {
+  padding: 5px 9px; font-size: 13px; line-height: 1;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.mail-tb:hover { background: rgba(255, 255, 255, .08); }
+.mail-tb:active { transform: translateY(1px); }
+.mail-tb-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }
+
+/* Метка-подстановка: сразу видно, что это не текст, а подставляемое
+   значение — и что редактировать её посимвольно бессмысленно. */
+.mail-varbtn {
+  padding: 4px 9px; font-size: 12px; line-height: 1; cursor: pointer;
+  color: #1a1a1a; background: #d9a546;
+  border: 1px solid #b8892f; border-radius: 999px;
+}
+.mail-varbtn::before { content: '+ '; opacity: .7; }
+.mail-varbtn:hover { filter: brightness(1.1); }
+
+.mail-editor {
+  min-height: 190px; padding: 12px 14px;
+  background: #fff; color: #222;               /* письмо белое — показываем как есть */
+  border: 1px solid var(--border); border-radius: 0 0 8px 8px;
+  overflow-wrap: anywhere; line-height: 1.5;
+}
+.mail-editor:focus { outline: 2px solid #d9a546; outline-offset: -2px; }
+.mail-editor h2 { margin: 0 0 8px; font-size: 20px; color: #2e5b1f; }
+.mail-editor p { margin: 0 0 10px; }
+.mail-editor a { color: #1a5fb4; }
+
+.mail-editor .mail-var,
+.a2-card .mail-var {
+  display: inline-block; padding: 1px 8px; margin: 0 1px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+  color: #1a1a1a; background: #f2d492;
+  border: 1px solid #b8892f; border-radius: 999px;
+  user-select: none;
+}
+.mail-editor .mail-var::before { content: '{'; opacity: .45; margin-right: 2px; }
+.mail-editor .mail-var::after { content: '}'; opacity: .45; margin-left: 2px; }
+
+.mail-code {
+  width: 100%; box-sizing: border-box; padding: 10px 12px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 0 0 8px 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .mail-tb, .mail-varbtn { font-size: 12px; padding: 5px 7px; }
+  .mail-tb-sep { display: none; }
+}

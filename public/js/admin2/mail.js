@@ -10,6 +10,175 @@
 // того, как человек полчаса писал текст.
 // ===================================================================
 
+// ── Визуальный редактор письма ─────────────────────────────────────
+// Раньше тут было голое окно с разметкой, и владельцу приходилось писать
+// теги руками. Отсюда и брались поломки вроде {{Альянс Генералов}} в
+// теме: человек видел фигурные скобки, думал, что так задаётся любое
+// значение, и почтовый сервис отклонял письмо целиком.
+//
+// Теперь письмо правится как в обычном редакторе, а подстановки —
+// цветные метки, которые вставляются кнопкой. Режим «Код» оставлен: он
+// нужен, когда надо вставить готовую вёрстку письма.
+window.MailEdit = {
+  // {{имя}} в ТЕКСТЕ становится меткой. В атрибутах не трогаем: ссылка
+  // кнопки — это href="{{ссылка}}", и подмена там сломала бы переход.
+  toEditor(html) {
+    const box = document.createElement('div');
+    box.innerHTML = String(html || '');
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, null);
+    const texts = [];
+    while (walker.nextNode()) texts.push(walker.currentNode);
+    texts.forEach((node) => {
+      const val = node.nodeValue || '';
+      if (!/\{\{[^{}]+\}\}/.test(val)) return;
+      const frag = document.createDocumentFragment();
+      const re = /\{\{([^{}]+)\}\}/g;
+      let last = 0, m;
+      while ((m = re.exec(val))) {
+        if (m.index > last) frag.appendChild(document.createTextNode(val.slice(last, m.index)));
+        frag.appendChild(MailEdit.chip(m[1].trim()));
+        last = m.index + m[0].length;
+      }
+      if (last < val.length) frag.appendChild(document.createTextNode(val.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+    return box.innerHTML;
+  },
+
+  chip(name) {
+    const s = document.createElement('span');
+    s.className = 'mail-var';
+    s.setAttribute('contenteditable', 'false');
+    s.setAttribute('data-var', name);
+    s.textContent = name;
+    return s;
+  },
+
+  // Обратно: метки — снова {{имя}}. Работаем на копии, чтобы не мигал
+  // экран и не сбивалась каретка во время набора.
+  toHtml(editor) {
+    const box = editor.cloneNode(true);
+    box.querySelectorAll('.mail-var').forEach((s) => {
+      s.parentNode.replaceChild(
+        document.createTextNode('{{' + (s.getAttribute('data-var') || '') + '}}'), s);
+    });
+    return box.innerHTML;
+  },
+
+  // Вставка в место, где стоит каретка
+  insertNode(editor, node) {
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) {
+      editor.appendChild(node);
+    } else {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  },
+
+  // Кнопка перехода: тот же вид, что в заводских письмах. Собираем её
+  // здесь, чтобы владельцу не пришлось знать про inline-стили — почтовые
+  // клиенты общий CSS всё равно вырезают, стиль обязан быть на теге.
+  linkButton(href, text) {
+    const a = document.createElement('a');
+    a.setAttribute('href', href);
+    a.setAttribute('style', 'display:inline-block;padding:12px 24px;background:#d9a546;'
+      + 'color:#1a1a1a;text-decoration:none;border-radius:6px;font-weight:bold');
+    a.textContent = text;
+    return a;
+  },
+
+  bindToolbar(card, editor, code) {
+    const exec = (cmd, val) => { editor.focus(); document.execCommand(cmd, false, val || null); };
+
+    card.querySelectorAll('.mail-tb').forEach((btn) => {
+      const cmd = btn.getAttribute('data-cmd');
+      if (!cmd) return;
+      btn.onclick = async (e) => {
+        e.preventDefault();
+        if (cmd === 'bold' || cmd === 'italic' || cmd === 'underline') return exec(cmd);
+        if (cmd === 'h2') return exec('formatBlock', 'h2');
+        if (cmd === 'p') return exec('formatBlock', 'p');
+        if (cmd === 'list') return exec('insertUnorderedList');
+
+        if (cmd === 'link' || cmd === 'button') {
+          const isBtn = cmd === 'button';
+          // Для писем подтверждения и сброса нужная ссылка почти всегда
+          // одна и та же — предлагаем её сразу, чтобы не заставлять
+          // вспоминать написание подстановки.
+          const href = await UI.prompt('Куда ведёт ссылка?', {
+            title: isBtn ? 'Кнопка перехода' : 'Ссылка',
+            icon: isBtn ? '▭' : '🔗',
+            value: '{{ссылка}}',
+            hint: '{{ссылка}} — подтверждение или смена пароля. Можно вписать любой адрес.',
+            okText: 'Вставить',
+          });
+          if (!href) return;
+          if (isBtn) {
+            const text = await UI.prompt('Надпись на кнопке', {
+              title: 'Кнопка перехода', icon: '▭', value: 'Подтвердить почту', okText: 'Вставить',
+            });
+            if (!text) return;
+            MailEdit.insertNode(editor, MailEdit.linkButton(href, text));
+          } else {
+            exec('createLink', href);
+          }
+        }
+      };
+    });
+
+    // Метки-подстановки: и в текст письма, и в тему
+    card.querySelectorAll('.mail-varbtn').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const name = (btn.getAttribute('data-var') || '').replace(/[{}]/g, '');
+        if (btn.getAttribute('data-into') === 'subject') {
+          // Тема — обычное поле ввода, метку туда не вставить: пишем текстом
+          const input = card.querySelector('.tpl-subject');
+          const at = input.selectionStart === null ? input.value.length : input.selectionStart;
+          const ins = '{{' + name + '}}';
+          input.value = input.value.slice(0, at) + ins + input.value.slice(input.selectionEnd || at);
+          input.focus();
+          input.setSelectionRange(at + ins.length, at + ins.length);
+          return;
+        }
+        MailEdit.insertNode(editor, MailEdit.chip(name));
+      };
+    });
+
+    // Переключение «как выглядит» ↔ «разметка». Содержимое переносим в
+    // обе стороны: иначе правка в одном окне пропадала бы при переходе.
+    const toggle = card.querySelector('.tpl-codetoggle');
+    if (toggle) toggle.onclick = (e) => {
+      e.preventDefault();
+      if (code.hidden) {
+        code.value = MailEdit.toHtml(editor);
+        code.hidden = false; editor.hidden = true;
+        toggle.textContent = '👁 Как выглядит';
+      } else {
+        editor.innerHTML = MailEdit.toEditor(code.value);
+        code.hidden = true; editor.hidden = false;
+        toggle.innerHTML = '&lt;/&gt; Код';
+      }
+    };
+
+    // Вставка из Word и с сайтов тащит чужие шрифты и цвета, которые в
+    // письме выглядят инородно. Берём только текст — оформление
+    // накладывается кнопками.
+    editor.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+    });
+  },
+};
+
 (function () {
   const dt = (ms) => ms
     ? new Date(ms).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -58,19 +227,42 @@
             </h3>
           </div>
           <p class="a2-muted" style="margin:4px 0 8px">${UI.esc(t.about)}</p>
-          <p class="a2-muted" style="margin:0 0 8px">Подстановки: ${t.vars.map((v) => `<code>${UI.esc(v)}</code>`).join(' ')}
-            — вместо них в письме окажутся настоящие значения.</p>
 
           <label class="a2-muted small">Тема письма</label>
-          <input class="tpl-subject" value="${UI.esc(t.subject)}"
-            style="width:100%;box-sizing:border-box;padding:6px 10px;margin:4px 0 8px;background:var(--bg);
-                   color:var(--text);border:1px solid var(--border);border-radius:8px">
+          <div class="mail-subject-row">
+            <input class="tpl-subject" value="${UI.esc(t.subject)}">
+            ${t.vars.map((v) => `<button class="mail-varbtn" data-into="subject"
+              data-var="${UI.esc(v)}" title="Вставить в тему">${UI.esc(v.replace(/[{}]/g, ''))}</button>`).join('')}
+          </div>
 
-          <label class="a2-muted small">Текст письма (разметка)</label>
-          <textarea class="tpl-html" rows="10"
-            style="width:100%;box-sizing:border-box;padding:8px 10px;margin:4px 0 8px;background:var(--bg);
-                   color:var(--text);border:1px solid var(--border);border-radius:8px;
-                   font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">${UI.esc(t.html)}</textarea>
+          <label class="a2-muted small">Текст письма</label>
+
+          <div class="mail-toolbar">
+            <button class="mail-tb" data-cmd="bold" title="Жирный"><b>Ж</b></button>
+            <button class="mail-tb" data-cmd="italic" title="Наклонный"><i>К</i></button>
+            <button class="mail-tb" data-cmd="underline" title="Подчёркнутый"><u>Ч</u></button>
+            <span class="mail-tb-sep"></span>
+            <button class="mail-tb" data-cmd="h2" title="Заголовок">Заголовок</button>
+            <button class="mail-tb" data-cmd="p" title="Обычный текст">Текст</button>
+            <button class="mail-tb" data-cmd="list" title="Список">• Список</button>
+            <span class="mail-tb-sep"></span>
+            <button class="mail-tb" data-cmd="link" title="Ссылка">🔗 Ссылка</button>
+            <button class="mail-tb" data-cmd="button" title="Кнопка перехода">▭ Кнопка</button>
+            <span class="mail-tb-sep"></span>
+            ${t.vars.map((v) => `<button class="mail-varbtn" data-into="body"
+              data-var="${UI.esc(v)}" title="Вставить в текст">${UI.esc(v.replace(/[{}]/g, ''))}</button>`).join('')}
+            <span style="flex:1"></span>
+            <button class="mail-tb tpl-codetoggle" title="Показать разметку">&lt;/&gt; Код</button>
+          </div>
+
+          <div class="tpl-editor mail-editor" contenteditable="true"></div>
+          <textarea class="tpl-html mail-code" rows="12" hidden>${UI.esc(t.html)}</textarea>
+
+          <p class="a2-muted small" style="margin:6px 0 8px">
+            Цветные метки — это подставляемые значения: вместо них в письме окажутся
+            позывной игрока, ссылка, название и адрес игры. Вставляются кнопками, руками
+            фигурные скобки писать не нужно.
+          </p>
 
           <div class="a2-row">
             <button class="btn btn-orange tpl-save">Сохранить</button>
@@ -110,8 +302,21 @@
 
     el.querySelectorAll('[data-tpl]').forEach((card) => {
       const id = card.getAttribute('data-tpl');
+      const editor = card.querySelector('.tpl-editor');
+      const code = card.querySelector('.tpl-html');
       const subject = () => card.querySelector('.tpl-subject').value;
-      const html = () => card.querySelector('.tpl-html').value;
+
+      // Разметку показываем как готовое письмо, а подстановки — цветными
+      // метками. Владелец правит текст, а не теги: именно из-за тегов
+      // руками появлялись {{Альянс Генералов}} и ломали отправку.
+      editor.innerHTML = MailEdit.toEditor(code.value);
+
+      // Что уходит на сервер. В визуальном режиме собираем из редактора,
+      // в режиме кода берём как есть — иначе правка в одном окне молча
+      // терялась бы при сохранении из другого.
+      const html = () => (code.hidden ? MailEdit.toHtml(editor) : code.value);
+
+      MailEdit.bindToolbar(card, editor, code);
 
       card.querySelector('.tpl-save').onclick = async () => {
         try {

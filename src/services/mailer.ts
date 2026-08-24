@@ -96,6 +96,87 @@ function escapeHtml(s: string): string {
   } as Record<string, string>)[c]));
 }
 
+// ── Чистка разметки письма ─────────────────────────────────────────
+// Тексты правит владелец — человек доверенный, так что это не защита от
+// него, а защита письма. Причины две:
+//
+//  1. Визуальный редактор в панели строит разметку сам, и браузеры любят
+//     подсовывать своё: <font>, <meta>, style-теги из буфера обмена при
+//     вставке текста из Word. Почтовые клиенты такое режут по-своему, и
+//     письмо у половины игроков выглядит иначе, чем в панели.
+//  2. Если текст письма когда-нибудь начнёт править не только владелец,
+//     граница уже будет на месте, а не «добавим потом».
+//
+// Разрешаем ровно то, что переживает почтовые клиенты.
+const ALLOWED_TAGS: Record<string, string[]> = {
+  p: ['style'], div: ['style'], span: ['style'], br: [], hr: ['style'],
+  b: ['style'], strong: ['style'], i: ['style'], em: ['style'], u: ['style'], s: ['style'],
+  h1: ['style'], h2: ['style'], h3: ['style'],
+  a: ['href', 'style', 'target', 'rel'],
+  ul: ['style'], ol: ['style'], li: ['style'],
+  blockquote: ['style'],
+  img: ['src', 'alt', 'width', 'height', 'style'],
+  table: ['style', 'width', 'cellpadding', 'cellspacing', 'border'],
+  thead: ['style'], tbody: ['style'], tr: ['style'], td: ['style'], th: ['style'],
+};
+
+// Адрес в ссылке или картинке. Пропускаем http(s), почту и нашу
+// подстановку — она стоит прямо в href у кнопки подтверждения.
+function safeUrl(raw: string): string | null {
+  const v = String(raw || '').trim();
+  if (!v) return null;
+  if (/^\{\{[^{}]+\}\}$/.test(v)) return v;
+  if (/^(https?:\/\/|mailto:)/i.test(v)) return v;
+  return null;
+}
+
+function safeStyle(raw: string): string {
+  // В письме нет скриптов, но старые почтовые клиенты понимали
+  // expression() и url(javascript:) — вырезаем на всякий случай.
+  return String(raw || '')
+    .replace(/expression\s*\(/gi, '')
+    .replace(/url\s*\(\s*['"]?\s*javascript:/gi, 'url(')
+    .replace(/["<>]/g, '')
+    .trim();
+}
+
+function sanitizeHtml(html: string): string {
+  let out = String(html || '');
+  // Блоки, которые вырезаем вместе с содержимым — их текст в письме не нужен
+  out = out.replace(/<(script|style|iframe|object|embed|noscript|form|input|button|svg)\b[\s\S]*?<\/\1\s*>/gi, '');
+  out = out.replace(/<(script|style|iframe|object|embed|noscript|form|input|button|svg)\b[^>]*\/?>/gi, '');
+  out = out.replace(/<!--[\s\S]*?-->/g, '');
+
+  return out.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (_full, slash, rawName, rawAttrs) => {
+    const name = String(rawName).toLowerCase();
+    const allowed = ALLOWED_TAGS[name];
+    // Незнакомый тег убираем, а текст внутри оставляем: письмо потеряет
+    // оформление, но не содержание.
+    if (!allowed) return '';
+    if (slash) return `</${name}>`;
+
+    const attrs: string[] = [];
+    const re = /([a-zA-Z-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(String(rawAttrs || '')))) {
+      const attr = m[1].toLowerCase();
+      const val = m[3] !== undefined ? m[3] : (m[4] !== undefined ? m[4] : m[5] || '');
+      if (!allowed.includes(attr)) continue;      // сюда же уходят все on*=
+      if (attr === 'href' || attr === 'src') {
+        const url = safeUrl(val);
+        if (!url) continue;
+        attrs.push(`${attr}="${url.replace(/"/g, '&quot;')}"`);
+      } else if (attr === 'style') {
+        const st = safeStyle(val);
+        if (st) attrs.push(`style="${st}"`);
+      } else {
+        attrs.push(`${attr}="${escapeHtml(val)}"`);
+      }
+    }
+    return `<${name}${attrs.length ? ' ' + attrs.join(' ') : ''}>`;
+  });
+}
+
 // Подстановка значений. Имя игрока экранируем: позывной проверяется при
 // регистрации, но письмо — не то место, где стоит на это полагаться.
 // Ссылку не экранируем: её собирает сервер, и внутри неё есть /#, которое
@@ -173,7 +254,9 @@ function list() {
 function save(actorName: string, id: string, subject: string, html: string, notices: Notices) {
   if (!DEFAULTS[id]) throw new u.ApiError('Неизвестный шаблон письма');
   const s = String(subject || '').trim();
-  const h = String(html || '').trim();
+  // Чистим ДО проверок: визуальный редактор и вставка из Word тащат
+  // мусорные теги, и проверять надо то, что реально ляжет в базу.
+  const h = sanitizeHtml(String(html || '')).trim();
   if (!s) throw new u.ApiError('Тема письма не может быть пустой');
   if (!h) throw new u.ApiError('Текст письма не может быть пустым');
   // Ссылка в письмах подтверждения и сброса — единственное, ради чего
@@ -360,5 +443,5 @@ function audience(allUsers: Record<string, any>) {
 export = {
   DEFAULTS, render, list, save, resetToDefault, sendPreview,
   broadcastStart, broadcastStop, broadcastStatus, audience, recipients,
-  leftovers, stripUnknownVars,
+  leftovers, stripUnknownVars, sanitizeHtml,
 };
