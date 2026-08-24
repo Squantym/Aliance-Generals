@@ -109,15 +109,41 @@ function fill(text: string, vars: Record<string, string>): string {
   return out;
 }
 
+// Что осталось в фигурных скобках после подстановки — то есть опечатка
+// или выдуманная подстановка вроде {{Альянс Генералов}}.
+function leftovers(text: string): string[] {
+  const found = String(text || '').match(/\{\{[^{}]*\}\}/g) || [];
+  return Array.from(new Set(found));
+}
+
+// Снимаем скобки с того, что подставить не удалось.
+//
+// Зачем вообще: двойные фигурные скобки — это ЕЩЁ И синтаксис самого
+// Unisender. Нераспознанное {{…}} уезжает к нему, он видит свою
+// подстановку с кириллицей внутри и отклоняет письмо целиком:
+//   Invalid substitution format 'Альянс Генералов'
+// То есть опечатка в шаблоне превращалась в наглухо несработавшую
+// регистрацию, а причина была написана на языке чужого сервиса.
+//
+// Текст оставляем, скобки убираем: владелец, написавший
+// «Подтверждение почты — {{Альянс Генералов}}», хотел увидеть в теме
+// название игры. Он его и увидит, а письмо уйдёт.
+function stripUnknownVars(text: string): string {
+  return String(text || '').replace(/\{\{([^{}]*)\}\}/g, (_m, inner) => escapeHtml(String(inner).trim()));
+}
+
 // Готовое письмо: тема и разметка. Обёртку вокруг текста добавляем здесь,
 // чтобы владелец правил только содержание и не следил за вёрсткой.
 function render(id: string, vars: Record<string, string>): { subject: string; html: string } {
   const t = tplOf(id);
   const all = { игра: GAME_NAME, сайт: APP_URL, ...vars };
+  // stripUnknownVars — последний рубеж: шаблон мог быть сохранён до того,
+  // как появилась проверка при сохранении. Лучше отправить письмо с
+  // текстом без скобок, чем не отправить совсем.
   return {
-    subject: fill(t.subject, all),
+    subject: stripUnknownVars(fill(t.subject, all)),
     html: `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;color:#222;line-height:1.5">
-${fill(t.html, all)}
+${stripUnknownVars(fill(t.html, all))}
 </div>`,
   };
 }
@@ -156,6 +182,18 @@ function save(actorName: string, id: string, subject: string, html: string, noti
   // почту, ни сменить пароль, а узнаете вы об этом по жалобам.
   if ((id === 'verify' || id === 'reset') && !h.includes('{{ссылка}}')) {
     throw new u.ApiError('В этом письме обязательна подстановка {{ссылка}} — без неё игроку некуда переходить');
+  }
+  // Выдуманная подстановка вроде {{Альянс Генералов}} — самая обидная
+  // ошибка: сохранилась бы молча, а письмо отклонил бы уже почтовый
+  // сервис, ответив про «invalid substitution format» — на своём языке
+  // и про свои правила. Ловим здесь, пока владелец смотрит на поле.
+  const bad = leftovers(fill(s + ' ' + h, {
+    имя: '', ссылка: '', игра: '', сайт: '',
+  }));
+  if (bad.length) {
+    throw new u.ApiError(
+      `Неизвестная подстановка: ${bad.join(', ')}. `
+      + `Доступны только ${DEFAULTS[id].vars.join(', ')} — остальное пишите обычным текстом, без фигурных скобок.`);
   }
   const all = store();
   all[id] = { subject: s, html: h, changedAt: Date.now(), changedBy: String(actorName || '') };
@@ -322,4 +360,5 @@ function audience(allUsers: Record<string, any>) {
 export = {
   DEFAULTS, render, list, save, resetToDefault, sendPreview,
   broadcastStart, broadcastStop, broadcastStatus, audience, recipients,
+  leftovers, stripUnknownVars,
 };
