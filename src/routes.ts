@@ -1139,17 +1139,21 @@ function registerRoutes(app: any) {
       list: unverified
         .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
         .slice(0, 50)
+        // mailError — настоящий ответ почтового сервиса на последнюю
+        // попытку. Без него «письмо не приходит» разбиралось вслепую:
+        // причина оставалась в консоли сервера, куда владелец не ходит.
         .map((p: any) => ({
           id: p.id, name: p.name, email: p.email || '',
           createdAt: p.createdAt || 0, level: p.level,
+          mailError: p.lastMailError || '', mailAt: p.lastMailAt || 0,
         })),
       hint: email.isConfigured
         ? (email.usingTestSender
             ? 'Отправитель тестовый (resend.dev) — письма уходят только на вашу собственную почту. '
               + 'Для игроков подключите свой домен в Resend и укажите его в EMAIL_FROM.'
             : 'Отправка настроена. Новые игроки обязаны подтвердить почту перед входом.')
-        : 'Ключ отправки не задан (RESEND_API_KEY). Пока его нет, почта считается подтверждённой '
-          + 'автоматически, и требование не действует.',
+        : 'Ключ отправки не задан (UNISENDER_API_KEY или RESEND_API_KEY). Пока его нет, почта '
+          + 'считается подтверждённой автоматически, и требование не действует.',
     };
   }, { admin: true });
 
@@ -1163,6 +1167,8 @@ function registerRoutes(app: any) {
     if ((target as any).emailVerified) throw new u.ApiError('Почта уже подтверждена');
     (target as any).emailVerified = true;
     (target as any).emailVerifyToken = null;
+    (target as any).emailVerifyCode = null;      // код гасим вместе с токеном
+    (target as any).emailVerifyTries = 0;
     require('./core/db').markUser(target.id);
     require('./core/db').save('users');
     auditLog.record({
@@ -1250,7 +1256,15 @@ function registerRoutes(app: any) {
       unverified: unverified
         .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
         .slice(0, 50)
-        .map((p: any) => ({ id: p.id, name: p.name, email: p.email, createdAt: p.createdAt || 0 })),
+        // mailError — почему НЕ ушло последнее письмо этому игроку.
+        // Без него «письмо не приходит» приходилось разбирать вслепую:
+        // причина оставалась только в консоли сервера, куда владелец не
+        // ходит, а игрок видел бодрое «письмо отправлено».
+        .map((p: any) => ({
+          id: p.id, name: p.name, email: p.email, createdAt: p.createdAt || 0,
+          mailError: p.lastMailError || '', mailAt: p.lastMailAt || 0,
+          codeLeft: Math.max(0, 5 - (p.emailVerifyTries || 0)),
+        })),
       hint: !email.isConfigured
         ? 'Отправка писем не настроена: почта у новых игроков подтверждается сама, '
           + 'подтверждение не требуется. Задайте UNISENDER_API_KEY в .env и перезапустите — '
@@ -1269,22 +1283,11 @@ function registerRoutes(app: any) {
   // Подтвердить почту вручную. Нужно, когда письмо не доходит: у игрока
   // опечатка в адресе, письмо в спаме или почтовый ящик недоступен.
   // Без этого единственным выходом была бы правка базы руками.
-  app.add('POST', '/api/admin/verify-email', act((req, n) => {
-    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
-    const target = player.users()[String(req.body.userId || '')];
-    if (!target) throw new u.ApiError('Игрок не найден');
-    if ((target as any).emailVerified) throw new u.ApiError('Почта уже подтверждена');
-    (target as any).emailVerified = true;
-    (target as any).emailVerifyToken = null;
-    require('./core/db').markUser(target.id);
-    require('./core/db').save('users');
-    auditLog.record({
-      userId: req.user.id, userName: req.user.name, path: '/api/admin/verify-email',
-      body: { targetId: target.id, targetName: target.name, email: (target as any).email },
-    });
-    n.push(`✅ Почта игрока «${target.name}» подтверждена вручную`);
-    return { ok: true };
-  }), { admin: true });
+  // Второй регистрации этого адреса здесь БЫЛО: та же ручка, но с зоной
+  // 'players' вместо 'security'. Побеждала первая (роутер берёт первое
+  // совпадение), поэтому права не текли — но стоило кому-то удалить
+  // верхнюю, и подтверждать чужую почту смог бы любой с доступом к
+  // игрокам. Дубль убран, ручка одна — выше, под зоной 'security'.
 
   // Диагностика: что на самом деле приходит от прокси. Нужна, когда в
   // журнале у всех один адрес — сразу видно, передаёт ли nginx заголовки

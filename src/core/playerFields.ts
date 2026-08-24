@@ -41,6 +41,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   emailVerifyCode:    { owner: 'auth',       note: 'код из письма (6 цифр) — вводится в форме регистрации' },
   emailVerifyCodeExp: { owner: 'auth',       note: 'до какого времени код годен' },
   emailVerifyTries:   { owner: 'auth',       note: 'неверных попыток ввода кода — защита от перебора' },
+  lastMailError:      { owner: 'auth',       note: 'почему не ушло последнее письмо — видно владельцу в карточке' },
+  lastMailAt:         { owner: 'auth',       note: 'когда была последняя попытка отправки' },
   resetToken:         { owner: 'auth',       note: 'токен сброса пароля' },
   resetTokenExp:      { owner: 'auth',       note: 'срок действия токена сброса' },
   country:            { owner: 'auth',       note: 'флаг/страна' },

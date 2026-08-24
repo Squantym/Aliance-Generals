@@ -119,6 +119,8 @@ export interface User {
   emailVerifyCode?: string | null;
   emailVerifyCodeExp?: number;     // до какого времени код годен
   emailVerifyTries?: number;       // сколько раз ошибся — защита от перебора
+  lastMailError?: string;          // почему не ушло последнее письмо (для панели)
+  lastMailAt?: number;             // когда пытались отправить
   country: string;
   status: string;
   createdAt: number;

@@ -1671,10 +1671,17 @@ const Admin = {
                       <td class="small mono">${UI.esc(p.email)}</td>
                       <td class="small muted nowrap">${dt(p.createdAt)}</td>
                       <td class="num"><button class="btn btn-inline" data-verify="${p.id}">Подтвердить</button></td>
-                    </tr>`).join('')}
+                    </tr>
+                    ${p.mailError ? `
+                    <tr><td colspan="4" class="small" style="color:var(--red);padding-top:0">
+                      ✉️ последнее письмо не ушло: ${UI.esc(p.mailError)}
+                      ${p.mailAt ? `<span class="muted"> · ${dt(p.mailAt)}</span>` : ''}
+                    </td></tr>` : ''}`).join('')}
                 </table>
                 <p class="muted small mt">Подтверждайте вручную, только если убедились, что игрок —
                 владелец этой почты. Обычно письмо просто попало в спам.</p>
+                <p class="muted small">Красная строка под игроком — настоящий ответ почтового сервиса.
+                Если она есть, дело не в спаме: письмо не ушло вовсе.</p>
               </div>` : ''}`;
           box.querySelectorAll('[data-verify]').forEach((b) => {
             b.onclick = async () => {

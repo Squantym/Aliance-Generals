@@ -25,6 +25,18 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const CODE_TTL_MS = 30 * 60 * 1000;   // полчаса
 const CODE_MAX_TRIES = 5;
 
+// Незавершённая регистрация: аккаунт есть, почта не подтверждена.
+// Пока код из письма живой — это чья-то регистрация в процессе, трогать
+// нельзя. Как только код сгорел или просрочился, аккаунт превращается в
+// мусор, который держит занятыми позывной и почту. Раньше держал вечно:
+// ни войти, ни зарегистрироваться заново, ни отдать имя другому.
+function pendingIsStale(p: User): boolean {
+  if (p.emailVerified) return false;
+  if (!p.emailVerifyCode) return true;
+  if ((p.emailVerifyTries || 0) >= CODE_MAX_TRIES) return true;
+  return Date.now() > (p.emailVerifyCodeExp || 0);
+}
+
 function newCode(): string {
   // Первая цифра не ноль: ведущий ноль теряется при копировании в поля,
   // которые почтовые клиенты и браузеры считают числовыми.
@@ -414,12 +426,28 @@ async function register(login: string, password: string, emailAddr: string, coun
   if (!config.COUNTRY_BY_ID[country]) throw new u.ApiError('Выберите страну');
 
   const all = users();
-  if (Object.values(all).some((p) => p.name.toLowerCase() === login.toLowerCase())) {
-    throw new u.ApiError('Такой позывной уже занят');
+  const byName = Object.values(all).find((p) => p.name.toLowerCase() === login.toLowerCase());
+  const byMail = Object.values(all).find((p) => (p.email || '').toLowerCase() === emailAddr);
+
+  // Занято живым аккаунтом — отказ, как и раньше.
+  if (byName && !pendingIsStale(byName)) throw new u.ApiError('Такой позывной уже занят');
+  if (byMail && !pendingIsStale(byMail)) throw new u.ApiError('Этот email уже используется');
+
+  // А вот выдохшуюся незавершённую регистрацию забираем. В ней нет
+  // ничего, кроме имени и почты: игрок в неё ни разу не вошёл, потому
+  // что вход без подтверждения закрыт. Держать её вечно означало
+  // навсегда потерять имя и адрес из-за одного недошедшего письма —
+  // ровно в такую ловушку и попадали.
+  for (const stale of [byName, byMail]) {
+    if (!stale) continue;
+    delete all[stale.id];
+    auditLog.record({
+      userId: stale.id, userName: stale.name, path: '/system/pending-replaced',
+      body: { email: stale.email, newLogin: login },
+    });
+    console.log(`ℹ️  Незавершённая регистрация «${stale.name}» <${stale.email}> заменена новой.`);
   }
-  if (Object.values(all).some((p) => (p.email || '').toLowerCase() === emailAddr)) {
-    throw new u.ApiError('Этот email уже используется');
-  }
+  if (byName || byMail) db.save('users');
 
   // ПРАВА АДМИНИСТРАТОРА ПРИ РЕГИСТРАЦИИ НЕ ВЫДАЮТСЯ НИКОМУ.
   // Раньше их автоматически получал первый зарегистрировавшийся — это
@@ -453,7 +481,10 @@ async function register(login: string, password: string, emailAddr: string, coun
   const sendRes = await email.sendVerificationEmail(
     emailAddr, login, newU.emailVerifyToken || '', newU.emailVerifyCode || '');
   if (!sendRes.sent) {
-    console.error(`📧 ВНИМАНИЕ: письмо подтверждения для «${login}» <${emailAddr}> НЕ отправлено (${sendRes.error || '—'}). Игрок не сможет войти, пока не подтвердит почту. Проверьте настройки почты в админке.`);
+    newU.lastMailError = String(sendRes.error || 'причина неизвестна').slice(0, 300);
+    newU.lastMailAt = Date.now();
+    db.save('users');
+    console.error(`📧 ВНИМАНИЕ: письмо подтверждения для «${login}» <${emailAddr}> НЕ отправлено (${sendRes.error || '—'}). Игрок не сможет войти, пока не подтвердит почту. Причина видна в карточке игрока.`);
   }
   // needCode говорит клиенту: страницу не перезагружаем, показываем поле
   // для кода прямо под адресом почты.
@@ -564,6 +595,23 @@ async function resendVerification(loginName: string, ip?: string) {
     db.save('users');
     return { autoVerified: true, message: 'Почта подтверждена автоматически (режим разработки)' };
   }
+
+  // Здесь раньше стоял безусловный ответ «письмо отправлено». Из-за него
+  // отказ почтового сервиса выглядел успехом: игрок жал кнопку, видел
+  // зелёную надпись, письма не было — и причину не знал никто, потому
+  // что наружу она не выходила вообще. Теперь отказ виден игроку, а
+  // текст сервиса сохраняем владельцу: игроку он ни о чём не говорит, а
+  // в карточке отвечает на вопрос «почему у этого не доходит».
+  if (!result.sent) {
+    found.lastMailError = String(result.error || 'причина неизвестна').slice(0, 300);
+    found.lastMailAt = Date.now();
+    db.markUser(found.id);
+    console.error(`📧 Повторное письмо для «${found.name}» <${found.email}> НЕ ушло: ${found.lastMailError}`);
+    throw new u.ApiError('Письмо отправить не удалось. Попробуйте через несколько минут; если не помогает — напишите в поддержку.');
+  }
+  found.lastMailError = '';
+  found.lastMailAt = Date.now();
+  db.markUser(found.id);
   return { message: 'Письмо отправлено — введите код из него', needCode: true };
 }
 
