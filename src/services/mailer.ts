@@ -323,11 +323,43 @@ function render(id: string, vars: Record<string, string>): { subject: string; ht
   // stripUnknownVars — последний рубеж: шаблон мог быть сохранён до того,
   // как появилась проверка при сохранении. Лучше отправить письмо с
   // текстом без скобок, чем не отправить совсем.
-  const body = stripUnknownVars(fill(t.html, all));
+  let body = stripUnknownVars(fill(t.html, all));
+
+  // Спасательный круг для устаревшего шаблона подтверждения.
+  //
+  // Шаблон, однажды сохранённый из панели, живёт в базе и больше не
+  // обновляется вместе с заводским. Владелец нажал «Сохранить» ещё до
+  // того, как появился код из шести цифр, — и с тех пор игрокам уходило
+  // старое письмо с одной кнопкой. Форма регистрации при этом требовала
+  // код, которого в письме нет: тупик, причём молчаливый.
+  //
+  // Чужой текст не переписываем — дописываем код в само письмо и громко
+  // ругаемся в консоль. Владелец поправит шаблон, когда дойдут руки, а
+  // игроки регистрируются уже сейчас.
+  if (id === 'verify' && vars['код'] && !t.html.includes('{{код}}')) {
+    console.warn('📧 Шаблон «Подтверждение почты» устарел: в нём нет {{код}}. '
+      + 'Код дописан в письмо автоматически. Панель → «Письма» → «Вернуть заводской».');
+    body += `\n<p style="margin:22px 0 0;padding:14px 10px;background:#efe6d2;border:1px dashed #b8892f;`
+      + `border-radius:8px;text-align:center;font-family:'Courier New',Courier,monospace;`
+      + `font-size:32px;font-weight:bold;letter-spacing:8px;color:#26221c">`
+      + escapeHtml(String(vars['код'])) + `</p>`
+      + `<p style="margin:8px 0 0;font-size:14px;color:#5c564c">Код для окна регистрации. Действует 30 минут.</p>`;
+  }
+
   return {
     subject: stripUnknownVars(fill(t.subject, all)),
     html: envelope(body, preheaderOf(body)),
   };
+}
+
+// Обязательные подстановки: без них письмо бесполезно. Проверяем и при
+// сохранении, и при показе — сохранённые раньше шаблоны про новые
+// требования, разумеется, не знают.
+function missingVars(id: string, html: string): string[] {
+  const need: string[] = [];
+  if (id === 'verify' && !html.includes('{{код}}')) need.push('{{код}}');
+  if (id === 'reset' && !html.includes('{{ссылка}}')) need.push('{{ссылка}}');
+  return need;
 }
 
 // ── Панель: список шаблонов ────────────────────────────────────────
@@ -346,6 +378,10 @@ function list() {
         isDefault: !saved,
         changedAt: t.changedAt || 0,
         changedBy: t.changedBy || '',
+        // Чего не хватает сохранённому шаблону против заводского. Пустой
+        // список — всё в порядке. Иначе письмо уходит неполным, а узнать
+        // об этом можно было только по жалобам игроков.
+        missing: saved ? missingVars(id, t.html) : [],
       };
     }),
     mail: email.status(),
@@ -377,15 +413,33 @@ function save(actorName: string, id: string, subject: string, html: string, noti
   // ошибка: сохранилась бы молча, а письмо отклонил бы уже почтовый
   // сервис, ответив про «invalid substitution format» — на своём языке
   // и про свои правила. Ловим здесь, пока владелец смотрит на поле.
-  const bad = leftovers(fill(s + ' ' + h, {
-    имя: '', ссылка: '', игра: '', сайт: '',
-  }));
+  // Список разрешённого берём из САМОГО шаблона, а не переписываем
+  // руками рядом. Написанный руками он уже разошёлся с настоящим: у
+  // письма подтверждения появился {{код}}, а сюда его добавить забыли —
+  // и новый заводской шаблон стало невозможно сохранить, панель ругалась
+  // на подстановку, которую сама же и предлагает кнопкой.
+  const allowed: Record<string, string> = {};
+  for (const v of DEFAULTS[id].vars) allowed[v.replace(/[{}]/g, '')] = '';
+  const bad = leftovers(fill(s + ' ' + h, allowed));
   if (bad.length) {
     throw new u.ApiError(
       `Неизвестная подстановка: ${bad.join(', ')}. `
       + `Доступны только ${DEFAULTS[id].vars.join(', ')} — остальное пишите обычным текстом, без фигурных скобок.`);
   }
   const all = store();
+
+  // Сохранение текста, который слово в слово совпадает с заводским, —
+  // это не правка, а нажатая кнопка. Раньше оно всё равно создавало
+  // копию в базе, и шаблон навсегда отцеплялся от заводского: все
+  // будущие улучшения проходили мимо. Именно так письмо подтверждения
+  // осталось без кода. Ничего не сохраняем — остаёмся на заводской ветке.
+  if (s === DEFAULTS[id].subject && h === DEFAULTS[id].html) {
+    delete all[id];
+    db.save('mailTemplates');
+    notices.push(`✉️ Шаблон «${DEFAULTS[id].name}» совпадает с заводским — оставлен заводским.`);
+    return { ok: true, id, isDefault: true };
+  }
+
   all[id] = { subject: s, html: h, changedAt: Date.now(), changedBy: String(actorName || '') };
   db.save('mailTemplates');
   notices.push(`✉️ Шаблон «${DEFAULTS[id].name}» сохранён.`);
@@ -550,5 +604,5 @@ function audience(allUsers: Record<string, any>) {
 export = {
   DEFAULTS, render, list, save, resetToDefault, sendPreview,
   broadcastStart, broadcastStop, broadcastStatus, audience, recipients,
-  leftovers, stripUnknownVars, sanitizeHtml,
+  leftovers, stripUnknownVars, sanitizeHtml, missingVars,
 };

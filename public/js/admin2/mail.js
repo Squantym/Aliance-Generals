@@ -226,6 +226,15 @@ window.MailEdit = {
                             : `<span class="a2-pill is-ok">изменён ${dt(t.changedAt)}${t.changedBy ? ' · ' + UI.esc(t.changedBy) : ''}</span>`}
             </h3>
           </div>
+          ${(t.missing || []).length ? `
+            <div class="a2-card" style="margin:8px 0;background:rgba(220,60,60,.12);border-color:var(--red)">
+              <b style="color:var(--red)">Шаблон устарел.</b>
+              В нём нет ${t.missing.map((v) => `<code>${UI.esc(v)}</code>`).join(', ')} —
+              а без этого письмо приходит неполным.
+              Так бывает с шаблонами, сохранёнными до появления новых полей:
+              сохранённый текст живёт своей жизнью и заводские улучшения до него не доходят.
+              Нажмите <b>«Вернуть заводской»</b> — или впишите недостающее сами.
+            </div>` : ''}
           <p class="a2-muted" style="margin:4px 0 8px">${UI.esc(t.about)}</p>
 
           <label class="a2-muted small">Тема письма</label>
