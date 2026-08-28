@@ -6,6 +6,7 @@ import config = require('../../config/gameConfig');
 import db = require('../core/db');
 import u = require('../core/utils');
 import email = require('./email');
+import consent = require('./consent');
 import auditLog = require('./auditLog');
 import type { User, Notices } from '../types';
 
@@ -397,7 +398,7 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   return { name };
 }
 
-async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any, fp?: string) {
+async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any, fp?: string, consents?: any) {
   checkHeavy('register', ip);
   // БАГ 24: очистка управляющих символов
   login = sanitizeInput(login).trim();
@@ -459,6 +460,11 @@ async function register(login: string, password: string, emailAddr: string, coun
   const id = u.uid(12);
   const autoVerified = !email.isConfigured;
   const newU = newUser(id, login, emailAddr, await u.hashPassword(password, salt), salt, country, false, autoVerified);
+  // Согласия пишем сразу, вместе с версией документа, временем и адресом.
+  // Это и есть доказательство: без версии нельзя показать, ЧТО именно
+  // человек принял, а без времени и адреса — что принял он.
+  consent.applyRegistration(newU, consents, ip);
+  (newU as any).mailKey = u.uid(24);
   all[id] = newU;
   db.save('users');
 
@@ -467,7 +473,16 @@ async function register(login: string, password: string, emailAddr: string, coun
     console.log(`ℹ️  Зарегистрирован первый игрок «${login}». Права администратора НЕ выданы.`);
     console.log(`   Назначить администратора: node tools/grant-admin.js "${login}"`);
   }
-  auditLog.record({ userId: id, userName: login, path: '/api/register', body: { email: emailAddr, country } });
+  auditLog.record({
+    userId: id, userName: login, path: '/api/register',
+    body: {
+      email: emailAddr, country,
+      // Записываем в журнал ровно то, на что человек согласился, и какой
+      // редакции. Журнал неизменяем — это второй экземпляр доказательства.
+      consents: Object.fromEntries(Object.entries((newU as any).consents || {})
+        .map(([k, v]: any) => [k, v && v.at ? `v${v.v} @${new Date(v.at).toISOString()}` : 'отказ'])),
+    },
+  });
 
   // Адрес и устройство запоминаем ДО развилки: игрок мог зарегистрироваться
   // с подтверждением почты и войти позже — данные регистрации нужны в обоих

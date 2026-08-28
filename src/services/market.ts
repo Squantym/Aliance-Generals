@@ -56,7 +56,7 @@ function buyMines(user: User, qty: number, notices: Notices) {
   const bought = Math.min(q, room);
   const cost = bought * unitPrice;
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'market');
   try { require('./stats').track(user, 'goldSpent', 'market', cost); } catch (e) {}
   user.landmines = have + bought;
   require('./dailyQuests').bump(user, 'marketBought', 1);
@@ -131,7 +131,7 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     if (target.id === user.id) throw new u.ApiError('Падлянка самому себе? Оригинально, но нет.');
     // И своему же второму персонажу — тоже: это способ обнулить эффект
     require('./account').assertNotSelfAccount(user, target, 'Применение падлянки');
-    user.gold -= price;
+    player.spendGold(user, price, 'market');
     countBuy();
   try { require('./stats').track(user, 'goldSpent', 'market', price); } catch (e) {}
     pushEffect(target, item, user);
@@ -145,7 +145,7 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     return { applied: target.name };
   }
 
-  user.gold -= price;
+  player.spendGold(user, price, 'market');
   countBuy();
   const mx = player.maxima(user);
   switch (item.kind) {
@@ -209,7 +209,7 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   require('./dailyQuests').bump(user, 'marketBought', 1);
   // Счётчик по конкретному контейнеру (для поручений на контрабанду)
   require('./dailyQuests').bump(user, 'buy:' + c.id, qty);
-  user.gold -= totalPrice;
+  player.spendGold(user, totalPrice, 'market');
   try { require('./stats').track(user, 'goldSpent', 'container', totalPrice); } catch (e) {}
 
   // Открываем qty контейнеров подряд, суммируя выпавшее
@@ -428,7 +428,7 @@ function bid(user: User, lotId: string, amount: number, notices: Notices) {
         { text: `Вашу ставку 🪙 ${lot.best.amount} перебил ${user.name}. Золото возвращено.` });
     }
   }
-  user.gold -= amount;
+  player.spendGold(user, amount, 'market');
   lot.best = { userId: user.id, name: user.name, amount };
   db.save('world');
   notices.push(`🔨 Ставка 🪙 ${amount} принята. Вы — лидер лота!`);

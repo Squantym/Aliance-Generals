@@ -136,8 +136,27 @@ const roundTrip = (html) => ME.toHtml(editorWith(html));
       subject: mailer.DEFAULTS[id].subject, html: mailer.DEFAULTS[id].html,
       isDefault: true, changedAt: 0, changedBy: '',
     })),
-    mail: { configured: true, provider: 'unisender', from: 'Generals <noreply@aliance-general.ru>', hint: '' },
-    audience: { ready: 69, total: 69, unverified: 0, noEmail: 0 },
+    mail: {
+      configured: true, provider: 'smtpbz', from: 'Aliance Generals <noreply@aliance-general.ru>', hint: '',
+      chain: [{ id: 'smtpbz', name: 'SMTP.BZ' }],
+      hasBackup: false,
+      quota: {
+        limits: { day: 500, month: 15000, reserve: 300 },
+        used: { day: 12, month: 480 },
+        left: { day: 488, month: 14520, broadcast: 488 },
+        byKind: { verify: 300, news: 180 },
+        resetsAt: '1 сентября',
+      },
+    },
+    audience: {
+      ready: 69, total: 80, unverified: 8, noEmail: 3, banned: 0, canSend: 488,
+      groups: [
+        { id: 'all', name: 'Всем', about: 'все с подтверждённой почтой', count: 69, fits: true },
+        { id: 'active', name: 'Активные', about: 'заходили за 14 дней', count: 40, fits: true },
+        { id: 'sleeping', name: 'Спящие', about: 'не заходили 14 дней', count: 29, fits: true },
+        { id: 'newbies', name: 'Новички', about: 'за 7 дней', count: 5, fits: true },
+      ],
+    },
     broadcast: { running: false, last: null },
   });
   const host = win.document.createElement('div');
@@ -150,7 +169,23 @@ const roundTrip = (html) => ME.toHtml(editorWith(html));
   ok('панель кнопок на месте', host.querySelectorAll('.mail-toolbar').length === 4);
   ok('метки подстановок вставлены в редактор', host.querySelectorAll('.mail-editor .mail-var').length > 0);
   ok('окно разметки спрятано за кнопкой «Код»', Array.from(host.querySelectorAll('.mail-code')).every((c) => c.hidden));
-  ok('кнопка «Проверить сервис» рядом', !!host.querySelector('#mail-diag'));
+  // Проверка домена нужна при любом сервисе: письма чаще всего не
+  // доходят из-за непрописанных записей DNS, а не из-за ключа.
+  ok('кнопка проверки домена на месте', !!host.querySelector('#mail-diag'));
+
+  console.log('\n── 11. Расход лимита и выбор получателей ──');
+  ok('видно расход за сутки и за месяц', host.querySelectorAll('.mail-bar').length >= 2);
+  ok('показан остаток рассылке', /Доступно рассылке/.test(host.textContent));
+  ok('и неприкосновенный запас', /Запас на служебные/.test(host.textContent));
+  ok('видна цепочка сервисов', host.querySelectorAll('.mail-chain-item').length === 1);
+  // Сервис один — панель обязана сказать про единственную точку отказа,
+  // а не молчать до дня, когда новые игроки перестанут получать коды.
+  ok('и предупреждение, что запасного нет', /Сервис один/.test(host.textContent));
+  ok('основной помечен', !!host.querySelector('.mail-chain-item.is-main'));
+  const groups = host.querySelectorAll('.mail-group');
+  ok(`группы получателей на выбор (${groups.length})`, groups.length === 4);
+  ok('по умолчанию выбрано «Всем»', host.querySelector('input[name="bc-group"]:checked').value === 'all');
+  ok('у каждой группы видно число', /Активные/.test(host.textContent) && /40/.test(host.textContent));
   const first = host.querySelector('.mail-editor');
   ok('в редакторе виден текст письма, а не теги', !/</.test(first.textContent));
 

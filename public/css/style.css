@@ -4545,3 +4545,147 @@ body.combat-fullscreen { padding-top: 0 !important; }
   .mail-tb, .mail-varbtn { font-size: 12px; padding: 5px 7px; }
   .mail-tb-sep { display: none; }
 }
+
+/* ── Почта: цепочка сервисов, расход лимита, группы рассылки ─────── */
+.mail-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.mail-chain-item {
+  padding: 4px 10px; font-size: 12px; border-radius: 999px;
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--border);
+}
+.mail-chain-item.is-main { border-color: var(--gold); color: var(--gold); }
+.mail-chain-arrow { opacity: .5; }
+
+.mail-bar-row { margin: 0 0 10px; }
+.mail-bar-head {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 13px; margin-bottom: 4px;
+}
+.mail-bar {
+  height: 8px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, .07);
+}
+.mail-bar > i { display: block; height: 100%; background: var(--gold); transition: width .3s; }
+.mail-bar > i.is-warn { background: #e08b2a; }
+.mail-bar > i.is-danger { background: #d3453f; }
+
+.mail-quota-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px; margin-top: 10px;
+}
+.mail-quota-facts > div {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(255, 255, 255, .03);
+}
+.mail-quota-facts span { display: block; font-size: 12px; }
+.mail-quota-facts b { font-size: 18px; }
+
+/* Выбор получателей: карточки, а не выпадающий список — числа должны
+   быть видны все сразу, иначе выбор делается вслепую */
+.mail-groups {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px;
+}
+.mail-group {
+  display: block; padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: rgba(255, 255, 255, .03);
+}
+.mail-group:hover { border-color: var(--gold); }
+.mail-group input { margin-right: 6px; }
+.mail-group:has(input:checked) { border-color: var(--gold); background: rgba(233, 199, 92, .08); }
+.mail-group.is-off { opacity: .45; cursor: not-allowed; }
+.mail-group-name { font-size: 14px; }
+.mail-group-name b { color: var(--gold); }
+.mail-group-about { display: block; font-size: 12px; opacity: .7; margin-top: 3px; }
+.mail-group-warn { display: block; font-size: 12px; color: var(--red); margin-top: 3px; }
+
+/* ── Отметки согласий в форме регистрации ─────────────────────────
+   Крупная область нажатия: галку ставят пальцем на телефоне, а
+   промах по чекбоксу 13×13 читается как «форма не работает».
+   Текст не выделяется при двойном тапе — иначе на мобильном вместо
+   отметки подсвечивается абзац. */
+.rg-check {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 7px 0; cursor: pointer; line-height: 1.35;
+  -webkit-user-select: none; user-select: none;
+}
+.rg-check input[type="checkbox"] {
+  flex: 0 0 auto; width: 20px; height: 20px; margin: 1px 0 0;
+  accent-color: var(--gold); cursor: pointer;
+}
+.rg-check span { flex: 1; font-size: 14px; color: var(--text); }
+.rg-check.small span { font-size: 13px; color: var(--muted); }
+.rg-check a { color: var(--gold); text-decoration: underline; }
+.rg-check a:hover { opacity: .85; }
+
+/* ── Окно подтверждения согласий ──────────────────────────────────
+   Закрывает игру целиком для тех, кто регистрировался до появления
+   отметок: согласий у них нет, и продолжать обработку «по умолчанию»
+   нельзя. Прокрутка внутри окна — текста тут больше, чем в окне
+   блокировки, а на телефоне кнопка «Принять» обязана оставаться
+   достижимой. */
+#consent-gate {
+  position: fixed; inset: 0; z-index: 20000;
+  display: flex; align-items: flex-start; justify-content: center;
+  background: rgba(8, 10, 6, .97); padding: 16px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.cg-box {
+  max-width: 420px; width: 100%; margin: auto;
+  background: linear-gradient(160deg, #1c1a12, #0f0d0a);
+  border: 1px solid var(--gold); border-radius: 14px;
+  padding: 20px 18px 16px; box-shadow: 0 14px 50px rgba(0,0,0,.7);
+}
+.cg-icon { font-size: 36px; line-height: 1; text-align: center; }
+.cg-title {
+  font-size: 18px; font-weight: 700; color: var(--gold);
+  margin-top: 8px; text-align: center;
+}
+.cg-lead { font-size: 13.5px; color: var(--text); margin-top: 10px; line-height: 1.5; }
+.cg-note { font-size: 12.5px; color: var(--dim); margin-top: 10px; line-height: 1.5; }
+.cg-list { margin: 14px 0 6px; }
+.cg-sep { border: none; border-top: 1px solid var(--border-dim); margin: 12px 0 6px; }
+.cg-out {
+  display: block; text-align: center; margin-top: 10px;
+  font-size: 12.5px; color: var(--dim); text-decoration: underline; cursor: pointer;
+}
+
+/* ── Экран обновления ─────────────────────────────────────────────
+   Закрывает игру целиком на время выката. Спокойный, без красного:
+   это не поломка и не наказание, а плановая работа — и человек должен
+   уйти с ощущением «подожду», а не «всё сломалось». */
+#maint-screen {
+  position: fixed; inset: 0; z-index: 20000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 10, 6, .97); padding: 16px;
+}
+.maint-box {
+  max-width: 380px; width: 100%; text-align: center;
+  background: linear-gradient(160deg, #1b1a14, #100e0b);
+  border: 1px solid var(--border-dim); border-radius: 14px;
+  padding: 26px 20px 20px; box-shadow: 0 14px 50px rgba(0,0,0,.7);
+}
+.maint-icon { font-size: 40px; line-height: 1; }
+.maint-title { font-size: 19px; font-weight: 700; color: var(--gold); margin-top: 10px; }
+.maint-reason { font-size: 14.5px; color: var(--text); margin-top: 10px; line-height: 1.5; }
+.maint-left { font-size: 13.5px; color: var(--orange-1); margin-top: 8px; }
+.maint-note { font-size: 12.5px; color: var(--dim); margin-top: 12px; line-height: 1.5; }
+.maint-dots { margin-top: 16px; display: flex; gap: 6px; justify-content: center; }
+.maint-dots span {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  opacity: .3; animation: maint-pulse 1.4s infinite;
+}
+.maint-dots span:nth-child(2) { animation-delay: .2s; }
+.maint-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes maint-pulse { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+
+/* ── Полоса тестового мира ────────────────────────────────────────
+   Висит поверх всего и всегда. Перепутать тестовое окно с боевым и
+   раздать награды не тем людям — ошибка, которая случается один раз. */
+#test-world-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30000;
+  background: repeating-linear-gradient(45deg, #7a4a12, #7a4a12 12px, #8f5715 12px, #8f5715 24px);
+  color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .3px;
+  text-align: center; padding: 4px 8px; pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+}
+body.is-test-world { padding-top: 22px; }

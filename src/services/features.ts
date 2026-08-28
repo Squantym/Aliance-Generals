@@ -254,7 +254,7 @@ function buyCosmetic(user: User, cosmeticId: string, notices: Notices) {
   if (!user.ownedCosmetics) user.ownedCosmetics = [];
   if (user.ownedCosmetics.includes(cosmeticId)) throw new u.ApiError('Уже куплено');
   if (user.gold < item.priceGold) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${item.priceGold})`);
-  user.gold -= item.priceGold;
+  player.spendGold(user, item.priceGold, 'feature');
   try { require('./stats').track(user, 'goldSpent', 'market', item.priceGold); } catch (e) {}
   user.ownedCosmetics.push(cosmeticId);
   db.markUser(user.id);
@@ -477,7 +477,7 @@ function spyOn(user: User, targetId: string, notices: Notices) {
     if (user.gold < config.SPY.extraCostGold) {
       throw new u.ApiError(`Бесплатная разведка на сегодня исчерпана (${free}/день). Доп. разведка: 🪙 ${config.SPY.extraCostGold}`);
     }
-    user.gold -= config.SPY.extraCostGold;
+    player.spendGold(user, config.SPY.extraCostGold, 'feature');
   }
   user.spyCount = used + 1;
 

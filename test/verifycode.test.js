@@ -12,7 +12,7 @@
 //  2. Код из шести цифр можно подобрать. Значит проверяем не только
 //     «правильный код пускает», но и что неправильный кончается.
 //
-// Всё через НАСТОЯЩИЙ HTTP с поднятым сервером и подставным Unisender:
+// Всё через НАСТОЯЩИЙ HTTP с поднятым сервером и подставным сервисом почты:
 // код мы читаем из письма, как его прочитал бы игрок.
 //
 // Запуск: node test/verifycode.test.js  (после npm run build)
@@ -32,17 +32,27 @@ const BASE = 'http://127.0.0.1:' + PORT;
 let srv = null, workDir = '';
 const letters = [];   // сюда складываем всё, что «ушло» игрокам
 
-function fakeUnisender() {
+// Двойник почтового сервиса. Формат обязан совпадать с настоящим:
+// SMTP.BZ принимает обычную форму, а не JSON, и ключ ждёт заголовком
+// Authorization. Двойник на JSON пропустил бы мимо себя весь настоящий
+// путь отправки — тест был бы зелёным при неработающей почте.
+// В letters складываем письмо в удобном виде: тема и разметка.
+function fakeMailService() {
   return new Promise((r) => {
     const s = http.createServer((req, res) => {
       let b = ''; req.on('data', (c) => { b += c; });
       req.on('end', () => {
-        try { letters.push(JSON.parse(b).message); } catch (e) {}
+        const f = new URLSearchParams(b);
+        letters.push({
+          subject: f.get('subject') || '',
+          to: f.get('to') || '',
+          body: { html: f.get('html') || '' },
+        });
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'success', job_id: 'j' + letters.length }));
+        res.end(JSON.stringify({ success: true, id: 'j' + letters.length }));
       });
     });
-    s.listen(0, '127.0.0.1', () => r({ s, url: 'http://127.0.0.1:' + s.address().port + '/send.json' }));
+    s.listen(0, '127.0.0.1', () => r({ s, url: 'http://127.0.0.1:' + s.address().port + '/send' }));
   });
 }
 
@@ -78,19 +88,19 @@ const codeFrom = (msg) => {
 };
 
 (async () => {
-  const uni = await fakeUnisender();
+  const mail = await fakeMailService();
   workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-'));
   fs.mkdirSync(path.join(workDir, 'data'), { recursive: true });
   const env = Object.assign({}, process.env, {
     PORT: String(PORT), DISABLE_RATE_LIMIT: '1', DB_DRIVER: '', MONGODB_URI: '', NODE_ENV: 'test',
-    UNISENDER_API_KEY: 'k', UNISENDER_URL: uni.url,
+    SMTPBZ_API_KEY: 'k', SMTPBZ_URL: mail.url,
     EMAIL_FROM: 'Aliance Generals <noreply@aliance-general.ru>',
     APP_URL: 'https://aliance-general.ru',
   });
   srv = await startServer(env);
 
   console.log('\n── 1. Регистрация оставляет игрока в форме ──');
-  const reg = await post('/api/register', { login: 'Апчихба', email: 'a@t.ru', password: 'пароль123', country: 'ru' });
+  const reg = await post('/api/register', { login: 'Апчихба', email: 'a@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   ok('токен сразу не выдан — почта не подтверждена', !reg.d.token);
   ok('клиенту сказано показать поле кода', reg.d.needCode === true);
   ok('позывной вернулся — его подставлять в запрос кода', reg.d.login === 'Апчихба');
@@ -150,7 +160,7 @@ const codeFrom = (msg) => {
   console.log('\n── 7. Чужой позывной не выдаёт себя ──');
   // Иначе форма регистрации превращается в проверялку занятых имён
   const stranger = await post('/api/verify-code', { login: 'НетТакого', code: '123456' });
-  const wrongCode = await post('/api/register', { login: 'Второй', email: 'b@t.ru', password: 'пароль123', country: 'ru' })
+  const wrongCode = await post('/api/register', { login: 'Второй', email: 'b@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } })
     .then(() => post('/api/verify-code', { login: 'Второй', code: '111111' }));
   ok('ответ про несуществующего и про неверный код неразличим по смыслу',
      stranger.status >= 400 && wrongCode.status >= 400);
@@ -166,7 +176,7 @@ const codeFrom = (msg) => {
   // по файлу и оставалась бы зелёной, даже если функцию перестать
   // вызывать — я на этом уже попадался.
 
-  await stop(srv); uni.s.close();
+  await stop(srv); mail.s.close();
   try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);

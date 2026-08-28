@@ -153,7 +153,7 @@ function buyPack(user: User, type: LimitedType, packs: number, notices: Notices)
   if (user.dollars < totalDollars) throw new u.ApiError(`Не хватает денег (нужно $${u.fmt(totalDollars)})`);
   if (user.gold < totalGold) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${totalGold})`);
   user.dollars -= totalDollars;
-  user.gold -= totalGold;
+  require('./player').spendGold(user, totalGold, 'saboteur');
   user.saboteurs![type] += n * S.packSize;
   require('./dailyQuests').bump(user, 'saboteursBought', n * S.packSize); // поручение «Тихие люди»
   // Статистика: покупка диверсантов по типам
@@ -171,7 +171,7 @@ function buySuicide(user: User, qty: number, notices: Notices) {
   const n = Math.max(1, Math.min(room, Math.floor(qty) || 1));
   const cost = n * suicidePrice();
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  require('./player').spendGold(user, cost, 'saboteur');
   user.saboteurs!.suicide += n;
   db.markUser(user.id);
   notices.push(`💀 Куплено смертников: ${n} (за 🪙 ${cost}). В наличии: ${user.saboteurs!.suicide}/${S.suicide.fixedLimit}.`);
@@ -186,7 +186,7 @@ function upgradeLimit(user: User, type: LimitedType, notices: Notices) {
   const cost = nextUpgradeCost(user, type);
   if (cost === null) throw new u.ApiError(`Лимит уже максимальный (${cfg.maxLimit})`);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  require('./player').spendGold(user, cost, 'saboteur');
   user.saboteurLimits![type] = Math.min(cfg.maxLimit, user.saboteurLimits![type] + 10);
   db.markUser(user.id);
   notices.push(`📈 Лимит «${RU_NAME[type]}» повышен до ${user.saboteurLimits![type]} (за 🪙 ${cost}).`);

@@ -28,6 +28,10 @@ function startServer() {
       cwd: workDir,
       env: Object.assign({}, process.env, {
         PORT: String(PORT), DISABLE_RATE_LIMIT: '1', DB_DRIVER: '', MONGODB_URI: '', NODE_ENV: 'test',
+        // Второй фактор сотрудников проверяется отдельно, в
+        // test/consents.test.js. Здесь он мешал бы: тест про сессии и
+        // устройства, а не про вход в панель.
+        STAFF_2FA_REQUIRED: '0',
       }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -66,8 +70,8 @@ const UA_PHONE = 'Mozilla/5.0 (Linux; Android 13; SM-A536E) Chrome/120.0 Mobile 
   fsx.mkdirSync(pathx.join(workDir, 'data'), { recursive: true });
 
   srv = await startServer();
-  await post('/api/register', null, { login: 'Владелец', email: 'own@test.ru', password: 'пароль123', country: 'ru' });
-  await post('/api/register', null, { login: 'Игрок', email: 'pl@test.ru', password: 'пароль123', country: 'ru' });
+  await post('/api/register', null, { login: 'Владелец', email: 'own@test.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
+  await post('/api/register', null, { login: 'Игрок', email: 'pl@test.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   await stopServer(srv);
   execFileSync(process.execPath, [pathx.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
     { cwd: workDir, stdio: 'pipe' });

@@ -181,7 +181,7 @@ function build(user: User, notices: Notices) {
   }
   const cost = nextSiloCost(user);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'silo');
   user.silosBuiltTotal = (user.silosBuiltTotal || 0) + 1;
 
   const silo = { id: u.uid(10), rocket: freshRocket(user) };
@@ -198,7 +198,7 @@ function boost(user: User, siloId: string, notices: Notices) {
   if (r.buildFinishesAt <= Date.now()) throw new u.ApiError('Ракета уже готова к заправке');
   const cost = boostCost(r);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'silo');
   r.buildFinishesAt = Date.now();
   notices.push(`⚡ Постройка ускорена за 🪙 ${cost}. Ракета готова к заправке.`);
   return siloView(silo);

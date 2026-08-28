@@ -181,3 +181,6 @@ a.a2-item:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px
    игроку никто не нажимает. */
 .a2-legacy tr[data-gp] { cursor: pointer; }
 .a2-legacy tr[data-gp]:hover { background: rgba(255,255,255,.05); }
+
+/* Разделитель внутри карточки панели — используется в разделе «Обновление» */
+.a2-hr { border: none; border-top: 1px solid var(--border-dim); margin: 12px 0 8px; }

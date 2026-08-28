@@ -361,7 +361,7 @@ function boostStep(user: User, processId: string, notices: Notices) {
   if (proc.finishesAt <= Date.now()) throw new u.ApiError('Шаг уже завершён');
   const cost = proc.boostGold || config.MISSION_STEP.BOOST_GOLD_COST;
   if (user.gold < cost) throw new u.ApiError(`Нужно ${cost} золота`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'mission');
   proc.finishesAt = Date.now();
   notices.push('⚡ Шаг операции ускорен!');
   return { ok: true, cost };

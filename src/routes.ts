@@ -12,6 +12,10 @@ import db = require('./core/db');
 import player = require('./services/player');
 import auth = require('./services/auth');
 import twoFactor = require('./services/twoFactor');
+import consent = require('./services/consent');
+import maintenance = require('./services/maintenance');
+import testWorld = require('./services/testWorld');
+import playerFields = require('./core/playerFields');
 import battle = require('./services/battle');
 import sanctions = require('./services/sanctions');
 import missions = require('./services/missions');
@@ -135,8 +139,42 @@ function registerRoutes(app: any) {
 
   // ---------- Авторизация (открытые маршруты) ----------
   app.add('GET', '/api/countries', () => ({ countries: config.COUNTRIES }), { open: true });
-  app.add('POST', '/api/register', (req) =>
-    auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
+  // Состояние мира: обслуживание и признак тестовой установки.
+  // Открыт без входа намеренно: экран входа обязан объяснить человеку,
+  // почему игра не пускает, ДО того как он введёт пароль.
+  app.add('GET', '/api/world', () => ({
+    maintenance: maintenance.view(),
+    test: testWorld.view(),
+  }), { open: true });
+
+  // Регистрация. Согласия проверяются ЗДЕСЬ, до создания игрока: иначе
+  // при отказе в базе остался бы аккаунт, на который никто не
+  // соглашался. Проверка стоит на маршруте, а не внутри auth.register,
+  // потому что требование относится к живому человеку в форме, а не к
+  // функции: тем же auth.register пользуются инструменты и тесты,
+  // создающие служебные аккаунты.
+  //
+  // Единственный публичный путь создания аккаунта — этот. Появится
+  // второй — проверку нужно поставить и туда; за этим следит
+  // test/consents.test.js, который стучится в живой сервер.
+  app.add('POST', '/api/register', (req) => {
+    // Во время обновления новых игроков не заводим: человек попал бы
+    // в игру, которая через минуту перезапустится, и первое, что он
+    // увидел бы, — ошибка.
+    if (maintenance.isOn()) {
+      throw new u.ApiError(maintenance.view().reason + ' Регистрация ненадолго закрыта.');
+    }
+    // В тестовом мире аккаунты заводит владелец и раздаёт тестировщикам.
+    // Открытая регистрация превратила бы тест во второй живой мир — со
+    // своими игроками, которым тоже надо что-то обещать.
+    if (testWorld.isOn()) {
+      throw new u.ApiError('Это тестовый мир. Регистрация закрыта — '
+        + 'аккаунт выдаёт администратор.');
+    }
+    consent.checkRequired(req.body.consents);
+    return auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua,
+      (req as any).hints, (req as any).fp, req.body.consents);
+  }, { open: true });
   app.add('POST', '/api/login', (req) =>
     auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
   // Второй шаг входа: код из приложения-аутентификатора либо код
@@ -183,6 +221,116 @@ function registerRoutes(app: any) {
     req.ip, (req as any).ua, (req as any).hints, (req as any).fp), { open: true });
   app.add('POST', '/api/resend-verification', (req) => auth.resendVerification(req.body.login, req.ip), { open: true });
   app.add('POST', '/api/request-password-reset', (req) => auth.requestPasswordReset(req.body.loginOrEmail), { open: true });
+
+  // ═══ СОГЛАСИЯ ════════════════════════════════════════════════════
+  // Игрок должен видеть, ЧТО и КОГДА он принял, и уметь отозвать
+  // необязательное сам. Отзыв «напишите нам письмо» формально законен,
+  // но на практике означает, что не отзовёт никто.
+  app.add('GET', '/api/consents', (req) => consent.view(req.user));
+
+  app.add('POST', '/api/consents', act((req, n) => {
+    const id = String(req.body.id || '');
+    const on = !!req.body.on;
+    const def = consent.CONSENTS.find((c: any) => c.id === id);
+    if (!def) throw new u.ApiError('Неизвестное согласие');
+    // Обязательные согласия отзыву через эту ручку не подлежат: без них
+    // игра не работает вовсе, и правильный путь — удаление аккаунта, а
+    // не тихое снятие галки, после которого человек остаётся в игре без
+    // основания обработки.
+    if (def.required && !on) {
+      throw new u.ApiError('Это согласие обязательно для работы игры. '
+        + 'Чтобы прекратить обработку, запросите удаление аккаунта.');
+    }
+    if (on) consent.record(req.user, id, { ip: req.ip, src: 'settings', scope: req.body.scope });
+    else consent.withdraw(req.user, id, req.ip, 'settings');
+    db.markUser(req.user.id); db.save('users');
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/consents',
+      body: { id, on, scope: req.body.scope || null },
+    });
+    n.push(on ? '✅ Согласие сохранено' : '✅ Согласие отозвано');
+    return consent.view(req.user);
+  }));
+
+  // Подтверждение всего обязательного разом — из окна, которое
+  // закрывает игру старым игрокам. Отдельная ручка, а не пять вызовов
+  // /api/consents подряд: половина принятых согласий при обрыве связи —
+  // худший исход, чем ноль, потому что выглядит как согласие.
+  app.add('POST', '/api/consents/accept-all', act((req, n) => {
+    const given = req.body.consents && typeof req.body.consents === 'object' ? req.body.consents : {};
+    // Проверяем ровно тем же кодом, что и регистрация: разойдутся
+    // требования — разойдутся и два пути в игру.
+    consent.checkRequired(given);
+    for (const def of consent.CONSENTS) {
+      if (!def.required) continue;
+      consent.record(req.user, def.id, { ip: req.ip, src: 'reconsent' });
+    }
+    // Необязательные трогаем ТОЛЬКО если игрок их отметил: молчание в
+    // этом окне согласием на рекламу не является.
+    for (const id of ['public', 'ads']) {
+      if (given[id]) consent.record(req.user, id, { ip: req.ip, src: 'reconsent', scope: given.publicScope });
+    }
+    db.markUser(req.user.id); db.save('users');
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/consents/accept-all',
+      body: { given: Object.keys(given).filter((k) => given[k]) },
+    });
+    n.push('✅ Спасибо, всё подтверждено');
+    return { ok: true, left: consent.outdated(req.user) };
+  }));
+
+  // Отписка по ссылке из письма. Открыта без входа — в этом весь смысл:
+  // человек нажимает ссылку в почте, а не идёт вспоминать пароль.
+  // Ключ живёт на игроке и не связан с сессией: письмо лежит в почте
+  // годами, а сессия — тридцать дней.
+  //
+  // Отписка выполняется методом POST со страницы /unsubscribe.html, а не
+  // переходом по ссылке. Причина простая: почтовые клиенты и антивирусы
+  // заранее открывают ссылки из писем, и на GET человек оказался бы
+  // отписан, ничего не нажимая.
+  app.add('POST', '/api/unsubscribe', (req) => {
+    const id = String(req.body.u || '');
+    const key = String(req.body.k || '');
+    const target = player.users()[id];
+    // Один ответ на все случаи: не подтверждаем и не опровергаем, что
+    // такой игрок есть. Иначе ссылка превращается в способ проверять
+    // чужие идентификаторы.
+    if (!target || !key || String((target as any).mailKey || '') !== key) {
+      return { ok: true, done: false };
+    }
+    consent.withdraw(target, 'ads', req.ip, 'письмо');
+    db.markUser(target.id); db.save('users');
+    auditLog.record({
+      userId: target.id, userName: target.name, path: '/api/unsubscribe', body: { via: 'письмо' },
+    });
+    return { ok: true, done: true, name: target.name };
+  }, { open: true });
+
+  // ═══ ВЫГРУЗКА СВОИХ ДАННЫХ ═══════════════════════════════════════
+  // Право на копию своих данных закон даёт, а срок ответа — 10 рабочих
+  // дней. Собирать её руками из базы по каждому обращению значит либо
+  // не уложиться, либо выгружать лишнее. Кнопка отдаёт ровно то же, что
+  // хранится, за вычетом секретов.
+  app.add('GET', '/api/my-data', (req) => {
+    const src: any = req.user;
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (playerFields.SECRET_FIELDS.includes(k)) continue;   // хеш пароля, соль, токены, второй фактор
+      out[k] = v;
+    }
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/my-data', body: {},
+    });
+    return {
+      выгружено: new Date().toISOString(),
+      игра: brand.GAME_NAME,
+      пояснение: 'Копия данных вашего аккаунта. Пароль, его соль и служебные токены не '
+        + 'выгружаются: их нет в читаемом виде даже у нас. Что и зачем хранится — в Политике '
+        + 'обработки персональных данных.',
+      аккаунт: out,
+      входы: (() => { try { return require('./services/access').view(req.user); } catch (e) { return null; } })(),
+    };
+  });
   app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password, req.ip), { open: true });
 
   // ---------- Игрок ----------
@@ -1149,11 +1297,11 @@ function registerRoutes(app: any) {
         })),
       hint: email.isConfigured
         ? (email.usingTestSender
-            ? 'Отправитель тестовый (resend.dev) — письма уходят только на вашу собственную почту. '
-              + 'Для игроков подключите свой домен в Resend и укажите его в EMAIL_FROM.'
+            ? 'В EMAIL_FROM не ваш домен — письма игрокам не дойдут. '
+              + 'Подключите домен в почтовом сервисе и укажите адрес на нём.'
             : 'Отправка настроена. Новые игроки обязаны подтвердить почту перед входом.')
-        : 'Ключ отправки не задан (UNISENDER_API_KEY или RESEND_API_KEY). Пока его нет, почта '
-          + 'считается подтверждённой автоматически, и требование не действует.',
+        : 'Ключ отправки не задан (SMTPBZ_API_KEY). '
+          + 'Пока его нет, почта считается подтверждённой автоматически, и требование не действует.',
     };
   }, { admin: true });
 
@@ -1207,9 +1355,10 @@ function registerRoutes(app: any) {
     return require('./services/mailer').resetToDefault(String(req.body.id || ''), n);
   }), { admin: true });
 
-  // Проверка площадки Unisender: справочными методами, БЕЗ отправки.
-  // Иначе диагностика тратила бы тот самый лимит писем, из-за которого
-  // её и запускают.
+  // Проверка домена: читаем записи DNS, БЕЗ отправки письма. Иначе
+  // диагностика тратила бы тот самый лимит, из-за которого её и
+  // запускают. Домен молчит громче всех: записи не прописаны, сервис
+  // письмо принял, почтовик получателя выбросил — и никто не сказал.
   app.add('POST', '/api/admin/mail/diagnose', async (req) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
     return require('./services/email').diagnose();
@@ -1225,8 +1374,12 @@ function registerRoutes(app: any) {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
     const mailer = require('./services/mailer');
     if (req.body.stop) return mailer.broadcastStop(n);
-    auditLog.record({ userId: req.user.id, userName: req.user.name, path: '/api/admin/mail/broadcast' });
-    return mailer.broadcastStart(req.user.name, player.users(), n);
+    const group = String(req.body.group || 'all');
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/mail/broadcast',
+      body: { group },
+    });
+    return mailer.broadcastStart(req.user.name, player.users(), n, group);
   }), { admin: true });
 
   app.add('GET', '/api/admin/mail/broadcast', (req) => {
@@ -1241,8 +1394,7 @@ function registerRoutes(app: any) {
     const list = Object.values(users).filter((p: any) => !p.isBot);
     const unverified = list.filter((p: any) => !p.emailVerified);
     const PROVIDER_NAMES: Record<string, string> = {
-      unisender: 'Unisender Go (Россия)',
-      resend: 'Resend (США)',
+      smtpbz: 'SMTP.BZ (Россия)',
       none: 'не настроен',
     };
     return {
@@ -1267,16 +1419,17 @@ function registerRoutes(app: any) {
         })),
       hint: !email.isConfigured
         ? 'Отправка писем не настроена: почта у новых игроков подтверждается сама, '
-          + 'подтверждение не требуется. Задайте UNISENDER_API_KEY в .env и перезапустите — '
+          + 'подтверждение не требуется. Задайте SMTPBZ_API_KEY в .env и перезапустите — '
           + 'после этого новые игроки будут обязаны подтвердить почту.'
         : (email.usingTestSender
-          ? 'Ключ задан, но отправитель тестовый (resend.dev): письма уходят только на вашу '
+          ? 'Ключ задан, но в EMAIL_FROM не ваш домен: письма уходят только на вашу '
             + 'собственную почту. Игроки писем не получат. Укажите в EMAIL_FROM адрес на '
             + 'своём домене и подтвердите домен у почтового сервиса.'
-          : (email.provider === 'resend'
-            ? 'Работает Resend (США). Для игроков с почтой mail.ru и Яндекс письма чаще '
-              + 'попадают в спам. Рекомендуется Unisender Go: задайте UNISENDER_API_KEY.'
-            : 'Отправка настроена. Новые игроки обязаны подтвердить почту перед входом.')),
+          // Сервис один — молчать об этом нельзя: владелец должен
+          // узнать про единственную точку отказа заранее, а не в день,
+          // когда новые игроки перестанут получать коды.
+          : 'Отправка настроена. Сервис один: кончится тариф или случится сбой — '
+            + 'регистрация встанет целиком. Проверьте домен кнопкой ниже.'),
     };
   }, { admin: true });
 
@@ -1288,6 +1441,48 @@ function registerRoutes(app: any) {
   // совпадение), поэтому права не текли — но стоило кому-то удалить
   // верхнюю, и подтверждать чужую почту смог бы любой с доступом к
   // игрокам. Дубль убран, ручка одна — выше, под зоной 'security'.
+
+  // ═══ ОБНОВЛЕНИЕ И ТЕСТОВЫЙ МИР ═══════════════════════════════════
+  // Раздел владельца: он останавливает игру и он же выкатывает код.
+  // Ниже всё под isOwner, а не под зоной: раздать это администратору
+  // значит раздать возможность остановить проект.
+
+  app.add('GET', '/api/admin/release', async (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/release').status();
+  }, { admin: true });
+
+  app.add('POST', '/api/admin/maintenance', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const on = !!req.body.on;
+    const r = on
+      ? maintenance.turnOn(req.user.name, String(req.body.reason || ''), Number(req.body.minutes || 0))
+      : maintenance.turnOff(req.user.name);
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/maintenance',
+      body: { on, reason: r.reason, minutes: req.body.minutes || 0 },
+    });
+    n.push(on ? '🛠 Игра закрыта на обновление' : '✅ Игра снова открыта');
+    return maintenance.adminView();
+  }), { admin: true });
+
+  // Тестовый аккаунт: логин, пароль, почта не нужна и не спрашивается.
+  // Работает ТОЛЬКО в тестовом мире — на боевом это была бы дыра
+  // размером с регистрацию без подтверждения.
+  app.add('POST', '/api/admin/test-account', act(async (req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/release').makeTestAccount(
+      req.user, String(req.body.login || ''), String(req.body.password || ''),
+      String(req.body.country || 'ru'), req.ip, n);
+  }), { admin: true });
+
+  // Выкат версии, проверенной на тесте. Запускает фиксированный скрипт
+  // из репозитория, а не произвольную команду: панель не должна уметь
+  // выполнять на сервере то, что в неё передали.
+  app.add('POST', '/api/admin/release/deploy', act(async (req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/release').deploy(req.user, String(req.body.commit || ''), n);
+  }), { admin: true });
 
   // Диагностика: что на самом деле приходит от прокси. Нужна, когда в
   // журнале у всех один адрес — сразу видно, передаёт ли nginx заголовки

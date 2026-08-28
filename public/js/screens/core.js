@@ -93,8 +93,73 @@ App.screens.auth = async (c) => {
           </div>
         </div>
       </div>
+
+      <!-- ── Согласия ────────────────────────────────────────────────
+           Отметки пустые по умолчанию и разделены по смыслу: закон
+           требует конкретного и сознательного согласия, а согласие на
+           распространение данных — отдельного действия. Одна общая
+           галка «со всем согласен» этому не отвечает.
+           Реклама и публичный профиль на регистрацию не влияют. -->
+      <div class="card mt" id="rg-consents" style="background:rgba(233,199,92,.05);border-color:var(--gold)">
+        <div class="name" style="font-size:15px">Прежде чем подписать контракт</div>
+
+        <label class="rg-check">
+          <input type="checkbox" id="rg-age">
+          <span>Мне исполнилось <b>18 лет</b></span>
+        </label>
+
+        <label class="rg-check">
+          <input type="checkbox" id="rg-terms">
+          <span>Я прочитал(а) и принимаю
+            <a href="/terms.html" target="_blank" rel="noopener">Пользовательское соглашение</a>,
+            <a href="/rules.html" target="_blank" rel="noopener">Правила игры</a> и
+            <a href="/payments.html" target="_blank" rel="noopener">Правила платежей</a></span>
+        </label>
+
+        <label class="rg-check">
+          <input type="checkbox" id="rg-pdn">
+          <span>Даю <a href="/consent-pdn.html" target="_blank" rel="noopener">согласие на обработку
+            персональных данных</a> в соответствии с
+            <a href="/privacy.html" target="_blank" rel="noopener">Политикой</a></span>
+        </label>
+
+        <hr class="hr" style="margin:12px 0">
+        <p class="muted small" style="margin:0 0 6px">Необязательно — на регистрацию не влияет:</p>
+
+        <label class="rg-check">
+          <input type="checkbox" id="rg-public">
+          <span>Разрешаю <a href="/consent-public.html" target="_blank" rel="noopener">показывать мой
+            профиль</a> другим игрокам</span>
+        </label>
+        <div id="rg-public-parts" style="display:none;margin:4px 0 8px 26px">
+          <label class="rg-check small"><input type="checkbox" data-pub="nick" checked><span>Позывной</span></label>
+          <label class="rg-check small"><input type="checkbox" data-pub="flag" checked><span>Страна и флаг</span></label>
+          <label class="rg-check small"><input type="checkbox" data-pub="stats" checked><span>Уровень и статистика</span></label>
+          <label class="rg-check small"><input type="checkbox" data-pub="ally" checked><span>Альянс и роль</span></label>
+        </div>
+
+        <label class="rg-check">
+          <input type="checkbox" id="rg-ads">
+          <span>Хочу получать <a href="/consent-ads.html" target="_blank" rel="noopener">новости, акции
+            и предложения</a></span>
+        </label>
+        <p class="muted small" style="margin:8px 0 0">
+          Код подтверждения, восстановление пароля и сообщения о санкциях приходят всегда —
+          это служебные письма, а не реклама.
+        </p>
+      </div>
+
       <button class="btn btn-orange mt" id="rg-go">Подписать контракт</button>
     </div>`;
+
+  // Подкатегории публичности раскрываются только когда разрешение дано:
+  // выбор «по каждой категории» закон требует, но показывать его человеку,
+  // который вообще отказался, незачем.
+  const pubBox = document.getElementById('rg-public');
+  if (pubBox) pubBox.onchange = () => {
+    const parts = document.getElementById('rg-public-parts');
+    if (parts) parts.style.display = pubBox.checked ? '' : 'none';
+  };
 
   // Показ бонуса выбранной страны
   const updateCountryBonus = () => {
@@ -228,12 +293,30 @@ App.screens.auth = async (c) => {
     if (!pass)  { UI.toast('⛔ Введите пароль'); return; }
     if (pass.length < 8) { UI.toast('⛔ Пароль минимум 8 символов'); return; }
     if (!/[A-Za-zА-Яа-яЁё]/.test(pass) || !/[0-9]/.test(pass)) { UI.toast('⛔ Пароль должен содержать буквы и цифры'); return; }
+
+    // Согласия. Проверяем и здесь, и на сервере: клиентская проверка
+    // подсказывает сразу, серверная — единственная, на которую можно
+    // положиться.
+    const ck = (id) => !!(document.getElementById(id) || {}).checked;
+    if (!ck('rg-age'))   { UI.toast('⛔ Регистрация доступна с 18 лет'); return; }
+    if (!ck('rg-terms')) { UI.toast('⛔ Примите Пользовательское соглашение'); return; }
+    if (!ck('rg-pdn'))   { UI.toast('⛔ Нужно согласие на обработку персональных данных'); return; }
+    const publicScope = {};
+    document.querySelectorAll('#rg-public-parts input[data-pub]').forEach((el) => {
+      publicScope[el.getAttribute('data-pub')] = !!el.checked;
+    });
+    const consents = {
+      age18: ck('rg-age'), terms: ck('rg-terms'), pdn: ck('rg-pdn'),
+      public: ck('rg-public'), ads: ck('rg-ads'), publicScope,
+    };
+
     try {
       const r = await API.post('/api/register', {
         login: name,
         email: document.getElementById('rg-email').value,
         password: pass,
         country: document.getElementById('rg-country').value,
+        consents,
       });
       if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора');
       if (r.token) {
@@ -1491,6 +1574,20 @@ App.screens.settings = async (c) => {
   const current = App.theme();
   const tab = App._settingsTab || 'app';
 
+  // Согласия тянем только когда вкладка открыта: на остальных они не
+  // нужны, а лишний запрос при каждом заходе в настройки — лишний.
+  let consents = null;
+  if (tab === 'consents') {
+    try { consents = await API.get('/api/consents'); } catch (e) { consents = { items: [], error: e.message }; }
+  }
+
+  // Состояние второго фактора. Спрашиваем только у сотрудников — у
+  // обычного игрока этой ручки нет, и запрос вернул бы отказ.
+  let tfa = null;
+  if (tab === 'account' && App.me && App.me.staffPanel) {
+    try { tfa = await API.get('/api/2fa/status'); } catch (e) { tfa = null; }
+  }
+
   const themeBtn = (id, name, desc) => `
     <div class="card">
       <div class="list-row" style="border:none;padding:0">
@@ -1580,16 +1677,97 @@ App.screens.settings = async (c) => {
       <label class="field-label">Текущий пароль</label>
       <input type="password" id="al-pass" class="field" placeholder="подтвердите паролем" autocomplete="current-password">
       <button class="btn mt" id="al-go" style="width:100%">Сменить логин</button>
-    </div>`;
+    </div>
+
+    ${!tfa ? '' : `
+    <div class="card">
+      <div class="name">🔐 Второй фактор входа
+        ${tfa.enabled ? '<span class="badge green">включён</span>'
+          : '<span class="badge red">выключен</span>'}</div>
+      ${tfa.enabled ? `
+        <p class="muted small mt">Вход в игру и в панель требует код из приложения-аутентификатора.
+        Осталось кодов восстановления: <b>${tfa.recoveryLeft != null ? tfa.recoveryLeft : '—'}</b>.</p>`
+      : `
+        <p class="muted small mt">Панель управления не откроется, пока второй фактор не включён.
+        Это не прихоть: у сотрудника есть доступ к чужим аккаунтам, переписке и платежам, и одного
+        украденного пароля для этого достаточно.</p>
+        <p class="muted small mt">Подойдёт любое приложение, которое у вас уже есть: Google
+        Authenticator, Яндекс.Ключ, Authy, 1Password. Ставить специальное не нужно.</p>
+        <button class="btn btn-orange mt" id="tfa-start" style="width:100%">
+          ${tfa.pending ? 'Показать ключ заново' : 'Подключить второй фактор'}</button>`}
+      <div id="tfa-box"></div>
+    </div>`}`;
+
+  // ── Вкладка «Согласия» ─────────────────────────────────────────
+  // Право отозвать согласие есть у каждого, но «напишите нам письмо»
+  // формально законно и практически означает, что не отзовёт никто.
+  // Здесь видно, что и когда принято, какой редакции, и всё
+  // необязательное снимается кнопкой.
+  const dt = (ms) => ms ? new Date(ms).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  const consentsHtml = !consents ? '' : (consents.error
+    ? `<div class="card"><p class="muted">Не удалось загрузить: ${UI.esc(consents.error)}</p></div>`
+    : `
+    ${(consents.needed || []).length ? `
+      <div class="card" style="border-color:var(--orange-1)">
+        <div class="name">📋 Требуется подтверждение</div>
+        <p class="muted small mt">Вы регистрировались до того, как появились отдельные отметки, либо
+        документ с тех пор изменился. Подтвердите ниже — это займёт минуту и ничего не меняет в игре.</p>
+        <div class="muted small mt">${(consents.needed || []).map((x) => UI.esc(x.title)).join('<br>')}</div>
+      </div>` : ''}
+    <div class="card">
+      <p class="muted small" style="margin:0">Здесь видно, что вы приняли при регистрации и когда.
+      Обязательные согласия нужны, чтобы игра работала. Необязательные можно снять в любой момент —
+      на игру это не влияет.</p>
+    </div>
+    ${(consents.items || []).map((it) => `
+      <div class="card" data-consent="${UI.esc(it.id)}">
+        <div class="list-row" style="border:none;padding:0;align-items:flex-start">
+          <div class="grow">
+            <div class="name">${it.given ? '✅' : '⬜'} ${UI.esc(it.title)}
+              ${it.required ? '<span class="badge">обязательное</span>' : ''}</div>
+            <div class="muted small mt">${UI.esc(it.about)}</div>
+            <div class="muted small mt">
+              ${it.given
+                ? `Принято ${UI.esc(dt(it.at))}${it.version ? `, редакция ${UI.esc(it.version)}` : ''}`
+                : (it.withdrawnAt ? `Отозвано ${UI.esc(dt(it.withdrawnAt))}` : 'Не давалось')}
+              ${it.doc ? ` · <a href="${UI.esc(it.doc.url)}" target="_blank" rel="noopener">текст документа</a>` : ''}
+            </div>
+            ${it.stale ? '<div class="small mt" style="color:var(--orange-1)">Документ обновился — подтвердите заново</div>' : ''}
+            ${it.id === 'public' && it.given && it.scope ? `
+              <div class="muted small mt">Показывается:
+                ${(consents.parts || []).filter((pt) => it.scope[pt.id]).map((pt) => UI.esc(pt.name)).join(', ') || '—'}</div>` : ''}
+          </div>
+          ${it.required
+            ? (it.given && !it.stale ? '' : `
+              <button class="btn btn-inline btn-orange"
+                      data-consent-go="${UI.esc(it.id)}" data-on="1">Подтвердить</button>`)
+            : `
+            <button class="btn btn-inline ${it.given ? 'btn-red' : 'btn-orange'}"
+                    data-consent-go="${UI.esc(it.id)}" data-on="${it.given ? '0' : '1'}">
+              ${it.given ? 'Отозвать' : 'Дать'}
+            </button>`}
+        </div>
+      </div>`).join('')}
+    <div class="card">
+      <div class="name">📄 Копия моих данных</div>
+      <p class="muted small mt">Выгрузка того, что хранится о вашем аккаунте. Пароль и служебные
+      токены не выгружаются — в читаемом виде их нет даже у нас.</p>
+      <button class="btn mt" id="my-data" style="width:100%">Скачать копию данных</button>
+    </div>
+    <div class="card">
+      <p class="muted small" style="margin:0">Вопросы по обработке данных и удалению аккаунта —
+      через <a href="/privacy.html" target="_blank" rel="noopener">Политику</a>, раздел «Права субъекта».</p>
+    </div>`);
 
   c.innerHTML = `
     <div class="title">Настройки</div>
     <div class="tabs">
       <div class="tab ${tab === 'app' ? 'active' : ''}" data-stab="app">Приложение</div>
       <div class="tab ${tab === 'account' ? 'active' : ''}" data-stab="account">Аккаунт</div>
+      <div class="tab ${tab === 'consents' ? 'active' : ''}" data-stab="consents">Согласия</div>
       <div class="tab ${tab === 'appearance' ? 'active' : ''}" data-stab="appearance">Оформление игры</div>
     </div>
-    ${tab === 'app' ? appTabHtml : tab === 'account' ? accountHtml : themesHtml}
+    ${tab === 'app' ? appTabHtml : tab === 'account' ? accountHtml : tab === 'consents' ? consentsHtml : themesHtml}
     ${(App.me && App.me.staffPanel && App.me.staffRole !== 'moderator') ? `
       <hr class="hr">
       <div class="card">
@@ -1684,6 +1862,116 @@ App.screens.settings = async (c) => {
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   }
+
+  // ── Подключение второго фактора ───────────────────────────────
+  // Раньше эта настройка жила ТОЛЬКО внутри панели управления. После
+  // того как панель закрылась до включения второго фактора, получался
+  // замкнутый круг: чтобы включить фактор, нужно войти в панель; чтобы
+  // войти в панель, нужен включённый фактор. Поэтому настройка стоит
+  // здесь — в личных настройках, куда сотрудник попадает как обычный
+  // игрок.
+  const tfaStart = document.getElementById('tfa-start');
+  if (tfaStart) tfaStart.onclick = async () => {
+    const box = document.getElementById('tfa-box');
+    let d = null;
+    try { d = await API.post('/api/2fa/setup', {}); }
+    catch (e) { return UI.toast('⛔ ' + e.message); }
+    // Без ключа показывать нечего, а обращение к d.secret уронило бы
+    // экран целиком — человек остался бы с пустой страницей.
+    if (!d || !d.secret) return UI.toast('⛔ Сервер не выдал ключ — попробуйте ещё раз');
+    box.innerHTML = `
+      <hr class="hr">
+      <div class="name">Шаг 1 — добавьте запись в приложение</div>
+      <p class="muted small mt">Введите этот ключ вручную (в приложении это кнопка «ввести ключ»):</p>
+      <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px;letter-spacing:2px;
+                  padding:10px;border:1px solid var(--border);border-radius:8px;word-break:break-all">
+        ${UI.esc(d.secret.replace(/(.{4})/g, '$1 ').trim())}</div>
+      <button class="btn mt" id="tfa-copy" style="width:100%">Скопировать ключ</button>
+      <p class="muted small mt">${d.digits} цифр, обновляется раз в ${d.step} секунд.</p>
+
+      <div class="name mt">Шаг 2 — подтвердите кодом</div>
+      <p class="muted small mt">Введите код, который приложение показывает прямо сейчас.
+      Пока код не проверен, фактор <b>не включается</b> — так нельзя запереть себя опечаткой.</p>
+      <input type="text" id="tfa-code" class="field" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="8" placeholder="123456"
+             style="letter-spacing:6px;text-align:center;font-size:20px;
+                    font-family:ui-monospace,Menlo,Consolas,monospace">
+      <button class="btn btn-orange mt" id="tfa-on" style="width:100%">Включить</button>
+      <p class="muted small mt">Код не подходит? Проверьте время на телефоне — коды считаются
+      от часов, и расхождение больше минуты их ломает.</p>`;
+
+    const cp = document.getElementById('tfa-copy');
+    if (cp) cp.onclick = async () => {
+      try { await navigator.clipboard.writeText(d.secret); UI.toast('📋 Ключ скопирован'); }
+      catch (e) { UI.toast('⛔ Скопируйте вручную'); }
+    };
+    document.getElementById('tfa-on').onclick = async () => {
+      const code = (document.getElementById('tfa-code').value || '').trim();
+      if (!code) return UI.toast('⛔ Введите код из приложения');
+      try {
+        const r = await API.post('/api/2fa/enable', { code });
+        // Коды восстановления показываются ОДИН раз. Уйти с экрана, не
+        // сохранив их, — значит потерять единственный запасной путь при
+        // утрате телефона, поэтому просто перерисовать нельзя.
+        box.innerHTML = `
+          <hr class="hr">
+          <div class="name">🔑 Коды восстановления</div>
+          <p class="muted small mt">Сохраните их сейчас — <b>больше они не покажутся</b>.
+          Каждый работает один раз и заменяет код из приложения, если телефон потерян.</p>
+          <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;line-height:2;
+                      padding:10px;border:1px solid var(--gold);border-radius:8px">
+            ${(r.recoveryCodes || []).map((x) => UI.esc(x)).join('<br>')}</div>
+          <button class="btn mt" id="tfa-save" style="width:100%">Сохранить в файл</button>
+          <button class="btn btn-orange mt" id="tfa-done" style="width:100%">Я сохранил коды</button>`;
+        const sv = document.getElementById('tfa-save');
+        if (sv) sv.onclick = () => {
+          const blob = new Blob([(r.recoveryCodes || []).join('\n') + '\n'], { type: 'text/plain' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'коды-восстановления-альянс-генералов.txt';
+          document.body.appendChild(a); a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+        };
+        document.getElementById('tfa-done').onclick = () => App.rerender();
+        UI.toast('🔐 Второй фактор включён');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  };
+
+  // ── Кнопки согласий ───────────────────────────────────────────
+  c.querySelectorAll('[data-consent-go]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-consent-go');
+      const on = btn.getAttribute('data-on') === '1';
+      btn.disabled = true;
+      try {
+        // Разрешение на публичный профиль без выбора категорий смысла не
+        // имеет: включаем всё, а тонкую настройку игрок делает потом.
+        const body = { id, on };
+        if (id === 'public' && on) body.scope = { nick: true, flag: true, stats: true, ally: true };
+        await API.post('/api/consents', body);
+        App.rerender();
+      } catch (e) { btn.disabled = false; UI.toast('⛔ ' + e.message); }
+    };
+  });
+
+  const myData = document.getElementById('my-data');
+  if (myData) myData.onclick = async () => {
+    myData.disabled = true;
+    try {
+      const r = await API.get('/api/my-data');
+      // Отдаём файлом, а не показываем на экране: копию данных человек
+      // сохраняет себе, а не читает в браузере.
+      const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'мои-данные-альянс-генералов.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+      UI.toast('📄 Копия данных сохранена');
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+    myData.disabled = false;
+  };
 
   c.querySelectorAll('[data-stab]').forEach((btn) => {
     btn.onclick = () => { App._settingsTab = btn.dataset.stab; App.rerender(); };

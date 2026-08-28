@@ -1,185 +1,165 @@
 // ═══════════════════════════════════════════════════════════════════
-// test/maildiag.test.js — кнопка «Проверить сервис» в панели
+// test/maildiag.test.js — кнопка «Проверить домен» в панели
 //
-// Проверяем не текст на кнопке, а поведение: узнаёт ли игра, что ключ
-// выдан на ДРУГОЙ площадке Unisender, и подсказывает ли ровно ту строку
-// для .env, которая это чинит.
+// Когда письма «не доходят», подозреваемых трое: ключ, сервис и домен.
+// Первые двое отвечают сами — их отказ виден дословно при тестовой
+// отправке. Домен молчит громче всех: записи не прописаны, сервис
+// письмо принял и отчитался успехом, а почтовик получателя выбросил его
+// без единого слова. Владелец при этом видит «письмо отправлено» и ищет
+// поломку где угодно, кроме DNS.
 //
-// Ошибка «User with id … not found» читается как поломка аккаунта, из-за
-// чего владелец идёт в поддержку и ждёт сутками то, что чинится строчкой.
-// Ради этого разбора маршрут и написан — значит и тест про это.
+// Поэтому проверяем не текст на кнопке, а поведение: спрашивает ли игра
+// у DNS, что реально прописано, и подсказывает ли ровно ту строку,
+// которая чинит. Главная подсказка — SPF: её нельзя добавлять второй
+// записью, только исправлять существующую.
 //
-// Площадки Unisender подменяем своими: настоящие в тесте дёргать нельзя.
 // Запуск: node test/maildiag.test.js  (после npm run build)
 // ═══════════════════════════════════════════════════════════════════
-const { spawn, execFileSync } = require('child_process');
-const http = require('http');
-const fsx = require('fs');
-const osx = require('os');
-const pathx = require('path');
-const ROOT = pathx.join(__dirname, '..');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const ROOT = path.join(__dirname, '..');
 
 let passed = 0, failed = 0;
 const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 
-const PORT = 4820 + Math.floor(Math.random() * 60);
-const BASE = 'http://127.0.0.1:' + PORT;
-let workDir = '', srv = null;
-
-// Подставная площадка Unisender: либо признаёт ключ, либо отвечает той
-// самой ошибкой про ненайденного пользователя.
-function fakePlatform(mode) {
-  return new Promise((resolve) => {
-    const s = http.createServer((req, res) => {
-      let b = ''; req.on('data', (c) => { b += c; });
-      req.on('end', () => {
-        res.setHeader('Content-Type', 'application/json');
-        if (mode === 'ok') {
-          res.writeHead(200);
-          res.end(JSON.stringify({ status: 'success', domains: [{ domain: 'aliance-general.ru', domain_verified: true }] }));
-        } else {
-          res.writeHead(400);
-          res.end(JSON.stringify({ status: 'error', message: "User with id '8316838' not found" }));
-        }
-      });
-    });
-    s.listen(0, '127.0.0.1', () => resolve({ s, url: 'http://127.0.0.1:' + s.address().port }));
-  });
+// Модуль читает окружение при загрузке — для каждого случая берём заново
+function freshEmail(env) {
+  for (const k of Object.keys(require.cache)) {
+    if (/dist[\\/]src[\\/]services[\\/](email|mailQuota|maildns)\.js$/.test(k)) delete require.cache[k];
+  }
+  for (const k of Object.keys(process.env)) {
+    if (/^(SMTPBZ|MAIL_LIMIT|MAIL_RESERVE|EMAIL_FROM)/.test(k)) delete process.env[k];
+  }
+  Object.assign(process.env, env);
+  return require(path.join(ROOT, 'dist/src/services/email.js'));
 }
 
-function startServer(extraEnv) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, [pathx.join(ROOT, 'dist/server.js')], {
-      cwd: workDir,
-      env: Object.assign({}, process.env, {
-        PORT: String(PORT), DISABLE_RATE_LIMIT: '1', DB_DRIVER: '', MONGODB_URI: '', NODE_ENV: 'test',
-      }, extraEnv || {}),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let out = '';
-    const onData = (b) => { out += String(b); if (/сервер запущен/i.test(out)) resolve(proc); };
-    proc.stdout.on('data', onData);
-    proc.stderr.on('data', onData);
-    proc.on('exit', (c) => reject(new Error('сервер вышел: ' + c + '\n' + out.slice(-400))));
-    setTimeout(() => reject(new Error('сервер не поднялся:\n' + out.slice(-400))), 20000);
-  });
-}
-function stopServer(p) {
-  return new Promise((r) => { if (!p) return r(); p.on('exit', () => r()); p.kill('SIGTERM'); setTimeout(r, 3000); });
-}
-
-async function api(method, path, token, body) {
-  const res = await fetch(BASE + path, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'x-token': token || '' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  let data = {};
-  try { data = await res.json(); } catch (e) {}
-  return { status: res.status, data };
-}
-const post = (p, t, b) => api('POST', p, t, b || {});
+const work = fs.mkdtempSync(path.join(os.tmpdir(), 'maildiag-'));
+fs.mkdirSync(path.join(work, 'data'), { recursive: true });
+process.chdir(work);
 
 (async () => {
-  // Первая площадка — чужая, вторая признаёт ключ. Игра по умолчанию
-  // ходит на первую: ровно та ситуация, которую разбираем.
-  const alien = await fakePlatform('notfound');
-  const home = await fakePlatform('ok');
+  const db = require(path.join(ROOT, 'dist/src/core/db.js'));
+  await db.init();
+  const maildns = require(path.join(ROOT, 'dist/src/services/maildns.js'));
 
-  workDir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'generals-diag-'));
-  fsx.mkdirSync(pathx.join(workDir, 'data'), { recursive: true });
+  console.log('\n── 1. Что вообще требуется от домена ──');
+  const need = maildns.PROVIDERS;
+  ok('сервис в списке один', need.length === 1 && need[0].id === 'smtpbz');
+  ok('SPF сервиса известен', need[0].spf === 'include:spf.smtp.bz');
+  ok('селектор DKIM известен', need[0].dkim[0] === 'smtpbz');
+  ok('поддомен статистики известен',
+     !!need[0].cname && need[0].cname.name === 'stats' && need[0].cname.value === 'smtp.bz');
+  ok('Unisender из требований вычищен', !/unisender/i.test(JSON.stringify(need)));
 
-  const mailEnv = {
-    UNISENDER_API_KEY: 'testkey123',
-    UNISENDER_HOSTS: [alien.url, home.url].join(','),
-    UNISENDER_URL: alien.url + '/ru/transactional/api/v1/email/send.json',
-    EMAIL_FROM: 'Generals <noreply@aliance-general.ru>',
-    APP_URL: 'https://aliance-general.ru',
-  };
+  console.log('\n── 2. Готовая строка SPF ──');
+  // SPF в домене может быть ТОЛЬКО ОДНА. Две записи — не «двойная
+  // защита», а ошибка стандарта: проверку перестают проходить ВСЕ
+  // письма домена, включая те, что уходили годами. Ровно сюда попадают,
+  // когда новый сервис просит «добавьте SPF», а старая уже лежит рядом.
+  const INC = need.map((p) => p.spf);
+  const fresh = maildns.mergedSpf('', INC);
+  ok(`с нуля собирается корректно: ${fresh}`,
+     /^v=spf1 /.test(fresh) && fresh.includes('include:spf.smtp.bz') && / ~all$/.test(fresh));
+  const wasOther = maildns.mergedSpf('v=spf1 a mx include:_spf.yandex.net -all', INC);
+  ok('чужие механизмы не выброшены',
+     wasOther.includes(' a ') && wasOther.includes(' mx ') && wasOther.includes('include:_spf.yandex.net'));
+  ok('нового сервиса добавили', wasOther.includes('include:spf.smtp.bz'));
+  ok('v=spf1 остался один', (wasOther.match(/v=spf1/gi) || []).length === 1);
+  ok('all остался один и последним',
+     (wasOther.match(/all/gi) || []).length === 1 && wasOther.trim().endsWith('~all'));
+  ok('повторный прогон ничего не портит', maildns.mergedSpf(wasOther, INC) === wasOther);
 
-  // Регистрируем БЕЗ почтовых настроек — иначе игра потребует
-  // подтверждения по письму, которого в тесте некому доставить.
-  // Это не обход, а ровно то поведение, ради которого всё и делается:
-  // как только ключ задан, без подтверждения в игру не пускают.
-  srv = await startServer({});
-  await post('/api/register', null, { login: 'Владелец', email: 'own@test.ru', password: 'пароль123', country: 'ru' });
-  await post('/api/register', null, { login: 'Игрок', email: 'pl@test.ru', password: 'пароль123', country: 'ru' });
-  await stopServer(srv);
-  execFileSync(process.execPath, [pathx.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe' });
-  srv = await startServer(mailEnv);
+  console.log('\n── 3. Домена нет — так и сказано ──');
+  // Несуществующая зона .invalid: DNS не ответит ни при каких настройках
+  // сети, поэтому случай воспроизводится одинаково и в сети, и без неё.
+  const dead = await maildns.checkDomain('нет-такого-' + 'x'.repeat(20) + '.invalid');
+  ok('домен не признан готовым', dead.ok === false);
+  ok('и объяснено, что он вообще не отвечает', /не отвечает/i.test(dead.verdict));
+  ok('лишних проверок не печатается', dead.checks.length === 0);
 
-  const owner = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
+  console.log('\n── 4. Пустой домен не роняет проверку ──');
+  const none = await maildns.checkDomain('');
+  ok('вернулся ответ, а не исключение', !!none && none.ok === false);
+  ok('сказано, где искать причину', /APP_URL|EMAIL_FROM/.test(none.verdict));
 
-  console.log('\n── 1. Ключ с другой площадки — игра это понимает ──');
-  const r = await post('/api/admin/mail/diagnose', owner);
-  ok('маршрут существует', r.status === 200);
-  ok('рабочая площадка найдена', (r.data.hosts || []).some((h) => h.recognized === true && h.host === home.url));
-  ok('чужая помечена чужой', (r.data.hosts || []).some((h) => h.recognized === false && h.host === alien.url));
-  ok('видно, куда шлём сейчас', (r.data.hosts || []).some((h) => h.current && h.host === alien.url));
-  ok('вердикт объясняет ошибку сервиса', /не туда|другой площадке/i.test(r.data.verdict || ''));
-  ok('подсказана готовая строка для .env',
-     r.data.fix === `UNISENDER_URL=${home.url}/ru/transactional/api/v1/email/send.json`);
-  ok('ok=false, пока адрес не исправлен', r.data.ok === false);
-  ok('домены с рабочей площадки показаны',
-     (r.data.hosts.find((h) => h.host === home.url).domains || []).some((d) => d.name === 'aliance-general.ru' && d.verified));
-  ok('ключ не раскрыт целиком', !JSON.stringify(r.data).includes('testkey123'));
+  console.log('\n── 5. Диагностика без ключа ничего не делает ──');
+  // Проверять домен, когда отправка выключена, — сбивать с толку:
+  // владелец увидит зелёные записи и не поймёт, почему тишина.
+  let email = freshEmail({ EMAIL_FROM: 'Aliance Generals <noreply@aliance-general.ru>' });
+  let d = await email.diagnose();
+  ok('проверка пропущена', d.skipped === true);
+  ok('названа настоящая причина — нет ключа', /SMTPBZ_API_KEY/.test(d.verdict));
 
-  console.log('\n── 2. Подсказка действительно чинит отправку ──');
-  // Тот же ключ, но адрес уже правильный — как после правки .env
-  await stopServer(srv);
-  srv = await startServer(Object.assign({}, mailEnv, {
-    UNISENDER_URL: home.url + '/ru/transactional/api/v1/email/send.json',
-  }));
-  const owner2 = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
-  const r2 = await post('/api/admin/mail/diagnose', owner2);
-  ok('теперь площадка совпадает', r2.data.ok === true);
-  ok('лишних правок не советует', !r2.data.fix);
-  // И главное: письмо после этого реально уходит
-  const sent = await post('/api/admin/mail/preview', owner2, { id: 'verify', to: 'kto@example.com' });
-  ok('образец письма ушёл', sent.status === 200 && sent.data.ok === true);
+  console.log('\n── 6. Чужой отправитель ловится до всякого DNS ──');
+  // С адресом на localhost письма не дойдут ни при каких записях —
+  // проверять домен бессмысленно, надо чинить EMAIL_FROM.
+  email = freshEmail({ SMTPBZ_API_KEY: 'ключ', EMAIL_FROM: 'Aliance Generals <noreply@localhost>' });
+  d = await email.diagnose();
+  ok('проверка пропущена', d.skipped === true);
+  ok('сказано про EMAIL_FROM', /EMAIL_FROM/.test(d.verdict));
 
-  console.log('\n── 3. Мусор в ключе виден отдельно ──');
-  await stopServer(srv);
-  srv = await startServer(Object.assign({}, mailEnv, { UNISENDER_API_KEY: 'ключ с пробелом' }));
-  const owner3 = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
-  const r3 = await post('/api/admin/mail/diagnose', owner3);
-  ok('посторонние символы замечены', r3.data.keyDirty === true);
+  console.log('\n── 7. Мусор в ключе виден без сети ──');
+  // Лишний пробел или кавычка ломают заголовок Authorization, а глазом
+  // в редакторе это не заметно. Сервис при этом отвечает про доступ, и
+  // владелец идёт менять ключ вместо того, чтобы убрать пробел.
+  const dom = 'нет-такого-' + 'y'.repeat(20) + '.invalid';
+  email = freshEmail({
+    SMTPBZ_API_KEY: 'ключ с пробелом',
+    EMAIL_FROM: `Aliance Generals <noreply@${dom}>`,
+  });
+  d = await email.diagnose();
+  ok('проверка не пропущена — домен свой', d.skipped === false);
+  ok('мусор в ключе замечен', d.keyDirty === true);
+  ok('и вынесен в вердикт первым', /пробел или кавычк/i.test(d.verdict));
+  ok('ключ показан замаскированным', /…/.test(String(d.keyMasked)));
+  ok('целиком ключ наружу не отдаётся', !JSON.stringify(d).includes('ключ с пробелом'));
 
-  console.log('\n── 4. Универсальный адрес советуем раньше конкретной площадки ──');
-  // Поддержка Unisender подтвердила: есть адрес, который сам направляет
-  // запрос на площадку владельца ключа. Он и должен быть советом по
-  // умолчанию — прибитая площадка перестанет работать, если аккаунт
-  // переедет, и всё повторится сначала.
-  await stopServer(srv);
-  const universal = await fakePlatform('ok');   // «goapi»: ключ признаёт
-  srv = await startServer(Object.assign({}, mailEnv, {
-    UNISENDER_ANY_HOST: universal.url,
-    // Универсальный СПЕЦИАЛЬНО не первый в списке: иначе «первый рабочий»
-    // совпал бы с ним случайно, и проверка ничего бы не проверяла —
-    // такой тест зеленеет и при выкинутом приоритете.
-    UNISENDER_HOSTS: [alien.url, home.url, universal.url].join(','),
-    UNISENDER_URL: alien.url + '/ru/transactional/api/v1/email/send.json',
-  }));
-  const owner4 = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
-  const r4 = await post('/api/admin/mail/diagnose', owner4);
-  ok('советует именно универсальный адрес',
-     r4.data.fix === `UNISENDER_URL=${universal.url}/ru/transactional/api/v1/email/send.json`);
-  ok('а не конкретную площадку', !String(r4.data.fix).includes(home.url));
-  ok('но говорит, где живёт аккаунт', String(r4.data.verdict).includes(home.url));
-  ok('и объясняет причину отказов', /User with id/.test(r4.data.verdict || ''));
+  console.log('\n── 8. DMARC по ссылке не выдаётся за свою запись ──');
+  // Ловушка, на которую эта проверка сама чуть не попалась. Сервисы
+  // предлагают «DMARC в один клик»: в зоне появляется не своя
+  // TXT-запись, а CNAME на их поддомен. Запрос TXT при этом ПРОЙДЁТ ПО
+  // ССЫЛКЕ и вернёт чужую запись — на вид неотличимую от собственной.
+  // Проверишь TXT первым, и делегирование покажется своей записью:
+  // домен зависит от чужого аккаунта, а проверка про это молчит.
+  const V = maildns.dmarcVerdict;
+  const POLICY = ['v=DMARC1; p=none; rua=mailto:x@example.ru'];
 
-  console.log('\n── 5. Права: чужому проверка закрыта ──');
-  const plain = (await post('/api/login', null, { login: 'Игрок', password: 'пароль123' })).data.token;
-  ok('обычный игрок получает отказ', (await post('/api/admin/mail/diagnose', plain)).status >= 400);
+  const ownRec = V(POLICY, [], 'aliance-general.ru');
+  ok('своя TXT-запись признана своей', ownRec.own === true && ownRec.ok === true);
+  ok('и чужой зависимостью не считается', ownRec.borrowed === false);
+  ok(`показана как своя: «${ownRec.value}»`, /своя запись/.test(ownRec.value));
 
-  await stopServer(srv);
-  alien.s.close(); home.s.close(); universal.s.close();
-  try { fsx.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
+  // Ровно живой случай: CNAME на чужой сервис, а TXT по ссылке вернул
+  // его политику. Именно здесь проверка и обманывалась.
+  const viaCname = V(POLICY, ['aliance-general.ru.dmarc.postmarker.ru'], 'aliance-general.ru');
+  ok('запись есть — DMARC работает', viaCname.ok === true);
+  ok('но своей НЕ считается, хотя TXT вернулся', viaCname.own === false);
+  ok('и помечена как чужая зависимость', viaCname.borrowed === true);
+  ok(`видно, куда ведёт ссылка: «${viaCname.value}»`, /postmarker\.ru/.test(viaCname.value));
+
+  const inside = V([], ['dmarc.aliance-general.ru.'], 'aliance-general.ru');
+  ok('ссылка внутри своего домена чужой не считается', inside.borrowed === false);
+  ok('и точка в конце имени не мешает', /dmarc\.aliance-general\.ru$/.test(inside.value));
+
+  const missing = V([], [], 'aliance-general.ru');
+  ok('без записи — не ok', missing.ok === false);
+  ok('и сказано, что записи нет', /записи нет/.test(missing.value));
+  const junk = V(['v=spf1 ~all'], [], 'aliance-general.ru');
+  ok('чужая TXT на _dmarc за DMARC не сходит', junk.ok === false);
+
+  console.log('\n── 9. Панель получает всё, что ей нужно нарисовать ──');
+  const panel = fs.readFileSync(path.join(ROOT, 'public/js/admin2/mail.js'), 'utf8');
+  ok('кнопка проверки домена есть', /id="mail-diag"/.test(panel));
+  ok('показывается при любой настроенной отправке', /mail\.configured \?/.test(panel));
+  ok('рисует список проверок', /r\.checks \|\| \[\]/.test(panel));
+  ok('и готовую строку SPF', /r\.spfFix/.test(panel));
+  ok('с предупреждением, что запись правится, а не добавляется',
+     /может быть только ОДНА/.test(panel));
+  ok('Unisender из панели убран', !/unisender/i.test(panel));
+
+  try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);
-})().catch(async (e) => {
-  console.error('\n⛔ ' + (e && e.message));
-  await stopServer(srv);
-  process.exit(1);
-});
+})().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });

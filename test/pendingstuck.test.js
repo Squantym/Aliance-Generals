@@ -32,24 +32,37 @@ let srv = null, workDir = '';
 let mailMode = 'ok';
 const letters = [];
 
-function fakeUnisender() {
+// Двойник почтового сервиса. Формат обязан совпадать с настоящим:
+// SMTP.BZ принимает обычную форму, а не JSON, и ключ ждёт заголовком
+// Authorization. Двойник на JSON пропустил бы мимо себя весь настоящий
+// путь отправки — тест был бы зелёным при неработающей почте.
+// В letters складываем письмо в удобном виде: тема и разметка.
+// mailMode переключается по ходу теста: так проверяется отказ ПОСРЕДИ
+// работы, а не «сломано с самого начала».
+function fakeMailService() {
   return new Promise((r) => {
     const s = http.createServer((req, res) => {
       let b = ''; req.on('data', (c) => { b += c; });
       req.on('end', () => {
         res.setHeader('Content-Type', 'application/json');
         if (mailMode === 'fail') {
-          // Так отвечает сервис, когда кончился месячный лимит
-          res.writeHead(400);
-          res.end(JSON.stringify({ status: 'error', message: 'Monthly limit reached' }));
+          // Настоящий вид отказа сервиса: сырой английский текст, который
+          // игроку показывать нельзя, а владельцу — обязательно.
+          res.writeHead(429);
+          res.end(JSON.stringify({ success: false, message: 'Monthly limit reached' }));
           return;
         }
-        try { letters.push(JSON.parse(b).message); } catch (e) {}
+        const f = new URLSearchParams(b);
+        letters.push({
+          subject: f.get('subject') || '',
+          to: f.get('to') || '',
+          body: { html: f.get('html') || '' },
+        });
         res.writeHead(200);
-        res.end(JSON.stringify({ status: 'success', job_id: 'j' + letters.length }));
+        res.end(JSON.stringify({ success: true, id: 'j' + letters.length }));
       });
     });
-    s.listen(0, '127.0.0.1', () => r({ s, url: 'http://127.0.0.1:' + s.address().port + '/send.json' }));
+    s.listen(0, '127.0.0.1', () => r({ s, url: 'http://127.0.0.1:' + s.address().port + '/send' }));
   });
 }
 
@@ -90,19 +103,22 @@ const burn = async (login) => {
 };
 
 (async () => {
-  const uni = await fakeUnisender();
+  const mail = await fakeMailService();
   workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stuck-'));
   fs.mkdirSync(path.join(workDir, 'data'), { recursive: true });
   const env = Object.assign({}, process.env, {
     PORT: String(PORT), DISABLE_RATE_LIMIT: '1', DB_DRIVER: '', MONGODB_URI: '', NODE_ENV: 'test',
-    UNISENDER_API_KEY: 'k', UNISENDER_URL: uni.url,
+    // Второй фактор сотрудников проверяется отдельно (test/consents.test.js).
+    // Здесь он только мешал бы: тест про недоставку писем, а не про вход.
+    STAFF_2FA_REQUIRED: '0',
+    SMTPBZ_API_KEY: 'k', SMTPBZ_URL: mail.url,
     EMAIL_FROM: 'Aliance Generals <noreply@aliance-general.ru>',
     APP_URL: 'https://aliance-general.ru',
   });
   srv = await startServer(env);
 
   console.log('\n── 1. Отказ сервиса почты больше не выглядит успехом ──');
-  await post('/api/register', { login: 'Апчихба', email: 'a@t.ru', password: 'пароль123', country: 'ru' });
+  await post('/api/register', { login: 'Апчихба', email: 'a@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   await burn('Апчихба');                 // чтобы пауза между письмами не мешала
   mailMode = 'fail';
   const bad = await post('/api/resend-verification', { login: 'Апчихба' });
@@ -113,7 +129,7 @@ const burn = async (login) => {
   console.log('\n── 2. Владельцу видна настоящая причина ──');
   // Заводим владельца отдельно, пока почта ещё «работает»
   mailMode = 'ok';
-  await post('/api/register', { login: 'Владелец', email: 'own@t.ru', password: 'пароль123', country: 'ru' });
+  await post('/api/register', { login: 'Владелец', email: 'own@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   const ownerCode = codeFrom(letters[letters.length - 1]);
   await post('/api/verify-code', { login: 'Владелец', code: ownerCode });
   await stop(srv);
@@ -139,23 +155,23 @@ const burn = async (login) => {
 
   console.log('\n── 4. Выход второй: перерегистрация поверх выдохшейся ──');
   mailMode = 'ok';
-  await post('/api/register', { login: 'Заброшен', email: 'z@t.ru', password: 'пароль123', country: 'ru' });
-  const stillFresh = await post('/api/register', { login: 'Заброшен', email: 'other@t.ru', password: 'пароль123', country: 'ru' });
+  await post('/api/register', { login: 'Заброшен', email: 'z@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
+  const stillFresh = await post('/api/register', { login: 'Заброшен', email: 'other@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   ok('пока код живой — имя занято, чужую регистрацию не перебить', stillFresh.status >= 400);
 
   await burn('Заброшен');                // регистрация выдохлась
-  const retakeName = await post('/api/register', { login: 'Заброшен', email: 'new@t.ru', password: 'пароль123', country: 'ru' });
+  const retakeName = await post('/api/register', { login: 'Заброшен', email: 'new@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   ok('после этого имя можно занять заново', retakeName.status === 200 && retakeName.d.needCode === true);
 
   await burn('Заброшен');
-  const retakeMail = await post('/api/register', { login: 'СовсемДругой', email: 'new@t.ru', password: 'пароль123', country: 'ru' });
+  const retakeMail = await post('/api/register', { login: 'СовсемДругой', email: 'new@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   ok('и адрес почты тоже освобождается', retakeMail.status === 200);
 
   console.log('\n── 5. Подтверждённый аккаунт забрать нельзя ──');
   // Иначе перерегистрацией можно было бы затереть живого игрока
-  const takeLive = await post('/api/register', { login: 'Апчихба', email: 'evil@t.ru', password: 'пароль123', country: 'ru' });
+  const takeLive = await post('/api/register', { login: 'Апчихба', email: 'evil@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   ok('имя живого игрока защищено', takeLive.status >= 400 && /занят/i.test(takeLive.d.error || ''));
-  const takeLiveMail = await post('/api/register', { login: 'Злодей', email: 'a@t.ru', password: 'пароль123', country: 'ru' });
+  const takeLiveMail = await post('/api/register', { login: 'Злодей', email: 'a@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   ok('и его почта тоже', takeLiveMail.status >= 400 && /используется/i.test(takeLiveMail.d.error || ''));
   const stillWorks = await post('/api/login', { login: 'Апчихба', password: 'пароль123' });
   ok('живой аккаунт цел и пускает', stillWorks.status === 200);
@@ -163,11 +179,11 @@ const burn = async (login) => {
   console.log('\n── 6. Новый код после перерегистрации работает ──');
   const fresh = letters[letters.length - 1];
   const freshCode = codeFrom(fresh);
-  ok('письмо с кодом ушло на новый адрес', (fresh.recipients || [{}])[0].email === 'new@t.ru');
+  ok('письмо с кодом ушло на новый адрес', fresh.to === 'new@t.ru');
   const enter = await post('/api/verify-code', { login: 'СовсемДругой', code: freshCode });
   ok('код пускает в игру', enter.status === 200 && !!enter.d.token);
 
-  await stop(srv); uni.s.close();
+  await stop(srv); mail.s.close();
   try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);

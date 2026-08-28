@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Отписка от рассылки — Альянс Генералов</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/doc.css">
+  <link rel="icon" href="/img/favicon.png">
+</head>
+<body>
+  <div class="doc" style="max-width:560px">
+    <h1>Отписка от рассылки</h1>
+
+    <!-- Отписка выполняется методом POST по нажатию кнопки, а не самим
+         переходом по ссылке. Почтовые клиенты и антивирусы заранее
+         открывают ссылки из писем ради проверки — на GET человек
+         оказался бы отписан, ничего не нажимая, и потом не понял бы,
+         почему письма перестали приходить. -->
+    <div id="ask">
+      <p>Отписаться от новостей, акций и предложений игры «Альянс Генералов»?</p>
+      <p class="muted small">Служебные письма — код подтверждения почты, восстановление пароля,
+      уведомления о санкциях — приходить не перестанут: это не реклама, и отписаться от них
+      нельзя, иначе вы не смогли бы восстановить доступ к аккаунту.</p>
+      <button class="btn btn-orange mt" id="go" style="width:100%">Отписаться</button>
+      <p class="center mt"><a href="/" class="small">Ничего не менять и вернуться в игру</a></p>
+    </div>
+
+    <div id="done" style="display:none"></div>
+  </div>
+
+  <script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var u = q.get('u') || '';
+    var k = q.get('k') || '';
+    var ask = document.getElementById('ask');
+    var done = document.getElementById('done');
+
+    function show(html) { ask.style.display = 'none'; done.style.display = ''; done.innerHTML = html; }
+
+    if (!u || !k) {
+      show('<p>Ссылка неполная — похоже, почтовая программа обрезала её при пересылке.</p>'
+         + '<p class="muted small">Отписаться можно в самой игре: «Настройки» → «Согласия».</p>'
+         + '<p class="center mt"><a href="/" class="btn btn-orange" style="text-decoration:none">Открыть игру</a></p>');
+      return;
+    }
+
+    document.getElementById('go').onclick = function () {
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Отписываю…';
+      fetch('/api/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ u: u, k: k })
+      }).then(function (r) { return r.json(); }).then(function (r) {
+        // Ответ одинаков и для верной, и для неверной ссылки: иначе
+        // страница превращалась бы в способ проверять чужие
+        // идентификаторы игроков.
+        show('<p><b>Готово.</b> Рассылка на этот адрес больше не отправляется.</p>'
+           + '<p class="muted small">Передумаете — включить обратно можно в игре: '
+           + '«Настройки» → «Согласия». Служебные письма приходят по-прежнему.</p>'
+           + '<p class="center mt"><a href="/" class="btn btn-orange" style="text-decoration:none">Вернуться в игру</a></p>');
+      }).catch(function () {
+        btn.disabled = false;
+        btn.textContent = 'Отписаться';
+        show('<p>Не получилось связаться с сервером.</p>'
+           + '<p class="muted small">Попробуйте ещё раз позже или отпишитесь в игре: '
+           + '«Настройки» → «Согласия».</p>');
+      });
+    };
+  })();
+  </script>
+</body>
+</html>

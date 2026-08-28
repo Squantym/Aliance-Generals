@@ -184,6 +184,35 @@ window.MailEdit = {
     ? new Date(ms).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '—';
 
+  // Виды писем по-русски: в расходе лимита «verify» ничего не говорит
+  const KIND_RU = {
+    verify: 'подтверждения почты', reset: 'восстановление пароля',
+    welcome: 'приветственные', news: 'рассылка', test: 'проверочные',
+  };
+
+  // Полоса расхода. Цвет меняется у порога: пока запас есть — обычный,
+  // на исходе — предупреждающий. Число рядом обязательно: полоса
+  // показывает «примерно», а решение принимается по цифрам.
+  const bar = (label, used, limit) => {
+    if (!limit) return '';
+    const pct = Math.min(100, Math.round((used / limit) * 100));
+    const cls = pct >= 90 ? 'is-danger' : (pct >= 70 ? 'is-warn' : '');
+    return `
+      <div class="mail-bar-row">
+        <div class="mail-bar-head">
+          <span>${label}</span>
+          <span><b>${used}</b> из ${limit} · ${pct}%</span>
+        </div>
+        <div class="mail-bar"><i class="${cls}" style="width:${pct}%"></i></div>
+      </div>`;
+  };
+
+  const progress = (done, total) => {
+    if (!total) return '';
+    const pct = Math.min(100, Math.round((done / total) * 100));
+    return `<div class="mail-bar" style="margin:6px 0"><i style="width:${pct}%"></i></div>`;
+  };
+
   async function render(el) {
     el.innerHTML = '<div class="a2-title">Письма игрокам</div><div class="loading">Загружаю…</div>';
     let d = null;
@@ -198,6 +227,7 @@ window.MailEdit = {
     const aud = d.audience || {};
     const bc = (d.broadcast && d.broadcast.last) || null;
     const running = !!(d.broadcast && d.broadcast.running);
+    const q = mail.quota || null;
 
     el.innerHTML = `
       <div class="a2-title">Письма игрокам</div>
@@ -206,17 +236,55 @@ window.MailEdit = {
         <h3 style="margin:0">Состояние отправки</h3>
         <p class="a2-muted" style="margin:6px 0 0">
           ${mail.configured
-            ? `Сервис подключён. Отправитель: <b>${UI.esc(mail.from || '—')}</b>.`
+            ? `Отправитель: <b>${UI.esc(mail.from || '—')}</b>`
             : '<b style="color:var(--red)">Отправка не настроена.</b> Письма никуда не уходят, а новым игрокам почта подтверждается сама. Пока это так, правка шаблонов ни на что не влияет.'}
         </p>
+        ${(mail.chain || []).length ? `
+          <div class="mail-chain">
+            ${mail.chain.map((p, i) => `
+              <span class="mail-chain-item ${i === 0 ? 'is-main' : ''}">
+                ${i === 0 ? '① основной' : '② запасной'}: <b>${UI.esc(p.name)}</b>
+              </span>`).join('<span class="mail-chain-arrow">→</span>')}
+          </div>
+          ${mail.hasBackup
+            ? '<p class="a2-muted small" style="margin:6px 0 0">Откажет основной — письмо уйдёт через запасной само.</p>'
+            : '<p class="a2-muted small" style="margin:6px 0 0;color:var(--orange-1)">Сервис один. Откажет он — письма перестанут уходить совсем, и регистрация встанет.</p>'}
+        ` : ''}
         ${mail.hint ? `<p class="a2-muted" style="margin-top:6px">${UI.esc(mail.hint)}</p>` : ''}
-        ${mail.provider === 'unisender' ? `
+        ${mail.configured ? `
           <div class="a2-row" style="margin-top:10px">
-            <button class="btn btn-inline" id="mail-diag">🔎 Проверить сервис</button>
-            <span class="a2-muted small">ничего не отправляет, лимит писем не тратит</span>
+            <button class="btn btn-inline" id="mail-diag">🔎 Проверить домен</button>
+            <span class="a2-muted small">читает записи DNS, ничего не отправляет и лимит не тратит</span>
           </div>
           <div id="mail-diag-out"></div>` : ''}
       </div>
+
+      ${q ? `
+      <div class="a2-card">
+        <h3 style="margin:0">Расход лимита</h3>
+        <p class="a2-muted small" style="margin:6px 0 10px">
+          Игра считает письма сама и останавливается заранее. Иначе тариф кончился бы
+          молча — и первым перестал бы работать не список новостей, а подтверждение почты
+          у новых игроков.
+        </p>
+
+        ${bar('За сутки', q.used.day, q.limits.day)}
+        ${bar('За месяц', q.used.month, q.limits.month)}
+
+        <div class="mail-quota-facts">
+          <div><span class="a2-muted">Осталось сегодня</span><b>${q.left.day}</b></div>
+          <div><span class="a2-muted">Осталось в месяце</span><b>${q.left.month}</b></div>
+          <div><span class="a2-muted">Доступно рассылке</span><b>${q.left.broadcast}</b></div>
+          <div><span class="a2-muted">Запас на служебные</span><b>${q.limits.reserve}</b></div>
+        </div>
+        <p class="a2-muted small" style="margin:8px 0 0">
+          Запас в ${q.limits.reserve} писем рассылке недоступен: он держится на подтверждения
+          почты и восстановление паролей. Месячный счётчик обнулится ${UI.esc(q.resetsAt)}.
+        </p>
+        ${Object.keys(q.byKind || {}).length ? `
+          <p class="a2-muted small" style="margin:8px 0 0">На что ушли в этом месяце:
+            ${Object.entries(q.byKind).map(([k, v]) => `${UI.esc(KIND_RU[k] || k)} — ${v}`).join(' · ')}</p>` : ''}
+      </div>` : ''}
 
       ${(d.templates || []).map((t) => `
         <div class="a2-card" data-tpl="${UI.esc(t.id)}">
@@ -285,27 +353,46 @@ window.MailEdit = {
 
       <div class="a2-card">
         <h3 style="margin:0">Рассылка</h3>
-        <p class="a2-muted" style="margin:6px 0">Уходит текст шаблона «Новостная рассылка» — тот,
-          что выше. Получателей сейчас: <b>${aud.ready || 0}</b> из ${aud.total || 0} игроков
-          (без подтверждённой почты — ${aud.unverified || 0}, вовсе без почты — ${aud.noEmail || 0}).</p>
-        <p class="a2-muted" style="margin:0 0 8px">Шлём только на подтверждённые адреса. Неподтверждённый
-          адрес — это чаще всего опечатка, а письма на несуществующие ящики портят репутацию отправителя,
-          после чего в спам начинают уходить и подтверждения регистрации.</p>
+        <p class="a2-muted" style="margin:6px 0 10px">Уходит текст шаблона «Новостная рассылка».
+          Шлём только на подтверждённые адреса живых игроков: письма на несуществующие ящики
+          портят репутацию отправителя, после чего в спам начинают уходить и подтверждения регистрации.</p>
+
+        <div class="mail-groups">
+          ${(aud.groups || []).map((g) => `
+            <label class="mail-group ${g.count === 0 || !g.fits ? 'is-off' : ''}">
+              <input type="radio" name="bc-group" value="${UI.esc(g.id)}" ${g.id === 'all' ? 'checked' : ''}
+                ${g.count === 0 || !g.fits ? 'disabled' : ''}>
+              <span class="mail-group-name">${UI.esc(g.name)} <b>${g.count}</b></span>
+              <span class="mail-group-about">${UI.esc(g.about)}</span>
+              ${!g.fits && g.count > 0 ? '<span class="mail-group-warn">не влезает в остаток лимита</span>' : ''}
+            </label>`).join('')}
+        </div>
+
+        <p class="a2-muted small" style="margin:10px 0 0">
+          Всего игроков ${aud.total || 0}: без подтверждённой почты — ${aud.unverified || 0},
+          вовсе без почты — ${aud.noEmail || 0}${aud.banned ? `, в бане — ${aud.banned}` : ''}.
+          Рассылке сейчас доступно <b>${aud.canSend || 0}</b> писем.
+        </p>
 
         ${bc ? `
-          <div class="a2-card" style="margin:8px 0;background:rgba(255,255,255,.03)">
+          <div class="a2-card" style="margin:10px 0 0;background:rgba(255,255,255,.03)">
             <div><b>${running ? 'Идёт рассылка' : 'Прошлая рассылка'}</b>
-              <span class="a2-muted">${dt(bc.startedAt)}${bc.by ? ' · запустил ' + UI.esc(bc.by) : ''}</span></div>
-            <div class="a2-muted">Отправлено ${bc.sent} из ${bc.total}${bc.failed ? ` · не дошло ${bc.failed}` : ''}${running ? ` · осталось ${bc.left}` : ''}${bc.stopped ? ' · остановлена вручную' : ''}</div>
+              <span class="a2-muted">${dt(bc.startedAt)}${bc.by ? ' · запустил ' + UI.esc(bc.by) : ''}${bc.audience ? ' · ' + UI.esc(bc.audience) : ''}</span></div>
+            ${running ? progress(bc.sent, bc.total) : ''}
+            <div class="a2-muted">Отправлено ${bc.sent} из ${bc.total}${bc.failed ? ` · не дошло ${bc.failed}` : ''}${running ? ` · осталось ${bc.left}` : ''}</div>
+            ${bc.stopped ? `<div style="color:var(--orange-1);margin-top:4px">
+              ⏹ Остановлена${bc.stopReason ? ': ' + UI.esc(bc.stopReason) : ' вручную'}
+              ${bc.left ? ` Не отправлено: ${bc.left}.` : ''}</div>` : ''}
             ${(bc.errors || []).length ? `<div class="a2-muted small" style="margin-top:6px">Ошибки:
               ${bc.errors.map((e) => `${UI.esc(e.email)} — ${UI.esc(e.error)}`).join('<br>')}</div>` : ''}
           </div>` : ''}
 
-        <div class="a2-row">
+        <div class="a2-row" style="margin-top:10px">
           ${running
             ? '<button class="btn btn-red" id="bc-stop">⏹ Остановить рассылку</button>'
-            : `<button class="btn btn-orange" id="bc-start" ${mail.configured ? '' : 'disabled'}>✉️ Разослать всем (${aud.ready || 0})</button>`}
+            : `<button class="btn btn-orange" id="bc-start" ${mail.configured && (aud.canSend || 0) > 0 ? '' : 'disabled'}>✉️ Разослать</button>`}
           <button class="btn btn-inline" id="bc-refresh">Обновить</button>
+          ${running ? '<span class="a2-muted small">обновляется само каждые 5 секунд</span>' : ''}
         </div>
       </div>`;
 
@@ -356,32 +443,56 @@ window.MailEdit = {
 
     const start = document.getElementById('bc-start');
     if (start) start.onclick = async () => {
+      const picked = el.querySelector('input[name="bc-group"]:checked');
+      const gid = picked ? picked.value : 'all';
+      const g = (aud.groups || []).find((x) => x.id === gid) || { name: 'Всем', count: aud.ready || 0 };
+      // В подтверждении — конкретика: кому, сколько и что останется от
+      // лимита. Иначе «разослать всем» нажимается на автомате, а потом
+      // выясняется, что месячный запас ушёл за один вечер.
       const ok = await UI.confirm(
-        `Разослать письмо ${aud.ready || 0} игрокам? Отменить уже ушедшие письма нельзя.
-         Проверьте текст образцом на свою почту, если ещё не проверяли.`,
-        { title: 'Рассылка', icon: '✉️', okText: 'Разослать' });
+        `Группа «${g.name}» — ${g.count} писем.\n\n`
+        + `После рассылки в месячном лимите останется ${Math.max(0, (q ? q.left.month : 0) - g.count)}.\n`
+        + `Отменить уже ушедшие письма нельзя.\n\n`
+        + `Проверьте текст образцом на свою почту, если ещё не проверяли.`,
+        { title: 'Рассылка', icon: '✉️', okText: `Разослать (${g.count})` });
       if (!ok) return;
-      try { await API.post('/api/admin/mail/broadcast', {}); render(el); }
+      try { await API.post('/api/admin/mail/broadcast', { group: gid }); render(el); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
     const stop = document.getElementById('bc-stop');
     if (stop) stop.onclick = async () => {
+      const ok = await UI.confirm(
+        'Остановить рассылку? Уже отправленные письма не вернуть, '
+        + 'а продолжить с того же места будет нельзя — только запустить заново, '
+        + 'и тогда получившие письмо получат его второй раз.',
+        { title: 'Остановить рассылку', icon: '⏹', danger: true, okText: 'Остановить' });
+      if (!ok) return;
       try { await API.post('/api/admin/mail/broadcast', { stop: true }); render(el); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
     const refresh = document.getElementById('bc-refresh');
     if (refresh) refresh.onclick = () => render(el);
 
-    // ── Проверка площадки Unisender ────────────────────────────────
-    // Ошибка «User with id … not found» читается как поломка аккаунта, а
-    // на деле обычно значит, что ключ выдан на другой площадке сервиса.
-    // Без этой кнопки владелец идёт в поддержку и ждёт сутками то, что
-    // чинится одной строчкой в .env.
+    // Пока рассылка идёт — обновляем сами. Иначе владелец смотрит на
+    // застывшие цифры и не понимает, идёт процесс или встал.
+    if (running) {
+      const t = setTimeout(() => { if (document.body.contains(el)) render(el); }, 5000);
+      A2._mailTimer = t;
+    } else if (A2._mailTimer) {
+      clearTimeout(A2._mailTimer); A2._mailTimer = null;
+    }
+
+    // ── Проверка домена ────────────────────────────────────────────
+    // Когда письма «не доходят», подозреваемых трое: ключ, сервис и
+    // домен. Первые двое отвечают сами — их ответ виден дословно при
+    // тестовой отправке. Домен молчит: записи не прописаны, сервис
+    // письмо принял, почтовик получателя выбросил, и никто ничего не
+    // сказал. Эта кнопка спрашивает у DNS напрямую.
     const diag = document.getElementById('mail-diag');
     if (diag) diag.onclick = async () => {
       const out = document.getElementById('mail-diag-out');
       diag.disabled = true;
-      out.innerHTML = '<p class="a2-muted" style="margin-top:8px">Спрашиваю площадки…</p>';
+      out.innerHTML = '<p class="a2-muted" style="margin-top:8px">Спрашиваю DNS…</p>';
       let r = null;
       try { r = await API.post('/api/admin/mail/diagnose', {}); }
       catch (e) {
@@ -396,25 +507,25 @@ window.MailEdit = {
         return;
       }
 
-      const rows = (r.hosts || []).map((h) => {
-        const mark = h.recognized === true ? '✅' : (h.recognized === false ? '⛔' : '⚠️');
-        const now = h.current ? ' <span class="a2-pill">сюда шлём сейчас</span>' : '';
-        const doms = (h.domains || []).map((d) =>
-          `<div class="a2-muted small" style="margin-left:18px">• ${UI.esc(d.name)}${d.verified ? ' — подтверждён' : ' — НЕ подтверждён'}</div>`).join('');
-        return `<div style="margin-top:4px">${mark} <code>${UI.esc(h.host)}</code>${now}
-          <div class="a2-muted small" style="margin-left:18px">${UI.esc(h.message)}</div>${doms}</div>`;
-      }).join('');
+      const rows = (r.checks || []).map((c) => `
+        <div style="margin-top:6px">
+          ${c.ok ? '✅' : '⛔'} <b>${UI.esc(c.title)}</b>
+          <div class="a2-muted small" style="margin-left:18px;word-break:break-all">${UI.esc(c.value)}</div>
+          ${c.hint ? `<div class="small" style="margin-left:18px;color:var(--orange-1)">${UI.esc(c.hint)}</div>` : ''}
+        </div>`).join('');
 
       out.innerHTML = `
         <div class="a2-card" style="margin-top:8px;background:rgba(255,255,255,.03)">
-          <div class="a2-muted small">Ключ: <code>${UI.esc(r.keyMasked || '—')}</code> · длина ${r.keyLength || 0}
+          <div class="a2-muted small">Домен: <code>${UI.esc(r.domain || '—')}</code>
+            · ключ <code>${UI.esc(r.keyMasked || '—')}</code> · длина ${r.keyLength || 0}
             ${r.keyDirty ? ' · <b style="color:var(--red)">в ключе посторонние символы (пробел, кавычка, перенос)</b>' : ''}</div>
+          ${r.panel ? `<div class="a2-muted small">Записи правятся здесь: ${UI.esc(r.panel)}</div>` : ''}
           ${rows}
           <p style="margin:10px 0 0"><b>${UI.esc(r.verdict || '')}</b></p>
-          ${r.fix ? `
-            <p class="a2-muted" style="margin:8px 0 4px">Впишите строку в <code>.env</code> и перезапустите
-              (<code>pm2 restart generals-game</code>):</p>
-            <input readonly value="${UI.esc(r.fix)}" onclick="this.select()"
+          ${r.spfFix ? `
+            <p class="a2-muted" style="margin:8px 0 4px">SPF в домене может быть только ОДНА.
+              Не добавляйте вторую запись — <b>исправьте существующую</b> на эту строку:</p>
+            <input readonly value="${UI.esc(r.spfFix)}" onclick="this.select()"
               style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);color:var(--text);
                      border:1px solid var(--border);border-radius:8px;
                      font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">` : ''}

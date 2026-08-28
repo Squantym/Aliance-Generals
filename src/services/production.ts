@@ -121,7 +121,7 @@ function buyWorkshop(user: User, notices: Notices) {
   checkUnlocked(user);
   const price = nextWorkshopPrice(user);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
-  user.gold -= price;
+  player.spendGold(user, price, 'production');
   user.workshops++;
   notices.push(`🏭 Построен цех №${user.workshops}. Свободных линий: ${user.workshops - slotsUsed(user)}.`);
   return { workshops: user.workshops };
@@ -192,7 +192,7 @@ function boostProcess(user: User, processId: string, notices: Notices) {
   if (proc.finishesAt <= Date.now()) throw new u.ApiError('Процесс уже завершён');
   const cost = config.MODERN.BOOST_GOLD_COST;
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно ${cost})`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'production');
   proc.finishesAt = Date.now(); // refresh заберёт его при следующем запросе
   notices.push(`⚡ Модернизация «${proc.unitName}» ускорена! Партия готова.`);
   return { ok: true };

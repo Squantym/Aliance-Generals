@@ -389,8 +389,16 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     res.end('Not found');
     return;
   }
-  if (rel === '/terms' || rel === '/terms/') rel = '/terms.html';
-  if (rel === '/privacy' || rel === '/privacy/') rel = '/privacy.html';
+  // Короткие адреса документов: их пишут в письмах и переписке руками,
+  // и «/terms» набрать проще, чем «/terms.html». Список закрытый —
+  // произвольное дописывание .html открыло бы доступ к чужим файлам.
+  const SHORT_DOCS: Record<string, string> = {
+    terms: 'terms.html', rules: 'rules.html', payments: 'payments.html',
+    privacy: 'privacy.html', cookies: 'cookies.html',
+    consent: 'consent-pdn.html', unsubscribe: 'unsubscribe.html',
+  };
+  const shortName = rel.replace(/^\/|\/$/g, '');
+  if (SHORT_DOCS[shortName]) rel = '/' + SHORT_DOCS[shortName];
   const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
 
@@ -625,6 +633,35 @@ function createApp() {
                 banInfo: banPayload,
               }, acceptEncoding);
             }
+            // ── Режим обслуживания ──────────────────────────────
+            // Игру закрываем ВСЕМ, кроме сотрудников: обновление меняет
+            // данные на ходу, и запрос, пришедший в этот момент, может
+            // оставить в базе полурассчитанный бой.
+            //
+            // Сотрудников пускаем всегда — иначе снять режим будет
+            // нечем: панель тоже часть игры.
+            //
+            // /api/me пропускаем и обычному игроку: он должен войти и
+            // увидеть окно с причиной и сроком, а не пустую ошибку.
+            // Ровно та же логика, что у блокировки аккаунта выше.
+            try {
+              const maint = require('../services/maintenance');
+              if (maint.isOn()) {
+                let isStaff = false;
+                try { isStaff = require('../services/roles').zonesFor(user).length > 0; } catch (e) {}
+                if (!isStaff) {
+                  const info = maint.view();
+                  if (pathname === '/api/me') {
+                    return sendJson(res, 200, { maintenance: info, name: user.name }, acceptEncoding);
+                  }
+                  return sendJson(res, 503, {
+                    error: info.reason,
+                    maintenance: info,
+                  }, acceptEncoding);
+                }
+              }
+            } catch (e) { /* модуль недоступен — не запираем игру из-за этого */ }
+
             if (found.opts.admin) {
               // Полный доступ определяет модуль ролей: сейчас это только
               // владелец. Старое поле isAdmin само по себе прав не даёт —
@@ -644,6 +681,31 @@ function createApp() {
                 // осознанная попытка, а не случайность: логируем с именем
                 console.warn(`🛡  Игрок «${user.name}» (id ${user.id}, ip ${reqCtx.ip}) пытался вызвать ${found.method} ${pathname}`);
                 return sendJson(res, 403, { error: 'Недостаточно прав для этого раздела' }, acceptEncoding);
+              }
+              // Второй фактор у сотрудников. Документы обещают 2FA
+              // администраторов, а добровольная 2FA — это «включил, кто
+              // захотел»: украденный пароль одного невключившего
+              // открывает чужие аккаунты, переписку и платежи.
+              //
+              // Запрет стоит здесь, на входе в ПАНЕЛЬ, а не на входе в
+              // игру. Иначе сотрудник, у которого сел телефон с
+              // приложением-аутентификатором, оказался бы заперт снаружи
+              // целиком — включая обычную игру. Так он играет как все,
+              // а служебный доступ включается после настройки второго
+              // фактора. Выключается через STAFF_2FA_REQUIRED=0.
+              if (String(process.env.STAFF_2FA_REQUIRED || '1') !== '0') {
+                let has2fa = true;
+                try { has2fa = require('../services/twoFactor').isEnabled(user); } catch (e) { has2fa = true; }
+                // Ручки самого второго фактора обязаны оставаться
+                // открытыми: иначе включить его будет нечем.
+                const setupPath = /^\/api\/2fa\//.test(pathname);
+                if (!has2fa && !setupPath) {
+                  console.warn(`🛡  Служебный доступ «${user.name}» отклонён: не включён второй фактор.`);
+                  return sendJson(res, 403, {
+                    error: 'Служебный доступ закрыт, пока не включён второй фактор входа. '
+                      + 'Включите его в игре: «Настройки» → «Аккаунт» → «Второй фактор».',
+                  }, acceptEncoding);
+                }
               }
               // Необязательный белый список адресов: если ADMIN_IPS задан, админские
               // запросы принимаются только с перечисленных адресов. Даже угнанная

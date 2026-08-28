@@ -53,7 +53,7 @@ function changeName(user: User, newName: string, notices: Notices) {
 
   const price = namePrice(user);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
-  user.gold -= price;
+  require('./player').spendGold(user, price, 'passport');
   const oldName = user.name;
   user.name = newName;
   ensurePassport(user);
@@ -71,7 +71,7 @@ function changeCountry(user: User, newCountry: string, notices: Notices) {
 
   const price = countryPrice(user);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
-  user.gold -= price;
+  require('./player').spendGold(user, price, 'passport');
   const oldCountry = user.country;
   user.country = newCountry;
   ensurePassport(user);

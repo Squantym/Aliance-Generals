@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Идёт обновление — Альянс Генералов</title>
+  <meta name="robots" content="noindex">
+  <!--
+    Страница nginx на время, когда сервер игры физически не отвечает —
+    то есть на секунды самого перезапуска. Всё остальное время экран
+    обновления рисует сама игра.
+
+    ВАЖНО: страница обязана быть САМОДОСТАТОЧНОЙ. Стили и скрипт —
+    внутри файла, картинок нет. Внешние файлы отдаёт тот же сервер,
+    который сейчас лежит: страница про недоступность сервера, которая
+    сама тянет с него оформление, приедет без оформления.
+
+    Установка описана в ОБНОВЛЕНИЯ-И-ТЕСТ.md:
+      sudo cp public/maintenance.html /var/www/maintenance/
+  -->
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex;
+      align-items: center; justify-content: center; padding: 16px;
+      background: #0d0f0a;
+      color: #e8e3d6;
+      font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    .box {
+      max-width: 380px; width: 100%; text-align: center;
+      background: linear-gradient(160deg, #1b1a14, #100e0b);
+      border: 1px solid #3a352a; border-radius: 14px;
+      padding: 28px 20px 22px; box-shadow: 0 14px 50px rgba(0,0,0,.7);
+    }
+    .icon { font-size: 42px; line-height: 1; }
+    h1 { font-size: 19px; margin: 12px 0 0; color: #d9a546; }
+    p { font-size: 14px; line-height: 1.55; margin: 12px 0 0; }
+    .note { font-size: 12.5px; color: #8a8074; }
+    .dots { margin-top: 18px; display: flex; gap: 6px; justify-content: center; }
+    .dots span {
+      width: 7px; height: 7px; border-radius: 50%; background: #d9a546;
+      opacity: .25; animation: p 1.4s infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: .2s; }
+    .dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes p { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="icon">🛠</div>
+    <h1>Идёт обновление</h1>
+    <p>Ставим новую версию игры. Это займёт несколько минут.</p>
+    <p class="note">Страница откроется сама, как только игра заработает —
+    обновлять её вручную не нужно. Прогресс, армия и ресурсы на месте:
+    обновление их не трогает.</p>
+    <div class="dots"><span></span><span></span><span></span></div>
+  </div>
+
+  <script>
+  // Раз в десять секунд стучимся на сервер. Ответил — значит игра
+  // поднялась, перезагружаем страницу.
+  //
+  // Запрос идёт с обходом кеша: браузер охотно отдаёт сохранённый ответ
+  // и на живом сервере, и тогда страница висела бы вечно.
+  (function () {
+    setInterval(function () {
+      fetch('/api/world?_=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { if (r.ok) location.reload(); })
+        .catch(function () { /* ещё поднимается — ждём дальше */ });
+    }, 10000);
+  })();
+  </script>
+</body>
+</html>

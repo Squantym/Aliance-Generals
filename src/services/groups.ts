@@ -227,7 +227,7 @@ function hireDiplomat(user: User, kind: string, notices: Notices) {
   if (!g || g.leaderId !== user.id) throw new u.ApiError(`Нанять дипломата может только лидер ${def.label.toLowerCase()}`);
   const cost = diplomatCost(g);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'group');
   try { require('./stats').track(user, 'goldSpent', 'other', cost); } catch (e) {}
   g.diplomats = (g.diplomats || 0) + 1;
   db.save(def.coll);

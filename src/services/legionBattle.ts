@@ -1447,7 +1447,7 @@ function restoreForBattle(user: User, kind: string, notices: Notices) {
   if (Math.floor(item.res.cur) >= Math.floor(item.max)) throw new u.ApiError('Этот ресурс уже полный');
   if ((user.gold || 0) < item.cost) throw new u.ApiError(`Нужно ${item.cost} золота`);
 
-  user.gold -= item.cost;
+  player.spendGold(user, item.cost, 'legion');
   try { require('./stats').track(user, 'goldSpent', 'other', item.cost); } catch (e) {}
   item.res.cur = item.max;
   item.res.t = now();

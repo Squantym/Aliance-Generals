@@ -25,6 +25,8 @@ import db = require('../core/db');
 import u = require('../core/utils');
 import email = require('./email');
 import brand = require('../core/brand');
+import quota = require('./mailQuota');
+import consent = require('./consent');
 import type { Notices } from '../types';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
@@ -232,12 +234,14 @@ function leftovers(text: string): string[] {
 
 // Снимаем скобки с того, что подставить не удалось.
 //
-// Зачем вообще: двойные фигурные скобки — это ЕЩЁ И синтаксис самого
-// Unisender. Нераспознанное {{…}} уезжает к нему, он видит свою
-// подстановку с кириллицей внутри и отклоняет письмо целиком:
+// Зачем вообще: двойные фигурные скобки — это ЕЩЁ И синтаксис подстановок
+// у почтовых сервисов. Нераспознанное {{…}} уезжает к сервису, он видит
+// свою подстановку с кириллицей внутри и отклоняет письмо ЦЕЛИКОМ —
+// так было с прежним сервисом:
 //   Invalid substitution format 'Альянс Генералов'
 // То есть опечатка в шаблоне превращалась в наглухо несработавшую
 // регистрацию, а причина была написана на языке чужого сервиса.
+// Сервис сменится — грабли останутся, поэтому чистим у себя.
 //
 // Текст оставляем, скобки убираем: владелец, написавший
 // «Подтверждение почты — {{Альянс Генералов}}», хотел увидеть в теме
@@ -362,6 +366,29 @@ function missingVars(id: string, html: string): string[] {
   return need;
 }
 
+// Проверка при старте сервера. Сохранённый шаблон живёт в базе и
+// заводские улучшения его не догоняют: письмо подтверждения, сохранённое
+// до появления кода, продолжало уходить с одной кнопкой, а форма
+// регистрации требовала код. Игрок оказывался в тупике, и понять это
+// можно было только по его жалобе. Теперь сервер говорит об этом сам,
+// при каждом запуске.
+function warnStaleTemplates(): string[] {
+  const bad: string[] = [];
+  const saved = store();
+  for (const id of Object.keys(DEFAULTS)) {
+    if (!saved[id]) continue;
+    const miss = missingVars(id, saved[id].html || '');
+    if (miss.length) bad.push(`«${DEFAULTS[id].name}» — нет ${miss.join(', ')}`);
+  }
+  if (bad.length) {
+    console.warn('⚠️  Шаблоны писем устарели:');
+    for (const b of bad) console.warn('     ' + b);
+    console.warn('     Письма уходят неполными. Панель → «Письма» → «Вернуть заводской».');
+    console.warn('     Пока не поправите — недостающее дописывается в письмо автоматически.');
+  }
+  return bad;
+}
+
 // ── Панель: список шаблонов ────────────────────────────────────────
 function list() {
   return {
@@ -463,7 +490,7 @@ async function sendPreview(id: string, to: string, playerName: string) {
   const addr = String(to || '').trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) throw new u.ApiError('Укажите адрес, куда отправить образец');
   const r = render(id, { имя: playerName || 'Боец', код: '482913', ссылка: `${APP_URL}/#пример-ссылки` });
-  const res = await email.sendMail(addr, '[образец] ' + r.subject, r.html);
+  const res = await email.sendMail(addr, '[образец] ' + r.subject, r.html, 'test');
   if (!res.sent) throw new u.ApiError('Письмо не ушло: ' + (res.error || 'причина неизвестна'));
   return { ok: true, to: addr };
 }
@@ -479,10 +506,12 @@ type Job = {
   startedAt: number; finishedAt: number;
   subject: string;
   total: number; sent: number; failed: number;
-  queue: Array<{ id: string; email: string; name: string }>;
+  queue: Array<{ id: string; email: string; name: string; unsub?: string }>;
   errors: Array<{ email: string; error: string }>;
   by: string;
   stopped?: boolean;
+  stopReason?: string;      // почему встала: рука владельца или лимит
+  audience?: string;        // кому слали — видно в истории
 };
 
 function job(): Job | null {
@@ -502,8 +531,34 @@ function tickSend(): void {
     console.log(`✉️  Рассылка закончена: отправлено ${j.sent}, не дошло ${j.failed}`);
     return;
   }
+  // Лимит проверяем перед КАЖДЫМ письмом, а не только на старте:
+  // рассылка идёт минутами, за это время лимит могли доесть
+  // регистрации, а упереться в отказ сервиса посреди рассылки — значит
+  // получить полсотни одинаковых ошибок в журнале вместо внятного
+  // «лимит кончился, продолжим завтра».
+  const allow = quota.check('news');
+  if (!allow.ok) {
+    j.stopped = true;
+    j.stopReason = allow.reason;
+    db.save('broadcast');
+    console.warn(`✉️  Рассылка остановлена: ${allow.reason} Осталось в очереди: ${j.queue.length + 1}`);
+    return;
+  }
+
   const r = render('news', { имя: next.name });
-  email.sendMail(next.email, r.subject, r.html)
+  // Ссылка отписки обязана быть в КАЖДОМ рекламном письме, и добавляем
+  // её здесь, а не в шаблоне: шаблон правит владелец из панели и может
+  // её случайно стереть. Служебные письма этой ссылки не получают —
+  // отписаться от кода подтверждения нельзя.
+  const html = r.html + `
+    <div style="max-width:600px;margin:0 auto;padding:14px 24px 24px;
+                font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                line-height:1.6;color:#8a8074;text-align:center">
+      Вы получили это письмо, потому что согласились на новости и акции.<br>
+      <a href="${escapeHtml(next.unsub || APP_URL)}" style="color:#8a8074">Отписаться от рассылки</a>
+      — служебные письма о безопасности и восстановлении доступа приходить не перестанут.
+    </div>`;
+  email.sendMail(next.email, r.subject, html, 'news')
     .then((res: any) => {
       const cur = job();
       if (!cur) return;
@@ -533,6 +588,7 @@ function broadcastStatus() {
       startedAt: j.startedAt, finishedAt: j.finishedAt,
       subject: j.subject, total: j.total, sent: j.sent, failed: j.failed,
       left: j.queue.length, by: j.by, stopped: !!j.stopped,
+      stopReason: j.stopReason || '', audience: j.audience || '',
       errors: j.errors.slice(0, 20),
     },
   };
@@ -542,25 +598,100 @@ function broadcastStatus() {
 // адрес — это чаще всего опечатка, и письма на него бьют по репутации
 // отправителя, из-за которой потом в спам уходят ВСЕ письма, включая
 // подтверждения регистрации.
-function recipients(allUsers: Record<string, any>) {
-  return Object.values(allUsers)
-    .filter((p: any) => p && !p.isBot && p.emailVerified && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(p.email || '')))
-    .map((p: any) => ({ id: p.id, email: String(p.email), name: String(p.name || 'Генерал') }));
+// ── Кому уходит рассылка ───────────────────────────────────────────
+// Раньше было одно правило «всем с подтверждённой почтой». Для живой
+// игры этого мало: письмо новичку, который зашёл вчера, и письмо тому,
+// кто пропал полгода назад, — разные письма и разная цена. А цена теперь
+// имеет значение: лимит бесплатного тарифа конечен, и рассылка на всех
+// подряд может съесть его в один вечер.
+const DAY = 24 * 60 * 60 * 1000;
+const GROUPS: Record<string, { name: string; about: string; pick: (p: any) => boolean }> = {
+  all: {
+    name: 'Всем',
+    about: 'все игроки с подтверждённой почтой',
+    pick: () => true,
+  },
+  active: {
+    name: 'Активные',
+    about: 'заходили за последние 14 дней — им новость точнее всего пригодится',
+    pick: (p) => Date.now() - (p.lastSeen || 0) < 14 * DAY,
+  },
+  sleeping: {
+    name: 'Спящие',
+    about: 'не заходили больше 14 дней — письмо-возвращение',
+    pick: (p) => Date.now() - (p.lastSeen || 0) >= 14 * DAY,
+  },
+  newbies: {
+    name: 'Новички',
+    about: 'зарегистрировались за последние 7 дней',
+    pick: (p) => Date.now() - (p.createdAt || 0) < 7 * DAY,
+  },
+};
+
+// Кому можно отправить РАССЫЛКУ. Служебные письма — код подтверждения,
+// сброс пароля, санкции — сюда не относятся: они идут по другому
+// основанию и приходят всегда, иначе игрок остался бы заперт снаружи.
+//
+// Главное здесь — согласие. Реклама без предварительного согласия
+// адресата запрещена, и «зарегистрировался — значит согласился» таким
+// согласием не является. Раньше проверка была чисто технической (бот /
+// подтверждена почта / не забанен), то есть первая же рассылка ушла бы
+// всем без разбора.
+function canReceive(p: any): boolean {
+  return !!(p && !p.isBot && p.emailVerified && !p.banned
+    && consent.has(p, 'ads')
+    && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(p.email || '')));
 }
 
-function broadcastStart(actorName: string, allUsers: Record<string, any>, notices: Notices) {
+// Ссылка отписки для письма рассылки. Ключ живёт на игроке и не связан
+// с сессией: письмо лежит в почте годами, а сессия — тридцать дней.
+function unsubUrl(p: any): string {
+  if (!p.mailKey) { p.mailKey = u.uid(24); db.save('users'); }
+  return `${APP_URL}/unsubscribe.html?u=${encodeURIComponent(p.id)}&k=${encodeURIComponent(p.mailKey)}`;
+}
+
+function recipients(allUsers: Record<string, any>, group = 'all') {
+  const g = GROUPS[group] || GROUPS.all;
+  return Object.values(allUsers)
+    .filter((p: any) => canReceive(p) && g.pick(p))
+    .map((p: any) => ({
+      id: p.id, email: String(p.email), name: String(p.name || 'Боец'),
+      unsub: unsubUrl(p),
+    }));
+}
+
+function broadcastStart(actorName: string, allUsers: Record<string, any>, notices: Notices, group = 'all') {
   if (!email.isConfigured) throw new u.ApiError('Почта не настроена — отправлять нечем');
   const cur = job();
   if (cur && !cur.finishedAt && !cur.stopped) throw new u.ApiError('Рассылка уже идёт — дождитесь конца или остановите её');
+  if (!GROUPS[group]) throw new u.ApiError('Неизвестная группа получателей');
 
-  const list = recipients(allUsers);
-  if (!list.length) throw new u.ApiError('Некому отправлять: нет игроков с подтверждённой почтой');
+  const list = recipients(allUsers, group);
+  if (!list.length) throw new u.ApiError(`Некому отправлять: в группе «${GROUPS[group].name}» нет игроков с подтверждённой почтой`);
+
+  // Лимит проверяем ДО запуска и отказываем целиком, а не на середине.
+  // Рассылка, оборванная на 40-м письме из 200, — худший вариант из
+  // возможных: часть игроков новость получила, часть нет, и повторить
+  // её уже нельзя, не задвоив первым.
+  const canSend = quota.left('news').total;
+  if (canSend <= 0) {
+    const why = quota.check('news');
+    throw new u.ApiError(why.reason || 'Лимит писем исчерпан');
+  }
+  if (list.length > canSend) {
+    throw new u.ApiError(
+      `Получателей ${list.length}, а до конца лимита можно отправить ${canSend}. `
+      + `Выберите группу поменьше или дождитесь обновления лимита. `
+      + `Неприкосновенный запас на подтверждения почты и пароли не трогаем.`);
+  }
 
   const r = render('news', { имя: 'Боец' });
   const s: any = db.load<any>('broadcast', {});
   s.startedAt = Date.now();
   s.finishedAt = 0;
   s.stopped = false;
+  s.stopReason = '';
+  s.audience = GROUPS[group].name;
   s.subject = r.subject;
   s.total = list.length;
   s.sent = 0; s.failed = 0;
@@ -572,8 +703,8 @@ function broadcastStart(actorName: string, allUsers: Record<string, any>, notice
   const t = setTimeout(tickSend, 10);
   if (t.unref) t.unref();
 
-  notices.push(`✉️ Рассылка запущена: получателей ${list.length}. Идёт в фоне, панель можно закрыть.`);
-  return { total: list.length };
+  notices.push(`✉️ Рассылка запущена: «${GROUPS[group].name}», получателей ${list.length}. Идёт в фоне, панель можно закрыть.`);
+  return { total: list.length, group };
 }
 
 function broadcastStop(notices: Notices) {
@@ -592,17 +723,29 @@ function broadcastStop(notices: Notices) {
 // обойдётся рассылка по лимитам почтового сервиса.
 function audience(allUsers: Record<string, any>) {
   const all = Object.values(allUsers).filter((p: any) => p && !p.isBot);
-  const list = recipients(allUsers);
+  const q = quota.left('news');
   return {
-    ready: list.length,
+    ready: recipients(allUsers, 'all').length,
     total: all.length,
     unverified: all.filter((p: any) => !p.emailVerified).length,
     noEmail: all.filter((p: any) => !String(p.email || '').trim()).length,
+    banned: all.filter((p: any) => p.banned).length,
+    // Сколько в каждой группе — владелец выбирает, видя числа, а не
+    // угадывая, много там народу или два человека
+    groups: Object.keys(GROUPS).map((id) => ({
+      id,
+      name: GROUPS[id].name,
+      about: GROUPS[id].about,
+      count: recipients(allUsers, id).length,
+      // Хватит ли лимита именно на эту группу
+      fits: recipients(allUsers, id).length <= q.total,
+    })),
+    canSend: q.total,
   };
 }
 
 export = {
   DEFAULTS, render, list, save, resetToDefault, sendPreview,
   broadcastStart, broadcastStop, broadcastStatus, audience, recipients,
-  leftovers, stripUnknownVars, sanitizeHtml, missingVars,
+  leftovers, stripUnknownVars, sanitizeHtml, missingVars, warnStaleTemplates, GROUPS, canReceive, unsubUrl,
 };

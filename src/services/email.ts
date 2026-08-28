@@ -1,60 +1,57 @@
 // ===================================================================
-// src/services/email.ts — отправка писем (подтверждение почты, сброс пароля)
+// src/services/email.ts — отправка писем игрокам
 //
-// Используется HTTP API сервиса resend.com (бесплатный тариф:
-// 3000 писем/мес, 100/день). Никаких npm-зависимостей — через fetch().
+// Сервис российский, и это принципиально: письма с зарубежных серверов
+// mail.ru и Яндекс кладут в спам заметно охотнее, а почта у нашей
+// аудитории в основном там. Игрок не получил бы код, не смог бы войти и
+// ушёл бы — причём молча, ни на что не пожаловавшись.
+//
+//   SMTP.BZ — единственный сервис отправки. Бесплатный тариф бессрочный.
+//
+// Отправка устроена ЦЕПОЧКОЙ, хотя сервис сейчас один: не развилка
+// if/else, а список. Понадобится запасной — он добавляется одной
+// строкой в CHAIN и одной функцией sendViaXxx, без переделки вызовов.
+// Пока сервис один, он же и точка отказа: кончится тариф или случится
+// сбой — регистрация встанет целиком. Панель об этом честно говорит.
+//
+// Никаких npm-зависимостей — обычный fetch().
 //
 // Переменные окружения:
-//   RESEND_API_KEY — ключ API (resend.com → API Keys)
-//   EMAIL_FROM     — адрес отправителя, например
-//                    "Альянс Генералов <noreply@ваш-домен>". Тестовый
-//                    onboarding@resend.dev шлёт ТОЛЬКО на почту владельца
-//                    аккаунта Resend — реальным игрокам письма не дойдут!
-//   APP_URL        — публичный адрес игры (для ссылок в письме)
+//   SMTPBZ_API_KEY — ключ SMTP.BZ
+//   EMAIL_FROM     — отправитель: "Aliance Generals <noreply@домен>"
+//   APP_URL        — публичный адрес игры (для ссылок в письмах)
 //
-// РЕЖИМ РАЗРАБОТКИ: если RESEND_API_KEY не задан, письмо не отправляется,
-// ссылка выводится в консоль, а auth.register считает почту подтверждённой.
+// РЕЖИМ РАЗРАБОТКИ: если ключа нет, письма не отправляются, код и
+// ссылка выводятся в консоль, а почта считается подтверждённой — иначе
+// на локальной машине нельзя было бы зарегистрироваться вообще.
 // ===================================================================
-
-// ── Какой сервис отправляет письма ────────────────────────────────
-// Основной — Unisender Go: российский, и это принципиально. Письма с
-// зарубежных серверов mail.ru и Яндекс часто кладут в спам, а у нашей
-// аудитории почта в основном там. Игрок не получил бы письмо, не смог
-// войти и просто ушёл бы — причём молча.
-//
-// Resend оставлен запасным: если ключа Unisender нет, а ключ Resend
-// есть, работает он. Так переход не ломает уже настроенные серверы.
 import brand = require('../core/brand');
+import quota = require('./mailQuota');
+import maildns = require('./maildns');
 
-const UNISENDER_API_KEY = process.env.UNISENDER_API_KEY || '';
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const SMTPBZ_API_KEY = process.env.SMTPBZ_API_KEY || '';
+const SMTPBZ_URL = process.env.SMTPBZ_URL || 'https://api.smtp.bz/v1/smtp/send';
 
-// Unisender Go разводит клиентов по нескольким площадкам (go1, go2, …) с
-// одинаковым API, но РАЗНЫМИ базами пользователей. Ключ, выданный на
-// одной, на другой не опознаётся: сервер разбирает ключ, достаёт из него
-// внутренний номер владельца и не находит такого у себя. Наружу это
-// выглядит как «User with id '…' not found» — то есть как поломка
-// аккаунта, хотя аккаунт цел и стучимся мы просто не в ту дверь.
-//
-// Поэтому по умолчанию берём УНИВЕРСАЛЬНЫЙ адрес: он сам направляет
-// запрос на площадку владельца ключа. Раньше здесь был прибит go1, и
-// любой аккаунт с go2 получал стопроцентный отказ на все письма.
-const UNISENDER_URL = process.env.UNISENDER_URL
-  || 'https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json';
-
-const EMAIL_FROM = process.env.EMAIL_FROM || `${brand.GAME_NAME_EN} <onboarding@resend.dev>`;
+const EMAIL_FROM = process.env.EMAIL_FROM || `${brand.GAME_NAME_EN} <noreply@localhost>`;
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
-// Какой сервис используем на самом деле
-const provider: 'unisender' | 'resend' | 'none' =
-  UNISENDER_API_KEY ? 'unisender' : (RESEND_API_KEY ? 'resend' : 'none');
+// Порядок отправки: сначала основной, при отказе — следующий.
+// Пустой список означает режим разработки.
+type ProviderId = 'smtpbz';
+const CHAIN: ProviderId[] = [
+  ...(SMTPBZ_API_KEY ? ['smtpbz' as ProviderId] : []),
+];
+const PROVIDER_NAMES: Record<string, string> = {
+  smtpbz: 'SMTP.BZ',
+  none: 'не настроен',
+};
 
-// true, если настроена реальная отправка почты
-const isConfigured = provider !== 'none';
-// Признак «тестового» отправителя resend.dev — шлёт только владельцу аккаунта
-const usingTestSender = /resend\.dev/i.test(EMAIL_FROM);
+const provider: ProviderId | 'none' = CHAIN[0] || 'none';
+const isConfigured = CHAIN.length > 0;
+// Отправитель без своего домена: письма игрокам с такого адреса не дойдут
+const usingTestSender = /@localhost|@example\./i.test(EMAIL_FROM);
 
-// Разбираем «Имя <адрес>» — Unisender требует имя и адрес отдельно
+// Разбираем «Имя <адрес>» — сервис требует имя и адрес отдельными полями
 function splitFrom(raw: string): { name: string; email: string } {
   const m = /^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/.exec(String(raw || ''));
   if (m) return { name: m[1].replace(/^["']|["']$/g, '') || brand.GAME_NAME_EN, email: m[2] };
@@ -67,125 +64,105 @@ function escapeHtml(s: string): string {
   } as Record<string, string>)[c]));
 }
 
-// Отправка через Unisender Go.
-// Формат ответа у него свой: HTTP 200 приходит и при частичном отказе,
-// поэтому обязательно смотрим failed_emails в теле — иначе сбой
-// выглядел бы успехом, и мы не узнали бы, что письма не доходят.
-// Можно ли просить «письмо без отписки». Право на это выдаётся отдельно
-// (флаг allow_skip_unsubscribe у аккаунта), и на бесплатном тарифе его
-// обычно нет. Запрашивать разрешение хорошо: письмо о подтверждении
-// почты — служебное, ссылка «отписаться» в нём вредна (игрок отпишется —
-// и не получит ни сброса пароля, ни подтверждения). Но если права нет,
-// сервис отклоняет письмо ЦЕЛИКОМ, и лучше отправить со ссылкой
-// отписки, чем не отправить совсем.
+// ── Отправка через SMTP.BZ ─────────────────────────────────────────
+// Их API принимает обычную форму, а ключ — заголовком Authorization.
+// Тело письма и адрес получателя передаются полями формы, а не JSON.
 //
-// Поэтому: пробуем с флагом, а на отказ именно по нему — повторяем без
-// него и запоминаем. Один лишний запрос за весь запуск, дальше сразу
-// правильно. UNISENDER_SKIP_UNSUBSCRIBE=0 выключает попытку заранее.
-let skipUnsubscribeAllowed = String(process.env.UNISENDER_SKIP_UNSUBSCRIBE || '1') !== '0';
-
-function isSkipUnsubscribeRefusal(msg: string): boolean {
-  return /skip_unsubscribe/i.test(msg) || /allow_skip_unsubscribe/i.test(msg);
-}
-
-async function unisenderRequest(to: string, subject: string, html: string, withSkip: boolean) {
+// Ответ разбираем осторожно: у таких сервисов «200 OK» с телом
+// {"success":false} — обычное дело, и принять это за успех означает
+// потерять письмо молча. Поэтому успехом считаем только явное
+// подтверждение, а всё остальное — отказ с текстом от сервиса.
+async function sendViaSmtpBz(to: string, subject: string, html: string):
+  Promise<{ sent: boolean; status: number; error: string; id?: string }> {
   const from = splitFrom(EMAIL_FROM);
-  const message: any = {
-    recipients: [{ email: to }],
-    body: { html },
-    subject,
-    from_email: from.email,
-    from_name: from.name,
-  };
-  if (withSkip) message.skip_unsubscribe = 1;
-
-  const res = await fetch(UNISENDER_URL, {
-    method: 'POST',
-    headers: {
-      'X-API-KEY': UNISENDER_API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ message }),
-  });
-  const bodyText = await res.text().catch(() => '');
-  let parsed: any = {};
-  try { parsed = JSON.parse(bodyText); } catch (e) {}
-  return { res, bodyText, parsed };
-}
-
-async function sendViaUnisender(to: string, subject: string, html: string):
-  Promise<{ sent: boolean; status: number; error: string; id?: string }> {
   try {
-    let { res, bodyText, parsed } = await unisenderRequest(to, subject, html, skipUnsubscribeAllowed);
+    const form = new URLSearchParams();
+    form.set('name', from.name);
+    form.set('from', from.email);
+    form.set('subject', subject);
+    form.set('to', to);
+    form.set('html', html);
+    // Текстовая версия: почтовые клиенты без разметки покажут её, а
+    // спам-фильтры письмо без текстовой части любят меньше.
+    form.set('text', html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000));
 
-    // Отказ именно из-за «без отписки» — повторяем обычным письмом.
-    // Иначе владелец видел бы загадочное «письмо не ушло» и чинил бы
-    // домен, ключ и площадку, хотя дело в праве на один флаг.
-    if (skipUnsubscribeAllowed) {
-      const reason = String(parsed.message || parsed.error || bodyText || '');
-      if ((!res.ok || parsed.status === 'error') && isSkipUnsubscribeRefusal(reason)) {
-        console.warn('📧 Unisender: у аккаунта нет права на письма без ссылки отписки — '
-          + 'шлём обычным письмом. Чтобы убрать отписку из служебных писем, '
-          + 'попросите поддержку включить allow_skip_unsubscribe.');
-        skipUnsubscribeAllowed = false;
-        ({ res, bodyText, parsed } = await unisenderRequest(to, subject, html, false));
-      }
-    }
-
-    if (!res.ok || parsed.status === 'error') {
-      const reason = parsed.message || parsed.error || bodyText || `HTTP ${res.status}`;
-      console.error(`📧 Unisender отклонил письмо для <${to}>: HTTP ${res.status} — ${reason}`);
-      return { sent: false, status: res.status, error: String(reason) };
-    }
-    // Адрес мог быть отклонён поимённо при общем «успехе»
-    const failed = parsed.failed_emails || {};
-    if (failed && failed[to]) {
-      console.error(`📧 Unisender не принял адрес <${to}>: ${failed[to]}`);
-      return { sent: false, status: res.status, error: String(failed[to]) };
-    }
-    const id = (parsed.job_id || (parsed.emails && parsed.emails[0])) || undefined;
-    return { sent: true, status: res.status, error: '', id };
-  } catch (e: any) {
-    console.error('📧 Сетевая ошибка отправки письма (Unisender):', e.message);
-    return { sent: false, status: 0, error: e.message || 'network error' };
-  }
-}
-
-// Низкоуровневая отправка через Resend. Возвращает подробный результат,
-// чтобы вызывающий код и диагностика видели РЕАЛЬНУЮ причину сбоя.
-async function sendViaResend(to: string, subject: string, html: string):
-  Promise<{ sent: boolean; status: number; error: string; id?: string }> {
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch(SMTPBZ_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
+        Authorization: SMTPBZ_API_KEY,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({ from: EMAIL_FROM, to: [to], subject, html }),
+      body: form.toString(),
     });
     const bodyText = await res.text().catch(() => '');
+    let parsed: any = {};
+    try { parsed = JSON.parse(bodyText); } catch (e) {}
+
     if (!res.ok) {
-      console.error(`📧 Resend отклонил письмо для <${to}>: HTTP ${res.status} — ${bodyText}`);
-      return { sent: false, status: res.status, error: bodyText || `HTTP ${res.status}` };
+      const reason = parsed.message || parsed.error || bodyText || `HTTP ${res.status}`;
+      console.error(`📧 SMTP.BZ отклонил письмо для <${to}>: HTTP ${res.status} — ${reason}`);
+      return { sent: false, status: res.status, error: String(reason).slice(0, 300) };
     }
-    let id: string | undefined;
-    try { id = JSON.parse(bodyText).id; } catch (e) {}
-    return { sent: true, status: res.status, error: '', id };
+    // Явный отказ при 200 — так тоже бывает
+    if (parsed && (parsed.success === false || parsed.status === 'error')) {
+      const reason = parsed.message || parsed.error || bodyText;
+      console.error(`📧 SMTP.BZ не принял письмо для <${to}>: ${reason}`);
+      return { sent: false, status: res.status, error: String(reason).slice(0, 300) };
+    }
+    const id = parsed && (parsed.id || parsed.message_id || parsed.result) || undefined;
+    return { sent: true, status: res.status, error: '', id: id ? String(id) : undefined };
   } catch (e: any) {
-    console.error('📧 Сетевая ошибка отправки письма:', e.message);
+    console.error('📧 Сетевая ошибка отправки письма (SMTP.BZ):', e.message);
     return { sent: false, status: 0, error: e.message || 'network error' };
   }
 }
 
-// Единая точка отправки: выбор сервиса решается здесь и только здесь.
-// Иначе при добавлении второго сервиса пришлось бы править каждое место
-// вызова, и одно из них рано или поздно забыли бы.
-async function sendMail(to: string, subject: string, html: string):
-  Promise<{ sent: boolean; status: number; error: string; id?: string }> {
-  if (provider === 'unisender') return sendViaUnisender(to, subject, html);
-  if (provider === 'resend') return sendViaResend(to, subject, html);
-  return { sent: false, status: 0, error: 'Отправка писем не настроена' };
+// Кто чем отправляет. Таблица, а не развилка: добавится второй сервис —
+// здесь появится одна строка, а sendMail не изменится вовсе.
+type SendFn = (to: string, subject: string, html: string) =>
+  Promise<{ sent: boolean; status: number; error: string; id?: string }>;
+const SENDERS: Record<ProviderId, SendFn> = {
+  smtpbz: sendViaSmtpBz,
+};
+
+// Единая точка отправки. Здесь три вещи, и все три обязаны быть именно
+// здесь, а не у каждого вызова по отдельности:
+//
+//  1. ЛИМИТ. Бесплатный тариф — жёсткий потолок. Упереться в него
+//     молча значит сломать регистрацию: игрок не получит код и не
+//     поймёт, почему. Считаем сами и останавливаемся заранее.
+//  2. ПЕРЕКЛЮЧЕНИЕ. Отказал сервис — пробуем следующий в цепочке, а не
+//     хороним письмо. Сейчас сервис один, но порядок вызова уже готов.
+//  3. УЧЁТ. Засчитываем только УШЕДШЕЕ письмо, и знаем, кто отправил.
+//
+// kind — вид письма: verify / reset / welcome / news / test. От него
+// зависит, тратить ли неприкосновенный запас: рассылка не имеет права
+// съесть остаток, нужный подтверждениям почты.
+async function sendMail(to: string, subject: string, html: string, kind = 'test'):
+  Promise<{ sent: boolean; status: number; error: string; id?: string; via?: string }> {
+  if (!CHAIN.length) return { sent: false, status: 0, error: 'Отправка писем не настроена' };
+
+  const allowed = quota.check(kind);
+  if (!allowed.ok) {
+    console.warn(`📧 Письмо «${kind}» не отправлено: ${allowed.reason}`);
+    return { sent: false, status: 0, error: allowed.reason };
+  }
+
+  const errors: string[] = [];
+  for (const p of CHAIN) {
+    const r = await SENDERS[p](to, subject, html);
+    if (r.sent) {
+      quota.count(kind);
+      if (p !== CHAIN[0]) {
+        console.warn(`📧 Основной сервис отказал, письмо ушло через запасной (${PROVIDER_NAMES[p]}).`);
+      }
+      return { ...r, via: p };
+    }
+    errors.push(`${PROVIDER_NAMES[p]}: ${r.error}`);
+  }
+  // Не ушло нигде — отдаём ВСЕ причины: по одной непонятно, общая это
+  // беда (домен, лимит) или сбой одного сервиса.
+  return { sent: false, status: 0, error: errors.join(' | ').slice(0, 400) };
 }
 
 function verifyHtml(name: string, link: string): string {
@@ -253,7 +230,7 @@ async function sendVerificationEmail(toEmail: string, name: string, token: strin
   // («Почта» → «Шаблоны писем»). Заводской текст лежит там же, в
   // mailer.DEFAULTS, и совпадает с прежним вшитым.
   const t = tpl('verify', name, link, code);
-  const r = await sendMail(toEmail, t.subject, t.html);
+  const r = await sendMail(toEmail, t.subject, t.html, 'verify');
   if (!r.sent) console.error(`📧 Не удалось отправить подтверждение <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
 }
@@ -266,7 +243,7 @@ async function sendWelcomeEmail(toEmail: string, name: string):
   if (!isConfigured) return { sent: false, error: 'почта не настроена' };
   try {
     const t = tpl('welcome', name, APP_URL);
-    const r = await sendMail(toEmail, t.subject, t.html);
+    const r = await sendMail(toEmail, t.subject, t.html, 'welcome');
     if (!r.sent) console.error(`📧 Приветственное письмо не ушло <${toEmail}>: ${r.error}`);
     return { sent: r.sent, error: r.error };
   } catch (e: any) {
@@ -280,194 +257,105 @@ async function sendPasswordResetEmail(toEmail: string, name: string, token: stri
   Promise<{ sent: boolean; link: string; status?: number; error?: string }> {
   const link = `${APP_URL}/#reset/${token}`;
   if (!isConfigured) {
-    console.log('📧 [DEV] Почта не настроена (нет RESEND_API_KEY).');
+    console.log('📧 [DEV] Почта не настроена — письмо не отправлено.');
     console.log(`📧 [DEV] Ссылка сброса пароля для «${name}» <${toEmail}>: ${link}`);
     return { sent: false, link };
   }
   const t = tpl('reset', name, link);
-  const r = await sendMail(toEmail, t.subject, t.html);
+  const r = await sendMail(toEmail, t.subject, t.html, 'reset');
   if (!r.sent) console.error(`📧 Не удалось отправить сброс пароля <${toEmail}>. Ссылка вручную: ${link}`);
   return { sent: r.sent, link, status: r.status, error: r.error };
 }
 
 // ── Диагностика (для админки) ──────────────────────────────────────
-// Текущее состояние конфигурации почты (без раскрытия самого ключа)
+// Текущее состояние почты — без раскрытия самих ключей.
 function status() {
   return {
     configured: isConfigured,
     from: EMAIL_FROM,
     appUrl: APP_URL,
-    usingTestSender,               // true = onboarding@resend.dev (шлёт только владельцу)
+    usingTestSender,
     provider,
-    // Маскируем именно ТОТ ключ, который работает: раньше показывался
-    // только Resend, и при живом Unisender поле выглядело пустым — как
-    // будто почта не настроена.
-    keyMasked: (() => {
-      const k = provider === 'unisender' ? UNISENDER_API_KEY : RESEND_API_KEY;
-      return k ? k.slice(0, 5) + '…' + k.slice(-3) : null;
-    })(),
-    // Подсказки о вероятной проблеме
+    providerName: PROVIDER_NAMES[provider] || provider,
+    // Вся цепочка, а не только основной: владелец должен видеть, есть ли
+    // вообще запасной вариант, — от этого зависит, чинить ли сегодня.
+    chain: CHAIN.map((p) => ({ id: p, name: PROVIDER_NAMES[p] })),
+    hasBackup: CHAIN.length > 1,
+    keyMasked: SMTPBZ_API_KEY ? SMTPBZ_API_KEY.slice(0, 5) + '…' + SMTPBZ_API_KEY.slice(-3) : null,
+    quota: quota.view(),
     hint: !isConfigured
-      ? 'Ключ почтового сервиса не задан: UNISENDER_API_KEY (основной) или '
-        + 'RESEND_API_KEY (запасной). Письма не отправляются, у новых игроков '
-        + 'почта подтверждается сама — иначе они не смогли бы войти.'
+      ? 'Ключ почтового сервиса не задан: SMTPBZ_API_KEY. Письма не отправляются, '
+        + 'у новых игроков почта подтверждается сама — иначе они не смогли бы войти.'
       : (usingTestSender
-        ? 'EMAIL_FROM = resend.dev: письма дойдут ТОЛЬКО на почту владельца аккаунта Resend. Подключите свой домен.'
-        : 'Конфигурация выглядит рабочей. Проверьте тест-отправкой и папку «Спам».'),
+        ? 'В EMAIL_FROM не ваш домен — письма игрокам не дойдут. Укажите адрес на подтверждённом домене.'
+        // Сервис один — он же единственная точка отказа. Молчать об этом
+        // нельзя: владелец должен узнать заранее, а не в день, когда
+        // новые игроки перестанут получать коды.
+        : 'Сервис отправки один. Кончится тариф или случится сбой — письма '
+          + 'перестанут уходить совсем, и регистрация встанет.'),
   };
 }
 
-// Тестовая отправка на указанный адрес — возвращает реальный ответ Resend
+// Тестовая отправка на указанный адрес — возвращает реальный ответ сервиса
 async function sendTest(toEmail: string):
-  Promise<{ sent: boolean; status: number; error: string; from: string; configured: boolean }> {
+  Promise<{ sent: boolean; status: number; error: string; from: string; configured: boolean; via?: string }> {
   const to = String(toEmail || '').trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
     return { sent: false, status: 0, error: 'Некорректный email', from: EMAIL_FROM, configured: isConfigured };
   }
   if (!isConfigured) {
-    return { sent: false, status: 0, error: 'RESEND_API_KEY не задан (dev-режим)', from: EMAIL_FROM, configured: false };
+    return { sent: false, status: 0, error: 'Ключ почтового сервиса не задан (режим разработки)', from: EMAIL_FROM, configured: false };
   }
   const html = `<div style="font-family:Arial,sans-serif"><h3>Проверка почты «${brand.GAME_NAME}»</h3>
     <p>Если вы видите это письмо — отправка настроена верно ✅</p></div>`;
-  const r = await sendMail(to, `Проверка почты — ${brand.GAME_NAME}`, html);
-  return { sent: r.sent, status: r.status, error: r.error, from: EMAIL_FROM, configured: true };
+  const r = await sendMail(to, `Проверка почты — ${brand.GAME_NAME}`, html, 'test');
+  // via — какой сервис сработал. Нужен и в панели: при отказе
+  // основного владелец должен видеть, что письмо спас запасной.
+  return { sent: r.sent, status: r.status, error: r.error, from: EMAIL_FROM, configured: true, via: r.via };
 }
 
-// ── Где живёт ключ Unisender ───────────────────────────────────────
-// Unisender Go — это несколько независимых площадок с одинаковым API,
-// но РАЗНЫМИ базами пользователей. Ключ, выданный на одной, на другой не
-// опознаётся: сервер разбирает ключ, достаёт из него внутренний номер
-// владельца и не находит такого у себя. Наружу это выглядит как
-//   «User with id '8316838' not found»
-// то есть как поломка аккаунта, хотя аккаунт цел — мы стучимся не в ту
-// дверь. Без этой проверки владелец идёт в поддержку и ждёт ответа
-// сутками, хотя чинится строчкой в .env.
+// ── Диагностика домена ─────────────────────────────────────────────
+// Что здесь проверяется и почему именно это. Когда письма «не доходят»,
+// у владельца три подозреваемых: ключ, сервис и домен. Ключ и сервис
+// отвечают сами — их ответ виден дословно при тестовой отправке. А вот
+// домен молчит: записи не прописаны, сервис письмо принял, почтовик
+// получателя выбросил — и никто ничего не сказал. Поэтому проверяем
+// именно записи домена.
 //
-// Проверяем СПРАВОЧНЫМИ методами: они только читают и лимит писем не
-// тратят. Иначе диагностика съедала бы то, ради чего её запускают.
-// Список площадок можно переопределить через UNISENDER_HOSTS (через
-// запятую): если сервис заведёт третью, владельцу не придётся ждать
-// правки кода. Этим же пользуется тест, подставляя свои сервера.
-// Универсальный адрес идёт первым: он работает при любой площадке, и
-// советовать в первую очередь нужно именно его. Остальные проверяем
-// ради ответа на вопрос «а где вообще живёт аккаунт» — это видно в
-// панели и помогает разговаривать с поддержкой предметно.
-// UNISENDER_ANY_HOST переопределяется только тестом: настоящий
-// универсальный адрес в проверках дёргать нельзя.
-const UNISENDER_ANY = process.env.UNISENDER_ANY_HOST || 'https://goapi.unisender.ru';
-const UNISENDER_HOSTS = (process.env.UNISENDER_HOSTS || '')
-  ? String(process.env.UNISENDER_HOSTS).split(',').map((s) => s.trim()).filter(Boolean)
-  : [UNISENDER_ANY, 'https://go1.unisender.ru', 'https://go2.unisender.ru'];
-const PROBE_METHODS = [
-  '/ru/transactional/api/v1/domain/list.json',
-  '/ru/transactional/api/v1/template/list.json',
-];
-
-// Признак «это не наша площадка»: ключ разобран, владелец не найден.
-function isUserNotFound(msg: string): boolean {
-  return /user with id/i.test(msg) && /not found/i.test(msg);
-}
-
-type ProbeResult = {
-  host: string;
-  current: boolean;              // сюда игра шлёт письма сейчас
-  recognized: boolean | null;    // true — ключ свой, false — чужой, null — непонятно
-  message: string;
-  domains?: Array<{ name: string; verified: boolean }>;
-};
-
-async function probeHost(host: string): Promise<ProbeResult> {
-  const current = UNISENDER_URL.startsWith(host);
-  let lastMsg = '';
-  for (const method of PROBE_METHODS) {
-    try {
-      const res = await fetch(host + method, {
-        method: 'POST',
-        headers: { 'X-API-KEY': UNISENDER_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 50, offset: 0 }),
-      });
-      const text = await res.text().catch(() => '');
-      let parsed: any = {};
-      try { parsed = JSON.parse(text); } catch (e) {}
-      const msg = String(parsed.message || parsed.error || text.slice(0, 200) || '');
-
-      if (res.status === 200) {
-        const list = Array.isArray(parsed.domains)
-          ? parsed.domains.map((d: any) => ({
-            name: String(d.domain || d.name || '?'),
-            verified: !!(d.domain_verified || d.verified),
-          }))
-          : undefined;
-        return { host, current, recognized: true, message: 'ключ признан', domains: list };
-      }
-      if (isUserNotFound(msg)) {
-        return { host, current, recognized: false, message: msg };
-      }
-      // Ни успеха, ни «не найден» — возможно, метод переименован.
-      // Пробуем следующий, иначе спутали бы «нет метода» с «нет ключа».
-      lastMsg = msg;
-    } catch (e: any) {
-      return { host, current, recognized: null, message: 'сеть недоступна: ' + (e.message || '') };
-    }
-  }
-  return { host, current, recognized: null, message: lastMsg || '(пустой ответ)' };
-}
-
-// Полная диагностика для панели. Ничего не отправляет.
+// Ничего не отправляется: лимит писем эта проверка не тратит.
 async function diagnose(): Promise<any> {
-  if (provider !== 'unisender') {
-    return {
-      ok: false,
-      skipped: true,
-      verdict: provider === 'resend'
-        ? 'Сейчас работает запасной сервис (Resend) — проверять площадку Unisender нечего.'
-        : 'Ключ почтового сервиса не задан, проверять нечего.',
-      hosts: [],
-    };
+  const from = splitFrom(EMAIL_FROM);
+  const domain = (from.email.split('@')[1] || '').toLowerCase();
+
+  if (!isConfigured) {
+    return { ok: false, skipped: true, domain, checks: [], spfFix: '',
+      verdict: 'Ключ SMTPBZ_API_KEY не задан — отправка выключена, проверять нечего.' };
+  }
+  if (usingTestSender || !domain) {
+    return { ok: false, skipped: true, domain, checks: [], spfFix: '',
+      verdict: 'В EMAIL_FROM не ваш домен, а служебный адрес. Укажите адрес на '
+        + 'своём домене — иначе письма игрокам не дойдут ни при каких записях.' };
   }
 
-  // Мусор в ключе виден до всякой сети: лишний пробел или кавычка
-  // ломают заголовок, а глазом в редакторе это не заметно.
-  const dirty = !/^[A-Za-z0-9]+$/.test(UNISENDER_API_KEY);
+  // Мусор в ключе виден до всякой сети: лишний пробел или кавычка ломают
+  // заголовок, а глазом в редакторе это не заметно.
+  const keyDirty = /\s|["']/.test(SMTPBZ_API_KEY);
 
-  const hosts = await Promise.all(UNISENDER_HOSTS.map(probeHost));
-  const working = hosts.filter((h) => h.recognized === true);
-  // Что советовать. Если нынешний адрес работает — не трогаем ничего.
-  // Иначе universal-адрес предпочтительнее конкретной площадки: он
-  // переживёт переезд аккаунта, а прибитая площадка — нет.
-  const winner = working.find((h) => h.current)
-    || working.find((h) => h.host === UNISENDER_ANY)
-    || working[0]
-    || null;
-
-  let verdict = '';
-  let fix = '';
-  if (winner && winner.current) {
-    verdict = 'Ключ признан тем адресом, куда игра и шлёт письма. Если письма не уходят — причина не в адресе сервиса.';
-  } else if (winner) {
-    const where = working.filter((h) => h.host !== UNISENDER_ANY).map((h) => h.host).join(', ');
-    verdict = (winner.host === UNISENDER_ANY
-      ? 'Игра стучится не туда, поэтому сервис отвечает «User with id … not found». '
-        + 'Ниже — универсальный адрес: он сам направляет запрос на площадку вашего аккаунта'
-        + (where ? ` (у вас это ${where})` : '') + '.'
-      : `Ключ принадлежит площадке ${winner.host}, а игра стучится не туда — отсюда «User with id … not found».`);
-    fix = `UNISENDER_URL=${winner.host}/ru/transactional/api/v1/email/send.json`;
-  } else if (hosts.some((h) => h.recognized === false)) {
-    verdict = 'Ключ не признан ни одной площадкой. Дело не в адресе, а в самом ключе: создайте новый в панели Unisender и проверьте, включён ли у него доступ к API.';
-  } else {
-    verdict = 'Ни одна площадка не ответила понятно — похоже на проблему с сетью сервера, а не с ключом.';
-  }
-
+  const rep = await maildns.checkDomain(domain);
   return {
-    ok: !!(winner && winner.current),
-    keyMasked: UNISENDER_API_KEY.slice(0, 5) + '…' + UNISENDER_API_KEY.slice(-3),
-    keyLength: UNISENDER_API_KEY.length,
-    keyDirty: dirty,
-    currentUrl: UNISENDER_URL,
-    hosts,
-    verdict,
-    fix,
+    ok: rep.ok,
+    skipped: false,
+    domain,
+    from: EMAIL_FROM,
+    keyMasked: SMTPBZ_API_KEY.slice(0, 5) + '…' + SMTPBZ_API_KEY.slice(-3),
+    keyLength: SMTPBZ_API_KEY.length,
+    keyDirty,
+    ns: rep.ns,
+    panel: rep.panel,
+    checks: rep.checks,
+    spfFix: rep.spfFix,
+    verdict: (keyDirty ? 'В ключе есть пробел или кавычка — уберите их в .env. ' : '') + rep.verdict,
   };
 }
 
-export = { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, sendMail, UNISENDER_URL, diagnose,};
+export = { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, PROVIDER_NAMES, CHAIN, sendMail, SMTPBZ_URL, diagnose, quota,};

@@ -160,7 +160,7 @@ function startUpgrade(user: User, id: string, notices: Notices) {
   if (activeFor(user, id)) throw new u.ApiError('Этот трофей уже прокачивается');
   const cost = nextCost(level, def);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  require('./player').spendGold(user, cost, 'trophy');
   if (!(user as any).trophyQueue) (user as any).trophyQueue = [];
   const now = Date.now();
   const targetLevel = level + 1;
@@ -191,7 +191,7 @@ function boostUpgrade(user: User, id: string, notices: Notices) {
   const def = config.TROPHIES.find((t) => t.id === id);
   const cost = config.trophyBoostGold(proc.level, def ? (def as any).timeMul : undefined);
   if (user.gold < cost) throw new u.ApiError(`Нужно ${cost} золота`);
-  user.gold -= cost;
+  require('./player').spendGold(user, cost, 'trophy');
   proc.finishesAt = Date.now();
   notices.push('⚡ Прокачка трофея ускорена!');
   return { ok: true, cost };

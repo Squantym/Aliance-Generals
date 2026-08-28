@@ -136,7 +136,7 @@ function buyPlot(user: User, notices: Notices) {
   if (plots(user).length >= M.MAX_PLOTS) throw new u.ApiError(`Максимум ${M.MAX_PLOTS} участков`);
   const cost = nextPlotGold(user);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  user.gold -= cost;
+  player.spendGold(user, cost, 'mine');
   const plot = { id: u.uid(10), status: 'empty', dailyKey: todayMskKey(), minutesUsedToday: 0 };
   plots(user).push(plot);
   db.markUser(user.id);

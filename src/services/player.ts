@@ -146,9 +146,46 @@ function addBattleLoot(user: User, amount: number): void {
 // Хранится у игрока и накапливается всю жизнь аккаунта.
 
 
+// ── Золото: начисление, списание и раздельный учёт ────────────────
+//
+// Зачем раздельный учёт. Купленное за деньги золото и подаренное игрой —
+// с точки зрения закона совершенно разные вещи. При возврате платежа или
+// его оспаривании нужно списать НЕИСПОЛЬЗОВАННОЕ КУПЛЕННОЕ, не тронув
+// заработанное игроком за месяцы. Пока баланс — одно число без истории,
+// это невозможно: отличить нечем, и любой возврат превращается либо в
+// подарок мошеннику, либо в изъятие честно заработанного.
+//
+// Как считаем. Общий баланс остаётся одним числом user.gold — арифметика
+// игры не меняется вовсе. Рядом лежит goldPaid: сколько из этого баланса
+// куплено за деньги. Начисление за деньги поднимает оба, любое списание
+// опускает goldPaid до баланса, если тот стал меньше.
+//
+// Из этого правила само собой следует то, что обещают Правила платежей:
+// СНАЧАЛА ТРАТИТСЯ БОНУСНОЕ И ЗАРАБОТАННОЕ, купленное — последним. Оно
+// в пользу игрока: оплаченное дольше остаётся доступным к возврату.
+//
+// Сегодня goldPaid равен нулю у всех — платежи не подключены. Значит
+// min(0, баланс) = 0 всегда, и на живой экономике эта правка не меняет
+// ни одного числа. Вводить её нужно ДО запуска платежей: задним числом
+// источник начислений не восстановить.
+
+// Сколько из нынешнего баланса куплено за деньги.
+function paidGold(user: User): number {
+  return Math.max(0, Math.min(Number((user as any).goldPaid) || 0, Number(user.gold) || 0));
+}
+
+// Привести goldPaid к балансу после его изменения.
+function syncPaid(user: User): void {
+  const paid = paidGold(user);
+  if (paid) (user as any).goldPaid = paid;
+  else delete (user as any).goldPaid;   // ноль не храним — поле есть только у плативших
+}
+
 // source — откуда пришло золото: quest, season, event, purchase, admin.
 // Нужен для разбивки в расширенной статистике.
-function addGold(user: User, amount: number, source?: string): void {
+// paid = true — золото куплено за деньги. Ставить его имеет право только
+// платёжный код после подтверждённого платежа.
+function addGold(user: User, amount: number, source?: string, paid?: boolean): void {
   // Источник золота передаётся вызывающим кодом через третий аргумент
   try {
     const src = (arguments as any)[2] || 'other';
@@ -156,6 +193,27 @@ function addGold(user: User, amount: number, source?: string): void {
   } catch (e) {}
 
   user.gold = Math.max(0, Math.round(user.gold + amount));
+  if (paid && amount > 0) {
+    (user as any).goldPaid = (Number((user as any).goldPaid) || 0) + Math.round(amount);
+  }
+  syncPaid(user);
+}
+
+// Списание. Единственная точка, через которую золото уходит с баланса.
+// Раньше тридцать мест по всему коду делали `user.gold -= цена` напрямую,
+// и добавить к ним учёт источника было негде: пришлось бы править
+// тридцать мест и не забыть ни одного при следующей правке.
+//
+// Арифметика та же, что была: вычитание без пола по нулю. Проверку
+// «хватает ли» по-прежнему делает вызывающий код — здесь её нет
+// намеренно, чтобы молча не превратить ошибку расчёта в бесплатную
+// покупку.
+function spendGold(user: User, amount: number, reason?: string): void {
+  const n = Math.round(Number(amount) || 0);
+  if (n <= 0) return;
+  try { require('./stats').track(user, 'goldSpent', String(reason || 'other'), -n); } catch (e) {}
+  user.gold -= n;
+  syncPaid(user);
 }
 
 // Множитель опыта от страны (Украина +7%)
@@ -239,7 +297,7 @@ function resetSkills(user: User): any {
   }
   // Нечего возвращать — не даём впустую потратить бесплатную попытку/золото
   if (refund <= 0) throw new u.ApiError('Навыки ещё не распределены — сбрасывать нечего');
-  if (cost > 0) user.gold -= cost;
+  if (cost > 0) spendGold(user, cost, 'player');
   user.skillPoints += refund;
   user.skills = { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 };
   user.skillResets = done + 1;
@@ -1033,6 +1091,13 @@ function mePayload(user: User): any {
     earRegrowAt: user.earsLostAt && user.earsLostAt.length > 0 ? user.earsLostAt[0] + config.EARS.REGROW_MS : null,
     earRestoreCostGold: config.EARS.RESTORE_GOLD,
     capacity: capacity(user),
+    // Чего игрок ещё не подтвердил. У всех, кто регистрировался до
+    // появления отметок, здесь непустой список: согласий у них нет — их
+    // просто не спрашивали. Клиент по этому списку показывает окно,
+    // закрывающее игру, пока человек не ответит.
+    needConsent: (() => {
+      try { return require('./consent').outdated(user); } catch (e) { return []; }
+    })(),
     power: { atk: atk.power, def: def.power, taken: atk.taken, unitTaken: atk.unitTaken, secretTaken: atk.secretTaken },
     incomePerHour: totalIncome(user), upkeepPerHour: totalUpkeep(user),
     nextPayoutSec: Math.max(0, Math.ceil((user.lastIncomeAt + HOUR - now) / 1000)),
@@ -1328,7 +1393,7 @@ function restoreEar(user: User, notices: Notices) {
   if (user.gold < config.EARS.RESTORE_GOLD) {
     throw new u.ApiError(`Не хватает золота (нужно 🪙 ${config.EARS.RESTORE_GOLD})`);
   }
-  user.gold -= config.EARS.RESTORE_GOLD;
+  spendGold(user, config.EARS.RESTORE_GOLD, 'player');
   user.earsCurrent = Math.min(config.EARS.MAX, user.earsCurrent + 1);
   // Убираем самую старую запись о потере (это ухо уже восстановлено)
   if (user.earsLostAt.length > 0) user.earsLostAt.shift();
@@ -1344,7 +1409,7 @@ function restoreEar(user: User, notices: Notices) {
 }
 
 export = { isXpBlocked, xpBlockLeftMin,
-  users, maxima, refresh, addMoney, addBattleLoot, addGold, addXp, xpMul, spendSkill, resetSkills,
+  users, maxima, refresh, addMoney, addBattleLoot, addGold, spendGold, paidGold, addXp, xpMul, spendSkill, resetSkills,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,

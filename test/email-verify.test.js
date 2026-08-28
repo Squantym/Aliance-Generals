@@ -38,8 +38,8 @@ ok(/id="rg-email"[^>]*required/.test(html), 'поле почты обязате�
 console.log('\n── 2. Как включается подтверждение ──');
 ok(/const autoVerified = !email\.isConfigured/.test(authSrc),
    'подтверждение требуется, когда настроена отправка писем');
-ok(/const isConfigured = provider !== 'none'/.test(fs.readFileSync(path.join(ROOT, 'src/services/email.ts'), 'utf8')),
-   'признак настройки — выбранный сервис отправки');
+ok(/const isConfigured = CHAIN\.length > 0/.test(fs.readFileSync(path.join(ROOT, 'src/services/email.ts'), 'utf8')),
+   'признак настройки — есть ли хоть один сервис в цепочке');
 ok(/emailVerifyToken: emailVerified \? null : u\.uid\(32\)/.test(authSrc),
    'неподтверждённому выдаётся код подтверждения');
 
@@ -76,9 +76,9 @@ const chkStart = routes.indexOf("'/api/admin/email-check'");
 const chk = routes.slice(chkStart, routes.indexOf('}, { admin: true });', chkStart));
 ok(/isOwner\(req\.user\)/.test(chk), 'доступна только владельцу');
 ok(/unverified/.test(chk), 'показывает, кто не подтвердил');
-ok(/Задайте UNISENDER_API_KEY/.test(chk), 'при выключенной отправке объясняет, как включить');
-ok(/отправитель тестовый/.test(chk),
-   'предупреждает о тестовом отправителе — с ним письма игрокам не уходят');
+ok(/Задайте SMTPBZ_API_KEY/.test(chk), 'при выключенной отправке объясняет, как включить');
+ok(/не ваш домен/.test(chk),
+   'предупреждает про чужой домен в EMAIL_FROM — с ним письма игрокам не уходят');
 const adminJs = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 ok(/id="mail-check"/.test(adminJs), 'кнопка проверки есть в панели');
 ok((adminJs.match(/const mailGo = /g) || []).length === 1, 'обработчик объявлен один раз');
@@ -92,60 +92,61 @@ ok(/Почта уже подтверждена/.test(vfy), 'повторное �
 ok(/auditLog\.record/.test(vfy), 'действие пишется в журнал — это доступ к чужому аккаунту');
 ok(/data-verify=/.test(adminJs), 'кнопка есть у каждого в списке');
 
-console.log('\n── 7. Отправка через Unisender Go ──');
+console.log('\n── 7. Отправка через SMTP.BZ ──');
 const emailSrc = fs.readFileSync(path.join(ROOT, 'src/services/email.ts'), 'utf8');
-ok(/async function sendViaUnisender/.test(emailSrc), 'отправка через Unisender реализована');
-// По умолчанию — универсальный адрес. Прибитый go1 означал, что любой
-// аккаунт со второй площадки получал стопроцентный отказ на все письма
-// с невнятным «User with id ... not found».
-ok(/goapi\.unisender\.ru\/ru\/transactional/.test(emailSrc),
-   'по умолчанию универсальный адрес — он сам найдёт площадку аккаунта');
-ok(/'X-API-KEY': UNISENDER_API_KEY/.test(emailSrc), 'ключ передаётся заголовком, как требует сервис');
-ok(/from_email: from\.email/.test(emailSrc) && /from_name: from\.name/.test(emailSrc),
-   'отправитель разбирается на имя и адрес — Unisender требует их отдельно');
-// Служебное письмо просим отправить без ссылки отписки, но право на это
-// выдаётся аккаунту отдельно. Без запасного пути сервис отклонял письмо
-// целиком — игрок не получал подтверждение и не мог войти. Поэтому
-// проверяем оба: и что флаг просим, и что отказ по нему не хоронит
-// письмо. Само поведение разобрано в test/mailskip.test.js.
-ok(/skip_unsubscribe = 1/.test(emailSrc),
-   'служебное письмо просим без ссылки отписки');
-ok(/isSkipUnsubscribeRefusal/.test(emailSrc),
-   'отказ по этому флагу не отменяет письмо — повторяем без него');
-// Главная тонкость этого сервиса
-ok(/failed && failed\[to\]/.test(emailSrc),
-   'проверяется failed_emails: сервис отвечает 200 даже при отказе по адресу');
-ok(/parsed\.status === 'error'/.test(emailSrc), 'разбирается и общая ошибка в теле ответа');
+ok(/async function sendViaSmtpBz/.test(emailSrc), 'отправка через SMTP.BZ реализована');
+ok(/Authorization: SMTPBZ_API_KEY/.test(emailSrc), 'ключ передаётся заголовком, как требует сервис');
+ok(/application\/x-www-form-urlencoded/.test(emailSrc),
+   'тело — форма, а не JSON: сервис принимает только так');
+ok(/form\.set\('from', from\.email\)/.test(emailSrc) && /form\.set\('name', from\.name\)/.test(emailSrc),
+   'отправитель разбирается на имя и адрес — сервис требует их отдельно');
+ok(/form\.set\('text'/.test(emailSrc),
+   'у письма есть текстовая версия — без неё спам-фильтры строже');
+// Самая коварная разновидность отказа: HTTP 200, а в теле success:false.
+// Принять это за успех — потерять письмо молча: игрок ждёт код, которого
+// не будет, а в панели горит «отправлено».
+ok(/parsed\.success === false/.test(emailSrc),
+   'разбирается отказ при 200 OK — иначе потеря письма выглядела бы успехом');
+ok(/parsed\.status === 'error'/.test(emailSrc), 'и вторая форма отказа в теле ответа');
 
-console.log('\n── 8. Выбор сервиса ──');
-ok(/const provider: 'unisender' \| 'resend' \| 'none'/.test(emailSrc), 'сервис определяется признаком');
-ok(/UNISENDER_API_KEY \? 'unisender' : \(RESEND_API_KEY \? 'resend' : 'none'\)/.test(emailSrc),
-   'Unisender главный, Resend запасной — переход не ломает настроенные серверы');
+console.log('\n── 8. Сервис отправки ──');
+// Российский сервис принципиально: письма с зарубежных серверов mail.ru
+// и Яндекс кладут в спам охотнее, а почта у аудитории в основном там.
+ok(/'smtpbz'/.test(emailSrc), 'сервис на месте');
+// Владелец потребовал стереть прежние сервисы полностью. Забытая строка
+// обещает запасной путь, которого нет: в день отказа владелец будет
+// искать поломку не там.
+ok(!/resend/i.test(emailSrc) && !/\u0055nisender/i.test(emailSrc),
+   'прежних сервисов в коде не осталось');
+// Цепочка остаётся списком, хотя сервис один: понадобится запасной —
+// добавится строкой в CHAIN и строкой в SENDERS, без правки вызовов.
+ok(/const CHAIN: ProviderId\[\]/.test(emailSrc), 'порядок сервисов — список, а не развилка');
+ok(/const SENDERS: Record<ProviderId, SendFn>/.test(emailSrc), 'кто чем шлёт — таблица');
 ok(/async function sendMail\(/.test(emailSrc), 'есть единая точка отправки');
-const directCalls = (emailSrc.match(/await sendViaResend\(/g) || []).length;
-ok(directCalls === 0, 'ни одно письмо не идёт мимо общей точки');
 ok((emailSrc.match(/await sendMail\(/g) || []).length >= 3,
    'подтверждение, восстановление пароля и проверка идут через неё');
-// Разбор отправителя
-const splitTest = /function splitFrom/.test(emailSrc);
-ok(splitTest, 'разбор строки «Имя <адрес>» вынесен отдельно');
+ok(/function splitFrom/.test(emailSrc), 'разбор строки «Имя <адрес>» вынесен отдельно');
 
 console.log('\n── 9. Сервис виден в панели ──');
 const chk2Start = routes.indexOf("'/api/admin/email-check'");
 const chk2 = routes.slice(chk2Start, routes.indexOf('}, { admin: true });', chk2Start));
 ok(/providerName/.test(chk2), 'проверка сообщает, какой сервис работает');
-ok(/Unisender Go \(Россия\)/.test(chk2), 'название по-русски');
-ok(/чаще[\s\S]{0,30}попадают в спам/.test(chk2),
-   'при Resend предупреждает о проблемах с российской почтой');
+ok(/SMTP\.BZ \(Россия\)/.test(chk2), 'название с пометкой страны');
+// Сервис один — он же одна точка отказа: кончится тариф или случится
+// сбой, и регистрация встанет целиком. Панель обязана сказать про это
+// заранее, а не в день, когда новые игроки перестанут получать коды.
+ok(/Сервис один/.test(chk2), 'панель предупреждает про единственную точку отказа');
 const adminJs2 = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 ok(/r\.providerName/.test(adminJs2), 'сервис показан в панели');
 
 console.log('\n── 10. Настройки описаны ──');
 const envEx = fs.readFileSync(path.join(ROOT, '.env.example'), 'utf8');
-ok(/UNISENDER_API_KEY/.test(envEx), 'ключ описан в примере настроек');
-ok(/UNISENDER_URL/.test(envEx), 'адрес площадки тоже');
-ok(/SPF, DKIM и DMARC/.test(envEx), 'указано про записи домена — без них спам у любого сервиса');
-ok(/go\.unisender\.ru/.test(envEx), 'дана ссылка на регистрацию');
+ok(/SMTPBZ_API_KEY/.test(envEx), 'ключ основного сервиса описан в примере настроек');
+ok(/SPF, DKIM/.test(envEx), 'указано про записи домена — без них письма падают в спам');
+ok(/check-dns/.test(envEx), 'и как их проверить');
+ok(/smtp\.bz/.test(envEx), 'дана ссылка на регистрацию');
+ok(/MAIL_LIMIT_MONTH/.test(envEx) && /MAIL_RESERVE/.test(envEx),
+   'лимиты и неприкосновенный запас описаны — иначе про них никто не узнает');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

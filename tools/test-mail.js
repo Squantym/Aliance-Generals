@@ -15,7 +15,7 @@ const path = require('path');
 
 // Тот же загрузчик .env, что и в server.ts — при прямом запуске файла
 // (не через pm2/server.ts) process.env иначе не увидит ни
-// UNISENDER_API_KEY, ни EMAIL_FROM.
+// SMTPBZ_API_KEY, ни EMAIL_FROM.
 (function loadDotEnv() {
   try {
     const envPath = path.join(process.cwd(), '.env');
@@ -51,7 +51,7 @@ try {
 }
 
 console.log(`\nОтправитель: ${email.EMAIL_FROM}`);
-console.log(`Сервис: ${email.provider === 'unisender' ? 'Unisender Go' : email.provider === 'resend' ? 'Resend (запасной)' : 'не настроен'}`);
+console.log(`Сервис: ${email.PROVIDER_NAMES[email.provider] || email.provider}`);
 console.log(`Отправляю проверочное письмо на ${to} ...\n`);
 
 email.sendTest(to).then((r) => {

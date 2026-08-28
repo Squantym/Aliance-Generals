@@ -363,6 +363,20 @@ const App = {
     window.addEventListener('hashchange', () => App.route());
     App._initPwa();            // service worker + предложение установить игру
 
+    // Состояние мира спрашиваем ПЕРВЫМ делом и без токена: и обновление,
+    // и метка тестового мира должны быть видны человеку до того, как он
+    // введёт пароль, а не после.
+    try {
+      const w = await fetch('/api/world').then((x) => x.json());
+      if (w && w.test && w.test.on) App.markTestWorld(w.test.name);
+      if (w && w.maintenance && w.maintenance.on) {
+        // Сотрудника обновление не касается — он его и проводит. Понять,
+        // сотрудник ли перед нами, можно только по /api/me, поэтому
+        // здесь лишь запоминаем и решаем ниже.
+        App._maint = w.maintenance;
+      }
+    } catch (e) { /* сервер не отвечает — маршрутизация покажет своё */ }
+
     // Если токен есть — пробуем сразу получить состояние игрока
     if (API.token()) {
       try { App.me = await API.get('/api/me'); }
@@ -373,6 +387,20 @@ const App = {
     // не рисовалось — игрок видел чёрный экран и не понимал, что случилось.
     if (App.me && App.me.banned && App.me.banInfo) {
       App.showBanScreen(App.me.banInfo);
+      return;
+    }
+    // Согласия. Проверка стоит ПОСЛЕ блокировки и ДО маршрутизации:
+    // заблокированному незачем что-либо подтверждать, а всем остальным
+    // окно должно закрыть игру до того, как отрисуется первый экран.
+    if (App.me && App.me.needConsent && App.me.needConsent.length) {
+      App.showConsentGate(App.me.needConsent);
+      return;
+    }
+    // Обновление. Сотрудник сюда не попадает: сервер его пропускает, и
+    // в ответе /api/me поля maintenance нет — иначе снять режим было бы
+    // некому, панель ведь тоже часть игры.
+    if (App._maint && (!App.me || App.me.maintenance)) {
+      App.showMaintenance((App.me && App.me.maintenance) || App._maint);
       return;
     }
     // Ссылки из писем обязаны работать БЕЗ входа — в этом их смысл.
@@ -447,6 +475,20 @@ const App = {
       // произошло и когда это закончится.
       if (App.me && App.me.banned && App.me.banInfo) {
         App.showBanScreen(App.me.banInfo);
+        return;
+      }
+      // Игрок мог быть в игре в момент выката новой редакции документов.
+      // Ждать, пока он перезайдёт, значит обрабатывать его данные без
+      // подтверждения ещё сутки — окно показываем прямо сейчас.
+      if (App.me && App.me.needConsent && App.me.needConsent.length) {
+        App.showConsentGate(App.me.needConsent);
+        return;
+      }
+      // Обновление могли включить, пока игрок сидел в игре. Ждать, пока
+      // он сам наткнётся на ошибку, — значит показать ему поломку
+      // вместо объяснения.
+      if (App.me && App.me.maintenance) {
+        App.showMaintenance(App.me.maintenance);
         return;
       }
       App.renderHeader();
@@ -2091,6 +2133,161 @@ const App = {
   // Игрок входит в игру, но вместо интерфейса видит только это окно:
   // причина, срок и обратный отсчёт. Ничего больше нажать нельзя.
   _banTimer: null,
+
+  // ── Экран обновления ───────────────────────────────────────────
+  // Показывается, пока идёт обновление игры. Закрывает всё: играть в
+  // этот момент нельзя, потому что данные меняются на ходу и запрос,
+  // пришедший не вовремя, может оставить в базе полурассчитанный бой.
+  //
+  // Экран сам себя проверяет раз в 20 секунд и уходит, когда игру
+  // откроют, — человеку не нужно гадать, когда обновлять страницу.
+  //
+  // Честная оговорка про секунды самого перезапуска: пока процесс игры
+  // перезагружается, отвечать некому, и вместо этого экрана браузер
+  // покажет ошибку сервера. Закрыть и эти секунды может только запасная
+  // страница nginx — она описана в ОБНОВЛЕНИЯ-И-ТЕСТ.md.
+  showMaintenance(info) {
+    const box = document.getElementById('maint-screen') || (() => {
+      const d = document.createElement('div');
+      d.id = 'maint-screen';
+      document.body.appendChild(d);
+      return d;
+    })();
+    const wrap = document.getElementById('wrap');
+    if (wrap) wrap.style.display = 'none';
+    const toasts = document.getElementById('toasts');
+    if (toasts) toasts.style.display = 'none';
+
+    const left = () => {
+      if (!info || !info.until) return '';
+      const ms = info.until - Date.now();
+      if (ms <= 0) return 'Обновление затянулось — скоро закончим.';
+      const m = Math.max(1, Math.round(ms / 60000));
+      return `Ориентировочно осталось: ${m} мин.`;
+    };
+
+    const draw = () => {
+      box.innerHTML = `
+        <div class="maint-box">
+          <div class="maint-icon">🛠</div>
+          <div class="maint-title">Идёт обновление</div>
+          <p class="maint-reason">${UI.esc((info && info.reason) || 'Скоро вернёмся.')}</p>
+          ${left() ? `<p class="maint-left">${UI.esc(left())}</p>` : ''}
+          <p class="maint-note">Страница откроется сама, как только игра заработает.
+          Прогресс, армия и ресурсы на месте — обновление их не трогает.</p>
+          <div class="maint-dots"><span></span><span></span><span></span></div>
+        </div>`;
+    };
+    draw();
+    if (App._maintTimer) clearInterval(App._maintTimer);
+    App._maintTimer = setInterval(async () => {
+      draw();
+      try {
+        const r = await fetch('/api/world').then((x) => x.json());
+        if (!r || !r.maintenance || !r.maintenance.on) location.reload();
+        else info = r.maintenance;
+      } catch (e) { /* сервер ещё перезапускается — просто ждём */ }
+    }, 20000);
+  },
+
+  // Полоса «тестовый мир». Перепутать тестовое окно с боевым и раздать
+  // награды не тем людям — ошибка, которая случается ровно один раз и
+  // запоминается надолго. Поэтому метка висит всегда и поверх всего.
+  markTestWorld(name) {
+    if (document.getElementById('test-world-bar')) return;
+    const b = document.createElement('div');
+    b.id = 'test-world-bar';
+    b.textContent = '🧪 ' + (name || 'ТЕСТОВЫЙ МИР') + ' — это не боевая игра';
+    document.body.appendChild(b);
+    document.body.classList.add('is-test-world');
+  },
+
+  // ── Окно подтверждения согласий ────────────────────────────────
+  // Кому показывается: тем, кто регистрировался ДО появления отметок в
+  // форме. Согласий у них нет — их не спрашивали, — а продолжать
+  // обработку «по умолчанию» нельзя: молчание согласием не является.
+  //
+  // Почему окно закрывающее, а не баннер. Баннер решает задачу наполовину:
+  // его увидит и проигнорирует большинство, и через месяц окажется, что
+  // у половины базы согласий по-прежнему нет. Закрывающее окно даёт
+  // однозначный ответ по каждому игроку — да или нет.
+  //
+  // Из окна есть выход: кнопка «Выйти из игры». Человек, который не
+  // согласен, должен иметь возможность уйти, а не оказаться заперт.
+  // Аккаунт при этом цел: он передумает — войдёт и подтвердит.
+  showConsentGate(list) {
+    if (document.getElementById('consent-gate')) return;
+    const box = document.createElement('div');
+    box.id = 'consent-gate';
+    document.body.appendChild(box);
+    const wrap = document.getElementById('wrap');
+    if (wrap) wrap.style.display = 'none';
+    const toasts = document.getElementById('toasts');
+    if (toasts) toasts.style.display = 'none';
+
+    const row = (id, text, link) => `
+      <label class="rg-check">
+        <input type="checkbox" data-cg="${id}">
+        <span>${text}${link ? ` — <a href="${link}" target="_blank" rel="noopener">читать</a>` : ''}</span>
+      </label>`;
+
+    box.innerHTML = `
+      <div class="cg-box">
+        <div class="cg-icon">📋</div>
+        <div class="cg-title">Нужно ваше подтверждение</div>
+        <p class="cg-lead">Вы регистрировались раньше, чем в игре появились отдельные отметки
+        о согласии. Мы обязаны спросить вас прямо, а не считать согласие данным по умолчанию.
+        Это займёт минуту и ничего не меняет в игре: прогресс, армия и альянс на месте.</p>
+
+        <div class="cg-list">
+          ${row('age18', 'Мне исполнилось <b>18 лет</b>')}
+          ${row('terms', 'Принимаю <a href="/terms.html" target="_blank" rel="noopener">Пользовательское '
+            + 'соглашение</a>, <a href="/rules.html" target="_blank" rel="noopener">Правила игры</a> и '
+            + '<a href="/payments.html" target="_blank" rel="noopener">Правила платежей</a>')}
+          ${row('pdn', 'Согласен(на) на <a href="/consent-pdn.html" target="_blank" rel="noopener">обработку '
+            + 'персональных данных</a> по <a href="/privacy.html" target="_blank" rel="noopener">Политике</a>')}
+        </div>
+
+        <hr class="cg-sep">
+        <p class="cg-note" style="margin-top:6px">Необязательно — на игру не влияет:</p>
+        ${row('public', 'Разрешаю показывать мой профиль другим игрокам', '/consent-public.html')}
+        ${row('ads', 'Хочу получать новости и акции', '/consent-ads.html')}
+
+        <button class="btn btn-orange mt" id="cg-go" style="width:100%">Подтверждаю</button>
+        <p class="cg-note">Служебные письма — восстановление пароля, код подтверждения,
+        сообщения о санкциях — приходят всегда: это не реклама.</p>
+        <a class="cg-out" id="cg-out">Выйти из игры</a>
+      </div>`;
+
+    const val = (id) => !!(box.querySelector(`[data-cg="${id}"]`) || {}).checked;
+    document.getElementById('cg-go').onclick = async () => {
+      // Проверяем и здесь, и на сервере. Клиентская проверка подсказывает
+      // сразу; серверная — единственная, на которую можно положиться.
+      if (!val('age18')) return UI.toast('⛔ Подтвердите, что вам есть 18 лет');
+      if (!val('terms')) return UI.toast('⛔ Примите Пользовательское соглашение');
+      if (!val('pdn'))   return UI.toast('⛔ Нужно согласие на обработку персональных данных');
+      const btn = document.getElementById('cg-go');
+      btn.disabled = true; btn.textContent = 'Сохраняю…';
+      try {
+        await API.post('/api/consents/accept-all', {
+          consents: {
+            age18: true, terms: true, pdn: true,
+            public: val('public'), ads: val('ads'),
+            publicScope: { nick: true, flag: true, stats: true, ally: true },
+          },
+        });
+        location.reload();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Подтверждаю';
+        UI.toast('⛔ ' + e.message);
+      }
+    };
+    document.getElementById('cg-out').onclick = () => {
+      API.setToken('');
+      location.hash = '#auth';
+      location.reload();
+    };
+  },
 
   showBanScreen(info) {
     document.getElementById('war-report-window')?.remove();

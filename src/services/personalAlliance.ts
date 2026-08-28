@@ -135,7 +135,7 @@ function buyDiplomat(user: User, notices: Notices) {
   if (user.gold < cost) {
     throw new u.ApiError(`Дипломат стоит 🪙 ${cost} (каждый следующий вдвое дороже).`);
   }
-  user.gold -= cost;
+  require('./player').spendGold(user, cost, 'alliance');
   user.allianceDiplomats = (user.allianceDiplomats || 0) + 1;
   db.save('users');
   notices.push(`🎩 Дипломат нанят! Лимит заявок: ${inviteLimit(user)}/час. Всего дипломатов: ${user.allianceDiplomats}.`);

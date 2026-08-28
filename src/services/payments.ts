@@ -100,7 +100,12 @@ function confirmPayment(orderId: string): { ok: boolean } {
     const mul = require('./discounts').bonusMul('gold', user);
     credited = Math.round(order.gold * mul);
   } catch (e) {}
-  require('./player').addGold(user, credited, 'purchase');
+  // Купленным помечается ВЕСЬ зачисленный объём, включая бонус акции и
+  // VIP: игрок заплатил за пакет, а бонус — часть того, что ему обещали
+  // при оплате. Делить его на «оплаченную» и «подарочную» части значило
+  // бы при возврате оставлять человеку кусок, который без покупки ему бы
+  // не достался.
+  require('./player').addGold(user, credited, 'purchase', true);
   (order as any).creditedGold = credited;
   // Реферальный процент: 10% от купленного золота — пригласившему
   try { require('./features').onReferralPurchase(user, credited); } catch (e) {}

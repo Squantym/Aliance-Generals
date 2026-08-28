@@ -1,0 +1,64 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Оформление юридических страниц: соглашение, политика, правила,
+   согласия. Один файл на все документы — иначе стиль расходится, и
+   страницы начинают выглядеть как с разных сайтов.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.doc { max-width: 820px; margin: 0 auto; padding: 18px 16px 60px; line-height: 1.65; }
+.doc h1 { font-size: 23px; margin: 6px 0 4px; color: var(--gold); }
+.doc h2 { font-size: 17px; margin: 26px 0 8px; color: var(--orange-1); }
+.doc h3 { font-size: 15px; margin: 18px 0 6px; color: var(--text); }
+.doc p, .doc li { font-size: 14.5px; }
+.doc ul, .doc ol { padding-left: 22px; margin: 8px 0; }
+.doc li { margin: 5px 0; }
+
+.doc-date { color: var(--dim); font-size: 13px; margin-bottom: 18px; }
+.doc-back { display: inline-block; margin-bottom: 14px; color: var(--orange-1); text-decoration: none; }
+.doc-back:hover { text-decoration: underline; }
+
+/* Пояснение сбоку — то, что не является условием договора, а помогает
+   понять, зачем условие нужно. */
+.doc-note {
+  border-left: 3px solid var(--orange-1); background: var(--panel-2);
+  padding: 10px 12px; margin: 14px 0; border-radius: 0 6px 6px 0; font-size: 14px;
+}
+
+/* «Коротко о главном» — человеческая выжимка в начале публичных
+   документов. Юридическую силу несёт основной текст, но игрок читает
+   первые пять строк, и они должны быть правдой. */
+.doc-key {
+  border: 1px solid var(--gold); background: rgba(200,160,60,.07);
+  padding: 12px 14px; margin: 16px 0; border-radius: 8px;
+}
+.doc-key strong { color: var(--gold); }
+.doc-key ul { margin: 8px 0 0; }
+
+/* Незаполненное место. Красным — чтобы пропуск нельзя было не заметить
+   ни при вычитке, ни на живой странице. */
+.doc-fill { color: var(--red); font-weight: bold; }
+
+/* Таблицы документов: на телефоне прокручиваются вбок, а не ломают
+   страницу. */
+.doc-table-wrap { overflow-x: auto; margin: 12px 0; -webkit-overflow-scrolling: touch; }
+.doc table { border-collapse: collapse; width: 100%; min-width: 480px; font-size: 13.5px; }
+.doc th, .doc td { border: 1px solid var(--border-dim); padding: 7px 9px; text-align: left; vertical-align: top; }
+.doc th { background: var(--panel-2); color: var(--gold); font-weight: bold; }
+
+/* Оглавление комплекта: карточки-ссылки на связанные документы. */
+.doc-map { display: grid; gap: 8px; margin: 14px 0; }
+.doc-map a {
+  display: block; padding: 10px 12px; border: 1px solid var(--border-dim);
+  border-radius: 8px; background: var(--panel-2); text-decoration: none; color: var(--text);
+}
+.doc-map a:hover { border-color: var(--gold); }
+.doc-map b { color: var(--gold); display: block; font-size: 14.5px; }
+.doc-map span { color: var(--dim); font-size: 13px; }
+
+/* Реквизиты Оператора — их рисует /js/legal.js из одного места. */
+.doc-req { margin-top: 26px; }
+.doc-foot { margin-top: 26px; font-size: 13.5px; color: var(--dim); }
+.doc-foot a { color: var(--orange-1); }
+
+/* Чекбоксы в текстах согласий — образец формы, не рабочее поле. */
+.doc-choice { list-style: none; padding-left: 0; }
+.doc-choice li::before { content: '☐ '; color: var(--gold); }

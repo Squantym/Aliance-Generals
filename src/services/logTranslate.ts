@@ -421,6 +421,25 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/mail/read-all':          return '📬 Прочитал всю почту';
       case '/api/push/subscribe':         return '📲 Включил push-уведомления';
       case '/api/push/unsubscribe':       return '📴 Отключил push-уведомления';
+      // Согласия. В журнале это должно читаться как действие человека, а
+      // не как адрес: спор о том, отзывал ли игрок согласие, разбирается
+      // именно по журналу.
+      case '/api/consents':
+        return body && body.on
+          ? `✅ Дал согласие: ${String(body.id || '—')}`
+          : `🚫 Отозвал согласие: ${String((body && body.id) || '—')}`;
+      case '/api/unsubscribe':            return '🚫 Отписался от рассылки по ссылке из письма';
+      case '/api/consents/accept-all':    return '✅ Подтвердил согласия в окне при входе';
+      // Остановка игры и выкат кода. В журнале это должно читаться
+      // мгновенно: если игра вдруг закрыта, первым делом смотрят сюда.
+      case '/api/admin/maintenance':
+        return body && body.on
+          ? `🛠 ЗАКРЫЛ игру на обновление: ${String((body && body.reason) || '—')}`
+          : '✅ ОТКРЫЛ игру для игроков';
+      case '/api/admin/release/deploy':
+        return `🚀 Запустил выкат версии ${String((body && body.commit) || '—')}`;
+      case '/api/admin/test-account':
+        return `🧪 Создал тестовый аккаунт «${String((body && body.login) || '—')}»`;
       case '/api/login-reward/claim':     return '🎁 Забрал награду за вход';
       case '/api/war-report/ack':         return '📄 Закрыл сводку «пока вас не было»';
       case '/api/achievements/ack':       return '🏅 Закрыл окно достижения';
@@ -595,7 +614,10 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/admin/mail/preview':
         return `✉️ Отправил образец письма «${body.id || '—'}» на ${body.to || '—'}`;
       case '/api/admin/mail/broadcast':
-        return body.stop ? '⏹ Остановил рассылку писем' : '✉️ Запустил рассылку писем всем игрокам';
+        return body.stop ? '⏹ Остановил рассылку писем'
+          : `✉️ Запустил рассылку писем (${body.group === 'active' ? 'активным'
+            : body.group === 'sleeping' ? 'спящим'
+            : body.group === 'newbies' ? 'новичкам' : 'всем'})`;
       case '/api/admin/set-password':
         return `🔑 Назначил новый пароль игроку ${body.targetName || body.userId || '—'}`;
       case '/api/admin/delete-account':

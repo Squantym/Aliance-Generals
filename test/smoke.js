@@ -43,6 +43,10 @@ function startServer(extraEnv) {
       env: Object.assign({}, process.env, {
         PORT: String(PORT),
         DISABLE_RATE_LIMIT: '1',      // сценарий регистрирует игроков пачками
+        // Второй фактор сотрудников проверяется отдельно, в
+        // test/consents.test.js. Здесь он закрыл бы панель и сценарий
+        // не дошёл бы до того, ради чего написан.
+        STAFF_2FA_REQUIRED: '0',
         DB_DRIVER: '',                // JSON-режим: временная папка, ничего не жалко
         MONGODB_URI: '',
         NODE_ENV: 'test',
@@ -111,6 +115,7 @@ async function bootstrap(adminName, adminPass, adminEmail) {
   srv = await startServer();
   const reg = await post('/api/register', null, {
     login: adminName, email: adminEmail, password: adminPass, country: 'ru',
+    consents: { age18: true, terms: true, pdn: true },
   });
   if (reg.status !== 200) throw new Error('не удалось создать игрока для прав: ' + JSON.stringify(reg.data));
 
@@ -155,20 +160,20 @@ async function main() {
   if (bootToken) {
     // Игрок уже создан на шаге 0 — повторная регистрация того же
     // позывного обязана быть отклонена, это тоже проверка.
-    const again = await post('/api/register', null, { login: nameA, email: `dup${stamp}@test.ru`, password: passA, country: 'ru' });
+    const again = await post('/api/register', null, { login: nameA, email: `dup${stamp}@test.ru`, password: passA, country: 'ru', consents: { age18: true, terms: true, pdn: true } });
     check('повторная регистрация того же позывного отклонена', again.status === 400);
     A = bootToken;
   } else {
-    const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: passA, country: 'ru' });
+    const regA = await post('/api/register', null, { login: nameA, email: `admina${stamp}@test.ru`, password: passA, country: 'ru', consents: { age18: true, terms: true, pdn: true } });
     check('первый игрок зарегистрирован', regA.status === 200 && (!!regA.data.token || regA.data.pending));
     A = regA.data.token; // в dev-режиме есть сразу
   }
-  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'parol12345', country: 'ua' });
+  const regB = await post('/api/register', null, { login: nameB, email: `boetsb${stamp}@test.ru`, password: 'parol12345', country: 'ua', consents: { age18: true, terms: true, pdn: true } });
   check('второй игрок зарегистрирован', regB.status === 200);
   const B = regB.data.token;
-  const dupe = await post('/api/register', null, { login: nameA, email: `dupe${stamp}@test.ru`, password: 'x1234', country: 'ru' });
+  const dupe = await post('/api/register', null, { login: nameA, email: `dupe${stamp}@test.ru`, password: 'x1234', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   check('дубликат позывного отклонён', dupe.status === 400);
-  const dupeEmail = await post('/api/register', null, { login: 'ZZZ' + stamp, email: `admina${stamp}@test.ru`, password: 'x1234', country: 'ru' });
+  const dupeEmail = await post('/api/register', null, { login: 'ZZZ' + stamp, email: `admina${stamp}@test.ru`, password: 'x1234', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   check('дубликат email отклонён', dupeEmail.status === 400);
   const login = await post('/api/login', null, { login: nameA, password: passA });
   check('вход работает', login.status === 200 && !!login.data.token);
@@ -563,7 +568,7 @@ async function main() {
 
   console.log('23. Защита построек учитывается в power.def');
   // Берём C — нового игрока без построек
-  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'parol12345', country: 'kz' });
+  const regC = await post('/api/register', null, { login: 'C' + stamp, email: `c${stamp}@t.ru`, password: 'parol12345', country: 'kz', consents: { age18: true, terms: true, pdn: true } });
   const C = regC.data.token;
   const idC = (await get('/api/me', C)).data.id;
   await post('/api/admin/grant', A, { userId: idC, setLevel: 35, dollars: 100000 });

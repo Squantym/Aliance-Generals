@@ -8,6 +8,9 @@ fs.rmSync(TEST_CWD, { recursive: true, force: true });
 fs.mkdirSync(TEST_CWD + '/data', { recursive: true });
 process.chdir(TEST_CWD);
 process.env.DISABLE_RATE_LIMIT = '1';
+// Второй фактор сотрудников проверяется отдельно (test/consents.test.js).
+// Здесь он мешал бы: тест про резервные копии, а не про вход в панель.
+process.env.STAFF_2FA_REQUIRED = '0';
 process.env.PORT = '3478';
 process.env.DB_DRIVER = 'sqlite';
 process.env.SQLITE_DIR = TEST_CWD + '/data';

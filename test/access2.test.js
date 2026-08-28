@@ -18,6 +18,8 @@ const player = require('../dist/src/services/player');
 const access = require('../dist/src/services/access');
 const auth   = require('../dist/src/services/auth');
 const mailer = require('../dist/src/services/mailer');
+const fs     = require('fs');
+const path   = require('path');
 
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
@@ -176,16 +178,34 @@ console.log('\n[5] Сброс пароля закрывает чужие сес�
 
   console.log('\n    рассылка знает своих получателей');
   reset();
-  const R1 = mk('r1'); const R2 = mk('r2'); const R3 = mk('r3');
+  // Рассылка уходит только тем, кто на неё СОГЛАСИЛСЯ. Подтверждённая
+  // почта — условие техническое, а не разрешение: реклама без согласия
+  // адресата запрещена, и «зарегистрировался — значит согласен» таким
+  // согласием не является.
+  const consent = require('../dist/src/services/consent');
+  const R1 = mk('r1'); const R2 = mk('r2'); const R3 = mk('r3'); const R4 = mk('r4');
   R2.emailVerified = false;              // не подтвердил почту
   R3.email = '';                         // почты нет вовсе
-  um['r1'] = R1; um['r2'] = R2; um['r3'] = R3;
+  for (const p of [R1, R2, R3, R4]) consent.record(p, 'ads', { ip: '1.1.1.1' });
+  consent.withdraw(R4, 'ads', '1.1.1.1');  // согласие было и отозвано
+  um['r1'] = R1; um['r2'] = R2; um['r3'] = R3; um['r4'] = R4;
   const aud = mailer.audience(um);
-  eq('получателей с подтверждённой почтой', aud.ready, 1);
+  eq('получателей с подтверждённой почтой и согласием', aud.ready, 1);
   eq('без подтверждения', aud.unverified, 1);
   eq('без почты', aud.noEmail, 1);
-  ok('в список рассылки попал только подтверждённый',
+  ok('в список рассылки попал только согласившийся',
      mailer.recipients(um).map((x) => x.id).join(',') === 'r1');
+  ok('отозвавший согласие в рассылку не попадает',
+     mailer.recipients(um).every((x) => x.id !== 'r4'));
+
+  console.log('\n    в письме рассылки есть ссылка отписки');
+  // Ссылку добавляет код рассылки, а не шаблон: шаблон правит владелец
+  // из панели и может её случайно стереть.
+  ok('ссылка собирается для игрока', /unsubscribe\.html\?u=r1&k=/.test(mailer.unsubUrl(R1)));
+  ok('у каждого свой ключ', mailer.unsubUrl(R1) !== mailer.unsubUrl(R2));
+  const mailerSrc = fs.readFileSync(path.join(__dirname, '..', 'src/services/mailer.ts'), 'utf8');
+  ok('подвал с отпиской добавляется к письму рассылки, а не берётся из шаблона',
+     /Отписаться от рассылки/.test(mailerSrc) && /next\.unsub/.test(mailerSrc));
 
   console.log(`\n═══ Всего проверок: ${passed} ═══`);
   process.exit(0);
