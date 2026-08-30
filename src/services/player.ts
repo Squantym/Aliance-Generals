@@ -1098,6 +1098,14 @@ function mePayload(user: User): any {
     needConsent: (() => {
       try { return require('./consent').outdated(user); } catch (e) { return []; }
     })(),
+    // Назначенное, но ещё не наступившее окно обслуживания. Игрок сейчас
+    // играет как обычно — ему нужна полоса с обратным отсчётом, а не
+    // запертая дверь. Действующий режим сюда не попадает: он приезжает
+    // отдельным полем из http.ts, потому что до этой сборки ответа
+    // обычный игрок в тот момент просто не доходит.
+    maintenanceSoon: (() => {
+      try { return require('./maintenance').view().soon; } catch (e) { return null; }
+    })(),
     power: { atk: atk.power, def: def.power, taken: atk.taken, unitTaken: atk.unitTaken, secretTaken: atk.secretTaken },
     incomePerHour: totalIncome(user), upkeepPerHour: totalUpkeep(user),
     nextPayoutSec: Math.max(0, Math.ceil((user.lastIncomeAt + HOUR - now) / 1000)),

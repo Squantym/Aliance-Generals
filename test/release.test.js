@@ -192,12 +192,145 @@ async function makePlayer(login, mail) {
   const twice = await post('/api/admin/maintenance', { on: false }, owner2);
   ok('повторное открытие отклонено внятно', twice.status >= 400 && /выключен/i.test(twice.d.error || ''));
 
+  console.log('\n── 7б. Отложенное окно обслуживания ──');
+  // Главное здесь: НАЗНАЧЕННОЕ окно игру НЕ закрывает. Если бы оно
+  // закрывало, «назначить профилактику на ночь» означало бы «выключить
+  // игру прямо сейчас» — и выяснилось бы это уже от игроков.
+  const plan = await post('/api/admin/maintenance',
+    { on: true, reason: 'Плановая профилактика', delayMin: 60, durationMin: 30 }, owner2);
+  ok('окно назначено', plan.status === 200);
+  ok('оно помечено как ещё не наступившее', plan.d.pending === true);
+  ok('и игра при этом НЕ закрыта', plan.d.on === false);
+  ok('начало через час', Math.abs(plan.d.startAt - (Date.now() + 3600000)) < 20000);
+  ok('длительность считается от начала окна, а не от «сейчас»',
+     Math.abs(plan.d.until - (plan.d.startAt + 1800000)) < 5000);
+  ok('самооткрытие по умолчанию выключено', plan.d.auto === false);
+
+  const meSoon = await get('/api/me', player2);
+  ok('игрок продолжает играть', meSoon.status === 200);
+  ok('и окна обновления у него нет', !meSoon.d.maintenance);
+  ok('зато есть предупреждение с временем начала',
+     !!meSoon.d.maintenanceSoon && meSoon.d.maintenanceSoon.startAt === plan.d.startAt);
+  ok('с причиной', /профилактика/i.test((meSoon.d.maintenanceSoon || {}).reason || ''));
+  const actSoon = await post('/api/war/attack', { targetName: 'Хозяин' }, player2);
+  ok('играть по-прежнему можно', actSoon.status !== 503);
+
+  const wSoon = await get('/api/world');
+  ok('/api/world говорит, что игра открыта', wSoon.d.maintenance.on === false);
+  ok('и отдельно — про будущее окно', !!wSoon.d.maintenance.soon);
+
+  // Регистрация во время НАЗНАЧЕННОГО окна закрываться не должна: до
+  // начала могут быть часы, и терять всех новичков за эти часы — цена
+  // ни за что.
+  const regSoon = await post('/api/register',
+    { login: 'Новичок2', email: 'n2@t.ru', password: 'пароль123', country: 'ru', consents: CONS });
+  ok('регистрация во время назначенного окна открыта', regSoon.status === 200);
+
+  // Назначенное на ночь окно, потерянное при первом же перезапуске,
+  // хуже, чем не назначенное вовсе: владелец на него рассчитывает.
+  await stop(srv);
+  srv = await startServer(env);
+  const wAfter = await get('/api/world');
+  ok('назначенное окно пережило перезапуск', !!wAfter.d.maintenance.soon);
+  ok('и игра всё ещё открыта', wAfter.d.maintenance.on === false);
+
+  let owner4 = (await post('/api/login', { login: 'Хозяин', password: 'пароль123' })).d.token;
+  const cancel = await post('/api/admin/maintenance', { on: false }, owner4);
+  ok('назначенное окно отменяется той же кнопкой', cancel.status === 200);
+  ok('после отмены предупреждения нет', !(await get('/api/world')).d.maintenance.soon);
+
+  console.log('\n── 7в. Наступление окна и самооткрытие по сроку ──');
+  // Время вперёд не перевести, поэтому подменяем состояние в базе —
+  // ровно то же самое сделало бы наступившее время. Заодно это ещё раз
+  // проверяет, что режим читается из базы, а не из памяти процесса.
+  const mFile = path.join(workDir, 'data', 'maintenance.json');
+  const setState = async (patch) => {
+    await stop(srv);
+    let cur = {};
+    try { cur = JSON.parse(fs.readFileSync(mFile, 'utf8')); } catch (e) {}
+    fs.writeFileSync(mFile, JSON.stringify(Object.assign(cur, patch)));
+    srv = await startServer(env);
+  };
+
+  // Окно, назначенное на час назад, — то есть уже наступившее.
+  await setState({
+    on: true, startAt: Date.now() - 3600000, until: 0, auto: false,
+    reason: 'Плановая профилактика', by: 'Хозяин', at: Date.now() - 7200000, offAt: 0,
+  });
+  const wNow = await get('/api/world');
+  ok('наступившее окно закрывает игру', wNow.d.maintenance.on === true);
+  ok('и предупреждения уже нет — есть само окно', !wNow.d.maintenance.soon);
+  const playerNow = (await post('/api/login', { login: 'Боец', password: 'пароль123' })).d.token;
+  ok('игрок в игру не попадает',
+     (await post('/api/war/attack', { targetName: 'Хозяин' }, playerNow)).status === 503);
+
+  // Срок истёк, галочки самооткрытия НЕТ — игра обязана остаться
+  // закрытой. Это самое важное решение во всём разделе: если обновление
+  // затянулось, автоматически открытые двери впустили бы людей в
+  // сломанную игру.
+  await setState({ on: true, until: Date.now() - 60000, auto: false, offAt: 0 });
+  ok('срок истёк, но без галочки игра остаётся закрытой',
+     (await get('/api/world')).d.maintenance.on === true);
+
+  // А с галочкой — открывается сама. Это ночная профилактика, которую
+  // владелец не собирается закрывать вручную в четыре утра.
+  await setState({ on: true, until: Date.now() - 60000, auto: true, offAt: 0 });
+  const wAuto = await get('/api/world');
+  ok('с галочкой самооткрытия игра открылась по сроку', wAuto.d.maintenance.on === false);
+  const playerBack = (await post('/api/login', { login: 'Боец', password: 'пароль123' })).d.token;
+  ok('игрок снова играет', (await get('/api/me', playerBack)).status === 200);
+  // Снятие пишется в базу, а не пересчитывается на каждом запросе:
+  // иначе журнал не знал бы, когда именно игра открылась, а сообщение
+  // в консоль печаталось бы по разу на запрос.
+  // Запись в базу отложенная (400 мс) — ждём её честно.
+  await new Promise((r) => setTimeout(r, 900));
+  const savedState = JSON.parse(fs.readFileSync(mFile, 'utf8'));
+  ok('снятие записано в базу', savedState.on === false && savedState.offAt > 0);
+
+  // Самооткрытие без названного срока — это окно, которое никогда не
+  // снимется само, хотя владелец на это рассчитывал. Галочка молча
+  // игнорируется.
+  owner4 = (await post('/api/login', { login: 'Хозяин', password: 'пароль123' })).d.token;
+  const noDur = await post('/api/admin/maintenance',
+    { on: true, reason: 'Без срока', durationMin: 0, auto: true }, owner4);
+  ok('самооткрытие без срока не включается', noDur.d.auto === false);
+  await post('/api/admin/maintenance', { on: false }, owner4);
+
+  // Выкат кнопкой не ставит самооткрытие НИКОГДА: после обновления игра
+  // может не подняться, и открывать её должен человек, посмотрев.
+  const relSrc = fs.readFileSync(path.join(ROOT, 'src/services/release.ts'), 'utf8');
+  ok('выкат закрывает игру без самооткрытия',
+     /maintenance\.turnOn\(/.test(relSrc) && !/turnOn\([^)]*auto/.test(relSrc));
+
+  console.log('\n── 7г. Текст окна обновления ──');
+  // В окне обновления это единственное, что владелец может сказать
+  // игрокам, и одной строки на «что чиним, надолго ли и что будет с
+  // прогрессом» не хватает.
+  const long = 'Меняем боевой расчёт.\n\nПрогресс и армия на месте.\nБои сдвинутся.';
+  const withText = await post('/api/admin/maintenance',
+    { on: true, reason: long, durationMin: 20 }, owner4);
+  ok('многострочный текст принят', withText.status === 200);
+  ok('переносы строк сохранены', withText.d.reason === long);
+  const seen = await get('/api/me', (await post('/api/login',
+    { login: 'Боец', password: 'пароль123' })).d.token);
+  ok('игрок видит его целиком', (seen.d.maintenance || {}).reason === long);
+
+  // Управляющие символы вычищаем: попасть в разметку они не могут (текст
+  // рисуется как textContent), но мусор в журнале и в базе не нужен.
+  const dirty = await post('/api/admin/maintenance',
+    { on: false }, owner4).then(() => post('/api/admin/maintenance',
+    { on: true, reason: 'Чисто\u0007 так\r\nи так', durationMin: 5 }, owner4));
+  ok('управляющие символы вычищены',
+     !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(dirty.d.reason || ''));
+  ok('а перенос строки остался', /Чисто так\nи так/.test(dirty.d.reason || ''));
+  await post('/api/admin/maintenance', { on: false }, owner4);
+
   console.log('\n── 8. Выкат не принимает чужие команды ──');
   // Кнопка выката — это удалённое выполнение кода. Всё, что не похоже
   // на номер версии, обязано отсекаться ДО оболочки.
   const badCommits = ['origin/main; whoami', '$(id)', '../../etc/passwd', 'main && rm -rf /', 'zzz'];
   for (const c of badCommits) {
-    const r = await post('/api/admin/release/deploy', { commit: c }, owner2);
+    const r = await post('/api/admin/release/deploy', { commit: c }, owner4);
     ok(`отклонено: «${c}»`, r.status >= 400);
   }
   // Проверяем и сам образец — вызовом, а не чтением кода.
@@ -212,7 +345,7 @@ async function makePlayer(login, mail) {
 
   console.log('\n── 9. Тестовые аккаунты только в тестовом мире ──');
   const noTest = await post('/api/admin/test-account',
-    { login: 'Тестер1', password: 'пароль123' }, owner2);
+    { login: 'Тестер1', password: 'пароль123' }, owner4);
   ok('на боевом сервере отказ', noTest.status >= 400);
   ok('и объяснено, что это только для тестового мира', /тестов/i.test(noTest.d.error || ''));
 

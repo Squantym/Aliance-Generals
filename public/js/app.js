@@ -375,6 +375,9 @@ const App = {
         // здесь лишь запоминаем и решаем ниже.
         App._maint = w.maintenance;
       }
+      // Назначенное окно: игру не закрывает, поэтому его достаточно
+      // запомнить и показать полосой после маршрутизации.
+      if (w && w.maintenance && w.maintenance.soon) App._maintSoonInit = w.maintenance.soon;
     } catch (e) { /* сервер не отвечает — маршрутизация покажет своё */ }
 
     // Если токен есть — пробуем сразу получить состояние игрока
@@ -412,6 +415,13 @@ const App = {
     // всё работало — поэтому поломка выглядела плавающей.
     if (!App.me && !App._isMailLink()) location.hash = '#auth';
     App.route();
+
+    // Полоса «скоро обновление» — после маршрутизации: до неё экран
+    // перерисовывается целиком, и полоса встала бы под ним. Сотрудник
+    // видит её тоже, и это правильно: он сам её и назначил, а забыть про
+    // собственное окно — обычное дело.
+    const soon = (App.me ? App.me.maintenanceSoon : App._maintSoonInit);
+    if (soon) App.showMaintenanceSoon(soon);
 
     App.startOnlineCounter();
     App._prefetchScreens();
@@ -490,6 +500,18 @@ const App = {
       if (App.me && App.me.maintenance) {
         App.showMaintenance(App.me.maintenance);
         return;
+      }
+      // Окно могли назначить (или отменить), пока игрок сидит в игре.
+      if (App.me && App.me.maintenanceSoon) {
+        // Не перерисовываем полосу без нужды: сброс таймера каждый опрос
+        // означал бы, что закрытый крестиком баннер возвращается сам.
+        const prev = App._maintSoon;
+        if (!prev || prev.startAt !== App.me.maintenanceSoon.startAt) {
+          App._maintSoonHidden = false;
+          App.showMaintenanceSoon(App.me.maintenanceSoon);
+        }
+      } else if (App._maintSoon) {
+        App.hideMaintenanceSoon();
       }
       App.renderHeader();
       // Ежедневная награда за вход выдана автоматически — показываем тост
@@ -2146,7 +2168,24 @@ const App = {
   // перезагружается, отвечать некому, и вместо этого экрана браузер
   // покажет ошибку сервера. Закрыть и эти секунды может только запасная
   // страница nginx — она описана в ОБНОВЛЕНИЯ-И-ТЕСТ.md.
+  // Перезагрузка страницы одной строкой в одном месте. Вынесено не ради
+  // красоты: location.reload() в тесте не подменить ничем, и без этого
+  // шва проверить «окно закрылось само, когда игру открыли» можно было
+  // бы только вручную — то есть никогда.
+  _reload() { location.reload(); },
+
+  // Картинки карусели. Список здесь, а не приходит с сервера: экран
+  // недоступности не должен зависеть от лишних запросов к серверу,
+  // который в этот момент и так перезапускается.
+  _MAINT_PICS: [1, 2, 3, 4, 5, 6, 7].map((n) => `/img/maintenance/${n}.webp`),
+  _maintPic: 0,
+
   showMaintenance(info) {
+    // Экран строится ОДИН раз, дальше меняются только текст и картинка.
+    // Перерисовывать его целиком каждые несколько секунд нельзя: браузер
+    // заново качал бы картинку, и вместо карусели человек видел бы
+    // мигание.
+    const fresh = !document.getElementById('maint-screen');
     const box = document.getElementById('maint-screen') || (() => {
       const d = document.createElement('div');
       d.id = 'maint-screen';
@@ -2157,37 +2196,194 @@ const App = {
     if (wrap) wrap.style.display = 'none';
     const toasts = document.getElementById('toasts');
     if (toasts) toasts.style.display = 'none';
+    // Полоса «скоро обновление» своё отработала — теперь есть сам экран.
+    App.hideMaintenanceSoon();
 
-    const left = () => {
-      if (!info || !info.until) return '';
-      const ms = info.until - Date.now();
-      if (ms <= 0) return 'Обновление затянулось — скоро закончим.';
-      const m = Math.max(1, Math.round(ms / 60000));
-      return `Ориентировочно осталось: ${m} мин.`;
-    };
-
-    const draw = () => {
+    const pics = App._MAINT_PICS;
+    if (fresh) {
+      // Первую картинку выбираем случайно: иначе каждое обновление
+      // начиналось бы с одного и того же кадра.
+      App._maintPic = Math.floor(Math.random() * pics.length);
       box.innerHTML = `
-        <div class="maint-box">
-          <div class="maint-icon">🛠</div>
-          <div class="maint-title">Идёт обновление</div>
-          <p class="maint-reason">${UI.esc((info && info.reason) || 'Скоро вернёмся.')}</p>
-          ${left() ? `<p class="maint-left">${UI.esc(left())}</p>` : ''}
-          <p class="maint-note">Страница откроется сама, как только игра заработает.
-          Прогресс, армия и ресурсы на месте — обновление их не трогает.</p>
-          <div class="maint-dots"><span></span><span></span><span></span></div>
+        <div class="maint-box" role="dialog" aria-modal="true" aria-live="polite">
+          <div class="maint-slides">
+            ${pics.map((src, i) => `<img src="${UI.esc(src)}" alt=""
+                 ${i === App._maintPic ? 'class="on"' : 'loading="lazy"'}>`).join('')}
+          </div>
+          <div class="maint-pad">
+            <div class="maint-pips">${pics.map(() => '<i></i>').join('')}</div>
+            <div class="maint-icon">🛠</div>
+            <div class="maint-title">Идёт обновление</div>
+            <p class="maint-reason"></p>
+            <p class="maint-left" hidden></p>
+            <p class="maint-note">Страница откроется сама, как только игра заработает.
+            Прогресс, армия и ресурсы на месте — обновление их не трогает.
+            Назначенные бои не пройдут без вас: их сроки сдвинутся ровно на время
+            обновления.</p>
+            <div class="maint-dots"><span></span><span></span><span></span></div>
+          </div>
         </div>`;
+    }
+
+    const imgs = box.querySelectorAll('.maint-slides img');
+    const pips = box.querySelectorAll('.maint-pips i');
+
+    const paint = () => {
+      // textContent, а не innerHTML: текст пишет владелец, и разметка из
+      // него в страницу попадать не должна. Переносы строк рисует CSS
+      // (white-space: pre-line).
+      const r = box.querySelector('.maint-reason');
+      if (r) r.textContent = (info && info.reason) || 'Скоро вернёмся.';
+
+      const el = box.querySelector('.maint-left');
+      if (el) {
+        const ms = info && info.until ? info.until - Date.now() : 0;
+        let text = '';
+        if (info && info.until) {
+          text = ms <= 0
+            ? 'Обновление затянулось — скоро закончим.'
+            : `Ориентировочно осталось: ${Math.max(1, Math.round(ms / 60000))} мин.`;
+        }
+        el.textContent = text;
+        el.hidden = !text;
+      }
     };
-    draw();
+
+    const rotate = () => {
+      if (!imgs.length) return;
+      App._maintPic = (App._maintPic + 1) % imgs.length;
+      imgs.forEach((im, i) => im.classList.toggle('on', i === App._maintPic));
+      pips.forEach((p, i) => p.classList.toggle('on', i === App._maintPic));
+      // Следующий кадр подгружаем заранее, чтобы смена была мгновенной.
+      const next = imgs[(App._maintPic + 1) % imgs.length];
+      if (next && next.loading === 'lazy') next.loading = 'eager';
+    };
+
+    paint();
+    imgs.forEach((im, i) => im.classList.toggle('on', i === App._maintPic));
+    pips.forEach((p, i) => p.classList.toggle('on', i === App._maintPic));
+
+    // Три таймера, каждый со своим делом. Смешать их в один значило бы
+    // либо крутить картинку раз в двадцать секунд (это не карусель),
+    // либо дёргать сервер каждые семь (это лишняя нагрузка ровно в тот
+    // момент, когда он перезапускается).
     if (App._maintTimer) clearInterval(App._maintTimer);
+    if (App._maintPicTimer) clearInterval(App._maintPicTimer);
+    if (App._maintTextTimer) clearInterval(App._maintTextTimer);
+
+    App._maintPicTimer = setInterval(rotate, 7000);
+    App._maintTextTimer = setInterval(paint, 30000);
     App._maintTimer = setInterval(async () => {
-      draw();
       try {
         const r = await fetch('/api/world').then((x) => x.json());
-        if (!r || !r.maintenance || !r.maintenance.on) location.reload();
-        else info = r.maintenance;
+        // Игру открыли — окно закрывается САМО, перезагрузкой страницы:
+        // за время обновления поменялся и код, и разметка, так что
+        // «просто спрятать окно» оставило бы игрока на старой версии.
+        if (!r || !r.maintenance || !r.maintenance.on) return App._reload();
+        info = r.maintenance;
+        paint();
       } catch (e) { /* сервер ещё перезапускается — просто ждём */ }
     }, 20000);
+  },
+
+  // ── Полоса «скоро обновление» ──────────────────────────────────
+  // Окно обслуживания назначено, но ещё не наступило: игра работает,
+  // игрок играет. Закрывающий экран тут был бы враньём — до начала
+  // остались часы, — а молчание нечестно: человек начнёт постройку на
+  // восемь часов или полезет в бой ровно перед закрытием.
+  //
+  // Поэтому полоса с обратным отсчётом. Её можно закрыть крестиком:
+  // висеть восемь часов подряд она не должна, иначе её просто перестают
+  // видеть. Но за пять минут до начала она возвращается сама — это
+  // единственный момент, когда предупреждение действительно решает,
+  // успеет игрок доиграть бой или вылетит из него.
+  //
+  // Когда время приходит, полоса сама спрашивает сервер: если игру
+  // закрыли — показывает закрывающий экран. Ждать, пока игрок наткнётся
+  // на ошибку, значит показать ему поломку вместо объяснения.
+  showMaintenanceSoon(info) {
+    if (!info || !info.startAt) return App.hideMaintenanceSoon();
+    App._maintSoon = info;
+    // Окно могли переназначить на другое время — старый опрос про
+    // прежнее начало теперь врёт.
+    if (App._maintSoonPoll) { clearInterval(App._maintSoonPoll); App._maintSoonPoll = null; }
+
+    const box = document.getElementById('maint-soon') || (() => {
+      const d = document.createElement('div');
+      d.id = 'maint-soon';
+      document.body.appendChild(d);
+      return d;
+    })();
+    // Под полосой тестового мира, если она есть, — иначе они наложатся.
+    box.style.top = document.getElementById('test-world-bar') ? '22px' : '0';
+    box.style.display = App._maintSoonHidden ? 'none' : '';
+    document.body.classList.toggle('has-maint-soon', !App._maintSoonHidden);
+
+    const draw = () => {
+      const left = info.startAt - Date.now();
+      const near = left <= 5 * 60000;
+      // Крестик спрятал полосу, но подошли последние пять минут —
+      // возвращаем: сейчас она важнее, чем нежелание её видеть.
+      if (App._maintSoonHidden && near) App._maintSoonHidden = false;
+      box.style.display = App._maintSoonHidden ? 'none' : '';
+      document.body.classList.toggle('has-maint-soon', !App._maintSoonHidden);
+      box.classList.toggle('is-near', near);
+
+      if (left <= 0) {
+        box.innerHTML = '<b>Обновление начинается.</b> Заканчивайте текущее действие.';
+        // Сервер мог задержаться на минуту — спрашиваем его, а не решаем
+        // за него. Опрос живёт в ОТДЕЛЬНОМ таймере: клади его в
+        // _maintSoonTimer — и перерисовка тут же его затрёт, потому что
+        // ниже она этот же таймер и заводит.
+        if (App._maintSoonPoll) return;
+        App._maintSoonPoll = setInterval(async () => {
+          try {
+            const r = await fetch('/api/world').then((x) => x.json());
+            if (r && r.maintenance && r.maintenance.on) {
+              App.hideMaintenanceSoon();
+              App.showMaintenance(r.maintenance);
+            } else if (!r || !r.maintenance || !r.maintenance.soon) {
+              // Окно отменили, пока игрок ждал, — полоса не нужна.
+              App.hideMaintenanceSoon();
+            }
+          } catch (e) { /* сервер перезапускается — просто ждём */ }
+        }, 10000);
+        return;
+      }
+
+      const mins = Math.ceil(left / 60000);
+      const when = mins >= 60
+        ? `${Math.floor(mins / 60)} ч ${mins % 60} мин`
+        : `${mins} мин`;
+      const till = info.until
+        ? ` Ориентировочно до ${new Date(info.until).toLocaleTimeString('ru-RU',
+          { hour: '2-digit', minute: '2-digit' })}.`
+        : '';
+      box.innerHTML = `🛠 <b>Через ${UI.esc(when)}</b> игра закроется на обновление.`
+        + `${UI.esc(till)} ${UI.esc(info.reason || '')}`
+        + '<button class="ms-x" title="Скрыть">×</button>';
+      const x = box.querySelector('.ms-x');
+      if (x) {
+        x.onclick = () => {
+          App._maintSoonHidden = true;
+          box.style.display = 'none';
+          document.body.classList.remove('has-maint-soon');
+        };
+      }
+    };
+
+    draw();
+    if (App._maintSoonTimer) clearInterval(App._maintSoonTimer);
+    App._maintSoonTimer = setInterval(draw, 15000);
+  },
+
+  hideMaintenanceSoon() {
+    App._maintSoon = null;
+    if (App._maintSoonTimer) { clearInterval(App._maintSoonTimer); App._maintSoonTimer = null; }
+    if (App._maintSoonPoll) { clearInterval(App._maintSoonPoll); App._maintSoonPoll = null; }
+    const box = document.getElementById('maint-soon');
+    if (box) box.remove();
+    document.body.classList.remove('has-maint-soon');
   },
 
   // Полоса «тестовый мир». Перепутать тестовое окно с боевым и раздать

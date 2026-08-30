@@ -1882,7 +1882,14 @@ App.screens.settings = async (c) => {
     box.innerHTML = `
       <hr class="hr">
       <div class="name">Шаг 1 — добавьте запись в приложение</div>
-      <p class="muted small mt">Введите этот ключ вручную (в приложении это кнопка «ввести ключ»):</p>
+      ${d.otpauth ? `
+        <p class="muted small mt">С телефона проще всего так: нажмите ссылку — приложение-аутентификатор
+        откроется само и добавит запись.</p>
+        <a class="btn btn-orange mt" href="${UI.esc(d.otpauth)}" style="width:100%;display:block;
+           text-align:center;text-decoration:none">Открыть в приложении</a>
+        <p class="muted small mt">Не сработало (например, вы за компьютером) — введите ключ руками,
+        в приложении это кнопка «ввести ключ»:</p>
+      ` : '<p class="muted small mt">Введите этот ключ вручную (в приложении это кнопка «ввести ключ»):</p>'}
       <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px;letter-spacing:2px;
                   padding:10px;border:1px solid var(--border);border-radius:8px;word-break:break-all">
         ${UI.esc(d.secret.replace(/(.{4})/g, '$1 ').trim())}</div>

@@ -432,10 +432,19 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/consents/accept-all':    return '✅ Подтвердил согласия в окне при входе';
       // Остановка игры и выкат кода. В журнале это должно читаться
       // мгновенно: если игра вдруг закрыта, первым делом смотрят сюда.
-      case '/api/admin/maintenance':
-        return body && body.on
-          ? `🛠 ЗАКРЫЛ игру на обновление: ${String((body && body.reason) || '—')}`
-          : '✅ ОТКРЫЛ игру для игроков';
+      case '/api/admin/maintenance': {
+        if (!body || !body.on) return '✅ ОТКРЫЛ игру для игроков';
+        const why = String(body.reason || '—');
+        // Назначенное окно и закрытие «прямо сейчас» — разные события.
+        // Если игра вдруг закрыта, в журнал смотрят первым делом, и
+        // «назначил на потом» вместо «закрыл» экономит минуту паники.
+        if (Number(body.delayMin) > 0) {
+          return `🕒 НАЗНАЧИЛ окно обслуживания через ${Number(body.delayMin)} мин`
+            + `${Number(body.durationMin) ? `, на ${Number(body.durationMin)} мин` : ''}`
+            + `${body.auto ? ', с самооткрытием' : ''}: ${why}`;
+        }
+        return `🛠 ЗАКРЫЛ игру на обновление: ${why}`;
+      }
       case '/api/admin/release/deploy':
         return `🚀 Запустил выкат версии ${String((body && body.commit) || '—')}`;
       case '/api/admin/test-account':

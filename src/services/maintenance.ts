@@ -12,7 +12,10 @@
 //
 //  1. СОСТОЯНИЕ ЛЕЖИТ В БАЗЕ, а не в памяти процесса. Иначе перезапуск
 //     сервера — то есть ровно то, ради чего режим включают, — снимал бы
-//     его сам. Игроки влетели бы в наполовину обновлённую игру.
+//     его сам. Игроки влетели бы в наполовину обновлённую игру. По той
+//     же причине в базе лежит и ОТЛОЖЕННОЕ окно: назначить его на ночь,
+//     а к ночи потерять при первом же перезапуске — хуже, чем не
+//     назначать вовсе.
 //
 //  2. СОТРУДНИКОВ ПУСКАЕМ ВСЕГДА. Режим, запирающий и владельца, снять
 //     будет нечем: панель — тоже часть игры.
@@ -23,73 +26,215 @@
 //     nginx — он описан в ОБНОВЛЕНИЯ-И-ТЕСТ.md. Здесь мы честно
 //     закрываем всё остальное время.
 //
-//  4. СРОК ОКОНЧАНИЯ — ОРИЕНТИР, А НЕ ТАЙМЕР. Режим не снимается сам по
-//     истечении времени: если обновление затянулось, автоматическое
-//     открытие впустило бы людей в сломанную игру. Время показывается
-//     игроку, снимает режим человек.
+//  4. САМООТКРЫТИЕ ПО СРОКУ — ТОЛЬКО ПО ЯВНОЙ ГАЛОЧКЕ, и по умолчанию
+//     её нет. Обычный порядок прежний: закрыл, обновил, посмотрел
+//     глазами, открыл кнопкой. Если обновление затянулось, автоматически
+//     открытые двери впустили бы людей в сломанную игру.
+//     Исключение ровно одно и оно осмысленное: заранее назначенное
+//     окно («профилактика в 04:00, полчаса»), которое владелец не
+//     собирается сидеть и закрывать вручную среди ночи. Выкат кнопкой
+//     галочку не ставит НИКОГДА — там открывает человек.
+//
+//  5. НАЗНАЧЕННОЕ ОКНО ЕЩЁ НЕ ЗАКРЫВАЕТ ИГРУ. Пока не наступило время
+//     начала, isOn() = false: игрок играет как обычно и видит только
+//     предупреждение с обратным отсчётом. Иначе «назначить на ночь»
+//     означало бы «закрыть прямо сейчас».
 // ===================================================================
 import db = require('../core/db');
 import u = require('../core/utils');
 
 type State = {
-  on: boolean;
+  on: boolean;         // окно назначено (может ещё не наступить)
+  startAt: number;     // когда окно вступает в силу; 0 — уже действует
   reason: string;      // что показать игроку
   until: number;       // ориентировочное окончание, 0 — не назвали
+  auto: boolean;       // снимать ли режим самому по истечении until
   by: string;          // кто включил
-  at: number;          // когда включили
+  at: number;          // когда включили/назначили
   offAt: number;       // когда сняли (для журнала)
+  frozenFrom: number;  // с какого момента стоят игровые таймеры
+  lastFreeze: any;     // сводка последней разморозки (для панели)
 };
 
 const DEFAULT_REASON = 'Идёт обновление игры. Скоро вернёмся.';
+const MAX_MIN = 1440;        // сутки — дальше это уже не «обновление»
+const MAX_DELAY_MIN = 10080; // неделя вперёд
 
 function state(): State {
   const s = db.load<State>('maintenance', {} as State);
   if (typeof s.on !== 'boolean') s.on = false;
+  if (typeof s.startAt !== 'number') s.startAt = 0;
+  if (typeof s.auto !== 'boolean') s.auto = false;
   return s;
 }
 
-function isOn(): boolean { return !!state().on; }
+// Окно назначено, но время ещё не пришло.
+function isPending(s?: State): boolean {
+  const st = s || state();
+  return !!st.on && !!st.startAt && Date.now() < st.startAt;
+}
 
-// Что показать игроку. Ничего лишнего: причина, срок и время включения.
+// Главный вопрос: закрыта ли игра ПРЯМО СЕЙЧАС.
+//
+// Вызывается на каждом запросе, поэтому в базу пишет только в момент
+// перехода — когда истёк срок окна с галочкой «открыть самому». Один
+// раз, дальше on уже false.
+function isOn(): boolean {
+  const s = state();
+  if (!s.on) return false;
+  if (s.startAt && Date.now() < s.startAt) return false; // ещё не началось
+  if (s.auto && s.until && Date.now() >= s.until) {
+    lift(s, 'по истечении назначенного срока');
+    return false;
+  }
+  return true;
+}
+
+// Снять режим и РАЗМОРОЗИТЬ игровые сроки. Общий хвост для обеих дорог —
+// кнопки владельца и самооткрытия по времени, — потому что забыть
+// разморозку в одной из них означало бы, что бой, назначенный на «через
+// пять минут», стартует в пустой игре ровно в момент открытия.
+function lift(s: State, why: string) {
+  const from = Number(s.frozenFrom) || 0;
+  const now = Date.now();
+  s.on = false;
+  s.startAt = 0;
+  s.auto = false;
+  s.offAt = now;
+  // Сдвигаем ДО записи состояния: упадёт сдвиг — режим останется
+  // включённым, и владелец нажмёт ещё раз. Обратный порядок открыл бы
+  // игру с несдвинутыми сроками, и починить это было бы уже нечем.
+  let freeze: any = null;
+  if (from > 0 && now > from) {
+    try { freeze = require('./timefreeze').shiftFuture(from, now - from); }
+    catch (e) { console.error('Заморозка: сдвиг сроков не удался', e); }
+  }
+  s.lastFreeze = freeze;
+  s.frozenFrom = 0;
+  db.save('maintenance');
+  console.log(`✅ Режим обслуживания снят ${why}`);
+  return freeze;
+}
+
+// Что показать игроку. Ничего лишнего: причина, сроки и время включения.
 // Кто именно включил — сведение служебное, наружу не отдаём.
+//
+// `on` здесь — ДЕЙСТВУЮЩЕЕ состояние, а не «назначено». Клиент по нему
+// решает, закрывать ли игру, и назначенное на ночь окно не должно
+// закрывать её днём. Про будущее окно клиенту рассказывает `soon` — оно
+// рисуется полосой с обратным отсчётом, а не запертой дверью.
 function view() {
   const s = state();
+  const now = isOn();
   return {
-    on: !!s.on,
+    on: now,
     reason: String(s.reason || DEFAULT_REASON),
     until: Number(s.until) || 0,
     at: Number(s.at) || 0,
+    auto: now ? !!s.auto : false,
+    soon: isPending(s)
+      ? {
+        startAt: Number(s.startAt) || 0,
+        until: Number(s.until) || 0,
+        reason: String(s.reason || DEFAULT_REASON),
+      }
+      : null,
   };
 }
 
 // Полная картина — для панели.
 function adminView() {
   const s = state();
-  return { ...view(), by: String(s.by || ''), offAt: Number(s.offAt) || 0 };
+  return {
+    ...view(),
+    planned: !!s.on,          // назначено (в т.ч. если уже действует)
+    pending: isPending(s),    // назначено и ещё не наступило
+    startAt: Number(s.startAt) || 0,
+    by: String(s.by || ''),
+    offAt: Number(s.offAt) || 0,
+    // Заморозка: с какого момента стоят сроки и что дала последняя
+    // разморозка. Без этого понять, сработала ли она, можно было бы
+    // только по чужим жалобам.
+    frozenFrom: Number(s.frozenFrom) || 0,
+    lastFreeze: s.lastFreeze || null,
+  };
 }
 
-function turnOn(byName: string, reason?: string, minutes?: number) {
+// Назначить окно. delayMin=0 — закрыть немедленно (прежнее поведение).
+//
+// durationMin отсчитывается от НАЧАЛА окна, а не от «сейчас»: владелец
+// думает «профилактика в четыре, на полчаса», а не «через восемь часов
+// и ещё полчаса».
+function schedule(
+  byName: string,
+  opts: { reason?: string; delayMin?: number; durationMin?: number; auto?: boolean } = {},
+) {
   const s = state();
+  const delay = Math.max(0, Math.min(MAX_DELAY_MIN, Math.round(Number(opts.delayMin) || 0)));
+  const dur = Math.max(0, Math.min(MAX_MIN, Math.round(Number(opts.durationMin) || 0)));
+  const now = Date.now();
+  const start = delay ? now + delay * 60000 : 0;
+
+  // Самооткрытие без названного срока невозможно: открывать было бы не
+  // по чему. Молча игнорируем галочку, а не заводим окно, которое
+  // никогда не снимется само, хотя владелец на это рассчитывал.
+  const auto = !!opts.auto && dur > 0;
+
   s.on = true;
-  s.reason = String(reason || '').trim().slice(0, 300) || DEFAULT_REASON;
-  const m = Math.max(0, Math.min(1440, Math.round(Number(minutes) || 0)));
-  s.until = m ? Date.now() + m * 60000 : 0;
+  s.startAt = start;
+  // Текст многострочный: владельцу нужно объяснить, что чинят и что
+  // будет с прогрессом, а в одну строку это не помещается. Возврат
+  // каретки оставляем, всё прочее управляющее — вон.
+  s.reason = String(opts.reason || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, 1500) || DEFAULT_REASON;
+  s.until = dur ? (start || now) + dur * 60000 : 0;
+  s.auto = auto;
   s.by = String(byName || '').slice(0, 60);
-  s.at = Date.now();
+  s.at = now;
   s.offAt = 0;
+  // С этого момента встают игровые таймеры. Для отложенного окна —
+  // с момента НАЧАЛА, а не назначения: пока окно не наступило, игра
+  // работает как обычно, и замораживать в ней нечего.
+  s.frozenFrom = start || now;
+  s.lastFreeze = null;
   db.save('maintenance');
-  console.log(`🛠  Режим обслуживания ВКЛЮЧЁН (${s.by}): ${s.reason}`);
+  console.log(delay
+    ? `🕒 Окно обслуживания НАЗНАЧЕНО на ${new Date(start).toISOString()} (${s.by}): ${s.reason}`
+    : `🛠  Режим обслуживания ВКЛЮЧЁН (${s.by}): ${s.reason}`);
+  return adminView();
+}
+
+// Прежняя подпись — ею пользуется выкат (release.ts) и старые вызовы.
+// Закрывает немедленно и НИКОГДА не ставит самооткрытие: после выката
+// игру открывает человек, убедившись глазами, что она поднялась.
+function turnOn(byName: string, reason?: string, minutes?: number) {
+  schedule(byName, { reason, delayMin: 0, durationMin: Number(minutes) || 0, auto: false });
   return view();
 }
 
+// Снимает и действующий режим, и ещё не наступившее назначенное окно —
+// это одна и та же кнопка «отмена», разделять их незачем.
 function turnOff(byName: string) {
   const s = state();
   if (!s.on) throw new u.ApiError('Режим обслуживания и так выключен');
-  s.on = false;
-  s.offAt = Date.now();
-  db.save('maintenance');
-  console.log(`✅ Режим обслуживания снят (${String(byName || '')})`);
+  // Отмена ещё не наступившего окна — не разморозка: замораживать было
+  // нечего, игра всё это время работала. Сдвинуть сроки здесь значило бы
+  // подарить всем лишнее время ни за что.
+  if (isPending(s)) {
+    s.on = false;
+    s.startAt = 0;
+    s.auto = false;
+    s.frozenFrom = 0;
+    s.offAt = Date.now();
+    db.save('maintenance');
+    console.log(`🗑  Назначенное окно обслуживания отменено (${String(byName || '')})`);
+    return view();
+  }
+  lift(s, `(${String(byName || '')})`);
   return view();
 }
 
-export = { isOn, view, adminView, turnOn, turnOff, DEFAULT_REASON };
+export = { isOn, isPending, view, adminView, schedule, turnOn, turnOff, DEFAULT_REASON };

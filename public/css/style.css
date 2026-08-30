@@ -4658,17 +4658,58 @@ body.combat-fullscreen { padding-top: 0 !important; }
   display: flex; align-items: center; justify-content: center;
   background: rgba(8, 10, 6, .97); padding: 16px;
 }
+/* Ширина средняя, не во весь экран: на широком мониторе строка в
+   полтора метра нечитаема, а окно на 380 px не вмещает ни картинку, ни
+   текст владельца в несколько абзацев. 620 px — это примерно 70 знаков
+   в строке, то есть нормальная колонка. */
 .maint-box {
-  max-width: 380px; width: 100%; text-align: center;
+  max-width: 620px; width: 100%; text-align: center;
   background: linear-gradient(160deg, #1b1a14, #100e0b);
   border: 1px solid var(--border-dim); border-radius: 14px;
-  padding: 26px 20px 20px; box-shadow: 0 14px 50px rgba(0,0,0,.7);
+  padding: 0 0 20px; box-shadow: 0 14px 50px rgba(0,0,0,.7);
+  overflow: hidden;
+  max-height: calc(100vh - 32px); overflow-y: auto;
 }
-.maint-icon { font-size: 40px; line-height: 1; }
-.maint-title { font-size: 19px; font-weight: 700; color: var(--gold); margin-top: 10px; }
-.maint-reason { font-size: 14.5px; color: var(--text); margin-top: 10px; line-height: 1.5; }
-.maint-left { font-size: 13.5px; color: var(--orange-1); margin-top: 8px; }
+.maint-pad { padding: 0 22px; }
+.maint-icon { font-size: 38px; line-height: 1; margin-top: 22px; }
+.maint-title { font-size: 20px; font-weight: 700; color: var(--gold); margin-top: 8px; }
+/* Текст владельца многострочный: pre-line сохраняет его абзацы, но не
+   схлопывает вёрстку, как это сделал бы <pre>. */
+.maint-reason {
+  font-size: 14.5px; color: var(--text); margin-top: 10px; line-height: 1.55;
+  white-space: pre-line; word-break: break-word;
+}
+.maint-left { font-size: 13.5px; color: var(--orange-1); margin-top: 10px; }
 .maint-note { font-size: 12.5px; color: var(--dim); margin-top: 12px; line-height: 1.5; }
+
+/* ── Карусель ─────────────────────────────────────────────────────
+   Ждать полчаса перед пустой заглушкой скучно; картинки дают понять,
+   что за работа идёт. Соотношение задано жёстко, чтобы окно не прыгало
+   в высоту при смене кадра, и место под картинку резервируется до её
+   загрузки — иначе на медленной связи текст подскакивал бы вверх. */
+.maint-slides {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  background: #0c0d0a; margin-top: 16px; overflow: hidden;
+}
+.maint-slides img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0; transition: opacity .6s ease;
+}
+.maint-slides img.on { opacity: 1; }
+/* Низ кадра затемняем: под ним идёт заголовок, и светлая картинка
+   встык с текстом читается как оборванная. */
+.maint-slides::after {
+  content: ''; position: absolute; inset: auto 0 0 0; height: 40%;
+  background: linear-gradient(to bottom, transparent, #100e0b);
+  pointer-events: none;
+}
+.maint-pips { margin-top: 10px; display: flex; gap: 5px; justify-content: center; }
+.maint-pips i {
+  width: 16px; height: 3px; border-radius: 2px; background: var(--gold);
+  opacity: .22; transition: opacity .4s ease;
+}
+.maint-pips i.on { opacity: .85; }
+
 .maint-dots { margin-top: 16px; display: flex; gap: 6px; justify-content: center; }
 .maint-dots span {
   width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
@@ -4677,6 +4718,40 @@ body.combat-fullscreen { padding-top: 0 !important; }
 .maint-dots span:nth-child(2) { animation-delay: .2s; }
 .maint-dots span:nth-child(3) { animation-delay: .4s; }
 @keyframes maint-pulse { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+
+@media (max-width: 520px) {
+  .maint-pad { padding: 0 16px; }
+  .maint-icon { font-size: 32px; margin-top: 16px; }
+  .maint-title { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .maint-slides img { transition: none; }
+}
+
+/* ── Полоса «скоро обновление» ────────────────────────────────────
+   Назначенное, но ещё не наступившее окно. Игра работает, поэтому это
+   именно полоса, а не запертая дверь: человеку надо дать доиграть бой
+   и не начинать долгую постройку, а не выбросить его из игры заранее.
+   Полосу можно закрыть крестиком — она вернётся сама за пять минут до
+   начала, когда предупреждение снова становится важным. */
+#maint-soon {
+  position: fixed; left: 0; right: 0; z-index: 29000;
+  background: linear-gradient(180deg, #6b4a10, #4a3208);
+  border-bottom: 1px solid var(--border-dim);
+  color: #ffe6b0; font-size: 12.5px; text-align: center;
+  padding: 5px 34px 5px 10px; line-height: 1.35;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+}
+#maint-soon b { color: #fff; }
+#maint-soon.is-near { background: linear-gradient(180deg, #8a3a12, #5c2409); }
+#maint-soon .ms-x {
+  position: absolute; top: 2px; right: 6px; cursor: pointer;
+  font-size: 15px; line-height: 1; color: #ffd9a0; opacity: .7;
+  padding: 2px 5px; background: none; border: 0;
+}
+#maint-soon .ms-x:hover { opacity: 1; }
+body.has-maint-soon { padding-top: 26px; }
+body.is-test-world.has-maint-soon { padding-top: 48px; }
 
 /* ── Полоса тестового мира ────────────────────────────────────────
    Висит поверх всего и всегда. Перепутать тестовое окно с боевым и

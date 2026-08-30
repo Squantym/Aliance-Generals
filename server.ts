@@ -53,9 +53,9 @@ import registerRoutes = require('./src/routes');
 import market = require('./src/services/market');
 import legion = require('./src/services/legion');
 import fame = require('./src/services/fame');
+import worldTick = require('./src/services/worldTick');
 
 const PORT = Number(process.env.PORT) || 3000;
-let lastThin = Date.now();
 
 async function main() {
   // Сначала подключаемся к базе данных (или к локальным файлам) —
@@ -119,32 +119,15 @@ async function main() {
   registerRoutes(app);
 
   // Фоновый «тик» мира: раз в 30 секунд разрешаем истёкшие аукционы,
-  // следим за чёрным рынком и кланвойнами, сохраняем изменения.
-  setInterval(() => {
-    try {
-      market.tick();
-      legion.resolveWars();
-      require('./src/services/tournaments').tick(); // авто-старт матчей и продвижение сетки
-      require('./src/services/silos').resolveInFlight(); // долёт летящих ракет
-      require('./src/services/seasons').rolloverIfNeeded(); // смена недели: наградить топ-3 ДО любых сбросов
-      require('./src/services/mines').tickAll(); // шахты: уведомления о нападении вовремя + финализация спусков
-      fame.resetDailyIfNeeded();
-      // Срез аналитики за сутки. Сам пропускает работу, если сегодняшний
-      // день уже записан, — дёргать его каждые 30 секунд безопасно.
-      require('./src/services/analytics').snapshotDaily();
-      // Упаковка журнала старше недели — понемногу за раз, чтобы не
-      // занимать единственный поток надолго. Когда хвост упакован,
-      // вызов не делает ничего.
-      db.packLogs(6);
-      // Прореживание истории игроков: свежее подробно, старое обзорно.
-      // Дешёвая операция, но и делать её каждые 30 секунд незачем —
-      // раз в час достаточно.
-      if (Date.now() - lastThin > 3600 * 1000) { lastThin = Date.now(); db.thinHistory(); }
-      db.saveAll();
-    } catch (e) {
-      console.error('Ошибка фонового тика:', e);
-    }
-  }, 30 * 1000);
+  // стартуем назначенные бои, доводим ракеты, сохраняем изменения.
+  //
+  // Тело тика вынесено в src/services/worldTick.ts. Там же и решение
+  // «двигать мир или нет»: на время обновления игровая половина тика
+  // замирает, чтобы бой легиона не прошёл в закрытой игре без своих
+  // участников. Вынесено ради проверяемости — решение, до которого тест
+  // может добраться только подождав тридцать секунд живого сервера, на
+  // практике не проверяется никогда.
+  setInterval(() => { worldTick.tick(); }, 30 * 1000);
 
   // При первом старте сразу создаём аукционные лоты
   market.tick();

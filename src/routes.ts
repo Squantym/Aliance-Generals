@@ -1452,17 +1452,32 @@ function registerRoutes(app: any) {
     return require('./services/release').status();
   }, { admin: true });
 
+  // Закрыть игру, назначить окно на потом или отменить и то и другое.
+  // Одна ручка на всё: «отменить назначенное» и «открыть игру» — с точки
+  // зрения владельца одна и та же кнопка отмены, а разводить их по
+  // разным адресам значит завести два состояния там, где оно одно.
   app.add('POST', '/api/admin/maintenance', act((req, n) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
     const on = !!req.body.on;
-    const r = on
-      ? maintenance.turnOn(req.user.name, String(req.body.reason || ''), Number(req.body.minutes || 0))
+    // delayMin — через сколько минут окно вступит в силу (0 — сейчас),
+    // durationMin — сколько оно продлится. Старое поле minutes значило
+    // ровно durationMin и продолжает работать: им пользуется выкат.
+    const delayMin = Math.max(0, Number(req.body.delayMin) || 0);
+    const durationMin = Math.max(0, Number(
+      req.body.durationMin === undefined ? req.body.minutes : req.body.durationMin) || 0);
+    const auto = !!req.body.auto;
+    const r: any = on
+      ? maintenance.schedule(req.user.name, {
+        reason: String(req.body.reason || ''), delayMin, durationMin, auto,
+      })
       : maintenance.turnOff(req.user.name);
     auditLog.record({
       userId: req.user.id, userName: req.user.name, path: '/api/admin/maintenance',
-      body: { on, reason: r.reason, minutes: req.body.minutes || 0 },
+      body: { on, reason: r.reason, delayMin, durationMin, auto, pending: !!r.pending },
     });
-    n.push(on ? '🛠 Игра закрыта на обновление' : '✅ Игра снова открыта');
+    n.push(on
+      ? (delayMin ? '🕒 Окно обслуживания назначено' : '🛠 Игра закрыта на обновление')
+      : '✅ Игра снова открыта');
     return maintenance.adminView();
   }), { admin: true });
 
