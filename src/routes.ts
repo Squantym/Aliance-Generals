@@ -1488,6 +1488,26 @@ function registerRoutes(app: any) {
     return maintenance.adminView();
   }), { admin: true });
 
+  // ═══ ОБНУЛЕНИЕ МИРА ══════════════════════════════════════════════
+  // Самая опасная ручка в игре: стирает всех игроков и всё нажитое.
+  // Только владелец, только со вторым фактором (это уже проверено на
+  // входе в панель) и только с набранной руками фразой подтверждения.
+  app.add('GET', '/api/admin/world-reset', (req) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/worldReset').preview();
+  }, { admin: true });
+
+  app.add('POST', '/api/admin/world-reset', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    const r = require('./services/worldReset').run(req.user, {
+      confirm: String(req.body.confirm || ''),
+      reason: String(req.body.reason || ''),
+      resetOwner: req.body.resetOwner !== false,
+    });
+    n.push(`💥 Мир обнулён. Удалено игроков: ${r.removed}. Игра закрыта на обслуживание.`);
+    return r;
+  }), { admin: true });
+
   // Тестовый аккаунт: логин, пароль, почта не нужна и не спрашивается.
   // Работает ТОЛЬКО в тестовом мире — на боевом это была бы дыра
   // размером с регистрацию без подтверждения.

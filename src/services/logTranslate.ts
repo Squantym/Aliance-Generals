@@ -445,6 +445,15 @@ function describe(path: string, body?: any, result?: any): string | null {
         }
         return `🛠 ЗАКРЫЛ игру на обновление: ${why}`;
       }
+      // Обнуление мира. В журнале это должно быть видно издалека: если
+      // игроки пропали, первый вопрос — «кто и когда», и ответ обязан
+      // читаться с одной строки.
+      case '/api/admin/world-reset':
+        return `💥 ОБНУЛИЛ МИР №${String((body && body.world) || '?')}: `
+          + `удалено игроков ${String((body && body.removed) || 0)}, `
+          + `оставлено ${String((body && body.kept) || 0)}, `
+          + `копия базы: ${String((body && body.backup) || '—')}`
+          + `${body && body.reason ? '. Причина: ' + String(body.reason) : ''}`;
       case '/api/admin/release/deploy':
         return `🚀 Запустил выкат версии ${String((body && body.commit) || '—')}`;
       case '/api/admin/test-account':

@@ -150,7 +150,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // существующих, а сами ручки дополнительно проверяют, что перед ними
   // владелец: раздать это администратору значит раздать возможность
   // остановить проект.
-  [/^\/api\/admin\/(maintenance|release|test-account)/, 'roles'],
+  [/^\/api\/admin\/(maintenance|release|test-account|world-reset)/, 'roles'],
   [/^\/api\/admin\/(ban|account-ban|account-unban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
   // Блокировка чатов — своя зона, отдельная от банов аккаунтов
   [/^\/api\/mod\/(chat-ban|chat-unban|chat-bans|chat-scopes|chat-status|find)/, 'chat'],
