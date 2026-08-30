@@ -171,6 +171,13 @@ function registerRoutes(app: any) {
       throw new u.ApiError('Это тестовый мир. Регистрация закрыта — '
         + 'аккаунт выдаёт администратор.');
     }
+    // Почта не настроена и самоподтверждение явно не разрешено. Пускать
+    // сюда нельзя: аккаунт завёлся бы на непроверенный адрес, а
+    // восстановление пароля потом ушло бы тому, кто этим адресом владеет
+    // на самом деле. Закрытая регистрация чинится за минуту и видна
+    // сразу; тихо неподтверждённые аккаунты не видны никогда.
+    const blocked = require('./services/email').registrationBlocked();
+    if (blocked) throw new u.ApiError(blocked);
     consent.checkRequired(req.body.consents);
     return auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua,
       (req as any).hints, (req as any).fp, req.body.consents);

@@ -51,6 +51,53 @@ const isConfigured = CHAIN.length > 0;
 // Отправитель без своего домена: письма игрокам с такого адреса не дойдут
 const usingTestSender = /@localhost|@example\./i.test(EMAIL_FROM);
 
+// ── Можно ли подтверждать почту САМИМ, без письма ──────────────────
+//
+// Когда сервиса нет, игра подтверждает адрес сама — иначе локальную
+// разработку было бы не начать: почтовый ящик нужен раньше первого
+// экрана. Удобно и правильно ровно до тех пор, пока это не случается
+// на боевом сервере.
+//
+// А случается легко: забыли строку в .env, перенесли проект, развернули
+// из копии — и регистрация молча превращается в «вход без подтверждения
+// почты». Дальше человек заводит аккаунт на чужой адрес, а
+// восстановление пароля уходит тому, кто этим адресом владеет. Заметить
+// это можно было только зайдя в панель и прочитав подсказку мелким
+// шрифтом; на боевом сервере так не бывает.
+//
+// Поэтому самоподтверждение теперь требует ЯВНОГО разрешения. Не
+// разрешено и почты нет — регистрация закрывается с внятным текстом.
+// Закрытая регистрация видна сразу и чинится за минуту; тихо
+// неподтверждённые аккаунты не видны никогда и не чинятся вовсе.
+const ALLOW_UNVERIFIED = String(process.env.ALLOW_UNVERIFIED_EMAIL || '') === '1'
+  || String(process.env.TEST_WORLD || '') === '1'   // тестовый мир: почты в нём нет намеренно
+  || process.env.NODE_ENV === 'test';               // автотесты
+
+// Почему регистрация не работает, если не работает. Пусто — всё в порядке.
+function registrationBlocked(): string {
+  if (isConfigured) return '';
+  if (ALLOW_UNVERIFIED) return '';
+  return 'Регистрация временно закрыта: на сервере не настроена отправка писем, '
+    + 'а заводить аккаунты без подтверждения почты нельзя. Мы уже чиним.';
+}
+
+// Текст для консоли при запуске. Отдельно от предыдущего: владельцу
+// нужны подробности, игроку — нет.
+function bootWarning(): string {
+  if (isConfigured && !usingTestSender) return '';
+  if (!isConfigured && ALLOW_UNVERIFIED) {
+    return '📧 Почта не настроена, самоподтверждение РАЗРЕШЕНО явно '
+      + '(ALLOW_UNVERIFIED_EMAIL / TEST_WORLD / NODE_ENV=test). '
+      + 'Адреса игроков не проверяются — на боевом сервере так быть не должно.';
+  }
+  if (!isConfigured) {
+    return '⛔ Почта не настроена: РЕГИСТРАЦИЯ ЗАКРЫТА. Задайте SMTPBZ_API_KEY в .env '
+      + 'и перезапустите. Для локальной разработки: ALLOW_UNVERIFIED_EMAIL=1.';
+  }
+  return `⚠ EMAIL_FROM = «${EMAIL_FROM}» — это не ваш домен. Письма с такого адреса `
+    + 'не дойдут. Ожидается вид: Aliance Generals <noreply@ваш-домен>.';
+}
+
 // Разбираем «Имя <адрес>» — сервис требует имя и адрес отдельными полями
 function splitFrom(raw: string): { name: string; email: string } {
   const m = /^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/.exec(String(raw || ''));
@@ -358,4 +405,4 @@ async function diagnose(): Promise<any> {
   };
 }
 
-export = { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, PROVIDER_NAMES, CHAIN, sendMail, SMTPBZ_URL, diagnose, quota,};
+export = { registrationBlocked, bootWarning, ALLOW_UNVERIFIED, sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, isConfigured, status, sendTest, usingTestSender, EMAIL_FROM, APP_URL, provider, PROVIDER_NAMES, CHAIN, sendMail, SMTPBZ_URL, diagnose, quota,};

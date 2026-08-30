@@ -12,9 +12,12 @@
 
 (function () {
   // Показ кодов восстановления — единственный за всё время. Повторить
-  // его нельзя: в базе только хеши. Поэтому окно нарочно неудобно
-  // закрыть случайно.
-  function showRecovery(codes) {
+  // его нельзя: в базе только хеши. Поэтому экран нарочно неудобно
+  // закрыть случайно: перерисовка идёт только по кнопке «Я сохранил».
+  //
+  // `done` — что делать по этой кнопке. Без неё человек оставался бы
+  // перед кодами без единого признака, что дело кончено.
+  function showRecovery(codes, done) {
     const box = document.getElementById('sec-recovery');
     if (!box) return;
     box.innerHTML = `
@@ -23,12 +26,16 @@
         <p class="a2-muted">Показываются <b>один раз</b>: в базе хранятся только их отпечатки,
           повторить показ не сможет никто, включая владельца. Каждый код срабатывает один раз.
           Нужны, если телефон потерян или сломан — без них доступ к панели вернуть будет нечем.</p>
+        <p class="a2-muted" style="color:var(--orange-1)">Не фотографируйте этот экран и не
+          пересылайте коды: снимок кодов равен снятому второму фактору. Если они всё же куда-то
+          попали — выпустите новые кнопкой ниже, старые сразу перестанут работать.</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;
                     font-family:monospace;font-size:14px;margin:8px 0">
           ${codes.map((c) => `<div style="padding:5px 8px;border:1px solid var(--border);border-radius:6px">${UI.esc(c)}</div>`).join('')}
         </div>
         <div class="a2-row">
           <button class="btn btn-inline" id="sec-copy">Скопировать все</button>
+          <button class="btn btn-orange btn-inline" id="sec-saved">Я сохранил коды</button>
           <span class="a2-muted">Положите их туда, где не лежит пароль от игры.</span>
         </div>
       </div>`;
@@ -39,9 +46,23 @@
         UI.toast('📋 Коды скопированы');
       } catch (e) { UI.toast('⛔ Скопируйте вручную — браузер не разрешил доступ к буферу'); }
     };
+    const saved = document.getElementById('sec-saved');
+    // Возвращаем результат: перерисовка асинхронна, и без этого
+    // дождаться её снаружи было бы нечем.
+    if (saved) saved.onclick = () => (done ? done() : undefined);
   }
 
-  async function render(el) {
+  // freshCodes — коды, только что выданные сервером. Экран всегда
+  // перерисовывается ЦЕЛИКОМ и всегда спрашивает состояние заново, а
+  // коды прокидываются через этот параметр.
+  //
+  // Раньше было иначе: после включения обработчик стирал форму
+  // подтверждения и дорисовывал коды, но шапку не трогал. Она так и
+  // висела «не завершён» с кнопкой «Показать ключ заново» — при том что
+  // на сервере фактор был уже включён. Человек видел экран, который ему
+  // врёт, и не понимал, что делать дальше. Чинить это дорисовкой
+  // отдельных кусков нельзя: ровно так поломка и появилась.
+  async function render(el, freshCodes) {
     el.innerHTML = '<div class="a2-title">Защита входа</div><div class="loading">Проверяю…</div>';
     let st = null;
     try { st = await API.get('/api/2fa/status'); }
@@ -61,6 +82,10 @@
         <div class="a2-title">Защита входа</div>
         <div class="a2-card">
           <h3>Второй фактор <span class="a2-pill is-ok">включён</span></h3>
+          ${freshCodes && freshCodes.length
+            ? '<p style="color:var(--green,#7ac043)">✅ Готово. Панель открыта, а при следующем входе '
+              + 'игра спросит код из приложения. Ниже — коды на случай потери телефона.</p>'
+            : ''}
           ${why}
           <p class="a2-muted">Включён ${st.enabledAt ? new Date(st.enabledAt).toLocaleDateString('ru-RU') : ''} ·
             кодов восстановления осталось: <b>${st.recoveryLeft}</b>
@@ -75,12 +100,17 @@
         </div>
         <div id="sec-recovery"></div>`;
 
+      // Коды показываем ПОСЛЕ перерисовки шапки — иначе их смыло бы ею
+      // же. Именно на этом и ломался прежний порядок.
+      if (freshCodes && freshCodes.length) showRecovery(freshCodes, () => render(el));
+
       const codeOf = () => (document.getElementById('sec-code').value || '').trim();
       document.getElementById('sec-newcodes').onclick = async () => {
         if (!codeOf()) return UI.toast('⛔ Введите код из приложения');
         try {
           const r = await API.post('/api/2fa/recovery', { code: codeOf() });
-          showRecovery(r.recoveryCodes);
+          UI.toast('🔑 Старые коды больше не работают');
+          await render(el, r.recoveryCodes);
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
       document.getElementById('sec-off').onclick = async () => {
@@ -108,6 +138,12 @@
       </div>
       <div id="sec-setup"></div>
       <div id="sec-recovery"></div>`;
+
+    // Сюда попасть не должны: коды выдаются только вместе с включением.
+    // Но если состояние с сервера пришло неожиданное, коды всё равно
+    // обязаны оказаться на экране — потерять их молча нельзя, повторить
+    // показ не сможет никто.
+    if (freshCodes && freshCodes.length) showRecovery(freshCodes, () => render(el));
 
     document.getElementById('sec-start').onclick = async () => {
       let d = null;
@@ -150,9 +186,10 @@
         if (!code) return UI.toast('⛔ Введите код из приложения');
         try {
           const r = await API.post('/api/2fa/enable', { code });
-          document.getElementById('sec-setup').innerHTML = '';
-          showRecovery(r.recoveryCodes);
           UI.toast('🔐 Второй фактор включён');
+          // Перерисовываем весь экран: он сам спросит состояние и
+          // покажет «включён», а коды получит сюда параметром.
+          await render(el, r.recoveryCodes);
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     };
