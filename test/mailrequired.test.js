@@ -67,6 +67,11 @@ function startServer(extra) {
 }
 const stop = (p) => new Promise((r) => { if (!p || p.killed) return r(); p.on('exit', r); p.kill(); });
 
+async function world() {
+  const res = await fetch(BASE + '/api/world');
+  try { return await res.json(); } catch (e) { return {}; }
+}
+
 async function reg(login, mail) {
   const res = await fetch(BASE + '/api/register', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -98,6 +103,17 @@ async function reg(login, mail) {
   try { users = JSON.parse(fs.readFileSync(path.join(workDir, 'data', 'users.json'), 'utf8')); } catch (e) {}
   ok('аккаунт в базе не завёлся', Object.keys(users).length === 0);
 
+  console.log('\n── 1б. И это видно снаружи, без попытки регистрации ──');
+  // Появилось после суток поисков: регистрация была закрыта, но узнать
+  // об этом можно было, только попытавшись зарегистрироваться либо зайдя
+  // в панель. Со стороны это выглядело как «игра сломалась», и причину
+  // искали не там. Теперь состояние видно одним запросом и без входа.
+  const w1 = await world();
+  ok('/api/world говорит про регистрацию', !!w1.registration);
+  ok('и что она закрыта', w1.registration.open === false);
+  ok('и называет причину', /почт|письм/i.test(w1.registration.why || ''));
+  ok('причина та же, что и в отказе', w1.registration.why === r1.d.error);
+
   console.log('\n── 2. И об этом сказано в консоли при запуске ──');
   // Владелец смотрит вывод pm2 сразу после выката. Если поломка видна
   // только в панели мелким шрифтом — её не увидит никто.
@@ -111,6 +127,9 @@ async function reg(login, mail) {
   await stop(srv);
   srv = await startServer({ ALLOW_UNVERIFIED_EMAIL: '1' });
   const r2 = await reg('Местный', 'local@example.com');
+  const w2 = await world();
+  ok('снаружи видно, что регистрация открыта', w2.registration.open === true);
+  ok('и причины нет', !w2.registration.why);
   ok('регистрация проходит', r2.status === 200);
   ok('и сразу пускает в игру', !!r2.d.token && r2.d.emailVerified === true);
   ok('в консоли всё равно предупреждение', /самоподтверждение РАЗРЕШЕНО/i.test(bootLog));
@@ -125,6 +144,9 @@ async function reg(login, mail) {
   ok('публичная регистрация закрыта своим правилом', r3.status >= 400);
   ok('и причина именно в тестовом мире, а не в почте',
      /тестов/i.test(r3.d.error || ''));
+  const w3 = await world();
+  ok('снаружи причина тоже про тестовый мир',
+     w3.registration.open === false && /тестов/i.test(w3.registration.why || ''));
 
   console.log('\n── 5. Ключ есть — всё как обычно ──');
   // Письмо не уйдёт (адрес сервиса выдуман), но игра ОБЯЗАНА требовать
@@ -138,6 +160,22 @@ async function reg(login, mail) {
   ok('но в игру не пускает — ждёт код', !r4.d.token && r4.d.needCode === true);
   ok('и честно говорит, что письмо не ушло', r4.d.emailSent === false);
   ok('при запуске лишних предупреждений нет', !/РЕГИСТРАЦИЯ ЗАКРЫТА/i.test(bootLog));
+  const w4 = await world();
+  ok('и снаружи регистрация открыта', w4.registration.open === true);
+
+  console.log('\n── 6. Закрытая на обслуживание игра — тоже причина ──');
+  // Три разные причины закрытой регистрации, и снаружи должно быть
+  // видно, какая именно: иначе владелец чинит почту, когда на самом
+  // деле забыл открыть игру после обновления.
+  await stop(srv);
+  fs.writeFileSync(path.join(workDir, 'data', 'maintenance.json'), JSON.stringify({
+    on: true, startAt: 0, until: 0, auto: false, reason: 'Ставим новые пушки.',
+    by: 'Хозяин', at: Date.now(), offAt: 0, frozenFrom: Date.now(),
+  }));
+  srv = await startServer({ SMTPBZ_API_KEY: 'k', SMTPBZ_URL: 'http://127.0.0.1:1/send' });
+  const w5 = await world();
+  ok('регистрация закрыта', w5.registration.open === false);
+  ok('и причина — обновление, а не почта', /пушки/i.test(w5.registration.why || ''));
 
   await stop(srv);
   try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
