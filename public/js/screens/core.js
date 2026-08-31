@@ -14,12 +14,33 @@ App.screens.auth = async (c) => {
     `<option value="${x.id}">${x.flag} ${UI.esc(x.name)} — ${UI.esc(x.bonus)}${x.gold ? ` (🪙 ${x.gold})` : ''}</option>`
   ).join('');
 
+  // Открыта ли регистрация. Ответ уже пришёл вместе с состоянием мира —
+  // второй раз тот же вопрос серверу не задаём.
+  //
+  // Вкладку прячем совсем, а не блокируем: форма, которая всегда
+  // откажет, — это обещание, которое игра не собирается выполнять.
+  // Человек заполняет пять полей, ставит три галочки, жмёт «Подписать
+  // контракт» и только тогда узнаёт, что регистрации нет. Так устроен
+  // тестовый мир: аккаунты там выдаёт владелец.
+  //
+  // Не знаем состояния (запрос не прошёл) — показываем как раньше:
+  // отказать всегда успеет сервер, а вот спрятать регистрацию из-за
+  // сетевой ошибки значило бы потерять живого новичка.
+  const regState = (App._world && App._world.registration) || null;
+  const regOpen = !regState || regState.open !== false;
+  const regWhy = regState && regState.why ? regState.why : '';
+
   c.innerHTML = `
     <div class="title">Военкомат</div>
     <div class="tabs">
       <div class="tab active" id="tab-login">Вход</div>
-      <div class="tab" id="tab-reg">Регистрация</div>
+      ${regOpen ? '<div class="tab" id="tab-reg">Регистрация</div>' : ''}
     </div>
+
+    ${regOpen ? '' : `
+      <div class="card" style="border-color:var(--gold)">
+        <p class="small" style="margin:0">🚫 ${UI.esc(regWhy || 'Регистрация сейчас закрыта.')}</p>
+      </div>`}
 
     <div class="card" id="form-login">
       <label for="li-name">Позывной</label>
@@ -172,15 +193,18 @@ App.screens.auth = async (c) => {
     document.getElementById('rg-cbonus').innerHTML = '🎖 ' + UI.esc(ct.desc || ct.bonus || '') + (ct.gold ? ` <span class="gold">(+<span class="ic-gold"></span> ${ct.gold} на старте)</span>` : '');
   };
 
-  // Переключение вкладок входа/регистрации
+  // Переключение вкладок входа/регистрации. Вкладки регистрации может не
+  // быть вовсе — тогда переключать нечего, и обращение к ней уронило бы
+  // весь экран входа, то есть заперло бы игру целиком.
+  const tabReg = document.getElementById('tab-reg');
   const show = (login) => {
     document.getElementById('form-login').style.display = login ? '' : 'none';
     document.getElementById('form-reg').style.display = login ? 'none' : '';
     document.getElementById('tab-login').classList.toggle('active', login);
-    document.getElementById('tab-reg').classList.toggle('active', !login);
+    if (tabReg) tabReg.classList.toggle('active', !login);
   };
   document.getElementById('tab-login').onclick = () => show(true);
-  document.getElementById('tab-reg').onclick = () => show(false);
+  if (tabReg) tabReg.onclick = () => show(false);
   // Обновление блока бонуса страны
   const countrySel = document.getElementById('rg-country');
   if (countrySel) { countrySel.onchange = updateCountryBonus; updateCountryBonus(); }

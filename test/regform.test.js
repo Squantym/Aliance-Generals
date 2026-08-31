@@ -32,7 +32,7 @@ const coreSrc = fs.readFileSync(path.join(ROOT, 'public/js/screens/core.js'), 'u
 
 // Поднимаем экран входа в чистом DOM. В сеть не ходим: нас интересует
 // одно — какой запрос форма СОБЕРЁТСЯ отправить.
-function boot() {
+function boot(world) {
   const dom = new JSDOM('<!doctype html><body><div id="content"></div></body>',
     { url: 'https://aliance-general.ru/', runScripts: 'outside-only' });
   const win = dom.window;
@@ -57,6 +57,9 @@ function boot() {
   win.App = {
     screens: {},
     me: null,
+    // Состояние мира: экран входа по нему решает, предлагать ли
+    // регистрацию. undefined — «не знаем», как при неудачном запросе.
+    _world: world === undefined ? { registration: { open: true, why: '' } } : world,
     theme: () => 'classic',
     go() {}, rerender() {}, route() {},
     refreshMe: async () => {},
@@ -68,8 +71,8 @@ function boot() {
   return { win, toasts, sent, App: win.App };
 }
 
-async function renderAuth() {
-  const b = boot();
+async function renderAuth(world) {
+  const b = boot(world);
   const c = b.win.document.getElementById('content');
   await b.App.screens.auth(c);
   // Экран открывается на вкладке входа — переключаемся на регистрацию.
@@ -168,6 +171,38 @@ async function renderAuth() {
   boxes.ads.checked = true;
   await go.onclick();
   ok('с рекламой — тоже', sent[sent.length - 1].body.consents.ads === true);
+
+  console.log('\n── Регистрация закрыта: вкладки нет вовсе ──');
+  // Форма, которая всегда откажет, — обещание, которое игра не собирается
+  // выполнять. Человек заполнит пять полей, поставит три галочки, нажмёт
+  // «Подписать контракт» и только тогда узнает, что регистрации нет.
+  // Так устроен тестовый мир: аккаунты там выдаёт владелец.
+  {
+    const closed = await renderAuth({
+      registration: { open: false, why: 'Это тестовый мир. Регистрация закрыта — аккаунт выдаёт администратор.' },
+      test: { on: true, name: 'Полигон' },
+    });
+    ok('вкладки «Регистрация» нет', !closed.c.querySelector('#tab-reg'));
+    ok('вход при этом на месте', !!closed.c.querySelector('#tab-login'));
+    ok('и форма входа работает', !!closed.c.querySelector('#li-go'));
+    ok('причина показана прямо на экране',
+       /аккаунт выдаёт администратор/i.test(closed.c.textContent));
+    // Экран входа — единственная дверь в игру. Уронить его значит
+    // запереть игру целиком, а не просто спрятать одну вкладку.
+    ok('экран не упал: список стран отрисован', !!closed.c.querySelector('#rg-country')
+       || !!closed.c.querySelector('#li-name'));
+    ok('и клик по «Вход» не ломается',
+       (() => { try { closed.c.querySelector('#tab-login').onclick(); return true; } catch (e) { return false; } })());
+  }
+
+  console.log('\n── Состояние неизвестно: показываем как раньше ──');
+  // Спрятать регистрацию из-за сетевой ошибки значило бы потерять живого
+  // новичка. Отказать всегда успеет сервер.
+  {
+    const unknown = await renderAuth(null);
+    ok('вкладка «Регистрация» на месте', !!unknown.c.querySelector('#tab-reg'));
+    ok('и форма тоже', !!unknown.c.querySelector('#rg-age'));
+  }
 
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);

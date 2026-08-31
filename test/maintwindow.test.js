@@ -373,6 +373,53 @@ const REL_OPEN = {
   await App.pollMe();
   ok('pollMe увидел, что обновление снято, и перезагрузил', reloaded === 1);
 
+  console.log('\n── 20. Окно честно признаётся, что устарело ──');
+  // Главный изъян прошлой версии: экран одинаково выглядел и когда
+  // обновление правда идёт, и когда связи нет полчаса, а игра давно
+  // работает. Человек не мог отличить «ждём» от «врёт».
+  scr() && scr().remove();
+  ticks.length = 0;
+  App._maintSeen = Date.now();
+  App._reload = () => {};
+  App.showMaintenance({ on: true, reason: 'Идёт', until: 0 });
+  const staleLine = () => scr().querySelector('.maint-stale');
+  ok('пока связь есть — про устаревание молчим', staleLine().hidden === true);
+
+  // Связь пропала: сервер не отвечает.
+  win.fetch = async () => { throw new Error('сеть недоступна'); };
+  App._maintSeen = Date.now() - 5 * 60000;      // последний ответ пять минут назад
+  await ticks[2]();
+  ok('сказано, что связи нет', staleLine().hidden === false);
+  ok('и сколько именно минут', /5 мин/.test(staleLine().textContent));
+  ok('и что окно могло устареть', /устарело/i.test(staleLine().textContent));
+  ok('окно при этом не убрано — решает сервер, а не догадка', !!scr());
+
+  // Связь вернулась — признание убирается.
+  win.fetch = async () => ({ json: async () => ({ maintenance: { on: true, reason: 'Идёт', until: 0, soon: null } }) });
+  await ticks[2]();
+  ok('связь вернулась — строка про устаревание убрана', staleLine().hidden === true);
+
+  console.log('\n── 21. Если перезагрузка не сработала — окно всё равно уходит ──');
+  // Пусть игрок окажется на старой разметке, чем перед вечной заглушкой
+  // над работающей игрой.
+  scr() && scr().remove();
+  ticks.length = 0;
+  const realTimeout = win.setTimeout;
+  const delayed = [];
+  win.setTimeout = (fn, ms) => { delayed.push({ fn, ms }); return delayed.length; };
+  App._reload = () => {};                        // «перезагрузка» ничего не делает
+  App.showMaintenance({ on: true, reason: 'Идёт', until: 0 });
+  worldAnswer = { maintenance: { on: false, soon: null } };
+  win.fetch = async () => ({ json: async () => worldAnswer });
+  await ticks[2]();
+  ok('окно ещё на месте — даём перезагрузке шанс', !!scr());
+  const fallback = delayed.find((d) => d.ms === 3000);
+  ok('подстраховка заведена', !!fallback);
+  fallback.fn();
+  ok('через три секунды окно убрано', !scr());
+  ok('и игра показана обратно', win.document.getElementById('wrap').style.display === '');
+  win.setTimeout = realTimeout;
+
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });

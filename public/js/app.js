@@ -368,6 +368,10 @@ const App = {
     // введёт пароль, а не после.
     try {
       const w = await fetch('/api/world').then((x) => x.json());
+      // Состояние мира держим целиком: экран входа по нему решает,
+      // предлагать ли регистрацию. Спрашивать сервер второй раз тем же
+      // вопросом незачем.
+      App._world = w || null;
       if (w && w.test && w.test.on) App.markTestWorld(w.test.name);
       if (w && w.maintenance && w.maintenance.on) {
         // Сотрудника обновление не касается — он его и проводит. Понять,
@@ -2230,6 +2234,7 @@ const App = {
             обновления.</p>
             <div class="maint-dots"><span></span><span></span><span></span></div>
             <button class="maint-again" type="button">Проверить сейчас</button>
+            <p class="maint-stale" hidden></p>
           </div>
         </div>`;
     }
@@ -2289,24 +2294,59 @@ const App = {
     // окно обновления оставалось навсегда. Игру давно открыли, сервер
     // отвечает «работаю», а человек сидит перед заглушкой и ждёт.
     // Ловушка вокруг решения превращает поломку в вечное ожидание.
+    // Когда последний раз удалось спросить сервер. Экран, который не
+    // может сказать, что показывает старое, — главный изъян прошлой
+    // версии: он одинаково выглядел и когда обновление правда идёт, и
+    // когда связи нет уже полчаса, а игра давно работает.
+    App._maintSeen = App._maintSeen || Date.now();
+    const stale = () => {
+      const el = box.querySelector('.maint-stale');
+      if (!el) return;
+      const ago = Date.now() - App._maintSeen;
+      if (ago < 90000) { el.hidden = true; return; }
+      const m = Math.round(ago / 60000);
+      el.hidden = false;
+      el.textContent = `Связи с сервером нет уже ${m} мин — возможно, игра давно работает, `
+        + 'а это окно устарело. Нажмите «Проверить сейчас» или обновите страницу.';
+    };
+
     const check = async () => {
       let r = null;
       try { r = await fetch('/api/world', { cache: 'no-store' }).then((x) => x.json()); }
-      catch (e) { return; }              // сервер перезапускается — подождём
-      if (!r || !r.maintenance) return;
+      catch (e) { stale(); return; }     // сервер перезапускается — подождём
+      if (!r || !r.maintenance) { stale(); return; }
+      App._maintSeen = Date.now();
       if (!r.maintenance.on) {
         // Игру открыли — окно закрывается САМО, перезагрузкой страницы:
         // за время обновления поменялся и код, и разметка, так что
         // «просто спрятать окно» оставило бы игрока на старой версии.
         App._reload();
+        // Подстраховка на случай, если перезагрузка не случилась: у
+        // старой сборки в кэше, у заблокированной навигации, у чужой
+        // ошибки. Через три секунды просто убираем окно — пусть игрок
+        // окажется на старой разметке, чем перед вечной заглушкой над
+        // работающей игрой.
+        setTimeout(() => {
+          const scr = document.getElementById('maint-screen');
+          if (!scr) return;
+          scr.remove();
+          const w = document.getElementById('wrap');
+          if (w) w.style.display = '';
+          const t = document.getElementById('toasts');
+          if (t) t.style.display = '';
+          if (App._maintTimer) clearInterval(App._maintTimer);
+          if (App._maintPicTimer) clearInterval(App._maintPicTimer);
+          if (App._maintTextTimer) clearInterval(App._maintTextTimer);
+        }, 3000);
         return;
       }
       info = r.maintenance;
       paint();
+      stale();
     };
 
     App._maintPicTimer = setInterval(rotate, 7000);
-    App._maintTextTimer = setInterval(paint, 30000);
+    App._maintTextTimer = setInterval(() => { paint(); stale(); }, 30000);
     App._maintTimer = setInterval(check, 15000);
 
     // Возврат на вкладку — проверяем сразу, не дожидаясь своей очереди.
