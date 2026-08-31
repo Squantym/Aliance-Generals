@@ -222,6 +222,12 @@ function load<T = any>(name: string, def?: T): T {
   return store[name];
 }
 
+// Что уже прочитано в память, и что там лежит. Только для чтения:
+// обнуление обязано знать, какие коллекции существуют, а load() их бы
+// создавал — то есть сам плодил бы то, что собирается стирать.
+function loadedNames(): string[] { return Object.keys(store); }
+function peek(name: string): any { return store[name]; }
+
 // ---------- Запись (отложенная) ----------
 // Помечает коллекцию «грязной» и планирует сохранение через 400 мс.
 // Несколько вызовов save() подряд склеиваются в одну запись.
@@ -450,6 +456,58 @@ function backupLightNow(): string | null {
   if (mode !== 'sqlite') return null;
   try { return sqlite.backupLight('light', Number(process.env.BACKUP_LIGHT_KEEP || 192)); }
   catch (e) { return null; }
+}
+
+// ═══ ЗАМОРОЗКА МИРА И ПОЛНОЕ ОБНУЛЕНИЕ ══════════════════════════════
+// Обёртки над своей базой. В файловом режиме заморозка невозможна —
+// возвращаем null, и worldReset честно скажет об этом владельцу вместо
+// того, чтобы стереть всё «вроде бы с копией».
+function freezeWorld(n: number): { file: string; bytes: number } | null {
+  if (mode !== 'sqlite') return null;
+  try { return sqlite.freezeWorld(n); } catch (e) { return null; }
+}
+
+function frozenWorlds(): any[] {
+  if (mode !== 'sqlite') return [];
+  try { return sqlite.frozenWorlds(); } catch (e) { return []; }
+}
+
+// Полная очистка. Чистит и таблицы, о которых код снаружи не знает:
+// журнал, упакованный журнал, историю состояний игроков, снимки. Кэш в
+// памяти сбрасывается здесь же — иначе сервер продолжил бы отдавать
+// стёртые данные до перезапуска.
+function wipeEverything(keepPlayers: string[], keepCollections: string[]): Record<string, number> {
+  const keptP = new Set((keepPlayers || []).map(String));
+  const keptC = new Set((keepCollections || []).map(String));
+
+  let stats: Record<string, number> = {};
+  if (mode === 'sqlite') {
+    stats = sqlite.wipeEverything(keepPlayers || [], keepCollections || []);
+  }
+
+  // Память. Объекты коллекций чистим НА МЕСТЕ: сервисы держат ссылку на
+  // них с первого своего вызова, и подмена оставила бы половину игры
+  // работать со старым, уже стёртым содержимым.
+  const users = store.users || {};
+  let removed = 0;
+  for (const id of Object.keys(users)) {
+    if (keptP.has(id)) continue;
+    delete users[id];
+    dirtyUsers.delete(id);
+    removed++;
+  }
+  if (!stats.players) stats.players = removed;
+
+  for (const name of Object.keys(store)) {
+    if (name === 'users' || keptC.has(name)) continue;
+    const box = store[name];
+    if (Array.isArray(box)) box.length = 0;
+    else if (box && typeof box === 'object') for (const k of Object.keys(box)) delete box[k];
+    dirty.add(name);
+  }
+  allUsersDirty = true;
+  scheduleFlush();
+  return stats;
 }
 
 function snapshotCollection(name: string, label: string): boolean {
@@ -717,12 +775,12 @@ async function flushAllNow(): Promise<string[]> {
 }
 
 export = {
-  init, load, save, markUser, saveAll, flushAllNow, appendLog, tailLogs, DATA_DIR,
+  init, load, save, markUser, saveAll, loadedNames, peek, flushAllNow, appendLog, tailLogs, DATA_DIR,
   logStats, logsBetween, LOG_KEEP_MS, playerFromBackup,
   dropUser, findDuplicateUsers,
   // Своя база: защита данных и аналитика
   backupNow, backupsList, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats, closeDb,
-  offsiteStatus, packLogs, backupLightNow,
+  offsiteStatus, packLogs, backupLightNow, freezeWorld, frozenWorlds, wipeEverything,
   playerHistory, playerHistoryGet, playerHistoryAt, snapshotPlayer, thinHistory, historyStats,
   get mode() { return mode; },
 };

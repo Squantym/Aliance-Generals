@@ -32,6 +32,7 @@ type Row = { id: string; data: string };
 let db: any = null;
 let dbPath = '';
 let backupDir = '';
+let worldsDir = '';
 let driverKind = '';
 
 // ── Выбор драйвера ────────────────────────────────────────────────
@@ -119,6 +120,12 @@ function open(dataDir: string, fileName = 'generals.db'): any {
   dbPath = path.join(dataDir, fileName);
   backupDir = path.join(dataDir, 'backups');
   if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+  // Замороженные миры лежат ОТДЕЛЬНО от копий. В backups/ работает
+  // ротация: старые файлы удаляются, чтобы диск не заполнялся сам. Для
+  // архива прошлого мира это смертельно — он должен лежать вечно, а не
+  // до четырнадцатой копии.
+  worldsDir = path.join(dataDir, 'worlds');
+  if (!fs.existsSync(worldsDir)) fs.mkdirSync(worldsDir, { recursive: true });
 
   db = makeDriver(dbPath);
   driverKind = db.kind;
@@ -768,6 +775,90 @@ function backup(label = 'auto', keep = 14): string {
   return target;
 }
 
+// ═══ ЗАМОРОЗКА МИРА: вечная копия перед обнулением ═══════════════════
+// Полный слепок базы в data/worlds/. Отличий от обычной копии два, и оба
+// принципиальны:
+//
+//  1. НИКАКОЙ РОТАЦИИ. Обычные копии вытесняют друг друга по счётчику —
+//     иначе диск заполнится сам. Замороженный мир вытеснять нечем: это
+//     единственное, что от него останется. Файл лежит, пока владелец
+//     сам его не удалит.
+//
+//  2. ОТДЕЛЬНАЯ ПАПКА. В backups/ его рано или поздно снёс бы чужой
+//     код, чистящий старые копии по маске.
+//
+// Возвращает путь и размер: worldReset обязан убедиться, что файл
+// действительно записался и не пуст, ПРЕЖДЕ чем что-либо стирать.
+function freezeWorld(n: number): { file: string; bytes: number } {
+  const day = new Date().toISOString().slice(0, 10);
+  const nn = String(n).padStart(2, '0');
+  let target = path.join(worldsDir, `mir-${nn}-${day}.db`);
+  let i = 1;
+  while (fs.existsSync(target)) target = path.join(worldsDir, `mir-${nn}-${day}-${i++}.db`);
+  db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+  const bytes = fs.existsSync(target) ? fs.statSync(target).size : 0;
+  return { file: target, bytes };
+}
+
+// Список замороженных миров — для панели.
+function frozenWorlds(): Array<{ file: string; bytes: number; at: number }> {
+  if (!worldsDir || !fs.existsSync(worldsDir)) return [];
+  return fs.readdirSync(worldsDir)
+    .filter((f) => f.endsWith('.db'))
+    .map((f) => {
+      const st = fs.statSync(path.join(worldsDir, f));
+      return { file: f, bytes: st.size, at: st.mtimeMs };
+    })
+    .sort((a, b) => b.at - a.at);
+}
+
+// ═══ ПОЛНАЯ ОЧИСТКА: всё, кроме перечисленных игроков и коллекций ═════
+// Отдельная функция здесь, а не в worldReset, по одной причине: половина
+// того, что надо стереть, лежит НЕ в коллекциях. Журнал, упакованный
+// журнал, история состояний игроков и снимки — это свои таблицы, и код
+// снаружи о них не знает. Забыть любую из них значит оставить в «чистой»
+// базе персональные данные игроков, которых уже нет.
+//
+// keepPlayers / keepCollections — что уцелеет. Всё остальное удаляется
+// без разбора: перечислять надо то, что остаётся, а не то, что уходит.
+// Список «что уходит» пришлось бы дописывать при каждой новой таблице,
+// и однажды его бы не дописали.
+function wipeEverything(keepPlayers: string[], keepCollections: string[]): Record<string, number> {
+  const kp = new Set((keepPlayers || []).map(String));
+  const kc = new Set((keepCollections || []).map(String));
+  const out: Record<string, number> = {};
+
+  const tx = db.transaction(() => {
+    const players = db.prepare('SELECT id FROM players').all() as Array<{ id: string }>;
+    let n = 0;
+    const delP = db.prepare('DELETE FROM players WHERE id = ?');
+    for (const r of players) if (!kp.has(String(r.id))) { delP.run(r.id); n++; }
+    out.players = n;
+
+    const colls = db.prepare('SELECT id FROM collections').all() as Array<{ id: string }>;
+    let m = 0;
+    const delC = db.prepare('DELETE FROM collections WHERE id = ?');
+    for (const r of colls) if (!kc.has(String(r.id))) { delC.run(r.id); m++; }
+    out.collections = m;
+
+    out.action_logs = (db.prepare('DELETE FROM action_logs').run() as any).changes || 0;
+    out.log_packs = (db.prepare('DELETE FROM log_packs').run() as any).changes || 0;
+    out.player_history = (db.prepare('DELETE FROM player_history').run() as any).changes || 0;
+    out.snapshots = (db.prepare('DELETE FROM snapshots').run() as any).changes || 0;
+  });
+  tx();
+
+  // Забываем, что писали удалённых: иначе игрок с тем же id (а он
+  // возможен — id случайный, но короткий) не записался бы как «не
+  // изменившийся».
+  for (const k of Object.keys(lastWritten)) if (!kp.has(k)) delete lastWritten[k];
+
+  // Возвращаем место операционной системе. Без этого файл базы остаётся
+  // прежнего размера, и «обнулённая» игра выглядит как гигабайт данных.
+  try { db.exec('VACUUM'); } catch (e) { /* не смертельно */ }
+  return out;
+}
+
 // ═══ ЛЁГКАЯ КОПИЯ: только игроки и коллекции, без журнала ═════════════
 // Полная копия тащит с собой журнал, а он и есть основной вес базы: при
 // 500 игроках это сотни мегабайт против пяти. Из-за этого частые полные
@@ -897,5 +988,6 @@ export = {
   savePlayerHistory, playerHistoryList, playerHistoryGet, playerHistoryAt,
   thinPlayerHistory, historyStats,
   backup, backupLight, snapshot, snapshotList, snapshotGet, snapshotGetFull,
+  freezeWorld, frozenWorlds, wipeEverything,
   query, stats,
 };

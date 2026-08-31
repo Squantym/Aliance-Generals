@@ -31,6 +31,12 @@ if (!JSDOM) { console.log('⛔ jsdom не установлен'); process.exit(1
 const ESC = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Текст экрана со схлопнутыми пробелами. Без этого проверка «сказано
+// „журнал действий“» падала бы от переноса строки в вёрстке: в
+// textContent между словами оказывается перевод строки с отступом.
+// Проверять надо смысл, а не то, где вёрстка перенесла слово.
+const flat = (el) => el.textContent.replace(/\s+/g, ' ').trim();
+
 const PREVIEW = {
   world: 3,
   phrase: 'обнулить мир 3',
@@ -38,13 +44,16 @@ const PREVIEW = {
   legions: 7,
   alliances: 4,
   counts: { legions: 7, alliances: 4, battles: 900, world: 3 },
-  keep: ['actionLogs', 'worldArchive', 'mailQuota'],
-  wipe: ['legions', 'alliances', 'battles', 'world'],
+  human: { legions: 'легионы', alliances: 'альянсы', battles: 'бои', world: 'мир: чат и аукцион' },
+  logs: 48210,
+  history: 9033,
+  keep: ['worldArchive', 'maintenance', 'mailQuota', 'pushconfig', 'roleZones'],
   archive: [
-    { n: 1, endedAt: Date.now() - 86400000 * 90, players: 60, by: 'Хозяин', reason: 'первый сезон' },
-    { n: 2, endedAt: Date.now() - 86400000 * 10, players: 210, by: 'Хозяин', reason: 'второй сезон' },
+    { n: 1, endedAt: Date.now() - 86400000 * 90, players: 60, by: 'Хозяин', reason: 'первый сезон', file: 'mir-01-2026-06-01.db', bytes: 5242880 },
+    { n: 2, endedAt: Date.now() - 86400000 * 10, players: 210, by: 'Хозяин', reason: 'второй сезон', file: 'mir-02-2026-08-20.db', bytes: 20971520 },
   ],
-  canBackup: true,
+  frozen: [{ file: 'mir-02-2026-08-20.db', bytes: 20971520, at: Date.now() }],
+  canFreeze: true,
 };
 
 function boot(preview) {
@@ -62,7 +71,11 @@ function boot(preview) {
     post: async (url, body) => {
       sent.push({ url, body });
       if (fail) throw new Error(fail);
-      return { ok: true, world: preview.world, removed: preview.players, kept: 1, backup: 'generals-wipe-x.db' };
+      return {
+        ok: true, world: preview.world, removed: preview.players, kept: 1,
+        file: 'mir-03-2026-08-30.db', bytes: 31457280,
+        wiped: { players: 143, collections: 12, action_logs: 48210, player_history: 9033 },
+      };
     },
   };
   win.A2 = { screens: {} };
@@ -81,14 +94,19 @@ function boot(preview) {
   console.log('\n── 1. Что показано до нажатия ──');
   const p = boot(PREVIEW);
   await p.render();
-  const t = p.el.textContent;
+  const t = flat(p.el);
   ok('назван номер текущего мира', /мир №3/i.test(t));
   ok('названо число игроков', /143/.test(t));
   ok('и что их удалят', /удал|стира/i.test(t));
   ok('сказано, что отменить нельзя', /нельзя/i.test(t));
-  ok('сказано про копию базы', /копи[ юя]/i.test(t));
-  ok('видно, что останется журнал', /журнал/i.test(t));
+  ok('сказано про заморозку мира', /заморажива|слепок/i.test(t));
+  ok('названо число записей журнала', /48210/.test(t));
+  ok('и срезов истории', /9033/.test(t));
+  // Журнал теперь СТИРАЕТСЯ — он целиком уходит в замороженный мир.
+  // Экран обязан сказать это прямо, а не умолчать.
+  ok('сказано, что журнал стирается', /журнал действий/i.test(t));
   ok('и что аккаунт владельца сохранится', /ваш аккаунт/i.test(t));
+  ok('видно, что список остающегося короткий', /Останется только это/i.test(t));
 
   console.log('\n── 2. Кнопка мертва, пока фраза не совпала ──');
   const go = p.q('w-go');
@@ -128,10 +146,12 @@ function boot(preview) {
   ok('и решение про свой прогресс', p.sent[0].body.resetOwner === true);
 
   console.log('\n── 5. После обнуления ──');
-  const done = p.el.textContent;
+  const done = flat(p.el);
   ok('сказано, что мир закрыт', /закрыт/i.test(done));
   ok('названо число удалённых', /143/.test(done));
-  ok('показан файл копии базы', /generals-wipe-x\.db/.test(done));
+  ok('показан файл замороженного мира', /mir-03-2026-08-30\.db/.test(done));
+  ok('и его размер', /МБ/.test(done));
+  ok('и сколько стёрто журнала', /48210/.test(done));
   // Игра остаётся закрытой намеренно: смотреть на результат должен
   // человек, а не игроки.
   ok('сказано, что игра закрыта на обслуживание', /обслуживани/i.test(done));
@@ -140,13 +160,13 @@ function boot(preview) {
   console.log('\n── 6. Сервер отказал — экран не врёт ──');
   const p2 = boot(PREVIEW);
   await p2.render();
-  p2.breakServer('Не удалось снять копию базы — обнуление отменено');
+  p2.breakServer('Не удалось заморозить мир — обнуление отменено, ничего не стёрто');
   p2.q('w-confirm').value = PREVIEW.phrase;
   p2.q('w-confirm').oninput();
   await p2.q('w-go').onclick();
-  ok('причина показана', /копию базы/i.test(p2.toasts.join(' ')));
+  ok('причина показана', /заморозить мир/i.test(p2.toasts.join(' ')));
   ok('и экран не сделал вид, что всё получилось',
-     !/мир №3 закрыт/i.test(p2.el.textContent));
+     !/мир №3 закрыт/i.test(flat(p2.el)));
   ok('кнопку можно нажать снова', p2.q('w-go').disabled === false);
 
   console.log('\n── 7. Архив прошлых миров виден прямо здесь ──');
@@ -154,16 +174,34 @@ function boot(preview) {
   // стирается не всё, и решение принимается спокойнее.
   const p3 = boot(PREVIEW);
   await p3.render();
-  const a = p3.el.textContent;
+  const a = flat(p3.el);
   ok('прошлые миры перечислены', /Прошлые миры/i.test(a));
   ok('первый мир на месте', /первый сезон/i.test(a));
   ok('второй тоже', /второй сезон/i.test(a));
-  ok('и сказано, что архив обнуление не стирает', /не стирает/i.test(a));
+  ok('видно, где лежат замороженные миры', /data\/worlds/.test(a));
+  ok('и их файлы', /mir-01-2026-06-01\.db/.test(a));
+  ok('и размеры', /5\.0 МБ|5 МБ/.test(a));
 
-  console.log('\n── 8. Файловая база: честно предупреждаем ──');
-  const p4 = boot(Object.assign({}, PREVIEW, { canBackup: false }));
+  console.log('\n── 8. Файловая база: без слепка — только по согласию ──');
+  // Молча уничтожать данные, потому что «тут всё равно разработка», —
+  // привычка, которая однажды сработает на боевом сервере.
+  const p4 = boot(Object.assign({}, PREVIEW, { canFreeze: false }));
   await p4.render();
-  ok('сказано, что копия не снимется сама', /вручную/i.test(p4.el.textContent));
+  ok('сказано, что заморозить нечем', /вручную/i.test(flat(p4.el)));
+  ok('и есть отдельная галочка согласия', !!p4.q('w-nofreeze'));
+  ok('снятая по умолчанию', p4.q('w-nofreeze').checked === false);
+  p4.q('w-confirm').value = PREVIEW.phrase;
+  p4.q('w-confirm').oninput();
+  await p4.q('w-go').onclick();
+  ok('без галочки согласие не уходит', p4.sent[0].body.allowNoFreeze === false);
+  const p5 = boot(Object.assign({}, PREVIEW, { canFreeze: false }));
+  await p5.render();
+  p5.q('w-nofreeze').checked = true;
+  p5.q('w-confirm').value = PREVIEW.phrase;
+  p5.q('w-confirm').oninput();
+  await p5.q('w-go').onclick();
+  ok('с галочкой — уходит', p5.sent[0].body.allowNoFreeze === true);
+  ok('на своей базе галочки нет вовсе', !p.q('w-nofreeze'));
 
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);

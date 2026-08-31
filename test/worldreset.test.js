@@ -171,11 +171,15 @@ function usersFile() {
   ok('это первый мир', pv.d.world === 1);
   ok('названо число игроков', pv.d.players === 3);
   ok('фраза подтверждения с номером мира', /обнулить мир 1/i.test(pv.d.phrase || ''));
-  ok('журнал в списке несдвигаемого', (pv.d.keep || []).includes('actionLogs'));
-  ok('счётчик тарифа почты тоже', (pv.d.keep || []).includes('mailQuota'));
-  ok('и он НЕ в списке стираемого', !(pv.d.wipe || []).includes('mailQuota'));
-  ok('списки стираемого и сохраняемого не пересекаются',
-     !(pv.d.wipe || []).some((w) => (pv.d.keep || []).includes(w)));
+  // Список остающегося короткий и весь — осознанный. Журнала в нём
+  // больше НЕТ: он целиком уходит в замороженный мир, а в живой базе
+  // персональным данным удалённых игроков не место.
+  ok('журнал НЕ в списке остающегося', !(pv.d.keep || []).includes('actionLogs'));
+  ok('счётчик тарифа почты остаётся', (pv.d.keep || []).includes('mailQuota'));
+  ok('указатель на замороженные миры остаётся', (pv.d.keep || []).includes('worldArchive'));
+  ok('режим обслуживания остаётся', (pv.d.keep || []).includes('maintenance'));
+  ok('игроки в списке остающегося не значатся', !(pv.d.keep || []).includes('users'));
+  ok('список остающегося короткий', (pv.d.keep || []).length <= 6);
 
   console.log('\n── 3. Кому нельзя ──');
   ok('обычному игроку раздел закрыт', (await get('/api/admin/world-reset', player)).status >= 400);
@@ -189,10 +193,54 @@ function usersFile() {
     ok(`отклонено: «${bad || '(пусто)'}»`, r.status >= 400);
   }
   ok('после всех попыток игроки на месте', Object.keys(usersFile()).length === 3);
+  if (SQLITE) {
+    console.log('\n── 3б. Наполняем служебные таблицы ──');
+    // player_history, log_packs и snapshots заполняются редко: срезами
+    // перед админскими действиями, упаковкой недельного журнала,
+    // страховкой перед сбросом сезона. В коротком тесте они остались бы
+    // пустыми — и три проверки «стёрто» прошли бы, ничего не проверив.
+    // Проверено намеренной поломкой: без этого блока отключение любого
+    // из трёх DELETE не давало ни одного красного.
+    const Database = require('better-sqlite3');
+    const d = new Database(path.join(workDir, 'data', 'generals.db'));
+    const ids = Object.keys(usersFile());
+    d.prepare('INSERT INTO player_history (id, at, label, actor, hash, data) VALUES (?,?,?,?,?,?)')
+      .run(ids[1] || 'x1', Date.now(), 'до выдачи', 'Хозяин', 'h1', Buffer.from('старое состояние'));
+    // Дата — десять дней назад: старше «горячих» суток, но внутри
+    // трёхмесячного срока хранения. Поставишь январь — пачку удалит
+    // обычная чистка по сроку, и проверка «стёрто» пройдёт, ничего не
+    // проверив. На этом тест уже один раз и обманулся.
+    const tenDaysAgo = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+    d.prepare('INSERT INTO log_packs (day, user_id, n, raw, data) VALUES (?,?,?,?,?)')
+      .run(tenDaysAgo, ids[1] || 'x1', 10, 100, Buffer.from('упакованный журнал'));
+    d.prepare('INSERT INTO snapshots (at, label, collection, data) VALUES (?,?,?,?)')
+      .run(Date.now(), 'перед сезоном', 'season', '{"old":true}');
+    const cnt = (t) => d.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
+    ok('история состояний наполнена', cnt('player_history') > 0);
+    ok('упакованный журнал наполнен', cnt('log_packs') > 0);
+    ok('снимки коллекций наполнены', cnt('snapshots') > 0);
+    d.close();
+  }
+
+  console.log('\n── 4б. Без слепка мира не стираем ──');
+  // Слепок — единственный путь назад. На своей базе он снимается всегда
+  // и обойти его нельзя. В файловой базе снимать его нечем, поэтому
+  // стирание требует отдельного согласия: молча уничтожать данные,
+  // потому что «тут всё равно разработка», — привычка, которая однажды
+  // сработает на боевом сервере.
+  if (!SQLITE) {
+    const noFreeze = await post('/api/admin/world-reset',
+      { confirm: 'обнулить мир 1' }, owner);
+    ok('отказ: заморозить мир нечем', noFreeze.status >= 400);
+    ok('и объяснено, что делать', /вручную|скопируйте/i.test(noFreeze.d.error || ''));
+    ok('игроки на месте', Object.keys(usersFile()).length === 3);
+  }
+
   // Регистр и лишние пробелы прощаем: это защита от бездумного клика, а
   // не проверка на аккуратность набора.
   const loose = await post('/api/admin/world-reset',
-    { confirm: '  ОБНУЛИТЬ   Мир 1 ', reason: 'конец первого сезона' }, owner);
+    { confirm: '  ОБНУЛИТЬ   Мир 1 ', reason: 'конец первого сезона',
+      allowNoFreeze: !SQLITE }, owner);
   ok('но регистр и лишние пробелы прощаются', loose.status === 200);
 
   console.log('\n── 5. Что осталось ──');
@@ -236,16 +284,98 @@ function usersFile() {
   ok('и фраза сменилась', /обнулить мир 2/i.test(pv2.d.phrase || ''));
   ok('в архиве одна запись', (pv2.d.archive || []).length === 1);
   ok('в ней число игроков прошлого мира', pv2.d.archive[0].players === 3);
+  if (SQLITE) {
+    // Замороженный мир — отдельный файл в data/worlds/, которого не
+    // касается ротация копий. Это единственный путь назад.
+    ok('мир заморожен в файл', /^mir-01-/.test(pv2.d.archive[0].file || ''));
+    ok('и файл не пустой', Number(pv2.d.archive[0].bytes) > 4096);
+    ok('он виден в списке замороженных', (pv2.d.frozen || []).length === 1);
+    const wf = path.join(workDir, 'data', 'worlds', (pv2.d.frozen[0] || {}).file || 'нет');
+    ok('и лежит на диске', fs.existsSync(wf));
+    // Главное: в замороженном мире игроки ЕСТЬ, хотя в живой базе их нет.
+    const Database = require('better-sqlite3');
+    const fz = new Database(wf, { readonly: true });
+    const inFrozen = fz.prepare('SELECT COUNT(*) AS n FROM players').get().n;
+    const logsFrozen = fz.prepare('SELECT COUNT(*) AS n FROM action_logs').get().n;
+    fz.close();
+    ok('в замороженном мире все три игрока', inFrozen === 3);
+    ok('и журнал прошлого мира тоже там', logsFrozen > 0);
+  }
   ok('кто обнулил', pv2.d.archive[0].by === 'Хозяин');
   ok('и зачем', /первого сезона/i.test(pv2.d.archive[0].reason || ''));
 
-  console.log('\n── 9. Журнал обнуление пережил ──');
-  // Кнопка, стирающая журнал, — это кнопка «замести следы».
+  console.log('\n── 9. Журнал начат заново ──');
+  // Старый журнал ушёл вместе со всем остальным — он целиком лежит в
+  // замороженном мире. Оставлять в живой базе действия игроков, которых
+  // больше нет, значит хранить их персональные данные без основания.
   const logs = await get('/api/admin/logs?limit=200', owner);
   const txt = JSON.stringify(logs.d || {});
   ok('журнал доступен', logs.status === 200);
-  ok('в нём осталась регистрация удалённого игрока', /Боец/.test(txt));
-  ok('и записано само обнуление', /ОБНУЛИЛ МИР|world-reset/i.test(txt));
+  ok('действий удалённого игрока в нём нет', !/Боец/.test(txt));
+  ok('но само обнуление записано — журнал не начинается с пустоты',
+     /ОБНУЛИЛ МИР|world-reset/i.test(txt));
+
+  if (SQLITE) {
+    console.log('\n── 9б. В живой базе не осталось ничего от прошлого мира ──');
+    // Проверяем саму базу, а не ответы сервера: нас интересует то, что
+    // лежит на диске. Персональные данные игроков, которых больше нет,
+    // не должны оставаться в работающей игре — они целиком в
+    // замороженном мире.
+    const Database = require('better-sqlite3');
+    const live = new Database(path.join(workDir, 'data', 'generals.db'), { readonly: true });
+    const one = (q) => live.prepare(q).get().n;
+    ok('игрок в таблице один', one('SELECT COUNT(*) AS n FROM players') === 1);
+    // История стирается вся, но сразу после обнуления сервер сохраняет
+    // пересобранный аккаунт владельца — и на него появляется новый срез.
+    // Поэтому проверяем не «ноль строк», а «нет истории удалённых».
+    const ownerId = Object.keys(usersFile())[0];
+    const histIds = live.prepare('SELECT DISTINCT id FROM player_history').all().map((r) => String(r.id));
+    ok('истории удалённых игроков не осталось',
+       histIds.every((id) => id === ownerId));
+    ok('упакованный журнал стёрт', one('SELECT COUNT(*) AS n FROM log_packs') === 0);
+    ok('снимки коллекций стёрты', one('SELECT COUNT(*) AS n FROM snapshots') === 0);
+    // Журнал не пуст — но только своей единственной записью про само
+    // обнуление. Записей прошлого мира в нём быть не должно.
+    const logRows = live.prepare('SELECT data FROM action_logs').all()
+      .map((r) => String(r.data)).join(' ');
+    ok('в журнале нет действий удалённых игроков', !/Боец|Второй/.test(logRows));
+    ok('но само обнуление в нём есть', /world-reset/.test(logRows));
+    live.close();
+  }
+
+  console.log('\n── 9в. Пустой слепок — не повод стирать ──');
+  // VACUUM INTO может оставить пустой файл при нехватке места на диске.
+  // «Копия есть» превратилось бы в ложь ровно в тот момент, когда на неё
+  // рассчитывают, поэтому размер проверяется, а не подразумевается.
+  //
+  // Проверяем в отдельном процессе со своей папкой данных: подмена
+  // заморозки в этом процессе писала бы в базу самого проекта.
+  {
+    const probe = `
+      const path = require('path');
+      const wr = require(${JSON.stringify(path.join(ROOT, 'dist/src/services/worldReset.js'))});
+      const dbm = require(${JSON.stringify(path.join(ROOT, 'dist/src/core/db.js'))});
+      Object.defineProperty(dbm, 'mode', { get: () => 'sqlite', configurable: true });
+      dbm.load('users', {}).x = { id: 'x', name: 'Хозяин' };
+      const out = [];
+      for (const fake of [() => ({ file: '/tmp/x.db', bytes: 0 }), () => null]) {
+        dbm.freezeWorld = fake;
+        try { wr.run({ id: 'x', name: 'Хозяин' }, { confirm: wr.phrase(), keepIds: ['x'] }); out.push('НЕ ОТКАЗАЛ'); }
+        catch (e) { out.push(String(e && e.message || e)); }
+      }
+      console.log(JSON.stringify(out));
+    `;
+    const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freeze-probe-'));
+    fs.mkdirSync(path.join(probeDir, 'data'), { recursive: true });
+    const r = require('child_process').spawnSync(process.execPath, ['-e', probe],
+      { cwd: probeDir, encoding: 'utf8' });
+    let said = [];
+    try { said = JSON.parse(String(r.stdout).trim().split('\n').pop()); } catch (e) {}
+    ok('пустой слепок останавливает обнуление', /заморозить мир/i.test(said[0] || ''));
+    ok('и подсказывает про место на диске', /место на диске/i.test(said[0] || ''));
+    ok('неудавшийся слепок — тоже отказ', /заморозить мир/i.test(said[1] || ''));
+    try { fs.rmSync(probeDir, { recursive: true, force: true }); } catch (e) {}
+  }
 
   console.log('\n── 10. Новый мир принимает игроков ──');
   await post('/api/admin/maintenance', { on: false }, owner);

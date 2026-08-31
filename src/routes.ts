@@ -1503,6 +1503,10 @@ function registerRoutes(app: any) {
       confirm: String(req.body.confirm || ''),
       reason: String(req.body.reason || ''),
       resetOwner: req.body.resetOwner !== false,
+      // Только для файловой базы (разработка): стереть без слепка. На
+      // своей базе этот флаг ничего не меняет — там слепок обязателен
+      // всегда, и обойти его нельзя ни из панели, ни запросом.
+      allowNoFreeze: !!req.body.allowNoFreeze,
     });
     n.push(`💥 Мир обнулён. Удалено игроков: ${r.removed}. Игра закрыта на обслуживание.`);
     return r;

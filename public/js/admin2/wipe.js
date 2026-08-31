@@ -20,13 +20,8 @@
   const dt = (ms) => (ms ? new Date(ms).toLocaleString('ru-RU',
     { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-  const NAMES = {
-    legions: 'легионы', alliances: 'альянсы', alliance_invites: 'приглашения в альянс',
-    battles: 'бои', arena: 'арена', groupBattle: 'групповые бои', rockets: 'ракеты',
-    sanctions: 'санкции', news: 'новости', broadcast: 'рассылки', mail: 'почта в игре',
-    world: 'мир (чат, аукцион)', world_event: 'событие мира', discounts: 'скидки',
-    dailyFame: 'слава за день', season: 'сезон', weeklySeason: 'недельный сезон',
-  };
+  const mb = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' МБ'
+    : b >= 1024 ? Math.round(b / 1024) + ' КБ' : b + ' Б');
 
   async function render(el) {
     el.innerHTML = '<div class="a2-title">Обнуление мира</div><p class="a2-muted">Считаю…</p>';
@@ -41,22 +36,26 @@
     const inp = 'padding:6px 10px;background:var(--bg);color:var(--text);'
       + 'border:1px solid var(--border);border-radius:8px';
 
+    const human = d.human || {};
     const rows = Object.keys(d.counts || {})
-      .filter((k) => d.counts[k] > 0)
-      .map((k) => `<li>${UI.esc(NAMES[k] || k)}: <b>${d.counts[k]}</b></li>`)
+      .sort((a, b) => d.counts[b] - d.counts[a])
+      .map((k) => `<li>${UI.esc(human[k] || k)}: <b>${d.counts[k]}</b></li>`)
       .join('');
 
     const arch = (d.archive || []).length ? `
       <div class="a2-card">
         <h3>Прошлые миры</h3>
-        <p class="a2-muted">Эти записи обнуление не стирает — новый мир пишет свою строку
-        рядом. Здесь же виден файл копии базы, из которой мир можно поднять целиком.</p>
+        <p class="a2-muted">Каждый закрытый мир заморожен в отдельный файл в
+        <code>data/worlds/</code>. Ротация копий его не касается: он лежит, пока вы сами
+        его не удалите. Из этого файла прошлый мир поднимается целиком — со всеми игроками,
+        журналом и историей.</p>
         <table class="a2-table" style="margin-top:8px">
-          <tr><th>Мир</th><th>Закрыт</th><th>Игроков</th><th>Кто</th><th>Причина</th></tr>
+          <tr><th>Мир</th><th>Закрыт</th><th>Игроков</th><th>Кто</th><th>Причина</th><th>Файл</th></tr>
           ${d.archive.slice().reverse().map((a) => `<tr>
             <td>№${a.n}</td><td>${UI.esc(dt(a.endedAt))}</td>
             <td>${a.players || 0}</td><td>${UI.esc(a.by || '')}</td>
-            <td>${UI.esc(a.reason || '—')}</td></tr>`).join('')}
+            <td>${UI.esc(a.reason || '—')}</td>
+            <td><code>${UI.esc(a.file || '—')}</code>${a.bytes ? ' · ' + mb(a.bytes) : ''}</td></tr>`).join('')}
         </table>
       </div>` : '';
 
@@ -65,22 +64,34 @@
 
       <div class="a2-card" style="border-color:var(--red)">
         <h3 style="color:var(--red)">Идёт мир №${d.world}</h3>
-        <p class="a2-muted">Обнуление стирает всех игроков и всё, что они нажили. Люди
-        заходят и не находят ни аккаунта, ни армии — и регистрируются заново. <b>Отменить это
-        нельзя</b>: единственный путь назад — развернуть копию базы, которая снимается прямо
-        перед стиранием.</p>
+        <p class="a2-muted">Обнуление стирает игру начисто: игроков, всё нажитое, журнал
+        действий, историю состояний. Люди заходят и не находят ни аккаунта, ни армии — и
+        регистрируются заново. <b>Отменить это нельзя.</b></p>
 
         <p class="a2-muted" style="margin-top:10px">Сейчас в игре:</p>
         <ul class="a2-muted" style="margin:4px 0 0 18px">
           <li>игроков: <b style="color:var(--red)">${d.players}</b></li>
+          ${d.logs ? `<li>записей в журнале действий: <b>${d.logs}</b></li>` : ''}
+          ${d.history ? `<li>срезов истории игроков: <b>${d.history}</b></li>` : ''}
           ${rows}
         </ul>
 
-        <p class="a2-muted" style="margin-top:10px"><b>Останется:</b> ваш аккаунт (логин,
-        пароль и второй фактор — регистрироваться заново не придётся), журнал действий,
-        итоги прошлых миров, счётчик тарифа почты и настройки ролей.</p>
-        ${d.canBackup ? '' : '<p class="a2-muted" style="color:var(--orange-1)">⚠ База файловая — '
-          + 'автоматическая копия не снимается. Сделайте копию папки data вручную.</p>'}
+        <p class="a2-muted" style="margin-top:10px"><b>Останется только это:</b> ваш аккаунт
+        (логин, пароль, роль владельца и второй фактор — регистрироваться заново не
+        придётся), указатель на замороженные миры, счётчик тарифа почты, ключи
+        push-уведомлений и настройки ролей. Всё остальное уходит.</p>
+
+        ${d.canFreeze ? `
+          <p class="a2-muted" style="margin-top:10px">Прямо перед стиранием мир
+          <b>замораживается</b>: полный слепок базы ляжет отдельным файлом в
+          <code>data/worlds/</code>, и ротация копий его не тронет. Не удастся заморозить —
+          обнуление отменится, не стерев ничего.</p>`
+        : `<p class="a2-muted" style="color:var(--orange-1);margin-top:10px">⚠ База файловая:
+          заморозить мир в отдельный файл нечем. Скопируйте папку <code>data</code> вручную
+          и поставьте галочку ниже — иначе обнуление откажется работать.</p>
+          <p class="a2-muted" style="margin-top:6px">
+            <label><input type="checkbox" id="w-nofreeze"> копию папки data я сделал,
+            стирать без слепка</label></p>`}
       </div>
 
       <div class="a2-card">
@@ -129,17 +140,29 @@
       go.disabled = true;
       go.textContent = 'Стираю…';
       try {
-        const r = await API.post('/api/admin/world-reset', { confirm: conf.value, reason, resetOwner });
+        const nf = document.getElementById('w-nofreeze');
+        const r = await API.post('/api/admin/world-reset', {
+          confirm: conf.value, reason, resetOwner,
+          allowNoFreeze: !!(nf && nf.checked),
+        });
+        const w = r.wiped || {};
         el.innerHTML = `
           <div class="a2-title">Обнуление мира</div>
           <div class="a2-card" style="border-color:var(--gold)">
             <h3 style="color:var(--gold)">💥 Мир №${r.world} закрыт</h3>
             <p class="a2-muted">Удалено игроков: <b>${r.removed}</b>. Оставлено: ${r.kept}.</p>
-            ${r.backup ? `<p class="a2-muted">Копия базы: <code>${UI.esc(r.backup)}</code> —
-              из неё прошлый мир поднимается целиком.</p>` : ''}
+            ${w.action_logs || w.player_history ? `<p class="a2-muted">Стёрто записей журнала:
+              <b>${w.action_logs || 0}</b>, срезов истории: <b>${w.player_history || 0}</b>,
+              коллекций: <b>${w.collections || 0}</b>.</p>` : ''}
+            ${r.file ? `<p class="a2-muted">Мир заморожен в <code>data/worlds/${UI.esc(r.file)}</code>
+              (${mb(r.bytes || 0)}) — из этого файла он поднимается целиком.</p>`
+              : '<p class="a2-muted" style="color:var(--orange-1)">Слепок не снимался (файловая база).</p>'}
             <p class="a2-muted">Игра <b>закрыта на обслуживание</b>. Это намеренно: посмотрите
             своими глазами, что мир действительно пуст и игра работает, и только потом
             открывайте — «Обновление» → «Открыть игру для игроков».</p>
+            <p class="a2-muted">Если игроки не смогут зарегистрироваться — проверьте почту:
+            без <code>SMTPBZ_API_KEY</code> регистрация закрыта намеренно, чтобы аккаунты не
+            заводились на неподтверждённые адреса.</p>
             <button class="btn btn-orange mt" id="w-again">К списку миров</button>
           </div>`;
         const b = document.getElementById('w-again');
