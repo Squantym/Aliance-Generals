@@ -501,6 +501,14 @@ const App = {
         App.showMaintenance(App.me.maintenance);
         return;
       }
+      // ...а могли и снять. Здесь этой ветки не было вовсе: окно умело
+      // появиться, но не умело исчезнуть. Единственным выходом оставалась
+      // самопроверка внутри самого окна — и если она почему-то не
+      // срабатывала, заглушка висела над работающей игрой навсегда.
+      if (document.getElementById('maint-screen')) {
+        App._reload();
+        return;
+      }
       // Окно могли назначить (или отменить), пока игрок сидит в игре.
       if (App.me && App.me.maintenanceSoon) {
         // Не перерисовываем полосу без нужды: сброс таймера каждый опрос
@@ -2221,6 +2229,7 @@ const App = {
             Назначенные бои не пройдут без вас: их сроки сдвинутся ровно на время
             обновления.</p>
             <div class="maint-dots"><span></span><span></span><span></span></div>
+            <button class="maint-again" type="button">Проверить сейчас</button>
           </div>
         </div>`;
     }
@@ -2271,19 +2280,50 @@ const App = {
     if (App._maintPicTimer) clearInterval(App._maintPicTimer);
     if (App._maintTextTimer) clearInterval(App._maintTextTimer);
 
-    App._maintPicTimer = setInterval(rotate, 7000);
-    App._maintTextTimer = setInterval(paint, 30000);
-    App._maintTimer = setInterval(async () => {
-      try {
-        const r = await fetch('/api/world').then((x) => x.json());
+    // Проверка «не открыли ли игру». Ловушка стоит ТОЛЬКО вокруг
+    // сетевого вызова, и это не мелочь.
+    //
+    // Раньше в try был весь блок, включая перезагрузку. Стоило
+    // App._reload оказаться недоступным — скажем, на странице, загруженной
+    // из кэша от прежней сборки, — как исключение молча съедалось, и
+    // окно обновления оставалось навсегда. Игру давно открыли, сервер
+    // отвечает «работаю», а человек сидит перед заглушкой и ждёт.
+    // Ловушка вокруг решения превращает поломку в вечное ожидание.
+    const check = async () => {
+      let r = null;
+      try { r = await fetch('/api/world', { cache: 'no-store' }).then((x) => x.json()); }
+      catch (e) { return; }              // сервер перезапускается — подождём
+      if (!r || !r.maintenance) return;
+      if (!r.maintenance.on) {
         // Игру открыли — окно закрывается САМО, перезагрузкой страницы:
         // за время обновления поменялся и код, и разметка, так что
         // «просто спрятать окно» оставило бы игрока на старой версии.
-        if (!r || !r.maintenance || !r.maintenance.on) return App._reload();
-        info = r.maintenance;
-        paint();
-      } catch (e) { /* сервер ещё перезапускается — просто ждём */ }
-    }, 20000);
+        App._reload();
+        return;
+      }
+      info = r.maintenance;
+      paint();
+    };
+
+    App._maintPicTimer = setInterval(rotate, 7000);
+    App._maintTextTimer = setInterval(paint, 30000);
+    App._maintTimer = setInterval(check, 15000);
+
+    // Возврат на вкладку — проверяем сразу, не дожидаясь своей очереди.
+    // В фоновой вкладке браузер режет таймеры до одного раза в минуту, и
+    // человек, вернувшийся к открытой игре, смотрел бы на заглушку ещё
+    // минуту после того, как всё заработало.
+    if (!App._maintVis) {
+      App._maintVis = () => { if (!document.hidden && document.getElementById('maint-screen')) check(); };
+      document.addEventListener('visibilitychange', App._maintVis);
+    }
+
+    // Кнопка на случай, если всё-таки застряли. Обещание «страница
+    // откроется сама» иногда не выполняется — по вине кэша, спящей
+    // вкладки или моей ошибки, — и тогда у человека должен быть выход,
+    // не требующий знать про Ctrl+Shift+R.
+    const again = box.querySelector('.maint-again');
+    if (again) again.onclick = () => { again.textContent = 'Проверяю…'; check(); };
   },
 
   // ── Полоса «скоро обновление» ──────────────────────────────────

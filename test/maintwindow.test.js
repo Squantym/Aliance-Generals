@@ -262,7 +262,12 @@ const REL_OPEN = {
   ok('срок не назван — строки про остаток нет', scr().querySelector('.maint-left').hidden === true);
 
   console.log('\n── 14. Окно не закрывается руками ──');
-  ok('кнопки закрытия нет', !scr().querySelector('button'));
+  // Кнопка на экране есть ровно одна — «Проверить сейчас». Она не
+  // закрывает окно, а спрашивает сервер: закрыть его может только сам
+  // сервер, сказав «игра работает».
+  const btns = Array.from(scr().querySelectorAll('button'));
+  ok('единственная кнопка — «Проверить сейчас»',
+     btns.length === 1 && /Проверить сейчас/.test(btns[0].textContent));
   ok('и крестика тоже', !scr().querySelector('.ms-x'));
   scr().click();
   ok('клик по экрану его не убирает', !!scr());
@@ -312,6 +317,61 @@ const REL_OPEN = {
   worldAnswer = { maintenance: { on: false, soon: null } };
   await askServer();
   ok('игру открыли — страница перезагрузилась сама', reloaded === 1);
+
+  console.log('\n── 17. Застрявшее окно чинится кнопкой ──');
+  // «Страница откроется сама» иногда не выполняется — кэш, спящая
+  // вкладка, чужая ошибка. Тогда у человека должен быть выход, не
+  // требующий знать про Ctrl+Shift+R.
+  scr() && scr().remove();
+  ticks.length = 0;
+  reloaded = 0;
+  worldAnswer = { maintenance: { on: true, reason: 'Идёт', until: 0, soon: null } };
+  App.showMaintenance({ on: true, reason: 'Идёт', until: 0 });
+  const again = scr().querySelector('.maint-again');
+  ok('кнопка есть', !!again);
+  // Именно «нажимается», а не «нарисована»: кнопка без обработчика
+  // выглядит на скриншоте так же, а человеку не помогает ничем.
+  ok('и она живая', !!again && typeof again.onclick === 'function');
+  if (!again || typeof again.onclick !== 'function') {
+    ok('нажатие спросило сервер и перезагрузило', false);
+  } else {
+  worldAnswer = { maintenance: { on: false, soon: null } };
+  await again.onclick();
+  await new Promise((r) => setTimeout(r, 0));
+  ok('нажатие спросило сервер и перезагрузило', reloaded === 1);
+  }
+
+  console.log('\n── 18. Ошибка перезагрузки не хоронит окно навсегда ──');
+  // Раньше ловушка стояла вокруг ВСЕГО блока, включая перезагрузку.
+  // Стоило App._reload оказаться недоступным — исключение молча
+  // съедалось, и окно висело над работающей игрой вечно.
+  scr() && scr().remove();
+  ticks.length = 0;
+  let attempts = 0;
+  App._reload = () => { attempts++; throw new TypeError('App._reload is not a function'); };
+  worldAnswer = { maintenance: { on: true, reason: 'Идёт', until: 0, soon: null } };
+  App.showMaintenance({ on: true, reason: 'Идёт', until: 0 });
+  worldAnswer = { maintenance: { on: false, soon: null } };
+  let blew = false;
+  try { await ticks[2](); } catch (e) { blew = true; }
+  ok('поломка перезагрузки видна, а не проглочена', blew === true && attempts === 1);
+  // И следующая попытка всё равно случится: таймер живёт своей жизнью.
+  App._reload = () => { attempts++; };
+  await ticks[2]();
+  ok('следующая проверка всё равно перезагружает', attempts === 2);
+
+  console.log('\n── 19. pollMe тоже умеет убрать окно ──');
+  // Ветки «обновление сняли» в pollMe не было вовсе: окно умело
+  // появиться, но не умело исчезнуть.
+  scr() && scr().remove();
+  reloaded = 0;
+  App._reload = () => { reloaded++; };
+  App.showMaintenance({ on: true, reason: 'Идёт', until: 0 });
+  ok('окно показано', !!scr());
+  win.API.get = async () => ({ name: 'Боец', gold: 1 });   // maintenance больше нет
+  win.API.token = () => 'токен';
+  await App.pollMe();
+  ok('pollMe увидел, что обновление снято, и перезагрузил', reloaded === 1);
 
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);
