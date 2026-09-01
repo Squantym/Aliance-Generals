@@ -406,7 +406,17 @@ const App = {
     // Обновление. Сотрудник сюда не попадает: сервер его пропускает, и
     // в ответе /api/me поля maintenance нет — иначе снять режим было бы
     // некому, панель ведь тоже часть игры.
-    if (App._maint && (!App.me || App.me.maintenance)) {
+    //
+    // Но «пропускает» относится к тому, у кого УЖЕ есть токен. До входа
+    // сотрудник неотличим от гостя, и окно закрывало ему сам экран
+    // входа: снять режим становилось некому вовсе. Так владелец остался
+    // заперт снаружи собственной игры на двое суток — войти нельзя,
+    // потому что обновление, а выключить обновление нельзя, потому что
+    // не вошёл. Поэтому явную просьбу показать вход (#auth) уважаем:
+    // войти можно всегда, а окно покажет /api/me тому, кому оно и
+    // адресовано — обычный игрок сразу после входа увидит его снова.
+    const wantsAuth = String(location.hash || '').replace(/^#/, '').split('/')[0] === 'auth';
+    if (App._maint && (!App.me || App.me.maintenance) && !(wantsAuth && !App.me)) {
       App.showMaintenance((App.me && App.me.maintenance) || App._maint);
       return;
     }
@@ -2234,6 +2244,7 @@ const App = {
             обновления.</p>
             <div class="maint-dots"><span></span><span></span><span></span></div>
             <button class="maint-again" type="button">Проверить сейчас</button>
+            ${App.me ? '' : '<p class="maint-login"><a href="#auth">Войти в аккаунт</a></p>'}
             <p class="maint-stale" hidden></p>
           </div>
         </div>`;
@@ -2364,6 +2375,16 @@ const App = {
     // не требующий знать про Ctrl+Shift+R.
     const again = box.querySelector('.maint-again');
     if (again) again.onclick = () => { again.textContent = 'Проверяю…'; check(); };
+
+    // Вход при закрытой игре. Перезагружаем страницу, а не меняем экран
+    // на месте: решение о показе окна принимается один раз на старте, и
+    // без перезагрузки оно осталось бы прежним.
+    const toLogin = box.querySelector('.maint-login a');
+    if (toLogin) toLogin.onclick = (e) => {
+      e.preventDefault();
+      location.hash = 'auth';
+      App._reload();
+    };
   },
 
   // ── Полоса «скоро обновление» ──────────────────────────────────

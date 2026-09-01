@@ -35,3 +35,5 @@ android/gradlew.bat
 android/local.properties
 android/store_icon.png
 android/app/src/main/res/
+.claude/settings.local.json
+.claude/settings.local.json

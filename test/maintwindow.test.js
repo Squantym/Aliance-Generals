@@ -274,6 +274,33 @@ const REL_OPEN = {
   win.document.body.click();
   ok('и клик мимо тоже', !!scr());
 
+  console.log('\n── 14б. Разлогиненному оставлен путь ко входу ──');
+  // Решение показать окно принимается ДО входа: токена нет — значит для
+  // клиента человек неотличим от гостя, и сотрудник тоже. Без этой
+  // ссылки владелец оказывался заперт снаружи собственной игры: войти
+  // нельзя, потому что обновление, а выключить обновление нельзя,
+  // потому что не вошёл. Ровно так и случилось после обнуления 30.08.
+  scr() && scr().remove();
+  App.me = null;
+  App.showMaintenance({ on: true, reason: 'Обновление', until: 0 });
+  const toLogin = () => scr().querySelector('.maint-login a');
+  ok('ссылка на вход показана', !!toLogin());
+  ok('и ведёт на экран входа', /#auth$/.test(toLogin().getAttribute('href')));
+  let loginReloaded = false;
+  const realReload = App._reload;
+  App._reload = () => { loginReloaded = true; };
+  toLogin().onclick({ preventDefault() {} });
+  ok('переводит на вход', /auth/.test(win.location.hash));
+  ok('и перезагружает — решение о показе принимается только на старте', loginReloaded);
+  App._reload = realReload;
+
+  // Вошедшему она ни к чему: он уже внутри, и окно ему показал сервер.
+  scr().remove();
+  App.me = { name: 'Игрок', maintenance: { on: true, reason: 'Обновление' } };
+  App.showMaintenance({ on: true, reason: 'Обновление', until: 0 });
+  ok('вошедшему ссылки нет', !scr().querySelector('.maint-login'));
+  App.me = null;
+
   console.log('\n── 15. Карусель ──');
   scr().remove();
   ticks.length = 0;
