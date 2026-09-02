@@ -2,6 +2,7 @@
 const assert=require('assert');
 process.env.MONGODB_URI='';
 const path=require('path'),fs=require('fs');
+require('./_guard');   // не даёт стереть боевую data/
 const DATA=path.join(process.cwd(),'data'); if(fs.existsSync(DATA))fs.rmSync(DATA,{recursive:true,force:true});
 const db=require('../dist/src/core/db'),auth=require('../dist/src/services/auth'),support=require('../dist/src/services/support'),social=require('../dist/src/services/social'),player=require('../dist/src/services/player');
 const N=()=>[];

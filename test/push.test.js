@@ -3,6 +3,7 @@
 const assert=require('assert');
 process.env.MONGODB_URI='';
 const path=require('path'),fs=require('fs');
+require('./_guard');   // не даёт стереть боевую data/
 const DATA=path.join(process.cwd(),'data'); if(fs.existsSync(DATA))fs.rmSync(DATA,{recursive:true,force:true});
 
 // ── Мокаем web-push ДО загрузки push.ts, чтобы не ходить в сеть ──

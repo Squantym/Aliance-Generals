@@ -23,6 +23,7 @@ const path = require('path');
 const fs = require('fs');
 
 process.env.MONGODB_URI = '';
+require('./_guard');   // не даёт стереть боевую data/
 const DATA = path.join(process.cwd(), 'data');
 if (fs.existsSync(DATA)) fs.rmSync(DATA, { recursive: true, force: true });
 

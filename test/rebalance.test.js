@@ -48,6 +48,7 @@ console.log('     контракт база(цель10/зол20): ур.1='+c.con
 console.log('\n[6] Интеграция: features применяет масштаб к контрактам');
 process.env.MONGODB_URI='';
 const fs=require('fs'),path=require('path');
+require('./_guard');   // не даёт стереть боевую data/
 const DATA=path.join(process.cwd(),'data'); if(fs.existsSync(DATA))fs.rmSync(DATA,{recursive:true,force:true});
 (async()=>{
  const db=require('../dist/src/core/db'),auth=require('../dist/src/services/auth'),player=require('../dist/src/services/player'),features=require('../dist/src/services/features');

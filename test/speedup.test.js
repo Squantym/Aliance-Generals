@@ -48,6 +48,7 @@ console.log('     border op0/step0: '+firstStep.require.units.count+' ед. ур
 
 console.log('\n[5] Enforcement: без нужной техники шаг не стартует (проверка по технике)');
 process.env.MONGODB_URI='';
+require('./_guard');   // не даёт стереть боевую data/
 const fs=require('fs'),path=require('path'); const DATA=path.join(process.cwd(),'data'); if(fs.existsSync(DATA))fs.rmSync(DATA,{recursive:true,force:true});
 (async()=>{
  const db=require('../dist/src/core/db'),auth=require('../dist/src/services/auth'),player=require('../dist/src/services/player'),missions=require('../dist/src/services/missions');
