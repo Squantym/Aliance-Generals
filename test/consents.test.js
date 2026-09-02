@@ -299,8 +299,16 @@ const codeFrom = (m) => {
 
   console.log('\n── 10. Панель закрыта сотруднику без второго фактора ──');
   await stop(srv);
-  execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Молчун', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Молчун', '--owner', '--yes'],
+      { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  } catch (e) {
+    // Свою причину grant-admin печатает в перехваченный поток, и без
+    // этого она пропадала: тест падал голым «Command failed», по
+    // которому нельзя отличить нехватку прав от неверной базы.
+    throw new Error('grant-admin не выдал права:\n'
+      + String((e && e.stdout) || '') + String((e && e.stderr) || ''));
+  }
   srv = await startServer(env);
   const owner = (await post('/api/login', { login: 'Молчун', password: 'пароль123' })).d.token;
   ok('в игру сотрудник входит как обычно', !!owner);

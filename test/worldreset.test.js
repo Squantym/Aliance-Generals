@@ -167,8 +167,16 @@ function usersFile() {
   ok('три игрока заведены', Object.keys(usersFile()).length === 3);
 
   await stop(srv);
-  execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Хозяин', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Хозяин', '--owner', '--yes'],
+      { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  } catch (e) {
+    // Свою причину grant-admin печатает в перехваченный поток, и без
+    // этого она пропадала: тест падал голым «Command failed», по
+    // которому нельзя отличить нехватку прав от неверной базы.
+    throw new Error('grant-admin не выдал права:\n'
+      + String((e && e.stdout) || '') + String((e && e.stderr) || ''));
+  }
   srv = await startServer();
   let owner = (await post('/api/login', { login: 'Хозяин', password: 'пароль123' })).d.token;
   const player = (await post('/api/login', { login: 'Боец', password: 'пароль123' })).d.token;

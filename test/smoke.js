@@ -129,9 +129,17 @@ async function bootstrap(adminName, adminPass, adminEmail) {
   // --yes: скрипт по умолчанию спрашивает подтверждение с клавиатуры.
   // Без флага он молча получал бы EOF, считал это отказом и «успешно»
   // ничего не делал — тест падал бы уже позже и на другом.
-  execFileSync(process.execPath,
-    [pathx.join(ROOT, 'tools/grant-admin.js'), adminName, '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe', env: toolEnv() });
+  try {
+    execFileSync(process.execPath,
+      [pathx.join(ROOT, 'tools/grant-admin.js'), adminName, '--owner', '--yes'],
+      { cwd: workDir, stdio: 'pipe', env: toolEnv() });
+  } catch (e) {
+    // Свою причину grant-admin печатает в перехваченный поток, и без
+    // этого она пропадала: оставалось голое «Command failed», по
+    // которому нельзя отличить нехватку прав от неверной базы.
+    throw new Error('grant-admin не выдал права:\n'
+      + String((e && e.stdout) || '') + String((e && e.stderr) || ''));
+  }
   srv = await startServer();
 
   const login = await post('/api/login', null, { login: adminName, password: adminPass });

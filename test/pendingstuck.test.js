@@ -144,8 +144,16 @@ const burn = async (login) => {
   const ownerCode = codeFrom(letters[letters.length - 1]);
   await post('/api/verify-code', { login: 'Владелец', code: ownerCode });
   await stop(srv);
-  execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
+      { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  } catch (e) {
+    // Свою причину grant-admin печатает в перехваченный поток, и без
+    // этого она пропадала: тест падал голым «Command failed», по
+    // которому нельзя отличить нехватку прав от неверной базы.
+    throw new Error('grant-admin не выдал права:\n'
+      + String((e && e.stdout) || '') + String((e && e.stderr) || ''));
+  }
   srv = await startServer(env);
   const owner = (await post('/api/login', { login: 'Владелец', password: 'пароль123' })).d.token;
 

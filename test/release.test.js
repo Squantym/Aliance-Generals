@@ -142,8 +142,16 @@ async function makePlayer(login, mail) {
   // боевой базой сервера вместо временной папки теста — «игрок не
   // найден» при живом игроке. Пустые строки в env перебивают файл:
   // loadEnv в скрипте ставит значение, только если ключа нет вовсе.
-  execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Хозяин', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Хозяин', '--owner', '--yes'],
+      { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
+  } catch (e) {
+    // Свою причину grant-admin печатает в перехваченный поток, и без
+    // этого она пропадала: тест падал голым «Command failed», по
+    // которому нельзя отличить нехватку прав от неверной базы.
+    throw new Error('grant-admin не выдал права:\n'
+      + String((e && e.stdout) || '') + String((e && e.stderr) || ''));
+  }
   srv = await startServer(env);
   const owner = (await post('/api/login', { login: 'Хозяин', password: 'пароль123' })).d.token;
   const player = (await post('/api/login', { login: 'Боец', password: 'пароль123' })).d.token;

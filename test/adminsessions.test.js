@@ -84,8 +84,16 @@ const UA_PHONE = 'Mozilla/5.0 (Linux; Android 13; SM-A536E) Chrome/120.0 Mobile 
   await post('/api/register', null, { login: 'Владелец', email: 'own@test.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   await post('/api/register', null, { login: 'Игрок', email: 'pl@test.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   await stopServer(srv);
-  execFileSync(process.execPath, [pathx.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe', env: toolEnv() });
+  try {
+    execFileSync(process.execPath, [pathx.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
+      { cwd: workDir, stdio: 'pipe', env: toolEnv() });
+  } catch (e) {
+    // Свою причину grant-admin печатает в перехваченный поток, и без
+    // этого она пропадала: тест падал голым «Command failed», по
+    // которому нельзя отличить нехватку прав от неверной базы.
+    throw new Error('grant-admin не выдал права:\n'
+      + String((e && e.stdout) || '') + String((e && e.stderr) || ''));
+  }
   srv = await startServer();
 
   const owner = (await post('/api/login', null, { login: 'Владелец', password: 'пароль123' })).data.token;
