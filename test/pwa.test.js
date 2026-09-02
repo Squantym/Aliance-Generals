@@ -4,6 +4,7 @@ const assert=require('assert');
 const http=require('http');
 const fs=require('fs');
 const path=require('path');
+const os=require('os');
 const { spawn }=require('child_process');
 
 let passed=0;
@@ -50,12 +51,24 @@ const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
  ok('не перехватывает POST', /req\.method !== 'GET'/.test(sw));
 
  console.log('\n[4] Сервер: заголовки кеша (запуск настоящего сервера)');
- const env=Object.assign({},process.env,{PORT:String(PORT),MONGODB_URI:''});
- const srv=spawn('node',['dist/server.js'],{cwd:path.join(__dirname,'..'),env,stdio:'ignore'});
+ // Папка запуска — корень проекта, и иначе нельзя: тест проверяет отдачу
+ // public/, а сервер ищет её от текущего каталога. Зато база уводится в
+ // сторону явно. Без этого сервер открывал БОЕВУЮ базу установки, упирался
+ // в её замок (там уже работает pm2) и не поднимался вовсе — а stdio
+ // 'ignore' прятал причину, оставляя голое «сервер поднялся: ❌».
+ const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'pwa-db-'));
+ const env=Object.assign({},process.env,{
+   PORT:String(PORT), MONGODB_URI:'', NODE_ENV:'test',
+   DB_DRIVER:'sqlite', SQLITE_DIR:dataDir, SQLITE_FILE:'pwa-test.db',
+ });
+ let srvOut='';
+ const srv=spawn('node',['dist/server.js'],{cwd:path.join(__dirname,'..'),env,stdio:['ignore','pipe','pipe']});
+ srv.stdout.on('data',(b)=>{srvOut+=String(b);});
+ srv.stderr.on('data',(b)=>{srvOut+=String(b);});
  try {
    let up=false;
    for(let i=0;i<40;i++){ try{ await get('/manifest.json'); up=true; break; }catch(e){ await wait(250); } }
-   ok('сервер поднялся', up);
+   ok('сервер поднялся'+(up?'':' — вывод сервера:\n'+srvOut.slice(-600)), up);
 
    const swRes=await get('/sw.js');
    eq('/sw.js отдаётся (200)', swRes.status,200);
@@ -98,7 +111,14 @@ const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
 
  console.log('\n[5] Android: файлы для сборки APK');
  ok('скрипт сборки на месте', fs.existsSync(__dirname+'/../android/make-apk.sh'));
- ok('скрипт исполняемый', (fs.statSync(__dirname+'/../android/make-apk.sh').mode & 0o111) !== 0);
+ // Исполняемого бита в Windows нет как понятия — проверка там всегда
+ // ложна и ни о чём не говорит. Смысл она имеет на сервере, где скрипт
+ // и запускают; там git хранит режим 100755.
+ if (process.platform === 'win32') {
+   console.log('  ⏭ проверка исполняемого бита пропущена (Windows его не хранит)');
+ } else {
+   ok('скрипт исполняемый', (fs.statSync(__dirname+'/../android/make-apk.sh').mode & 0o111) !== 0);
+ }
  ok('шаблон конфига TWA на месте', fs.existsSync(__dirname+'/../android/twa-manifest.template.json'));
  ok('инструкция на месте', fs.existsSync(__dirname+'/../android/README.md'));
  const twa=JSON.parse(fs.readFileSync(__dirname+'/../android/twa-manifest.template.json','utf8'));
