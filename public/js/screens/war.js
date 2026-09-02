@@ -633,7 +633,7 @@ App.screens.missions = async (c, param) => {
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
           a.secondsLeft > 0 ? 'Осталось: ' + UI.fmtTimer(a.secondsLeft) : 'Готово'
         )}</div>
-        ${a.canBoost ? `<button class="btn mt" id="m-boost" data-pid="${a.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(a.boostGold || data.boostGoldCost)}</button>` : ''}
+        ${a.canBoost ? `<button class="btn mt" id="m-boost" data-pid="${a.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(a.boostGold)}</button>` : ''}
       </div>`;
   }
 
@@ -704,7 +704,7 @@ async function renderConflictDetail(c, confId) {
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
           a.secondsLeft > 0 ? 'Осталось: ' + UI.fmtTimer(a.secondsLeft) : 'Готово'
         )}</div>
-        ${a.canBoost ? `<button class="btn mt" id="m-boost" data-pid="${a.id}">⚡ Ускорить за <span class="ic-gold"></span> ${conf.boostGoldCost}</button>` : ''}
+        ${a.canBoost ? `<button class="btn mt" id="m-boost" data-pid="${a.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(a.boostGold)}</button>` : ''}
       </div>`;
   }
 

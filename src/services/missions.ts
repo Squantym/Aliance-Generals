@@ -268,6 +268,22 @@ function list(user: User) {
   };
 }
 
+// Цена ускорения: минута остатка — одно золото, но не меньше одного.
+//
+// Считается ЗДЕСЬ и каждый раз заново, а не берётся из proc.boostGold.
+// Прежняя цена высчитывалась один раз при запуске шага от его ПОЛНОЙ
+// длительности (`timeMin / 6`) и дальше не менялась: за шаг, которому
+// осталась минута, просили столько же, сколько за только что начатый.
+// Вдобавок клиент рисовал её из двух разных полей — на карточке
+// конфликта стояла константа в 20 золота, а в списке настоящая цена
+// шага, — и число «падало с 20 до 2» само собой при переходе между
+// экранами. Одна функция на показ и на списание убирает и то, и другое:
+// игрок платит ровно за то, что видит, и ровно за остаток.
+function boostCost(proc: any): number {
+  const msLeft = Math.max(0, Number(proc.finishesAt) - Date.now());
+  return Math.max(1, Math.ceil(msLeft / 60000));
+}
+
 function activeView(proc: any) {
   const secLeft = Math.max(0, Math.floor((proc.finishesAt - Date.now()) / 1000));
   const conf = config.CONFLICT_BY_ID[proc.confId];
@@ -280,7 +296,7 @@ function activeView(proc: any) {
     totalSec: step.timeMin * 60,
     secondsLeft: secLeft,
     canBoost: secLeft > 0,
-    boostGold: proc.boostGold || config.MISSION_STEP.BOOST_GOLD_COST,
+    boostGold: boostCost(proc),
   };
 }
 
@@ -359,7 +375,7 @@ function boostStep(user: User, processId: string, notices: Notices) {
   const proc = user.missionQueue.find((p) => p.id === processId);
   if (!proc) throw new u.ApiError('Активный шаг не найден');
   if (proc.finishesAt <= Date.now()) throw new u.ApiError('Шаг уже завершён');
-  const cost = proc.boostGold || config.MISSION_STEP.BOOST_GOLD_COST;
+  const cost = boostCost(proc);
   if (user.gold < cost) throw new u.ApiError(`Нужно ${cost} золота`);
   player.spendGold(user, cost, 'mission');
   proc.finishesAt = Date.now();

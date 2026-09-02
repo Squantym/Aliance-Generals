@@ -84,6 +84,31 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  ok('active несёт secondsLeft', typeof list.active.secondsLeft==='number' && list.active.secondsLeft>0);
  ok('active несёт totalSec', typeof list.active.totalSec==='number' && list.active.totalSec>0);
 
+ console.log('\n[6] Ускорение: минута остатка — одно золото, и цена везде одна');
+ // Раньше цена считалась один раз от полной длительности шага и лежала
+ // в proc.boostGold, а клиент рисовал её из двух разных полей: на
+ // карточке конфликта стояла константа 20, в списке — настоящая цена.
+ // Число «падало с 20 до 2» при переходе между экранами, а платил
+ // игрок третью величину.
+ const proc6=U.missionQueue[0];
+ const stepMin=c.CONFLICT_BY_ID[confId].operations[1].steps[0].timeMin;
+ eq('цена только что запущенного шага = его минутам', missions.list(U).active.boostGold, stepMin);
+ eq('на карточке конфликта цена та же',
+    missions.detail(U, confId).activeStep.boostGold, missions.list(U).active.boostGold);
+
+ proc6.finishesAt=Date.now()+3*60000;
+ eq('осталось три минуты — цена три', missions.list(U).active.boostGold, 3);
+ proc6.finishesAt=Date.now()+30*1000;
+ eq('меньше минуты — но не бесплатно', missions.list(U).active.boostGold, 1);
+
+ proc6.finishesAt=Date.now()+5*60000;
+ U.gold=100;
+ const shown6=missions.list(U).active.boostGold;
+ const goldBefore6=U.gold;
+ missions.boostStep(U, proc6.id, []);
+ eq('списано ровно столько, сколько показано', goldBefore6-U.gold, shown6);
+ eq('и это пять золота за пять минут', shown6, 5);
+
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);
 })().catch(e=>{console.error('FAIL',e.stack||e);process.exit(1);});
