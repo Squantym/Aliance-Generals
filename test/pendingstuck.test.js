@@ -143,6 +143,12 @@ const burn = async (login) => {
   await post('/api/register', { login: 'Владелец', email: 'own@t.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   const ownerCode = codeFrom(letters[letters.length - 1]);
   await post('/api/verify-code', { login: 'Владелец', code: ownerCode });
+  // Ждём отложенную запись на диск. Сервер помечает игрока грязным и
+  // сбрасывает данные через 400 мс — а тест до сих пор останавливал его
+  // раньше этого срока. На Linux финальное сохранение по SIGTERM всё
+  // добирало, на Windows kill() обработчик не запускает вовсе, и
+  // grant-admin открывал ПУСТУЮ базу: «игроков: 0, игрок не найден».
+  await new Promise((r) => setTimeout(r, 900));
   await stop(srv);
   try {
     execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],

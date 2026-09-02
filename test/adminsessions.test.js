@@ -83,6 +83,12 @@ const UA_PHONE = 'Mozilla/5.0 (Linux; Android 13; SM-A536E) Chrome/120.0 Mobile 
   srv = await startServer();
   await post('/api/register', null, { login: 'Владелец', email: 'own@test.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
   await post('/api/register', null, { login: 'Игрок', email: 'pl@test.ru', password: 'пароль123', country: 'ru', consents: { age18: true, terms: true, pdn: true } });
+  // Ждём отложенную запись на диск. Сервер помечает игрока грязным и
+  // сбрасывает данные через 400 мс — а тест до сих пор останавливал его
+  // раньше этого срока. На Linux финальное сохранение по SIGTERM всё
+  // добирало, на Windows kill() обработчик не запускает вовсе, и
+  // grant-admin открывал ПУСТУЮ базу: «игроков: 0, игрок не найден».
+  await new Promise((r) => setTimeout(r, 900));
   await stopServer(srv);
   try {
     execFileSync(process.execPath, [pathx.join(ROOT, 'tools/grant-admin.js'), 'Владелец', '--owner', '--yes'],
