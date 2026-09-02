@@ -1673,35 +1673,43 @@ App.screens.settings = async (c) => {
   // Старый пароль подтверждает, что аккаунт свой; новый вводится дважды,
   // чтобы опечатка не заперла игрока снаружи.
   const accountHtml = `
+    ${(App._world && App._world.test && App._world.test.on) ? '' : `
     <div class="card">
-      <div class="name">🔑 Смена пароля</div>
-      <p class="muted small mt">Введите текущий пароль для подтверждения, затем новый — дважды. Минимум 8 символов, буквы и цифры. После смены все остальные входы в аккаунт будут сброшены.</p>
+      <!-- Свёрнуто в две кнопки. Раньше здесь всегда были развёрнуты семь
+           полей подряд, хотя логин и пароль меняют раз в год: экран
+           настроек начинался с длинной формы, а всё остальное — тема,
+           уведомления, согласия — оказывалось под ней.
+           <details> вместо своего кода: раскрытие, доступность с
+           клавиатуры и чтение с экрана работают сами. -->
+      <details class="acc-fold">
+        <summary class="acc-sum">🔑 Сменить пароль</summary>
+        <p class="muted small mt">Введите текущий пароль для подтверждения, затем новый — дважды.
+        Минимум 8 символов, буквы и цифры. После смены все остальные входы в аккаунт будут сброшены.</p>
 
-      <label class="field-label">Текущий пароль</label>
-      <div class="field-row">
-        <input type="password" id="pw-old" class="field" placeholder="ваш нынешний пароль" autocomplete="current-password" style="flex:1">
-        <button class="btn btn-inline" id="pw-eye" title="Показать пароли">👁</button>
-      </div>
+        <label class="field-label">Текущий пароль</label>
+        <input type="password" id="pw-old" class="field" placeholder="ваш нынешний пароль" autocomplete="current-password">
 
-      <label class="field-label">Новый пароль</label>
-      <input type="password" id="pw-new1" class="field" placeholder="минимум 8 символов" autocomplete="new-password">
+        <label class="field-label">Новый пароль</label>
+        <input type="password" id="pw-new1" class="field" placeholder="минимум 8 символов" autocomplete="new-password">
 
-      <label class="field-label">Новый пароль ещё раз</label>
-      <input type="password" id="pw-new2" class="field" placeholder="повторите новый пароль" autocomplete="new-password">
+        <label class="field-label">Новый пароль ещё раз</label>
+        <input type="password" id="pw-new2" class="field" placeholder="повторите новый пароль" autocomplete="new-password">
 
-      <div id="pw-hint" class="field-hint"></div>
-      <button class="btn btn-orange mt" id="pw-go" style="width:100%">Сменить пароль</button>
+        <div id="pw-hint" class="field-hint"></div>
+        <button class="btn btn-orange mt" id="pw-go" style="width:100%">Сменить пароль</button>
+      </details>
 
-      <hr class="hr">
-      <div class="name">🔑 Логин аккаунта</div>
-      <p class="muted small mt">Логин один на все ваши персонажи и не связан с их позывными.
-      По нему вы входите в игру.${App.me && App.me.accountLogin ? ` Сейчас: <b>${UI.esc(App.me.accountLogin)}</b>` : ' Пока не задан — вход по почте или позывному.'}</p>
-      <label class="field-label">Новый логин</label>
-      <input type="text" id="al-new" class="field" maxlength="20" placeholder="4–20 символов, латиница и цифры">
-      <label class="field-label">Текущий пароль</label>
-      <input type="password" id="al-pass" class="field" placeholder="подтвердите паролем" autocomplete="current-password">
-      <button class="btn mt" id="al-go" style="width:100%">Сменить логин</button>
-    </div>
+      <details class="acc-fold">
+        <summary class="acc-sum">🔑 Сменить логин аккаунта</summary>
+        <p class="muted small mt">Логин один на все ваши персонажи и не связан с их позывными.
+        По нему вы входите в игру.${App.me && App.me.accountLogin ? ` Сейчас: <b>${UI.esc(App.me.accountLogin)}</b>` : ' Пока не задан — вход по почте или позывному.'}</p>
+        <label class="field-label">Новый логин</label>
+        <input type="text" id="al-new" class="field" maxlength="20" placeholder="4–20 символов, латиница и цифры">
+        <label class="field-label">Текущий пароль</label>
+        <input type="password" id="al-pass" class="field" placeholder="подтвердите паролем" autocomplete="current-password">
+        <button class="btn mt" id="al-go" style="width:100%">Сменить логин</button>
+      </details>
+    </div>`}
 
     ${!tfa ? '' : `
     <div class="card">
@@ -1813,7 +1821,10 @@ App.screens.settings = async (c) => {
     <button class="btn btn-red" id="set-logout" style="width:100%">🚪 Выйти из аккаунта</button>`;
 
   // ── Обработчики смены пароля ────────────────────────────────────
-  if (tab === 'account') {
+  // Проверка на наличие полей, а не только на вкладку: в тестовом мире
+  // смены логина и пароля нет вовсе — аккаунты там раздаёт владелец, и
+  // сменивший пароль тестировщик просто потеряет выданный ему доступ.
+  if (tab === 'account' && document.getElementById('pw-old')) {
     const oldI = document.getElementById('pw-old');
     const n1 = document.getElementById('pw-new1');
     const n2 = document.getElementById('pw-new2');
@@ -1847,11 +1858,10 @@ App.screens.settings = async (c) => {
     };
     [n1, n2].forEach((el) => { el.oninput = validate; });
 
-    // Один глаз показывает/прячет все три поля разом
-    document.getElementById('pw-eye').onclick = () => {
-      const show = oldI.type === 'password';
-      [oldI, n1, n2].forEach((el) => { el.type = show ? 'text' : 'password'; });
-    };
+    // Общий глаз на три поля убран: теперь кнопка появляется у КАЖДОГО
+    // поля пароля сама (UI.watchPasswords), и рядом со старой они
+    // выглядели как две одинаковые кнопки подряд — так и было на
+    // «Текущем пароле».
 
     // Смена логина аккаунта. Пароль обязателен: логин — это вход,
   // и менять его по перехваченной сессии не должно быть можно.
@@ -1870,7 +1880,8 @@ App.screens.settings = async (c) => {
     } catch (e) { UI.toast('⛔ ' + e.message); alGo.disabled = false; }
   };
 
-  document.getElementById('pw-go').onclick = async () => {
+  const pwGo = document.getElementById('pw-go');
+  if (pwGo) pwGo.onclick = async () => {
       if (!oldI.value) return UI.toast('⛔ Введите текущий пароль');
       if (n1.value !== n2.value) return UI.toast('⛔ Новые пароли не совпадают');
       try {
