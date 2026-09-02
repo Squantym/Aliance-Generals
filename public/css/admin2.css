@@ -218,3 +218,13 @@ a.a2-item:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px
   color: var(--gold); background: rgba(233, 199, 92, .08);
   border: 1px solid rgba(233, 199, 92, .35); border-radius: 8px;
 }
+
+/* Вывод скрипта выката. Моноширинный и с прокруткой: это единственное
+   место, где видно, на каком шаге всё встало, и обрезать его нельзя. */
+.a2-log {
+  max-height: 260px; overflow: auto; margin: 0;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(0,0,0,.25); color: var(--dim);
+  font: 11.5px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}

@@ -146,8 +146,14 @@ function deploy(actor: any, commit: string, notices: Notices) {
 
   // Режим обслуживания включаем ДО запуска: сборка занимает минуты, и
   // всё это время игроки не должны менять данные.
+  //
+  // Срок НЕ называем. Здесь стояло 15 минут, и игрокам показывалось
+  // «ориентировочно до …», хотя turnOn самооткрытие не ставит никогда —
+  // игру после выката открывает человек, убедившись, что она поднялась.
+  // Обещание, которое некому исполнить, уже стоило этому проекту двух
+  // суток простоя: та же ошибка была в обнулении мира.
   if (!maintenance.isOn()) {
-    maintenance.turnOn(actor.name, 'Идёт обновление игры. Скоро вернёмся.', 15);
+    maintenance.turnOn(actor.name, 'Идёт обновление игры. Скоро вернёмся.');
   }
 
   const st = {
@@ -238,4 +244,144 @@ async function makeTestAccount(actor: any, login: string, password: string,
   };
 }
 
-export = { status, deploy, makeTestAccount, current, COMMIT_RE };
+// ═══ ВЫКАТ С ТЕСТОВОГО НА БОЕВОЙ ═══════════════════════════════════
+//
+// Кнопка, которой раньше не было. До неё порядок «сначала тест, потом
+// боевой» держался на том, какую строку владелец наберёт в терминале, —
+// и однажды не удержался: команда обновления ушла в боевую папку вместо
+// тестовой, отличавшуюся пятью символами в конце пути.
+//
+// Что здесь сделано намеренно:
+//
+//  1. ТОЛЬКО С ТЕСТОВОГО МИРА. Кнопка живёт там, где версию проверили.
+//     На боевом её нет — иначе она стала бы вторым способом обновить
+//     боевой мир, минуя проверку, то есть ровно тем, от чего заводилась.
+//
+//  2. ВЫКАТЫВАЕТСЯ ИМЕННО ТА ВЕРСИЯ, ЧТО СЕЙЧАС НА ТЕСТЕ. Не «последнее
+//     из ветки»: между проверкой и нажатием в ветку могло прилететь
+//     что угодно, и на боевой уехало бы непроверенное.
+//
+//  3. ОКНО ОБСЛУЖИВАНИЯ БОЕВОГО НЕ ТРОГАЕМ. Владелец закрывает игру сам
+//     и сам открывает: отсюда, из чужой установки, не видно ни игроков,
+//     ни того, поднялась ли она после сборки.
+//
+//  4. ФРАЗА ПОДТВЕРЖДЕНИЯ РУКАМИ. Диалог «вы уверены?» подтверждают не
+//     читая; набранная фраза требует прочитать. Так же сделано у
+//     обнуления мира — самой опасной кнопки проекта.
+//
+// Куда катим. По умолчанию — соседняя папка без суффикса -test и процесс
+// generals-game; переопределяется PROD_DIR и PROD_PM2 в .env, если
+// установка разложена иначе.
+const PROD_DIR = String(process.env.PROD_DIR || '').trim() || ROOT.replace(/-test$/, '');
+const PROD_PM2 = String(process.env.PROD_PM2 || '').trim() || 'generals-game';
+const PROMOTE_STATUS = path.join(ROOT, 'data', 'promote-status.json');
+const PROMOTE_LOG = path.join(ROOT, 'data', 'promote.log');
+const PROMOTE_PHRASE = 'выкатить на боевой';
+
+function normPhrase(s: string): string {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function readPromote(): any {
+  try { return JSON.parse(fs.readFileSync(PROMOTE_STATUS, 'utf8')); } catch (e) { return null; }
+}
+
+function promoteView() {
+  const cur = current();
+  const st = readPromote();
+  let prodExists = false;
+  try { prodExists = fs.existsSync(path.join(PROD_DIR, 'tools', 'deploy.sh')); } catch (e) {}
+  return {
+    available: testWorld.isOn() && prodExists && PROD_DIR !== ROOT,
+    phrase: PROMOTE_PHRASE,
+    prodDir: PROD_DIR,
+    prodPm2: PROD_PM2,
+    // Версия, которая сейчас проверяется на тесте, — её и предлагаем.
+    commit: cur.commit || '',
+    short: cur.short || '',
+    subject: cur.subject || '',
+    last: st,
+    log: st ? tail(80) : '',
+  };
+}
+
+function promote(actor: any, confirm: string, notices: Notices) {
+  if (!testWorld.isOn()) {
+    throw new u.ApiError('Выкат на боевой запускается только из тестового мира — '
+      + 'там, где версию проверили.');
+  }
+  if (PROD_DIR === ROOT) {
+    throw new u.ApiError('Не удалось определить папку боевого мира: она совпала с текущей. '
+      + 'Задайте PROD_DIR в .env тестовой установки.');
+  }
+  const prodScript = path.join(PROD_DIR, 'tools', 'deploy.sh');
+  if (!fs.existsSync(prodScript)) {
+    throw new u.ApiError(`В папке боевого мира (${PROD_DIR}) не найден tools/deploy.sh`);
+  }
+  if (normPhrase(confirm) !== normPhrase(PROMOTE_PHRASE)) {
+    throw new u.ApiError(`Не совпала фраза подтверждения. Наберите точно: «${PROMOTE_PHRASE}»`);
+  }
+
+  const cur = current();
+  if (!cur.isGit) throw new u.ApiError('Папка тестового мира не является git-репозиторием');
+  const want = String(cur.commit || '').trim();
+  // Выкатываем ровно то, что проверено здесь. Проверка по образцу — та
+  // же, что и для обычного выката: в оболочку не должно попасть ничего,
+  // кроме номера версии.
+  if (!COMMIT_RE.test(want)) {
+    throw new u.ApiError('Версия тестового мира не читается — выкат отменён');
+  }
+
+  const prev = readPromote();
+  if (prev && prev.state === 'идёт') {
+    throw new u.ApiError('Выкат на боевой уже идёт. Дождитесь окончания.');
+  }
+
+  const st = {
+    state: 'идёт',
+    commit: want,
+    by: String(actor.name || ''),
+    startedAt: Date.now(),
+    finishedAt: 0,
+    target: PROD_DIR,
+    error: '',
+  };
+  try {
+    fs.mkdirSync(path.dirname(PROMOTE_STATUS), { recursive: true });
+    fs.writeFileSync(PROMOTE_STATUS, JSON.stringify(st, null, 2));
+    fs.writeFileSync(PROMOTE_LOG, '');
+  } catch (e: any) {
+    throw new u.ApiError('Не удалось подготовить файлы выката: ' + (e && e.message));
+  }
+
+  // Открепляем от себя: скрипт перезапускает ЧУЖОЙ процесс, но идёт
+  // минуты, и переживать перезапуск тестового мира он тоже должен.
+  const out = fs.openSync(PROMOTE_LOG, 'a');
+  const child = cp.spawn('/bin/bash', [prodScript, want], {
+    cwd: PROD_DIR, detached: true, stdio: ['ignore', out, out],
+    env: {
+      ...process.env,
+      GAME_DIR: PROD_DIR,
+      PM2_NAME: PROD_PM2,
+      DEPLOY_STATUS_FILE: PROMOTE_STATUS,
+      // Тестовый мир — это отдельная установка со своим .env. Его
+      // переменные боевому не нужны и опасны: TEST_WORLD=1 в боевом
+      // окружении открыл бы регистрацию без подтверждения почты.
+      TEST_WORLD: '',
+      PORT: '',
+      SQLITE_DIR: '',
+      SQLITE_FILE: '',
+    },
+  });
+  child.unref();
+
+  auditLog.record({
+    userId: actor.id, userName: actor.name, path: '/api/admin/release/promote',
+    body: { commit: want, target: PROD_DIR, pm2: PROD_PM2 },
+  });
+  notices.push(`🚀 Выкат на боевой запущен: ${want.slice(0, 8)}. `
+    + 'Боевой мир НЕ закрывался — закройте и откройте его сами, когда проверите.');
+  return { started: true, commit: want, target: PROD_DIR };
+}
+
+export = { status, deploy, makeTestAccount, current, promote, promoteView, COMMIT_RE };

@@ -1480,7 +1480,10 @@ function registerRoutes(app: any) {
 
   app.add('GET', '/api/admin/release', async (req) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
-    return require('./services/release').status();
+    const rel = require('./services/release');
+    // Состояние выката на боевой отдаём тем же запросом: экран один, и
+    // второй поход на сервер ради одного блока — лишний.
+    return { ...rel.status(), promote: rel.promoteView() };
   }, { admin: true });
 
   // Закрыть игру, назначить окно на потом или отменить и то и другое.
@@ -1549,6 +1552,15 @@ function registerRoutes(app: any) {
   // Выкат версии, проверенной на тесте. Запускает фиксированный скрипт
   // из репозитория, а не произвольную команду: панель не должна уметь
   // выполнять на сервере то, что в неё передали.
+  // Выкат с тестового мира на боевой. Отдельная ручка, а не флаг у
+  // обычного выката: у них разные цели, разные проверки и разная цена
+  // ошибки, и один параметр «а теперь на боевой» рано или поздно
+  // проставился бы не туда.
+  app.add('POST', '/api/admin/release/promote', act((req, n) => {
+    if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
+    return require('./services/release').promote(req.user, String(req.body.confirm || ''), n);
+  }), { admin: true });
+
   app.add('POST', '/api/admin/release/deploy', act(async (req, n) => {
     if (!roles.isOwner(req.user)) throw new u.ApiError('Только для владельца');
     return require('./services/release').deploy(req.user, String(req.body.commit || ''), n);

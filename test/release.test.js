@@ -439,6 +439,70 @@ async function makePlayer(login, mail) {
   ok('и подтверждение на боевом предупреждает громче',
      /НА БОЕВОЙ/.test(relJs));
 
+  console.log('\n── 12. Выкат с тестового на боевой ──');
+  // Кнопка, которой раньше не было: порядок «сначала тест, потом боевой»
+  // держался на том, какую строку наберут в терминале, и однажды не
+  // удержался — команда обновления ушла в боевую папку вместо тестовой,
+  // отличавшуюся пятью символами в конце пути.
+  ok('в разделе есть состояние выката на боевой', !!relTest.d.promote);
+  ok('названа фраза подтверждения', relTest.d.promote.phrase === 'выкатить на боевой');
+  ok('и предлагается версия, которая сейчас на тесте',
+     relTest.d.promote.commit === relTest.d.current.commit);
+
+  // Папка боевого не определилась (временная папка теста не кончается на
+  // -test), поэтому кнопка недоступна — и ручка обязана отказать даже
+  // если её позвать напрямую.
+  ok('без известной папки боевого кнопка не показывается',
+     relTest.d.promote.available === false);
+  const noProd = await post('/api/admin/release/promote', { confirm: 'выкатить на боевой' }, owner3);
+  ok('и ручка отказывает', noProd.status >= 400);
+
+  // Подставная «боевая» установка: свой tools/deploy.sh, который
+  // оставляет след. Так проверяется главное — что кнопка зовёт скрипт
+  // ИМЕННО в чужой папке и передаёт ему проверенную версию.
+  const fakeProd = fs.mkdtempSync(path.join(os.tmpdir(), 'fakeprod-'));
+  fs.mkdirSync(path.join(fakeProd, 'tools'), { recursive: true });
+  const marker = path.join(fakeProd, 'ran.txt');
+  fs.writeFileSync(path.join(fakeProd, 'tools', 'deploy.sh'),
+    '#!/bin/bash\necho "$1" > "' + marker.replace(/\\/g, '/') + '"\n');
+
+  await stop(srv);
+  srv = await startServer(Object.assign({}, env, {
+    TEST_WORLD: '1', TEST_WORLD_NAME: 'Полигон',
+    PROD_DIR: fakeProd, PROD_PM2: 'generals-game',
+  }));
+  const owner5 = (await post('/api/login', { login: 'Хозяин', password: 'пароль123' })).d.token;
+  const rel5 = await get('/api/admin/release', owner5);
+  ok('с заданной папкой боевого кнопка появляется', rel5.d.promote.available === true);
+  ok('видно, куда именно поедет', rel5.d.promote.prodDir === fakeProd);
+
+  const wrongPhrase = await post('/api/admin/release/promote', { confirm: 'ага давай' }, owner5);
+  ok('без точной фразы выката нет', wrongPhrase.status >= 400);
+  ok('и сказано, что набрать', /выкатить на боевой/.test(wrongPhrase.d.error || ''));
+  ok('след не появился', !fs.existsSync(marker));
+
+  const notOwner = await post('/api/admin/release/promote',
+    { confirm: 'выкатить на боевой' }, player);
+  ok('обычному игроку выкат недоступен', notOwner.status >= 400);
+
+  // Сам запуск — только на Linux: сервис зовёт /bin/bash, которого на
+  // Windows нет. Проверка осмысленна там, где выкат и происходит.
+  if (process.platform === 'win32') {
+    console.log('  ⏭ сам запуск пропущен (на Windows нет /bin/bash)');
+  } else {
+    const started = await post('/api/admin/release/promote',
+      { confirm: 'ВЫКАТИТЬ НА БОЕВОЙ' }, owner5);   // регистр не важен
+    ok('с фразой выкат запускается', started.status === 200);
+    await new Promise((r) => setTimeout(r, 1500));
+    ok('скрипт запущен В ПАПКЕ БОЕВОГО, а не тестового', fs.existsSync(marker));
+    if (fs.existsSync(marker)) {
+      const passedCommit = fs.readFileSync(marker, 'utf8').trim();
+      ok('и ему передана версия, проверенная на тесте',
+         passedCommit === rel5.d.current.commit);
+    }
+  }
+  try { fs.rmSync(fakeProd, { recursive: true, force: true }); } catch (e) {}
+
   await stop(srv); mail.s.close();
   try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);

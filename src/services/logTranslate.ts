@@ -456,6 +456,12 @@ function describe(path: string, body?: any, result?: any): string | null {
           + `${body && body.reason ? '. Причина: ' + String(body.reason) : ''}`;
       case '/api/admin/release/deploy':
         return `🚀 Запустил выкат версии ${String((body && body.commit) || '—')}`;
+      // Выкат С ТЕСТОВОГО НА БОЕВОЙ — отдельная строка и с указанием
+      // папки: это самое дорогое действие в панели после обнуления мира,
+      // и в журнале должно быть видно не только «выкатил», но и куда.
+      case '/api/admin/release/promote':
+        return `🚀 Выкатил на БОЕВОЙ версию ${String((body && body.commit) || '—').slice(0, 8)}`
+          + `${body && body.target ? ` → ${body.target}` : ''}`;
       case '/api/admin/test-account':
         return `🧪 Создал тестовый аккаунт «${String((body && body.login) || '—')}»`;
       case '/api/login-reward/claim':     return '🎁 Забрал награду за вход';

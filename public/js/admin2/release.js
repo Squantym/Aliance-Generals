@@ -46,6 +46,40 @@
           именно туда, а здесь не находили.</p>
       </div>`;
 
+    // ── Выкат на боевой ───────────────────────────────────────────
+    // Кнопка есть только в тестовом мире: она катит ту версию, которая
+    // прямо сейчас проверяется здесь. На боевом её нет — иначе она
+    // стала бы вторым способом обновить боевой мир мимо проверки.
+    const pr = d.promote || {};
+    const prLast = pr.last || null;
+    const promoteBlock = !pr.available ? '' : `
+      <div class="a2-card" style="border-color:var(--red)">
+        <h3 style="color:var(--red)">🚀 Выкатить на боевой</h3>
+        <p class="a2-muted">Уедет <b>ровно та версия, что сейчас на тесте</b>, а не последнее
+        из ветки: между проверкой и нажатием в ветку могло прилететь что угодно.</p>
+        <div class="a2-kv"><span>версия</span><b class="mono">${UI.esc(pr.short || '—')}</b></div>
+        <div class="a2-kv"><span>что в ней</span><b>${UI.esc(pr.subject || '—')}</b></div>
+        <div class="a2-kv"><span>куда</span><b class="mono">${UI.esc(pr.prodDir || '—')}</b></div>
+        <div class="a2-kv"><span>процесс</span><b class="mono">${UI.esc(pr.prodPm2 || '—')}</b></div>
+
+        <p class="a2-warn" style="margin-top:10px">Боевой мир при этом <b>не закрывается</b>.
+        Закройте его сами перед выкатом и откройте после проверки — отсюда не видно ни игроков,
+        ни того, поднялась ли игра после сборки.</p>
+
+        <p class="a2-muted" style="margin-top:10px">Наберите руками фразу
+          <b>${UI.esc(pr.phrase || '')}</b> — диалог «вы уверены?» подтверждают не читая.</p>
+        <div class="a2-row" style="margin-top:6px;flex-wrap:wrap;gap:8px">
+          <input id="pr-confirm" placeholder="${UI.esc(pr.phrase || '')}"
+                 style="${'padding:6px 10px;background:var(--bg);color:var(--text);'
+                       + 'border:1px solid var(--border);border-radius:8px'};flex:1;min-width:220px">
+          <button class="btn btn-red btn-inline" id="pr-go">Выкатить на боевой</button>
+        </div>
+        ${prLast ? `<p class="a2-muted" style="margin-top:10px">Прошлый выкат:
+          <b>${UI.esc(prLast.state || '')}</b>, версия <span class="mono">${UI.esc(String(prLast.commit || '').slice(0, 8))}</span>,
+          запускал ${UI.esc(prLast.by || '—')}${prLast.error ? ' · ' + UI.esc(prLast.error) : ''}</p>` : ''}
+        ${pr.log ? `<pre class="a2-log" style="margin-top:8px">${UI.esc(pr.log)}</pre>` : ''}
+      </div>`;
+
     // ── Состояние игры ────────────────────────────────────────────
     // Три разных состояния, а не два: игра открыта; игра закрыта;
     // окно назначено на потом, но игра пока работает. Третье выглядит
@@ -202,7 +236,7 @@
       </div>` : ''}`;
 
     el.innerHTML = `<div class="a2-title">Обновление${isTest ? ' · тестовый мир' : ''}</div>
-      ${testBlock}${maintBlock}${verBlock}`;
+      ${testBlock}${promoteBlock}${maintBlock}${verBlock}`;
 
     // ── Обработчики ───────────────────────────────────────────────
     const on = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
@@ -265,6 +299,26 @@
 
     on('dp-refresh', () => render(el));
 
+    // Выкат на боевой. Фразу проверяет и сервер — здесь она нужна, чтобы
+    // человек узнал о промахе сразу, а не после запроса.
+    on('pr-go', async () => {
+      const said = (document.getElementById('pr-confirm').value || '').trim().toLowerCase();
+      if (said !== String(pr.phrase || '').toLowerCase()) {
+        return UI.toast('⛔ Наберите фразу подтверждения точно: ' + (pr.phrase || ''));
+      }
+      const btn = document.getElementById('pr-go');
+      btn.disabled = true; btn.textContent = 'Запускаю…';
+      try {
+        const r = await API.post('/api/admin/release/promote', { confirm: said });
+        UI.toast('🚀 Выкат на боевой запущен: ' + String(r.commit || '').slice(0, 8));
+        // Через полминуты перерисовываем: к этому моменту в журнале
+        // выката уже видно, дошло ли до сборки.
+        setTimeout(() => render(el), 30000);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Выкатить на боевой';
+        UI.toast('⛔ ' + e.message);
+      }
+    });
   }
 
   A2.screens.release = render;
