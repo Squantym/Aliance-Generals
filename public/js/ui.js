@@ -427,6 +427,70 @@ const UI = {
       </div>`;
   },
 
+  // ── Показать пароль ───────────────────────────────────────────────
+  //
+  // Значок свой, а не системный. Браузерный «глаз» есть только в Edge и
+  // части десктопных сборок Chrome, в мобильном его нет вовсе — то есть
+  // ровно там, где игрок чаще всего и промахивается по клавишам. Плюс
+  // он рисуется чужим цветом поверх нашей рамки.
+  //
+  // Кнопка вешается наблюдением за разметкой, а не вызовом из каждой
+  // формы. Поля пароля рисуются в десятке мест — вход, регистрация,
+  // смена пароля, восстановление, две панели, — и обойти их списком
+  // значит однажды где-то забыть, причём молча.
+  EYE_ON: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1.9 12S5.9 5.5 12 5.5 22.1 12 22.1 12 18.1 18.5 12 18.5 1.9 12 1.9 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>',
+  EYE_OFF: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1.9 12S5.9 5.5 12 5.5 22.1 12 22.1 12 18.1 18.5 12 18.5 1.9 12 1.9 12Z"/><circle cx="12" cy="12" r="3.1"/><line x1="4" y1="4" x2="20" y2="20"/></svg>',
+
+  wrapPassword(inp) {
+    if (!inp || inp.dataset.eyed === '1') return;
+    // Автозаполнение паролей у браузеров цепляется к полю, а не к его
+    // обёртке, поэтому саму разметку поля не трогаем — только оборачиваем.
+    inp.dataset.eyed = '1';
+    const wrap = document.createElement('div');
+    wrap.className = 'pw-wrap';
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';                  // иначе Enter в форме нажмёт его
+    btn.className = 'pw-eye';
+    btn.innerHTML = UI.EYE_ON;
+    btn.setAttribute('aria-label', 'Показать пароль');
+    btn.title = 'Показать пароль';
+    wrap.appendChild(btn);
+
+    btn.onclick = () => {
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.innerHTML = show ? UI.EYE_OFF : UI.EYE_ON;
+      btn.classList.toggle('on', show);
+      const t = show ? 'Скрыть пароль' : 'Показать пароль';
+      btn.setAttribute('aria-label', t);
+      btn.title = t;
+      // Возвращаем курсор в поле и в конец строки: иначе после нажатия
+      // человек дописывает пароль не туда, куда смотрит.
+      try { inp.focus(); const n = inp.value.length; inp.setSelectionRange(n, n); } catch (e) {}
+    };
+  },
+
+  eyes(root) {
+    const box = root || document;
+    box.querySelectorAll('input[type="password"]:not([data-eyed])').forEach(UI.wrapPassword);
+  },
+
+  // Один наблюдатель на всё приложение. Запускается из App.init().
+  watchPasswords() {
+    if (UI._pwWatch) return;
+    UI.eyes(document);
+    UI._pwWatch = new MutationObserver(() => {
+      // Пачкой: перерисовка экрана добавляет сотни узлов, а нам важен
+      // только итог.
+      clearTimeout(UI._pwTimer);
+      UI._pwTimer = setTimeout(() => UI.eyes(document), 30);
+    });
+    UI._pwWatch.observe(document.body, { childList: true, subtree: true });
+  },
+
   // Пара «старая→новая» цена с перечёркиванием. Если discount=null, обычная цена.
   // currency: '$' или 🪙 (через UI.gold или текст)
   priceWithSale(basePrice, price, currency, fmt) {
