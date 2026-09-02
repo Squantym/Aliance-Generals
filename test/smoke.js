@@ -36,6 +36,12 @@ let workDir = '';                     // временная папка с баз
 // Свободный порт берём случайным из высокого диапазона и проверяем.
 const PORT = 4700 + Math.floor(Math.random() * 200);
 
+// Окружение для служебных скриптов, запускаемых отдельным процессом.
+// Они дочитывают .env проекта сами, и без пустых ключей настоящий .env
+// уводил их в боевую базу вместо временной папки дымового прогона.
+const toolEnv = (e) => Object.assign({}, process.env,
+  { DB_DRIVER: '', SQLITE_DIR: '', SQLITE_FILE: '', MONGODB_URI: '' }, e || {});
+
 function startServer(extraEnv) {
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, [pathx.join(ROOT, 'dist/server.js')], {
@@ -125,7 +131,7 @@ async function bootstrap(adminName, adminPass, adminEmail) {
   // ничего не делал — тест падал бы уже позже и на другом.
   execFileSync(process.execPath,
     [pathx.join(ROOT, 'tools/grant-admin.js'), adminName, '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe' });
+    { cwd: workDir, stdio: 'pipe', env: toolEnv() });
   srv = await startServer();
 
   const login = await post('/api/login', null, { login: adminName, password: adminPass });

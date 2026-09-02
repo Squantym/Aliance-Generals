@@ -54,6 +54,17 @@ const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
 const SQLITE = process.argv.includes('--sqlite');
 const PORT = (SQLITE ? 4930 : 4975) + Math.floor(Math.random() * 20);
 const BASE = 'http://127.0.0.1:' + PORT;
+
+// Окружение для служебных скриптов, которые тест запускает отдельным
+// процессом (grant-admin и подобные). Они сами дочитывают .env проекта,
+// и на сервере это уводило их в БОЕВУЮ базу вместо временной папки
+// теста: скрипт честно докладывал «игрок не найден», хотя игрок был —
+// просто в другой базе. loadEnv в скриптах ставит значение, только если
+// ключа нет в окружении вовсе, поэтому пустая строка перебивает файл.
+// Значения самого теста идут последним слоем: worldreset включает
+// SQLite намеренно, и обнулять его настройки нельзя.
+const toolEnv = (e) => Object.assign({}, process.env,
+  { DB_DRIVER: '', SQLITE_DIR: '', SQLITE_FILE: '', MONGODB_URI: '' }, e || {});
 let srv = null, workDir = '';
 const letters = [];
 
@@ -157,7 +168,7 @@ function usersFile() {
 
   await stop(srv);
   execFileSync(process.execPath, [path.join(ROOT, 'tools/grant-admin.js'), 'Хозяин', '--owner', '--yes'],
-    { cwd: workDir, stdio: 'pipe' });
+    { cwd: workDir, stdio: 'pipe', env: toolEnv(env) });
   srv = await startServer();
   let owner = (await post('/api/login', { login: 'Хозяин', password: 'пароль123' })).d.token;
   const player = (await post('/api/login', { login: 'Боец', password: 'пароль123' })).d.token;
