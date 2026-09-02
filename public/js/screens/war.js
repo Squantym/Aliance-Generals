@@ -2155,8 +2155,12 @@ App.renderGroupBattle = async () => {
                alt="${b.iWon ? 'Победа' : 'Поражение'}" loading="eager" decoding="async"
                onerror="this.style.display='none'">`}
         <div class="arena-title ${b.iWon ? 'gb-win-title' : (b.winnerTeam === -1 ? '' : 'gb-lose-title')}">
-          ${b.iWon ? 'ПОБЕДА' : (b.winnerTeam === -1 ? 'НИЧЬЯ' : 'ПОРАЖЕНИЕ')}
+          ${b.forfeited ? 'НЕ ЯВИЛСЯ'
+            : (b.iWon ? 'ПОБЕДА' : (b.winnerTeam === -1 ? 'НИЧЬЯ' : 'ПОРАЖЕНИЕ'))}
         </div>
+        ${b.forfeited ? `
+          <p class="muted small mt">Вы не вошли в комнату за 30 секунд подготовки —
+          вместо вас играла ваша копия. Поражение засчитано, награды за этот бой нет.</p>` : ''}
         ${(() => {
           const mine = (b.result || []).find((x) => x.id === me.id);
           return mine ? `

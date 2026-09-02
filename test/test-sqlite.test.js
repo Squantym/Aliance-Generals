@@ -15,7 +15,13 @@ process.env.DISABLE_RATE_LIMIT = '1';   // сценарии создают иг�
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 
-const ROOT = '/tmp/generals-game';
+// Путь к проекту берём от самого файла, а не строкой. Здесь был зашит
+// '/tmp/generals-game' — папка облачной песочницы, в которой проект
+// когда-то лежал. Ни на сервере (~/Aliance-Generals), ни у владельца её
+// нет, поэтому тест не проходил НИГДЕ: падал на «модуль не найден» и
+// молча числился в общем списке упавших. __dirname не зависит от
+// process.chdir ниже, поэтому переносить строку не нужно.
+const ROOT = path.join(__dirname, '..');
 const sq = require(ROOT + '/dist/src/core/sqliteStore');
 
 console.log('\n── 1. База создаётся и настроена на устойчивость ──');

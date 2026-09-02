@@ -1078,6 +1078,10 @@ function battleState(user: User, watchId?: string) {
         active: false, state: 'done', finished: true,
         winnerTeam: saved.winnerTeam,
         iWon: mineRow ? !!mineRow.won : false,
+        // Экран обязан отличать «проиграл» от «не вышел на бой»: иначе
+        // человек видит поражение при победе своей команды и не понимает,
+        // за что. В истории боёв это различие уже есть.
+        forfeited: mineRow ? !!mineRow.forfeited : false,
         myTeam: mineRow ? mineRow.team : 0,
         result: saved.rows || [],
         me: mineRow ? {
@@ -1122,7 +1126,16 @@ function battleState(user: User, watchId?: string) {
     finished: b.state === 'done',
     winnerTeam: b.winnerTeam,
     result: (b as any).result || null,
-    iWon: b.state === 'done' && b.winnerTeam === me.team,
+    // Победа — это победа команды И собственное участие. Не явившийся
+    // за ним не стоит: за него играла его копия, а ему засчитано
+    // поражение — так задумано.
+    //
+    // Здесь раньше стояло просто `winnerTeam === me.team`, а во втором
+    // месте (разбор сохранённого боя, выше) — `mineRow.won`. Два разных
+    // определения одного флага в одном файле: для обычного игрока они
+    // совпадают, а прогульщику из победившей команды один экран говорил
+    // «ПОБЕДА», другой «ПОРАЖЕНИЕ». Определение теперь одно.
+    iWon: b.state === 'done' && b.winnerTeam === me.team && !me.forfeited,
     myTeam: me.team,
     me: {
       ...card(me),
