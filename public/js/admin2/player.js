@@ -51,6 +51,95 @@
     return rows.join('');
   }
 
+  // ── Адреса и устройства ────────────────────────────────────────────
+  //
+  // В прежней панели это было (Admin.showAccess), а в новой раздел
+  // потерялся: осталась только таблица открытых прямо сейчас сессий.
+  // Ручка /api/admin/access/:id и данные всё это время были на месте —
+  // их просто некому было показать, и владелец не мог ответить на
+  // вопрос «кто с какого адреса заходит».
+  //
+  // ВАЖНО про пустые адреса. Если nginx не передаёт заголовки с адресом
+  // посетителя, до игры доходит только адрес самого nginx, и здесь у
+  // ВСЕХ игроков будет одно и то же значение вроде 127.0.0.1. Это не
+  // ошибка панели — это настройка сервера, и подсказка об этом стоит
+  // прямо в разделе, чтобы не искать причину в игре.
+  const dt = (ms) => (ms
+    ? new Date(ms).toLocaleString('ru-RU',
+      { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : '—');
+  const LOCAL_IP = /^(127\.|::1$|0\.0\.0\.0$|localhost$)/;
+
+  async function renderAccess(id) {
+    const box = document.getElementById('pl-access');
+    if (!box) return;
+    let d = null;
+    try { d = await API.get('/api/admin/access/' + encodeURIComponent(id)); }
+    catch (e) {
+      box.innerHTML = `<h3>Адреса и устройства</h3>
+        <p class="a2-muted">Не открылось: ${UI.esc(e.message)}</p>`;
+      return;
+    }
+    const ips = d.ips || [];
+    const devices = d.devices || [];
+    // Все адреса локальные — верный признак, что заголовки не доходят.
+    const allLocal = ips.length > 0 && ips.every((x) => LOCAL_IP.test(String(x.ip || '')));
+
+    const line = (k, v, mono) => `<div class="a2-kv"><span>${k}</span>`
+      + `<b${mono ? ' class="mono"' : ''}>${UI.esc(v == null ? '—' : String(v))}</b></div>`;
+
+    box.innerHTML = `
+      <h3>Адреса и устройства</h3>
+      ${allLocal ? `<p class="a2-warn">⚠ У всех записей локальный адрес
+        (${UI.esc(ips[0].ip)}). Значит nginx не передаёт игре адрес посетителя:
+        нужны заголовки X-Real-IP и X-Forwarded-For в конфигурации сайта.
+        Пока их нет, все игроки здесь выглядят одинаково.</p>` : ''}
+
+      <div class="a2-grid2">
+        <div>
+          <h4>При регистрации</h4>
+          ${line('Когда', dt(d.registered && d.registered.at))}
+          ${line('Адрес', d.registered && d.registered.ip, true)}
+          ${line('Устройство', d.registered && d.registered.device)}
+        </div>
+        <div>
+          <h4>Последний вход</h4>
+          ${line('Когда', dt(d.last && d.last.at))}
+          ${line('Адрес', d.last && d.last.ip, true)}
+          ${line('Устройство', d.last && d.last.device)}
+        </div>
+      </div>
+
+      <h4>Адреса (${ips.length})</h4>
+      ${ips.length ? `
+        <table class="a2-table">
+          <thead><tr><th>Адрес</th><th class="num">Входов</th><th class="num">Последний раз</th></tr></thead>
+          <tbody>${ips.map((x) => `<tr>
+            <td class="mono">${UI.esc(x.ip)}</td>
+            <td class="num">${x.count}</td>
+            <td class="num a2-muted">${dt(x.lastAt)}</td></tr>`).join('')}</tbody>
+        </table>`
+      : '<p class="a2-muted">Пока пусто — записи появятся при следующем входе.</p>'}
+
+      <h4>Устройства (${devices.length})</h4>
+      <p class="a2-muted">Устройство узнаётся по браузеру и отпечатку — экран, часовой пояс,
+      число ядер. Другой браузер или переустановка системы дают новую запись, поэтому
+      несколько устройств у одного человека — обычное дело.</p>
+      ${devices.length ? devices.map((v) => `
+        <div class="a2-item">
+          <div class="a2-item-ico">💻</div>
+          <div class="a2-item-txt">
+            <b>${UI.esc(v.label)}</b>
+            ${v.isReg ? ' <span class="a2-pill">регистрация</span>' : ''}
+            <span class="a2-muted">· входов: ${v.count}</span>
+            <div class="a2-item-when">${dt(v.firstAt)} → ${dt(v.lastAt)}</div>
+            <div class="a2-muted" style="margin-top:2px">Адреса:
+              ${(v.ips || []).map((x) => `<span class="mono">${UI.esc(x.ip)}</span> ×${x.count}`).join(' · ') || '—'}</div>
+          </div>
+        </div>`).join('')
+      : '<p class="a2-muted">Пока пусто.</p>'}`;
+  }
+
   async function render(el, route) {
     const id = route.arg;
     if (!id) return A2Router.go('players', '', null, true);
@@ -147,10 +236,20 @@
         </div>
       </details>` : ''}
 
+      <div class="a2-card" id="pl-access">
+        <h3>Адреса и устройства</h3>
+        <p class="a2-muted">Загружаю…</p>
+      </div>
+
       <div class="a2-card">
         <h3>Последние действия</h3>
         ${recent || '<p class="a2-muted">Записей нет.</p>'}
       </div>`;
+
+    // Адреса грузим ОТДЕЛЬНЫМ запросом и после отрисовки карточки: это
+    // самый тяжёлый раздел досье, и если он не ответит, всё остальное —
+    // меры, выдача, история — должно остаться на месте.
+    renderAccess(p.id);
 
     // Меры — старыми диалогами: в них живут подтверждения и права
     el.querySelectorAll('[data-act]').forEach((b) => {
