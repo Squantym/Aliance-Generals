@@ -26,7 +26,19 @@ const ROOT = path.join(__dirname, '..');
 (function loadEnv() {
   const envPath = path.join(ROOT, '.env');
   if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+  // Файл может СУЩЕСТВОВАТЬ и при этом не читаться: .env держат в режиме
+  // 600, и запуск не от владельца файла упирался в EACCES. Голый
+  // readFileSync выбрасывал стектрейс на двадцать строк, из которого
+  // причина «прав не хватает» не следует никак.
+  let raw;
+  try {
+    raw = fs.readFileSync(envPath, 'utf8');
+  } catch (e) {
+    console.error(`\n⛔ Файл ${envPath} есть, но прочитать его не удалось: ${e.code || e.message}.`);
+    console.error('   Запускайте от того же пользователя, которому принадлежит .env (обычно root).\n');
+    process.exit(1);
+  }
+  for (const line of raw.split('\n')) {
     const t = line.trim();
     if (!t || t.startsWith('#')) continue;
     const eq = t.indexOf('=');

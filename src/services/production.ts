@@ -52,7 +52,7 @@ function processView(p: any) {
     startedAt: p.startedAt, finishesAt: p.finishesAt,
     secondsLeft: secLeft,
     canBoost: secLeft > 0,
-    boostCost: config.MODERN.BOOST_GOLD_COST,
+    boostCost: config.boostGoldFor(p.finishesAt),
   };
 }
 
@@ -190,7 +190,10 @@ function boostProcess(user: User, processId: string, notices: Notices) {
   const proc = user.modernQueue.find((p) => p.id === processId);
   if (!proc) throw new u.ApiError('Процесс не найден');
   if (proc.finishesAt <= Date.now()) throw new u.ApiError('Процесс уже завершён');
-  const cost = config.MODERN.BOOST_GOLD_COST;
+  // Минута остатка — золото. Плоская цена означала, что за партию,
+  // которой осталась минута, просили столько же, сколько за только что
+  // запущенную. Считаем и показываем одной формулой — config.boostGoldFor.
+  const cost = config.boostGoldFor(proc.finishesAt);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно ${cost})`);
   player.spendGold(user, cost, 'production');
   proc.finishesAt = Date.now(); // refresh заберёт его при следующем запросе

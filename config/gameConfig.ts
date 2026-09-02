@@ -1467,6 +1467,18 @@ function trophyTrainMinutes(targetLevel: number, timeMul?: number): number {
 }
 // Стоимость мгновенного ускорения прокачки трофея: 10 золота за КАЖДЫЙ ЧАС
 // полной длительности прокачки (мин. 1). Пример: 240 ч → 2400 золота.
+// Цена ускорения: минута ОСТАТКА — одно золото, но не меньше одного.
+//
+// Одна формула на спецоперации и производство, и намеренно здесь, а не
+// в каждом сервисе: пока их было две, они разошлись. У спецопераций
+// цену считали один раз от полной длительности шага и клали в процесс,
+// у производства она была плоской — и в обоих случаях за шаг, которому
+// осталась минута, просили столько же, сколько за только что начатый.
+function boostGoldFor(finishesAt: number): number {
+  const msLeft = Math.max(0, Number(finishesAt) - Date.now());
+  return Math.max(1, Math.ceil(msLeft / 60000));
+}
+
 function trophyBoostGold(targetLevel: number, timeMul?: number): number {
   return Math.max(1, Math.round((trophyTrainMinutes(targetLevel, timeMul) / 60) * 10));
 }
@@ -2369,7 +2381,7 @@ export = {
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
   COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
   RIDDLES, CLUB,
-  TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
+  TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, boostGoldFor, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,
   DAILY_QUESTS, DAILY_QUEST_BY_ID, DAILY_CHARS, DAILY_PICK_COUNT,
   dailyQuestTarget, dailyQuestReward, dailyAllBonusGold, pickDailyQuests, dailyGrowth,

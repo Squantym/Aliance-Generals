@@ -210,7 +210,7 @@ App.screens.production = async (c, param) => {
     <div class="card">
       <div class="kv"><span class="k">🏭 Цехов построено</span><span class="v">${p.workshops}</span></div>
       <div class="kv"><span class="k">Свободных слотов</span><span class="v ${p.slotsFree > 0 ? 'gold' : ''}">${p.slotsFree} / ${p.workshops}</span></div>
-      <p class="muted small mt">Один цех = одна линия. За партию — до ${p.maxBatch} единиц. Время: Mk1 — <b>${p.minutesPerUnitMk1} мин/ед.</b>, Mk2 — <b>${p.minutesPerUnitMk2} мин/ед.</b>. Можно ускорить за <span class="ic-gold"></span> ${p.boostGoldCost}.</p>
+      <p class="muted small mt">Один цех = одна линия. За партию — до ${p.maxBatch} единиц. Время: Mk1 — <b>${p.minutesPerUnitMk1} мин/ед.</b>, Mk2 — <b>${p.minutesPerUnitMk2} мин/ед.</b>. Ускорение — <span class="ic-gold"></span> 1 за каждую оставшуюся минуту.</p>
       <button class="btn btn-orange mt" id="ws-buy">Построить цех за ${UI.priceWithSale(p.baseNextWorkshopGold, p.nextWorkshopGold, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
       <p class="muted small center mt">Каждый следующий цех вдвое дороже предыдущего</p>
     </div>`;
@@ -317,7 +317,12 @@ App.screens.production = async (c, param) => {
   // Ускорение процесса
   c.querySelectorAll('[data-boost]').forEach((btn) => {
     btn.onclick = async () => {
-      if (!await UI.confirm(`Ускорить за ${p.boostGoldCost} золота?`, {title:'Ускорение', icon:'⚡', okText:'Ускорить'})) return;
+      // Цена берётся у самого процесса: она зависит от остатка, а в шапке
+      // экрана лежит только правило. Раньше кнопка показывала одно число,
+      // а подтверждение — другое, плоское.
+      const proc = (p.queue || []).find((x) => String(x.id) === String(btn.dataset.boost));
+      const cost = proc ? proc.boostCost : p.boostGoldCost;
+      if (!await UI.confirm(`Ускорить за ${cost} золота?`, {title:'Ускорение', icon:'⚡', okText:'Ускорить'})) return;
       try {
         await API.post('/api/production/boost', { processId: btn.dataset.boost });
         await App.refreshMe();

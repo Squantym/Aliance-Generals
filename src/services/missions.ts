@@ -280,8 +280,7 @@ function list(user: User) {
 // экранами. Одна функция на показ и на списание убирает и то, и другое:
 // игрок платит ровно за то, что видит, и ровно за остаток.
 function boostCost(proc: any): number {
-  const msLeft = Math.max(0, Number(proc.finishesAt) - Date.now());
-  return Math.max(1, Math.ceil(msLeft / 60000));
+  return config.boostGoldFor(proc.finishesAt);
 }
 
 function activeView(proc: any) {
