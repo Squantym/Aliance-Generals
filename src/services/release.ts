@@ -205,10 +205,10 @@ async function makeTestAccount(actor: any, login: string, password: string,
   password = String(password || '');
   if (password.length < 8) throw new u.ApiError('Пароль: минимум 8 символов');
 
-  // Почта нужна формально — на неё ничего не отправляется. Делаем её
-  // заведомо недоставляемой (.invalid — зарезервированная зона), чтобы
-  // случайная рассылка не ушла на чужой настоящий адрес.
-  const mail = `${login.toLowerCase().replace(/[^a-z0-9]/g, '') || 'test'}@test.invalid`;
+  // Почта нужна формально — на неё ничего не отправляется, но она
+  // обязана быть разной у разных аккаунтов. Правило одно на кнопку и на
+  // консольный инструмент, см. testWorld.testAccountEmail.
+  const mail = testWorld.testAccountEmail(login);
 
   const res: any = await auth.register(login, password, mail, country || 'ru', ip,
     'тестовый аккаунт', {}, '', { age18: true, terms: true, pdn: true });

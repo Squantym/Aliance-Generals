@@ -41,17 +41,9 @@
           ? '<p class="a2-muted" style="color:var(--orange-1)">⚠ В тестовом мире задан ключ почтового сервиса. '
             + 'Письма отсюда будут уходить по-настоящему и тратить лимит боевого тарифа — уберите SMTPBZ_API_KEY.</p>'
           : '<p class="a2-muted">Почта не настроена — письма никуда не уходят, адрес подтверждается сам. Так и надо.</p>'}
-        <div class="a2-row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
-          <input id="ta-login" placeholder="позывной" maxlength="16"
-                 style="padding:6px 10px;background:var(--bg);color:var(--text);
-                        border:1px solid var(--border);border-radius:8px;width:180px">
-          <input id="ta-pass" placeholder="пароль (мин. 8)" maxlength="40"
-                 style="padding:6px 10px;background:var(--bg);color:var(--text);
-                        border:1px solid var(--border);border-radius:8px;width:200px">
-          <button class="btn btn-orange btn-inline" id="ta-go">Создать аккаунт</button>
-          <button class="btn btn-inline" id="ta-rand">Придумать за меня</button>
-        </div>
-        <div id="ta-out"></div>
+        <p style="margin-top:10px">Выдача аккаунтов переехала в раздел
+          <a href="${A2Router.build('players')}"><b>«Игроки»</b></a> — искать её приходили
+          именно туда, а здесь не находили.</p>
       </div>`;
 
     // ── Состояние игры ────────────────────────────────────────────
@@ -273,33 +265,6 @@
 
     on('dp-refresh', () => render(el));
 
-    on('ta-rand', () => {
-      const n = Math.floor(Math.random() * 900 + 100);
-      document.getElementById('ta-login').value = 'Тестер' + n;
-      document.getElementById('ta-pass').value = 'test' + n + 'pass';
-    });
-
-    on('ta-go', async () => {
-      const login = (document.getElementById('ta-login').value || '').trim();
-      const password = (document.getElementById('ta-pass').value || '').trim();
-      if (!login || password.length < 8) return UI.toast('⛔ Нужен позывной и пароль от 8 символов');
-      try {
-        const r = await API.post('/api/admin/test-account', { login, password });
-        // Пароль показываем ОДИН раз и сразу: хранить его в базе в
-        // читаемом виде нельзя, а передать тестировщику надо.
-        document.getElementById('ta-out').innerHTML = `
-          <div class="a2-card" style="margin-top:10px;background:rgba(255,255,255,.03)">
-            <div>✅ Аккаунт создан. Передайте тестировщику:</div>
-            <div style="margin-top:6px;font-family:ui-monospace,Menlo,Consolas,monospace">
-              логин: <b>${UI.esc(r.login)}</b><br>пароль: <b>${UI.esc(r.password)}</b>
-            </div>
-            <p class="a2-muted small" style="margin-top:6px">${UI.esc(r.note || '')}
-            Пароль больше нигде не показывается — в базе он хранится только в виде хеша.</p>
-          </div>`;
-        document.getElementById('ta-login').value = '';
-        document.getElementById('ta-pass').value = '';
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    });
   }
 
   A2.screens.release = render;

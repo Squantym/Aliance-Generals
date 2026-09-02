@@ -50,6 +50,68 @@
       </a>`).join('');
   }
 
+  // ── Завести аккаунт (только в тестовом мире) ───────────────────────
+  //
+  // На боевом карточки нет вовсе, и это не только оформление: ручка
+  // /api/admin/test-account там отказывает сама. Регистрация без
+  // подтверждения почты на живом сервере — дыра, и запрет стоит на
+  // сервере, а не в том, нарисована ли кнопка.
+  async function renderNewAccount() {
+    const box = document.getElementById('pls-new');
+    if (!box) return;
+    let isTest = false;
+    try {
+      const w = await API.get('/api/world');
+      isTest = !!(w && w.test && w.test.on);
+    } catch (e) { return; }          // не узнали — просто не показываем
+    if (!isTest) return;
+
+    const inp = 'padding:6px 10px;background:var(--bg);color:var(--text);'
+      + 'border:1px solid var(--border);border-radius:8px';
+    box.innerHTML = `
+      <div class="a2-card" style="border-color:var(--orange-1)">
+        <h3>🧪 Завести аккаунт</h3>
+        <p class="a2-muted">Публичная регистрация в тестовом мире закрыта — аккаунты
+        раздаёт владелец. Почта не нужна и не проверяется.</p>
+        <div class="a2-row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+          <input id="ta-login" placeholder="позывной" maxlength="16" style="${inp};width:180px">
+          <input id="ta-pass" placeholder="пароль (мин. 8)" maxlength="40" style="${inp};width:200px">
+          <button class="btn btn-orange btn-inline" id="ta-go">Создать</button>
+          <button class="btn btn-inline" id="ta-rand">Придумать за меня</button>
+        </div>
+        <div id="ta-out"></div>
+      </div>`;
+
+    document.getElementById('ta-rand').onclick = () => {
+      const n = Math.floor(Math.random() * 900 + 100);
+      document.getElementById('ta-login').value = 'Тестер' + n;
+      document.getElementById('ta-pass').value = 'test' + n + 'pass';
+    };
+
+    document.getElementById('ta-go').onclick = async () => {
+      const login = (document.getElementById('ta-login').value || '').trim();
+      const password = (document.getElementById('ta-pass').value || '').trim();
+      if (!login || password.length < 8) return UI.toast('⛔ Нужен позывной и пароль от 8 символов');
+      try {
+        const r = await API.post('/api/admin/test-account', { login, password });
+        // Пароль показываем ОДИН раз и сразу: в базе он лежит только
+        // хешем, а передать тестировщику его надо.
+        document.getElementById('ta-out').innerHTML = `
+          <div class="a2-card" style="margin-top:10px;background:rgba(255,255,255,.03)">
+            <div>✅ Аккаунт создан. Передайте тестировщику:</div>
+            <div style="margin-top:6px;font-family:ui-monospace,Menlo,Consolas,monospace">
+              логин: <b>${UI.esc(r.login)}</b><br>пароль: <b>${UI.esc(r.password)}</b>
+            </div>
+            <p class="a2-muted" style="margin-top:6px">${UI.esc(r.note || '')}
+            Пароль больше нигде не показывается — в базе он хранится только в виде хеша.</p>
+          </div>`;
+        document.getElementById('ta-login').value = '';
+        document.getElementById('ta-pass').value = '';
+        load(document.getElementById('pls-q') ? document.getElementById('pls-q').value.trim() : '');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  }
+
   function render(el, route) {
     const q = route.query.q || '';
     el.innerHTML = `
@@ -64,8 +126,17 @@
         <p class="a2-muted" style="margin:6px 0 0">Строка ведёт на страницу игрока: там счёт, меры,
           выдача, журнал и история состояния — в одном месте.</p>
       </div>
+      <div id="pls-new"></div>
       ${Admin._historyHtml ? `<div class="a2-legacy">${Admin._historyHtml()}</div>` : ''}
       <div class="a2-card"><div id="pls-list"></div></div>`;
+
+    // Выдача аккаунтов — здесь, а не на экране «Обновление», где она
+    // жила раньше. Заводить аккаунты — это работа с игроками, и искать
+    // её приходили сюда; на экране выката её не находили вовсе.
+    // Проверка мира отдельным лёгким запросом: /api/world открыт и
+    // ничего не считает, в отличие от /api/admin/release, который лезет
+    // в git ради номера версии.
+    renderNewAccount();
 
     // История состояния — старый блок как есть: он самый нужный
     // инструмент разбора, и переписывать его ради оформления нельзя.

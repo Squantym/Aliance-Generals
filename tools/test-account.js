@@ -85,7 +85,11 @@ if (String(password).length < 8) {
   // Адрес заведомо недоставляемый: .invalid — зарезервированная зона,
   // письма туда не уходят никогда. Так случайная рассылка не попадёт на
   // чужой настоящий ящик.
-  const mail = `${String(login).toLowerCase().replace(/[^a-z0-9]/g, '') || 'test'}@test.invalid`;
+  // Правило адреса одно на консоль и на кнопку в панели: раньше здесь
+  // была своя копия, и у кириллических позывных все адреса совпадали —
+  // второй русский аккаунт не заводился вовсе.
+  const mail = require(path.join(process.cwd(), 'dist/src/services/testWorld.js'))
+    .testAccountEmail(login);
 
   try {
     await auth.register(login, password, mail, 'ru', '127.0.0.1', 'консоль', {}, '',
