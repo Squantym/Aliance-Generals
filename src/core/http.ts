@@ -98,6 +98,31 @@ function isUsableIp(ip: string): boolean {
   return true;
 }
 
+// ── Подавление повторов в журнале просмотров ──────────────────────
+//
+// Панель перерисовывается на каждое действие и на каждый возврат
+// «назад», поэтому один и тот же раздел открывается десятки раз за
+// разбор одной жалобы. Без этого журнал стал бы нечитаемым ровно там,
+// где он нужнее всего: полсотни одинаковых строк «открыл досье» вместо
+// одной. Срок общий — десять минут: подряд идущие заходы это одна
+// работа, а возврат через полчаса — уже другая.
+const VIEW_TTL_MS = 10 * 60 * 1000;
+const viewSeen = new Map<string, number>();
+
+function viewSeenRecently(userId: string, path: string): boolean {
+  const key = String(userId) + ' ' + String(path);
+  const now = Date.now();
+  const at = viewSeen.get(key) || 0;
+  if (now - at < VIEW_TTL_MS) return true;
+  viewSeen.set(key, now);
+  // Карта живёт в памяти процесса: без уборки она росла бы вместе с
+  // числом разделов и сотрудников до конца работы сервера.
+  if (viewSeen.size > 500) {
+    for (const [k, t] of viewSeen) if (now - t >= VIEW_TTL_MS) viewSeen.delete(k);
+  }
+  return false;
+}
+
 function clientIp(req: any): string {
   const h = req.headers || {};
   // Cloudflare и подобные ставят свой заголовок — он самый надёжный
@@ -752,6 +777,32 @@ function createApp() {
               body: reqCtx.body,
               user: reqCtx.user,
             });
+          }
+
+          // ── Что сотрудник ОТКРЫВАЛ ────────────────────────────────
+          // До сих пор в журнал попадали только POST, то есть действия.
+          // На вопрос «куда заходили» он не отвечал, и, что важнее, не
+          // было видно, кто из сотрудников чьи персональные данные
+          // смотрел: открыть досье и адреса игрока — такое же обращение
+          // к данным, как и правка, только следа от него не оставалось.
+          //
+          // Пишем ТОЛЬКО админские разделы. Логировать переходы игроков
+          // означало бы кратно раздуть журнал ради шума: их тысячи, и
+          // ничего, кроме объёма, это не даёт.
+          if (reqCtx.user && req.method === 'GET' && found.opts.admin) {
+            const desc = logTranslate.describeView(pathname, params);
+            // Незнакомый раздел не пишем вовсе: строка с сырым адресом
+            // в журнале — это ровно то, на что жалуются, «системная
+            // запись, по которой непонятно, что произошло».
+            if (desc && !viewSeenRecently(reqCtx.user.id, pathname)) {
+              auditLog.record({
+                userId: reqCtx.user.id,
+                userName: reqCtx.user.name,
+                path: pathname,
+                desc,
+                params,
+              });
+            }
           }
 
           sendJson(res, 200, result === undefined ? { ok: true } : result, acceptEncoding);

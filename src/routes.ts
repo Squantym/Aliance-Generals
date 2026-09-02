@@ -68,7 +68,13 @@ function humanizeLogs(logs: any[]): any[] {
     const { body, params, ...safe } = l;
     return {
       ...safe,
-      human: l.human || translate.describe(l.path, body, l.result) || l.path,
+      // Порядок важен. Сохранённое при записи описание (desc) идёт ПЕРЕД
+      // пересчётом: в момент записи под рукой были и тело запроса, и
+      // ответ, а здесь — только то, что уложилось в журнал. Пока desc
+      // здесь не читался, описания просмотров пропадали целиком и на
+      // экран шёл сырой адрес вида «/api/admin/dashboard» — ровно та
+      // «системная запись, по которой непонятно, что произошло».
+      human: l.human || l.desc || translate.describe(l.path, body, l.result) || l.path,
     };
   });
 }
@@ -1763,7 +1769,9 @@ function registerRoutes(app: any) {
     const translate = require('./services/logTranslate');
     const rows = logs
       .map((l: any) => {
-        const human = l.human || translate.describe(l.path, l.body, l.result) || '';
+        // desc перед пересчётом — по той же причине, что и в
+        // humanizeLogs: при записи было и тело, и ответ.
+        const human = l.human || l.desc || translate.describe(l.path, l.body, l.result) || '';
         // Сумма золота: из описания или из тела запроса
         const m = /🪙\s*([\d\s]+)/.exec(human);
         const gold = m ? Number(m[1].replace(/\s/g, '')) || 0 : (Number((l.body || {}).gold) || 0);

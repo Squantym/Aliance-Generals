@@ -672,4 +672,75 @@ function describe(path: string, body?: any, result?: any): string | null {
   }
 }
 
-export = { describe };
+// ── Что сотрудник ОТКРЫВАЛ ────────────────────────────────────────
+//
+// Журнал до сих пор писал только POST — то есть действия. На вопрос
+// «куда заходили» он не отвечал вовсе, и главное: не было видно, кто из
+// сотрудников чьи персональные данные смотрел. Для проекта, который сам
+// ссылается на 152-ФЗ, это заметный пробел — просмотр досье такое же
+// обращение к данным, как и правка.
+//
+// Отдельная функция, а не общий describe(): у GET и POST по одному
+// адресу разный смысл («список турниров» против «создал турнир»), и
+// смешивать их в одном переключателе — верный способ однажды подписать
+// просмотр как изменение.
+const VIEW_SECTIONS: Record<string, string> = {
+  '/api/admin/dashboard': 'сводку',
+  '/api/admin/players': 'список игроков',
+  '/api/admin/sessions': 'список входов в игру',
+  '/api/admin/anticheat': 'подозрения античита',
+  '/api/admin/analytics': 'аналитику',
+  '/api/admin/tournaments': 'турниры',
+  '/api/admin/release': 'раздел обновления',
+  '/api/admin/world-reset': 'раздел обнуления мира',
+  '/api/admin/sessions/all': 'полный список входов',
+  '/api/admin/mail/templates': 'шаблоны писем',
+  '/api/admin/mail/broadcast': 'рассылку',
+  '/api/admin/email-status': 'состояние почты',
+  '/api/admin/email-check': 'проверку почты',
+  '/api/admin/net-check': 'проверку сети',
+  '/api/admin/db-integrity': 'целостность базы',
+  '/api/admin/by-device': 'список по устройству',
+  '/api/admin/merc/list': 'наёмников',
+  '/api/admin/merc/holders': 'владельцев наёмников',
+  '/api/admin/event/images': 'картинки события',
+  '/api/admin/lobby-check': 'проверку сбора',
+};
+
+function describeView(path: string, params?: any): string | null {
+  try {
+    const p = String(path || '');
+    const who = (params && (params.name || params.id)) || '';
+
+    // Досье и всё, что раскрывает данные конкретного человека, —
+    // отдельными строками с именем: именно эти записи и нужны, когда
+    // разбираются, кто куда смотрел.
+    if (/^\/api\/admin\/access\/[^/]+$/.test(p)) {
+      return `👁 Смотрел адреса и устройства игрока${who ? ' ' + who : ''}`;
+    }
+    if (/^\/api\/admin\/player-card\/[^/]+$/.test(p)) {
+      return `👁 Открыл досье игрока${who ? ' ' + who : ''}`;
+    }
+    if (/^\/api\/admin\/player-view\/[^/]+$/.test(p)) {
+      return `👁 Смотрел игру глазами игрока${who ? ' ' + who : ''}`;
+    }
+    if (/^\/api\/admin\/player-snapshot\/[^/]+$/.test(p)) {
+      return `👁 Смотрел историю состояния игрока${who ? ' ' + who : ''}`;
+    }
+    if (/^\/api\/admin\/anticheat\/player/.test(p)) {
+      return '👁 Смотрел разбор античита по игроку';
+    }
+    if (/^\/api\/admin\/tournaments\/[^/]+$/.test(p)) return '👁 Открыл турнир';
+    if (/^\/api\/admin\/groups\/[^/]+\/[^/]+$/.test(p)) return '👁 Открыл объединение';
+    if (/^\/api\/admin\/groups\/[^/]+$/.test(p)) return '👁 Смотрел список объединений';
+    if (/^\/api\/admin\/legion\/[^/]+\/state$/.test(p)) return '👁 Смотрел состояние легиона';
+
+    const name = VIEW_SECTIONS[p];
+    if (name) return `👁 Открыл ${name}`;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export = { describe, describeView };
