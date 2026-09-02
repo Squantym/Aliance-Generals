@@ -12,7 +12,9 @@ const db = require('../dist/src/core/db');
 const auth = require('../dist/src/services/auth');
 const player = require('../dist/src/services/player');
 const sanctions = require('../dist/src/services/sanctions');
-const ROOT = process.cwd();
+// Якорь от файла, а не от текущей папки: набор запускают и из корня
+// проекта, и из временной, а файлы проекта лежат на месте всегда.
+const ROOT = path.join(__dirname, '..');
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
 const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); passed++; console.log('  ✅ ' + n); };

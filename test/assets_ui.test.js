@@ -16,7 +16,9 @@ const ach = require('../dist/src/services/achievements');
 const daily = require('../dist/src/services/dailyQuests');
 const features = require('../dist/src/services/features');
 const c = require('../dist/config/gameConfig');
-const ROOT = process.cwd();
+// Якорь от файла, а не от текущей папки: набор запускают и из корня
+// проекта, и из временной, а файлы проекта лежат на месте всегда.
+const ROOT = path.join(__dirname, '..');
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
 const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); passed++; console.log('  ✅ ' + n); };

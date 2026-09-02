@@ -6,7 +6,9 @@
 // (5) поля/гриды не шире экрана.
 const assert = require('assert');
 const path = require('path'), fs = require('fs');
-const ROOT = process.cwd();
+// Якорь от файла, а не от текущей папки: набор запускают и из корня
+// проекта, и из временной, а файлы проекта лежат на месте всегда.
+const ROOT = path.join(__dirname, '..');
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
 

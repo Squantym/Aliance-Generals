@@ -79,7 +79,7 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   throws('старт с некорректной ссылкой отклонён', () => we.adminStart(admin, { name: 'X', hp: 100, image: 'ерунда без домена' }, []));
 
   console.log('\n[5.4] Фото показывается квадратом 300×300');
-  const css = fs.readFileSync(path.join(process.cwd(), 'public/css/style.css'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public/css/style.css'), 'utf8');
   ok('ширина поля 300px', /\.boss-photo \{[^}]*width: 300px/.test(css));
   ok('квадратная пропорция', /\.boss-photo \{[^}]*aspect-ratio: 1 \/ 1/.test(css));
   ok('картинка вписывается (object-fit: cover)', /\.boss-photo \{[^}]*object-fit: cover/.test(css));

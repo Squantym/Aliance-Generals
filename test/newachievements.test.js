@@ -69,11 +69,11 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   ach.bump(u2, 'dodgesInFatality', 1, []);
   ok('этап «Неуловимый» выдан (порог 1)', (u2.achStages.fatDodges || 0) >= 1);
   // Проверяем, что точка инкремента в коде существует (статически)
-  const src = fs.readFileSync(path.join(process.cwd(), 'src/services/battle.ts'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src/services/battle.ts'), 'utf8');
   ok('в коде боя есть инкремент dodgesInFatality у цели', /dodgesInFatality/.test(src));
 
   console.log('\n[7] Достижения легиона: победы/урон/прикрытие/лечение (точки в коде + пороги)');
-  const lbSrc = fs.readFileSync(path.join(process.cwd(), 'src/services/legionBattle.ts'), 'utf8');
+  const lbSrc = fs.readFileSync(path.join(__dirname, '..', 'src/services/legionBattle.ts'), 'utf8');
   ok('в финализации боя легиона есть legionWins', /legionWins/.test(lbSrc));
   ok('есть legionDamageDealt (по stats.dmgDealt)', /legionDamageDealt/.test(lbSrc) && /st\.dmgDealt/.test(lbSrc));
   ok('есть legionDamageCovered (по stats.guardedDmg)', /legionDamageCovered/.test(lbSrc) && /st\.guardedDmg/.test(lbSrc));

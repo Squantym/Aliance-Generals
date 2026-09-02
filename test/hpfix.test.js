@@ -4,6 +4,10 @@
 // Запуск: node test/hpfix.test.js  (после npm run build)
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
+// Якорь от файла, а не от текущей папки: набор запускают и из корня
+// проекта, и из временной.
+const ROOT = path.join(__dirname, '..');
 const c = require('../dist/config/gameConfig');
 const db = require('../dist/src/core/db');
 const battle = require('../dist/src/services/battle');
@@ -16,13 +20,13 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
 
 // ===================================================================
 console.log('\n[1] CSS: --orange определена во всех темах (была undefined — ломала градиент полосы HP)');
-const css = fs.readFileSync('public/css/style.css', 'utf8');
+const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
 const orange1Count = (css.match(/--orange-1:/g) || []).length;
 const orangeAliasCount = (css.match(/--orange: var\(--orange-1\)/g) || []).length;
 eq('число тем с --orange-1', orange1Count, orangeAliasCount);
 ok('хотя бы одна тема есть', orange1Count > 0);
 const files = ['app.js','admin.js','ui.js','screens/core.js','screens/market.js','screens/social.js','screens/war.js']
-  .map((f) => fs.readFileSync('public/js/' + f, 'utf8'));
+  .map((f) => fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8'));
 const usesOrange = files.some((f) => f.includes('var(--orange)'));
 ok('var(--orange) всё ещё используется во фронте (не переписывали 21 место)', usesOrange);
 ok('и она теперь ОПРЕДЕЛЕНА в каждой теме CSS', orangeAliasCount >= 7);
