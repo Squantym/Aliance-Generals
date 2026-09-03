@@ -459,7 +459,28 @@ async function register(login: string, password: string, emailAddr: string, coun
   const salt = u.uid(16);
   const id = u.uid(12);
   const autoVerified = !email.isConfigured;
-  const newU = newUser(id, login, emailAddr, await u.hashPassword(password, salt), salt, country, false, autoVerified);
+  const passHash = await u.hashPassword(password, salt);
+
+  // ПОВТОРНАЯ ПРОВЕРКА ЗАНЯТОСТИ — обязательна, и вот почему.
+  //
+  // Хеширование пароля намеренно медленное, это его работа. Всё это
+  // время обработчик стоит на await, а сервер обслуживает другие
+  // запросы. Два одновременных обращения с одним позывным проходили
+  // проверку ОБА — на тот момент в базе ещё ничего нет, — и оба доходили
+  // до записи. Получались два аккаунта с одним именем: findByName
+  // возвращал произвольный из них, восстановление пароля по почте
+  // становилось неоднозначным, а имя в чате переставало указывать на
+  // конкретного человека. Хватало двойного нажатия по кнопке.
+  //
+  // Проверка стоит ПОСЛЕ ожидания, и дальше до самой записи нет ни
+  // одного await: этот кусок выполняется целиком, ничего между строк не
+  // проходит. Поэтому второй запрос увидит уже созданного игрока.
+  const takenName = Object.values(all).find((p) => p.name.toLowerCase() === login.toLowerCase());
+  const takenMail = Object.values(all).find((p) => (p.email || '').toLowerCase() === emailAddr);
+  if (takenName) throw new u.ApiError('Такой позывной уже занят');
+  if (takenMail) throw new u.ApiError('Этот email уже используется');
+
+  const newU = newUser(id, login, emailAddr, passHash, salt, country, false, autoVerified);
   // Согласия пишем сразу, вместе с версией документа, временем и адресом.
   // Это и есть доказательство: без версии нельзя показать, ЧТО именно
   // человек принял, а без времени и адреса — что принял он.
