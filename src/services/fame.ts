@@ -18,6 +18,7 @@
 // ===================================================================
 
 import db = require('../core/db');
+import u = require('../core/utils');
 import player = require('./player');
 import type { User } from '../types';
 
@@ -96,10 +97,7 @@ const CATEGORIES = [
 ];
 
 // ── МСК-дата в формате YYYY-MM-DD ─────────────────────────────────
-function mskDateKey(): string {
-  const d = new Date(Date.now() + 3 * 3600 * 1000);
-  return d.toISOString().slice(0, 10);
-}
+function mskDateKey(): string { return u.dayKey(); }
 
 // ── Создать снапшот из ТЕКУЩИХ данных игроков ─────────────────────
 // Вызывается только при смене дня — сохраняет «базу» для расчёта дельты.
@@ -205,7 +203,7 @@ function fame() {
 
 // ── Сброс в 23:59 МСК (вызывается из server.js каждые 30 сек) ────
 function resetDailyIfNeeded(): void {
-  const now = new Date(Date.now() + 3 * 3600 * 1000); // UTC+3
+  const now = new Date(Date.now() + u.MSK_OFFSET_MS); // UTC+3
   const h = now.getUTCHours(), m = now.getUTCMinutes();
   if (h === 23 && m === 59) {
     const stored = loadSnap();

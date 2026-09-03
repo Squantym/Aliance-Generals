@@ -28,18 +28,15 @@
 
 import db = require('../core/db');
 import player = require('./player');
+import u = require('../core/utils');
 
 const DAY = 24 * 3600 * 1000;
 
-// Начало суток по МСК: сутки игры считаем от 00:00 московского времени,
-// иначе «новые за сегодня» скакали бы посреди вечера.
-function dayStart(ts: number): number {
-  const shifted = ts + 3 * 3600 * 1000;
-  return Math.floor(shifted / DAY) * DAY - 3 * 3600 * 1000;
-}
-function dayKey(ts: number): string {
-  return new Date(dayStart(ts) + 3 * 3600 * 1000).toISOString().slice(0, 10);
-}
+// Сутки игры — от 00:00 московского времени, иначе «новые за сегодня»
+// скакали бы посреди вечера. Само правило живёт в core/utils, здесь —
+// только короткие имена, которыми пользуется весь файл.
+const dayStart = u.dayStart;
+const dayKey = u.dayKey;
 
 function livePlayers(): any[] {
   const users: Record<string, any> = player.users();

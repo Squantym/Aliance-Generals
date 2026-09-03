@@ -34,11 +34,10 @@ function plots(user: User): any[] {
   return user.mines;
 }
 
-// «День» по Москве (UTC+3): сдвигаем время на +3ч и берём календарную дату.
-function todayMskKey(): string {
-  const d = new Date(Date.now() + 3 * 3600 * 1000);
-  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
-}
+// «День» по Москве — общий для всей игры ключ суток. Раньше здесь был
+// свой формат «2026-8-3» (месяц с нуля, без ведущих нулей); он ни с чем
+// не сравнивался, кроме себя, но выглядел как ошибка и мешал читать базу.
+function todayMskKey(): string { return u.dayKey(); }
 
 function ensureDaily(mine: any): void {
   const today = todayMskKey();

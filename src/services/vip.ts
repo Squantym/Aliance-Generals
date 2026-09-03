@@ -41,10 +41,7 @@ function vipInfo(user: any): { active: boolean; until: number; daysLeft: number 
 // ---------- Суточные счётчики ----------
 // Отдельный набор от dailyQuests: там свои сбросы и своя логика,
 // смешивать их значило бы связать несвязанное.
-function mskDayKey(ts?: number): string {
-  const d = new Date((ts || Date.now()) + 3 * 3600 * 1000);   // МСК = UTC+3
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
+function mskDayKey(ts?: number): string { return u.dayKey(ts); }
 
 function daily(user: any): any {
   const key = mskDayKey();

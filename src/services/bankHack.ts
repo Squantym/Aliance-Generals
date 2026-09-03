@@ -99,10 +99,8 @@ function history(user: User) {
   };
 }
 
-function today(): string {
-  // День по МСК (UTC+3): новый день наступает в 00:00 МСК
-  return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
-}
+// День по МСК: новый день наступает в 00:00 МСК (правило — u.dayKey)
+function today(): string { return u.dayKey(); }
 
 // Сбрасывает суточные лимиты (счётчик попыток + список жертв), если
 // наступил новый день

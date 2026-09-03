@@ -26,6 +26,7 @@
 import fs = require('fs');
 import path = require('path');
 import zlib = require('zlib');
+import u = require('./utils');
 
 type Row = { id: string; data: string };
 
@@ -518,7 +519,7 @@ const LOG_HOT_DAYS = 7;
 // Сутки по МСК — как и везде в проекте, чтобы «день» не переключался
 // посреди вечера по местному времени игроков.
 function logDayKey(ts: number): string {
-  return new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  return u.dayKey(ts);
 }
 
 // Упаковка порциями. Сжать разом двухмесячный хвост при 500 игроках —
@@ -550,7 +551,7 @@ function packOldLogs(maxPacks = 6): any {
     const groups: any[] = db.prepare(
       `SELECT user_id AS uid, COUNT(*) AS n, MIN(at) AS from_at, MAX(at) AS to_at
          FROM action_logs WHERE at < ?
-        GROUP BY user_id, CAST((at + 10800000) / 86400000 AS INTEGER)
+        GROUP BY user_id, CAST((at + ${u.MSK_OFFSET_MS}) / 86400000 AS INTEGER)
         ORDER BY from_at ASC LIMIT ?`
     ).all(cutoff, maxPacks) as any[];
 
@@ -558,7 +559,7 @@ function packOldLogs(maxPacks = 6): any {
       const uid = g.uid || '';
       const day = logDayKey(g.from_at);
       // Границы этих суток по МСК — берём ровно те строки, что вошли в группу
-      const dayStart = Math.floor((g.from_at + 10800000) / 86400000) * 86400000 - 10800000;
+      const dayStart = u.dayStart(g.from_at);
       const dayEnd = dayStart + 86400000;
       const sel = uid
         ? db.prepare('SELECT seq, data FROM action_logs WHERE at >= ? AND at < ? AND user_id = ? ORDER BY seq ASC')
@@ -646,7 +647,7 @@ function logStats(): any {
     // Самая старая запись может лежать в упакованном блоке
     let oldestAt = r ? r.oldest || 0 : 0;
     if (p && p.oldestDay) {
-      const packOldest = Date.parse(p.oldestDay + 'T00:00:00Z') - 3 * 3600 * 1000;
+      const packOldest = Date.parse(p.oldestDay + 'T00:00:00Z') - u.MSK_OFFSET_MS;
       if (!oldestAt || packOldest < oldestAt) oldestAt = packOldest;
     }
     return {
@@ -790,7 +791,9 @@ function backup(label = 'auto', keep = 14): string {
 // Возвращает путь и размер: worldReset обязан убедиться, что файл
 // действительно записался и не пуст, ПРЕЖДЕ чем что-либо стирать.
 function freezeWorld(n: number): { file: string; bytes: number } {
-  const day = new Date().toISOString().slice(0, 10);
+  // Дата в имени снимка — по МСК, как и все прочие даты в игре: иначе
+  // снимок, снятый ночью, назывался бы вчерашним числом.
+  const day = u.dayKey();
   const nn = String(n).padStart(2, '0');
   let target = path.join(worldsDir, `mir-${nn}-${day}.db`);
   let i = 1;

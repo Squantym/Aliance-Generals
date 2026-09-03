@@ -251,7 +251,7 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
 // Время окончания текущего аукциона: ближайшие 23:59:59 по Москве (UTC+3).
 // Эффекты начинают действовать в 00:00 (сразу после закрытия).
 function auctionEndMsk(now: number): number {
-  const MSK_OFFSET = 3 * 3600 * 1000;
+  const MSK_OFFSET = u.MSK_OFFSET_MS;
   const mskNow = new Date(now + MSK_OFFSET);
   // Конец текущих МСК-суток: 23:59:59.999
   const endMsk = Date.UTC(

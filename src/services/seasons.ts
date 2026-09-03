@@ -13,7 +13,7 @@ import player = require('./player');
 import u = require('../core/utils');
 import type { User, Notices } from '../types';
 
-const MSK_OFFSET_MS = 3 * 3600 * 1000; // МСК = UTC+3
+const MSK_OFFSET_MS = u.MSK_OFFSET_MS; // МСК = UTC+3, определение — в core/utils
 
 function users(): Record<string, User> { return player.users(); }
 

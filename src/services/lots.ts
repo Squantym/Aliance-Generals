@@ -45,10 +45,7 @@ function store(): Record<string, DayLots> {
 }
 
 // Ключ суток по Москве — как и остальные суточные механики игры
-function mskDay(ts?: number): string {
-  const d = new Date((ts || Date.now()) + 3 * 3600 * 1000);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
+function mskDay(ts?: number): string { return u.dayKey(ts); }
 
 // Детерминированный генератор: одинаковый набор для всех игроков.
 // Обычный Math.random() выдавал бы разным игрокам разные лоты.
@@ -186,8 +183,7 @@ function view(user: User) {
 
   // До полуночи по Москве
   const now = Date.now();
-  const mskNow = new Date(now + 3 * 3600 * 1000);
-  const endOfDay = Date.UTC(mskNow.getUTCFullYear(), mskNow.getUTCMonth(), mskNow.getUTCDate() + 1) - 3 * 3600 * 1000;
+  const endOfDay = u.dayStart(now) + 24 * 3600 * 1000;
 
   return {
     day,

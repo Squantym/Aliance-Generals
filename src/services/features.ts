@@ -15,10 +15,8 @@ import player = require('./player');
 import trophies = require('./trophies');
 import type { User, Notices } from '../types';
 
-function today(): string {
-  // День по МСК (UTC+3): новый день наступает в 00:00 МСК
-  return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
-}
+// День по МСК: новый день наступает в 00:00 МСК (правило — u.dayKey)
+function today(): string { return u.dayKey(); }
 function users(): Record<string, User> { return player.users(); }
 
 // ===================================================================
@@ -35,7 +33,7 @@ function claimDailyIfDue(user: User, notices?: Notices): any | null {
 
   // Определяем серию: если вчера заходил — продолжаем, иначе сброс на 1.
   // После 7-го дня серия сбрасывается и начинается заново с 1.
-  const yesterday = new Date(Date.now() + 3 * 3600 * 1000 - 86400000).toISOString().slice(0, 10);
+  const yesterday = u.dayKey(Date.now() - 86400000);
   let streak;
   if (user.lastLoginDay === yesterday) {
     streak = (user.loginStreak || 0) + 1;

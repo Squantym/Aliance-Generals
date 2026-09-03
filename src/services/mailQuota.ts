@@ -22,6 +22,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import db = require('../core/db');
+import u = require('../core/utils');
 
 // Потолки тарифа. По умолчанию — бесплатный тариф SMTP.BZ: 15 000 в
 // месяц и 500 в сутки. Меняются в .env, если тариф другой.
@@ -48,8 +49,12 @@ type Counters = {
   lastAt: number;
 };
 
-function today(): string { return new Date().toISOString().slice(0, 10); }
-function thisMonth(): string { return new Date().toISOString().slice(0, 7); }
+// Сутки — общие для всей игры, от московской полуночи (u.dayKey).
+// Раньше здесь стоял new Date() без сдвига, и суточный лимит писем
+// сбрасывался в 03:00 по Москве: три часа после полуночи расход считался
+// вчерашним, а рассылка в это время могла съесть чужой день.
+function today(): string { return u.dayKey(); }
+function thisMonth(): string { return u.monthKey(); }
 
 function state(): Counters {
   const s = db.load<Counters>('mailQuota', {} as Counters);
