@@ -275,7 +275,7 @@
             <input id="pl-pass" type="password" autocomplete="new-password" placeholder="новый пароль…"
               style="flex:1;min-width:180px;padding:6px 10px;background:var(--bg);color:var(--text);
                      border:1px solid var(--border);border-radius:8px">
-            <button class="btn btn-inline" id="pl-pass-eye" title="Показать пароль">👁</button>
+            <button class="btn btn-inline pw-ico" id="pl-pass-eye" type="button" aria-label="Показать пароль">${UI.EYE_ON}</button>
             <button class="btn btn-orange btn-inline" id="pl-pass-go">Установить</button>
           </div>
         </div>
@@ -343,7 +343,13 @@
     const eye = document.getElementById('pl-pass-eye');
     if (eye) {
       const inp = document.getElementById('pl-pass');
-      eye.onclick = () => { inp.type = inp.type === 'password' ? 'text' : 'password'; };
+      eye.onclick = () => {
+        const show = inp.type === 'password';
+        inp.type = show ? 'text' : 'password';
+        eye.innerHTML = show ? UI.EYE_OFF : UI.EYE_ON;
+        eye.classList.toggle('on', show);
+        eye.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
+      };
     }
     const passGo = document.getElementById('pl-pass-go');
     if (passGo) passGo.onclick = async () => {

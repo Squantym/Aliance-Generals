@@ -1975,7 +1975,7 @@ proxy_set_header Host $host;</pre>
         <label class="field-label">Новый пароль для игрока</label>
         <div class="field-row">
           <input type="password" id="tech-pass" class="field" placeholder="новый пароль…" style="flex:1" autocomplete="new-password" ${t ? '' : 'disabled'}>
-          <button class="btn btn-inline" id="tech-pass-eye" title="Показать пароль">👁</button>
+          <button class="btn btn-inline pw-ico" id="tech-pass-eye" type="button" aria-label="Показать пароль">${UI.EYE_ON}</button>
         </div>
         <button class="btn btn-orange mt" id="tech-pass-go" style="width:100%" ${t ? '' : 'disabled'}>
           🔑 Установить пароль${t ? ` игроку «${UI.esc(t.name)}»` : ''}
@@ -2032,8 +2032,13 @@ proxy_set_header Host $host;</pre>
 
     // Показать/скрыть пароль
     const passInput = document.getElementById('tech-pass');
-    document.getElementById('tech-pass-eye').onclick = () => {
-      passInput.type = passInput.type === 'password' ? 'text' : 'password';
+    const techEye = document.getElementById('tech-pass-eye');
+    techEye.onclick = () => {
+      const show = passInput.type === 'password';
+      passInput.type = show ? 'text' : 'password';
+      techEye.innerHTML = show ? UI.EYE_OFF : UI.EYE_ON;
+      techEye.classList.toggle('on', show);
+      techEye.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
     };
 
     // Установка пароля

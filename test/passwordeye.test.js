@@ -89,6 +89,39 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('кнопка описана', /\.pw-eye\s*\{/.test(css));
   ok('поле оставляет место под кнопку', /\.pw-wrap\s*>\s*input\s*\{[^}]*padding-right/.test(css));
 
+  console.log('\n── 7. Браузерный глаз погашен ──');
+  // Edge рисует свой значок прямо в поле. Рядом с нашим получалось два
+  // глаза подряд, и хуже того — браузерный переключал поле мимо нашей
+  // кнопки, после чего она показывала не то состояние.
+  ok('::-ms-reveal скрыт', /::-ms-reveal[^{]*\{[^}]*display:\s*none/.test(css));
+  ok('::-ms-clear тоже', /::-ms-clear/.test(css));
+  ok('значок автозаполнения Safari убран',
+     /::-webkit-(credentials|strong-password)-auto-fill-button/.test(css));
+
+  console.log('\n── 8. Значок один и тот же везде ──');
+  // Просили «крутой кастомный, а не системный». Эмодзи 👁 — системный:
+  // его рисует шрифт устройства, и на Android, Windows и iOS это три
+  // разных картинки. Проверяем, что ни одна кнопка показа пароля к нему
+  // не вернулась.
+  const uiSrc = fs.readFileSync(path.join(ROOT, 'public/js/ui.js'), 'utf8');
+  const withEye = ['public/js/admin.js', 'public/js/admin2/player.js', 'public/js/screens/core.js']
+    .map((f) => [f, fs.readFileSync(path.join(ROOT, f), 'utf8')]);
+  const emojiBtns = withEye
+    .filter(([, src]) => /id="[a-z0-9-]*-eye"[^>]*>\s*👁/.test(src))
+    .map(([f]) => f);
+  ok(emojiBtns.length ? `эмодзи-глаз вернулся в: ${emojiBtns.join(', ')}` : 'кнопки показа пароля рисуют свой значок',
+     emojiBtns.length === 0);
+  ok('панель берёт значок из общего места (UI.EYE_ON)',
+     withEye.filter(([, src]) => /UI\.EYE_ON/.test(src)).length >= 2);
+  ok('значок описан ровно в одном файле',
+     /EYE_ON:/.test(uiSrc) && withEye.every(([, src]) => !/EYE_ON:/.test(src)));
+
+  // И проверка на слом: правило обязано отличать эмодзи от значка.
+  ok('образец с эмодзи распознаётся',
+     /id="[a-z0-9-]*-eye"[^>]*>\s*👁/.test('<button id="x-eye" title="a">👁</button>'));
+  ok('образец со значком — нет',
+     !/id="[a-z0-9-]*-eye"[^>]*>\s*👁/.test('<button id="x-eye">${UI.EYE_ON}</button>'));
+
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });
