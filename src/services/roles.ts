@@ -161,7 +161,9 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/(reset|reset-missions|reset-param|set-password)$/, 'security'],
   [/^\/api\/admin\/(players|logs|db-integrity)$/,   'players'],
   // Сводка и карточка игрока — рабочий стол сотрудника, зона «Игроки»
-  [/^\/api\/admin\/(dashboard|player-card|access)/, 'players'],
+  // player-note — служебные заметки о игроке. Зона та же, что у досье:
+  // кто может открыть карточку, тот может и записать в неё пометку.
+  [/^\/api\/admin\/(dashboard|player-card|access|player-note)/, 'players'],
   [/^\/api\/admin\/(multi-check|net-check|email-status|verify-email|email-check|lobby-check|lobby-reset)/, 'security'],
   // Открытые входы и выброс из кабинета — «Безопасность»: это работа с
   // доступом, а не с самим игроком. «Кто ещё заходил с устройства» —

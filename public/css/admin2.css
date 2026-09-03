@@ -247,3 +247,17 @@ body.a2-is-test #a2-root { padding-top: 26px; }
   .a2-world-bar { font-size: 11px; padding: 4px 8px; }
   body.a2-is-test #a2-root { padding-top: 34px; }
 }
+
+/* ── Опасная группа в меню ──────────────────────────────────────────
+   «Обновление» и «Обнуление мира» лежали в общем списке рядом с
+   «Игроками», куда заходят по двадцать раз за смену. Отбивка сверху и
+   красный оттенок — чтобы промах мышью требовал заметить, что цель
+   другого рода. Особенно на телефоне, где список уже. */
+.a2-group.is-danger {
+  margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid rgba(200, 70, 60, .35);
+  color: var(--red);
+}
+.a2-nav.is-danger { color: #d98b84; }
+.a2-nav.is-danger:hover { background: rgba(200, 70, 60, .12); color: #f0b3ad; }
+.a2-nav.is-danger.is-active { background: rgba(200, 70, 60, .2); color: #f6c9c4; }

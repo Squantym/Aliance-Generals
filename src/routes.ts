@@ -1282,6 +1282,36 @@ function registerRoutes(app: any) {
 
   // Карточка игрока для администратора: всё нужное в одном ответе,
   // чтобы не собирать её из пяти запросов
+  // ── Служебные заметки о игроке ───────────────────────────────────
+  // Видны ТОЛЬКО сотрудникам и игроку не отдаются ни одной ручкой: это
+  // рабочие пометки разбиравшего, а не переписка с человеком.
+  app.add('POST', '/api/admin/player-note', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    const note = require('./services/playerNotes').add(req.user, target.id, String(req.body.text || ''));
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/player-note',
+      body: { targetName: target.name, len: note.text.length },
+    });
+    n.push('📝 Заметка добавлена');
+    return { note };
+  }), { admin: true });
+
+  app.add('POST', '/api/admin/player-note/delete', act((req, n) => {
+    if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
+    const target = player.users()[String(req.body.userId || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
+    require('./services/playerNotes').remove(
+      req.user, target.id, String(req.body.noteId || ''), roles.isOwner(req.user));
+    auditLog.record({
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/player-note/delete',
+      body: { targetName: target.name },
+    });
+    n.push('🗑 Заметка убрана');
+    return { ok: true };
+  }), { admin: true });
+
   app.add('GET', '/api/admin/player-card/:id', async (req) => {
     if (!roles.canAccessZone(req.user, 'players')) throw new u.ApiError('Недостаточно прав');
     const target = player.users()[String(req.params.id || '')];
@@ -1290,8 +1320,18 @@ function registerRoutes(app: any) {
     const accBan = roles.accountBanInfo(target);
     let recent: any[] = [];
     try { recent = humanizeLogs((await auditLog.listForUser(target.id, 15)) || []); } catch (e) {}
+    // Служебные заметки: то, что знает разбиравший сотрудник и чего нет
+    // в журнале. Без них каждый следующий разбор начинается с нуля — в
+    // том числе у того же самого человека через месяц.
+    let notes: any[] = [];
+    try { notes = require('./services/playerNotes').list(target.id); } catch (e) {}
     const now = Date.now();
     return {
+      notes,
+      // Может ли смотрящий убрать чужую заметку. Свою — всегда, чужую —
+      // только владелец: иначе запись «выдал себе ресурсы» жила бы ровно
+      // до того, как её увидит тот, о ком она.
+      notesCanRemoveAny: roles.isOwner(req.user),
       id: target.id, name: target.name, level: target.level,
       flag: player.flag(target), role: roles.roleOf(target), roleLabel: roles.roleLabel(target),
       createdAt: (target as any).createdAt || 0,

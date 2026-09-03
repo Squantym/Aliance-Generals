@@ -462,6 +462,10 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/admin/release/promote':
         return `🚀 Выкатил на БОЕВОЙ версию ${String((body && body.commit) || '—').slice(0, 8)}`
           + `${body && body.target ? ` → ${body.target}` : ''}`;
+      case '/api/admin/player-note':
+        return '📝 Оставил заметку о игроке ' + String((body && body.targetName) || '—');
+      case '/api/admin/player-note/delete':
+        return '🗑 Убрал заметку о игроке ' + String((body && body.targetName) || '—');
       case '/api/admin/test-account':
         return `🧪 Создал тестовый аккаунт «${String((body && body.login) || '—')}»`;
       case '/api/login-reward/claim':     return '🎁 Забрал награду за вход';

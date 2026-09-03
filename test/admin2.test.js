@@ -225,7 +225,14 @@ ok(!!document.getElementById('a2-root'), 'каркас отрисован');
 ok(!!document.getElementById('a2-side'), 'боковое меню на месте');
 const navIds = Array.from(document.querySelectorAll('#a2-side .a2-nav')).map((a) => a.dataset.nav);
 ok(navIds.indexOf('queue') === 0, 'первым пунктом — очередь работ');
-ok(navIds.length === A2.NAV.length, `у владельца видны все разделы: ${navIds.length}`);
+// Не «все пункты NAV», а все НЕскрытые: «Защита входа» намеренно убрана
+// из списка разделов — это личная настройка сотрудника, а не раздел
+// игры, и ссылка на неё стоит рядом с его именем. Маршрут при этом
+// остался, см. проверку ниже.
+const visibleNav = A2.NAV.filter((n) => !n.hidden);
+ok(navIds.length === visibleNav.length,
+   `у владельца видны все разделы, кроме скрытых: ${navIds.length} из ${A2.NAV.length}`);
+ok(A2.NAV.some((n) => n.hidden), 'скрытые пункты вообще существуют — иначе проверка выше пустая');
 ok(location.hash === '#/queue', `после входа адрес осмысленный: ${location.hash}`);
 
 console.log('\n── 3. Очередь работ показывает работу, а не статистику ──');
@@ -647,8 +654,18 @@ ok(/один раз/.test(recBox.textContent), 'сказано, что пока�
 const savedZ3 = Admin.zones.slice();
 Admin.zones = ['support'];
 A2.renderNav();
-ok(Array.from(document.querySelectorAll('#a2-side .a2-nav')).some((a) => a.dataset.nav === 'security'),
-   'раздел виден сотруднику с любыми правами');
+// В СПИСКЕ РАЗДЕЛОВ его теперь нет намеренно: это личная настройка, а не
+// раздел игры. Но доступен он по-прежнему любому сотруднику — это и
+// проверяем, плюс наличие ссылки рядом с именем. Иначе «убрал из меню»
+// незаметно превратилось бы в «убрал совсем».
+const secItem = A2.find('security');
+ok(!!secItem && A2.visible(secItem), 'раздел доступен сотруднику с любыми правами');
+ok(secItem.hidden === true, 'но в списке разделов не показывается');
+ok(!Array.from(document.querySelectorAll('#a2-side .a2-nav')).some((a) => a.dataset.nav === 'security'),
+   'в боковом меню его действительно нет');
+const whoBox = document.querySelector('.a2-who');
+ok(!!whoBox && /security/.test(whoBox.innerHTML),
+   'ссылка на защиту входа стоит рядом с именем сотрудника');
 Admin.zones = savedZ3;
 
 console.log('\n── 24. Новая панель не выдаёт старую в обход ADMIN_PATH ──');

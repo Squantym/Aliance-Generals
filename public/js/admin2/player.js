@@ -51,6 +51,65 @@
     return rows.join('');
   }
 
+  // ── Служебные заметки ──────────────────────────────────────────────
+  //
+  // То, что знает разбиравший сотрудник и чего нет в журнале: «жаловался
+  // дважды, оба раза не подтвердилось», «обещал вернуть выданное по
+  // ошибке». Без этого каждый следующий разбор начинается с нуля — в том
+  // числе у того же человека через месяц.
+  //
+  // Заметки видны ТОЛЬКО сотрудникам. Игроку они не отдаются ни одной
+  // ручкой: это рабочие пометки, а не переписка с ним.
+  function renderNotes(p) {
+    const box = document.getElementById('pl-notes');
+    if (!box) return;
+    const notes = p.notes || [];
+    const rows = notes.map((n) => `
+      <div class="a2-item">
+        <div class="a2-item-ico">📝</div>
+        <div class="a2-item-txt">
+          <div style="white-space:pre-line">${UI.esc(n.text)}</div>
+          <div class="a2-item-when">${UI.esc(n.byName || '—')} · ${dt(n.at)}</div>
+        </div>
+        ${(p.notesCanRemoveAny || n.by === (Admin.me && Admin.me.id))
+          ? `<button class="btn btn-inline" data-note-del="${UI.esc(n.id)}" title="Убрать заметку">✕</button>` : ''}
+      </div>`).join('');
+
+    box.innerHTML = `
+      <h3>Заметки сотрудников ${notes.length ? `(${notes.length})` : ''}</h3>
+      <p class="a2-muted">Видны только сотрудникам. Игрок их не увидит никогда — для разговора
+      с человеком есть обращения в поддержку.</p>
+      ${rows || '<p class="a2-muted">Пока пусто. Первая заметка избавит следующего разбирающего — возможно, вас же — от чтения журнала заново.</p>'}
+      <div class="a2-row" style="margin-top:10px;align-items:flex-start">
+        <textarea id="pl-note-text" rows="2" maxlength="1000"
+          placeholder="Что стоит знать о человеке в следующий раз…"
+          style="flex:1;min-width:220px;padding:6px 10px;background:var(--bg);color:var(--text);
+                 border:1px solid var(--border);border-radius:8px;resize:vertical;font:inherit"></textarea>
+        <button class="btn btn-inline" id="pl-note-add">Записать</button>
+      </div>`;
+
+    document.getElementById('pl-note-add').onclick = async () => {
+      const el = document.getElementById('pl-note-text');
+      const text = (el.value || '').trim();
+      if (!text) return UI.toast('⛔ Заметка пустая');
+      try {
+        await API.post('/api/admin/player-note', { userId: p.id, text });
+        el.value = '';
+        A2.refresh();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+
+    box.querySelectorAll('[data-note-del]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await API.post('/api/admin/player-note/delete',
+            { userId: p.id, noteId: b.dataset.noteDel });
+          A2.refresh();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+  }
+
   // ── Адреса и устройства ────────────────────────────────────────────
   //
   // В прежней панели это было (Admin.showAccess), а в новой раздел
@@ -236,6 +295,8 @@
         </div>
       </details>` : ''}
 
+      <div class="a2-card" id="pl-notes"></div>
+
       <div class="a2-card" id="pl-access">
         <h3>Адреса и устройства</h3>
         <p class="a2-muted">Загружаю…</p>
@@ -245,6 +306,8 @@
         <h3>Последние действия</h3>
         ${recent || '<p class="a2-muted">Записей нет.</p>'}
       </div>`;
+
+    renderNotes(p);
 
     // Адреса грузим ОТДЕЛЬНЫМ запросом и после отрисовки карточки: это
     // самый тяжёлый раздел досье, и если он не ответит, всё остальное —

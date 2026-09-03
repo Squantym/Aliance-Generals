@@ -34,28 +34,35 @@ const A2 = {
     { id: 'events',     label: 'Событие',       icon: '🐉', group: 'Игра', zone: 'event',   legacy: 'renderEvents' },
     { id: 'tournament', label: 'Турниры',       icon: '⚔️', group: 'Игра', zone: 'legions', legacy: 'renderTournament' },
     { id: 'legions',    label: 'Легионы',       icon: '🎖', group: 'Игра', zone: 'legions', legacy: 'renderLegions' },
-    { id: 'analytics',  label: 'Аналитика',     icon: '📈', group: 'Служебное', zone: 'analytics', legacy: 'renderAnalytics' },
-    { id: 'logs',       label: 'Журнал',        icon: '📋', group: 'Служебное', zone: 'players',   legacy: 'renderLogs' },
-    { id: 'tech',       label: 'Техника',       icon: '🔧', group: 'Служебное', zone: 'security',  legacy: 'renderTech' },
-    { id: 'roles',      label: 'Роли',          icon: '🛡', group: 'Служебное', zone: 'roles',     legacy: 'renderRoles' },
+    // ── Разбор: сюда идут с вопросом «что произошло» ──────────────
+    { id: 'analytics',  label: 'Аналитика',     icon: '📈', group: 'Разбор', zone: 'analytics', legacy: 'renderAnalytics' },
+    { id: 'logs',       label: 'Журнал',        icon: '📋', group: 'Разбор', zone: 'players',   legacy: 'renderLogs' },
+    { id: 'sessions',   label: 'Открытые входы', icon: '🚪', group: 'Разбор', zone: 'security' },
+    // ── Настройка: сюда идут менять правила, а не разбираться ─────
+    { id: 'roles',      label: 'Роли',          icon: '🛡', group: 'Настройка', zone: 'roles', legacy: 'renderRoles' },
     // Значок валюты — картинкой, как в игре: сотрудник ищет глазом
     // знакомую монету, а не эмодзи, которое в каждой системе своё.
-    { id: 'gold',       label: 'Золото',        icon: '<span class="ic-gold"></span>', group: 'Служебное', zone: 'roles', legacy: 'renderGold', ownerOnly: true },
-    // Защита собственного входа доступна КАЖДОМУ сотруднику независимо
-    // от зон: это его учётная запись, а не раздел игры.
-    { id: 'security',   label: 'Защита входа',  icon: '🔐', group: 'Служебное' },
-    { id: 'sessions',   label: 'Открытые входы', icon: '🚪', group: 'Служебное', zone: 'security' },
+    { id: 'gold',       label: 'Золото',        icon: '<span class="ic-gold"></span>', group: 'Настройка', zone: 'roles', legacy: 'renderGold', ownerOnly: true },
     // Письма уходят от имени игры — правит только владелец
-    { id: 'mail',       label: 'Письма',        icon: '✉️', group: 'Служебное', zone: 'roles', ownerOnly: true },
-    // Остановка игры и выкат кода. Только владелец: раздать это
-    // администратору значит раздать возможность остановить проект.
-    { id: 'release',    label: 'Обновление',    icon: '🚀', group: 'Служебное', zone: 'roles', ownerOnly: true },
-    // Обнуление мира — последним в списке намеренно. Раздел, стирающий
-    // всех игроков, не должен стоять рядом с теми, куда заходят каждый
-    // день: промах мышью по соседнему пункту здесь стоит слишком дорого.
-    { id: 'wipe',       label: 'Обнуление мира', icon: '💥', group: 'Служебное', zone: 'roles', ownerOnly: true },
+    { id: 'mail',       label: 'Письма',        icon: '✉️', group: 'Настройка', zone: 'roles', ownerOnly: true },
+    { id: 'tech',       label: 'Техника',       icon: '🔧', group: 'Настройка', zone: 'security', legacy: 'renderTech' },
+    // ── Опасное: отдельной группой и с отбивкой ───────────────────
+    // Раньше эти два пункта лежали в общем списке «Служебное» вместе с
+    // «Игроками», куда заходят по двадцать раз за смену. Промах мышью
+    // по соседнему пункту здесь стоит слишком дорого, а на телефоне
+    // список ещё и уже.
+    { id: 'release',    label: 'Обновление',    icon: '🚀', group: 'Опасное', zone: 'roles', ownerOnly: true, danger: true },
+    { id: 'wipe',       label: 'Обнуление мира', icon: '💥', group: 'Опасное', zone: 'roles', ownerOnly: true, danger: true },
+    // ── Вне списка разделов ───────────────────────────────────────
+    // Защита собственного входа — это личная настройка сотрудника, а не
+    // раздел игры: она про его учётную запись и доступна ему независимо
+    // от прав. В списке разделов она занимала строку и сбивала счёт
+    // «сколько тут всего про игру». Ссылка на неё стоит рядом с именем
+    // наверху; hidden убирает пункт из меню, но НЕ из маршрутов —
+    // адрес #/security продолжает работать.
+    { id: 'security',   label: 'Защита входа',  icon: '🔐', group: 'Настройка', hidden: true },
   ],
-  GROUPS: ['Работа', 'Игра', 'Служебное'],
+  GROUPS: ['Работа', 'Игра', 'Разбор', 'Настройка', 'Опасное'],
 
   // Экраны, уже переписанные под v2. Ключ — id раздела.
   // Подпись: fn(el, route) → void | Promise
@@ -88,6 +95,7 @@ const A2 = {
           </div>
           <div class="a2-who">${UI.esc((Admin.me && Admin.me.name) || '')}
             · <b>${UI.esc(A2.roleName())}</b>
+            · <a href="${A2Router.build('security')}" title="Защита вашего входа">🔐 защита</a>
             · <a href="/" style="color:var(--dim)">в игру →</a></div>
         </div>
         <nav class="a2-side" id="a2-side" aria-label="Разделы панели"></nav>
@@ -184,13 +192,18 @@ const A2 = {
       const badge = (n.badge && b && b.count)
         ? `<span class="a2-badge ${b.tone === 'hot' ? 'is-hot' : (b.tone === 'warn' ? 'is-warn' : '')}">${b.count}</span>`
         : '';
-      return `<a class="a2-nav ${cur === n.id ? 'is-active' : ''}" href="${A2Router.build(n.id)}"
+      return `<a class="a2-nav ${cur === n.id ? 'is-active' : ''}${n.danger ? ' is-danger' : ''}"
+        href="${A2Router.build(n.id)}"
         data-nav="${n.id}" ${cur === n.id ? 'aria-current="page"' : ''}>${n.icon} ${UI.esc(n.label)}${badge}</a>`;
     };
     const group = (name) => {
-      const list = A2.allowed().filter((n) => n.group === name);
+      // hidden — пункт есть в маршрутах, но не в списке разделов
+      // (сейчас это «Защита входа»: она про учётную запись сотрудника,
+      // а не про игру, и живёт ссылкой рядом с его именем).
+      const list = A2.allowed().filter((n) => n.group === name && !n.hidden);
       if (!list.length) return '';       // пустых подписей не рисуем
-      return `<div class="a2-group">${name}</div>` + list.map(item).join('');
+      return `<div class="a2-group${name === 'Опасное' ? ' is-danger' : ''}">${name}</div>`
+        + list.map(item).join('');
     };
     document.getElementById('a2-side').innerHTML = A2.GROUPS.map(group).join('');
     document.querySelectorAll('#a2-side .a2-nav').forEach((a) => {
