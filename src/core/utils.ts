@@ -112,8 +112,38 @@ function fmt(n: number): string {
   return Math.round(n).toLocaleString('ru-RU');
 }
 
+// ── Годится ли адрес, чтобы считать его адресом ЧЕЛОВЕКА ──────────
+//
+// Отбрасываем loopback и приватные диапазоны. Нужно это в двух разных
+// смыслах, и оба сходятся к одному правилу:
+//
+//  1. При разборе X-Forwarded-For (core/http.ts). Если прокси добавил
+//     себя в цепочку, первым может оказаться внутренний адрес, а нужен
+//     внешний — тот, с которого пришёл человек.
+//
+//  2. При поиске мультоводов (services/access.ts). Пока nginx не
+//     передаёт настоящий адрес, сервер видит 127.0.0.1 у ВСЕХ, и в
+//     сводку это попадало как «36 аккаунтов с одного адреса» — готовый
+//     список для бана невиновных. Проверка обязана молчать, когда ей
+//     нечего сказать.
+//
+// Правило ОДНО и живёт здесь. Раньше эти пятнадцать строк были
+// записаны дважды, слово в слово: добавь кто-нибудь новый приватный
+// диапазон в одном месте — второе молча осталось бы со старым.
+function isPublicIp(ip: string): boolean {
+  const v = String(ip || '').trim().replace(/^::ffff:/, '');
+  if (!v || v === 'unknown') return false;
+  if (v === '::1' || v.startsWith('127.')) return false;   // loopback
+  if (/^10\./.test(v)) return false;
+  if (/^192\.168\./.test(v)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(v)) return false;
+  if (/^169\.254\./.test(v)) return false;                 // link-local
+  if (/^f[cd]/i.test(v)) return false;                     // приватные IPv6
+  return true;
+}
+
 export = {
-  ApiError, uid, rnd, pick, shuffle, clamp, toInt, fmt,
+  ApiError, uid, rnd, pick, shuffle, clamp, toInt, fmt, isPublicIp,
   hashPassword, verifyPassword,               // асинхронные — для кода сервера
   hashPasswordSync, verifyPasswordSync,       // синхронные — только для tools/
 };

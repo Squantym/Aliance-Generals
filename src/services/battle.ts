@@ -8,6 +8,7 @@
 // ===================================================================
 
 import config = require('../../config/gameConfig');
+import unitLoss = require('./unitLoss');
 import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
@@ -319,18 +320,10 @@ function unitLossCount(damage: number, crit: boolean, reduce: number = 0): numbe
 }
 
 function removeUnits(victim: any, armyEntries: any[], toLoseWanted: number, _unused?: boolean): any {
-  // Сортируем «жертв» от слабой к сильной: сначала Mk0, потом Mk1, Mk2;
-  // внутри одного Mk — по возрастанию unlock (уровень открытия = «слабее»).
-  const pool = armyEntries
-    .filter((e) => !e.secret && e.unitId && e.taken > 0)
-    .slice()
-    .sort((a, b) => {
-      if (a.mk !== b.mk) return a.mk - b.mk;
-      const cuA = config.UNIT_BY_ID[a.unitId];
-      const cuB = config.UNIT_BY_ID[b.unitId];
-      return (cuA ? cuA.unlock : 0) - (cuB ? cuB.unlock : 0);
-    });
-  const totalTaken = pool.reduce((s, e) => s + e.taken, 0);
+  // Порядок списания и сама механика — общие с минами, см. unitLoss.
+  // Здесь остаётся только правило «сколько»: оно у боя своё.
+  const pool = unitLoss.pool(armyEntries);
+  const totalTaken = unitLoss.totalTaken(pool);
   if (totalTaken <= 0) return [];
 
   // Количество приходит готовым из unitLossCount (абсолютные единицы,
@@ -340,25 +333,7 @@ function removeUnits(victim: any, armyEntries: any[], toLoseWanted: number, _unu
   toLose = Math.min(toLose, Math.max(1, Math.round(totalTaken * B.UNIT_LOSS_ARMY_PCT)));
   if (toLose <= 0) return [];
 
-  const lost = {};
-  const lostMeta = {};
-  for (const e of pool) {
-    if (toLose <= 0) break;
-    const m = victim.units[e.unitId];
-    const have = m ? (m[e.mk] || 0) : 0;
-    if (have <= 0 || e.taken <= 0) continue;
-    const n = Math.min(have, e.taken, toLose);
-    m[e.mk] = have - n;
-    e.taken -= n;
-    toLose -= n;
-    lost[e.name] = (lost[e.name] || 0) + n;
-    lostMeta[e.name] = { id: e.unitId, type: (config.UNIT_BY_ID[e.unitId] || {}).type };
-    if ((m[0] || 0) + (m[1] || 0) + (m[2] || 0) <= 0) delete victim.units[e.unitId];
-  }
-  // Возвращаем объекты с id (для картинок) — фронт сам решит как показать
-  return Object.entries(lost).map(([name, count]) => ({
-    name, count, id: lostMeta[name].id, unitType: lostMeta[name].type,
-  }));
+  return unitLoss.take(victim, pool, toLose);
 }
 
 // ---------- ГЛАВНАЯ ФУНКЦИЯ: атака цели ----------

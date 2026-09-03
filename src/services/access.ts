@@ -17,6 +17,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import db = require('../core/db');
+import u = require('../core/utils');
 import type { User } from '../types';
 
 const KEEP_LOGINS = 20;         // сколько последних входов помним
@@ -163,16 +164,10 @@ function securityEvent(user: any, kind: string, detail?: string, ip?: string, de
 // забанить полсервера невиновных; проверка обязана молчать, когда ей
 // нечего сказать.
 function isIdentifyingIp(ip: string): boolean {
-  const v = String(ip || '').trim().replace(/^::ffff:/, '');
-  if (!v || v === 'unknown') return false;
-  if (v === '::1' || v.startsWith('127.')) return false;
-  if (/^10\./.test(v)) return false;
-  if (/^192\.168\./.test(v)) return false;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(v)) return false;
-  if (/^169\.254\./.test(v)) return false;
-  if (/^f[cd]/i.test(v)) return false;          // приватные IPv6
-  return true;
+  // Правило одно на весь проект, см. core/utils.isPublicIp.
+  return u.isPublicIp(ip);
 }
+
 
 function recordLogin(user: any, ip: string, ua: string, kind?: string, hints?: any, fp?: string): void {
   if (!user) return;

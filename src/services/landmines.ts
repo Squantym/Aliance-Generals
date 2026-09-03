@@ -18,6 +18,7 @@
 // ===================================================================
 
 import config = require('../../config/gameConfig');
+import unitLoss = require('./unitLoss');
 import u = require('../core/utils');
 
 const WIRE_COLORS: Record<string, string> = {
@@ -85,37 +86,15 @@ function techLossPct(level: number): number {
 // здесь процент ТОЧНО тот, что обещан по уровню трофея — это финальный,
 // катастрофический удар, а не обычная боевая потеря.
 function destroyExactPct(victim: any, armyEntries: any[], pct: number): any[] {
-  const pool = armyEntries
-    .filter((e) => !e.secret && e.unitId && e.taken > 0)
-    .slice()
-    .sort((a, b) => {
-      if (a.mk !== b.mk) return a.mk - b.mk;
-      const cuA = config.UNIT_BY_ID[a.unitId];
-      const cuB = config.UNIT_BY_ID[b.unitId];
-      return (cuA ? cuA.unlock : 0) - (cuB ? cuB.unlock : 0);
-    });
-  const totalTaken = pool.reduce((s, e) => s + e.taken, 0);
+  // Порядок списания и механика — общие с обычным боем, см. unitLoss.
+  // Отличие только в количестве: здесь процент ТОЧНО тот, что обещан по
+  // уровню трофея, без смягчения. Это финальный удар, а не рядовая
+  // боевая потеря.
+  const pool = unitLoss.pool(armyEntries);
+  const totalTaken = unitLoss.totalTaken(pool);
   if (totalTaken <= 0 || pct <= 0) return [];
-  let toLose = Math.ceil(totalTaken * pct / 100);
-
-  const lost: Record<string, number> = {};
-  const lostMeta: Record<string, { id: string; type: string }> = {};
-  for (const e of pool) {
-    if (toLose <= 0) break;
-    const m = victim.units[e.unitId];
-    const have = m ? (m[e.mk] || 0) : 0;
-    if (have <= 0 || e.taken <= 0) continue;
-    const n = Math.min(have, e.taken, toLose);
-    m[e.mk] = have - n;
-    e.taken -= n;
-    toLose -= n;
-    lost[e.name] = (lost[e.name] || 0) + n;
-    lostMeta[e.name] = { id: e.unitId, type: (config.UNIT_BY_ID[e.unitId] || {}).type };
-    if ((m[0] || 0) + (m[1] || 0) + (m[2] || 0) <= 0) delete victim.units[e.unitId];
-  }
-  return Object.entries(lost).map(([name, count]) => ({
-    name, count, id: lostMeta[name].id, unitType: lostMeta[name].type,
-  }));
+  const toLose = Math.ceil(totalTaken * pct / 100);
+  return unitLoss.take(victim, pool, toLose);
 }
 
 export = { maxStock, generateWires, wiresView, rollTrigger, techLossPct, destroyExactPct, WIRE_COLORS };

@@ -209,8 +209,24 @@ for (const h of ['cf-connecting-ip', 'true-client-ip', 'x-real-ip', 'x-forwarded
   ok(httpSrc2.includes(h), `учитывается заголовок «${h}»`);
 }
 ok(/function isUsableIp/.test(httpSrc2), 'внутренние адреса отбрасываются');
-// В коде диапазоны записаны как регулярные выражения с экранированием
-const ipFn = httpSrc2.slice(httpSrc2.indexOf('function isUsableIp'), httpSrc2.indexOf('function clientIp'));
+// Правило «какой адрес считать адресом человека» живёт В ОДНОМ месте —
+// core/utils.isPublicIp. Раньше эти пятнадцать строк были записаны
+// дважды, слово в слово: в http.ts и в services/access.ts. Совпадали
+// они случайно: добавь кто-нибудь новый приватный диапазон в одном
+// месте, второе молча осталось бы со старым.
+const utilsSrc = fs.readFileSync(path.join(ROOT, 'src/core/utils.ts'), 'utf8');
+ok(/function isPublicIp/.test(utilsSrc), 'правило вынесено в core/utils.isPublicIp');
+ok(/isPublicIp/.test(httpSrc2), 'http.ts пользуется общим правилом, а не своей копией');
+const accessSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/access.ts'), 'utf8');
+ok(/isPublicIp/.test(accessSrc2), 'и access.ts тоже');
+// Второй копии диапазонов не осталось ни там, ни там: их наличие вне
+// utils означало бы, что правило снова разъехалось.
+for (const [src, where] of [[httpSrc2, 'http.ts'], [accessSrc2, 'access.ts']]) {
+  ok(!/\^192\\\.168\\\./.test(src), `в ${where} нет своей копии диапазонов`);
+}
+// Сами диапазоны проверяем там, где они теперь и лежат
+const ipFn = utilsSrc.slice(utilsSrc.indexOf('function isPublicIp'),
+                            utilsSrc.indexOf('function isPublicIp') + 900);
 for (const [needle, label] of [
   ['127.', 'локальный 127.x'],
   ['192', 'домашний 192.168.x'],

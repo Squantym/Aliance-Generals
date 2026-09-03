@@ -87,16 +87,11 @@ const PWA_NO_CACHE = ['/sw.js', '/sw-config.json', '/manifest.json'];
 // добавил себя в X-Forwarded-For, первым может оказаться внутренний
 // адрес, а нужен внешний — тот, с которого пришёл человек.
 function isUsableIp(ip: string): boolean {
-  const v = String(ip || '').trim().replace(/^::ffff:/, '');
-  if (!v || v === 'unknown') return false;
-  if (v === '127.0.0.1' || v === '::1' || v.startsWith('127.')) return false;
-  if (/^10\./.test(v)) return false;
-  if (/^192\.168\./.test(v)) return false;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(v)) return false;
-  if (/^169\.254\./.test(v)) return false;
-  if (/^f[cd]/i.test(v)) return false;          // приватные IPv6
-  return true;
+  // Правило одно на весь проект, см. core/utils.isPublicIp: те же
+  // пятнадцать строк лежали здесь и в services/access.ts слово в слово.
+  return u.isPublicIp(ip);
 }
+
 
 // ── Подавление повторов в журнале просмотров ──────────────────────
 //
