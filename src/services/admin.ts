@@ -876,6 +876,18 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
   const id = target.id;
   const name = target.name;
   const cleaned: string[] = [];
+  // Что очистить НЕ УДАЛОСЬ. Каждая коллекция чистится в своём
+  // try/catch, и это правильно: падение одной не должно срывать
+  // остальные. Но раньше падение было ещё и БЕЗМОЛВНЫМ — коллекция
+  // просто не появлялась в списке очищенного, а сообщение при этом
+  // обещало, что аккаунт удалён «полностью». Для проекта, который
+  // ссылается на 152-ФЗ, это означало бы: удаление отчиталось об
+  // успехе, а персональные данные где-то остались.
+  const failed: string[] = [];
+  const skipped = (what: string, e: any) => {
+    failed.push(what);
+    console.warn(`⚠️  Удаление аккаунта ${id}: не удалось очистить «${what}» — ${e && e.message}`);
+  };
 
   // 1) Выводим из альянса и легиона (лидерство передаётся / группа
   //    расформировывается — та же логика, что при обнулении)
@@ -890,14 +902,14 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
       if (uid === id) { delete (sessions as any)[tok]; n++; }
     }
     if (n) { db.save('sessions'); cleaned.push(`сессии (${n})`); }
-  } catch (e) {}
+  } catch (e) { skipped('сессии', e); }
 
   // 3) Коллекции вида { userId: [...] } — почта, уведомления, push-подписки
   for (const coll of ['mail', 'notifications', 'pushsubs', 'alliance_invites']) {
     try {
       const store = db.load(coll, {});
       if (store[id]) { delete store[id]; db.save(coll); cleaned.push(coll); }
-    } catch (e) {}
+    } catch (e) { skipped(coll, e); }
   }
 
   // 4) Коллекции вида { recordId: { userId } } — награды и тикеты поддержки
@@ -909,7 +921,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
         if (store[key] && store[key].userId === id) { delete store[key]; n++; }
       }
       if (n) { db.save(coll); cleaned.push(`${coll} (${n})`); }
-    } catch (e) {}
+    } catch (e) { skipped(coll, e); }
   }
 
   // 5) Санкции: снимаем санкцию НА игрока и вычищаем его взносы из
@@ -931,7 +943,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
       }
     }
     if (changed) { db.save('sanctions'); cleaned.push('санкции'); }
-  } catch (e) {}
+  } catch (e) { skipped('санкции', e); }
 
   // 6) Летящие ракеты, где игрок — атакующий или цель
   try {
@@ -942,7 +954,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
       if (rk && (rk.attackerId === id || rk.targetId === id)) { delete rockets[rid]; n++; }
     }
     if (n) { db.save('rockets'); cleaned.push(`ракеты (${n})`); }
-  } catch (e) {}
+  } catch (e) { skipped('ракеты', e); }
 
   // 7) Бои легиона: убираем игрока из составов и статистики активности
   try {
@@ -955,7 +967,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
       if (b.activity && b.activity[id] !== undefined) { delete b.activity[id]; changed = true; }
     }
     if (changed) { db.save('battles'); cleaned.push('бои легиона'); }
-  } catch (e) {}
+  } catch (e) { skipped('бои легиона', e); }
 
   // 8) Общий чат: стираем сообщения удалённого игрока
   try {
@@ -965,7 +977,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
       w.chat = w.chat.filter((m: any) => m && m.userId !== id && m.authorId !== id);
       if (w.chat.length !== before) { db.save('world'); cleaned.push(`чат (${before - w.chat.length})`); }
     }
-  } catch (e) {}
+  } catch (e) { skipped('чат', e); }
 
   // 9) Перекрёстные ссылки у ОСТАЛЬНЫХ игроков: отрезанные уши,
   //    послание на ухе, личная история боёв, наложенные эффекты.
@@ -1007,8 +1019,20 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
     path: '/api/admin/delete-account',
     body: { deletedId: id, deletedName: name },
   });
-  notices.push(`🗑 Аккаунт «${name}» удалён из игры полностью. Вход невозможен, позывной и email освобождены. Очищено: ${cleaned.join(', ') || 'нет связанных данных'}.`);
-  return { deletedId: id, deletedName: name, cleaned };
+  // Слово «полностью» ставим, только если оно правда. Раньше оно стояло
+  // всегда, и молча пропущенная коллекция выглядела как её отсутствие.
+  notices.push(failed.length
+    ? `🗑 Аккаунт «${name}» удалён, но НЕ ВСЁ: не удалось очистить ${failed.join(', ')}. `
+      + `Очищено: ${cleaned.join(', ') || 'нет связанных данных'}. `
+      + 'Причина в журнале сервера — данные по этим разделам остались в базе.'
+    : `🗑 Аккаунт «${name}» удалён из игры полностью. Вход невозможен, позывной и email освобождены. `
+      + `Очищено: ${cleaned.join(', ') || 'нет связанных данных'}.`);
+  auditLog.record({
+    userId: adminUser.id, userName: adminUser.name,
+    path: '/system/delete-account-result',
+    body: { deletedId: id, deletedName: name, cleaned, failed },
+  });
+  return { deletedId: id, deletedName: name, cleaned, failed };
 }
 
 // ── УСТАНОВКА ПАРОЛЯ ИГРОКУ ───────────────────────────────────────
