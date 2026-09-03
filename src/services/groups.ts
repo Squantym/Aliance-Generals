@@ -228,7 +228,6 @@ function hireDiplomat(user: User, kind: string, notices: Notices) {
   const cost = diplomatCost(g);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   player.spendGold(user, cost, 'group');
-  try { require('./stats').track(user, 'goldSpent', 'other', cost); } catch (e) {}
   g.diplomats = (g.diplomats || 0) + 1;
   db.save(def.coll);
   notices.push(`🎩 Нанят дипломат №${g.diplomats}. Лимит приглашений: ${inviteLimit(g)}/час. Следующий — 🪙 ${diplomatCost(g)}.`);

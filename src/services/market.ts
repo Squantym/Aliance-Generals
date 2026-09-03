@@ -57,7 +57,6 @@ function buyMines(user: User, qty: number, notices: Notices) {
   const cost = bought * unitPrice;
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   player.spendGold(user, cost, 'market');
-  try { require('./stats').track(user, 'goldSpent', 'market', cost); } catch (e) {}
   user.landmines = have + bought;
   require('./dailyQuests').bump(user, 'marketBought', 1);
   notices.push(`💣 Куплено мин: ${bought} (за 🪙 ${cost}). В запасе: ${user.landmines}.`);
@@ -133,7 +132,6 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     require('./account').assertNotSelfAccount(user, target, 'Применение падлянки');
     player.spendGold(user, price, 'market');
     countBuy();
-  try { require('./stats').track(user, 'goldSpent', 'market', price); } catch (e) {}
     pushEffect(target, item, user);
     // Жертву помечаем к записи явно: слой http сохраняет только автора
     // запроса. Без этого падлянка жила лишь в памяти процесса и исчезала
@@ -209,8 +207,9 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   require('./dailyQuests').bump(user, 'marketBought', 1);
   // Счётчик по конкретному контейнеру (для поручений на контрабанду)
   require('./dailyQuests').bump(user, 'buy:' + c.id, qty);
-  player.spendGold(user, totalPrice, 'market');
-  try { require('./stats').track(user, 'goldSpent', 'container', totalPrice); } catch (e) {}
+  // Категория именно 'container': раньше она жила во второй записи
+  // расхода, а та удваивала сумму и потому убрана.
+  player.spendGold(user, totalPrice, 'container');
 
   // Открываем qty контейнеров подряд, суммируя выпавшее
   const droppedAll: string[] = [];

@@ -255,7 +255,6 @@ function buyCosmetic(user: User, cosmeticId: string, notices: Notices) {
   if (user.ownedCosmetics.includes(cosmeticId)) throw new u.ApiError('Уже куплено');
   if (user.gold < item.priceGold) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${item.priceGold})`);
   player.spendGold(user, item.priceGold, 'feature');
-  try { require('./stats').track(user, 'goldSpent', 'market', item.priceGold); } catch (e) {}
   user.ownedCosmetics.push(cosmeticId);
   db.markUser(user.id);
   notices.push(`🎨 Куплено: «${item.name}»! Наденьте в настройках профиля.`);
