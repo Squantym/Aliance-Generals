@@ -514,6 +514,44 @@ ok(/immutable/.test(ccBlock), 'файлы с меткой версии по-пр
 ok(/max-age=31536000, immutable/.test(httpSrc4.slice(httpSrc4.indexOf(".webp"))),
    'картинки кешируются на год — их адреса не меняются');
 
+console.log('\n── Разбор последнего боя при совпадении времени ──');
+// Из-за этого раздел 16 выше «плавал»: примерно один прогон из шести
+// падал, и виноват был не тест.
+//
+// Тик обрабатывает ВСЕ дивизионы одним проходом, поэтому два боя
+// заканчиваются в одну и ту же миллисекунду постоянно. lastResultId
+// сортировал разборы только по времени, и при равенстве возвращал
+// произвольный из двух: игрок открывал разбор ЧУЖОГО боя — с чужим
+// уроном, чужой наградой и чужим рейтингом.
+{
+  const st = db.load('arena', {});
+  st.results = {};
+  const sameAt = Date.now();
+  const me = ps[1].id;
+  const row = (kills) => ([{ id: me, name: 'Браво', kills, damage: 0, place: 1 }]);
+  // Оба «завершены» в одну миллисекунду, различаются только номером.
+  st.results.oldOne = { id: 'oldOne', at: sameAt, seq: 7, rows: row(0) };
+  st.results.newOne = { id: 'newOne', at: sameAt, seq: 8, rows: row(3) };
+  db.save('arena');
+  ok(arena.lastResultId(me) === 'newOne',
+     'при равном времени берётся разбор с большим номером');
+
+  // И порядок в хранилище значения не имеет: раньше ответ зависел от
+  // того, какой ключ окажется первым при переборе объекта.
+  st.results = {};
+  st.results.newOne = { id: 'newOne', at: sameAt, seq: 8, rows: row(3) };
+  st.results.oldOne = { id: 'oldOne', at: sameAt, seq: 7, rows: row(0) };
+  db.save('arena');
+  ok(arena.lastResultId(me) === 'newOne', 'и от порядка записей это не зависит');
+
+  // Разное время по-прежнему решает само, номер тут ни при чём.
+  st.results = {};
+  st.results.older = { id: 'older', at: sameAt - 1000, seq: 99, rows: row(0) };
+  st.results.newer = { id: 'newer', at: sameAt, seq: 1, rows: row(3) };
+  db.save('arena');
+  ok(arena.lastResultId(me) === 'newer', 'при разном времени побеждает более позднее');
+}
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
 }

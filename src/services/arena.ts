@@ -131,6 +131,12 @@ type Store = {
   divs: Record<string, DivState>;
   ratings: Record<string, Record<string, { id: string; name: string; flag: string; points: number; wins: number; kills: number; battles: number }>>;
   results: Record<string, any>;   // разбор законченных боёв
+  // Порядковый номер разбора. Нужен потому, что времени НЕ ХВАТАЕТ:
+  // тик обрабатывает все дивизионы в одном проходе, и два боя легко
+  // заканчиваются в одну и ту же миллисекунду. Сортировка только по
+  // времени в этом случае выбирала произвольный из двух, и игрок видел
+  // разбор ЧУЖОГО боя — не свой урон, не свою награду, не свой рейтинг.
+  resultSeq?: number;
 };
 
 function emptyDiv(): DivState {
@@ -483,6 +489,9 @@ function finishBattle(div: DivId, s: DivState, winner: Fighter): void {
   root.results[b.id] = {
     id: b.id, div, divName: DIVISIONS[div].name, currency: DIVISIONS[div].currency,
     entry, pot: b.pot, at: b.finishedAt,
+    // Возрастающий номер: при совпадении времени до миллисекунды он и
+    // решает, какой разбор новее. См. Store.resultSeq.
+    seq: (root.resultSeq = (root.resultSeq || 0) + 1),
     winnerId: winner.id, winnerName: winner.name,
     favouriteId, rows,
   };
@@ -536,7 +545,12 @@ function lastResultId(userId: string): string {
   const all = Object.values(root.results) as any[];
   const mine = all
     .filter((r) => r.rows.some((x: any) => x.id === userId))
-    .sort((a, b) => (b.at || 0) - (a.at || 0));
+    // Сначала по времени, а при равенстве — по номеру. Сортировка ТОЛЬКО
+    // по времени выбирала произвольный разбор из двух, законченных в
+    // одну миллисекунду, и игрок открывал чужой бой: с чужим уроном,
+    // чужой наградой и чужим рейтингом. Тик обрабатывает все дивизионы
+    // одним проходом, так что совпадение — не редкость, а норма.
+    .sort((a, b) => ((b.at || 0) - (a.at || 0)) || ((b.seq || 0) - (a.seq || 0)));
   return mine.length ? mine[0].id : '';
 }
 
