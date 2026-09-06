@@ -118,27 +118,63 @@ function view(user: User) {
 }
 
 // ===================================================================
-// 1. ВОЕННЫЙ ПРЕФЕРАНС — добери до 21, не перебрав, против генерала
-//    Карты 2-11. Игрок берёт «ещё» или «хватит». Затем добирает генерал
-//    (до 17). Ближе к 21 — победа. Перебор (>21) — мгновенный проигрыш.
+// 1. ВОЕННЫЙ ПРЕФЕРАНС — добери до 21, не перебрав, против генерала.
+//
+//    Играется НАСТОЯЩЕЙ колодой из 36 карт (config.CARD_DECK), а не
+//    случайным числом от 2 до 11, как было раньше. Разница не косметика:
+//    карты уходят из колоды и второй раз не приходят, а стоимости
+//    распределены неравномерно — десяток вчетверо больше, чем валетов по
+//    два очка. Из-за этого перебор случается заметно чаще, и замер это
+//    подтвердил (см. коммит).
+//
+//    КАРТЫ ГЕНЕРАЛА ОТКРЫТЫ С РАЗДАЧИ. Это сделано намеренно: игрок
+//    просил видеть и свои карты, и чужие. Игра от этого становится не
+//    проще, а осмысленнее — решение «ещё или хватит» перестаёт быть
+//    гаданием и превращается в счёт против известной руки. Неизвестным
+//    остаётся то, что генерал доберёт: он тянет, пока у него меньше
+//    PREF_DEALER_STOP.
 // ===================================================================
-function drawCard(): number {
-  // Колода: значения 2..10 и «туз» = 11. Картинки/масти не важны.
-  return u.rnd(2, 11);
+
+// Свежая перетасованная колода на каждую партию. Одна колода на партию,
+// а не общая на всех: иначе пришлось бы хранить состояние стола между
+// игроками и решать, что делать при обрыве связи посреди раздачи.
+function freshDeck(): string[] {
+  return u.shuffle((config.CARD_DECK as string[]).slice());
+}
+
+function draw(game: any): string {
+  // Колода из 36 карт на двоих не кончается: максимум рука игрока и рука
+  // генерала — это около десятка карт. Но если кто-то поменяет правила
+  // добора, пустая колода не должна ронять сервер.
+  if (!game.deck || !game.deck.length) game.deck = freshDeck();
+  return game.deck.pop();
+}
+
+// Карты для экрана: id, ранг, масть и путь к картинке. Считает сервер,
+// потому что стоимость карты — правило игры, а не оформление.
+function cardsOut(ids: string[]): any[] {
+  return (ids || []).map((id) => config.cardInfo(id)).filter(Boolean);
 }
 
 function prefView(c: any) {
   if (c.pref) {
     return {
       state: 'active',
-      hand: c.pref.hand,
-      sum: c.pref.hand.reduce((s: number, x: number) => s + x, 0),
+      hand: cardsOut(c.pref.hand),
+      sum: config.handSum(c.pref.hand),
+      // Рука генерала видна с раздачи — целиком, а не одной картой
+      foe: cardsOut(c.pref.foe),
+      foeSum: config.handSum(c.pref.foe),
+      dealerStop: C.PREF_DEALER_STOP,
       target: C.PREF_TARGET,
     };
   }
   const left = cdLeft(c, 'pref');
   if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return { state: 'ready', target: C.PREF_TARGET, rewardMin: C.PREF_REWARD_MIN, rewardMax: C.PREF_REWARD_MAX };
+  return {
+    state: 'ready', target: C.PREF_TARGET, dealerStop: C.PREF_DEALER_STOP,
+    rewardMin: C.PREF_REWARD_MIN, rewardMax: C.PREF_REWARD_MAX,
+  };
 }
 
 function prefStart(user: User) {
@@ -146,8 +182,14 @@ function prefStart(user: User) {
   if (c.pref) return prefView(c);
   if (cdLeft(c, 'pref') > 0) throw new u.ApiError('Генерал ещё тасует колоду. Загляните позже.');
   gate(c);
-  // Стартовая рука — две карты
-  c.pref = { hand: [drawCard(), drawCard()] };
+  const game: any = { deck: freshDeck(), hand: [], foe: [] };
+  // Раздача по одной и по очереди, как за столом: порядок важен для
+  // показа на экране — игрок видит, как ложатся карты.
+  game.hand.push(draw(game));
+  game.foe.push(draw(game));
+  game.hand.push(draw(game));
+  game.foe.push(draw(game));
+  c.pref = game;
   return prefView(c);
 }
 
@@ -155,45 +197,53 @@ function prefHit(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.pref) throw new u.ApiError('Партия не начата');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  c.pref.hand.push(drawCard());
-  const sum = c.pref.hand.reduce((s: number, x: number) => s + x, 0);
+  const card = draw(c.pref);
+  c.pref.hand.push(card);
+  const sum = config.handSum(c.pref.hand);
   if (sum > C.PREF_TARGET) {
-    // Перебор — мгновенный проигрыш
+    const hand = cardsOut(c.pref.hand), foe = cardsOut(c.pref.foe);
+    const foeSum = config.handSum(c.pref.foe);
     c.pref = null;
     setCd(c, 'pref', C.PREF_CD_FAIL_MIN);
-    return { result: 'bust', sum };
+    return { result: 'bust', sum, card: config.cardInfo(card), hand, foe, foeSum };
   }
-  return { result: 'hit', hand: c.pref.hand, sum };
+  return { result: 'hit', card: config.cardInfo(card), hand: cardsOut(c.pref.hand), sum };
 }
 
 function prefStand(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.pref) throw new u.ApiError('Партия не начата');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  const myСум = c.pref.hand.reduce((s: number, x: number) => s + x, 0);
-  // Генерал добирает до PREF_DEALER_STOP
-  const dealer: number[] = [drawCard(), drawCard()];
-  let dealerSum = dealer.reduce((s, x) => s + x, 0);
-  while (dealerSum < C.PREF_DEALER_STOP) {
-    const card = drawCard();
-    dealer.push(card);
-    dealerSum += card;
+  const game = c.pref;
+  const mySum = config.handSum(game.hand);
+
+  // Генерал добирает из ТОЙ ЖЕ колоды: карты, уже лежащие у игрока, ему
+  // прийти не могут. Раньше он тянул из воздуха, и одна и та же карта
+  // могла оказаться на столе дважды.
+  const drawn: string[] = [];
+  while (config.handSum(game.foe) < C.PREF_DEALER_STOP) {
+    const card = draw(game);
+    game.foe.push(card);
+    drawn.push(card);
   }
+  const foeSum = config.handSum(game.foe);
+  const foe = cardsOut(game.foe);
+  const hand = cardsOut(game.hand);
   c.pref = null;
 
   let win = false;
-  if (dealerSum > C.PREF_TARGET) win = true;       // генерал перебрал
-  else if (myСум > dealerSum) win = true;          // у игрока больше
+  if (foeSum > C.PREF_TARGET) win = true;       // генерал перебрал
+  else if (mySum > foeSum) win = true;          // у игрока больше
   // равенство и меньше — проигрыш (генерал на своём поле)
 
   if (win) {
     const reward = payout(user, 'pref', u.rnd(C.PREF_REWARD_MIN, C.PREF_REWARD_MAX), notices);
     setCd(c, 'pref', C.PREF_CD_WIN_MIN);
-    notices.push(`🃏 Партия ваша! ${myСум} против ${dealerSum}.${reward ? ' +🪙 ' + reward : ''}`);
-    return { result: 'win', mySum: myСум, dealerSum, dealer, reward };
+    notices.push(`🃏 Партия ваша! ${mySum} против ${foeSum}.` + (reward ? ` +🪙 ${reward}` : ''));
+    return { result: 'win', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), reward };
   }
   setCd(c, 'pref', C.PREF_CD_FAIL_MIN);
-  return { result: 'lose', mySum: myСум, dealerSum, dealer };
+  return { result: 'lose', mySum, foeSum, hand, foe, drawn: cardsOut(drawn) };
 }
 
 // ===================================================================

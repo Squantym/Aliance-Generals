@@ -1068,6 +1068,78 @@ const RIDDLES = [
   { q: 'Чем больше из неё берёшь, тем больше она становится.', a: ['яма'] },
   { q: 'У него глаза цветные — не глаза, а три огня.', a: ['светофор'] },
 ];
+// ---------- КОЛОДА ДЛЯ «ВОЕННОГО ПРЕФЕРАНСА» ----------
+// 36 карт: 6..10, валет, дама, король, туз — четырёх мастей. Картинки
+// лежат в public/img/cards и называются ровно как id: «06-clubs.webp»,
+// «ace-spades.webp». Имя файла выводится из id, поэтому расхождение
+// «карта есть в игре, а картинки нет» невозможно по построению — и
+// закреплено тестом, который открывает каждый файл.
+//
+// СТОИМОСТЬ КАРТ — по классическому «очку»: валет 2, дама 3, король 4,
+// туз 11. Это не выдумано: именно так считают в русском «21 очко», и
+// именно под него нарисована колода (ранги на картах — В, Д, К, Т).
+// Правь таблицу здесь, если считаете иначе — игра берёт числа отсюда.
+//
+// Туз стоит 11, но если рука перебирает — считается за 1. Без этого
+// правила две шестёрки и туз были бы перебором (6+6+11=23), хотя по
+// любым правилам «очка» это 13 и игра продолжается.
+const CARD_RANKS = [
+  { id: '06',    label: '6', value: 6 },
+  { id: '07',    label: '7', value: 7 },
+  { id: '08',    label: '8', value: 8 },
+  { id: '09',    label: '9', value: 9 },
+  { id: '10',    label: '10', value: 10 },
+  { id: 'jack',  label: 'В', value: 2 },
+  { id: 'queen', label: 'Д', value: 3 },
+  { id: 'king',  label: 'К', value: 4 },
+  { id: 'ace',   label: 'Т', value: 11, soft: true },   // при переборе — 1
+];
+const CARD_SUITS = [
+  { id: 'spades',   label: '♠', name: 'пики',  red: false },
+  { id: 'clubs',    label: '♣', name: 'трефы', red: false },
+  { id: 'hearts',   label: '♥', name: 'червы', red: true },
+  { id: 'diamonds', label: '♦', name: 'бубны', red: true },
+];
+const CARD_BACK = '/img/cards/card-back.webp';
+
+// Полная колода в виде id вроде «ace-spades»
+const CARD_DECK: string[] = [];
+for (const r of CARD_RANKS) for (const s of CARD_SUITS) CARD_DECK.push(r.id + '-' + s.id);
+
+const CARD_RANK_BY_ID = Object.fromEntries(CARD_RANKS.map((r) => [r.id, r]));
+const CARD_SUIT_BY_ID = Object.fromEntries(CARD_SUITS.map((s) => [s.id, s]));
+
+// Разбор id карты в то, что нужно и серверу, и экрану
+function cardInfo(id: string) {
+  const cut = String(id || '').indexOf('-');
+  const rankId = cut < 0 ? '' : String(id).slice(0, cut);
+  const suitId = cut < 0 ? '' : String(id).slice(cut + 1);
+  const r: any = CARD_RANK_BY_ID[rankId];
+  const s: any = CARD_SUIT_BY_ID[suitId];
+  if (!r || !s) return null;
+  return {
+    id, rank: r.label, suit: s.label, suitName: s.name, red: s.red,
+    value: r.value, soft: !!r.soft,
+    img: '/img/cards/' + id + '.webp',
+  };
+}
+
+// Сумма руки. Туз считается за 11, но пока рука перебирает — каждый
+// следующий туз опускается до 1. Считать надо ЗДЕСЬ, в одном месте:
+// разойдись клиент с сервером в этом правиле, игрок увидел бы «21» и
+// проигрыш одновременно.
+function handSum(ids: string[]): number {
+  let sum = 0, aces = 0;
+  for (const id of ids || []) {
+    const c: any = cardInfo(id);
+    if (!c) continue;
+    sum += c.value;
+    if (c.soft) aces++;
+  }
+  while (sum > 21 && aces > 0) { sum -= 10; aces--; }
+  return sum;
+}
+
 const CLUB = {
   // ── ОБЩАЯ ЭКОНОМИКА КЛУБА ──────────────────────────────────────
   // Потолок эмиссии золота за московские сутки. Это главный рычаг, а не
@@ -2445,6 +2517,7 @@ export = {
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
   COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
   RIDDLES, CLUB, LOTTERY,
+  CARD_RANKS, CARD_SUITS, CARD_DECK, CARD_BACK, cardInfo, handSum,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, boostGoldFor, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,
   DAILY_QUESTS, DAILY_QUEST_BY_ID, DAILY_CHARS, DAILY_PICK_COUNT,

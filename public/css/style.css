@@ -4934,3 +4934,70 @@ body.is-test-world { padding-top: 22px; }
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   letter-spacing: 6px; text-align: center; font-size: 18px;
 }
+
+/* ---------- КАРТЫ: ВОЕННЫЙ ПРЕФЕРАНС ----------
+   Картинки 200×300, показываем их мелко и по ширине экрана. Рука не
+   переносится на вторую строку, а прокручивается вбок: пять карт на
+   телефоне иначе схлопывались бы в нечитаемые полоски. */
+.pf-side { margin-top: 6px; }
+.pf-who {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 13px; color: var(--dim); margin-bottom: 4px;
+}
+.pf-who b { font-size: 17px; }
+.pf-hand {
+  display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px;
+  min-height: 92px; scrollbar-width: thin;
+}
+.pf-card {
+  position: relative; flex: 0 0 auto;
+  width: 60px; aspect-ratio: 2 / 3;
+  border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  background: #efe9dc;                       /* цвет рубашки, пока грузится */
+}
+.pf-card img { width: 100%; height: 100%; display: block; object-fit: cover; }
+
+/* Рубашка лежит поверх лица и уезжает при раздаче. Сделано именно так,
+   а не переворотом контейнера: если анимация не отработает (старый
+   браузер, отключённое движение), карта останется ЛИЦОМ вверх, а не
+   рубашкой — то есть худший случай всё равно играбелен. */
+.pf-back {
+  position: absolute; inset: 0; display: block; opacity: 0;
+  background: url('/img/cards/card-back.webp') center/cover no-repeat;
+}
+.pf-card.pf-deal { animation: pf-in .34s cubic-bezier(.2,.9,.3,1.2) both; }
+.pf-card.pf-deal .pf-back { animation: pf-flip .34s ease-in both; }
+@keyframes pf-in {
+  from { opacity: 0; transform: translate(26px, -34px) rotate(9deg) scale(.86); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pf-flip { from { opacity: 1; } 70% { opacity: 1; } to { opacity: 0; } }
+
+.pf-result {
+  text-align: center; font-weight: 700; padding: 6px 8px;
+  border-radius: 6px; border: 1px solid var(--border); margin-bottom: 4px;
+}
+.pf-result.pf-win  { color: var(--gold); border-color: #4d7a3d; }
+.pf-result.pf-lose { color: var(--dim); }
+
+/* Кому движение мешает — карты просто появляются на месте, лицом вверх */
+@media (prefers-reduced-motion: reduce) {
+  .pf-card.pf-deal { animation: none; }
+  .pf-card.pf-deal .pf-back { animation: none; opacity: 0; }
+}
+@media (min-width: 520px) { .pf-card { width: 72px; } }
+
+/* Ранг и масть поверх угла карты. На рисунке они есть, но при ширине
+   карты в 72 px занимают около шести пикселей — формально видно, на
+   деле не читается. Метка небольшая и не закрывает лицо. */
+.pf-rank {
+  position: absolute; top: 2px; left: 2px; z-index: 2;
+  min-width: 17px; padding: 0 3px; border-radius: 4px;
+  font-size: 12px; line-height: 16px; font-weight: 800; text-align: center;
+  color: #1a1a1a; background: rgba(245, 241, 230, .93);
+  box-shadow: 0 1px 2px rgba(0,0,0,.4);
+  pointer-events: none;
+}
+.pf-rank.pf-red { color: #b3261e; }

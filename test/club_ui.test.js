@@ -156,6 +156,55 @@ const baseLot = () => ({
   ok('и что играть всё равно можно', /Играть можно/.test(html));
   ok('перерыв показан таймером', /Перерыв после выигрыша/.test(html));
 
+  console.log('\n── 11. Военный преферанс: карты видны обе руки ──');
+  const card = (id, rank, suit) => ({ id, rank, suit: '♠', suitName: suit, red: false, value: 10, img: '/img/cards/' + id + '.webp' });
+  cl = baseClub();
+  cl.pref = {
+    state: 'active', target: 21, dealerStop: 17,
+    hand: [card('10-spades', '10', 'пики'), card('07-hearts', '7', 'червы')], sum: 17,
+    foe: [card('king-clubs', 'К', 'трефы'), card('09-diamonds', '9', 'бубны')], foeSum: 13,
+  };
+  App._prefLast = null; App._prefSeen = null;
+  html = await render(cl, baseLot());
+  ok('карты нарисованы картинками', c.querySelectorAll('.pf-card img').length === 4);
+  ok('пути ведут в /img/cards', /src="\/img\/cards\/10-spades\.webp"/.test(html));
+  ok('рука генерала показана отдельно', /Генерал/.test(html));
+  ok('и его сумма видна', /<b class="gold">13<\/b>/.test(html));
+  ok('своя сумма тоже', /<b class="gold">17<\/b>/.test(html));
+  ok('сказано, до скольки он добирает', /меньше 17/.test(html));
+  ok('обе кнопки на месте', !!c.querySelector('#pref-hit') && !!c.querySelector('#pref-stand'));
+  ok('у каждой карты есть рубашка для раздачи', c.querySelectorAll('.pf-back').length === 4);
+  ok('карты помечены id — по нему и анимируем только новые',
+     [...c.querySelectorAll('.pf-card')].every((el) => !!el.dataset.cid));
+  ok('новые карты получили анимацию раздачи', c.querySelectorAll('.pf-card.pf-deal').length === 4);
+
+  console.log('\n── 12. Добор анимируется только для новой карты ──');
+  cl.pref.hand.push(card('06-clubs', '6', 'трефы'));
+  cl.pref.sum = 23;
+  html = await render(cl, baseLot());
+  ok('всего карт стало пять', c.querySelectorAll('.pf-card').length === 5);
+  ok('анимируется ровно одна — только что пришедшая',
+     c.querySelectorAll('.pf-card.pf-deal').length === 1);
+  ok('и это именно она', (c.querySelector('.pf-card.pf-deal') || {}).dataset.cid === '06-clubs');
+
+  console.log('\n── 13. Итог партии остаётся на экране ──');
+  // Иначе вскрытие мелькнёт на долю секунды и пропадёт вместе с
+  // перерисовкой, а посмотреть, чем кончилось, игрок как раз и хочет.
+  cl = baseClub();
+  cl.pref = { state: 'cooldown', cooldownSec: 900 };
+  App._prefLast = {
+    result: 'win', mySum: 20, foeSum: 18, reward: 15,
+    hand: [card('10-spades', '10', 'пики'), card('10-hearts', '10', 'червы')],
+    foe: [card('king-clubs', 'К', 'трефы'), card('ace-diamonds', 'Т', 'бубны'), card('07-spades', '7', 'пики')],
+  };
+  html = await render(cl, baseLot());
+  ok('исход назван', /Партия ваша/.test(html));
+  ok('счёт показан', /<b>20<\/b> против <b>18<\/b>/.test(html));
+  ok('награда названа', /\+🪙 15/.test(html));
+  ok('обе руки всё ещё на столе', c.querySelectorAll('.pf-card').length === 5);
+  ok('и таймер до следующей партии', /Доступно через/.test(html));
+
+
   console.log('\n── 10. Сама проверка умеет краснеть ──');
   // Если экран перестанет рисоваться, разметка будет пустой — на этом и
   // держатся все проверки выше.

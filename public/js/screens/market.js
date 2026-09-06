@@ -398,22 +398,60 @@ App.screens.club = async (c) => {
   const cdLine = (sec) => `<p class="muted center mt">⏳ Доступно через ${UI.fmtTimer(sec)}</p>`;
 
   // ── 1. ВОЕННЫЙ ПРЕФЕРАНС ──────────────────────────────────────
+  // Карты рисуются картинками из /img/cards. Стоимость и сумму считает
+  // СЕРВЕР и присылает готовыми: посчитай их здесь заново — и однажды
+  // клиент разойдётся с сервером в тузе, показав «21» при проигрыше.
+  const cardHtml = (c) => `
+    <div class="pf-card" data-cid="${UI.esc(c.id)}" title="${UI.esc(c.rank + ' ' + c.suitName)}">
+      <img src="${UI.esc(c.img)}" alt="${UI.esc(c.rank + ' ' + c.suitName)}" loading="lazy">
+      <b class="pf-rank${c.red ? ' pf-red' : ''}">${UI.esc(c.rank)}${UI.esc(c.suit)}</b>
+      <i class="pf-back"></i>
+    </div>`;
+  const handHtml = (cards) => `<div class="pf-hand">${(cards || []).map(cardHtml).join('')}</div>`;
+  // Стол: сначала генерал, под ним игрок — как за настоящим столом
+  const tableHtml = (foe, foeSum, mine, mySum, foeLabel) => `
+    <div class="pf-side">
+      <div class="pf-who"><span class="grow">🎖 ${foeLabel || 'Генерал'}</span><b class="gold">${foeSum}</b></div>
+      ${handHtml(foe)}
+    </div>
+    <div class="pf-side mt">
+      <div class="pf-who"><span class="grow">Вы</span><b class="gold">${mySum}</b></div>
+      ${handHtml(mine)}
+    </div>`;
+
   let prefHtml;
   const pf = data.pref;
+  const last = App._prefLast;
   if (pf.state === 'active') {
     prefHtml = `
-      <p class="small">Ваши карты: <b class="gold" style="font-size:18px">${pf.hand.join(' + ')}</b> = <b>${pf.sum}</b></p>
-      <p class="muted small">Цель — набрать как можно ближе к ${pf.target}, не перебрав. Затем добирает генерал.</p>
+      ${tableHtml(pf.foe, pf.foeSum, pf.hand, pf.sum)}
+      <p class="muted small mt">Цель — подойти к ${pf.target} ближе генерала, не перебрав.
+        Его карты открыты, но он ещё доберёт, пока у него меньше ${pf.dealerStop}.
+        Ничья считается его победой.</p>
       <div class="field-row mt">
-        <button class="btn btn-orange btn-inline" id="pref-hit">🃏 Ещё карту</button>
-        <button class="btn btn-inline" id="pref-stand">✋ Хватит</button>
+        <button class="btn btn-orange btn-inline grow" id="pref-hit">🃏 Ещё карту</button>
+        <button class="btn btn-inline grow" id="pref-stand">✋ Хватит</button>
       </div>`;
-  } else if (pf.state === 'cooldown') {
-    prefHtml = cdLine(pf.cooldownSec);
   } else {
-    prefHtml = `
-      <p class="muted small">Наберите ближе к ${pf.target}, чем генерал, не перебрав. Награда <span class="ic-gold"></span> ${pf.rewardMin}–${pf.rewardMax}.</p>
-      <button class="btn btn-orange mt" id="pref-start">Сесть за стол</button>`;
+    // Итог прошлой партии остаётся на экране. Иначе вскрытие карт
+    // мелькало бы на долю секунды и пропадало вместе с перерисовкой —
+    // а посмотреть, чем всё кончилось, игрок как раз и хочет.
+    const outcome = !last ? '' : `
+      <div class="pf-result ${last.result === 'win' ? 'pf-win' : 'pf-lose'}">
+        ${last.result === 'win' ? '🏆 Партия ваша'
+          : (last.result === 'bust' ? '💥 Перебор' : '🎖 Генерал забрал')}
+        · <b>${last.mySum}</b> против <b>${last.foeSum}</b>${last.reward ? ` · +🪙 ${last.reward}` : ''}
+      </div>
+      ${tableHtml(last.foe, last.foeSum, last.hand, last.mySum)}`;
+    if (pf.state === 'cooldown') {
+      prefHtml = outcome + cdLine(pf.cooldownSec);
+    } else {
+      prefHtml = outcome + `
+        <p class="muted small mt">Колода на 36 карт: 6…10 по номиналу, валет 2, дама 3, король 4, туз 11
+          (а если рука перебирает — туз считается за 1). Наберите ближе к ${pf.target},
+          чем генерал. Награда <span class="ic-gold"></span> ${pf.rewardMin}–${pf.rewardMax}.</p>
+        <button class="btn btn-orange mt" id="pref-start">Сесть за стол</button>`;
+    }
   }
 
   // ── 2. СЕЙФ ШТАБА: ОДИН на весь мир ───────────────────────────
@@ -621,15 +659,26 @@ App.screens.club = async (c) => {
 
   // ── Обработчики ──
   // Преферанс
-  if (R('pref-start')) R('pref-start').onclick = async () => { if (await post('/api/club/pref/start')) App.rerender(); };
+  if (R('pref-start')) R('pref-start').onclick = async () => {
+    App._prefLast = null;              // новая партия — старый итог убираем
+    App._prefSeen = null;              // и раздаём заново, с анимацией
+    if (await post('/api/club/pref/start')) App.rerender();
+  };
   if (R('pref-hit')) R('pref-hit').onclick = async () => {
     const r = await post('/api/club/pref/hit');
-    if (r && r.result === 'bust') UI.toast(`🃏 Перебор! ${r.sum} > 21. Вы проиграли.`);
+    if (r && r.result === 'bust') {
+      App._prefLast = { result: 'bust', mySum: r.sum, foeSum: r.foeSum, hand: r.hand, foe: r.foe };
+      UI.toast(`🃏 Перебор! ${r.sum} больше 21.`);
+    }
     await App.refreshMe(); App.rerender();
   };
   if (R('pref-stand')) R('pref-stand').onclick = async () => {
     const r = await post('/api/club/pref/stand');
-    if (r && r.result === 'lose') UI.toast(`🃏 Генерал сильнее: ${r.mySum} против ${r.dealerSum}.`);
+    if (r) {
+      App._prefLast = { result: r.result, mySum: r.mySum, foeSum: r.foeSum,
+                        hand: r.hand, foe: r.foe, reward: r.reward || 0 };
+      if (r.result === 'lose') UI.toast(`🃏 Генерал сильнее: ${r.mySum} против ${r.foeSum}.`);
+    }
     await App.refreshMe(); App.rerender();
   };
   // Сейф: общий на весь мир, «начать» его нельзя
@@ -695,6 +744,25 @@ App.screens.club = async (c) => {
       await App.refreshMe(); App.rerender();
     };
   });
+  // ── Раздача карт: анимируем ТОЛЬКО новые ──────────────────────
+  // Экран перерисовывается целиком после каждого действия. Если
+  // анимировать все карты подряд, вся рука заново «прилетала» бы на
+  // каждый добор — и разобрать, какая карта пришла сейчас, стало бы
+  // невозможно. Поэтому помним, что уже показывали.
+  const seen = App._prefSeen instanceof Set ? App._prefSeen : new Set();
+  let fresh = 0;
+  c.querySelectorAll('.pf-card').forEach((el) => {
+    const cid = el.dataset.cid;
+    if (seen.has(cid)) return;
+    seen.add(cid);
+    el.classList.add('pf-deal');
+    // Задержка по порядку: карты ложатся одна за другой, а не разом
+    el.style.animationDelay = (fresh++ * 110) + 'ms';
+    const back = el.querySelector('.pf-back');
+    if (back) back.style.animationDelay = (fresh * 110 - 110) + 'ms';
+  });
+  App._prefSeen = seen;
+
   // Аукцион: живой счётчик распределённых очков
   const bidInputs = [...c.querySelectorAll('.bids-input')];
   const recount = () => {
