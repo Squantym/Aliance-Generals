@@ -59,7 +59,7 @@ function budget(c: any): { cap: number; spent: number; left: number } {
 // Источник помечается («club_safe», «club_tactic»): раньше клуб звал
 // addGold без третьего аргумента, всё падало в «Прочее», и владелец не
 // видел в статистике крупнейший источник золота в игре.
-function payout(user: User, game: string, want: number, notices: Notices): number {
+function payout(user: User, game: string, want: number, notices: Notices, sharedBreak = true): number {
   const c = clubState(user);
   const b = budget(c);
   const wanted = Math.max(0, Math.round(want));
@@ -70,13 +70,28 @@ function payout(user: User, game: string, want: number, notices: Notices): numbe
   }
   // Общий кулдаун взводится за ПОБЕДУ, а не за выданное золото: упёршись
   // в потолок, игрок продолжает играть в том же темпе, просто без денег.
-  setCd(c, 'all', C.SHARED_CD_MIN);
+  //
+  // Платные игры из него исключены (sharedBreak=false). Общий перерыв
+  // придуман, чтобы придержать РАЗДАЧУ бесплатного золота; игра, за вход
+  // в которую заплачено, ничего бесплатного не раздаёт, и запирать из-за
+  // неё остальной клуб не за что.
+  if (sharedBreak) setCd(c, 'all', C.SHARED_CD_MIN);
   if (give < wanted) {
     notices.push(give > 0
       ? `🪙 Суточный предел клуба (${C.DAILY_GOLD_CAP}) достигнут: начислено ${give} вместо ${wanted}. Сброс в полночь по Москве.`
       : `🪙 Суточный предел клуба (${C.DAILY_GOLD_CAP}) исчерпан. Играть можно, золота до полуночи по Москве не будет.`);
   }
   return give;
+}
+
+// Взнос за платную игру возвращается в суточный бюджет. Потолок
+// ограничивает НЕТТО — сколько золота клуб отдал игроку сверх внесённого.
+// Считай мы по валовой выплате, десять партий преферанса (из них четыре
+// выигранных) забили бы весь суточный потолок, хотя игрок при этом ушёл
+// в минус на двадцать золота и ничего у игры не выиграл.
+function refundBudget(c: any, amount: number): void {
+  const b = budget(c);
+  c.dayGold = Math.max(0, b.spent - Math.max(0, Math.round(amount)));
 }
 
 // Общий перерыв после выигрыша. Проверяется на ВХОДЕ в игру, но не
@@ -173,15 +188,25 @@ function prefView(c: any) {
   if (left > 0) return { state: 'cooldown', cooldownSec: left };
   return {
     state: 'ready', target: C.PREF_TARGET, dealerStop: C.PREF_DEALER_STOP,
-    rewardMin: C.PREF_REWARD_MIN, rewardMax: C.PREF_REWARD_MAX,
+    entry: C.PREF_ENTRY_GOLD, win: C.PREF_WIN_GOLD, cdMin: C.PREF_CD_MIN,
+    // Вероятность выигрыша наружу НЕ отдаётся: игрок садится за стол, а
+    // не читает таблицу шансов.
   };
 }
 
-function prefStart(user: User) {
+function prefStart(user: User, notices?: Notices) {
   const c = clubState(user);
   if (c.pref) return prefView(c);
   if (cdLeft(c, 'pref') > 0) throw new u.ApiError('Генерал ещё тасует колоду. Загляните позже.');
-  gate(c);
+  // gate(c) здесь НЕТ намеренно: за партию плачено, общий перерыв клуба
+  // её не касается (см. пояснение в payout).
+  const entry = C.PREF_ENTRY_GOLD;
+  if ((user.gold || 0) < entry) {
+    throw new u.ApiError(`Ставка — 🪙 ${entry}, у вас ${user.gold || 0}`);
+  }
+  player.spendGold(user, entry, 'club_pref');
+  refundBudget(c, entry);
+  if (notices) notices.push(`🃏 Ставка принята: −🪙 ${entry}`);
   const game: any = { deck: freshDeck(), hand: [], foe: [] };
   // Раздача по одной и по очереди, как за столом: порядок важен для
   // показа на экране — игрок видит, как ложатся карты.
@@ -204,8 +229,8 @@ function prefHit(user: User, notices: Notices) {
     const hand = cardsOut(c.pref.hand), foe = cardsOut(c.pref.foe);
     const foeSum = config.handSum(c.pref.foe);
     c.pref = null;
-    setCd(c, 'pref', C.PREF_CD_FAIL_MIN);
-    return { result: 'bust', sum, card: config.cardInfo(card), hand, foe, foeSum };
+    setCd(c, 'pref', C.PREF_CD_MIN);
+    return { result: 'bust', sum, card: config.cardInfo(card), hand, foe, foeSum, entry: C.PREF_ENTRY_GOLD };
   }
   return { result: 'hit', card: config.cardInfo(card), hand: cardsOut(c.pref.hand), sum };
 }
@@ -236,14 +261,13 @@ function prefStand(user: User, notices: Notices) {
   else if (mySum > foeSum) win = true;          // у игрока больше
   // равенство и меньше — проигрыш (генерал на своём поле)
 
+  setCd(c, 'pref', C.PREF_CD_MIN);
   if (win) {
-    const reward = payout(user, 'pref', u.rnd(C.PREF_REWARD_MIN, C.PREF_REWARD_MAX), notices);
-    setCd(c, 'pref', C.PREF_CD_WIN_MIN);
+    const reward = payout(user, 'pref', C.PREF_WIN_GOLD, notices, false);
     notices.push(`🃏 Партия ваша! ${mySum} против ${foeSum}.` + (reward ? ` +🪙 ${reward}` : ''));
-    return { result: 'win', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), reward };
+    return { result: 'win', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), reward, entry: C.PREF_ENTRY_GOLD };
   }
-  setCd(c, 'pref', C.PREF_CD_FAIL_MIN);
-  return { result: 'lose', mySum, foeSum, hand, foe, drawn: cardsOut(drawn) };
+  return { result: 'lose', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), entry: C.PREF_ENTRY_GOLD };
 }
 
 // ===================================================================

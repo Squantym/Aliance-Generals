@@ -5001,3 +5001,35 @@ body.is-test-world { padding-top: 22px; }
   pointer-events: none;
 }
 .pf-rank.pf-red { color: #b3261e; }
+
+/* ---------- КЛУБ: КНОПКИ ИГР ----------
+   Вход в клуб — выбор, а не простыня из семи игр. Кнопка показывает
+   состояние своей игры (таймер, счёт, банк), чтобы не заходить внутрь
+   ради проверки. */
+.club-btn {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--text);
+  transition: border-color .15s ease, background .15s ease;
+}
+.club-btn:hover { border-color: var(--gold); }
+.club-ico { font-size: 24px; line-height: 1; width: 30px; text-align: center; flex: 0 0 auto; }
+.club-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.club-txt b { font-size: 15px; }
+.club-txt .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.club-arrow { color: var(--dim); font-size: 22px; flex: 0 0 auto; }
+
+/* Стоимости карт — компактной сеткой, чтобы правила читались целиком */
+.pref-vals { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.pref-val {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 3px 7px; border-radius: 5px;
+  border: 1px solid var(--border); background: rgba(255,255,255,.04);
+  font-size: 12px; color: var(--dim);
+}
+.pref-val b { color: var(--text); font-size: 14px; }
+
+.pref-stake {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.pref-stake:last-of-type { border-bottom: 0; }

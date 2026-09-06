@@ -41,7 +41,7 @@ const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
 const baseClub = () => ({
   budget: { cap: 100, spent: 40, left: 60 },
   sharedCooldownSec: 0,
-  pref: { state: 'ready', target: 21, rewardMin: 12, rewardMax: 18 },
+  pref: { state: 'ready', target: 21, dealerStop: 17, entry: 10, win: 20, cdMin: 5 },
   safe: {
     state: 'open', digits: 6, maxRepeat: 2, reward: 20,
     mask: '*41***', opened: 2, attempts: 7, crackers: 3,
@@ -72,9 +72,11 @@ const baseLot = () => ({
 
 (async () => {
   const c = document.getElementById('content');
-  const render = async (club, lot) => {
+  // Клуб теперь маршрутизируется: #club — кнопки, #club/<игра> —
+  // отдельная страница. Второй аргумент экрана и есть эта часть адреса.
+  const render = async (club, lot, game) => {
     API.get = async (url) => (url === '/api/club' ? club : (url === '/api/lottery' ? lot : {}));
-    await App.screens.club(c);
+    await App.screens.club(c, game);
     return c.innerHTML;
   };
 
@@ -86,6 +88,7 @@ const baseLot = () => ({
   ok('остаток назван', /Осталось <b>60<\/b>/.test(html));
 
   console.log('\n── 2. Общий сейф ──');
+  html = await render(baseClub(), baseLot(), 'safe');
   ok('маска нарисована по цифрам', c.querySelectorAll('.sf-d').length === 6);
   ok('открытые цифры видны', /<span class="sf-d">4<\/span>/.test(html));
   ok('закрытые помечены как скрытые', c.querySelectorAll('.sf-d.sf-hidden').length === 4);
@@ -96,14 +99,14 @@ const baseLot = () => ({
 
   console.log('\n── 3. Сейф на личном таймере ──');
   let cl = baseClub(); cl.safe.myCooldownSec = 45;
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'safe');
   ok('вместо поля — таймер', !c.querySelector('#safe-guess') && /Отмычки остывают/.test(html));
 
   console.log('\n── 4. Сейф вскрыт: закрыт для всех ──');
   cl = baseClub();
   cl.safe.state = 'locked'; cl.safe.lockedSec = 1500; cl.safe.mask = '341274';
   cl.safe.last = { name: 'Взломщик', at: Date.now(), attempts: 23 };
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'safe');
   ok('сказано, что вскрыт', /Сейф вскрыт/.test(html));
   ok('назван тот, кто взял', /Взломщик/.test(html) && /23-й попытки/.test(html));
   ok('видно, сколько ждать нового', /Новый сейф привезут/.test(html));
@@ -112,12 +115,12 @@ const baseLot = () => ({
   console.log('\n── 5. Ночной рейд ──');
   cl = baseClub();
   cl.raid = { state: 'active', step: 2, total: 6, loot: 6, nextRisk: 28, nextLoot: 10, atEnd: false };
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'raid');
   ok('видно взятые рубежи', /Взято рубежей: <b class="gold">2<\/b>/.test(html));
   ok('цена следующего шага названа ДО решения', /28%/.test(html) && /10<\/b>/.test(html));
   ok('обе кнопки есть', !!c.querySelector('#raid-push') && !!c.querySelector('#raid-pull'));
   cl.raid = { state: 'active', step: 6, total: 6, loot: 32, nextRisk: null, nextLoot: null, atEnd: true };
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'raid');
   ok('на последнем рубеже кнопки «дальше» нет', !c.querySelector('#raid-push'));
   ok('а отойти можно', !!c.querySelector('#raid-pull'));
 
@@ -128,13 +131,13 @@ const baseLot = () => ({
     kinds: baseClub().tactic.kinds,
     rounds: [{ mine: 'ground', foe: 'air', res: 'win' }, { mine: 'sea', foe: 'air', res: 'lose' }],
   };
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'tactic');
   ok('счёт показан', /<b class="gold">2<\/b> : <b>1<\/b>/.test(html));
   ok('история раундов видна — это и есть подсказка', /Наземные против/.test(html));
   ok('три кнопки родов войск', c.querySelectorAll('.tactic-kind').length === 3);
 
   console.log('\n── 7. Военный займ ──');
-  html = await render(baseClub(), baseLot());
+  html = await render(baseClub(), baseLot(), 'lottery');
   ok('банк крупно', /lot-pot-num/.test(html) && /600/.test(html));
   ok('продано билетов видно', /40 \/ 1000/.test(html));
   ok('свои билеты и шанс', /<b class="gold">2<\/b>/.test(html) && /шанс 5%/.test(html));
@@ -143,7 +146,7 @@ const baseLot = () => ({
 
   console.log('\n── 8. Билеты кончились ──');
   let lt = baseLot(); lt.left = 0; lt.sold = 1000; lt.pot = 15000;
-  html = await render(baseClub(), lt);
+  html = await render(baseClub(), lt, 'lottery');
   ok('покупку убрали', !c.querySelector('#lot-buy'));
   ok('и объяснили почему', /Билеты кончились/.test(html));
 
@@ -165,7 +168,7 @@ const baseLot = () => ({
     foe: [card('king-clubs', 'К', 'трефы'), card('09-diamonds', '9', 'бубны')], foeSum: 13,
   };
   App._prefLast = null; App._prefSeen = null;
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'pref');
   ok('карты нарисованы картинками', c.querySelectorAll('.pf-card img').length === 4);
   ok('пути ведут в /img/cards', /src="\/img\/cards\/10-spades\.webp"/.test(html));
   ok('рука генерала показана отдельно', /Генерал/.test(html));
@@ -181,7 +184,7 @@ const baseLot = () => ({
   console.log('\n── 12. Добор анимируется только для новой карты ──');
   cl.pref.hand.push(card('06-clubs', '6', 'трефы'));
   cl.pref.sum = 23;
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'pref');
   ok('всего карт стало пять', c.querySelectorAll('.pf-card').length === 5);
   ok('анимируется ровно одна — только что пришедшая',
      c.querySelectorAll('.pf-card.pf-deal').length === 1);
@@ -197,7 +200,7 @@ const baseLot = () => ({
     hand: [card('10-spades', '10', 'пики'), card('10-hearts', '10', 'червы')],
     foe: [card('king-clubs', 'К', 'трефы'), card('ace-diamonds', 'Т', 'бубны'), card('07-spades', '7', 'пики')],
   };
-  html = await render(cl, baseLot());
+  html = await render(cl, baseLot(), 'pref');
   ok('исход назван', /Партия ваша/.test(html));
   ok('счёт показан', /<b>20<\/b> против <b>18<\/b>/.test(html));
   ok('награда названа', /\+🪙 15/.test(html));
@@ -205,11 +208,45 @@ const baseLot = () => ({
   ok('и таймер до следующей партии', /Доступно через/.test(html));
 
 
+  console.log('\n── 14. Вход в клуб — кнопки, а не простыня ──');
+  // Семь игр на одной странице не помещались на экран телефона, а
+  // правила платной игры показать в такой простыне было негде.
+  html = await render(baseClub(), baseLot());        // без адреса игры
+  ok('заголовок клуба', /Клуб офицеров/.test(html));
+  ok('кнопок ровно семь — по числу игр', c.querySelectorAll('.club-btn').length === 7);
+  ok('каждая ведёт на свою страницу',
+     ['pref', 'safe', 'lottery', 'tactic', 'raid', 'dice', 'bids']
+       .every((g) => !!c.querySelector('.club-btn[href="#club/' + g + '"]')));
+  ok('на кнопке видно состояние игры — заходить ради проверки не надо',
+     /банк 🪙 600/.test(html) && /ставка 🪙 10/.test(html));
+  ok('суточный предел показан и здесь', /cap-bar/.test(html));
+  ok('столов и карт на входе нет', c.querySelectorAll('.pf-card').length === 0);
+
+  console.log('\n── 15. Страница преферанса: правила до игры ──');
+  // Игра платная, значит правила и цена должны быть видны ДО того, как
+  // с игрока спишут золото.
+  App._prefLast = null;
+  html = await render(baseClub(), baseLot(), 'pref');
+  ok('стоимость КАЖДОЙ карты расписана', c.querySelectorAll('.pref-val').length === 9);
+  ok('валет 2, дама 3, король 4, туз 11',
+     /<b>В<\/b>2/.test(html) && /<b>Д<\/b>3/.test(html) && /<b>К<\/b>4/.test(html) && /<b>Т<\/b>11/.test(html));
+  ok('правило туза объяснено', /туз.{0,80}за 1/i.test(html));
+  ok('сказано, что ничья — проигрыш', /Ничья считается его победой/.test(html));
+  ok('ставка названа до начала', /Ставка за партию/.test(html) && /🪙 10/.test(html));
+  ok('выигрыш назван', /🪙 20/.test(html));
+  ok('перерыв назван', /5 мин/.test(html));
+  ok('игра НЕ началась сама — есть кнопка старта', !!c.querySelector('#pref-start'));
+  ok('и карт на столе ещё нет', c.querySelectorAll('.pf-card').length === 0);
+  ok('шанс на выигрыш игроку не показан',
+     !/40\s*%/.test(html) && !/шанс/i.test(html) && !/вероятн/i.test(html));
+  ok('есть возврат в клуб', !!c.querySelector('a[href="#club"]'));
+
+
   console.log('\n── 10. Сама проверка умеет краснеть ──');
   // Если экран перестанет рисоваться, разметка будет пустой — на этом и
   // держатся все проверки выше.
   ok('разметка не пустая', html.length > 500);
-  ok('проверки смотрят в живой DOM', c.querySelectorAll('.card').length >= 6);
+  ok('проверки смотрят в живой DOM', c.querySelectorAll('.card').length >= 1);
 
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);

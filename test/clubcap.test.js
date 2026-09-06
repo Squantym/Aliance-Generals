@@ -104,12 +104,14 @@ const nx = [];
   const shared = U.club.cd.all;
   clearCd();
   U.club.cd.all = shared;
+  // Преферанса в списке нет намеренно: он платный и общему перерыву не
+  // подчиняется — это отдельно проверяется в разделе 10.
   let blocked = 0;
-  for (const start of [() => club.prefStart(U), () => club.diceStart(U),
-                       () => club.raidStart(U), () => club.tacticStart(U)]) {
+  for (const start of [() => club.diceStart(U), () => club.raidStart(U),
+                       () => club.tacticStart(U)]) {
     try { start(); } catch (e) { if (/перерыв/i.test(e.message)) blocked++; }
   }
-  ok('перерыв закрывает ВСЕ игры, а не одну', blocked === 4);
+  ok('перерыв закрывает ВСЕ бесплатные игры, а не одну', blocked === 3);
   // Общий сейф — тоже часть клуба и тоже под перерывом
   let safeBlocked = false;
   try { club.safeTry(U, '123456', nx); } catch (e) { safeBlocked = /перерыв/i.test(e.message); }
@@ -174,6 +176,59 @@ const nx = [];
   ok('и этот вызов помечает источник', /player\.addGold\(user, give, 'club_' \+ game\)/.test(src));
   const payoutCalls = (src.match(/payout\(user, '/g) || []).length;
   ok(`каждая игра выдаёт золото через payout (${payoutCalls} вызовов)`, payoutCalls >= 6);
+
+  console.log('\n── 10. Платная игра живёт по своим правилам ──');
+  // Общий перерыв придуман, чтобы придержать РАЗДАЧУ бесплатного
+  // золота. Преферанс платный: за партию внесена ставка, и запирать
+  // из-за него остальной клуб не за что — как и его самого чужими
+  // выигрышами.
+  U.club.day = "сутки для платной игры";
+  clearCd();
+  U.gold = 100000;
+  playRaid(2);                                  // бесплатная победа взвела перерыв
+  ok('после бесплатной игры общий перерыв стоит', club.view(U).sharedCooldownSec > 0);
+  let prefBlocked = false;
+  try { club.prefStart(U, nx); } catch (e) { prefBlocked = /перерыв/i.test(e.message); }
+  ok('но за платный стол он сесть не мешает', !prefBlocked);
+
+  // И наоборот: победа за платным столом не запирает бесплатные игры
+  clearCd();
+  let sharedAfterPref = null;
+  for (let i = 0; i < 200 && sharedAfterPref === null; i++) {
+    clearCd();
+    U.club.dayGold = 0;
+    club.prefStart(U, nx);
+    const r = club.prefStand(U, nx);
+    if (r.result === 'win') sharedAfterPref = club.view(U).sharedCooldownSec;
+  }
+  ok('победа за платным столом случилась', sharedAfterPref !== null);
+  ok('и она НЕ взвела общий перерыв клуба', sharedAfterPref === 0);
+
+  console.log('\n── 11. Потолок считает НЕТТО, а не выплаты ──');
+  // Считай мы по валовой выплате, десять партий преферанса (из них
+  // четыре выигранных) забили бы весь суточный потолок — при том что
+  // игрок ушёл бы в минус и ничего у клуба не выиграл.
+  U.club.day = "сутки для нетто";
+  clearCd();
+  U.gold = 100000;
+  const goldStart = U.gold;
+  let played = 0, won = 0;
+  for (let i = 0; i < 60; i++) {
+    clearCd();
+    club.prefStart(U, nx);
+    const r = club.prefStand(U, nx);
+    played++;
+    if (r.result === 'win') won++;
+  }
+  const netGold = U.gold - goldStart;
+  const spentBudget = club.view(U).budget.spent;
+  ok(`сыграно ${played} партий, выиграно ${won}`, played === 60 && won > 0);
+  ok(`на руках изменение ${netGold} 🪙 — игрок в минусе`, netGold < 0);
+  ok(`суточный счётчик потолка при этом ${spentBudget}, а не ${won * C.PREF_WIN_GOLD}`,
+     spentBudget < won * C.PREF_WIN_GOLD);
+  ok(`и бесплатные игры не заперты потолком (остаток ${club.view(U).budget.left})`,
+     club.view(U).budget.left > 0);
+
 
   console.log('\n── 9. Сама проверка умеет краснеть ──');
   // Без этого раздела разбор кода был бы зелёным и на пустом файле.

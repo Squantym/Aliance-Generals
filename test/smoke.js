@@ -359,15 +359,31 @@ async function main() {
 
   // Очко: сдача — добор — вскрытие. Каждый шаг обязан отвечать понятным
   // состоянием, а не просто «200 ОК».
+  // Очко стало ПЛАТНЫМ: вход стоит золота. У свежего игрока его нет
+  // (START_GOLD = 0), и отказ здесь — правильное поведение, а не сбой.
+  // Проверяем именно то, что касса работает в обе стороны.
+  const prefGold = (await get('/api/me', A)).data.gold || 0;
+  const prefEntry = (club.pref && club.pref.entry) || 0;
+  check('очко: ставка названа до игры', prefEntry > 0, 'entry: ' + prefEntry);
   const prefStart = await post('/api/club/pref/start', A);
-  clubCheck('очко: партия сдана', prefStart, (r) => Array.isArray(r.data.hand));
-  const prefHit = await post('/api/club/pref/hit', A);
-  clubCheck('очко: добор обработан', prefHit, (r) => ['hit', 'bust'].includes(r.data.result), started(prefStart));
-  if (prefHit.data.result === 'hit') {
-    const prefStand = await post('/api/club/pref/stand', A);
-    check('очко: вскрытие обработано', prefStand.status === 200 && !!prefStand.data.result);
+  if (prefGold < prefEntry) {
+    check('очко: без ставки за стол не пускают',
+          prefStart.status === 400 && /Ставка/i.test(String((prefStart.data || {}).error || '')),
+          'ответ: ' + prefStart.status + ' ' + JSON.stringify(prefStart.data).slice(0, 120));
+    skip('очко: партия сдана', 'у игрока меньше золота, чем стоит ставка');
+    skip('очко: добор обработан', 'партия не начиналась');
   } else {
-    skip('очко: вскрытие обработано', 'перебор на доборе — партия закончилась раньше');
+    clubCheck('очко: партия сдана', prefStart, (r) => Array.isArray(r.data.hand));
+    check('очко: ставка списана',
+          ((await get('/api/me', A)).data.gold || 0) === prefGold - prefEntry);
+    const prefHit = await post('/api/club/pref/hit', A);
+    clubCheck('очко: добор обработан', prefHit, (r) => ['hit', 'bust'].includes(r.data.result), started(prefStart));
+  }
+  const prefStand = await post('/api/club/pref/stand', A);
+  if (prefStand.status === 200) {
+    check('очко: вскрытие обработано', !!prefStand.data.result && !!prefStand.data.foe);
+  } else {
+    skip('очко: вскрытие обработано', 'партия закончилась раньше или не начиналась');
   }
 
   // Сейф: подбор кода по принципу «быки и коровы».

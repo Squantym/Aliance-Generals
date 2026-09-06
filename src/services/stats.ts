@@ -47,6 +47,7 @@ const GOLD_SPENDING: Record<string, string> = {
   lot_buff: 'Лоты: допинг',
   lot_bid: 'Лоты: ставки',
   lottery_ticket: 'Военный займ: билеты',
+  club_pref: 'Клуб: ставка в преферансе',
   vip: 'VIP-подписка',
   merc: 'Наёмники',
   boost: 'Ускорения',

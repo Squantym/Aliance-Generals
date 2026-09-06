@@ -604,7 +604,7 @@ function registerRoutes(app: any) {
   // ---------- Клуб офицеров ----------
   app.add('GET', '/api/club', (req) => club.view(req.user));
   // 1. Военный преферанс
-  app.add('POST', '/api/club/pref/start', act((req) => club.prefStart(req.user)));
+  app.add('POST', '/api/club/pref/start', act((req, n) => club.prefStart(req.user, n)));
   app.add('POST', '/api/club/pref/hit',   act((req, n) => club.prefHit(req.user, n)));
   app.add('POST', '/api/club/pref/stand', act((req, n) => club.prefStand(req.user, n)));
   // 2. Сейф штаба

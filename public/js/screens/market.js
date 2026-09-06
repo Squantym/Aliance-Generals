@@ -386,9 +386,12 @@ App.screens.market = async (c, param) => {
 };
 
 // ---------- КЛУБ ОФИЦЕРОВ ----------
-// ---------- КЛУБ ОФИЦЕРОВ (5 многоступенчатых игр) ----------
-App.screens.club = async (c) => {
+// Вход в клуб — список кнопок; каждая игра живёт на своей странице по
+// адресу #club/<игра>. Одна простыня на семь игр не помещалась на экран
+// телефона, и правила платной игры показать в ней было негде.
+App.screens.club = async (c, param) => {
   await App.refreshMe();
+  const game = String(param || '').split('/')[0];
   const [data, lot] = await Promise.all([API.get('/api/club'), API.get('/api/lottery')]);
   const R = (id) => document.getElementById(id);
   const post = async (url, body) => {
@@ -421,6 +424,22 @@ App.screens.club = async (c) => {
 
   let prefHtml;
   const pf = data.pref;
+  // ── Правила преферанса: показываем ДО игры, а не в подсказке ──
+  // Игрок платит золотом, значит правила должен видеть заранее и целиком,
+  // включая стоимость каждой карты. Спрятать их в тултип — то же, что
+  // спрятать цену.
+  const prefRules = `
+    <p class="muted small">Наберите ближе к <b>${pf.target || 21}</b>, чем генерал, не перебрав.
+      Карты генерала открыты с раздачи; он добирает, пока у него меньше <b>${pf.dealerStop || 17}</b>.
+      Перебрали — проигрыш сразу. <b>Ничья считается его победой.</b></p>
+    <p class="muted small mt">Колода на 36 карт. Сколько стоит какая:</p>
+    <div class="pref-vals">
+      ${[['6','6'],['7','7'],['8','8'],['9','9'],['10','10'],['В','2'],['Д','3'],['К','4'],['Т','11']]
+        .map(([r, v]) => `<span class="pref-val"><b>${r}</b>${v}</span>`).join('')}
+    </div>
+    <p class="muted small mt">Туз стоит 11, но если рука перебирает — считается за 1.
+      Масть на очки не влияет.</p>`;
+
   const last = App._prefLast;
   if (pf.state === 'active') {
     prefHtml = `
@@ -447,10 +466,15 @@ App.screens.club = async (c) => {
       prefHtml = outcome + cdLine(pf.cooldownSec);
     } else {
       prefHtml = outcome + `
-        <p class="muted small mt">Колода на 36 карт: 6…10 по номиналу, валет 2, дама 3, король 4, туз 11
-          (а если рука перебирает — туз считается за 1). Наберите ближе к ${pf.target},
-          чем генерал. Награда <span class="ic-gold"></span> ${pf.rewardMin}–${pf.rewardMax}.</p>
-        <button class="btn btn-orange mt" id="pref-start">Сесть за стол</button>`;
+        ${prefRules}
+        <div class="pref-stake mt">
+          <span class="grow">Ставка за партию</span><b>🪙 ${pf.entry}</b>
+        </div>
+        <div class="pref-stake">
+          <span class="grow">Выигрыш</span><b class="gold">🪙 ${pf.win}</b>
+        </div>
+        <p class="muted small mt">Между партиями — ${pf.cdMin} мин.</p>
+        <button class="btn btn-orange mt" id="pref-start" style="width:100%">🃏 Начать игру · ставка <span class="ic-gold"></span> ${pf.entry}</button>`;
     }
   }
 
@@ -645,17 +669,67 @@ App.screens.club = async (c) => {
         ? '<p class="muted small">⏳ Перерыв после выигрыша: ' + UI.fmtTimer(data.sharedCooldownSec) + '</p>' : ''}
     </div>`;
 
-  c.innerHTML = `
-    <div class="title">Клуб офицеров</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Игры на удачу и смекалку. После каждого выигрыша — общий перерыв.</p>
-    ${capHtml}
-    <div class="card"><div class="name">🎟 Военный займ</div><div class="mt">${lotHtml}</div></div>
-    <div class="card"><div class="name">⚔ Тактическая дуэль</div><div class="mt">${tacticHtml}</div></div>
-    <div class="card"><div class="name">🗝 Сейф штаба</div><div class="mt">${safeHtml}</div></div>
-    <div class="card"><div class="name">🃏 Военный преферанс</div><div class="mt">${prefHtml}</div></div>
-    <div class="card"><div class="name">🌒 Ночной рейд</div><div class="mt">${raidHtml}</div></div>
-    <div class="card"><div class="name">🎲 Военные кости</div><div class="mt">${diceHtml}</div></div>
-    <div class="card"><div class="name">💼 Штабной аукцион</div><div class="mt">${bidsHtml}</div></div>`;
+
+  // ── Клуб как набор кнопок ─────────────────────────────────────
+  // Раньше все семь игр висели на одной странице простынёй. Теперь вход
+  // в клуб — это выбор, а игра открывается своей страницей: на ней
+  // помещаются и правила, и стол, и история.
+  const st = (s) => (s && s.state) || '';
+  const timer = (sec) => '⏳ ' + UI.fmtTimer(sec);
+  const GAMES = [
+    { id: 'pref',    icon: '🃏', name: 'Военный преферанс',
+      note: pf.state === 'active' ? 'партия идёт'
+          : (pf.state === 'cooldown' ? timer(pf.cooldownSec)
+          : `ставка 🪙 ${pf.entry}, выигрыш 🪙 ${pf.win}`) },
+    { id: 'safe',    icon: '🗝', name: 'Сейф штаба',
+      note: sf.state === 'locked' ? 'вскрыт · ' + timer(sf.lockedSec)
+          : `${sf.mask} · открыто ${sf.opened} из ${sf.digits}` },
+    { id: 'lottery', icon: '🎟', name: 'Военный займ',
+      note: `банк 🪙 ${UI.fmtNum(lot.pot)} · до розыгрыша ${UI.fmtTimer(lot.secondsLeft)}` },
+    { id: 'tactic',  icon: '⚔', name: 'Тактическая дуэль',
+      note: dl.state === 'active' ? `счёт ${dl.my}:${dl.foe}`
+          : (dl.state === 'cooldown' ? timer(dl.cooldownSec) : `до ${dl.needed} побед`) },
+    { id: 'raid',    icon: '🌒', name: 'Ночной рейд',
+      note: rd.state === 'active' ? `взято рубежей ${rd.step}`
+          : (rd.state === 'cooldown' ? timer(rd.cooldownSec) : 'дойти и вовремя отойти') },
+    { id: 'dice',    icon: '🎲', name: 'Военные кости',
+      note: st(data.dice) === 'active' ? 'бросок сделан'
+          : (st(data.dice) === 'cooldown' ? timer(data.dice.cooldownSec) : '5 кубиков, 2 переброса') },
+    { id: 'bids',    icon: '💼', name: 'Штабной аукцион',
+      note: st(data.bids) === 'cooldown' ? timer(data.bids.cooldownSec) : 'слепые ставки на три лота' },
+  ];
+  const hubHtml = GAMES.map((g) => `
+    <a class="card club-btn" href="#club/${g.id}">
+      <span class="club-ico">${g.icon}</span>
+      <span class="club-txt"><b>${UI.esc(g.name)}</b><span class="muted small">${g.note}</span></span>
+      <span class="club-arrow">›</span>
+    </a>`).join('');
+
+  const back = '<p class="mt"><a class="btn btn-inline" href="#club">‹ В клуб офицеров</a></p>';
+  const PAGES = {
+    pref:    { icon: '🃏', name: 'Военный преферанс',  html: prefHtml },
+    safe:    { icon: '🗝', name: 'Сейф штаба',          html: safeHtml },
+    lottery: { icon: '🎟', name: 'Военный займ',        html: lotHtml },
+    tactic:  { icon: '⚔', name: 'Тактическая дуэль',    html: tacticHtml },
+    raid:    { icon: '🌒', name: 'Ночной рейд',         html: raidHtml },
+    dice:    { icon: '🎲', name: 'Военные кости',       html: diceHtml },
+    bids:    { icon: '💼', name: 'Штабной аукцион',     html: bidsHtml },
+  };
+
+  if (PAGES[game]) {
+    const g = PAGES[game];
+    c.innerHTML = `
+      <div class="title">${g.icon} ${UI.esc(g.name)}</div>
+      ${game === 'pref' ? '' : capHtml}
+      <div class="card">${g.html}</div>
+      ${back}`;
+  } else {
+    c.innerHTML = `
+      <div class="title">Клуб офицеров</div>
+      <p class="muted small" style="margin:-4px 4px 10px">Выберите развлечение. После выигрыша в бесплатных играх — общий перерыв на весь клуб.</p>
+      ${capHtml}
+      ${hubHtml}`;
+  }
 
   // ── Обработчики ──
   // Преферанс
