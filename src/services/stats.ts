@@ -49,6 +49,7 @@ const GOLD_SPENDING: Record<string, string> = {
   lottery_ticket: 'Военный займ: билеты',
   club_pref: 'Клуб: ставка в преферансе',
   vip: 'VIP-подписка',
+  trophy_refund: 'Возврат за снятые трофеи',
   merc: 'Наёмники',
   boost: 'Ускорения',
   heal: 'Лечение',

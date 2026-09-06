@@ -1791,7 +1791,7 @@ App.screens.notifications = async (c) => {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt">🛡 Проник в ваш штаб и сорвал ${p.doubleCut ? '<b style="color:var(--red)">сразу две части герба</b>' : 'часть герба'} <span class="ic-crest"></span>.${p.restored ? ' <span style="color:var(--green)">Но ремонтная бригада вернула часть на место! 🔧</span>' : ''}</p>`;
+        <p class="small mt">🛡 Проник в ваш штаб и сорвал часть герба <span class="ic-crest"></span>.</p>`;
     } else if (n.kind === 'breach_escape') {
       body = `
         <div class="kv"><span class="k">Кто пытался</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>

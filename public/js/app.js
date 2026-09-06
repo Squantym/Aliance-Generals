@@ -98,18 +98,11 @@ const App = {
   // Шаг 2: картинка результата + кнопка «Вернуться на поле боя».
   _showBreachResult(choice, res) {
     const isCrest = choice === 'crest';
-    // Сколько частей сорвано: трофей «Таран штаба» даёт шанс на две сразу.
-    // Раньше окно всегда говорило одно и то же, и игрок не понимал,
-    // сработал ли трофей.
-    const bothParts = !!(res && res.doubleCut);
-    const restored = !!(res && res.restored);
-    const crestTitle = bothParts ? 'Сорваны ДВЕ части герба' : 'Герб сорван';
-    const crestText = bothParts
-      ? `Трофей «Таран штаба» сработал: одним рывком вы сняли <b>две части герба</b>${res && res.victimName ? ` из штаба ${UI.esc(res.victimName)}` : ''} — в коллекцию ушло сразу два трофея.`
-      : `Вы сорвали <b>часть герба</b> со стены штаба${res && res.victimName ? ` (${UI.esc(res.victimName)})` : ''} — трофейный герб пополнил вашу коллекцию.`;
-    const restoredNote = restored
-      ? '<p class="center small mt" style="color:var(--orange-1)">🔧 Но ремонтная бригада вернула часть на место — трофей у вас, а герб хозяина снова цел.</p>'
-      : '';
+    // Одно проникновение — одна часть. Трофеев, дававших вторую часть или
+    // возвращавших её хозяину, в игре больше нет, поэтому и вариантов
+    // исхода здесь ровно два: сорвал или заключил перемирие.
+    const crestTitle = 'Герб сорван';
+    const crestText = `Вы сорвали <b>часть герба</b> со стены штаба${res && res.victimName ? ` (${UI.esc(res.victimName)})` : ''} — трофейный герб пополнил вашу коллекцию.`;
     const overlay = document.createElement('div');
     overlay.id = 'breach-overlay';
     overlay.className = 'breach-overlay';
@@ -120,7 +113,6 @@ const App = {
         <p class="center muted small">${isCrest
           ? crestText
           : 'Вы вышли из штаба, не тронув герб. Жетон перемирия — ваш.'}</p>
-        ${isCrest ? restoredNote : ''}
         ${(res && (res.crests != null || res.tokens != null)) ? `
           <div class="fat-loot">
             ${res.crests != null ? `<span><span class="ic-crest"></span> ${UI.fmtNum(res.crests)}</span>` : ''}

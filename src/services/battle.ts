@@ -960,9 +960,6 @@ function breach(user: User, choice: string, notices: Notices) {
   }
   user.pendingBreach = null;
   user.battle.breaches++;
-  // Детали для окна результата: одна часть герба или две (трофей «Таран штаба»),
-  // и не восстановила ли жертва ухо полевым хирургом
-  let outDoubleCut = false, outRestored = false;
   ach.bump(user, 'breaches', 1, notices);
   require('./dailyQuests').bump(user, 'breaches', 1);
 
@@ -976,59 +973,23 @@ function breach(user: User, choice: string, notices: Notices) {
     if (!pf.isBot) {
       const victim = player.users()[pf.targetId];
       if (victim) {
-        // Трофей «Таран штаба»: шанс сорвать СРАЗУ ДВЕ части одним рывком
-        const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
-        const doubleCut = victim.crestParts >= 2 && Math.random() * 100 < doublePct;
-        outDoubleCut = doubleCut;
-        const cutsToMake = doubleCut ? 2 : 1;
-        if (doubleCut) {
-          // Вторая часть: раньше она попадала в коллекцию и в поручения,
-          // но НЕ в сезонный рейтинг — из-за этого у владельцев трофея
-          // цифра в рейтинге отставала от реально сорванного.
-          user.ears++;
-          require('./dailyQuests').bump(user, 'crestsTorn', 1);
-          ach.bump(user, 'crestsTorn', 1, notices);
-          player.addRating(user, 3);
-          try { require('./seasons').onBreachCrest(user); } catch (e) {}
-        }
-
+        // Одно проникновение — одна часть. Два трофея, дававших вторую
+        // часть или возвращавших её хозяину, из игры убраны, поэтому
+        // случайности здесь больше нет: пришёл — снял часть.
         if (!victim.crestTakers) victim.crestTakers = new Array(config.CREST.PARTS).fill(null);
-        for (let k = 0; k < cutsToMake; k++) {
-          victim.crestPartsLost++;
-          victim.crestParts = Math.max(0, victim.crestParts - 1);
-          victim.crestLostAt.push(Date.now());
-          const cutIndex = config.CREST.PARTS - victim.crestParts - 1;
-          const slot = Math.max(0, Math.min(config.CREST.PARTS - 1, cutIndex));
-          victim.crestTakers[slot] = { id: user.id, name: user.name };
-          player.addRating(victim, -3); // рейтинг жертвы: у тебя сорвали часть герба −3
-          // Явно помечаем ЖЕРТВУ к записи. Слой http сохраняет только
-          // того, кто сделал запрос, — то есть атакующего. Сейчас жертву
-          // спасает то, что addRating помечает её сам, но это побочный
-          // эффект: уберут штраф рейтинга — и потеря части перестанет
-          // доживать до диска, оставаясь только в памяти процесса.
-          db.markUser(victim.id);
-        }
-        // Рейтинг за второе ухо (+3) начисляется ВЫШЕ, в блоке doubleCut,
-        // вместе с коллекцией, поручением и сезонным зачётом. Здесь стояло
-        // второе такое же начисление — оставшееся от прежней версии, когда
-        // блока выше ещё не было. Владелец «Тарана штаба» получал за
-        // двойной срез +9 вместо +6 и тихо обгонял всех в рейтинге.
-
-        // Трофей хозяина штаба «Ремонтная бригада»: шанс мгновенно
-        // вернуть часть герба на место (последнюю сорванную). Если
-        // вернул — герб уже не сорван целиком, и послание оставить нельзя.
-        const restorePct = trophies.discountPct ? trophies.discountPct(victim, 'ear_restore') : 0;
-        let restored = false;
-        if (restorePct > 0 && Math.random() * 100 < restorePct && victim.crestParts < config.CREST.PARTS) {
-          victim.crestParts = Math.min(config.CREST.PARTS, victim.crestParts + 1);
-          if (victim.crestLostAt.length > 0) victim.crestLostAt.pop();
-          // Снимаем отметки о тех, чьи части вернулись на место
-          const lostNow = config.CREST.PARTS - victim.crestParts;
-          for (let k = lostNow; k < config.CREST.PARTS; k++) victim.crestTakers[k] = null;
-          restored = true;
-          outRestored = true;
-          player.addRating(victim, 3); // часть вернулась — возвращаем рейтинг хозяину
-        }
+        victim.crestPartsLost++;
+        victim.crestParts = Math.max(0, victim.crestParts - 1);
+        victim.crestLostAt.push(Date.now());
+        const cutIndex = config.CREST.PARTS - victim.crestParts - 1;
+        const slot = Math.max(0, Math.min(config.CREST.PARTS - 1, cutIndex));
+        victim.crestTakers[slot] = { id: user.id, name: user.name };
+        player.addRating(victim, -3); // рейтинг хозяина: у тебя сорвали часть герба −3
+        // Явно помечаем ХОЗЯИНА к записи. Слой http сохраняет только
+        // того, кто сделал запрос, — то есть нападавшего. Сейчас его
+        // спасает то, что addRating помечает его сам, но это побочный
+        // эффект: уберут штраф рейтинга — и потеря части перестанет
+        // доживать до диска, оставаясь только в памяти процесса.
+        db.markUser(victim.id);
 
         // Послание можно оставить, только если ВЕСЬ герб сорван этим
         // игроком: сорвал одну часть из трёх — расписываться не за что.
@@ -1042,43 +1003,25 @@ function breach(user: User, choice: string, notices: Notices) {
         const penaltyNote = goneNow > 0
           ? ` Сорвано частей: ${goneNow} из ${config.CREST.PARTS} — штраф −${Math.round(goneNow * config.CREST.PENALTY_PER_PART_PCT * 100)}% к атаке и защите.`
           : '';
-        const cutMsg = doubleCut ? 'сразу две части герба' : 'часть герба';
-        const restMsg = restored ? ' Но ремонтная бригада успела вернуть часть на место!' : '';
         notifications.push(victim.id, 'breach_crest',
-          `${user.name} проник в ваш штаб и сорвал ${cutMsg}${restored ? ', но часть удалось вернуть' : ''}`, {
+          `${user.name} проник в ваш штаб и сорвал часть герба`, {
           attackerName: user.name, attackerId: user.id, at: Date.now(),
           partsLeft: victim.crestParts,
           partsGone: Math.max(0, config.CREST.PARTS - victim.crestParts),
-          doubleCut, restored,
         });
-        notices.push(`🛡 Штаб взят! Сорвано: ${cutMsg} (гербов в коллекции: ${user.ears}).${penaltyNote}${restMsg}`);
+        notices.push(`🛡 Штаб взят! Сорвана часть герба (гербов в коллекции: ${user.ears}).${penaltyNote}`);
       } else {
-        // Бот: своего герба у него нет, но трофей «Таран штаба» всё равно
-        // даёт шанс вынести из штаба сразу два знака.
-        const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
-        const doubleCut = Math.random() * 100 < doublePct;
-        outDoubleCut = doubleCut;
-        if (doubleCut) {
-          user.ears++;                                    // второй герб в коллекцию
-          ach.bump(user, 'crestsTorn', 1, notices);
-          require('./dailyQuests').bump(user, 'crestsTorn', 1);
-          player.addRating(user, 3);
-          try { require('./seasons').onBreachCrest(user); } catch (e) {}   // и в сезонный рейтинг
-        }
-        notices.push(`🛡 Штаб взят! ${doubleCut ? 'Вынесено СРАЗУ ДВА герба' : 'Трофейный герб'} — в коллекцию (всего: ${user.ears}).`);
+        // Бот: своего герба у него нет — просто трофей в коллекцию.
+        notices.push(`🛡 Штаб взят! Трофейный герб — в коллекцию (всего: ${user.ears}).`);
       }
     } else {
       // Хозяин штаба не найден (редкий случай): та же логика, что для бота.
-      const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
-      if (Math.random() * 100 < doublePct) user.ears++;
       notices.push(`🛡 Штаб взят! Трофейный герб отправлен в коллекцию (всего: ${user.ears}).`);
     }
-    // Детали нужны окну результата: сорвана одна часть или две (трофей
-    // «Таран штаба»), и не вернула ли ремонтная бригада часть на место
     return {
       choice, crests: user.ears, tokens: user.tokens, canLeaveMessage,
       victimId: pf.isBot ? null : pf.targetId,
-      doubleCut: outDoubleCut, restored: outRestored, victimName: pf.name || null,
+      victimName: pf.name || null,
     };
   }
 
@@ -1099,8 +1042,6 @@ function breach(user: User, choice: string, notices: Notices) {
   notices.push(`🕊 Перемирие заключено. Получен жетон перемирия (всего: ${user.tokens}).`);
   return {
     choice, crests: user.ears, tokens: user.tokens,
-    doubleCut: outDoubleCut,     // сорвано сразу две части (сработал трофей)
-    restored: outRestored,       // хозяин вернул часть на место
     victimName: pf.name || null,
   };
 }

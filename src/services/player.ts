@@ -818,6 +818,54 @@ function refresh(user: User): void {
   if (user.emailVerified === undefined) user.emailVerified = true;
   if (user.email === undefined) user.email = '';
 
+  // ── Снятые трофеи: возврат потраченного ────────────────────────
+  //
+  // Два трофея убраны из игры вместе с наследием фаталити. Просто
+  // выкинуть их нельзя: игроки платили за прокачку золотом, и на
+  // максимальном уровне это 15 345 (Тесак) и 10 230 (Хирург) — до
+  // 25 575 на двоих. Молча забрать купленное — это не «правка
+  // баланса», а изъятие оплаченного.
+  //
+  // Возвращаем ровно ту сумму, которую стоила прокачка до текущего
+  // уровня, по той же формуле, что её и считала. Скидки могли сделать
+  // фактический платёж меньше — значит возврат выходит не меньше
+  // потраченного, и ошибка идёт в пользу игрока, а не наоборот.
+  if (user.trophies) {
+    let back = 0;
+    const names: string[] = [];
+    for (const def of (config.TROPHIES_REMOVED || [])) {
+      const lvl = Number((user.trophies as any)[def.id]) || 0;
+      if (lvl <= 0) { delete (user.trophies as any)[def.id]; continue; }
+      for (let l = 0; l < lvl; l++) back += config.trophyUpgradeCost(l, def.expensive);
+      names.push(def.name + ' (ур. ' + lvl + ')');
+      delete (user.trophies as any)[def.id];
+    }
+    // Незаконченная прокачка снятого трофея: золото за неё уже списано,
+    // возвращаем и его, а сам процесс убираем из очереди.
+    const q: any[] = (user as any).trophyQueue || [];
+    if (q.length) {
+      const removedIds = new Set((config.TROPHIES_REMOVED || []).map((d: any) => d.id));
+      const keep = q.filter((job: any) => {
+        if (!removedIds.has(job.id)) return true;
+        const def: any = (config.TROPHIES_REMOVED || []).find((d: any) => d.id === job.id);
+        // В очереди хранится ЦЕЛЕВОЙ уровень, а заплачено было за переход
+        // с предыдущего — иначе возврат ушёл бы на ступень выше.
+        back += config.trophyUpgradeCost(Math.max(0, (Number(job.level) || 1) - 1), def && def.expensive);
+        return false;
+      });
+      if (keep.length !== q.length) (user as any).trophyQueue = keep;
+    }
+    if (back > 0) {
+      addGold(user, back, 'trophy_refund');
+      db.markUser(user.id);
+      try {
+        require('./notifications').push(user.id, 'trophy_refund',
+          `Трофеи сняты из игры: ${names.join(', ')}. Золото за прокачку возвращено: 🪙 ${back}.`,
+          { gold: back });
+      } catch (e) {}
+    }
+  }
+
   // ── Достижения: переименованные ступени ────────────────────────
   //
   // У достижений сменились идентификаторы вместе с механикой

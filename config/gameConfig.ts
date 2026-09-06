@@ -1591,17 +1591,25 @@ function pickDailyQuests(dayKey: string): string[] {
 // Помеченные expensive — стоят в прокачке на 50% дороже.
 // Прокачка требует времени, которое растёт ×1.7 за уровень: 1 ур. = 1 ч,
 // 5 ур. ≈ 8 ч, 8 ур. ≈ 1.7 сут, 10 ур. ≈ 4.8 сут (близко к неделе).
+// Трофеи, снятые из игры. Здесь они остаются НЕ для красоты: по этому
+// списку миграция возвращает игрокам золото, потраченное на прокачку.
+// Убери строку — и возврат перестанет считаться для тех, кто ещё не
+// заходил после обновления, то есть часть игроков молча лишится
+// купленного.
+const TROPHIES_REMOVED = [
+  { id: 'sewing',  name: 'Набор полевого хирурга', expensive: false },
+  { id: 'butcher', name: 'Тесак мясника',          expensive: true  },
+];
+
 const TROPHIES = [
   { id: 'medal',     name: 'Медаль «За отвагу»',          desc: '+2% к атаке за уровень (макс. 20%).',                  perLvl: 2,   apply: 'atk',     expensive: true },
   { id: 'shield',    name: 'Орден «Стальной щит»',        desc: '+2% к защите за уровень (макс. 20%).',                 perLvl: 2,   apply: 'def',     expensive: true },
   { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает критический урон: на макс. уровне крит наносит ×6 от базового урона (база крита ×2, трофей добавляет ещё +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: 'Каждое присланное союзником подкрепление даёт больше мощи: +1.5% за уровень трофея (базовый бонус подкрепления — 2%).', perLvl: 1.5, apply: 'reinforce' },
-  { id: 'sewing',    name: 'Ремонтная бригада',           desc: 'Шанс мгновенно вернуть сорванную часть герба +6% за уровень (макс. 60%).', perLvl: 6, apply: 'ear_restore' },
   // Крит-лечение медика в бою легиона. Раньше шанс ошибочно зависел от
   // ЛОВКОСТИ (стат уворота) — теперь у него собственный трофей.
   { id: 'red_cross', name: 'Орден «Красный крест»',       desc: 'Шанс критического лечения в бою легиона +4.5% за уровень (база 5%, на макс. уровне — 50%). Крит-лечение восстанавливает союзнику 100–330 HP вместо 20–40. Работает только для роли «Медик».', perLvl: 4.5, apply: 'crit_heal', expensive: true },
-  { id: 'butcher',   name: 'Таран штаба',                 desc: 'Шанс сорвать СРАЗУ ДВЕ части герба +6% за уровень (макс. 60%).', perLvl: 6, apply: 'double_ear', expensive: true },
   { id: 'hospital',  name: 'Полевой госпиталь',           desc: '−5% к цене лечения в госпитале за уровень (макс. 50%).', perLvl: 5, apply: 'hospital' },
   { id: 'supply',    name: 'Снабженческие линии',         desc: '−5% к содержанию техники за уровень (макс. 50%).',     perLvl: 5,   apply: 'upkeep' },
   // Трофеи скорости восстановления: −7.5% времени за уровень → на 10-м
@@ -2572,7 +2580,7 @@ export = {
   MARKET_ITEMS, MARKET_ITEM_BY_ID, CONTAINERS,
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
   COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
-  RIDDLES, CLUB, LOTTERY,
+  RIDDLES, CLUB, LOTTERY, TROPHIES_REMOVED,
   GENDERS, GENDER_BY_ID, GENDER_CHANGE_BASE_GOLD, GENDER_CHANGE_STEP_GOLD,
   CARD_RANKS, CARD_SUITS, CARD_DECK, CARD_BACK, cardInfo, handSum,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, boostGoldFor, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
