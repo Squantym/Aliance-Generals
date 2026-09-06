@@ -43,7 +43,8 @@ const baseClub = () => ({
   sharedCooldownSec: 0,
   pref: { state: 'ready', target: 21, dealerStop: 17, entry: 10, win: 20, cdMin: 5 },
   safe: {
-    state: 'open', digits: 6, maxRepeat: 2, reward: 20,
+    state: 'open', digits: 6, maxRepeat: 2, rewardMin: 15, rewardMax: 20,
+    fund: { total: 250, spent: 90, left: 160 },
     mask: '*41***', opened: 2, attempts: 7, crackers: 3,
     history: [
       { guess: '141690', tag: 'Ж42', at: Date.now() },
@@ -96,6 +97,17 @@ const baseLot = () => ({
   ok('история попыток видна', /141690/.test(html) && /341111/.test(html));
   ok('метки анонимные, без позывных', /взломщик Ж42/.test(html));
   ok('поле ввода на 6 цифр', (c.querySelector('#safe-guess') || {}).maxLength === 6);
+  ok('вилка награды показана', /15–20/.test(html));
+  ok('общий суточный фонд виден числом', /90 \/ 250/.test(html));
+  ok('и полосой', c.querySelectorAll('.cap-bar').length >= 1);
+
+  console.log('\n── 2б. Фонд сейфа исчерпан ──');
+  // Скрытое исчерпание читается как поломка: «вскрыл, а золота не дали».
+  const clEmpty = baseClub();
+  clEmpty.safe.fund = { total: 250, spent: 250, left: 0 };
+  html = await render(clEmpty, baseLot(), 'safe');
+  ok('сказано, что фонд выбран', /Фонд на сегодня выбран/.test(html));
+  ok('но вскрывать по-прежнему можно', !!c.querySelector('#safe-guess'));
 
   console.log('\n── 3. Сейф на личном таймере ──');
   let cl = baseClub(); cl.safe.myCooldownSec = 45;
@@ -133,7 +145,9 @@ const baseLot = () => ({
   };
   html = await render(cl, baseLot(), 'tactic');
   ok('счёт показан', /<b class="gold">2<\/b> : <b>1<\/b>/.test(html));
-  ok('история раундов видна — это и есть подсказка', /Наземные против/.test(html));
+  ok('история раундов видна', /Наземные против/.test(html));
+  ok('подсказки про привычку генерала больше нет — читать нечего',
+     !/повторяет то, чем выиграл/.test(html) && /выбирает вслепую/.test(html));
   ok('три кнопки родов войск', c.querySelectorAll('.tactic-kind').length === 3);
 
   console.log('\n── 7. Военный займ ──');

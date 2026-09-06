@@ -490,6 +490,16 @@ App.screens.club = async (c, param) => {
        <span class="sf-guess grow">${UI.esc(h.guess)}</span>
        <span class="muted">взломщик ${UI.esc(h.tag)}</span>
      </div>`).join('');
+  // Суточный фонд сейфа — общий на весь мир. Показываем всегда: скрытое
+  // исчерпание читается как поломка («вскрыл, а золота не дали»).
+  const fnd = sf.fund || { total: 0, spent: 0, left: 0 };
+  const fundPct = fnd.total > 0 ? Math.min(100, Math.round((fnd.spent / fnd.total) * 100)) : 0;
+  const fundHtml = `
+    <div class="field-row small mt"><span class="grow">Суточный фонд сейфа (на всех)</span>
+      <b class="${fnd.left > 0 ? 'gold' : 'muted'}">${fnd.spent} / ${fnd.total}</b></div>
+    <div class="cap-bar"><i style="width:${fundPct}%"></i></div>
+    ${fnd.left > 0 ? '' : '<p class="muted small">Фонд на сегодня выбран. Вскрыть сейф можно, золота за это до полуночи по Москве не будет.</p>'}`;
+
   const histBlock = hist
     ? `<p class="muted small mt">Последние попытки — чьи, не показывается:</p><div>${hist}</div>`
     : '<p class="muted small mt">К этому сейфу ещё никто не подходил.</p>';
@@ -508,7 +518,8 @@ App.screens.club = async (c, param) => {
       <p class="muted small mt">Сейф ОДИН на всех. Любая попытка — чья угодно — навсегда
         открывает цифры, которые оказались на своём месте. В коде ${sf.digits} цифр,
         одна цифра может встретиться до ${sf.maxRepeat} раз. Вскрывшему —
-        <span class="ic-gold"></span> ${sf.reward}.</p>
+        <span class="ic-gold"></span> ${sf.rewardMin}–${sf.rewardMax}.</p>
+      ${fundHtml}
       ${histBlock}
       ${sf.myCooldownSec > 0
         ? `<p class="muted small mt">⏳ Отмычки остывают: <b>${UI.fmtTimer(sf.myCooldownSec)}</b></p>`
@@ -638,8 +649,8 @@ App.screens.club = async (c, param) => {
     tacticHtml = `
       <p class="small">Счёт: <b class="gold">${dl.my}</b> : <b>${dl.foe}</b> (до ${dl.needed} побед)</p>
       ${dl.rounds.length ? `<div class="mt">${dl.rounds.map((r) => roundRow(r, dl.kinds)).join('')}</div>` : ''}
-      <p class="muted small mt">Генерал — человек привычки: он повторяет то, чем выиграл,
-        и уходит от того, чем проиграл. История выше — это подсказка.</p>
+      <p class="muted small mt">Генерал выбирает вслепую, каждый раунд заново.
+        Предсказать нечего — только удача.</p>
       <div class="field-row mt">${dl.kinds.map(kindBtn).join('')}</div>`;
   } else if (dl.state === 'cooldown') {
     tacticHtml = cdLine(dl.cooldownSec);

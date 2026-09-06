@@ -139,39 +139,54 @@ const nx = [];
      ev[best] > ev[ev.length - 1]);
   ok('первый рубеж не лучший — идти хотя бы раз стоит', best > 0);
 
-
-  console.log('\n── 7. Тактическая дуэль: привычку генерала можно прочитать ──');
+  console.log('\n── 7. Тактическая дуэль: читать нечего ──');
+  // Раньше генерал играл по привычке, и внимательный игрок брал 64%
+  // против 48% у случайного. Обратная сторона той же цифры: шаблон,
+  // который человек замечает иногда, скрипт читает всегда. Теперь
+  // выбор случайный, и проверяется ОБРАТНОЕ утверждение — что никакая
+  // стратегия не даёт преимущества. Это и есть защита от автоматизации:
+  // боту нечего вычитывать.
   const KINDS = ['ground', 'air', 'sea'];
-  const COUNTER = { air: 'ground', sea: 'air', ground: 'sea' };   // чем бить X
-  const tactic = (smart) => {
+  const COUNTER = { air: 'ground', sea: 'air', ground: 'sea' };
+  const tactic = (strategy) => {
     clearCd(); U.club.dayGold = 0;
     club.tacticStart(U);
     for (let r = 0; r < 40; r++) {
       const rounds = (U.club.tactic && U.club.tactic.rounds) || [];
       const last = rounds[rounds.length - 1];
-      let pick;
-      if (!smart || !last) pick = KINDS[Math.floor(Math.random() * 3)];
-      else if (last.res === 'lose') pick = COUNTER[last.foe];              // повторит победивший род
-      else if (last.res === 'win') pick = COUNTER[KINDS.filter((k) => k !== last.foe)[Math.floor(Math.random() * 2)]];
-      else pick = KINDS[Math.floor(Math.random() * 3)];
-      const res = club.tacticPlay(U, pick, nx);
+      const res = club.tacticPlay(U, strategy(last), nx);
       if (res.result === 'win') return true;
       if (res.result === 'lose') return false;
     }
     return false;
   };
-  let rnd = 0, smart = 0;
-  const M = 600;
-  for (let i = 0; i < M; i++) if (tactic(false)) rnd++;
-  for (let i = 0; i < M; i++) if (tactic(true)) smart++;
-  const rndPct = rnd / M, smartPct = smart / M;
-  ok(`тычущий наугад берёт ${(rndPct * 100).toFixed(0)}% — примерно поровну`,
-     rndPct > 0.4 && rndPct < 0.6);
-  ok(`читающий привычку берёт ${(smartPct * 100).toFixed(0)}% — заметно больше`,
-     smartPct - rndPct > 0.08);
+  const rndPick = () => KINDS[Math.floor(Math.random() * 3)];
+  // Три стратегии, которые написал бы автор скрипта, прочитав код
+  const strategies = [
+    ['наугад', () => rndPick()],
+    ['ждёт повтора победившего', (last) => (last && last.res === 'lose' ? COUNTER[last.foe] : rndPick())],
+    ['ждёт ухода от проигравшего', (last) => (last && last.res === 'win'
+        ? COUNTER[KINDS.filter((k) => k !== last.foe)[Math.floor(Math.random() * 2)]] : rndPick())],
+    ['всегда одно и то же', () => 'air'],
+  ];
+  const M = 800;
+  const rates = [];
+  for (const [name, fn] of strategies) {
+    let w = 0;
+    for (let i2 = 0; i2 < M; i2++) if (tactic(fn)) w++;
+    rates.push([name, w / M]);
+  }
+  for (const [name, r] of rates) {
+    ok(`${name}: ${(r * 100).toFixed(0)}% побед — как у всех`, r > 0.42 && r < 0.58);
+  }
+  const topRate = Math.max(...rates.map((x) => x[1]));
+  const lowRate = Math.min(...rates.map((x) => x[1]));
+  ok(`лучшая стратегия обгоняет худшую на ${((topRate - lowRate) * 100).toFixed(0)} п.п. — в пределах случайности`,
+     topRate - lowRate < 0.08);
   ok('чужой род войск не принимается',
      (() => { clearCd(); club.tacticStart(U);
        try { club.tacticPlay(U, 'бронепоезд', nx); return false; } catch (e) { return true; } })());
+
 
   console.log('\n── 8. Мимо потолка золото не выдаётся ──');
   // Разбор кода: ни одна игра не должна звать addGold напрямую. Проверка

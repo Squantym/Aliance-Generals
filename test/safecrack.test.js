@@ -61,7 +61,8 @@ const nx = [];
   ok('одна цифра может повториться дважды', C.SAFE_MAX_REPEAT === 2);
   ok('между попытками минута', C.SAFE_TRY_CD_SEC === 60);
   ok('видно последние 5 попыток', C.SAFE_HISTORY === 5);
-  ok('вскрывшему 20 золота', C.SAFE_REWARD === 20);
+  ok('вскрывшему 15–20 золота', C.SAFE_REWARD_MIN === 15 && C.SAFE_REWARD_MAX === 20);
+  ok('суточный фонд сейфа общий на весь мир', C.SAFE_DAILY_FUND === 250);
   ok('после вскрытия сейф закрыт 30 минут', C.SAFE_LOCK_MIN === 30);
 
   console.log('\n── 2. Генератор кода ──');
@@ -164,9 +165,12 @@ const nx = [];
   const goldBefore = winner.gold;
   const res = club.safeTry(winner, secret, nx);
   ok('код принят как верный', res.result === 'win');
-  ok(`выдано ${C.SAFE_REWARD} золота`, winner.gold - goldBefore === C.SAFE_REWARD);
+  const paid = winner.gold - goldBefore;
+  ok(`выдано ${paid} золота — в объявленных границах`,
+     paid >= C.SAFE_REWARD_MIN && paid <= C.SAFE_REWARD_MAX);
+  ok('и ровно столько, сколько сказал сервер', paid === res.reward);
   ok('источник помечен как club_safe',
-     ((winner.stats || {}).goldGot || {}).club_safe >= C.SAFE_REWARD);
+     ((winner.stats || {}).goldGot || {}).club_safe >= C.SAFE_REWARD_MIN);
   ok('победителю показан код', res.code === secret);
   const vLocked = club.view(U['Первый']).safe;
   ok('сейф закрыт ДЛЯ ВСЕХ, не только для победителя', vLocked.state === 'locked');
@@ -185,6 +189,87 @@ const nx = [];
   ok('код новый', cur().code !== secret || true);   // может совпасть случайно — важна маска
   ok('счётчики сброшены', vNew.attempts === 0 && vNew.crackers === 0);
   ok('но итог прошлого взлома остался на виду', vNew.last && vNew.last.name === 'Третий');
+
+  console.log('\n── 11. Общий суточный фонд сейфа ──');
+  // Фонд один на весь мир. Это главный ограничитель для скриптов:
+  // сколько бы их ни было и как быстро они ни опрашивали сейф, больше
+  // SAFE_DAILY_FUND за сутки он не отдаст.
+  const sc2 = require("../dist/src/services/safeCrack");
+  const st = () => db.load("safecrack", {});
+  const resetFund = () => { const s = st(); s.fundDay = u2.dayKey(); s.fundSpent = 0; };
+  const u2 = require("../dist/src/core/utils");
+  resetFund();
+  ok(`фонд задан и виден игроку (${sc2.fund().total})`,
+     sc2.fund().total === C.SAFE_DAILY_FUND && club.view(U["Первый"]).safe.fund.total === C.SAFE_DAILY_FUND);
+  ok(`в начале суток фонд целый`, sc2.fund().left === C.SAFE_DAILY_FUND);
+
+  // Вскрываем сейф раз за разом разными игроками и считаем, сколько
+  // золота мир получил всего.
+  const crackOnce = (p2) => {
+    const s = st();
+    if (s.cur) s.cur.lockedUntil = 0;
+    free(p2);
+    p2.club.dayGold = 0;                 // личный потолок здесь не проверяем
+    const secret2 = st().cur.code;
+    const g = p2.gold;
+    const r = club.safeTry(p2, secret2, nx);
+    return { paid: p2.gold - g, res: r };
+  };
+  let emitted = 0, cracks = 0, zeroPays = 0, outOfRange = 0, partial = 0;
+  const players = [U["Первый"], U["Второй"], U["Третий"]];
+  for (let i = 0; i < 40; i++) {
+    const r = crackOnce(players[i % players.length]);
+    cracks++;
+    emitted += r.paid;
+    if (r.paid === 0) zeroPays++;
+    // Последняя выплата перед исчерпанием законно меньше минимума: это
+    // остаток фонда, а не нарушение вилки. Наружу за верхнюю границу
+    // выйти нельзя никогда.
+    else if (r.paid > C.SAFE_REWARD_MAX) outOfRange++;
+    else if (r.paid < C.SAFE_REWARD_MIN) partial++;
+  }
+  ok(`вскрытий сделано ${cracks}`, cracks === 40);
+  ok(`выдано всего ${emitted} 🪙 — не больше фонда ${C.SAFE_DAILY_FUND}`, emitted <= C.SAFE_DAILY_FUND);
+  ok(`фонд действительно выбран (иначе проверка ничего не значит)`, emitted === C.SAFE_DAILY_FUND);
+  ok(`выше ${C.SAFE_REWARD_MAX} не выдано ни разу (нарушений ${outOfRange})`, outOfRange === 0);
+  ok(`неполных выплат не больше одной — только остаток фонда (${partial})`, partial <= 1);
+  ok(`после исчерпания сейф всё ещё вскрывается, но бесплатно (${zeroPays} раз)`, zeroPays > 0);
+  ok(`счётчик фонда сошёлся с выданным`, sc2.fund().spent === emitted);
+  ok(`игроку видно, что фонд пуст`, club.view(U["Первый"]).safe.fund.left === 0);
+
+  console.log('\n── 12. Фонд общий, а не личный ──');
+  // Если бы фонд считался на игрока, второй игрок получил бы полный
+  // лимит после того, как первый его выбрал.
+  const after = crackOnce(U["Второй"]);
+  ok(`другому игроку тоже не платят (получил ${after.paid})`, after.paid === 0);
+
+  console.log('\n── 13. Новые сутки — новый фонд ──');
+  st().fundDay = "вчера";
+  ok(`фонд восстановился (${sc2.fund().left})`, sc2.fund().left === C.SAFE_DAILY_FUND);
+  const again = crackOnce(U["Третий"]);
+  ok(`и платить снова начали (${again.paid})`,
+     again.paid >= C.SAFE_REWARD_MIN && again.paid <= C.SAFE_REWARD_MAX);
+
+  console.log('\n── 14. Личный потолок не обкрадывает мировой фонд ──');
+  // Порядок списания: safeCrack режет по фонду, payout — по личному
+  // потолку, из фонда уходит только фактически выданное. Спиши мы
+  // заранее — фонд терял бы то, чего игрок не получил.
+  st().fundDay = "новые сутки";
+  const P = U["Первый"];
+  // Дата ДОЛЖНА быть сегодняшней: чужую budget() считает сменой суток и
+  // сам обнуляет расход — именно на этом проверка и промахнулась.
+  P.club.day = u2.dayKey();
+  P.club.dayGold = C.DAILY_GOLD_CAP;     // личный суточный потолок выбран
+  const fundBefore = sc2.fund().spent;
+  const before2 = P.gold;
+  const s3 = st(); if (s3.cur) s3.cur.lockedUntil = 0;
+  const savedDay = P.club.day, savedGold = P.club.dayGold;
+  free(P);
+  P.club.day = savedDay; P.club.dayGold = savedGold;
+  club.safeTry(P, st().cur.code, nx);
+  ok(`игрок с выбранным личным потолком не получил ничего (${P.gold - before2})`, P.gold === before2);
+  ok(`и мировой фонд из-за него не потратился`, sc2.fund().spent === fundBefore);
+
 
   console.log('\n── 10. Сама проверка умеет краснеть ──');
   // Если маска перестанет накапливаться, раздел 5 обязан покраснеть —

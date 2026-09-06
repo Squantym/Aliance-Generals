@@ -324,9 +324,14 @@ function safeTry(user: User, guess: string, notices: Notices) {
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
   if (r.result === 'win') {
+    // Порядок важен: safeCrack уже обрезал награду остатком МИРОВОГО
+    // фонда, payout обрежет её личным суточным потолком игрока, и только
+    // фактически выданное списывается из фонда. Спиши мы заранее — фонд
+    // терял бы то, чего игрок не получил.
     const reward = payout(user, 'safe', r.reward, notices);
+    safeCrack.commitFund(reward);
     notices.push(`🗝 Сейф вскрыт! Код был ${r.code}, попыток ушло ${r.attempts}.`
-      + (reward ? ` +🪙 ${reward}` : ''));
+      + (reward ? ` +🪙 ${reward}` : ' Суточный фонд сейфа на сегодня пуст.'));
     return { ...r, reward };
   }
   return r;
@@ -638,14 +643,20 @@ function tacticView(c: any) {
   };
 }
 
-// Ход генерала. Привычка задана явно и одним числом (TACTIC_BOT_SWITCH_PCT),
-// чтобы её можно было ослабить или усилить, не переписывая игру.
-function tacticBotPick(d: any): string {
-  const ids = TACTIC_KINDS.map((k) => k.id);
-  const roll = u.rnd(1, 100) <= C.TACTIC_BOT_SWITCH_PCT;
-  if (d.foeWonWith && roll) return d.foeWonWith;                       // выиграл — повторяет
-  if (d.foeLostWith && roll) return u.pick(ids.filter((x) => x !== d.foeLostWith)); // проиграл — уходит
-  return u.pick(ids);
+// Ход генерала: чистый случай, каждый раунд заново.
+//
+// Раньше здесь была ПРИВЫЧКА — повторить выигравший род, уйти от
+// проигравшего. Она делала игру про наблюдательность, и по замеру
+// внимательный игрок брал 64% против 48% у случайного. Обратная сторона
+// та же цифра: закономерность, которую человек замечает иногда, скрипт
+// читает всегда и целиком. То есть шаблон работал на автоматизацию
+// сильнее, чем на людей.
+//
+// Со случайным выбором читать нечего никому. Игра стала чистой удачей —
+// это осознанная плата за то, что у скрипта здесь нет преимущества
+// перед человеком.
+function tacticBotPick(_d: any): string {
+  return u.pick(TACTIC_KINDS.map((k) => k.id));
 }
 
 function tacticStart(user: User) {
@@ -654,7 +665,7 @@ function tacticStart(user: User) {
   if (c.tactic) return tacticView(c);
   if (cdLeft(c, 'tactic') > 0) throw new u.ApiError('Генерал разбирает прошлую дуэль. Загляните позже.');
   gate(c);
-  c.tactic = { my: 0, foe: 0, rounds: [], foeWonWith: null, foeLostWith: null };
+  c.tactic = { my: 0, foe: 0, rounds: [] };
   return tacticView(c);
 }
 
@@ -675,10 +686,10 @@ function tacticPlay(user: User, kind: any, notices: Notices) {
   else res = 'lose';
 
   d.rounds.push({ mine, foe, res });
-  // Ничья не считается раундом по очкам, но остаётся в истории: она тоже
-  // говорит игроку, что генерал сейчас думает.
-  if (res === 'win') { d.my++; d.foeWonWith = null; d.foeLostWith = foe; }
-  if (res === 'lose') { d.foe++; d.foeWonWith = foe; d.foeLostWith = null; }
+  // Ничья не считается раундом по очкам, но остаётся в истории — просто
+  // как летопись партии: предсказать по ней нечего.
+  if (res === 'win') d.my++;
+  if (res === 'lose') d.foe++;
 
   const need = C.TACTIC_WINS_NEEDED;
   if (d.my >= need) {

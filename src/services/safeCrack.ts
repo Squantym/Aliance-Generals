@@ -61,8 +61,40 @@ type Crack = {
   last?: { name: string; at: number; attempts: number };
 };
 
-function store(): { cur?: Crack } {
-  return db.load<{ cur?: Crack }>('safecrack', {});
+type Store = {
+  cur?: Crack;
+  fundDay?: string;      // московские сутки, за которые считается фонд
+  fundSpent?: number;    // сколько золота сейф уже отдал за эти сутки
+};
+
+function store(): Store {
+  return db.load<Store>('safecrack', {});
+}
+
+// ── ОБЩИЙ СУТОЧНЫЙ ФОНД ───────────────────────────────────────────
+// Фонд один на весь мир, а не на игрока. Это и есть главный
+// ограничитель для скриптов: сколько бы их ни было и как бы быстро они
+// ни опрашивали сейф, больше SAFE_DAILY_FUND за сутки он не отдаст.
+// Выбрали фонд — вскрывать по-прежнему можно, но фармить нечего.
+//
+// Сутки берём общие для игры (u.dayKey), чтобы фонд сбрасывался вместе
+// со всеми остальными суточными счётчиками, а не в свой отдельный час.
+function fund(): { total: number; spent: number; left: number } {
+  const s = store();
+  const day = u.dayKey();
+  if (s.fundDay !== day) { s.fundDay = day; s.fundSpent = 0; db.save('safecrack'); }
+  const spent = Math.max(0, u.toInt(s.fundSpent, 0));
+  return { total: C.SAFE_DAILY_FUND, spent, left: Math.max(0, C.SAFE_DAILY_FUND - spent) };
+}
+
+// Списание из фонда. Зовётся ПОСЛЕ фактической выплаты, а не вместо
+// неё: личный суточный потолок игрока может обрезать награду, и мировой
+// фонд не должен терять то, чего игрок не получил.
+function commitFund(amount: number): void {
+  const s = store();
+  const f = fund();
+  s.fundSpent = f.spent + Math.max(0, Math.round(amount));
+  db.save('safecrack');
 }
 
 // ── Генератор кода ────────────────────────────────────────────────
@@ -145,7 +177,11 @@ function view(user: User) {
     state: locked ? 'locked' : 'open',
     digits: C.SAFE_DIGITS,
     maxRepeat: C.SAFE_MAX_REPEAT,
-    reward: C.SAFE_REWARD,
+    rewardMin: C.SAFE_REWARD_MIN,
+    rewardMax: C.SAFE_REWARD_MAX,
+    // Фонд виден всем и всегда: иначе исчерпание читается как поломка —
+    // «вскрыл, а золота не дали».
+    fund: fund(),
     // Главное число экрана: то, что мир уже вскрыл
     mask: c.mask,
     opened: c.mask.split('').filter((x) => x !== '*').length,
@@ -210,6 +246,10 @@ function attempt(user: User, guessRaw: any): any {
   c.history = c.history.slice(0, C.SAFE_HISTORY);
 
   const won = bulls === C.SAFE_DIGITS;
+  // Награда случайна в своих границах и обрезается остатком мирового
+  // фонда. Ноль — законный исход: сейф вскрыт, но на сегодня он пуст.
+  const want = won ? u.rnd(C.SAFE_REWARD_MIN, C.SAFE_REWARD_MAX) : 0;
+  const offered = won ? Math.min(want, fund().left) : 0;
   if (won) {
     c.last = { name: user.name, at: Date.now(), attempts: c.attempts };
     c.lockedUntil = Date.now() + C.SAFE_LOCK_MIN * 60 * 1000;
@@ -224,10 +264,11 @@ function attempt(user: User, guessRaw: any): any {
     cows,                       // личная подсказка: есть в коде, но не на месте
     mask: c.mask,
     attempts: c.attempts,
-    reward: won ? C.SAFE_REWARD : 0,
+    reward: offered,
+    wanted: want,
     code: won ? c.code : null,
     lockMin: won ? C.SAFE_LOCK_MIN : 0,
   };
 }
 
-export = { view, attempt, score, genCode, tagFor };
+export = { view, attempt, score, genCode, tagFor, fund, commitFund };
