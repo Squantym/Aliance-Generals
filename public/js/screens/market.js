@@ -389,7 +389,7 @@ App.screens.market = async (c, param) => {
 // ---------- КЛУБ ОФИЦЕРОВ (5 многоступенчатых игр) ----------
 App.screens.club = async (c) => {
   await App.refreshMe();
-  const data = await API.get('/api/club');
+  const [data, lot] = await Promise.all([API.get('/api/club'), API.get('/api/lottery')]);
   const R = (id) => document.getElementById(id);
   const post = async (url, body) => {
     try { return await API.post(url, body || {}); }
@@ -505,11 +505,91 @@ App.screens.club = async (c) => {
   }
 
 
+  // ── ВОЕННЫЙ ЗАЙМ (лотерея) ────────────────────────────────────
+  // Главное на карточке — банк и шанс. Оба считает сервер; здесь их
+  // только показываем, чтобы клиент и сервер не разошлись в арифметике.
+  const lotHtml = `
+    <div class="lot-pot">
+      <div class="lot-pot-num"><span class="ic-gold"></span> ${UI.fmtNum(lot.pot)}</div>
+      <div class="muted small">банк тиража — уйдёт одному победителю</div>
+    </div>
+    <div class="field-row mt">
+      <span class="grow small">Продано билетов</span>
+      <b>${lot.sold} / ${lot.maxTickets}</b>
+    </div>
+    <div class="cap-bar mt"><i style="width:${lot.maxTickets ? Math.min(100, Math.round(lot.sold / lot.maxTickets * 100)) : 0}%"></i></div>
+    <div class="field-row mt">
+      <span class="grow small">Ваши билеты</span>
+      <b class="gold">${lot.myTickets}</b>
+      <span class="small muted">шанс ${lot.myChancePct}%</span>
+    </div>
+    <p class="muted small mt">Шанс — это доля ваших билетов среди проданных.
+      Купили 1 из 10 проданных — 10%. Купили 1 из 1000 — 0.1%.
+      Чем больше продано, тем дороже стоит один и тот же шанс.</p>
+    <p class="muted small">До розыгрыша: <b>${UI.fmtTimer(lot.secondsLeft)}</b>
+      · билет <span class="ic-gold"></span> ${lot.ticketGold}
+      · не больше ${lot.maxPerPlayer} в одни руки${lot.myLeft <= 0 ? ' <b>(предел выбран)</b>' : ''}</p>
+    ${lot.left <= 0 ? '<p class="muted small"><b>Билеты кончились</b> — ждём розыгрыша.</p>' : `
+    <div class="field-row mt">
+      <input type="number" id="lot-count" class="field" min="1" max="${Math.max(1, Math.min(lot.myLeft, lot.left))}" value="1" style="width:90px">
+      <button class="btn btn-orange btn-inline grow" id="lot-buy" ${lot.myLeft <= 0 ? 'disabled' : ''}>🎟 Купить билеты</button>
+    </div>`}
+    ${lot.last ? `<p class="muted small mt">Прошлый тираж: ${lot.last.winnerName
+      ? `выиграл <b>${UI.esc(lot.last.winnerName)}</b> — <span class="ic-gold"></span> ${UI.fmtNum(lot.last.pot)} (билетов ${lot.last.winnerTickets} из ${lot.last.sold})`
+      : 'билеты не покупали, розыгрыша не было'}</p>` : ''}`;
+
+  // ── ТАКТИЧЕСКАЯ ДУЭЛЬ ─────────────────────────────────────────
+  let tacticHtml;
+  const dl = data.tactic;
+  const kindBtn = (k) => `<button class="btn btn-inline tactic-kind" data-kind="${k.id}">${k.icon} ${UI.esc(k.name)}</button>`;
+  const roundRow = (r, kinds) => {
+    const nm = (id) => { const k = kinds.find((x) => x.id === id); return k ? k.icon + ' ' + k.name : id; };
+    const mark = r.res === 'win' ? '<b class="gold">победа</b>' : (r.res === 'lose' ? '<b style="color:var(--red)">поражение</b>' : 'ничья');
+    return `<div class="field-row small"><span class="grow">${nm(r.mine)} против ${nm(r.foe)}</span>${mark}</div>`;
+  };
+  if (dl.state === 'active') {
+    tacticHtml = `
+      <p class="small">Счёт: <b class="gold">${dl.my}</b> : <b>${dl.foe}</b> (до ${dl.needed} побед)</p>
+      ${dl.rounds.length ? `<div class="mt">${dl.rounds.map((r) => roundRow(r, dl.kinds)).join('')}</div>` : ''}
+      <p class="muted small mt">Генерал — человек привычки: он повторяет то, чем выиграл,
+        и уходит от того, чем проиграл. История выше — это подсказка.</p>
+      <div class="field-row mt">${dl.kinds.map(kindBtn).join('')}</div>`;
+  } else if (dl.state === 'cooldown') {
+    tacticHtml = cdLine(dl.cooldownSec);
+  } else {
+    tacticHtml = `
+      <p class="muted small">Три рода войск бьют друг друга по кругу:
+        ${dl.kinds.map((k) => `${k.icon} ${UI.esc(k.name)} — ${UI.esc(k.note)}`).join('; ')}.
+        До ${dl.needed} побед. Награда <span class="ic-gold"></span> ${dl.rewardMin}–${dl.rewardMax}:
+        чем чище разгром, тем больше.</p>
+      <button class="btn btn-orange mt" id="tactic-start">⚔ Вызвать генерала</button>`;
+  }
+
+  // ── Суточный предел: виден всегда ────────────────────────────
+  // Скрытый потолок читается как поломка — «выиграл, а золото не дали».
+  // Поэтому остаток показан числом и полосой ещё до первой партии.
+  const bg = data.budget || { cap: 0, spent: 0, left: 0 };
+  const pct = bg.cap > 0 ? Math.min(100, Math.round((bg.spent / bg.cap) * 100)) : 0;
+  const capHtml = `
+    <div class="card">
+      <div class="field-row"><span class="grow small">Суточный предел клуба</span>
+        <b class="${bg.left > 0 ? 'gold' : 'muted'}">${bg.spent} / ${bg.cap} <span class="ic-gold"></span></b></div>
+      <div class="cap-bar mt"><i style="width:${pct}%"></i></div>
+      <p class="muted small mt">${bg.left > 0
+        ? 'Осталось <b>' + bg.left + '</b> — сбрасывается в полночь по Москве.'
+        : 'Предел исчерпан. Играть можно, золото снова пойдёт после полуночи по Москве.'}</p>
+      ${data.sharedCooldownSec > 0
+        ? '<p class="muted small">⏳ Перерыв после выигрыша: ' + UI.fmtTimer(data.sharedCooldownSec) + '</p>' : ''}
+    </div>`;
+
   c.innerHTML = `
     <div class="title">Клуб офицеров</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Пять игр на удачу и смекалку. Награды от <span class="ic-gold"></span> 8 до 20.</p>
-    <div class="card"><div class="name">🃏 Военный преферанс</div><div class="mt">${prefHtml}</div></div>
+    <p class="muted small" style="margin:-4px 4px 10px">Игры на удачу и смекалку. После каждого выигрыша — общий перерыв.</p>
+    ${capHtml}
+    <div class="card"><div class="name">🎟 Военный займ</div><div class="mt">${lotHtml}</div></div>
+    <div class="card"><div class="name">⚔ Тактическая дуэль</div><div class="mt">${tacticHtml}</div></div>
     <div class="card"><div class="name">🗝 Сейф штаба</div><div class="mt">${safeHtml}</div></div>
+    <div class="card"><div class="name">🃏 Военный преферанс</div><div class="mt">${prefHtml}</div></div>
     <div class="card"><div class="name">🎯 Артиллерийская пристрелка</div><div class="mt">${artyHtml}</div></div>
     <div class="card"><div class="name">🎲 Военные кости</div><div class="mt">${diceHtml}</div></div>
     <div class="card"><div class="name">💼 Штабной аукцион</div><div class="mt">${bidsHtml}</div></div>`;
@@ -557,6 +637,25 @@ App.screens.club = async (c) => {
     if (r && r.result === 'nothing') UI.toast('🎲 Комбинация не собралась. В другой раз!');
     await App.refreshMe(); App.rerender();
   };
+  // Лотерея
+  if (R('lot-buy')) R('lot-buy').onclick = async () => {
+    const n = parseInt((R('lot-count') || {}).value, 10) || 1;
+    const r = await post('/api/lottery/buy', { count: n });
+    if (r) await App.refreshMe();
+    App.rerender();
+  };
+  // Тактическая дуэль
+  if (R('tactic-start')) R('tactic-start').onclick = async () => {
+    if (await post('/api/club/tactic/start')) App.rerender();
+  };
+  [...c.querySelectorAll('.tactic-kind')].forEach((el) => {
+    el.onclick = async () => {
+      const r = await post('/api/club/tactic/play', { kind: el.dataset.kind });
+      if (r && r.result === 'draw') UI.toast('⚔ Ничья — раунд переигрывается');
+      if (r && r.result === 'lose' && r.foe >= 3) UI.toast('⚔ Дуэль проиграна. Генерал разгадал вас.');
+      await App.refreshMe(); App.rerender();
+    };
+  });
   // Аукцион: живой счётчик распределённых очков
   const bidInputs = [...c.querySelectorAll('.bids-input')];
   const recount = () => {

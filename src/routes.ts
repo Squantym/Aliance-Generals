@@ -26,6 +26,7 @@ import production = require('./services/production');
 import mines = require('./services/mines');
 import silos = require('./services/silos');
 import club = require('./services/club');
+import lottery = require('./services/lottery');
 import groups = require('./services/groups');
 import legion = require('./services/legion');
 import social = require('./services/social');
@@ -618,6 +619,14 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/club/dice/finish', act((req, n) => club.diceFinish(req.user, n)));
   // 5. Штабной аукцион
   app.add('POST', '/api/club/bids/play',   act((req, n) => club.bidsPlay(req.user, req.body.bids, n)));
+
+  app.add('POST', '/api/club/tactic/start', act((req) => club.tacticStart(req.user)));
+  app.add('POST', '/api/club/tactic/play',  act((req, n) => club.tacticPlay(req.user, req.body.kind, n)));
+
+  // Военный займ (лотерея). Тиражи разыгрывает игровой тик, здесь только
+  // просмотр и покупка билетов.
+  app.add('GET',  '/api/lottery',     (req) => lottery.view(req.user));
+  app.add('POST', '/api/lottery/buy', act((req, n) => lottery.buy(req.user, req.body.count, n)));
 
   // ---------- Трофеи ----------
   app.add('GET', '/api/trophies', (req) => trophies.list(req.user));

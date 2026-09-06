@@ -1,6 +1,17 @@
 // ===================================================================
 // src/services/club.ts — «Клуб офицеров» (развлекательный центр)
-// Пять мини-игр с наградами 8-20 золота:
+//
+// ГЛАВНОЕ ПРАВИЛО КЛУБА: суточный потолок эмиссии золота (CLUB.DAILY_GOLD_CAP).
+// До него ограничение было только по времени — кулдаун на каждую игру.
+// Замер показал, чем это кончается: играя ровно по кулдаунам, из клуба
+// выносилось 3341 🪙 в сутки, около 2500 ₽ бесплатного золота по прайсу
+// магазина, причём выигрывала усидчивость, а не умение. Сейф вообще не
+// проигрывался: 4000 партий из 4000 при осмысленной игре.
+//
+// Теперь кулдауны задают ТЕМП, а потолок — СУММУ. Всё золото клуба
+// выходит через одну функцию payout(), и другого пути нет.
+//
+// Мини-игры:
 //   1) Военный преферанс — добери до 21, не перебрав, против генерала.
 //   2) Сейф штаба — взломай 4-значный код («быки и коровы»).
 //   3) Артиллерийская пристрелка — угадай дистанцию (перелёт/недолёт).
@@ -20,12 +31,61 @@ const C = config.CLUB;
 function clubState(user: User): any {
   if (!user.club) user.club = {};
   const c: any = user.club;
-  if (!c.cd) c.cd = {};           // кулдауны по играм: { pref, safe, arty, dice, bids }
+  if (!c.cd) c.cd = {};           // кулдауны: { all, pref, safe, arty, dice, bids, tactic }
   if (c.pref === undefined) c.pref = null;
   if (c.safe === undefined) c.safe = null;
   if (c.arty === undefined) c.arty = null;
   if (c.dice === undefined) c.dice = null;
+  if (c.tactic === undefined) c.tactic = null;
   return c;
+}
+
+// ── СУТОЧНЫЙ ПОТОЛОК ЗОЛОТА ──────────────────────────────────────
+// Сутки — общие для игры, от московской полуночи (u.dayKey), а не от
+// момента первой партии: иначе у каждого игрока был бы свой сброс, и
+// потолок обходился бы сдвигом времени игры.
+function budget(c: any): { cap: number; spent: number; left: number } {
+  const day = u.dayKey();
+  if (c.day !== day) { c.day = day; c.dayGold = 0; }
+  const spent = Math.max(0, u.toInt(c.dayGold, 0));
+  return { cap: C.DAILY_GOLD_CAP, spent, left: Math.max(0, C.DAILY_GOLD_CAP - spent) };
+}
+
+// ЕДИНСТВЕННОЕ место, где клуб выдаёт золото. Каждая игра обязана
+// звать эту функцию, а не player.addGold напрямую: иначе новая игра
+// однажды пройдёт мимо потолка, и заметить это будет нечем.
+//
+// Источник помечается («club_safe», «club_tactic»): раньше клуб звал
+// addGold без третьего аргумента, всё падало в «Прочее», и владелец не
+// видел в статистике крупнейший источник золота в игре.
+function payout(user: User, game: string, want: number, notices: Notices): number {
+  const c = clubState(user);
+  const b = budget(c);
+  const wanted = Math.max(0, Math.round(want));
+  const give = Math.min(wanted, b.left);
+  if (give > 0) {
+    c.dayGold = b.spent + give;
+    player.addGold(user, give, 'club_' + game);
+  }
+  // Общий кулдаун взводится за ПОБЕДУ, а не за выданное золото: упёршись
+  // в потолок, игрок продолжает играть в том же темпе, просто без денег.
+  setCd(c, 'all', C.SHARED_CD_MIN);
+  if (give < wanted) {
+    notices.push(give > 0
+      ? `🪙 Суточный предел клуба (${C.DAILY_GOLD_CAP}) достигнут: начислено ${give} вместо ${wanted}. Сброс в полночь по Москве.`
+      : `🪙 Суточный предел клуба (${C.DAILY_GOLD_CAP}) исчерпан. Играть можно, золота до полуночи по Москве не будет.`);
+  }
+  return give;
+}
+
+// Общий перерыв после выигрыша. Проверяется на ВХОДЕ в игру, но не
+// мешает доиграть уже начатую партию — иначе выигрыш в костях запирал
+// бы недоигранный сейф, и попытки в нём сгорали бы ни за что.
+function gate(c: any): void {
+  const left = cdLeft(c, 'all');
+  if (left > 0) {
+    throw new u.ApiError(`В клубе перерыв после выигрыша — ещё ${Math.ceil(left / 60)} мин.`);
+  }
 }
 
 function cdLeft(c: any, key: string): number {
@@ -41,12 +101,18 @@ function setCd(c: any, key: string, minutes: number): void {
 // ===================================================================
 function view(user: User) {
   const c = clubState(user);
+  const b = budget(c);
   return {
+    // Потолок показываем игроку честно и всегда. Скрытый предел
+    // выглядит как поломка: награда молча стала нулём.
+    budget: { cap: b.cap, spent: b.spent, left: b.left },
+    sharedCooldownSec: cdLeft(c, 'all'),
     pref: prefView(c),
     safe: safeView(c),
     arty: artyView(c),
     dice: diceView(c),
     bids: bidsView(c),
+    tactic: tacticView(c),
   };
 }
 
@@ -78,6 +144,7 @@ function prefStart(user: User) {
   const c = clubState(user);
   if (c.pref) return prefView(c);
   if (cdLeft(c, 'pref') > 0) throw new u.ApiError('Генерал ещё тасует колоду. Загляните позже.');
+  gate(c);
   // Стартовая рука — две карты
   c.pref = { hand: [drawCard(), drawCard()] };
   return prefView(c);
@@ -119,10 +186,9 @@ function prefStand(user: User, notices: Notices) {
   // равенство и меньше — проигрыш (генерал на своём поле)
 
   if (win) {
-    const reward = u.rnd(C.PREF_REWARD_MIN, C.PREF_REWARD_MAX);
-    player.addGold(user, reward);
+    const reward = payout(user, 'pref', u.rnd(C.PREF_REWARD_MIN, C.PREF_REWARD_MAX), notices);
     setCd(c, 'pref', C.PREF_CD_WIN_MIN);
-    notices.push(`🃏 Партия ваша! ${myСум} против ${dealerSum}. +🪙 ${reward}`);
+    notices.push(`🃏 Партия ваша! ${myСум} против ${dealerSum}.${reward ? ' +🪙 ' + reward : ''}`);
     return { result: 'win', mySum: myСум, dealerSum, dealer, reward };
   }
   setCd(c, 'pref', C.PREF_CD_FAIL_MIN);
@@ -151,14 +217,25 @@ function safeView(c: any) {
   }
   const left = cdLeft(c, 'safe');
   if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return { state: 'ready', digits: C.SAFE_DIGITS, tries: C.SAFE_TRIES, reward: C.SAFE_REWARD };
+  return {
+    state: 'ready', digits: C.SAFE_DIGITS, tries: C.SAFE_TRIES,
+    rewardMax: safeReward(1), rewardMin: safeReward(C.SAFE_TRIES),
+  };
+}
+
+// Награда за вскрытие с N-й попытки. Плоская награда не различала
+// угадавшего с первого раза и дожавшего на последней — а разница между
+// ними и есть вся игра.
+function safeReward(tryNo: number): number {
+  return Math.max(C.SAFE_REWARD_MIN, C.SAFE_REWARD_BASE - tryNo * C.SAFE_REWARD_STEP);
 }
 
 function safeStart(user: User) {
   const c = clubState(user);
   if (c.safe) return safeView(c);
   if (cdLeft(c, 'safe') > 0) throw new u.ApiError('Сейф на таймере блокировки. Загляните позже.');
-  c.safe = { code: genSafeCode(C.SAFE_DIGITS), triesLeft: C.SAFE_TRIES, history: [] };
+  gate(c);
+  c.safe = { code: genSafeCode(C.SAFE_DIGITS), triesLeft: C.SAFE_TRIES, tries: 0, history: [] };
   return safeView(c);
 }
 
@@ -183,14 +260,15 @@ function safeTry(user: User, guess: string, notices: Notices) {
     else if (code.includes(g[i])) cows++;
   }
   c.safe.triesLeft--;
+  c.safe.tries = (c.safe.tries || 0) + 1;
   c.safe.history.push({ guess: g, bulls, cows });
 
   if (bulls === C.SAFE_DIGITS) {
+    const tries = c.safe.tries;
     c.safe = null;
-    player.addGold(user, C.SAFE_REWARD);
-    setCd(c, 'safe', C.SAFE_CD_WIN_MIN);
-    notices.push(`🗝 Сейф вскрыт! Код был верный. +🪙 ${C.SAFE_REWARD}`);
-    return { result: 'win', bulls, cows, reward: C.SAFE_REWARD };
+    const reward = payout(user, 'safe', safeReward(tries), notices);
+    notices.push(`🗝 Сейф вскрыт с ${tries}-й попытки!${reward ? ' +🪙 ' + reward : ''}`);
+    return { result: 'win', bulls, cows, tries, reward };
   }
   if (c.safe.triesLeft <= 0) {
     const code2 = c.safe.code;
@@ -233,6 +311,7 @@ function artyStart(user: User) {
   const c = clubState(user);
   if (c.arty) return artyView(c);
   if (cdLeft(c, 'arty') > 0) throw new u.ApiError('Батарея перезаряжается. Загляните позже.');
+  gate(c);
   c.arty = {
     target: u.rnd(C.ARTY_MIN, C.ARTY_MAX),
     shotsLeft: C.ARTY_SHOTS,
@@ -258,12 +337,11 @@ function artyShoot(user: User, distance: number | string, notices: Notices) {
   const target = c.arty.target;
 
   if (guess === target) {
-    const reward = artyReward(c.arty.shots);
     const shots = c.arty.shots;
     c.arty = null;
-    player.addGold(user, reward);
+    const reward = payout(user, 'arty', artyReward(shots), notices);
     setCd(c, 'arty', C.ARTY_CD_WIN_MIN);
-    notices.push(`🎯 Прямое попадание с ${shots}-го выстрела! +🪙 ${reward}`);
+    notices.push(`🎯 Прямое попадание с ${shots}-го выстрела!${reward ? ' +🪙 ' + reward : ''}`);
     return { result: 'hit', target, shots, reward };
   }
 
@@ -332,6 +410,7 @@ function diceStart(user: User) {
   const c = clubState(user);
   if (c.dice) return diceView(c);
   if (cdLeft(c, 'dice') > 0) throw new u.ApiError('Кости ещё у другого расчёта. Загляните позже.');
+  gate(c);
   c.dice = { dice: rollDice(C.DICE_COUNT), rerollsLeft: C.DICE_REROLLS };
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
   return diceView(c);
@@ -358,10 +437,10 @@ function diceFinish(user: User, notices: Notices) {
     setCd(c, 'dice', C.DICE_CD_FAIL_MIN);
     return { result: 'nothing', dice };
   }
-  player.addGold(user, combo.gold);
+  const reward = payout(user, 'dice', combo.gold, notices);
   setCd(c, 'dice', C.DICE_CD_WIN_MIN);
-  notices.push(`🎲 ${combo.name}! +🪙 ${combo.gold}`);
-  return { result: 'win', dice, combo, reward: combo.gold };
+  notices.push(`🎲 ${combo.name}!${reward ? ' +🪙 ' + reward : ''}`);
+  return { result: 'win', dice, combo, reward };
 }
 
 // ===================================================================
@@ -404,6 +483,7 @@ function rivalBids(): number[] {
 function bidsPlay(user: User, bids: any, notices: Notices) {
   const c = clubState(user);
   if (cdLeft(c, 'bids') > 0) throw new u.ApiError('Аукцион уже закрыт. Загляните позже.');
+  gate(c);
 
   const arr = (Array.isArray(bids) ? bids : []).map((x: any) => Math.max(0, u.toInt(x, 0)));
   if (arr.length !== C.BIDS_LOTS) throw new u.ApiError(`Нужно указать ставку по каждому из ${C.BIDS_LOTS} лотов`);
@@ -431,13 +511,115 @@ function bidsPlay(user: User, bids: any, notices: Notices) {
   if (sweep) reward += C.BIDS_SWEEP_BONUS;
 
   if (reward > 0) {
-    player.addGold(user, reward);
+    reward = payout(user, 'bids', reward, notices);
     setCd(c, 'bids', C.BIDS_CD_WIN_MIN);
-    notices.push(`💼 Аукцион: выиграно лотов ${won}/${C.BIDS_LOTS}${sweep ? ' (все!)' : ''}. +🪙 ${reward}`);
+    notices.push(`💼 Аукцион: выиграно лотов ${won}/${C.BIDS_LOTS}${sweep ? ' (все!)' : ''}.${reward ? ' +🪙 ' + reward : ''}`);
   } else {
     setCd(c, 'bids', C.BIDS_CD_FAIL_MIN);
   }
   return { result: reward > 0 ? 'win' : 'lost', lots, won, sweep, reward };
+}
+
+
+// ===================================================================
+// 6. ТАКТИЧЕСКАЯ ДУЭЛЬ — камень-ножницы-бумага на родах войск.
+//    Треугольник не выдуман, а взят из самой игры: у техники три типа
+//    (ground / air / sea). ПВО наземных сбивает авиацию, авиация топит
+//    флот, флот накрывает берег.
+//
+//    Против случайного бота это было бы 33% и никакого решения. Поэтому
+//    генерал играет по ПРИВЫЧКЕ: повторяет род, которым только что
+//    выиграл, и уходит от того, которым проиграл. История дуэли видна
+//    игроку целиком — значит привычку можно прочитать и наказать.
+// ===================================================================
+const TACTIC_KINDS = [
+  { id: 'ground', icon: '🛡', name: 'Наземные', beats: 'air',    note: 'ПВО сбивает авиацию' },
+  { id: 'air',    icon: '✈', name: 'Авиация',  beats: 'sea',    note: 'авиация топит флот' },
+  { id: 'sea',    icon: '🚢', name: 'Флот',     beats: 'ground', note: 'флот накрывает берег' },
+];
+const TACTIC_BY_ID: Record<string, any> = Object.fromEntries(TACTIC_KINDS.map((k) => [k.id, k]));
+
+function tacticReward(foeScore: number): number {
+  if (foeScore === 0) return C.TACTIC_REWARD_CLEAN;
+  if (foeScore === 1) return C.TACTIC_REWARD_SOLID;
+  return C.TACTIC_REWARD_CLOSE;
+}
+
+function tacticView(c: any) {
+  if (c.tactic) {
+    return {
+      state: 'active',
+      kinds: TACTIC_KINDS,
+      my: c.tactic.my, foe: c.tactic.foe,
+      needed: C.TACTIC_WINS_NEEDED,
+      rounds: c.tactic.rounds,      // [{ mine, foe, res }] — вся история, это и есть подсказка
+    };
+  }
+  const left = cdLeft(c, 'tactic');
+  if (left > 0) return { state: 'cooldown', cooldownSec: left };
+  return {
+    state: 'ready', kinds: TACTIC_KINDS, needed: C.TACTIC_WINS_NEEDED,
+    rewardMax: C.TACTIC_REWARD_CLEAN, rewardMin: C.TACTIC_REWARD_CLOSE,
+  };
+}
+
+// Ход генерала. Привычка задана явно и одним числом (TACTIC_BOT_SWITCH_PCT),
+// чтобы её можно было ослабить или усилить, не переписывая игру.
+function tacticBotPick(d: any): string {
+  const ids = TACTIC_KINDS.map((k) => k.id);
+  const roll = u.rnd(1, 100) <= C.TACTIC_BOT_SWITCH_PCT;
+  if (d.foeWonWith && roll) return d.foeWonWith;                       // выиграл — повторяет
+  if (d.foeLostWith && roll) return u.pick(ids.filter((x) => x !== d.foeLostWith)); // проиграл — уходит
+  return u.pick(ids);
+}
+
+function tacticStart(user: User) {
+  const c = clubState(user);
+  if (c.tactic) return tacticView(c);
+  if (cdLeft(c, 'tactic') > 0) throw new u.ApiError('Генерал разбирает прошлую дуэль. Загляните позже.');
+  gate(c);
+  c.tactic = { my: 0, foe: 0, rounds: [], foeWonWith: null, foeLostWith: null };
+  return tacticView(c);
+}
+
+function tacticPlay(user: User, kind: any, notices: Notices) {
+  const c = clubState(user);
+  if (!c.tactic) throw new u.ApiError('Дуэль не начата');
+  const mine = String(kind || '');
+  if (!TACTIC_BY_ID[mine]) throw new u.ApiError('Выберите род войск');
+  // Поручение засчитываем только за настоящий ход — см. пояснение в safeTry
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
+
+  const d = c.tactic;
+  const foe = tacticBotPick(d);
+  let res: 'win' | 'lose' | 'draw';
+  if (mine === foe) res = 'draw';
+  else if (TACTIC_BY_ID[mine].beats === foe) res = 'win';
+  else res = 'lose';
+
+  d.rounds.push({ mine, foe, res });
+  // Ничья не считается раундом по очкам, но остаётся в истории: она тоже
+  // говорит игроку, что генерал сейчас думает.
+  if (res === 'win') { d.my++; d.foeWonWith = null; d.foeLostWith = foe; }
+  if (res === 'lose') { d.foe++; d.foeWonWith = foe; d.foeLostWith = null; }
+
+  const need = C.TACTIC_WINS_NEEDED;
+  if (d.my >= need) {
+    const foeScore = d.foe;
+    const rounds = d.rounds;
+    c.tactic = null;
+    const reward = payout(user, 'tactic', tacticReward(foeScore), notices);
+    notices.push(`⚔ Дуэль выиграна ${need}:${foeScore}!${reward ? ' +🪙 ' + reward : ''}`);
+    return { result: 'win', my: need, foe: foeScore, rounds, reward, last: { mine, foe, res } };
+  }
+  if (d.foe >= need) {
+    const myScore = d.my;
+    const rounds = d.rounds;
+    c.tactic = null;
+    setCd(c, 'tactic', C.TACTIC_CD_FAIL_MIN);
+    return { result: 'lose', my: myScore, foe: need, rounds, last: { mine, foe, res } };
+  }
+  return { result: res, my: d.my, foe: d.foe, rounds: d.rounds, last: { mine, foe, res } };
 }
 
 export = {
@@ -447,4 +629,5 @@ export = {
   artyStart, artyShoot,
   diceStart, diceReroll, diceFinish,
   bidsPlay,
+  tacticStart, tacticPlay,
 };

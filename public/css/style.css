@@ -4892,3 +4892,18 @@ body.is-test-world { padding-top: 22px; }
 .acc-fold > .acc-sum:hover { color: var(--gold); }
 .acc-fold > *:not(.acc-sum) { margin-left: 12px; margin-right: 12px; }
 .acc-fold > *:last-child { margin-bottom: 12px; }
+
+/* ---------- КЛУБ: СУТОЧНЫЙ ПРЕДЕЛ И БАНК ТИРАЖА ----------
+   Полоса нужна, чтобы предел читался взглядом, а не вычитанием двух
+   чисел: «85 из 100» и полная полоса доходят по-разному. */
+.cap-bar {
+  height: 6px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,.08); border: 1px solid var(--border);
+}
+.cap-bar > i { display: block; height: 100%; background: var(--gold); transition: width .3s ease; }
+
+.lot-pot { text-align: center; padding: 10px 0 4px; }
+.lot-pot-num {
+  font-size: 30px; font-weight: 800; color: var(--gold);
+  line-height: 1.1; letter-spacing: .02em;
+}

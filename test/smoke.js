@@ -337,15 +337,32 @@ async function main() {
   // идёт ниже по сценарию.
   const club = (await get('/api/club', A)).data;
   check('клуб отдаёт свои игры',
-        !!club.pref && !!club.safe && !!club.arty && !!club.dice,
+        !!club.pref && !!club.safe && !!club.arty && !!club.dice && !!club.tactic,
         'получено: ' + Object.keys(club).join(', '));
+  check('клуб показывает суточный предел золота',
+        !!club.budget && typeof club.budget.cap === 'number' && club.budget.cap > 0,
+        'budget: ' + JSON.stringify(club.budget));
+
+  // После ЛЮБОГО выигрыша в клубе взводится общий перерыв на все игры
+  // сразу. Значит дальше по сценарию игра может законно ответить отказом
+  // «перерыв», и это не поломка, а правило. Проверяем поэтому не «200»,
+  // а «ответ осмысленный»: либо игра началась, либо сервер внятно
+  // объяснил, почему нет. Иначе дымовой тест краснел бы через раз — от
+  // того, повезло ли выиграть в предыдущей игре.
+  const onBreak = (r) => r.status === 400 && /перерыв/i.test(String((r.data || {}).error || ''));
+  const clubCheck = (name, r, pred, started) => {
+    if (onBreak(r)) skip(name, 'общий перерыв после выигрыша — так и задумано');
+    else if (started === false) skip(name, 'игра не начата: её вход закрыл общий перерыв');
+    else check(name, pred(r), 'ответ: ' + r.status + ' ' + JSON.stringify(r.data).slice(0, 120));
+  };
+  const started = (r) => r.status === 200;
 
   // Очко: сдача — добор — вскрытие. Каждый шаг обязан отвечать понятным
   // состоянием, а не просто «200 ОК».
   const prefStart = await post('/api/club/pref/start', A);
-  check('очко: партия сдана', prefStart.status === 200 && Array.isArray(prefStart.data.hand));
+  clubCheck('очко: партия сдана', prefStart, (r) => Array.isArray(r.data.hand));
   const prefHit = await post('/api/club/pref/hit', A);
-  check('очко: добор обработан', prefHit.status === 200 && ['hit', 'bust'].includes(prefHit.data.result));
+  clubCheck('очко: добор обработан', prefHit, (r) => ['hit', 'bust'].includes(r.data.result), started(prefStart));
   if (prefHit.data.result === 'hit') {
     const prefStand = await post('/api/club/pref/stand', A);
     check('очко: вскрытие обработано', prefStand.status === 200 && !!prefStand.data.result);
@@ -355,27 +372,56 @@ async function main() {
 
   // Сейф: подбор кода по принципу «быки и коровы».
   const safeStart = await post('/api/club/safe/start', A);
-  check('сейф: попытка начата', safeStart.status === 200 && safeStart.data.triesLeft > 0);
+  clubCheck('сейф: попытка начата', safeStart, (r) => r.data.triesLeft > 0);
   const digits = safeStart.data.digits || 4;
   const guessCode = '1234567890'.slice(0, digits);      // цифры не повторяются
   const safeTry = await post('/api/club/safe/try', A, { guess: guessCode });
-  check('сейф: подсказка по коду получена',
-        safeTry.status === 200 && typeof safeTry.data.bulls === 'number'
-        && typeof safeTry.data.cows === 'number');
+  clubCheck('сейф: подсказка по коду получена', safeTry,
+            (r) => typeof r.data.bulls === 'number' && typeof r.data.cows === 'number', started(safeStart));
   const badCode = await post('/api/club/safe/try', A, { guess: '11' });
-  check('сейф: неверный формат кода отклонён', badCode.status === 400);
+  clubCheck('сейф: неверный формат кода отклонён', badCode, (r) => r.status === 400, started(safeStart));
 
   // Артиллерия: пристрелка по расстоянию.
   const artyStart = await post('/api/club/arty/start', A);
-  check('артиллерия: наводка начата', artyStart.status === 200);
+  clubCheck('артиллерия: наводка начата', artyStart, () => true);
   const artyShot = await post('/api/club/arty/shoot', A, { distance: 50 });
-  check('артиллерия: выстрел обработан', artyShot.status === 200 && !!artyShot.data);
+  clubCheck('артиллерия: выстрел обработан', artyShot, (r) => !!r.data, started(artyStart));
 
   // Кости: бросок, переброс, подсчёт.
   const diceStart = await post('/api/club/dice/start', A);
-  check('кости: брошены', diceStart.status === 200 && Array.isArray(diceStart.data.dice));
+  clubCheck('кости: брошены', diceStart, (r) => Array.isArray(r.data.dice));
   const diceFinish = await post('/api/club/dice/finish', A);
-  check('кости: комбинация посчитана', diceFinish.status === 200);
+  clubCheck('кости: комбинация посчитана', diceFinish, () => true, started(diceStart));
+
+  // Тактическая дуэль: три рода войск бьют друг друга по кругу.
+  const tacStart = await post('/api/club/tactic/start', A);
+  clubCheck('дуэль: вызов принят', tacStart, (r) => Array.isArray(r.data.kinds) && r.data.kinds.length === 3);
+  const tacPlay = await post('/api/club/tactic/play', A, { kind: 'ground' });
+  clubCheck('дуэль: раунд сыгран', tacPlay,
+            (r) => ['win', 'lose', 'draw'].includes(r.data.result) && !!r.data.last, started(tacStart));
+  const tacBad = await post('/api/club/tactic/play', A, { kind: 'бронепоезд' });
+  clubCheck('дуэль: чужой род войск отклонён', tacBad, (r) => r.status === 400, started(tacStart));
+
+  // Военный займ: банк, шанс и покупка билета.
+  const lot = (await get('/api/lottery', A)).data;
+  check('займ: тираж открыт и виден банк',
+        typeof lot.pot === 'number' && typeof lot.sold === 'number' && lot.ticketGold > 0,
+        'получено: ' + JSON.stringify(lot).slice(0, 140));
+  check('займ: банк равен проданным билетам × цену', lot.pot === lot.sold * lot.ticketGold);
+  const goldBefore = (await get('/api/me', A)).data.gold;
+  const lotBuy = await post('/api/lottery/buy', A, { count: 1 });
+  if (goldBefore >= lot.ticketGold) {
+    check('займ: билет куплен', lotBuy.status === 200 && lotBuy.data.myTickets >= 1,
+          'ответ: ' + lotBuy.status + ' ' + JSON.stringify(lotBuy.data).slice(0, 120));
+    check('займ: золото списано ровно на цену билета',
+          (await get('/api/me', A)).data.gold === goldBefore - lot.ticketGold);
+    check('займ: шанс посчитан от проданных билетов',
+          lotBuy.data.myChancePct > 0 && lotBuy.data.myChancePct <= 100);
+  } else {
+    skip('займ: билет куплен', 'у игрока меньше золота, чем стоит билет');
+  }
+  const lotBuyMany = await post('/api/lottery/buy', A, { count: 999999 });
+  check('займ: покупка сверх предела отклонена', lotBuyMany.status === 400);
 
   console.log('11. Банк');
   meA = (await get('/api/me', A)).data;

@@ -69,6 +69,15 @@ function conflictName(id: string): string {
   const x = config.CONFLICT_BY_ID[id];
   return x ? x.name : String(id);
 }
+function tacticKindName(id: any): string {
+  switch (String(id || '')) {
+    case 'ground': return 'наземные войска';
+    case 'air':    return 'авиацию';
+    case 'sea':    return 'флот';
+    default:       return 'род войск';
+  }
+}
+
 function trophyName(id: string): string {
   const x = (config.TROPHIES || []).find((t: any) => t.id === id);
   return x ? x.name : id;
@@ -271,6 +280,18 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/dice/reroll': return '🎲 Клуб (кости): переброс';
       case '/api/club/dice/finish': return '🎲 Клуб (кости): забрал результат';
       case '/api/club/bids/play':  return '💼 Клуб: сделал ставки на штабном аукционе';
+      case '/api/club/tactic/start': return '⚔ Клуб: вызвал генерала на тактическую дуэль';
+      case '/api/club/tactic/play':
+        return '⚔ Клуб (дуэль): выставил ' + tacticKindName(body.kind);
+
+      // ── Военный займ (лотерея) ─────────────────────────────────
+      case '/api/lottery/buy':
+        return '🎟 Военный займ: купил билетов — ' + (Number(body.count) || 1);
+      case '/system/lottery-buy':
+        return '🎟 Военный займ: куплено билетов ' + (body.tickets || 0) + ' за 🪙 ' + (body.gold || 0);
+      case '/system/lottery-win':
+        return '🎉 Военный займ: выиграл 🪙 ' + (body.gold || 0)
+             + ' (билетов ' + (body.tickets || 0) + ' из ' + (body.sold || 0) + ')';
 
       // ── Трофеи ─────────────────────────────────────────────────
       case '/api/trophies/start':
