@@ -32,6 +32,11 @@ const db = require('../dist/src/core/db');
 const auth = require('../dist/src/services/auth');
 const player = require('../dist/src/services/player');
 const club = require('../dist/src/services/club');
+// Пульс клуба меряет РИТМ действий, и тесты правил гоняют партии пачками
+// в один и тот же миллисекунд — для детектора это, справедливо, скрипт.
+// Здесь проверяются правила игры, а не детектор, поэтому пульс глушим
+// целиком и явно. За сам детектор отвечает test/clubbot.test.js.
+require('../dist/src/services/antibot').track = () => ({ ok: true, suspicion: 0 });
 const sc = require('../dist/src/services/safeCrack');
 const C = require('../dist/config/gameConfig').CLUB;
 
@@ -49,7 +54,7 @@ const nx = [];
   const cur = () => db.load('safecrack', {}).cur;
   const noCd = (p) => { if (p.club) p.club.safeNextAt = 0; };
   const noBreak = (p) => { if (p.club && p.club.cd) p.club.cd.all = 0; };
-  const free = (p) => { noCd(p); noBreak(p); };
+  const free = (p) => { noCd(p); noBreak(p); p.behavior = null; if (p.club && p.club.cd) p.club.cd.bot = 0; };
 
   console.log('\n── 1. Настройки ──');
   ok(`код из ${C.SAFE_DIGITS} цифр`, C.SAFE_DIGITS === 6);

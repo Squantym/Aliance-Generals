@@ -349,7 +349,12 @@ async function main() {
   // а «ответ осмысленный»: либо игра началась, либо сервер внятно
   // объяснил, почему нет. Иначе дымовой тест краснел бы через раз — от
   // того, повезло ли выиграть в предыдущей игре.
-  const onBreak = (r) => r.status === 400 && /перерыв/i.test(String((r.data || {}).error || ''));
+  // Дымовой тест шлёт запросы машинной скоростью — а клуб теперь меряет
+  // ритм и такие запросы придерживает. Это НЕ поломка, а работающая
+  // защита, и ниже она проверяется отдельно. Здесь просто признаём такой
+  // ответ осмысленным, как и «перерыв после выигрыша».
+  const onBreak = (r) => r.status === 400
+    && /перерыв|Штаб проверяет/i.test(String((r.data || {}).error || ''));
   const clubCheck = (name, r, pred, started) => {
     if (onBreak(r)) skip(name, 'общий перерыв после выигрыша — так и задумано');
     else if (started === false) skip(name, 'игра не начата: её вход закрыл общий перерыв');
@@ -434,6 +439,14 @@ async function main() {
             (r) => ['win', 'lose', 'draw'].includes(r.data.result) && !!r.data.last, started(tacStart));
   const tacBad = await post('/api/club/tactic/play', A, { kind: 'бронепоезд' });
   clubCheck('дуэль: чужой род войск отклонён', tacBad, (r) => r.status === 400, started(tacStart));
+
+  // Защита от скриптов: сам этот тест ходит машинной скоростью, значит
+  // клуб обязан был это заметить. Если ни один club-запрос выше не
+  // получил придержку — детектор снова мёртв, как было до 201.
+  const botGuard = await post('/api/club/dice/start', A);
+  check('клуб придерживает машинный темп запросов',
+        botGuard.status === 400 && /Штаб проверяет|перерыв/i.test(String((botGuard.data || {}).error || '')),
+        'ответ: ' + botGuard.status + ' ' + JSON.stringify(botGuard.data).slice(0, 120));
 
   // Военный займ: банк, шанс и покупка билета.
   const lot = (await get('/api/lottery', A)).data;

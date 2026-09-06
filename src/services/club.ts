@@ -24,6 +24,7 @@ import config = require('../../config/gameConfig');
 import u = require('../core/utils');
 import player = require('./player');
 import safeCrack = require('./safeCrack');
+import antibot = require('./antibot');
 import type { User, Notices } from '../types';
 
 const C = config.CLUB;
@@ -92,6 +93,36 @@ function payout(user: User, game: string, want: number, notices: Notices, shared
 function refundBudget(c: any, amount: number): void {
   const b = budget(c);
   c.dayGold = Math.max(0, b.spent - Math.max(0, Math.round(amount)));
+}
+
+// ── ПУЛЬС: каждое действие клуба проходит через эту функцию ───────
+//
+// Клуб — самое привлекательное место для скрипта во всей игре: короткие
+// действия, понятный ответ, деньги на выходе. Поэтому ритм действий
+// здесь и меряется.
+//
+// Замер до этой правки: сто действий подряд с машинной регулярностью не
+// поднимали подозрительность НИ НА ЕДИНИЦУ — antibot.track не вызывался
+// вообще ниоткуда, поле user.behavior даже не заводилось. Панель при
+// этом показывала владельцу «подозрительность: 0» как измерение, хотя
+// увеличивать её было некому.
+//
+// Точка входа одна и намеренно: заведи кто-нибудь новую игру и забудь
+// про пульс — она станет дырой, через которую скрипт работает
+// незамеченным. Тест проверяет, что мимо beat() не ходит ни одна.
+function beat(user: User, what: string): void {
+  try { antibot.track(user, 'club:' + what); } catch (e) {}
+  const extra = (() => { try { return antibot.throttleSec(user); } catch (e) { return 0; } })();
+  if (extra > 0) {
+    // Не запрет, а задержка. Живой игрок теряет полминуты, скрипт теряет
+    // пропускную способность — то единственное, ради чего он и нужен.
+    const c = clubState(user);
+    const left = cdLeft(c, 'bot');
+    if (left > 0) {
+      throw new u.ApiError(`Штаб проверяет ваши действия. Следующий заход через ${left} с.`);
+    }
+    c.cd.bot = Date.now() + extra * 1000;
+  }
 }
 
 // Общий перерыв после выигрыша. Проверяется на ВХОДЕ в игру, но не
@@ -196,6 +227,7 @@ function prefView(c: any) {
 
 function prefStart(user: User, notices?: Notices) {
   const c = clubState(user);
+  beat(user, 'pref');
   if (c.pref) return prefView(c);
   if (cdLeft(c, 'pref') > 0) throw new u.ApiError('Генерал ещё тасует колоду. Загляните позже.');
   // gate(c) здесь НЕТ намеренно: за партию плачено, общий перерыв клуба
@@ -221,6 +253,7 @@ function prefStart(user: User, notices?: Notices) {
 function prefHit(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.pref) throw new u.ApiError('Партия не начата');
+  beat(user, 'pref');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
   const card = draw(c.pref);
   c.pref.hand.push(card);
@@ -238,6 +271,7 @@ function prefHit(user: User, notices: Notices) {
 function prefStand(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.pref) throw new u.ApiError('Партия не начата');
+  beat(user, 'pref');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
   const game = c.pref;
   const mySum = config.handSum(game.hand);
@@ -282,6 +316,7 @@ function safeView(user: User) {
 
 function safeTry(user: User, guess: string, notices: Notices) {
   const c = clubState(user);
+  beat(user, 'safe');
   gate(c);
   const r = safeCrack.attempt(user, guess);
   // Поручение засчитываем за НАСТОЯЩУЮ попытку: safeCrack уже отверг бы
@@ -348,6 +383,7 @@ function raidView(c: any) {
 
 function raidStart(user: User) {
   const c = clubState(user);
+  beat(user, 'raid');
   if (c.raid) return raidView(c);
   if (cdLeft(c, 'raid') > 0) throw new u.ApiError('Группа отдыхает после выхода. Загляните позже.');
   gate(c);
@@ -359,6 +395,7 @@ function raidStart(user: User) {
 function raidPush(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.raid) throw new u.ApiError('Группа не вышла на маршрут');
+  beat(user, 'raid');
   const last = (C.RAID_RISK_PCT as number[]).length;
   if (c.raid.step >= last) throw new u.ApiError('Дальше рубежей нет — отходите с добычей');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
@@ -379,6 +416,7 @@ function raidPush(user: User, notices: Notices) {
 function raidPull(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.raid) throw new u.ApiError('Группа не вышла на маршрут');
+  beat(user, 'raid');
   const step = c.raid.step;
   if (step <= 0) {
     // Отойти, не взяв ни одного рубежа, можно — но и уносить нечего.
@@ -441,6 +479,7 @@ function rollDice(n: number): number[] {
 
 function diceStart(user: User) {
   const c = clubState(user);
+  beat(user, 'dice');
   if (c.dice) return diceView(c);
   if (cdLeft(c, 'dice') > 0) throw new u.ApiError('Кости ещё у другого расчёта. Загляните позже.');
   gate(c);
@@ -453,6 +492,7 @@ function diceStart(user: User) {
 function diceReroll(user: User, keep: any, notices: Notices) {
   const c = clubState(user);
   if (!c.dice) throw new u.ApiError('Сначала бросьте кости');
+  beat(user, 'dice');
   if (c.dice.rerollsLeft <= 0) throw new u.ApiError('Перебросы кончились — забирайте результат');
   const keepSet = new Set((Array.isArray(keep) ? keep : []).map((x: any) => u.toInt(x)));
   c.dice.dice = c.dice.dice.map((d: number, i: number) => (keepSet.has(i) ? d : u.rnd(1, 6)));
@@ -463,6 +503,7 @@ function diceReroll(user: User, keep: any, notices: Notices) {
 function diceFinish(user: User, notices: Notices) {
   const c = clubState(user);
   if (!c.dice) throw new u.ApiError('Нет активной игры');
+  beat(user, 'dice');
   const dice = c.dice.dice.slice();
   const combo = diceCombo(dice);
   c.dice = null;
@@ -515,6 +556,7 @@ function rivalBids(): number[] {
 
 function bidsPlay(user: User, bids: any, notices: Notices) {
   const c = clubState(user);
+  beat(user, 'bids');
   if (cdLeft(c, 'bids') > 0) throw new u.ApiError('Аукцион уже закрыт. Загляните позже.');
   gate(c);
 
@@ -608,6 +650,7 @@ function tacticBotPick(d: any): string {
 
 function tacticStart(user: User) {
   const c = clubState(user);
+  beat(user, 'tactic');
   if (c.tactic) return tacticView(c);
   if (cdLeft(c, 'tactic') > 0) throw new u.ApiError('Генерал разбирает прошлую дуэль. Загляните позже.');
   gate(c);
@@ -618,6 +661,7 @@ function tacticStart(user: User) {
 function tacticPlay(user: User, kind: any, notices: Notices) {
   const c = clubState(user);
   if (!c.tactic) throw new u.ApiError('Дуэль не начата');
+  beat(user, 'tactic');
   const mine = String(kind || '');
   if (!TACTIC_BY_ID[mine]) throw new u.ApiError('Выберите род войск');
   // Поручение засчитываем только за настоящий ход — см. пояснение в safeTry

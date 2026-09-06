@@ -130,6 +130,35 @@ function track(user: User, actionType: string) {
   return { ok: true, suspicion: Math.round(b.suspicion) };
 }
 
+// ═══ ЗАМЕДЛЕНИЕ ВМЕСТО БЛОКИРОВКИ ══════════════════════════════════
+// Что делать с тем, кого заподозрили. Разбор вариантов:
+//
+//   ЗАПРЕТИТЬ действие — ложное срабатывание запирает живого игрока.
+//   Цена ошибки максимальная, а ошибки будут: человек с макросом на
+//   мышке или просто методичный игрок наберёт подозрительность.
+//
+//   МОЛЧА НЕ ПЛАТИТЬ — ещё хуже: живой игрок видит, что выиграл, а
+//   золота нет, и считает это поломкой. Такое не чинится поддержкой.
+//
+//   ЗАМЕДЛИТЬ — то, что нужно. Человек прибавки почти не заметит:
+//   тридцать секунд раз в несколько действий против его собственных
+//   пауз. Скрипту она рубит пропускную способность в разы, а именно
+//   пропускная способность и есть весь его смысл. Ложное срабатывание
+//   стоит игроку неудобства, а не потери.
+//
+// Пороги подобраны так, чтобы обычная игра их не достигала: живому
+// человеку нужен коэффициент вариации интервалов ниже 0.15 подряд
+// десять раз, чего у людей не выходит.
+function throttleSec(user: User): number {
+  const b = ensure(user);
+  applyDecay(b);
+  const s = b.suspicion || 0;
+  if (s >= 80) return 300;   // пять минут
+  if (s >= 60) return 120;
+  if (s >= 40) return 30;
+  return 0;
+}
+
 // Игрок прошёл проверку «я не робот» — сбрасываем подозрительность
 function passVerification(user: User) {
   const b = ensure(user);
@@ -147,4 +176,22 @@ function needsVerification(user: User): boolean {
   return false;
 }
 
-export = { track, passVerification, needsVerification, ensure };
+// Сводка для панели: во что сложилась подозрительность. Раньше панель
+// показывала одно число, которое НИКТО не увеличивал (см. историю
+// модуля) — теперь рядом с числом видно, на чём оно основано.
+function profile(user: User): any {
+  const b = ensure(user);
+  applyDecay(b);
+  const iv = b.intervals || [];
+  return {
+    suspicion: Math.round(b.suspicion || 0),
+    samples: iv.length,
+    cv: iv.length >= 5 ? Math.round(coeffOfVariation(iv) * 100) / 100 : null,
+    roundPct: iv.length >= 5 ? Math.round(roundRatio(iv) * 100) : null,
+    medianMs: iv.length ? iv.slice().sort((a, b2) => a - b2)[Math.floor(iv.length / 2)] : null,
+    throttleSec: throttleSec(user),
+    flagged: b.flagged || 0,
+  };
+}
+
+export = { track, passVerification, needsVerification, ensure, throttleSec, profile };

@@ -33,6 +33,11 @@ const db = require('../dist/src/core/db');
 const auth = require('../dist/src/services/auth');
 const player = require('../dist/src/services/player');
 const club = require('../dist/src/services/club');
+// Пульс клуба меряет РИТМ действий, и тесты правил гоняют партии пачками
+// в один и тот же миллисекунд — для детектора это, справедливо, скрипт.
+// Здесь проверяются правила игры, а не детектор, поэтому пульс глушим
+// целиком и явно. За сам детектор отвечает test/clubbot.test.js.
+require('../dist/src/services/antibot').track = () => ({ ok: true, suspicion: 0 });
 const C = require('../dist/config/gameConfig').CLUB;
 
 let passed = 0, failed = 0;
@@ -47,7 +52,10 @@ const nx = [];
 
   // Кулдауны в тесте снимаем руками: нас интересует потолок, а не то,
   // сколько реального времени нужно просидеть.
-  const clearCd = () => { if (U.club && U.club.cd) for (const k of Object.keys(U.club.cd)) U.club.cd[k] = 0; };
+  const clearCd = () => {
+    if (U.club && U.club.cd) for (const k of Object.keys(U.club.cd)) U.club.cd[k] = 0;
+    U.behavior = null;   // см. пояснение в test/cards: здесь проверяется потолок, а не пульс
+  };
   // Долбим потолок ночным рейдом: рубеж проставляем сами, чтобы проверка
   // не зависела от того, как лёг бросок. Нас интересует ПОТОЛОК, а не
   // везение.

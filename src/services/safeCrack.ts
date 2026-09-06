@@ -188,8 +188,14 @@ function attempt(user: User, guessRaw: any): any {
   // До кода он не доходит и ничего о нём не сообщает, а минута
   // наказания за опечатку в шестизначном числе — это не защита, а
   // издевательство над тем, кто промахнулся по клавише.
+  // Таймер с разбросом ±20%, а не ровно минута. Ровный интервал —
+  // подарок скрипту: он ставит будильник на 60.0 с и попадает в
+  // открытие каждый раз, обгоняя человека, который смотрит на часы.
+  // Разброс заставляет опрашивать вслепую, а слепой опрос — это уже
+  // машинный ритм, который ловит antibot.
+  const jitter = 0.8 + Math.random() * 0.4;
   (user as any).club = (user as any).club || {};
-  (user as any).club.safeNextAt = Date.now() + C.SAFE_TRY_CD_SEC * 1000;
+  (user as any).club.safeNextAt = Date.now() + Math.round(C.SAFE_TRY_CD_SEC * jitter) * 1000;
 
   const { bulls, cows } = score(g, c.code);
 

@@ -34,6 +34,11 @@ const db = require('../dist/src/core/db');
 const auth = require('../dist/src/services/auth');
 const player = require('../dist/src/services/player');
 const club = require('../dist/src/services/club');
+// Пульс клуба меряет РИТМ действий, и тесты правил гоняют партии пачками
+// в один и тот же миллисекунд — для детектора это, справедливо, скрипт.
+// Здесь проверяются правила игры, а не детектор, поэтому пульс глушим
+// целиком и явно. За сам детектор отвечает test/clubbot.test.js.
+require('../dist/src/services/antibot').track = () => ({ ok: true, suspicion: 0 });
 const cfg = require('../dist/config/gameConfig');
 const C = cfg.CLUB;
 
@@ -53,6 +58,11 @@ const nx = [];
     if (U.club && U.club.cd) for (const k of Object.keys(U.club.cd)) U.club.cd[k] = 0;
     if (U.club) U.club.dayGold = 0;
     U.gold = 1000000;
+    // Пачка партий подряд — машинный ритм, и пульс клуба справедливо
+    // его тормозит. Здесь проверяются правила игры, а не детектор:
+    // профиль поведения сбрасываем, как и кулдауны. За детектор
+    // отвечает test/clubbot.
+    U.behavior = null;
   };
 
   console.log('\n── 1. Колода собрана целиком ──');

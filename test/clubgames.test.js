@@ -13,6 +13,11 @@ const db = require('../dist/src/core/db');
 const auth = require('../dist/src/services/auth');
 const player = require('../dist/src/services/player');
 const club = require('../dist/src/services/club');
+// Пульс клуба меряет РИТМ действий, и тесты правил гоняют партии пачками
+// в один и тот же миллисекунд — для детектора это, справедливо, скрипт.
+// Здесь проверяются правила игры, а не детектор, поэтому пульс глушим
+// целиком и явно. За сам детектор отвечает test/clubbot.test.js.
+require('../dist/src/services/antibot').track = () => ({ ok: true, suspicion: 0 });
 const c = require('../dist/config/gameConfig');
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
@@ -29,7 +34,7 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   // предыдущие разделы, обрезал бы награды: проверка стала бы зависеть
   // от того, сколько золота выпало выше. За сам потолок отвечает
   // отдельный тест clubcap.
-  const clearCd = () => { p.club.cd = {}; p.club.dayGold = 0; };
+  const clearCd = () => { p.club.cd = {}; p.club.dayGold = 0; p.behavior = null; };
 
   console.log('\n[1] Состав клуба: старые игры убраны, новые на месте');
   const v = club.view(p);

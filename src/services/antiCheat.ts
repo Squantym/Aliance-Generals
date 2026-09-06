@@ -242,6 +242,7 @@ async function scan(hours = 24, limit = 40): Promise<any> {
       dollars: p.dollars || 0, gold: p.gold || 0,
       lastSeen: p.lastSeen || 0,
       suspicion: Math.round(behavior.suspicion || 0),   // от antibot
+      rhythm: (() => { try { return require('./antibot').profile(p); } catch (e) { return null; } })(),
       findings: findings.sort((a, b) => b.at - a.at).slice(0, 12),
       score: findings.reduce((s, f) => s + (f.severity === 'high' ? 10 : f.severity === 'mid' ? 4 : 1), 0),
     });
@@ -266,6 +267,7 @@ async function scanOne(userId: string, hours = 72): Promise<any> {
   return {
     id: p.id, name: p.name,
     suspicion: Math.round((p.behavior || {}).suspicion || 0),
+    rhythm: (() => { try { return require('./antibot').profile(p); } catch (e) { return null; } })(),
     findings: findings.sort((a, b) => b.at - a.at),
   };
 }
