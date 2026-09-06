@@ -55,7 +55,7 @@ ok(vip.left(v, 'immunity') === 3, `иммунитетов к фаталити: $
 ok(vip.left(v, 'reroll') === 2, `замен поручений: ${vip.left(v, 'reroll')}`);
 ok(vip.left(plain, 'heal') === 0, 'обычному суточных преимуществ не полагается');
 let used = 0;
-for (let i = 0; i < 5; i++) if (vip.tryFatalityImmunity(v)) used++;
+for (let i = 0; i < 5; i++) if (vip.tryBreachImmunity(v)) used++;
 ok(used === 3, `иммунитет сработал ровно ${used} раза`);
 ok(vip.left(v, 'immunity') === 0, 'после исчерпания — ноль');
 
@@ -134,7 +134,7 @@ const battleSrc = fs.readFileSync(ROOT + '/src/services/battle.ts', 'utf8');
 ok(/function unitLossFor/.test(battleSrc), 'потери техники считаются с учётом подписки');
 // Иммунитет переехал в момент ПЛЕНЕНИЯ: ускользать надо там, а не на
 // шаге фаталити, когда игрок уже занёс клинок над пленным
-ok(/tryFatalityImmunity\(target\)/.test(battleSrc), 'иммунитет к фаталити проверяется при пленении');
+ok(/tryBreachImmunity\(target\)/.test(battleSrc), 'иммунитет к фаталити проверяется при пленении');
 ok(/vipSaved \|\| Math\.random\(\) < escapeChance/.test(battleSrc),
    'иммунитет проверяется ДО броска на ловкость — иначе удачный бросок съедал бы попытку');
 const paySrc = fs.readFileSync(ROOT + '/src/services/payments.ts', 'utf8');

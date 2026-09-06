@@ -22,22 +22,32 @@ const App = {
     return `<img src="/img/flags/${code}.webp" class="flag-img ${cls || ''}" alt="" loading="lazy" decoding="async">`;
   },
 
-  // ── ФАТАЛИТИ: взятие в плен → фото + выбор → результат → возврат ──
-  // Шаг 1: крупное фото момента + выбор (отрезать ухо / помиловать).
-  async _showFatalityFlow(fat) {
-    const old = document.getElementById('fatality-overlay');
+  // ── ПРОНИКНОВЕНИЕ В ШТАБ: сцена → выбор → итог → возврат ──
+  //
+  // Сцены сняты отдельно для мужчин и женщин. Пол берём из своего
+  // профиля (App.me.gender): показать женщине мужскую сцену — то же
+  // самое, что показать ей чужого персонажа.
+  _breachScene(kind) {
+    const g = (App.me && App.me.gender === 'f') ? 'f' : 'm';
+    return '/img/breach/' + kind + '-' + g + '.webp';
+  },
+
+  // Шаг 1: сцена проникновения + выбор (сорвать герб / перемирие).
+  async _showBreachFlow(fat) {
+    const old = document.getElementById('breach-overlay');
     if (old) old.remove();
     const overlay = document.createElement('div');
-    overlay.id = 'fatality-overlay';
-    overlay.className = 'fatality-overlay';
+    overlay.id = 'breach-overlay';
+    overlay.className = 'breach-overlay';
     overlay.innerHTML = `
-      <div class="fatality-modal">
-        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="" loading="lazy" decoding="async">
-        <div class="fatality-title" style="color:var(--red)">🪖 Пленный командир</div>
-        <p class="center muted small">Командир <b style="color:var(--fg)">${UI.esc(fat.name)}</b> полностью в вашей власти. Решите его судьбу:</p>
-        <div class="fatality-choices">
-          <button class="btn btn-red fatality-choice-btn" data-fat="ear">✂️ Отрезать ухо</button>
-          <button class="btn btn-green fatality-choice-btn" data-fat="mercy"><span class="ic-token"></span> Помиловать</button>
+      <div class="breach-modal">
+        <img src="${App._breachScene('breach')}" class="breach-photo" alt="" loading="lazy" decoding="async">
+        <div class="breach-title" style="color:var(--red)">🛡 Штаб взят</div>
+        <p class="center muted small">Вы в штабе командира <b style="color:var(--fg)">${UI.esc(fat.name)}</b>.
+          На стене — герб штаба. Решайте:</p>
+        <div class="breach-choices">
+          <button class="btn btn-red breach-choice-btn" data-fat="crest"><span class="ic-crest"></span> Сорвать герб</button>
+          <button class="btn btn-green breach-choice-btn" data-fat="mercy"><span class="ic-token"></span> Перемирие</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -45,15 +55,15 @@ const App = {
       overlay.querySelectorAll('[data-fat]').forEach((x) => { x.disabled = true; x.style.opacity = '.5'; });
       const choice = b.dataset.fat;
       try {
-        const res = await API.post('/api/war/fatality', { choice });
+        const res = await API.post('/api/war/breach', { choice });
         App._lastBattle = null;
         overlay.remove();
         // Ветка res.escaped убрана: ускользание происходит РАНЬШЕ,
         // в момент пленения, и приходит в ответе на атаку полем
-        // fatalityDodged. Здесь она читала несуществующее поле и не
+        // breachDodged. Здесь она читала несуществующее поле и не
         // срабатывала ни разу — а окно «жертва ускользнула» из-за
         // этого не видел никто.
-        App._showFatalityResult(choice, res);
+        App._showBreachResult(choice, res);
       } catch (e) {
         UI.toast('⛔ ' + e.message);
         overlay.remove(); await App.refreshMe(); App.rerender();
@@ -61,19 +71,19 @@ const App = {
     });
   },
 
-  // Окно «жертва ускользнула» — раньше был только тост, теперь такое же
-  // окно, как у остальных исходов фаталити.
-  _showFatalityEscaped(res) {
+  // Окно «до герба не дошли» — раньше был только тост, теперь такое же
+  // окно, как у остальных исходов проникновения.
+  _showBreachEscaped(res) {
     const overlay = document.createElement('div');
-    overlay.id = 'fatality-overlay';
-    overlay.className = 'fatality-overlay';
+    overlay.id = 'breach-overlay';
+    overlay.className = 'breach-overlay';
     overlay.innerHTML = `
-      <div class="fatality-modal">
-        <img src="/img/fatality/moment.webp" class="fatality-photo" alt="" loading="lazy" decoding="async">
-        <div class="fatality-title" style="color:var(--orange-1)">💨 Жертва ускользнула</div>
+      <div class="breach-modal">
+        <img src="${App._breachScene('breach')}" class="breach-photo" alt="" loading="lazy" decoding="async">
+        <div class="breach-title" style="color:var(--orange-1)">💨 Штаб успели закрыть</div>
         <p class="center muted small">${res && res.victimName
-          ? `<b style="color:var(--fg)">${UI.esc(res.victimName)}</b> вывернулся в последний момент — ловкость спасла его от клинка.`
-          : 'Пленный вывернулся в последний момент — ловкость спасла его от клинка.'}
+          ? `Охрана <b style="color:var(--fg)">${UI.esc(res.victimName)}</b> опомнилась раньше — до герба вы не дошли.`
+          : 'Охрана опомнилась раньше — до герба вы не дошли.'}
           Трофея нет, но и следов вы не оставили.</p>
         <button class="btn btn-orange" id="fat-return" style="width:100%;padding:12px;margin-top:10px">🔙 Вернуться на поле боя</button>
       </div>`;
@@ -86,34 +96,34 @@ const App = {
   },
 
   // Шаг 2: картинка результата + кнопка «Вернуться на поле боя».
-  _showFatalityResult(choice, res) {
-    const isEar = choice === 'ear';
-    // Сколько ушей срезано: трофей «Тесак мясника» даёт шанс на оба сразу.
-    // Раньше окно всегда говорило «Ухо отрезано», и игрок не понимал,
+  _showBreachResult(choice, res) {
+    const isCrest = choice === 'crest';
+    // Сколько частей сорвано: трофей «Таран штаба» даёт шанс на две сразу.
+    // Раньше окно всегда говорило одно и то же, и игрок не понимал,
     // сработал ли трофей.
-    const bothEars = !!(res && res.doubleCut);
+    const bothParts = !!(res && res.doubleCut);
     const restored = !!(res && res.restored);
-    const earTitle = bothEars ? 'Отрезаны ОБА уха' : 'Ухо отрезано';
-    const earText = bothEars
-      ? `Трофей «Тесак мясника» сработал: одним ударом вы срезали <b>оба уха</b>${res && res.victimName ? ` командиру ${UI.esc(res.victimName)}` : ''} — в коллекцию ушло сразу два трофея.`
-      : `Вы отрезали <b>одно ухо</b> поверженному командиру${res && res.victimName ? ` (${UI.esc(res.victimName)})` : ''} — трофей жестокости пополнил вашу коллекцию.`;
+    const crestTitle = bothParts ? 'Сорваны ДВЕ части герба' : 'Герб сорван';
+    const crestText = bothParts
+      ? `Трофей «Таран штаба» сработал: одним рывком вы сняли <b>две части герба</b>${res && res.victimName ? ` из штаба ${UI.esc(res.victimName)}` : ''} — в коллекцию ушло сразу два трофея.`
+      : `Вы сорвали <b>часть герба</b> со стены штаба${res && res.victimName ? ` (${UI.esc(res.victimName)})` : ''} — трофейный герб пополнил вашу коллекцию.`;
     const restoredNote = restored
-      ? '<p class="center small mt" style="color:var(--orange-1)">⚕️ Но жертва мгновенно восстановила ухо полевым хирургом — трофей у вас, а враг снова целый.</p>'
+      ? '<p class="center small mt" style="color:var(--orange-1)">🔧 Но ремонтная бригада вернула часть на место — трофей у вас, а герб хозяина снова цел.</p>'
       : '';
     const overlay = document.createElement('div');
-    overlay.id = 'fatality-overlay';
-    overlay.className = 'fatality-overlay';
+    overlay.id = 'breach-overlay';
+    overlay.className = 'breach-overlay';
     overlay.innerHTML = `
-      <div class="fatality-modal">
-        <img src="/img/fatality/${isEar ? 'cut' : 'pardon'}.webp" class="fatality-photo" alt="" loading="lazy" decoding="async">
-        <div class="fatality-title" style="color:${isEar ? 'var(--red)' : 'var(--green)'}">${isEar ? `<span class="ic-ear"></span> ${earTitle}` : '<span class="ic-token"></span> Враг помилован'}</div>
-        <p class="center muted small">${isEar
-          ? earText
-          : 'Вы проявили милосердие и отпустили командира. Знак чести и жетон милосердия — ваши.'}</p>
-        ${isEar ? restoredNote : ''}
-        ${(res && (res.ears != null || res.tokens != null)) ? `
+      <div class="breach-modal">
+        <img src="${App._breachScene(isCrest ? 'crest' : 'truce')}" class="breach-photo" alt="" loading="lazy" decoding="async">
+        <div class="breach-title" style="color:${isCrest ? 'var(--red)' : 'var(--green)'}">${isCrest ? `<span class="ic-crest"></span> ${crestTitle}` : '<span class="ic-token"></span> Перемирие заключено'}</div>
+        <p class="center muted small">${isCrest
+          ? crestText
+          : 'Вы вышли из штаба, не тронув герб. Жетон перемирия — ваш.'}</p>
+        ${isCrest ? restoredNote : ''}
+        ${(res && (res.crests != null || res.tokens != null)) ? `
           <div class="fat-loot">
-            ${res.ears   != null ? `<span><span class="ic-ear"></span> ${UI.fmtNum(res.ears)}</span>` : ''}
+            ${res.crests != null ? `<span><span class="ic-crest"></span> ${UI.fmtNum(res.crests)}</span>` : ''}
             ${res.tokens != null ? `<span><span class="ic-token"></span> ${UI.fmtNum(res.tokens)}</span>` : ''}
           </div>` : ''}
         <button class="btn btn-orange" id="fat-return" style="width:100%;padding:12px;margin-top:10px">🔙 Вернуться на поле боя</button>
@@ -122,7 +132,7 @@ const App = {
     document.getElementById('fat-return').onclick = async () => {
       overlay.remove();
       await App.refreshMe();
-      // Если отрезаны ОБА уха одной жертве — предложим оставить послание
+      // Если сорван ВЕСЬ герб — предложим оставить послание в штабе
       if (res && res.canLeaveMessage && res.victimId) App._showEarMessagePrompt(res.victimId);
       // Возврат на поле боя: если уже на войне — принудительно перерисовываем
       // (App.go с тем же хешем не вызывает hashchange), иначе переходим.
@@ -1019,7 +1029,7 @@ const App = {
     box.innerHTML = `
       <div class="contrib-head">
         <span style="width:20px"></span><span class="grow">Игрок</span>
-        <span class="contrib-v"><span class="ic-ear"></span></span>
+        <span class="contrib-v"><span class="ic-crest"></span></span>
         <span class="contrib-v"><span class="ic-token"></span></span>
         <span class="contrib-v"><span class="ic-reserve"></span></span>
       </div>
@@ -1820,7 +1830,7 @@ const App = {
           <div style="font-weight:bold;margin-bottom:8px;color:var(--gold)">👑 Обзор администратора</div>
           <div class="kv"><span class="k">💰 Казна</span><span class="v gold">$${UI.fmtNum(peek.treasury)}</span></div>
           <div class="kv"><span class="k">🔷 Резервы</span><span class="v">${UI.fmtNum(peek.reserves)} <span class="ic-reserve"></span> РЕЗ</span></div>
-          <div class="kv"><span class="k"><span class="ic-ear"></span> Уши / <span class="ic-token"></span> Жетоны казны</span><span class="v">${peek.treasuryEars} / ${peek.treasuryTokens}</span></div>
+          <div class="kv"><span class="k"><span class="ic-crest"></span> Уши / <span class="ic-token"></span> Жетоны казны</span><span class="v">${peek.treasuryEars} / ${peek.treasuryTokens}</span></div>
           <div class="kv"><span class="k">Лидер</span><span class="v">${UI.esc(peek.leaderName)}</span></div>
           <div class="kv"><span class="k">В бою сейчас</span><span class="v">${peek.hasActiveBattle ? '⚔️ да' : 'нет'}</span></div>
           ${peek.arsenal.length ? `<div style="margin-top:6px;font-size:12px"><b>Арсенал:</b> ${peek.arsenal.map(a => `${UI.esc(a.name)}×${a.count}`).join(', ')}</div>` : ''}
@@ -1861,7 +1871,7 @@ const App = {
 
   // Диалог админ-вклада ресурсов в легион
   async _adminInvestLegion(legionId, legionName) {
-    const RES = [['treasury', '💰 Казна ($)'], ['reserves', '🔷 Резервы (РЕЗ)'], ['ears', '<span class="ic-ear"></span> Уши'], ['tokens', '<span class="ic-token"></span> Жетоны']];
+    const RES = [['treasury', '💰 Казна ($)'], ['reserves', '🔷 Резервы (РЕЗ)'], ['ears', '<span class="ic-crest"></span> Уши'], ['tokens', '<span class="ic-token"></span> Жетоны']];
     const pop = document.createElement('div');
     pop.id = 'lgadmin-invest-pop';
     pop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';

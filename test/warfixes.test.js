@@ -21,7 +21,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
 
 function giveArmy(u, unit, count) { u.units = u.units || {}; u.units[unit.id] = { 0: count, 1: 0, 2: 0 }; }
 function resetFighter(u) {
-  u.lastAttackAt = 0; u.pendingFatality = null; u.pendingBankHack = null; u.pendingMineDefuse = null;
+  u.lastAttackAt = 0; u.pendingBreach = null; u.pendingBankHack = null; u.pendingMineDefuse = null;
   const mx = player.maxima(u); u.res.hp.cur = mx.hp; u.res.am.cur = mx.am; u.res.en.cur = mx.en;
 }
 

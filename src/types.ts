@@ -3,7 +3,7 @@
 //
 // Здесь зафиксированы все поля сущностей. Именно отсюда TypeScript
 // будет ловить опечатки в полях — те самые баги, на которых мы теряли
-// время: ears vs earsCurrent, legionId vs legion, battleId и т.д.
+// время: ears vs crestParts, legionId vs legion, battleId и т.д.
 //
 // По мере перевода сервисов на .ts импортируйте эти типы:
 //   import type { User, Legion, Battle } from './types';
@@ -37,18 +37,18 @@ export interface BattleStats {
   losses: number;
   defWins: number;
   defLosses: number;
-  fatalities: number;
+  breaches: number;
 }
 
 // ---------- Счётчики достижений / зала славы ----------
 export interface PlayerCounters {
   wins: number;
   attacks: number;
-  fatalities: number;
+  breaches: number;
   unitsBought: number;
   buildingsBuilt: number;
   missionStages: number;
-  earsCut: number;
+  crestsTorn: number;
   moneyEarned: number;
   battleLoot: number;   // заработок именно с боёв (для зала славы)
   level: number;
@@ -76,8 +76,8 @@ export interface BehaviorProfile {
   flagged: number;
 }
 
-// ---------- Ожидающее решение фаталити ----------
-export interface PendingFatality {
+// ---------- Ожидающее решение в штабе ----------
+export interface PendingBreach {
   name: string;
   victimId?: string;
   [k: string]: unknown;
@@ -94,8 +94,8 @@ export interface Gift {
 // ---------- ИГРОК ----------
 // Главная сущность. ВНИМАНИЕ к двум разным «ушам»:
 //   ears        — ТРОФЕЙНЫЕ уши (нарезанные у врагов): ресурс для трат
-//                 и для зала славы. Растёт при фаталити.
-//   earsCurrent — СВОИ уши игрока (лимит EARS.MAX): их отрезают враги,
+//                 и для зала славы. Растёт при срыве герба.
+//   crestParts — СВОИ уши игрока (лимит CREST.PARTS): их отрезают враги,
 //                 они регенерируют. Это НЕ ресурс для трат.
 // Принадлежность к группам — через ID (allianceId / legionId), не объект.
 export interface User {
@@ -147,19 +147,19 @@ export interface User {
   superSecret: number;
 
   ears: number;          // трофейные (тратятся, идут в зал славы)
-  tokens: number;        // жетоны помилования
-  earsLost: number;
-  earsCurrent: number;   // собственные уши (лимит), регенерируют
-  earsLostAt: number[];
-  // Кто отрезал уши: earCutters[0] = левое (первое отрезанное),
-  // earCutters[1] = правое (второе). Каждый элемент: { id, name } или null.
-  earCutters?: ({ id: string; name: string } | null)[];
+  tokens: number;        // жетоны перемирия
+  crestPartsLost: number;
+  crestParts: number;   // собственные уши (лимит), регенерируют
+  crestLostAt: number[];
+  // Кто отрезал уши: crestTakers[0] = левое (первое отрезанное),
+  // crestTakers[1] = правое (второе). Каждый элемент: { id, name } или null.
+  crestTakers?: ({ id: string; name: string } | null)[];
   // Послание от того, кто отрезал оба уха (видно всем в профиле)
-  earMessage?: { byId: string; byName: string; text: string } | null;
-  earPenaltyUntil: number;
+  crestMessage?: { byId: string; byName: string; text: string } | null;
+  // earPenaltyUntil убран: штраф считается от числа сорванных частей
   lastAttackAt?: number;      // время последней атаки (кулдаун 1 сек)
   lastHospitalHeal?: number;  // время последнего лечения в госпитале (кулдаун 5 мин)
-  adminEars?: number;    // выданные админом (не учитываются в статистике)
+  adminCrests?: number;    // выданные админом (не учитываются в статистике)
   adminTokens?: number;
 
   battle: BattleStats;
@@ -249,7 +249,7 @@ export interface User {
   } | null;
 
   lastIncomeAt: number;
-  pendingFatality: PendingFatality | null;
+  pendingBreach: PendingBreach | null;
   lastChatAt: number;
 
   // ── Диверсанты (см. src/services/saboteurs.ts) ──────────────────
@@ -270,7 +270,7 @@ export interface User {
   // Необязательные поля, появляющиеся в рантайме
   recentAttacks?: Record<string, number[]>;
   // Личная история боёв против конкретного противника (по его id):
-  // { wins, losses } — нужна для ограничения фаталити тем, кто часто
+  // { wins, losses } — нужна для ограничения проникновений тем, кто часто
   // проигрывает данному противнику.
   vsRecord?: Record<string, { wins: number; losses: number }>;
   behavior?: BehaviorProfile;

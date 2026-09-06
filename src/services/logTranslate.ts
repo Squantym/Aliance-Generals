@@ -233,10 +233,10 @@ function describe(path: string, body?: any, result?: any): string | null {
         const loot = result.loot ? `, награбил $${money(result.loot)}` : '';
         return `⚔️ Атаковал${who} — ${outcome}${loot}`;
       }
-      case '/api/war/fatality':
+      case '/api/war/breach':
         return body.choice === 'ear'
-          ? '💀 Фаталити: отрезал ухо противнику'
-          : '🤝 Фаталити: помиловал (получил жетон)';
+          ? '🛡 Штаб: сорвал часть герба'
+          : '🕊 Штаб: заключил перемирие (получил жетон)';
       case '/api/ears/restore':
         return `👂 Восстановил ухо${result.cost ? ` за 🪙 ${money(result.cost)}` : ''}`;
       case '/api/war/mine-defuse':

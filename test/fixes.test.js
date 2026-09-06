@@ -5,6 +5,7 @@
 // Запуск: node test/fixes.test.js  (после npm run build)
 const assert = require('assert');
 const c = require('../dist/config/gameConfig');
+const CREST_PARTS = require('../dist/config/gameConfig').CREST.PARTS;
 const db = require('../dist/src/core/db');
 const player = require('../dist/src/services/player');
 const battle = require('../dist/src/services/battle');
@@ -32,13 +33,13 @@ function mkUser(id, name, opts) {
     res: { hp: { cur: opts.hp ?? 100, max: 100, t: now }, en: { cur: 100, max: 100, t: now }, am: { cur: 9999, max: 9999, t: now } },
     units: opts.units || { ground_1: [10, 0, 0] },
     workshops: 0, modernQueue: [], buildings: {}, secretDevs: {}, superSecret: 0,
-    ears: 0, tokens: 0, earsLost: 0, earsCurrent: c.EARS.MAX, earsLostAt: [], earPenaltyUntil: 0,
-    battle: { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 },
-    counters: { wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0, level: 20 },
+    ears: 0, tokens: 0, crestPartsLost: 0, crestParts: c.CREST.PARTS, crestLostAt: [],
+    battle: { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, breaches: 0 },
+    counters: { wins: 0, attacks: 0, breaches: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, crestsTorn: 0, moneyEarned: 0, battleLoot: 0, level: 20 },
     achStages: {}, missions: {}, tutorial: { step: 0, done: true }, effects: opts.effects || [],
     trophies: Object.fromEntries(c.TROPHIES.map((t) => [t.id, (opts.trophies || {})[t.id] || 0])),
     club: {}, allianceId: null, legionId: null, lastIncomeAt: now,
-    pendingFatality: null, lastChatAt: 0, trophyQueue: [],
+    pendingBreach: null, lastChatAt: 0, trophyQueue: [],
     pendingBankHack: null, bankHackCountToday: 0, bankHackVictimsToday: [],
     landmines: 0, pendingMineDefuse: null, recentAttacks: {},
   };
@@ -47,7 +48,7 @@ const notices = { push: () => {} };
 
 // ===================================================================
 console.log('\n[1] Допинг «Ястреб» (crit_bonus) усиливает шанс ФАТАЛИТИ, не только крит');
-function mkFatalityAttacker(withBuff) {
+function mkBreachAttacker(withBuff) {
   const u = mkUser('u_fat_' + (withBuff ? 'buff' : 'nobuff'), 'Атакер', {
     skills: { energy: 0, health: 0, ammo: 0, cruelty: 20, agility: 0 },
     units: { ground_1: [500, 0, 0] },
@@ -57,37 +58,37 @@ function mkFatalityAttacker(withBuff) {
   }
   return u;
 }
-function runFatalityTrial(attacker, victim, trials) {
-  let critWinLowHp = 0, fatalities = 0;
+function runBreachTrial(attacker, victim, trials) {
+  let critWinLowHp = 0, breaches = 0;
   for (let i = 0; i < trials; i++) {
     attacker.lastAttackAt = 0; attacker.res.am.cur = 9999; attacker.res.hp.cur = 100;
-    attacker.pendingFatality = null;
+    attacker.pendingBreach = null;
     attacker.level = 20; attacker.xp = 0; // иначе левелапится за тысячи атак и вылетает за ±10
     victim.res.hp.cur = 30; // maxima=200 (health skill=10) -> 15% = 30; выше порога атаки (25)
-    victim.pendingFatality = null;
+    victim.pendingBreach = null;
     const r = battle.attack(attacker, victim.id, notices);
     if (r.crit && r.win && r.targetHpPct <= 15) {
       critWinLowHp++;
-      if (attacker.pendingFatality) { fatalities++; attacker.pendingFatality = null; }
+      if (attacker.pendingBreach) { breaches++; attacker.pendingBreach = null; }
     }
   }
-  return { critWinLowHp, fatalities, rate: fatalities / Math.max(1, critWinLowHp) };
+  return { critWinLowHp, breaches, rate: breaches / Math.max(1, critWinLowHp) };
 }
 
 const victimA = mkUser('u_fat_victimA', 'ЖертваA', { units: { ground_1: [1, 0, 0] }, skills: { energy: 0, health: 10, ammo: 0, cruelty: 0, agility: 0 } });
 const victimB = mkUser('u_fat_victimB', 'ЖертваB', { units: { ground_1: [1, 0, 0] }, skills: { energy: 0, health: 10, ammo: 0, cruelty: 0, agility: 0 } });
 usersMap['u_fat_victimA'] = victimA; usersMap['u_fat_victimB'] = victimB;
 
-const noBuff = mkFatalityAttacker(false);
+const noBuff = mkBreachAttacker(false);
 usersMap[noBuff.id] = noBuff;
-const withBuff = mkFatalityAttacker(true);
+const withBuff = mkBreachAttacker(true);
 usersMap[withBuff.id] = withBuff;
 
 const N = 4000;
-const resNoBuff = runFatalityTrial(noBuff, victimA, N);
-const resBuff = runFatalityTrial(withBuff, victimB, N);
-console.log(`  без баффа: fatality-rate при crit&&win&&lowHP = ${(resNoBuff.rate * 100).toFixed(1)}% (образцов: ${resNoBuff.critWinLowHp})`);
-console.log(`  с баффом:  fatality-rate при crit&&win&&lowHP = ${(resBuff.rate * 100).toFixed(1)}% (образцов: ${resBuff.critWinLowHp})`);
+const resNoBuff = runBreachTrial(noBuff, victimA, N);
+const resBuff = runBreachTrial(withBuff, victimB, N);
+console.log(`  без баффа: breach-rate при crit&&win&&lowHP = ${(resNoBuff.rate * 100).toFixed(1)}% (образцов: ${resNoBuff.critWinLowHp})`);
+console.log(`  с баффом:  breach-rate при crit&&win&&lowHP = ${(resBuff.rate * 100).toFixed(1)}% (образцов: ${resBuff.critWinLowHp})`);
 ok('достаточно образцов без баффа (>100)', resNoBuff.critWinLowHp > 100);
 ok('достаточно образцов с баффом (>100)', resBuff.critWinLowHp > 100);
 ok('без баффа частота фаталити близка к базовой 10% (5-16%)', resNoBuff.rate > 0.05 && resNoBuff.rate < 0.16);

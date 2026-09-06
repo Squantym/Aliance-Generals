@@ -30,7 +30,7 @@ interface Sub {
 const PUSH_KINDS = new Set([
   'legion_challenge', 'legion_war', 'legion_battle_start', 'legion_battle_active', 'legion_battle_result',
   'attack_lost', 'attack_defended',
-  'fatality_ear', 'fatality_escape', 'fatality_mercy',
+  'breach_crest', 'breach_escape', 'breach_truce',
   'rocket_incoming', 'rocket_hit', 'rocket_intercepted', 'rocket_shot_down', 'mine_terror',
   'auction_outbid', 'auction_won',
   'admin_gift', 'sanction_executed', 'debuff_applied',
@@ -43,7 +43,7 @@ const KIND_URL: Record<string, string> = {
   legion_battle_active: '/#legion', legion_battle_result: '/#legion',
   group_join_request: '/#legion', group_invite_accepted: '/#legion', alliance_invite: '/#alliance',
   attack_lost: '/#war', attack_defended: '/#war',
-  fatality_ear: '/#war', fatality_escape: '/#war', fatality_mercy: '/#war',
+  breach_crest: '/#war', breach_escape: '/#war', breach_truce: '/#war',
   rocket_incoming: '/#war', rocket_hit: '/#war', rocket_intercepted: '/#war', rocket_shot_down: '/#war',
   mine_terror: '/#war', debuff_applied: '/#home', sanction_executed: '/#home',
   auction_outbid: '/#market', auction_won: '/#market', admin_gift: '/#home',

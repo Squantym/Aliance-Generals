@@ -29,7 +29,7 @@ function boxOf(userId: string): Notification[] {
   return boxes[userId];
 }
 
-// kind: 'attack_lost' | 'attack_won' | 'rocket_hit' | 'fatality' | ...
+// kind: 'attack_lost' | 'attack_won' | 'rocket_hit' | 'breach' | ...
 // payload: произвольные структурированные данные конкретного типа
 function push(targetUserId: string, kind: string, title: string, payload?: Record<string, unknown>): void {
   const box = boxOf(targetUserId);

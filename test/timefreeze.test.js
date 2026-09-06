@@ -58,7 +58,7 @@ const now = Date.now();
   for (const k of future) ok(`срок: ${k}`, tf.isFutureKey(k) === true);
 
   const pastKeys = ['createdAt', 'regAt', 'startedAt', 'finishedAt', 'bannedAt',
-    'lastIncomeAt', 'lastAttackAt', 'lastSeenAt', 'earsLostAt', 'at', 'offAt',
+    'lastIncomeAt', 'lastAttackAt', 'lastSeenAt', 'crestLostAt', 'at', 'offAt',
     'paidAt', 'updatedAt', 'frozenFrom'];
   for (const k of pastKeys) ok(`не срок: ${k}`, tf.isFutureKey(k) === false);
 
@@ -71,7 +71,7 @@ const now = Date.now();
     id: 'u1', name: 'Боец', gold: 500, level: 12,
     createdAt: now - 10 * HOUR,          // запись о прошлом
     lastIncomeAt: now - 600000,          // якорь накопления дохода
-    earsLostAt: now - 300000,            // якорь отрастания уха
+    crestLostAt: now - 300000,            // якорь отрастания уха
     lastAttackAt: now - 60000,           // якорь отката атаки
     banUntil: now + 2 * HOUR,            // срок в будущем
     guardedUntil: now - 60000,           // срок УЖЕ прошёл
@@ -108,7 +108,7 @@ const now = Date.now();
   // Иначе обновление становится наказанием: и из игры выгнали, и полчаса
   // лечения не засчитали.
   ok('доход идёт как шёл', users.u1.lastIncomeAt === before.u.lastIncomeAt);
-  ok('ухо отрастает как отрастало', users.u1.earsLostAt === before.u.earsLostAt);
+  ok('ухо отрастает как отрастало', users.u1.crestLostAt === before.u.crestLostAt);
   ok('откат атаки не продлился', users.u1.lastAttackAt === before.u.lastAttackAt);
   ok('дата регистрации не поехала', users.u1.createdAt === before.u.createdAt);
 

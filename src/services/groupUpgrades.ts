@@ -85,7 +85,7 @@ const TIERS = [
 // переходе на следующую ступень — иначе выгоднее было бы копить.
 //
 // Валюта улучшений — «боевые очки», отдельный ресурс групповых боёв.
-// Не путать с жетонами милосердия: те давно есть в игре и тратятся
+// Не путать с жетонами перемирия: те давно есть в игре и тратятся
 // здесь как второй ресурс, наравне с ушами.
 const CURRENCY_NAME = 'Боевые очки';
 const CURRENCY_ICON = '🎗';
@@ -112,7 +112,7 @@ function costOf(level: number): { amount: number; ears: number; tokens: number }
   // Плавный рост внутри ступени
   const amount = Math.round(c.curFrom + (c.curTo - c.curFrom) * k);
   const res = Math.round(c.resFrom + (c.resTo - c.resFrom) * k);
-  // amount — боевые очки, ears — уши, tokens — жетоны милосердия
+  // amount — боевые очки, ears — гербы, tokens — жетоны перемирия
   return { amount, ears: res, tokens: res };
 }
 
@@ -279,7 +279,7 @@ function upgrade(user: User, skillId: string, notices: Notices) {
   }
   if (((user as any).ears || 0) < cost.ears) throw new u.ApiError(`Не хватает ушей: нужно ${cost.ears}`);
   if (((user as any).tokens || 0) < cost.tokens) {
-    throw new u.ApiError(`Не хватает жетонов милосердия: нужно ${cost.tokens}`);
+    throw new u.ApiError(`Не хватает жетонов перемирия: нужно ${cost.tokens}`);
   }
 
   // Списываем

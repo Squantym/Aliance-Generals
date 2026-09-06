@@ -68,7 +68,7 @@ let attacksLanded = 0;
 for (let i = 0; i < 5; i++) {
   atk.lastAttackAt = 0;              // сброс кулдауна атак (1 сек)
   fill(atk); def.res.hp.cur = 100;   // ресурсы и HP на каждый бой
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.lastSeen = Date.now() - 60 * 60 * 1000; // держим цель «оффлайн»
   try { battle.attack(atk, def.id, []); attacksLanded++; } catch (e) { console.log('  (атака: ' + e.message + ')'); }
 }
@@ -83,8 +83,8 @@ const lossKeys = Object.keys(w.losses || {});
 console.log('  (потери техники в сводке: ' + lossKeys.map(k => w.losses[k].name + ' ×' + w.losses[k].count).join(', ') + ')');
 
 // Санкция на оффлайн-цель (нужно, чтобы цель отрезала ухо заказчику)
-atk.earCutters = [{ id: def.id, name: def.name }, null];
-atk.earsCurrent = 1;
+atk.crestTakers = [{ id: def.id, name: def.name }, null];
+atk.crestParts = 1;
 atk.dollars = 500000;
 sanctions.declare(atk, def.id, 5000, []);
 sanctions.declare(atk, def.id, 3000, []); // добор — агрегируется

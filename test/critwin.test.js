@@ -31,7 +31,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
    A.skills.cruelty=opts.cruelty||0; A.skills.agility=opts.agility||0; A.trophies=opts.tr||{}; A.effects=[];
    T.skills.cruelty=0; T.skills.agility=opts.tgtAgility||0; T.trophies={}; T.effects=[];
    for(let i=0;i<n;i++){
-     A.lastAttackAt=0; A.pendingFatality=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
+     A.lastAttackAt=0; A.pendingBreach=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
      // Восстанавливаем составы: техника теперь расходуется в бою, а тест
      // проверяет исход при ЗАДАННОМ соотношении сил
      W.units={ [c.UNITS[10].id]:{0:50,1:0,2:0} }; S.units={ [c.UNITS[13].id]:{0:50,1:0,2:0} };

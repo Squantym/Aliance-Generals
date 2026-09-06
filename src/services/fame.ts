@@ -49,15 +49,15 @@ const CATEGORIES = [
   {
     id: 'ears',
     name: '👂 Коллекционер ушей',
-    desc: 'Отрезано ушей при фаталити',
+    desc: 'Сорвано гербов в чужих штабах',
     getter: 'ears',
     absGetter: null,
     fmt: 'number',
   },
   {
     id: 'mercy',
-    name: '🕊️ Рыцарь милосердия',
-    desc: 'Жетонов помилования получено',
+    name: '🕊️ Хранитель мира',
+    desc: 'Жетонов перемирия получено',
     getter: 'tokens',
     absGetter: null,
     fmt: 'number',

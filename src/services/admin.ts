@@ -27,7 +27,7 @@ function brief(p: User) {
     level: p.level, xp: p.xp,
     dollars: p.dollars, gold: p.gold, bank: p.bank,
     skillPoints: p.skillPoints,
-    ears: p.ears, earsCurrent: p.earsCurrent, tokens: p.tokens,
+    ears: p.ears, crestParts: p.crestParts, tokens: p.tokens,
     createdAt: p.createdAt, lastSeen: p.lastSeen,
     banned: !!p.banned, banReason: p.banReason || '',
     online: (Date.now() - (p.lastSeen || 0)) < 5 * 60 * 1000,
@@ -166,7 +166,7 @@ function playerSnapshot(adminUser: User, targetId: string) {
     resources: {
       dollars: t.dollars, gold: t.gold, bank: t.bank,
       tokens: t.tokens, skillPoints: t.skillPoints,
-      earsTrophy: t.ears, earsCurrent: t.earsCurrent, earsMax: config.EARS.MAX,
+      crestsTrophy: t.ears, crestParts: t.crestParts, crestPartsMax: config.CREST.PARTS,
       landmines: t.landmines || 0,
       hp: { cur: t.res.hp.cur, max: mx.hp },
       en: { cur: t.res.en.cur, max: mx.en },
@@ -246,7 +246,7 @@ function applyGrant(target: User, body: any): string[] {
   }
   if (addInt('ears'))       {
     // Уши от администратора — в отдельный кошелёк, не смешиваются с игровыми
-    target.adminEars   = (target.adminEars   || 0) + addInt('ears');
+    target.adminCrests   = (target.adminCrests   || 0) + addInt('ears');
     granted.push(`${addInt('ears')} 👂`);
   }
   if (addInt('tokens'))     {
@@ -331,8 +331,8 @@ function applyTake(target: User, body: any): string[] {
   const wantEars = amt('ears');
   if (wantEars) {
     let left = wantEars;
-    const fromAdmin = Math.min(left, target.adminEars || 0);
-    target.adminEars = (target.adminEars || 0) - fromAdmin; left -= fromAdmin;
+    const fromAdmin = Math.min(left, target.adminCrests || 0);
+    target.adminCrests = (target.adminCrests || 0) - fromAdmin; left -= fromAdmin;
     const fromReal = Math.min(left, target.ears || 0);
     target.ears = (target.ears || 0) - fromReal; left -= fromReal;
     taken.push(`${wantEars - left} 👂`);
@@ -538,7 +538,7 @@ function setGlobalBuff(adminUser: User, body: any, notices: Notices) {
 // записям, а не к сырому потоку.
 const LOG_CATEGORIES: Record<string, RegExp> = {
   buy:    /\/(buy|build|container|bid|workshop|deposit|heal|modern)/,
-  battle: /\/(attack|fatality|war|battle|arena|group)/,
+  battle: /\/(attack|breach|war|battle|arena|group)/,
   legion: /\/(legion|alliance|group)/,
   auth:   /\/(login|register|change-password|reset-password)/,
   admin:  /^\/api\/(admin|mod|staff)\//,
@@ -730,14 +730,14 @@ function resetParam(adminUser: User, body: any, notices: Notices) {
       (t as any).counters.missionStages = 0;
     },
     achievements: (t) => { (t as any).achStages = {};
-      (t as any).counters = { ...(t as any).counters, wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0 }; },
+      (t as any).counters = { ...(t as any).counters, wins: 0, attacks: 0, breaches: 0, unitsBought: 0, buildingsBuilt: 0, crestsTorn: 0, moneyEarned: 0, battleLoot: 0 }; },
     trophies: (t) => { t.trophies = Object.fromEntries(config.TROPHIES.map((tr: any) => [tr.id, 0])); (t as any).trophyQueue = []; },
     skills: (t) => { t.skills = { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 }; t.skillPoints = 0; },
     money: (t) => { t.dollars = config.PLAYER.START_DOLLARS; t.gold = config.PLAYER.START_GOLD; t.bank = 0; },
     units: (t) => { t.units = {}; t.workshops = 0; (t as any).modernQueue = []; },
     buildings: (t) => { t.buildings = {}; },
-    ears: (t) => { t.ears = 0; t.earsLost = 0; t.earsCurrent = config.EARS.MAX; t.earsLostAt = []; t.earPenaltyUntil = 0; t.earCutters = [null, null]; t.earMessage = null; },
-    battle: (t) => { t.battle = { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 }; t.vsRecord = {}; },
+    ears: (t) => { t.ears = 0; t.crestPartsLost = 0; t.crestParts = config.CREST.PARTS; t.crestLostAt = []; t.crestTakers = new Array(config.CREST.PARTS).fill(null); t.crestMessage = null; },
+    battle: (t) => { t.battle = { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, breaches: 0 }; t.vsRecord = {}; },
     effects: (t) => { t.effects = []; },
     alliances: (t) => { t.allianceMembers = 0; t.allianceRoster = []; t.allianceDiplomats = 0; t.allianceInviteLog = []; t.allianceId = null; t.legionId = null; },
     tokens: (t) => { t.tokens = 0; },
@@ -986,14 +986,14 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
   for (const p of Object.values(players)) {
     if (p.id === id) continue;
     let touched = false;
-    if (Array.isArray((p as any).earCutters)) {
-      const cs = (p as any).earCutters;
+    if (Array.isArray((p as any).crestTakers)) {
+      const cs = (p as any).crestTakers;
       for (let i = 0; i < cs.length; i++) {
         if (cs[i] && cs[i].id === id) { cs[i] = null; touched = true; }
       }
     }
-    if ((p as any).earMessage && (p as any).earMessage.byId === id) {
-      (p as any).earMessage = null; touched = true;
+    if ((p as any).crestMessage && (p as any).crestMessage.byId === id) {
+      (p as any).crestMessage = null; touched = true;
     }
     if ((p as any).vsRecord && (p as any).vsRecord[id]) {
       delete (p as any).vsRecord[id]; touched = true;

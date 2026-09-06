@@ -20,8 +20,8 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  const O2=Object.values(us).find(x=>x.name==='Заказчик2');
  const T=Object.values(us).find(x=>x.name==='Цель');
  O1.dollars=1e6; O2.dollars=1e6;
- O1.earCutters=[{id:T.id,name:'Цель',at:Date.now()}];
- O2.earCutters=[{id:T.id,name:'Цель',at:Date.now()}];
+ O1.crestTakers=[{id:T.id,name:'Цель',at:Date.now()}];
+ O2.crestTakers=[{id:T.id,name:'Цель',at:Date.now()}];
  db.save('users');
 
  console.log('\n[1] Несколько заказчиков — банк суммируется');

@@ -74,7 +74,7 @@ ok(gu.CURRENCY_NAME === 'Боевые очки', `валюта улучшени�
 // Три разных ресурса, ни один не путается с другим
 const costParts = gu.costOf(1);
 ok(typeof costParts.amount === 'number' && typeof costParts.ears === 'number' && typeof costParts.tokens === 'number',
-   'цена состоит из боевых очков, ушей и жетонов милосердия');
+   'цена состоит из боевых очков, гербов и жетонов перемирия');
 
 console.log('\n── 4. Ступени по рангу ──');
 setRating(plain.id, 0);
@@ -113,14 +113,14 @@ const nextCost = gu.costOf(gu.levelsOf(pro).hp + 1);
 gu.upgrade(pro, 'hp', []);
 ok(ptsBefore - pro.battlePoints === nextCost.amount, `списано боевых очков: ${nextCost.amount}`);
 ok(earsBefore - pro.ears === nextCost.ears, `списано ушей: ${nextCost.ears}`);
-ok(tokBefore - pro.tokens === nextCost.tokens, `списано жетонов милосердия: ${nextCost.tokens}`);
+ok(tokBefore - pro.tokens === nextCost.tokens, `списано жетонов перемирия: ${nextCost.tokens}`);
 // Валюта новая и отдельная: обычные деньги и золото не трогаются
 ok(pro.gold === goldUntouched, 'золото не расходуется');
 ok(pro.dollars === moneyUntouched, 'игровые деньги тоже');
 pro.ears = 0;
 fails(() => gu.upgrade(pro, 'hp', []), 'ушей', 'без ушей улучшить нельзя');
 pro.ears = 1e6; pro.tokens = 0;
-fails(() => gu.upgrade(pro, 'hp', []), 'жетонов милосердия', 'без жетонов тоже');
+fails(() => gu.upgrade(pro, 'hp', []), 'жетонов перемирия', 'без жетонов тоже');
 pro.tokens = 1e6; pro.battlePoints = 0;
 fails(() => gu.upgrade(pro, 'hp', []), 'боевых очков', 'и без боевых очков');
 pro.battlePoints = 1e9;

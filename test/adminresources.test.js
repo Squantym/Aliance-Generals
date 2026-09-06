@@ -62,13 +62,13 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
 
   console.log('\n[4] Отъём ресурсов, включая банк');
   p.dollars = 1000; p.bank = 5000; p.gold = 300; p.skillPoints = 10;
-  p.ears = 4; p.adminEars = 2; p.tokens = 3; p.adminTokens = 1; p.xp = 500;
+  p.ears = 4; p.adminCrests = 2; p.tokens = 3; p.adminTokens = 1; p.xp = 500;
   admin.take(adm, { userId: p.id, dollars: 400, bank: 2000, gold: 100, skillPoints: 3, ears: 5, tokens: 2, xp: 200 }, []);
   eq('наличные списаны', p.dollars, 600);
   eq('БАНК списан', p.bank, 3000);
   eq('золото списано', p.gold, 200);
   eq('очки навыков списаны', p.skillPoints, 7);
-  eq('уши: сначала админские, потом игровые (2+3)', p.adminEars + p.ears, 1);
+  eq('уши: сначала админские, потом игровые (2+3)', p.adminCrests + p.ears, 1);
   eq('жетоны списаны (1 админ + 1 игровой)', p.adminTokens + p.tokens, 2);
   eq('опыт списан', p.xp, 300);
 

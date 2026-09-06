@@ -389,7 +389,7 @@ input, select, textarea { box-sizing: border-box; }
    родителя — .ic-* масштабируется вместе с ним (width/height в em).
    =================================================================== */
 .ic-gold, .ic-dollar, .ic-health, .ic-energy, .ic-ammo, .ic-mail, .ic-bell,
-.ic-ear, .ic-token, .ic-reserve {
+.ic-crest, .ic-token, .ic-reserve {
   display: inline-block;
   width: 1.15em;
   height: 1.15em;
@@ -405,9 +405,9 @@ input, select, textarea { box-sizing: border-box; }
 .ic-ammo   { background-image: url('/img/icons/ammo.webp'); }
 .ic-mail   { background-image: url('/img/icons/mail.webp'); }
 .ic-bell   { background-image: url('/img/icons/bell.webp'); }
-/* Валюты легиона: ухо (👂), жетон (🎖) и резерв (РЕЗ) */
-.ic-ear     { background-image: url('/img/icons/ear.webp'); }
-.ic-token   { background-image: url('/img/icons/token.webp'); }
+/* Трофеи: герб штаба, жетон перемирия и резерв (РЕЗ) */
+.ic-crest   { background-image: url('/img/icons/crest.webp'); }
+.ic-token   { background-image: url('/img/icons/truce.webp'); }
 .ic-reserve { background-image: url('/img/icons/reserve.webp'); }
 
 /* В темах (кибер/пустыня/нуар/аврора) золото раньше меняло цвет через
@@ -2044,21 +2044,21 @@ body.theme-cyber .img-frame {
 .online-dot.off { background: #ff2e2e; box-shadow: 0 0 6px #ff2e2e, 0 0 2px #ff2e2e; }
 
 /* Модалки фаталити (взятие в плен → выбор → результат) */
-.fatality-overlay { position: fixed; inset: 0; z-index: 10005; display: flex;
+.breach-overlay { position: fixed; inset: 0; z-index: 10005; display: flex;
   align-items: center; justify-content: center; padding: 16px;
   background: rgba(0,0,0,.9); animation: toast-in .2s ease; }
-.fatality-modal { background: var(--card); border: 2px solid var(--red); border-radius: 14px;
+.breach-modal { background: var(--card); border: 2px solid var(--red); border-radius: 14px;
   max-width: 460px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 16px; text-align: center; }
-.fatality-photo { display: block; width: 100%; border-radius: 10px; margin-bottom: 12px;
+.breach-photo { display: block; width: 100%; border-radius: 10px; margin-bottom: 12px;
   border: 1px solid var(--border); }
-.fatality-title { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-.fatality-choices { display: flex; gap: 12px; margin-top: 14px; }
-.fatality-choice { flex: 1; padding: 8px; border-radius: 10px; cursor: pointer;
+.breach-title { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+.breach-choices { display: flex; gap: 12px; margin-top: 14px; }
+.breach-choice { flex: 1; padding: 8px; border-radius: 10px; cursor: pointer;
   background: var(--bg); border: 2px solid var(--border); display: flex; flex-direction: column;
   align-items: center; gap: 6px; color: var(--fg); font-weight: 700; font-size: 13px; }
-.fatality-choice img { width: 100%; border-radius: 8px; aspect-ratio: 16/9; object-fit: cover; }
-.fatality-choice.cut:hover { border-color: var(--red); }
-.fatality-choice.pardon:hover { border-color: var(--green); }
+.breach-choice img { width: 100%; border-radius: 8px; aspect-ratio: 16/9; object-fit: cover; }
+.breach-choice.cut:hover { border-color: var(--red); }
+.breach-choice.pardon:hover { border-color: var(--green); }
 
 .pf-avatar.frame_gold   { border: 3px solid #e9c75c; box-shadow: 0 0 8px rgba(233,199,92,.6); }
 .pf-avatar.frame_steel  { border: 3px solid #8c9aa8; box-shadow: 0 0 6px rgba(140,154,168,.5); }

@@ -1,7 +1,7 @@
 // ===================================================================
 // public/js/screens/war.js — экраны «Война» и «Миссии»
 // Война: 10 целей (игроки ±10 уровней + 2–3 бота-террориста 💀),
-// панель результата боя и окно фаталити. Миссии: карточки операций
+// панель результата боя и окно проникновения в штаб. Миссии: карточки операций
 // с этапами по 3 шага и кнопкой «Выполнить шаг».
 // ===================================================================
 
@@ -177,7 +177,7 @@ App.screens.war = async (c) => {
           </div>
         </div>
         ${marks ? `<p class="center small mt">${marks}</p>` : ''}
-        ${!m.pendingFatality ? `<button class="btn btn-orange mt" id="atk-again" style="width:100%">⚔️ Атаковать снова</button>` : ''}
+        ${!m.pendingBreach ? `<button class="btn btn-orange mt" id="atk-again" style="width:100%">⚔️ Атаковать снова</button>` : ''}
         <hr class="hr">
         <div class="kv"><span class="k">Нанесено</span><span class="v dmg-deal">${b.dealt} урона</span></div>
         <div class="kv"><span class="k">Получено</span><span class="v dmg-take">${b.received} урона</span></div>
@@ -215,11 +215,11 @@ App.screens.war = async (c) => {
       </div>`;
   }
 
-  // Окно фаталити: враг повержен, решаем его судьбу
-  const fatalityHtml = m.pendingFatality ? `
-    <div class="card fatality-card">
+  // Окно проникновения: враг повержен, вы в его штабе
+  const breachHtml = m.pendingBreach ? `
+    <div class="card breach-card">
       <div class="result-title" style="color:var(--red)">💀 КОМАНДИР ВРАГА ПОВЕРЖЕН</div>
-      <p class="center">Ваш отряд наткнулся на командира врага <b>${UI.esc(m.pendingFatality.name)}</b>. Вы можете взять его в плен и решить его судьбу. Решайте быстро — окно закроется через 3 минуты!</p>
+      <p class="center">Ваш отряд наткнулся на командира врага <b>${UI.esc(m.pendingBreach.name)}</b>. Вы можете взять его в плен и решить его судьбу. Решайте быстро — окно закроется через 3 минуты!</p>
       <button class="btn btn-red mt" id="fat-capture" style="width:100%;padding:12px">🪖 Взять в плен</button>
     </div>` : '';
 
@@ -234,7 +234,7 @@ App.screens.war = async (c) => {
 
   // Окно «встречи». Мина срабатывает ДО боя — прячет результат, пока игрок
   // не разберётся с проводом. Сейф выпадает ПОСЛЕ боя — показываем его ВМЕСТЕ
-  // с результатом боя и окном фаталити (бой уже прошёл).
+  // с результатом боя и окном штаба (бой уже прошёл).
   const enc = App._warEncounter;
   const preCombat = enc && enc.type === 'mine_defuse'; // только мина прячет итог боя
   const encounterHtml = enc
@@ -245,7 +245,7 @@ App.screens.war = async (c) => {
     <div class="title">Война</div>
     ${eventBanner}
     ${encounterHtml}
-    ${!preCombat ? fatalityHtml : ''}
+    ${!preCombat ? breachHtml : ''}
     ${!preCombat ? resultHtml : ''}
     <div class="tabs">
       <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">${App.tabImg('war_targets', 20)}Вторжение</div>
@@ -269,7 +269,7 @@ App.screens.war = async (c) => {
       <div class="card" id="war-list"><div class="loading">Разведка ищет цели…</div></div>
     ` : `
       <div class="card">
-        <p class="muted small">🎯 <b>Санкции</b> — заказы на игроков. Любой может объявить санкцию на любого через его профиль, заморозив награду. Кто снизит HP цели до ≤5% в бою — забирает всю награду. Несколько заказов на одну цель суммируются. По цели под санкцией <b>фаталити не срабатывает</b> — уши в санкциях не режут, награда и есть трофей.</p>
+        <p class="muted small">🎯 <b>Санкции</b> — заказы на игроков. Любой может объявить санкцию на любого через его профиль, заморозив награду. Кто снизит HP цели до ≤5% в бою — забирает всю награду. Несколько заказов на одну цель суммируются. По цели под санкцией <b>проникновение не срабатывает</b> — гербы в санкциях не рвут, награда и есть трофей.</p>
       </div>
       <div class="card" id="sanctions-list"><div class="loading">Загрузка списка санкций…</div></div>
     `}`;
@@ -303,14 +303,14 @@ App.screens.war = async (c) => {
     }, 1000);
   }
 
-  // Кнопки результата и фаталити
-  if (b && !m.pendingFatality) {
+  // Кнопки результата и проникновения
+  if (b && !m.pendingBreach) {
     const again = document.getElementById('atk-again');
     if (again) again.onclick = () => attackTarget(b.targetId);
   }
-  if (m.pendingFatality) {
+  if (m.pendingBreach) {
     const cap = document.getElementById('fat-capture');
-    if (cap) cap.onclick = () => App._showFatalityFlow(m.pendingFatality);
+    if (cap) cap.onclick = () => App._showBreachFlow(m.pendingBreach);
   }
   if (enc && enc.type === 'bank_hack') wireBankHackHandlers();
   if (enc && enc.type === 'mine_defuse') {
@@ -391,16 +391,16 @@ App.screens.war = async (c) => {
   // поверх итога боя.
   function handleAttackOutcome(r) {
     // Жертва ускользнула от клинка (ловкость или защита VIP). Сервер
-    // сообщает об этом полем fatalityDodged, но раньше его никто не
+    // сообщает об этом полем breachDodged, но раньше его никто не
     // читал: код на клиенте ждал res.escaped, а такого поля нет.
     // Получалось, что событие происходит, за него даже выдаётся
     // достижение «Неуловимый» — а атакующий не видит ничего и думает,
-    // что фаталити просто не выпало.
-    if (r.fatalityDodged) {
+    // что проникновение просто не выпало.
+    if (r.breachDodged) {
       // Показываем то самое окно, которое уже было написано для этого
       // события: с картинкой и объяснением. Оно висело мёртвым, потому
       // что ждало сигнала, который приходит под другим именем.
-      App._showFatalityEscaped({ victimName: r.targetName });
+      App._showBreachEscaped({ victimName: r.targetName });
     }
     if (r.encounter === 'mine_defuse') {
       App._warEncounter = { type: 'mine_defuse', wires: r.wires, canSacrifice: r.canSacrifice };
@@ -521,12 +521,12 @@ App.screens.war = async (c) => {
     wireBankHackHandlers();
   }
 
-  async function doFatality(choice) {
+  async function doBreach(choice) {
     try {
-      const res = await API.post('/api/war/fatality', { choice });
+      const res = await API.post('/api/war/breach', { choice });
       App._lastBattle = null;
       // Ветка «жертва ускользнула» отсюда убрана намеренно: ускользание
-      // проверяется в момент пленения, а не на шаге фаталити. Здесь она
+      // проверяется в момент прорыва, а не на шаге штаба. Здесь она
       // читала несуществующее поле res.escaped и не срабатывала никогда.
       // Если игрок отрезал ОБА уха одной жертве — предлагаем оставить послание
       if (res && res.canLeaveMessage && res.victimId) {
@@ -627,7 +627,7 @@ App.screens.missions = async (c, param) => {
   if (data.active) {
     const a = data.active;
     activeBlock = `
-      <div class="card fatality-card" id="mission-active">
+      <div class="card breach-card" id="mission-active">
         <div class="name">⏳ Идёт шаг: ${UI.esc(a.confName)}</div>
         <div class="muted small mt">${UI.esc(a.opName)} · ${UI.esc(a.stepName)}</div>
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
@@ -699,7 +699,7 @@ async function renderConflictDetail(c, confId) {
   if (conf.activeStep) {
     const a = conf.activeStep;
     activeBlock = `
-      <div class="card fatality-card" id="mission-active">
+      <div class="card breach-card" id="mission-active">
         <div class="name">⏳ ${UI.esc(a.opName)} · ${UI.esc(a.stepName)}</div>
         <div class="mt">${UI.bar(a.totalSec - a.secondsLeft, a.totalSec, 'xp',
           a.secondsLeft > 0 ? 'Осталось: ' + UI.fmtTimer(a.secondsLeft) : 'Готово'
@@ -1729,7 +1729,7 @@ App.renderUpgradesPage = async () => {
   const cost = (c) => c ? `
     <span class="gb-cost">
       ${up.currencyIcon} ${UI.fmtNum(c.amount)}
-      <span class="gb-cost-sep">·</span> <span class="ic-ear"></span> ${c.ears}
+      <span class="gb-cost-sep">·</span> <span class="ic-crest"></span> ${c.ears}
       <span class="gb-cost-sep">·</span> <span class="ic-token"></span> ${c.tokens}
     </span>` : '';
 
@@ -1741,11 +1741,11 @@ App.renderUpgradesPage = async () => {
       <p class="muted small mt">Навыки прокачиваются по ступеням: на каждом ранге свои десять
       уровней. Следующая ступень откроется, только когда предыдущая выкачана до конца.</p>
       <p class="muted small">Платите ${up.currencyIcon} <b>боевыми очками</b> (их дают за бои),
-      <span class="ic-ear"></span> ушами и <span class="ic-token"></span> жетонами милосердия.</p>
+      <span class="ic-crest"></span> гербами и <span class="ic-token"></span> жетонами перемирия.</p>
       <div class="gb-wallet mt">
         <span title="${UI.esc(up.currencyName)}">${up.currencyIcon} ${UI.fmtNum(up.wallet.points)}</span>
-        <span title="Уши"><span class="ic-ear"></span> ${UI.fmtNum(up.wallet.ears)}</span>
-        <span title="Жетоны милосердия"><span class="ic-token"></span> ${UI.fmtNum(up.wallet.tokens)}</span>
+        <span title="Уши"><span class="ic-crest"></span> ${UI.fmtNum(up.wallet.ears)}</span>
+        <span title="Жетоны перемирия"><span class="ic-token"></span> ${UI.fmtNum(up.wallet.tokens)}</span>
       </div>
     </div>
 
@@ -1785,7 +1785,7 @@ App.renderUpgradesPage = async () => {
                   ? `<div class="gb-skill-buy">
                        ${sk.nextCost ? `<span class="gb-cost">
                          ${up.currencyIcon} ${UI.fmtNum(sk.nextCost.amount)}
-                         <span class="gb-cost-sep">·</span> <span class="ic-ear"></span> ${sk.nextCost.ears}
+                         <span class="gb-cost-sep">·</span> <span class="ic-crest"></span> ${sk.nextCost.ears}
                          <span class="gb-cost-sep">·</span> <span class="ic-token"></span> ${sk.nextCost.tokens}
                        </span>` : ''}
                        <button class="btn btn-inline gb-up" data-skill="${sk.id}"

@@ -32,7 +32,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
 
  console.log('\n[2] Штаб не влияет на урон в обычном бою');
  const avgDmg=(bb)=>{ legs['LA'].battleBuildings=bb; db.save('legions'); let s=0,k=0;
-   for(let i=0;i<1500;i++){ A.recentAttacks={}; A.lastAttackAt=0; A.pendingFatality=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
+   for(let i=0;i<1500;i++){ A.recentAttacks={}; A.lastAttackAt=0; A.pendingBreach=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
      const mx=player.maxima(A); A.res.hp.cur=mx.hp; A.res.am.cur=mx.am; A.res.en.cur=mx.en; V.res.hp.cur=player.maxima(V).hp; V.dollars=100000;
      let r; try{ r=battle.attack(A,V.id,N()); }catch(e){ continue; } s+=r.dealt; k++; } return s/k; };
  const d0=avgDmg({}), d10=avgDmg({warcmd:10});

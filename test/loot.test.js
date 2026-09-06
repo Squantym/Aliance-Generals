@@ -33,7 +33,7 @@ const near=(n,a,b,d)=>{assert.ok(Math.abs(a-b)<=d,`❌ ${n}: ${a} не ≈ ${b} 
    for(let i=0;i<n;i++){
      A.trophies=tr||{}; A.effects=[]; V.effects=[];
      A.recentAttacks={}; A.lastAttackAt=0;
-     A.pendingFatality=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
+     A.pendingBreach=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
      const mx=player.maxima(A); A.res.hp.cur=mx.hp; A.res.am.cur=mx.am; A.res.en.cur=mx.en;
      V.res.hp.cur=player.maxima(V).hp; V.dollars=1000000;
      const r=battle.attack(A,V.id,N());
@@ -51,7 +51,7 @@ const near=(n,a,b,d)=>{assert.ok(Math.abs(a-b)<=d,`❌ ${n}: ${a} не ≈ ${b} 
 
  console.log('\n[3] Грабёж не превышает наличных цели');
  A.trophies={looter:10}; A.recentAttacks={}; A.lastAttackAt=0;
- A.pendingFatality=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
+ A.pendingBreach=null; A.pendingBankHack=null; A.pendingMineDefuse=null;
  const mx=player.maxima(A); A.res.hp.cur=mx.hp; A.res.am.cur=mx.am; A.res.en.cur=mx.en;
  V.res.hp.cur=player.maxima(V).hp; V.dollars=100;   // почти пусто
  let loot=0; for(let k=0;k<40;k++){ A.recentAttacks={}; A.lastAttackAt=0; V.dollars=100; const mxx=player.maxima(A); A.res.hp.cur=mxx.hp; A.res.am.cur=mxx.am; A.res.en.cur=mxx.en; const r=battle.attack(A,V.id,N()); if(r.win){loot=r.loot;break;} }

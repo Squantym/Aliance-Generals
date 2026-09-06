@@ -54,8 +54,8 @@ console.log(`  (макс. HP цели ${preyMaxHp}; порог фаталити 
 // Санкция может закрыться выплатой посреди цикла — держим её активной
 const keepSanction = () => {
   if (sanctions.isUnderSanction(prey.id)) return;
-  boss.earCutters = [{ id: prey.id, name: prey.name }, null];
-  boss.earsCurrent = 1; boss.dollars = 5000000;
+  boss.crestTakers = [{ id: prey.id, name: prey.name }, null];
+  boss.crestParts = 1; boss.dollars = 5000000;
   sanctions.declare(boss, prey.id, 10000, []);
 };
 
@@ -90,8 +90,8 @@ console.log('\n── 2. Фаталити по цели под санкцией 
 ok(sanctions.isUnderSanction(prey.id) === false, 'до объявления санкции: цель не под санкцией');
 
 // Объявляем санкцию на «Добычу» (нужно, чтобы она отрезала ухо заказчику)
-boss.earCutters = [{ id: prey.id, name: prey.name }, null];
-boss.earsCurrent = 1;
+boss.crestTakers = [{ id: prey.id, name: prey.name }, null];
+boss.crestParts = 1;
 boss.dollars = 500000;
 sanctions.declare(boss, prey.id, 10000, []);
 ok(sanctions.isUnderSanction(prey.id) === true, 'после объявления: цель под санкцией');
@@ -105,7 +105,7 @@ let fatalityOffers = 0, crits = 0, battles = 0;
 for (let i = 0; i < 300; i++) {
   hunter.lastAttackAt = 0;
   hunter.res.hp.cur = 100; hunter.res.en.cur = 100; hunter.res.am.cur = 500;
-  hunter.pendingFatality = null; hunter.pendingBankHack = null; hunter.pendingMineDefuse = null;
+  hunter.pendingBreach = null; hunter.pendingBankHack = null; hunter.pendingMineDefuse = null;
   prey.res.hp.cur = HP_IN_WINDOW;         // в окне фаталити, но выше порога выплаты
   prey.dollars = 100000;
   keepSanction();                          // санкция должна оставаться активной
@@ -113,14 +113,14 @@ for (let i = 0; i < 300; i++) {
     const r = battle.attack(hunter, prey.id, []);
     battles++;
     if (r && r.crit) crits++;
-    if (hunter.pendingFatality) fatalityOffers++;
+    if (hunter.pendingBreach) fatalityOffers++;
   } catch (e) { /* лазарет/кулдаун — пропускаем */ }
 }
 console.log(`  (боёв: ${battles}, критов: ${crits}, предложений фаталити: ${fatalityOffers})`);
 ok(battles > 50, `бои по цели под санкцией проходят (${battles}) — атаковать её по-прежнему можно`);
 ok(crits > 0, `криты случались (${crits}) — условие фаталити достигалось`);
 ok(fatalityOffers === 0, 'фаталити не предложено НИ РАЗУ по цели под санкцией');
-ok(prey.earsCurrent === config.EARS.MAX, `уши цели целы (${prey.earsCurrent}/${config.EARS.MAX}) — резать в санкциях нельзя`);
+ok(prey.crestParts === config.CREST.PARTS, `уши цели целы (${prey.crestParts}/${config.CREST.PARTS}) — резать в санкциях нельзя`);
 ok(hunter.ears === 0, 'охотник не получил ни одного уха с цели под санкцией');
 
 console.log('\n── 3. Без санкции фаталити работает как раньше ──');
@@ -130,32 +130,32 @@ let offersAfter = 0;
 for (let i = 0; i < 300; i++) {
   hunter.lastAttackAt = 0;
   hunter.res.hp.cur = 100; hunter.res.en.cur = 100; hunter.res.am.cur = 500;
-  hunter.pendingFatality = null; hunter.pendingBankHack = null; hunter.pendingMineDefuse = null;
+  hunter.pendingBreach = null; hunter.pendingBankHack = null; hunter.pendingMineDefuse = null;
   prey.res.hp.cur = HP_IN_WINDOW; prey.dollars = 100000;
   try {
     battle.attack(hunter, prey.id, []);
-    if (hunter.pendingFatality) { offersAfter++; break; }
+    if (hunter.pendingBreach) { offersAfter++; break; }
   } catch (e) {}
 }
 ok(offersAfter > 0, 'после снятия санкции фаталити снова доступно — механика не сломана');
 
 console.log('\n── 4. Санкция, объявленная ПОСЛЕ открытия окна фаталити ──');
 // Окно уже открыто (осталось от предыдущего блока), теперь вешаем санкцию
-hunter.pendingFatality = { targetId: prey.id, name: prey.name, isBot: false, exp: Date.now() + 60000 };
-boss.earCutters = [{ id: prey.id, name: prey.name }, null];
-boss.earsCurrent = 1; boss.dollars = 500000;
+hunter.pendingBreach = { targetId: prey.id, name: prey.name, isBot: false, exp: Date.now() + 60000 };
+boss.crestTakers = [{ id: prey.id, name: prey.name }, null];
+boss.crestParts = 1; boss.dollars = 500000;
 sanctions.declare(boss, prey.id, 10000, []);
-const earsBefore = prey.earsCurrent;
+const earsBefore = prey.crestParts;
 let blocked = false, msg = '';
-try { battle.fatality(hunter, 'ear', []); } catch (e) { blocked = true; msg = e.message; }
+try { battle.breach(hunter, 'ear', []); } catch (e) { blocked = true; msg = e.message; }
 ok(blocked, `попытка добить заблокирована → «${msg}»`);
-ok(prey.earsCurrent === earsBefore, 'ухо не отрезано');
-ok(hunter.pendingFatality === null, 'окно фаталити закрыто');
+ok(prey.crestParts === earsBefore, 'ухо не отрезано');
+ok(hunter.pendingBreach === null, 'окно фаталити закрыто');
 
 console.log('\n── 5. Награда за санкцию по-прежнему выплачивается ──');
 sanctions.clearTarget(prey.id);
-boss.earCutters = [{ id: prey.id, name: prey.name }, null];
-boss.earsCurrent = 1; boss.dollars = 500000;
+boss.crestTakers = [{ id: prey.id, name: prey.name }, null];
+boss.crestParts = 1; boss.dollars = 500000;
 sanctions.declare(boss, prey.id, 50000, []);
 const moneyBefore = hunter.dollars;
 const maxHp = player.maxima(prey).hp;

@@ -266,7 +266,7 @@ rich.units = {}; for (let t = 1; t <= 12; t++) rich.units['ground_' + t] = { 0: 
 for (let t = 1; t <= 8; t++) rich.units['air_' + t] = { 0: 3 + t, 1: 1 };
 rich.buildings = {}; for (let b = 1; b <= 10; b++) rich.buildings['b' + b] = 3;
 rich.skills = { energy: 20, health: 20, ammo: 15, agility: 9, cruelty: 9 };
-rich.battle = { wins: 400, losses: 120, defWins: 200, defLosses: 180, fatalities: 70, attacks: 520 };
+rich.battle = { wins: 400, losses: 120, defWins: 200, defLosses: 180, breaches: 70, attacks: 520 };
 rich.stats = { playMs: 9e7, moneyEarned: 9e9, moneySpent: 8e9, goldGot: { club: 200, quest: 150 },
                unitsBought: { ground: 300 }, unitsLost: { ground: 90 } };
 rich.trophies = { t1: 3, t2: 2 }; rich.achStages = { a1: 3, a2: 2, a3: 1 };

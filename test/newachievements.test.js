@@ -24,7 +24,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   const u2 = Object.values(player.users()).find(x => x.name === 'Ветеран2');
 
   console.log('\n[1] Все 10 новых достижений в конфиге, с 5 порогами и титулами');
-  const NEW = ['deaths','dodgesInFatality','merciesGiven','legionWins','losses',
+  const NEW = ['deaths','dodgesInBreach','trucesMade','legionWins','losses',
                'sanctionsCompleted','sanctionedTimes','legionDamageDealt','legionDamageCovered','legionHpHealed'];
   for (const counter of NEW) {
     const a = c.ACHIEVEMENTS.find(x => x.counter === counter);
@@ -39,11 +39,11 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   eq('HP обнулён взрывом', u1.res.hp.cur, 0);
   ok('этап достижения «Смертник» выдан (порог 1)', (u1.achStages.deaths || 0) >= 1);
 
-  console.log('\n[3] Помилование инкрементит merciesGiven');
-  u1.pendingFatality = { targetId: u2.id, name: u2.name, isBot: false, exp: Date.now() + 60000 };
-  battle.fatality(u1, 'mercy', []);
-  eq('merciesGiven = 1', u1.counters.merciesGiven, 1);
-  ok('этап «Милосердный» выдан', (u1.achStages.mercies || 0) >= 1);
+  console.log('\n[3] Помилование инкрементит trucesMade');
+  u1.pendingBreach = { targetId: u2.id, name: u2.name, isBot: false, exp: Date.now() + 60000 };
+  battle.breach(u1, 'mercy', []);
+  eq('trucesMade = 1', u1.counters.trucesMade, 1);
+  ok('этап «Миротворец» выдан', (u1.achStages.truces || 0) >= 1);
 
   console.log('\n[4] Поражения: у атакующего и защитника');
   ach.bump(u1, 'losses', 10, []); // прямой инкремент (полный бой уже покрыт warfixes)
@@ -51,7 +51,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
 
   console.log('\n[5] Санкции: попадание (цель) и выполнение (охотник)');
   u1.dollars = 1e12; u1.level = 30; u2.level = 30;
-  u1.earCutters = [{ id: u2.id, name: u2.name }]; // u2 отрезал ухо u1 → u1 может объявить санкцию
+  u1.crestTakers = [{ id: u2.id, name: u2.name }]; // u2 отрезал ухо u1 → u1 может объявить санкцию
   sanctions.declare(u1, u2.id, 1e9, []); // новая санкция на u2
   eq('sanctionedTimes цели = 1 (новая санкция)', u2.counters.sanctionedTimes, 1);
   sanctions.declare(u1, u2.id, 1e9, []); // добор к той же санкции
@@ -66,11 +66,11 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   ok('этап «Охотник за головами» выдан', (hunter.achStages.sanctionsDone || 0) >= 1);
 
   console.log('\n[6] Уворот от фаталити (счётчик цели) — точка в коде + этап по порогу');
-  ach.bump(u2, 'dodgesInFatality', 1, []);
-  ok('этап «Неуловимый» выдан (порог 1)', (u2.achStages.fatDodges || 0) >= 1);
+  ach.bump(u2, 'dodgesInBreach', 1, []);
+  ok('этап «Неуловимый» выдан (порог 1)', (u2.achStages.breachDodges || 0) >= 1);
   // Проверяем, что точка инкремента в коде существует (статически)
   const src = fs.readFileSync(path.join(__dirname, '..', 'src/services/battle.ts'), 'utf8');
-  ok('в коде боя есть инкремент dodgesInFatality у цели', /dodgesInFatality/.test(src));
+  ok('в коде боя есть инкремент dodgesInBreach у цели', /dodgesInBreach/.test(src));
 
   console.log('\n[7] Достижения легиона: победы/урон/прикрытие/лечение (точки в коде + пороги)');
   const lbSrc = fs.readFileSync(path.join(__dirname, '..', 'src/services/legionBattle.ts'), 'utf8');

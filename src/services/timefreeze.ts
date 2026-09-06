@@ -90,7 +90,7 @@ const PAST = new Set([
   'bannedAt', 'offAt', 'paidAt', 'changedAt', 'resolvedAt', 'collapsedAt',
   'withdrawnAt', 'claimedAt', 'assignedAt', 'launchedAt', 'enabledAt',
   'peakAt', 'firstAt', 'oldestAt', 'newestAt', 'recoveryUsedAt',
-  'emailVerifySentAt', 'earsLostAt', 'joinedAt', 'leftAt', 'diedAt',
+  'emailVerifySentAt', 'crestLostAt', 'joinedAt', 'leftAt', 'diedAt',
   'killedAt', 'deletedAt', 'sentAt', 'readAt', 'usedAt', 'seenAt',
   'shownAt', 'openedAt', 'closedAt', 'wonAt', 'lostAt', 'ackAt',
   'frozenFrom',

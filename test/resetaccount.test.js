@@ -31,11 +31,11 @@ const P = {
   res: { hp: { cur: 500, t: now }, en: { cur: 600, t: now }, am: { cur: 200, t: now } },
   units: { ground_1: { 0: 500, 1: 100 }, air_1: { 0: 300 } }, workshops: 8, modernQueue: [{ x: 1 }],
   buildings: { hq: 20, bank_s: 15, factory: 30 }, secretDevs: { sd1: 5 }, superSecret: 3,
-  ears: 50, tokens: 12, earsLost: 4, earsCurrent: 1, earsLostAt: [now], earPenaltyUntil: now + 1e6,
-  earCutters: [{ id: 'x', name: 'X' }, null], earMessage: { byId: 'x', byName: 'X', text: 'hi' },
-  adminEars: 100, adminTokens: 50,
-  battle: { attacks: 200, wins: 150, losses: 50, defWins: 20, defLosses: 10, fatalities: 30 },
-  counters: { wins: 150, attacks: 200, fatalities: 30, unitsBought: 999, buildingsBuilt: 65, missionStages: 40, earsCut: 4, moneyEarned: 1e9, battleLoot: 5e8, level: 55 },
+  ears: 50, tokens: 12, crestPartsLost: 4, crestParts: 1, crestLostAt: [now], earPenaltyUntil: now + 1e6,
+  crestTakers: [{ id: 'x', name: 'X' }, null], crestMessage: { byId: 'x', byName: 'X', text: 'hi' },
+  adminCrests: 100, adminTokens: 50,
+  battle: { attacks: 200, wins: 150, losses: 50, defWins: 20, defLosses: 10, breaches: 30 },
+  counters: { wins: 150, attacks: 200, breaches: 30, unitsBought: 999, buildingsBuilt: 65, missionStages: 40, crestsTorn: 4, moneyEarned: 1e9, battleLoot: 5e8, level: 55 },
   achStages: { a1: 3 }, missions: { m1: true }, missionProgress: { m1: 2 }, missionQueue: [{ s: 1 }],
   tutorial: { step: 10, done: true }, effects: [{ id: 'buff' }],
   trophies: { satellite: 1, medvezhatnik: 1 }, club: { vip: true },
@@ -48,7 +48,7 @@ const P = {
   allianceId: 'aL', legionId: 'lG',
   allianceMembers: 40, allianceRoster: [{ id: 'b1', name: 'Bot', isBot: true }], allianceDiplomats: 3, allianceInviteLog: [now],
   lastBankHackDay: '2026-07-01', bankHackCountToday: 5, bankHackVictimsToday: ['v1'],
-  landmines: 8, pendingMineDefuse: null, pendingBankHack: null, pendingFatality: null,
+  landmines: 8, pendingMineDefuse: null, pendingBankHack: null, pendingBreach: null,
   saboteurs: { ground: 50, sea: 40, air: 30, secret: 20, building: 10, suicide: 5 },
   saboteurLimits: { ground: 200, sea: 150, air: 120, secret: 80, building: 60 }, saboteurRareLossAccum: 12,
   vsRecord: { e1: { wins: 3, losses: 1 } }, recentAttacks: { e1: [now] }, lastChatAt: now, lastIncomeAt: now,
@@ -103,11 +103,11 @@ eq('цехи 0', R.workshops, 0);
 eq('постройки пусты', Object.keys(R.buildings).length, 0);
 eq('секретки пусты', Object.keys(R.secretDevs).length, 0);
 eq('суперсекрет 0', R.superSecret, 0);
-eq('уши/жетоны 0', R.ears + R.tokens + R.earsLost, 0);
-eq('adminEars сброшены', R.adminEars || 0, 0);
+eq('уши/жетоны 0', R.ears + R.tokens + R.crestPartsLost, 0);
+eq('adminCrests сброшены', R.adminCrests || 0, 0);
 eq('adminTokens сброшены', R.adminTokens || 0, 0);
-eq('статистика боёв обнулена', R.battle.attacks + R.battle.wins + R.battle.fatalities, 0);
-eq('счётчики обнулены', R.counters.wins + R.counters.attacks + R.counters.fatalities, 0);
+eq('статистика боёв обнулена', R.battle.attacks + R.battle.wins + R.battle.breaches, 0);
+eq('счётчики обнулены', R.counters.wins + R.counters.attacks + R.counters.breaches, 0);
 eq('трофеи обнулены', Object.values(R.trophies).reduce((s, x) => s + x, 0), 0);
 eq('титулы сброшены', (R.titles || []).length, 0);
 eq('активный титул сброшен', R.activeTitle || null, null);

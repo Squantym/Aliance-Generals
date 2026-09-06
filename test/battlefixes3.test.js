@@ -44,7 +44,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   strong.skills.agility = 0;
   db.save('users');
 
-  const reset = (p) => { p.lastAttackAt = 0; p.pendingFatality = null; p.pendingBankHack = null; p.pendingMineDefuse = null;
+  const reset = (p) => { p.lastAttackAt = 0; p.pendingBreach = null; p.pendingBankHack = null; p.pendingMineDefuse = null;
     const mx = player.maxima(p); p.res.hp.cur = mx.hp; p.res.am.cur = mx.am; p.res.en.cur = mx.en; };
 
   let fights = 0, strongWins = 0, dodgeFights = 0, dodgeStrongWins = 0, zeroDealtWins = 0;

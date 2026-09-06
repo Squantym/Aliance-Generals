@@ -564,10 +564,10 @@ function depositResources(user: User, ears: number, tokens: number, useAdmin: bo
   if (ears <= 0 && tokens <= 0) throw new u.ApiError('Укажите количество ушей или жетонов');
 
   if (useAdmin) {
-    // Источник — adminEars/adminTokens (начислено администратором)
-    if (ears   > 0 && (user.adminEars || 0)   < ears)   throw new u.ApiError(`Не хватает адм. ушей (нужно ${ears}, есть ${user.adminEars || 0})`);
+    // Источник — adminCrests/adminTokens (начислено администратором)
+    if (ears   > 0 && (user.adminCrests || 0)   < ears)   throw new u.ApiError(`Не хватает адм. ушей (нужно ${ears}, есть ${user.adminCrests || 0})`);
     if (tokens > 0 && (user.adminTokens || 0) < tokens) throw new u.ApiError(`Не хватает адм. жетонов (нужно ${tokens}, есть ${user.adminTokens || 0})`);
-    if (ears   > 0) { user.adminEars   = (user.adminEars || 0)   - ears;   l.treasuryEars   += ears; }
+    if (ears   > 0) { user.adminCrests   = (user.adminCrests || 0)   - ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.adminTokens = (user.adminTokens || 0) - tokens; l.treasuryTokens += tokens; }
   } else {
     // Источник — трофейные уши (user.ears) и жетоны (user.tokens)

@@ -40,7 +40,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   u1.units = { [hi.id]: { 0: 3000, 1: 0, 2: 0 } };  // доминирует
   u2.units = { [lo.id]: { 0: 1, 1: 0, 2: 0 } };
   u2.skills.agility = 0;
-  const reset = (p) => { p.lastAttackAt = 0; p.pendingFatality = null; p.pendingBankHack = null; p.pendingMineDefuse = null;
+  const reset = (p) => { p.lastAttackAt = 0; p.pendingBreach = null; p.pendingBankHack = null; p.pendingMineDefuse = null;
     const mx = player.maxima(p); p.res.hp.cur = mx.hp; p.res.am.cur = mx.am; p.res.en.cur = mx.en; };
   let wins = 0, defLosses = 0;
   for (let i = 0; i < 5; i++) {
@@ -55,16 +55,16 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
 
   console.log('\n[4] Отрезанное ухо: +3 нападавшему, −3 жертве');
   u1.rating = 0; u2.rating = 0;
-  u2.earsCurrent = 2; u2.earsLost = 0; u2.earsLostAt = []; u2.earCutters = [null, null];
-  u1.pendingFatality = { targetId: u2.id, name: u2.name, isBot: false, exp: Date.now() + 60000 };
-  battle.fatality(u1, 'ear', []);
+  u2.crestParts = 2; u2.crestPartsLost = 0; u2.crestLostAt = []; u2.crestTakers = [null, null];
+  u1.pendingBreach = { targetId: u2.id, name: u2.name, isBot: false, exp: Date.now() + 60000 };
+  battle.breach(u1, 'crest', []);
   eq('нападавший +3 за ухо', player.rating(u1), 3);
   eq('жертва −3 за отрезанное ухо', player.rating(u2), -3);
 
   console.log('\n[5] Жетон (помилование): +3 помиловавшему, жертва не теряет');
   u1.rating = 0; u2.rating = 0;
-  u1.pendingFatality = { targetId: u2.id, name: u2.name, isBot: false, exp: Date.now() + 60000 };
-  battle.fatality(u1, 'mercy', []);
+  u1.pendingBreach = { targetId: u2.id, name: u2.name, isBot: false, exp: Date.now() + 60000 };
+  battle.breach(u1, 'mercy', []);
   eq('помиловавший +3 за жетон', player.rating(u1), 3);
   eq('помилованный рейтинг не теряет', player.rating(u2), 0);
 

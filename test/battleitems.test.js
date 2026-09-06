@@ -14,7 +14,7 @@ for (const m of [um, lm, bm]) for (const k of Object.keys(m)) delete m[k];
 const now = Date.now();
 
 function mkUser(id) {
-  return { id, name: id, email: id + '@t.t', passHash: 'x', salt: 'x', isAdmin: false, country: 'ru', status: '', createdAt: now, lastSeen: now, level: 60, xp: 0, dollars: 0, gold: 0, bank: 0, skillPoints: 0, skills: { energy: 20, health: 20, ammo: 20, cruelty: 0, agility: 0 }, res: { hp: { cur: 200, t: now }, en: { cur: 200, t: now }, am: { cur: 100, t: now } }, units: {}, workshops: 0, modernQueue: [], buildings: {}, secretDevs: {}, superSecret: 0, ears: 0, tokens: 0, earsCurrent: 2, battle: {}, counters: {}, effects: [], trophies: {}, allianceId: null, legionId: 'lA', saboteurs: {}, saboteurLimits: {}, silos: [], lasers: [], mines: [] };
+  return { id, name: id, email: id + '@t.t', passHash: 'x', salt: 'x', isAdmin: false, country: 'ru', status: '', createdAt: now, lastSeen: now, level: 60, xp: 0, dollars: 0, gold: 0, bank: 0, skillPoints: 0, skills: { energy: 20, health: 20, ammo: 20, cruelty: 0, agility: 0 }, res: { hp: { cur: 200, t: now }, en: { cur: 200, t: now }, am: { cur: 100, t: now } }, units: {}, workshops: 0, modernQueue: [], buildings: {}, secretDevs: {}, superSecret: 0, ears: 0, tokens: 0, crestParts: 2, battle: {}, counters: {}, effects: [], trophies: {}, allianceId: null, legionId: 'lA', saboteurs: {}, saboteurLimits: {}, silos: [], lasers: [], mines: [] };
 }
 const V = mkUser('u_v');
 um['u_v'] = V;

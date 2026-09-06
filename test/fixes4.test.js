@@ -29,8 +29,8 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   const v  = Object.values(player.users()).find(x => x.name === 'Жертва');
   [z1, z2, v].forEach(p => { p.level = 50; p.dollars = 1e12; });
   // Жертва отрезала уши обоим — иначе санкцию объявить нельзя
-  z1.earCutters = [{ id: v.id, name: v.name }];
-  z2.earCutters = [{ id: v.id, name: v.name }];
+  z1.crestTakers = [{ id: v.id, name: v.name }];
+  z2.crestTakers = [{ id: v.id, name: v.name }];
 
   console.log('\n[1] Один заказчик — его имя видно в списке');
   sanctions.declare(z1, v.id, 1e6, []);

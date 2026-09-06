@@ -453,9 +453,9 @@ App.screens.home = async (c) => {
     majorHtml = '';
   }
 
-  // Незавершённое фаталити — срочное напоминание
-  const fatalityHtml = m.pendingFatality
-    ? `<div class="card fatality-card center">💀 Враг <b>${UI.esc(m.pendingFatality.name)}</b> повержен и ждёт вашего решения!
+  // Незавершённое дело в штабе — срочное напоминание
+  const breachHtml = m.pendingBreach
+    ? `<div class="card breach-card center">💀 Враг <b>${UI.esc(m.pendingBreach.name)}</b> повержен и ждёт вашего решения!
        <button class="btn btn-red mt" onclick="App.go('war')">Решить судьбу →</button></div>`
     : '';
 
@@ -585,7 +585,7 @@ App.screens.home = async (c) => {
     ${installBanner}
     ${pushBanner}
     ${rewardsBanner}
-    ${fatalityHtml}
+    ${breachHtml}
     ${majorHtml}
     <div class="menu-grid">
       ${big.map(([id, ic, label]) =>
@@ -800,7 +800,7 @@ App.screens.vip = async (c) => {
         <div class="muted small">Действует до ${until} · осталось ${d.daysLeft} дн.</div>
         <div class="vip-left mt">
           <div><b>${d.left.heal}</b><span>лечений</span></div>
-          <div><b>${d.left.immunity}</b><span>уходов от фаталити</span></div>
+          <div><b>${d.left.immunity}</b><span>отбитых проникновений</span></div>
           <div><b>${d.left.reroll}</b><span>замен поручений</span></div>
         </div>
         <p class="muted small mt">Счётчики обновляются в полночь по Москве.</p>
@@ -1045,7 +1045,7 @@ App.screens.profile = async (c, param) => {
           <div class="pf2-stats-label">Статистика:</div>
           <div class="kv" style="padding:2px 0"><span class="k">победы</span><span class="v">${UI.fmtNum((p.battle.wins||0) + (p.battle.defWins||0))}</span></div>
           <div class="kv" style="padding:2px 0"><span class="k">поражения</span><span class="v">${UI.fmtNum((p.battle.losses||0) + (p.battle.defLosses||0))}</span></div>
-          <div class="kv" style="padding:2px 0"><span class="k">убийства</span><span class="v">${UI.fmtNum(p.battle.fatalities||0)}</span></div>
+          <div class="kv" style="padding:2px 0"><span class="k">убийства</span><span class="v">${UI.fmtNum(p.battle.breaches||0)}</span></div>
           <div class="kv" style="padding:2px 0"><span class="k">смерти</span><span class="v">${UI.fmtNum(p.deathsCount||0)}</span></div>
         </div>
       </div>
@@ -1119,15 +1119,16 @@ App.screens.profile = async (c, param) => {
       <div class="kv"><span class="k">Поражения</span><span class="v">${UI.fmtNum((p.battle.losses||0) + (p.battle.defLosses||0))}</span></div>
       <div class="kv"><span class="k">Оборона: отбито / сдано</span><span class="v">${UI.fmtNum(p.battle.defWins)} / ${UI.fmtNum(p.battle.defLosses)}</span></div>
       <hr class="hr">
-      <div class="kv"><span class="k">💀 Фаталити</span><span class="v">${UI.fmtNum(p.battle.fatalities)}</span></div>
-      <div class="kv"><span class="k"><span class="ic-ear"></span> Отрезанные уши (трофеи)</span><span class="v">${UI.fmtNum(p.ears)}</span></div>
-      <div class="kv"><span class="k">🏷 Жетоны милосердия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
-      <div class="kv"><span class="k">Потеряно своих ушей</span><span class="v">${UI.fmtNum(p.earsLost)}</span></div>
-      <div class="kv"><span class="k">Свои уши сейчас</span><span class="v">${p.earsCurrent} / ${p.earsMax}${p.earPenaltyActive ? ' <span style="color:var(--red)">⚠ штраф −10%</span>' : ''}</span></div>
-      ${p.earCutInfo && p.earCutInfo.left ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Левое ухо у</span><span class="v"><a href="#" onclick="App.go('profile/${p.earCutInfo.left.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.left.name)}</a></span></div>` : ''}
-      ${p.earCutInfo && p.earCutInfo.right ? `<div class="kv"><span class="k" style="color:var(--red)">✂️ Правое ухо у</span><span class="v"><a href="#" onclick="App.go('profile/${p.earCutInfo.right.id}');return false" style="color:var(--gold)">${UI.esc(p.earCutInfo.right.name)}</a></span></div>` : ''}
-      ${p.earMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile/${p.earMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.earMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.earMessage.text)}»</div></div>` : ''}
-      ${own && p.earsCurrent < p.earsMax ? `<button class="btn btn-orange mt" id="pf-restore-ear" style="width:100%"><span class="ic-ear"></span> Восстановить ухо за <span class="ic-gold"></span> ${App.me.earRestoreCostGold || 20}</button>` : ''}
+      <div class="kv"><span class="k">🛡 Проникновений в штаб</span><span class="v">${UI.fmtNum(p.battle.breaches)}</span></div>
+      <div class="kv"><span class="k"><span class="ic-crest"></span> Гербы штабов (трофеи)</span><span class="v">${UI.fmtNum(p.crests != null ? p.crests : p.ears)}</span></div>
+      <div class="kv"><span class="k"><span class="ic-token"></span> Жетоны перемирия</span><span class="v">${UI.fmtNum(p.tokens)}</span></div>
+      <div class="kv"><span class="k">Сорвано частей своего герба</span><span class="v">${UI.fmtNum(p.crestPartsLost)}</span></div>
+      <div class="kv"><span class="k">Герб сейчас</span><span class="v">${p.crestParts} / ${p.crestPartsMax}${p.crestPenaltyPct > 0 ? ` <span style="color:var(--red)">⚠ штраф −${p.crestPenaltyPct}%</span>` : ''}</span></div>
+      ${(p.crestTakenBy || []).map((t, i) => t
+        ? `<div class="kv"><span class="k" style="color:var(--red)">🛡 ${i + 1}-я часть у</span><span class="v"><a href="#" onclick="App.go('profile/${t.id}');return false" style="color:var(--gold)">${UI.esc(t.name)}</a></span></div>`
+        : '').join('')}
+      ${p.crestMessage ? `<div style="margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:8px;background:rgba(255,60,60,.08)"><div class="muted small">✍️ Послание от <a href="#" onclick="App.go('profile/${p.crestMessage.byId}');return false" style="color:var(--gold)">${UI.esc(p.crestMessage.byName)}</a>:</div><div style="margin-top:4px;font-style:italic">«${UI.esc(p.crestMessage.text)}»</div></div>` : ''}
+      ${own && p.crestParts < p.crestPartsMax ? `<button class="btn btn-orange mt" id="pf-restore-crest" style="width:100%"><span class="ic-crest"></span> Вернуть часть герба за <span class="ic-gold"></span> ${App.me.crestRestoreCostGold || 20}</button>` : ''}
     </div>
 
     ${(p.activeEffects && p.activeEffects.length) ? `
@@ -1230,7 +1231,7 @@ App.screens.profile = async (c, param) => {
     };
   }
 
-  const restoreEarBtn = document.getElementById('pf-restore-ear');
+  const restoreEarBtn = document.getElementById('pf-restore-crest');
   if (restoreEarBtn) {
     restoreEarBtn.onclick = async () => {
       try {
@@ -1367,8 +1368,8 @@ App.screens.skills = async (c) => {
     ['energy',  '<span class="ic-energy"></span> Энергия',     'Расходуется в миссиях. +10 к максимуму за прокачку.', 10],
     ['health',  '<span class="ic-health"></span> Здоровье',    'Ниже 25 — в бой нельзя. +10 к максимуму за прокачку.', 10],
     ['ammo',    '<span class="ic-ammo"></span> Боеприпасы', 'Сколько атак в запасе. +1 к максимуму.', 1],
-    ['cruelty', '💀 Жестокость', '+0.5% к шансу крита и +0.5% к шансу фаталити (макс. 50% каждое).', 1],
-    ['agility', '🏃 Ловкость',    '+0.5% к шансу увернуться от атаки и +0.5% ускользнуть от фаталити (макс. 50% каждое).', 1],
+    ['cruelty', '💀 Жестокость', '+0.5% к шансу крита и +0.5% к шансу проникновения в штаб (макс. 50% каждое).', 1],
+    ['agility', '🏃 Ловкость',    '+0.5% к шансу увернуться от атаки и +0.5% отбить проникновение в штаб (макс. 50% каждое).', 1],
   ];
 
   const caps = m.skillCaps || {};

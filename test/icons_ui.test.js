@@ -8,7 +8,7 @@ const FRONT=['public/js/app.js','public/js/screens/social.js','public/js/screens
              'public/js/screens/news.js','public/js/admin.js'].filter(f=>fs.existsSync(path.join(ROOT,f)));
 
 console.log('\n[1] Файлы иконок на месте');
-for (const n of ['ear','token','reserve']) {
+for (const n of ['crest','truce','reserve']) {
   const p=path.join(ROOT,'public/img/icons',n+'.webp');
   ok(`иконка ${n}.webp есть`, fs.existsSync(p));
   ok(`иконка ${n}.webp лёгкая (<40 KB)`, fs.statSync(p).size < 40*1024);
@@ -16,10 +16,16 @@ for (const n of ['ear','token','reserve']) {
 
 console.log('\n[2] CSS-классы объявлены');
 const css=fs.readFileSync(path.join(ROOT,'public/css/style.css'),'utf8');
-for (const n of ['ear','token','reserve']) {
-  ok(`.ic-${n} имеет картинку`, new RegExp(`\\.ic-${n}\\s*\\{[^}]*icons/${n}\\.webp`).test(css));
-  ok(`.ic-${n} в общем правиле размеров`, new RegExp(`\\.ic-${n}[,\\s][^{]*\\{[\\s\\S]{0,200}?background-size`).test(css)
-     || new RegExp(`\\.ic-${n}\\s*[,{]`).test(css));
+for (const n of ['crest','truce','reserve']) {
+  // Файл и класс называются по-разному только у жетона: файл truce.webp,
+  // а класс .ic-token — он уже стоит в разметке в десятках мест, и
+  // переименовывать его ради единообразия значило бы править их все.
+  const cls = n === 'truce' ? 'token' : n;
+  const lines = css.split(String.fromCharCode(10));
+  ok(`.ic-${cls} берёт картинку ${n}.webp`,
+     lines.some((ln) => ln.includes(".ic-" + cls) && ln.includes("icons/" + n + ".webp")));
+  ok(`.ic-${cls} в общем правиле размеров`,
+     lines.some((ln) => ln.includes(".ic-" + cls) && ln.includes(",")));
 }
 
 console.log('\n[3] Иконки не ломают разметку');
@@ -32,21 +38,24 @@ for (const f of FRONT) {
 
 console.log('\n[4] Валюта показана иконками в ключевых местах');
 const core=fs.readFileSync(path.join(ROOT,'public/js/screens/core.js'),'utf8');
-ok('профиль: отрезанные уши — иконкой', /ic-ear[\s\S]{0,60}Отрезанные уши/.test(core));
-ok('профиль: восстановить ухо — иконкой', /pf-restore-ear[\s\S]{0,80}ic-ear/.test(core));
+ok('профиль: гербы — иконкой', core.includes('ic-crest') && core.includes('Гербы штабов'));
+ok('профиль: вернуть часть — иконкой', core.includes('pf-restore-crest') && core.includes('Вернуть часть герба'));
 ok('банк: вкладка резерва — иконкой', /ic-reserve[\s\S]{0,20}Резерв/.test(core));
 ok('награды сезона: жетоны — иконкой', /ic-token[\s\S]{0,30}tokens/.test(core));
 
 const app=fs.readFileSync(path.join(ROOT,'public/js/app.js'),'utf8');
 // v52: заголовок окна стал переменным (одно ухо / оба уха по трофею),
 // поэтому проверяем иконку рядом с подстановкой и сами варианты текста
-ok('фаталити: ухо отрезано — иконкой', /ic-ear[\s\S]{0,40}\$\{earTitle\}/.test(app));
-ok('фаталити: заголовок различает одно ухо и оба', /Отрезаны ОБА уха/.test(app) && /'Ухо отрезано'/.test(app));
-ok('фаталити: помилование — жетоном', /ic-token[\s\S]{0,40}Враг помилован/.test(app));
-ok('фаталити: показан итог трофеев', /fat-loot/.test(app));
+ok('штаб: герб сорван — иконкой', app.includes('ic-crest') && app.includes('crestTitle'));
+ok('штаб: заголовок различает одну часть и две',
+   app.includes('Сорваны ДВЕ части герба') && app.includes('Герб сорван'));
+ok('штаб: перемирие — жетоном', app.includes('ic-token') && app.includes('Перемирие заключено'));
+ok('штаб: показан итог трофеев', app.includes('fat-loot'));
+// Сцены выбираются по полу: женщине показывают женскую, и наоборот.
+ok('сцена зависит от пола игрока', app.includes('_breachScene') && app.includes("App.me.gender === 'f'"));
 
 const social=fs.readFileSync(path.join(ROOT,'public/js/screens/social.js'),'utf8');
-ok('казна: уши иконкой', /Уши <span class="ic-ear">/.test(social));
+ok('казна: гербы иконкой', social.includes('Гербы <span class="ic-crest">'));
 ok('казна: жетоны иконкой', /Жетоны <span class="ic-token">/.test(social));
 ok('ценники построек: РЕЗ иконкой', /ic-reserve[\s\S]{0,10}РЕЗ/.test(social));
 

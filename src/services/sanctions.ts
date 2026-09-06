@@ -27,7 +27,7 @@ function store(): Record<string, SanctionEntry> { return db.load<Record<string, 
 
 // Висит ли на игроке активная санкция (награда за голову > 0).
 // Нужен бою: по цели под санкцией идёт охота за наградой, поэтому
-// фаталити (и отрезание ушей) на ней не срабатывает.
+// проникновение в штаб (и срыв герба) на ней не срабатывает.
 function isUnderSanction(targetId: string): boolean {
   if (!targetId) return false;
   const entry = store()[targetId];
@@ -50,8 +50,8 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   require('./account').assertNotSelfAccount(user, target, 'Объявление санкции');
 
   // Объявить санкцию можно ТОЛЬКО на того, кто напал и отрезал тебе ухо.
-  // Проверяем по earCutters — там записаны те, кто отрезал уши заказчику.
-  const cutters = user.earCutters || [];
+  // Проверяем по crestTakers — там записаны те, кто отрезал уши заказчику.
+  const cutters = user.crestTakers || [];
   const cutByTarget = cutters.some((c) => c && c.id === targetId);
   if (!cutByTarget) {
     throw new u.ApiError('Объявить санкцию можно только на того, кто напал на вас и отрезал ухо.');

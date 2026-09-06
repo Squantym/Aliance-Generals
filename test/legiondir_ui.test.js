@@ -99,7 +99,7 @@ const active=(moveCd)=>({
  ok('строк рейтинга — 2', c2.querySelectorAll('.contrib-row').length===2);
  ok('лидер выделен', c2.querySelectorAll('.contrib-row.first').length===1);
  ok('вклад ушедшего сохранён и помечен', /Ушедший[\s\S]{0,60}\(вышел\)/.test(c2.innerHTML));
- ok('иконки валют в шапке', !!c2.querySelector('.contrib-head .ic-ear') && !!c2.querySelector('.contrib-head .ic-token') && !!c2.querySelector('.contrib-head .ic-reserve'));
+ ok('иконки валют в шапке', !!c2.querySelector('.contrib-head .ic-crest') && !!c2.querySelector('.contrib-head .ic-token') && !!c2.querySelector('.contrib-head .ic-reserve'));
  ok('есть переключатели общий/недельный', c2.querySelectorAll('[data-contrib]').length===2);
 
  App._contribPeriod='week';

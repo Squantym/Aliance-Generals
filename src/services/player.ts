@@ -92,10 +92,18 @@ function totalPower(user: User, mode: string, debuffs?: any): any {
 
   let totalPow = armyPow + buildPow;
 
-  // Штраф «без ушей»: -10% к атаке и защите на 6 часов после потери
-  // второго уха (применяется к итоговой мощи, включая постройки)
-  if (user.earPenaltyUntil && user.earPenaltyUntil > Date.now()) {
-    totalPow = Math.round(totalPow * (1 - config.EARS.PENALTY_PCT));
+  // Штраф за сорванный герб: 5% за каждую снятую часть — 5 / 10 / 15
+  // процентов к атаке и защите, включая постройки.
+  //
+  // Считается ОТ ЧИСЛА ЧАСТЕЙ, а не по отдельному таймеру. Раньше штраф
+  // был выключателем: ровно 10% на шесть часов и только когда сорвано
+  // всё, — то есть до последнего срыва потери не значили ничего, а
+  // «срок штрафа» жил своей жизнью и мог разойтись с самим гербом.
+  // Теперь источник правды один: сколько частей на месте, столько и
+  // штрафа, и он спадает сам по мере их возвращения.
+  const partsGone = crestPartsGone(user);
+  if (partsGone > 0) {
+    totalPow = Math.round(totalPow * (1 - config.CREST.PENALTY_PER_PART_PCT * partsGone));
   }
 
   return { ...army, power: totalPow, basePower: army.power };
@@ -412,7 +420,7 @@ function effLabel(type: string): string {
     ammo_regen_pct: 'восст. боеприпасов', energy_regen_pct: 'восст. энергии',
     crit_bonus: 'шанс крита', dodge_bonus: 'шанс уворота',
     xp_pct: 'опыт', build_slow_pct: 'замедление строек', research_slow_pct: 'замедление исследований',
-    invite_unlimited: 'безлимит приглашений', fatality_immunity: 'иммунитет к фаталити',
+    invite_unlimited: 'безлимит приглашений', breach_immunity: 'охрана штаба',
     xp_block: 'опыт не начисляется',
   };
   return map[type] || type;
@@ -431,7 +439,7 @@ function effectsView(user: User): any[] {
       // Флаговые эффекты (value=1, не проценты) показываем как статус.
       // Сыворотка сюда же: «+100% (опыт не начисляется)» читалось бы как
       // бонус к опыту — ровно наоборот смыслу.
-      const isFlag = e.type === 'invite_unlimited' || e.type === 'fatality_immunity' || e.type === 'xp_block';
+      const isFlag = e.type === 'invite_unlimited' || e.type === 'breach_immunity' || e.type === 'xp_block';
       const desc = isFlag
         ? effLabel(e.type)
         : `${e.value > 0 ? '+' : ''}${e.value}% (${effLabel(e.type)})`;
@@ -738,7 +746,7 @@ function syncSuper(user: User, notices: Notices): any {
 
 // ---------- «Освежение» игрока перед каждым запросом ----------
 // Лениво досчитываем всё, что должно было произойти со временем:
-// регенерацию, почасовой доход, истечение эффектов и окна фаталити.
+// регенерацию, почасовой доход, истечение эффектов и окна штаба.
 function refresh(user: User): void {
   const now = Date.now();
   const mx = maxima(user);
@@ -799,8 +807,8 @@ function refresh(user: User): void {
 
   syncSuper(user, []);
 
-  // Просроченное окно фаталити закрывается
-  if (user.pendingFatality && (user.pendingFatality as any).exp < now) user.pendingFatality = null;
+  // Просроченное окно штаба закрывается
+  if (user.pendingBreach && (user.pendingBreach as any).exp < now) user.pendingBreach = null;
 
   // Страховка для существующих игроков: новые поля при обновлении версии
   if (user.legionId === undefined) user.legionId = null;
@@ -810,26 +818,100 @@ function refresh(user: User): void {
   if (user.emailVerified === undefined) user.emailVerified = true;
   if (user.email === undefined) user.email = '';
 
-  // Миграция полей собственных ушей игрока (новая механика)
-  if (user.earsCurrent === undefined) user.earsCurrent = config.EARS.MAX;
-  if (!user.earsLostAt) user.earsLostAt = [];
-  if (user.earPenaltyUntil === undefined) user.earPenaltyUntil = 0;
-  // Естественная регенерация: каждое ухо восстанавливается через
-  // EARS.REGROW_MS после своей потери (не общий таймер на оба сразу)
-  const earsNow = Date.now();
-  while (user.earsLostAt.length > 0 && user.earsCurrent < config.EARS.MAX
-         && earsNow - user.earsLostAt[0] >= config.EARS.REGROW_MS) {
-    user.earsLostAt.shift();
-    user.earsCurrent = Math.min(config.EARS.MAX, user.earsCurrent + 1);
+  // ── Достижения: переименованные ступени ────────────────────────
+  //
+  // У достижений сменились идентификаторы вместе с механикой
+  // (наследие: прежние имена ступеней переносятся на новые,
+  // fatDodges → breachDodges). Прогресс игрока хранится ПО ЭТИМ
+  // ключам, и без переноса все, кто что-то закрыл, обнулились бы
+  // молча: старый ключ остался бы в сохранении, а игра завела бы
+  // рядом пустой новый.
+  //
+  // Картинки достижений тоже названы по идентификатору
+  // (/img/achievements/<id>_<ступень>.webp) и переименованы вместе с
+  // ними — иначе на месте наград висели бы битые картинки.
+  // НАСЛЕДИЕ: слева стоят СТАРЫЕ ключи — иначе перенести нечего.
+  const ACH_RENAMED: Record<string, string> = {   // наследие: старые имена
+    fatalities: 'breaches',   // наследие
+    ears: 'crests',
+    mercies: 'truces',
+    fatDodges: 'breachDodges',
+  };
+  if (user.achStages) {
+    for (const [oldId, newId] of Object.entries(ACH_RENAMED)) {
+      const st: any = (user.achStages as any)[oldId];
+      if (st === undefined) continue;
+      const cur: any = (user.achStages as any)[newId];
+      // Берём большее: если по новому ключу уже что-то накопилось
+      // (игрок заходил после выката), понижать его нельзя.
+      (user.achStages as any)[newId] = Math.max(Number(cur) || 0, Number(st) || 0);
+      delete (user.achStages as any)[oldId];
+    }
   }
-  // Если оба уха отросли — стираем записи об отрезавших и послание
-  if (user.earsCurrent >= config.EARS.MAX && (user.earMessage || (user.earCutters && (user.earCutters[0] || user.earCutters[1])))) {
-    user.earCutters = [null, null];
-    user.earMessage = null;
+
+  // ── Герб штаба: перенос старых сохранений и восстановление ──────
+  //
+  // У живых игроков в базе лежат ПРЕЖНИЕ поля — уши. Молча начать читать
+  // новые значило бы обнулить всем трофеи и потери: старое поле осталось
+  // бы в сохранении, а игра завела бы рядом пустое новое. Поэтому
+  // переносим явно и ровно один раз.
+  //
+  // Соответствие: два уха превращаются в три части герба ПО ДОЛЕ
+  // сохранности, а не «сколько было, столько и стало». Игрок с одним
+  // ухом из двух был повреждён наполовину — и остаётся повреждён
+  // наполовину: полторы части округляем вверх, в пользу игрока.
+  const legacy: any = user as any;
+  if (user.crestParts === undefined && typeof legacy.earsCurrent === 'number') {
+    const wasMax = 2;
+    user.crestParts = Math.min(config.CREST.PARTS,
+      Math.ceil((legacy.earsCurrent / wasMax) * config.CREST.PARTS));
+    delete legacy.earsCurrent;
   }
-  // Штраф снимается автоматически по истечении срока
-  if (user.earPenaltyUntil > 0 && earsNow >= user.earPenaltyUntil) {
-    user.earPenaltyUntil = 0;
+  if (user.crestPartsLost === undefined && typeof legacy.earsLost === 'number') {
+    user.crestPartsLost = legacy.earsLost;
+    delete legacy.earsLost;
+  }
+  if (!user.crestLostAt && Array.isArray(legacy.earsLostAt)) {
+    user.crestLostAt = legacy.earsLostAt;
+    delete legacy.earsLostAt;
+  }
+  if (!user.crestTakers && Array.isArray(legacy.earCutters)) {
+    user.crestTakers = legacy.earCutters;
+    delete legacy.earCutters;
+  }
+  if (user.crestMessage === undefined && legacy.earMessage !== undefined) {
+    user.crestMessage = legacy.earMessage;
+    delete legacy.earMessage;
+  }
+  // Старый срок штрафа больше не нужен: штраф считается от числа
+  // сорванных частей и спадает вместе с их восстановлением.
+  if (legacy.earPenaltyUntil !== undefined) delete legacy.earPenaltyUntil;
+
+  if (user.crestParts === undefined) user.crestParts = config.CREST.PARTS;
+  if (!user.crestLostAt) user.crestLostAt = [];
+  if (user.crestPartsLost === undefined) user.crestPartsLost = 0;
+  if (!user.crestTakers) user.crestTakers = new Array(config.CREST.PARTS).fill(null);
+  // Число слотов должно совпадать с числом частей: раньше их было два.
+  if (user.crestTakers.length !== config.CREST.PARTS) {
+    const old = user.crestTakers.slice(0, config.CREST.PARTS);
+    while (old.length < config.CREST.PARTS) old.push(null);
+    user.crestTakers = old;
+  }
+
+  // Восстановление: каждая часть возвращается через CREST.REGROW_MS
+  // после СВОЕЙ потери — не общим таймером на все сразу. Три части,
+  // сорванные подряд, вернутся за шесть часов, по одной каждые два.
+  const crestNow = Date.now();
+  while (user.crestLostAt.length > 0 && user.crestParts < config.CREST.PARTS
+         && crestNow - user.crestLostAt[0] >= config.CREST.REGROW_MS) {
+    user.crestLostAt.shift();
+    user.crestParts = Math.min(config.CREST.PARTS, user.crestParts + 1);
+  }
+  // Герб собран целиком — забываем, кто его рвал, и снятое послание
+  if (user.crestParts >= config.CREST.PARTS
+      && (user.crestMessage || (user.crestTakers && user.crestTakers.some((x: any) => x)))) {
+    user.crestTakers = new Array(config.CREST.PARTS).fill(null);
+    user.crestMessage = null;
   }
 
   // Миграция формата техники: принудительно нормализуем. MongoDB может
@@ -906,7 +988,7 @@ function refresh(user: User): void {
 // ---------- Рейтинг и звание ----------
 // НАКОПИТЕЛЬНЫЙ рейтинг (переработан). Правила начисления:
 //   победа в бою +1, поражение −1;
-//   отрезал ухо ИЛИ дал жетон (помиловал) +3;
+//   сорвал герб ИЛИ заключил перемирие +3;
 //   тебе отрезали ухо −3; подорвался на мине −3.
 // У старых игроков поле отсутствует → рейтинг начинается с 0 (обнуление всем).
 // Начисляют боевые события через addRating(); rating() только читает.
@@ -1076,6 +1158,16 @@ function genderTitle(user: User): string {
   return config.GENDER_BY_ID[genderId(user)].title;
 }
 
+// Сколько частей герба сорвано прямо сейчас. Одно место на весь проект:
+// от этого числа зависят и штраф, и то, что видит игрок.
+function crestPartsGone(user: User): number {
+  const parts = typeof user.crestParts === 'number' ? user.crestParts : config.CREST.PARTS;
+  return Math.max(0, Math.min(config.CREST.PARTS, config.CREST.PARTS - parts));
+}
+function crestPenaltyPct(user: User): number {
+  return Math.round(crestPartsGone(user) * config.CREST.PENALTY_PER_PART_PCT * 100);
+}
+
 function mePayload(user: User): any {
   const atk = totalPower(user, "atk");
   const def = totalPower(user, "def");
@@ -1096,15 +1188,16 @@ function mePayload(user: User): any {
     healCost: config.hospitalPrice(user.level),  // для баннера «вылечиться» при HP < 25
     healCooldownLeft: Math.max(0, Math.ceil((((user as any).lastHospitalHeal || 0) + 5 * 60 * 1000 - Date.now()) / 1000)),
     battle: { ...user.battle },
-    ears: user.ears, tokens: user.tokens, earsLost: user.earsLost,
-    adminEars: user.adminEars || 0, adminTokens: user.adminTokens || 0,
-    // Собственные уши игрока (лимит 2): сколько есть сейчас, штраф,
-    // время до следующего восстановления и цена мгновенного восстановления
-    earsCurrent: user.earsCurrent, earsMax: config.EARS.MAX,
-    earPenaltyActive: !!(user.earPenaltyUntil && user.earPenaltyUntil > Date.now()),
-    earPenaltyUntil: user.earPenaltyUntil || 0,
-    earRegrowAt: user.earsLostAt && user.earsLostAt.length > 0 ? user.earsLostAt[0] + config.EARS.REGROW_MS : null,
-    earRestoreCostGold: config.EARS.RESTORE_GOLD,
+    crests: user.ears, tokens: user.tokens, crestPartsLost: user.crestPartsLost,
+    adminCrests: user.adminCrests || 0, adminTokens: user.adminTokens || 0,
+    // Свой герб: сколько частей на месте, какой сейчас штраф, когда
+    // вернётся следующая часть и во сколько обойдётся вернуть сразу.
+    crestParts: user.crestParts, crestPartsMax: config.CREST.PARTS,
+    crestPartsGone: crestPartsGone(user),
+    crestPenaltyPct: crestPenaltyPct(user),
+    crestRegrowAt: user.crestLostAt && user.crestLostAt.length > 0
+      ? user.crestLostAt[0] + config.CREST.REGROW_MS : null,
+    crestRestoreCostGold: config.CREST.RESTORE_GOLD,
     capacity: capacity(user),
     // Чего игрок ещё не подтвердил. У всех, кто регистрировался до
     // появления отметок, здесь непустой список: согласий у них нет — их
@@ -1127,7 +1220,7 @@ function mePayload(user: User): any {
     alliance: allianceInfo(user),
     legion: legionInfo(user),
     tutorial: tutorialView(user),
-    pendingFatality: user.pendingFatality ? { name: user.pendingFatality.name } : null,
+    pendingBreach: user.pendingBreach ? { name: user.pendingBreach.name } : null,
     // Безопасные сводки незавершённых мини-игр — БЕЗ кода сейфа и БЕЗ
     // индекса верного провода (иначе игрок мог бы подсмотреть в консоли).
     pendingBankHack: user.pendingBankHack ? {
@@ -1297,24 +1390,28 @@ function publicProfile(target: User, viewer: User): any {
     // «Смерти» для блока «Статистика» в профиле: гибель при подрыве на
     // мине (счётчик достижения «Смертник»)
     deathsCount: ((target.counters as any) || {}).deaths || 0,
-    ears: target.ears, tokens: target.tokens, earsLost: target.earsLost,
-    earsCurrent: target.earsCurrent, earsMax: config.EARS.MAX,
-    earPenaltyActive: !!(target.earPenaltyUntil && target.earPenaltyUntil > Date.now()),
-    // Кто отрезал уши (видно всем): левое = earCutters[0], правое = [1].
-    // Показываем только реально отрезанные (earsCurrent < MAX).
-    earCutInfo: (() => {
-      const c = target.earCutters || [null, null];
-      const out: any = { left: null, right: null };
-      // Левое ухо считается отрезанным, если потеряно хотя бы одно ухо
-      const lost = config.EARS.MAX - (target.earsCurrent ?? config.EARS.MAX);
-      if (lost >= 1 && c[0]) out.left = { id: c[0].id, name: c[0].name };
-      if (lost >= 2 && c[1]) out.right = { id: c[1].id, name: c[1].name };
+    ears: target.ears, tokens: target.tokens, crestPartsLost: target.crestPartsLost,
+    crestParts: target.crestParts, crestPartsMax: config.CREST.PARTS,
+    crestPartsGone: crestPartsGone(target),
+    crestPenaltyPct: crestPenaltyPct(target),
+    // Кто держит части герба (видно всем). Список длиной в число частей:
+    // на месте i лежит тот, кто снял i-ю часть, либо null. Раньше здесь
+    // были жёстко «левое» и «правое» — под два уха; частей три, и такой
+    // список не расширяется, а переписывается.
+    crestTakenBy: (() => {
+      const c = target.crestTakers || [];
+      const gone = crestPartsGone(target);
+      const out: any[] = [];
+      for (let i = 0; i < config.CREST.PARTS; i++) {
+        const t: any = c[i];
+        out.push(i < gone && t ? { id: t.id, name: t.name } : null);
+      }
       return out;
     })(),
-    earMessage: target.earMessage ? {
-      byName: target.earMessage.byName,
-      byId: target.earMessage.byId,
-      text: target.earMessage.text,
+    crestMessage: target.crestMessage ? {
+      byName: target.crestMessage.byName,
+      byId: target.crestMessage.byId,
+      text: target.crestMessage.text,
     } : null,
     // Активные эффекты видны всем (название + сколько осталось). Имя
     // того, кто наложил подлянку, видит ТОЛЬКО сама жертва (isOwn).
@@ -1411,25 +1508,25 @@ function setAvatar(user: User, avatarId: string) {
 
 // Восстановить одно ухо мгновенно за золото (если потеряно хотя бы одно)
 function restoreEar(user: User, notices: Notices) {
-  if (user.earsCurrent >= config.EARS.MAX) {
+  if (user.crestParts >= config.CREST.PARTS) {
     throw new u.ApiError('У вас уже оба уха целы');
   }
-  if (user.gold < config.EARS.RESTORE_GOLD) {
-    throw new u.ApiError(`Не хватает золота (нужно 🪙 ${config.EARS.RESTORE_GOLD})`);
+  if (user.gold < config.CREST.RESTORE_GOLD) {
+    throw new u.ApiError(`Не хватает золота (нужно 🪙 ${config.CREST.RESTORE_GOLD})`);
   }
-  spendGold(user, config.EARS.RESTORE_GOLD, 'player');
-  user.earsCurrent = Math.min(config.EARS.MAX, user.earsCurrent + 1);
+  spendGold(user, config.CREST.RESTORE_GOLD, 'player');
+  user.crestParts = Math.min(config.CREST.PARTS, user.crestParts + 1);
   // Убираем самую старую запись о потере (это ухо уже восстановлено)
-  if (user.earsLostAt.length > 0) user.earsLostAt.shift();
+  if (user.crestLostAt.length > 0) user.crestLostAt.shift();
   // Если теперь снова есть хотя бы одно ухо — штраф снимается
-  if (user.earsCurrent > 0) user.earPenaltyUntil = 0;
+  // Штраф отдельно снимать не нужно: он считается от числа частей.
   // Если оба уха восстановлены — стираем записи о том, кто отрезал, и послание
-  if (user.earsCurrent >= config.EARS.MAX) {
-    user.earCutters = [null, null];
-    user.earMessage = null;
+  if (user.crestParts >= config.CREST.PARTS) {
+    user.crestTakers = [null, null];
+    user.crestMessage = null;
   }
-  notices.push(`👂 Ухо восстановлено за 🪙 ${config.EARS.RESTORE_GOLD}. Сейчас ушей: ${user.earsCurrent}/${config.EARS.MAX}.`);
-  return { earsCurrent: user.earsCurrent };
+  notices.push(`👂 Ухо восстановлено за 🪙 ${config.CREST.RESTORE_GOLD}. Сейчас ушей: ${user.crestParts}/${config.CREST.PARTS}.`);
+  return { crestParts: user.crestParts };
 }
 
 export = { isXpBlocked, xpBlockLeftMin,

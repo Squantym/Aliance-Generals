@@ -448,7 +448,7 @@ function buildSpyReport(target: User, reveal: ReturnType<typeof config.spyReveal
 
   return {
     targetId: target.id, targetName: target.name, targetLevel: target.level,
-    hp: target.res.hp.cur, earsCurrent: target.earsCurrent,
+    hp: target.res.hp.cur, crestParts: target.crestParts,
     trophyLvl,
     units, unitsTotal, unitsByType,
     buildings, secretDevs, superDevInfo,

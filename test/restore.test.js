@@ -32,13 +32,13 @@ function mkUser() {
     skills: { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 },
     res: { hp: { cur: 1, t: now }, en: { cur: 0, t: now }, am: { cur: 0, t: now } },
     units: {}, workshops: 0, modernQueue: [], buildings: {}, secretDevs: {}, superSecret: 0,
-    ears: 0, tokens: 0, earsLost: 0, earsCurrent: c.EARS.MAX, earsLostAt: [], earPenaltyUntil: 0,
-    battle: { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, fatalities: 0 },
-    counters: { wins: 0, attacks: 0, fatalities: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, earsCut: 0, moneyEarned: 0, battleLoot: 0, level: 20 },
+    ears: 0, tokens: 0, crestPartsLost: 0, crestParts: c.CREST.PARTS, crestLostAt: [], earPenaltyUntil: 0,
+    battle: { attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0, breaches: 0 },
+    counters: { wins: 0, attacks: 0, breaches: 0, unitsBought: 0, buildingsBuilt: 0, missionStages: 0, crestsTorn: 0, moneyEarned: 0, battleLoot: 0, level: 20 },
     achStages: {}, missions: {}, tutorial: { step: 0, done: true }, effects: [],
     trophies: Object.fromEntries(c.TROPHIES.map((t) => [t.id, 0])),
     club: {}, allianceId: null, legionId: null, lastIncomeAt: now,
-    pendingFatality: null, lastChatAt: 0, trophyQueue: [], dailyQuests: {},
+    pendingBreach: null, lastChatAt: 0, trophyQueue: [], dailyQuests: {},
   };
 }
 const user = mkUser();

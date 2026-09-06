@@ -59,7 +59,7 @@ for (let i = 0; i < 600; i++) {
   atk.lastAttackAt = 0;
   atk.level = 10; def.level = 10;   // не даём уровням разойтись за серию боёв
   atk.res.hp.cur = 100; atk.res.en.cur = 100; atk.res.am.cur = 999;
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.res.hp.cur = 100; def.dollars = 1000000;
   // Возвращаем технику, чтобы армии не иссякли за 600 боёв
   atk.units[unit.id][0] = 5000; def.units[unit.id][0] = 5000;
@@ -92,7 +92,7 @@ for (let i = 0; i < 400; i++) {
   atk.lastAttackAt = 0;
   atk.level = 10; def.level = 10;   // не даём уровням разойтись за серию боёв
   atk.res.hp.cur = 100; atk.res.en.cur = 100; atk.res.am.cur = 999;
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.res.hp.cur = 100; def.dollars = 1000000;
   atk.units[unit.id][0] = 5000;
   // Меняем соотношение сил: то защитник крепче (слабые удары), то слабее (сильные)
@@ -126,7 +126,7 @@ for (let i = 0; i < 300; i++) {
   atk.lastAttackAt = 0;
   atk.level = 10; def.level = 10;   // не даём уровням разойтись за серию боёв
   atk.res.hp.cur = 100; atk.res.en.cur = 100; atk.res.am.cur = 999;
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.res.hp.cur = 100; def.dollars = 1000000;
   atk.units[unit.id][0] = 5000; def.units[unit.id][0] = 5000;
   let r;
@@ -148,7 +148,7 @@ for (let i = 0; i < 300; i++) {
   atk.lastAttackAt = 0;
   atk.level = 10; def.level = 10;   // не даём уровням разойтись за серию боёв
   atk.res.hp.cur = 100; atk.res.en.cur = 100; atk.res.am.cur = 999;
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.res.hp.cur = 100; def.dollars = 1000000;
   atk.units[unit.id][0] = 5000; def.units[unit.id][0] = 5000;
   let r;
@@ -169,7 +169,7 @@ for (let i = 0; i < 600; i++) {
   atk.lastAttackAt = 0;
   atk.level = 10; def.level = 10;   // не даём уровням разойтись за серию боёв
   atk.res.hp.cur = 100; atk.res.en.cur = 100; atk.res.am.cur = 999;
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.res.hp.cur = 100; def.dollars = 1000000;
   atk.units[unit.id][0] = 5000; def.units[unit.id][0] = 5000;
   let r;
@@ -193,7 +193,7 @@ for (let i = 0; i < 200; i++) {
   atk.lastAttackAt = 0;
   atk.level = 10; def.level = 10;   // не даём уровням разойтись за серию боёв
   atk.res.hp.cur = 100; atk.res.en.cur = 100; atk.res.am.cur = 999;
-  atk.pendingFatality = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
+  atk.pendingBreach = null; atk.pendingBankHack = null; atk.pendingMineDefuse = null;
   def.res.hp.cur = 100; def.dollars = 1000000;
   atk.units[unit.id][0] = 5000;
   def.units[unit.id] = [6, 0, 0];

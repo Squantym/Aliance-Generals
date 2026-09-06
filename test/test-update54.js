@@ -32,9 +32,9 @@ const me = by('Первый');
 
 console.log('\n── 1. Места не скачут при равных очках ──');
 // Даём очки только трём, остальным — нули
-seasons.onFatalityEar(by('Первый'));
-for (let i = 0; i < 5; i++) seasons.onFatalityEar(by('Второй'));
-for (let i = 0; i < 3; i++) seasons.onFatalityEar(by('Третий'));
+seasons.onBreachCrest(by('Первый'));
+for (let i = 0; i < 5; i++) seasons.onBreachCrest(by('Второй'));
+for (let i = 0; i < 3; i++) seasons.onBreachCrest(by('Третий'));
 
 const snapshots = [];
 for (let attempt = 0; attempt < 6; attempt++) {
@@ -74,9 +74,9 @@ console.log('\n── 3. Призёров недели тоже выбирает
 const winnersRuns = [];
 for (let attempt = 0; attempt < 4; attempt++) {
   // Восстанавливаем одинаковую картину очков перед каждым прогоном
-  seasons.onFatalityEar(by('Первый'));
-  for (let i = 0; i < 5; i++) seasons.onFatalityEar(by('Второй'));
-  for (let i = 0; i < 3; i++) seasons.onFatalityEar(by('Третий'));
+  seasons.onBreachCrest(by('Первый'));
+  for (let i = 0; i < 5; i++) seasons.onBreachCrest(by('Второй'));
+  for (let i = 0; i < 3; i++) seasons.onBreachCrest(by('Третий'));
   // Перемешиваем порядок ключей — имитация свежей загрузки из Mongo
   const store = db.load('users', {});
   const entries = Object.entries(store).sort(() => Math.random() - 0.5);

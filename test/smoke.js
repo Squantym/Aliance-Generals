@@ -924,14 +924,16 @@ async function main() {
   check('dodgeChancePct присутствует', typeof profWithChances.dodgeChancePct === 'number');
   check('критический шанс в разумных пределах (0-50%)', profWithChances.critChancePct >= 0 && profWithChances.critChancePct <= 50);
 
-  console.log('41. Механика ушей: лимит 2, штраф, восстановление');
-  check('EARS.MAX === 2', cfg.EARS.MAX === 2);
-  check('EARS.PENALTY_PCT === 0.10', cfg.EARS.PENALTY_PCT === 0.10);
-  check('EARS.RESTORE_GOLD === 20', cfg.EARS.RESTORE_GOLD === 20);
-  const meEars = (await get('/api/me', A)).data;
-  check('earsCurrent присутствует и равен MAX у нового игрока', meEars.earsCurrent === 2);
+  console.log('41. Герб штаба: три части, штраф по числу сорванных, восстановление');
+  check('в гербе три части', cfg.CREST.PARTS === 3);
+  check('штраф 5% за часть', cfg.CREST.PENALTY_PER_PART_PCT === 0.05);
+  check('одна часть возвращается за 2 часа', cfg.CREST.REGROW_MS === 2 * 60 * 60 * 1000);
+  check('вернуть часть сразу — 20 золота', cfg.CREST.RESTORE_GOLD === 20);
+  const meCrest = (await get('/api/me', A)).data;
+  check('у нового игрока герб целый', meCrest.crestParts === cfg.CREST.PARTS);
+  check('штрафа при целом гербе нет', meCrest.crestPenaltyPct === 0);
   const restoreFull = await post('/api/ears/restore', A);
-  check('нельзя восстановить ухо если оба целы', restoreFull.status === 400);
+  check('нельзя вернуть часть, когда герб цел', restoreFull.status === 400);
 
   console.log('42. Контейнеры пачками и история');
   // Допустимые пачки сменились с 1/3/5 на 1/5/10. Тест проверял старые

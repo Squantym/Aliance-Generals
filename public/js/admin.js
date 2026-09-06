@@ -2588,7 +2588,7 @@ proxy_set_header Host $host;</pre>
               </td>
               <td class="adm-stat" data-l="$" style="padding:8px;text-align:right;font-size:12px">${UI.fmtMoney(p.dollars)}</td>
               <td class="adm-stat" data-l="🪙" style="padding:8px;text-align:right;font-size:12px">${Admin.ICG} ${UI.fmtNum(p.gold)}</td>
-              <td class="adm-stat" data-l="👂" style="padding:8px;text-align:right;font-size:12px">${p.earsCurrent ?? p.ears}</td>
+              <td class="adm-stat" data-l="👂" style="padding:8px;text-align:right;font-size:12px">${p.crestParts ?? p.ears}</td>
               <td class="adm-stat" data-l="🎖" style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
               <td class="adm-acts" style="padding:8px;white-space:nowrap">
                 <button class="btn btn-inline" data-view="${p.id}" title="Досье игрока">👁</button>
@@ -2753,10 +2753,10 @@ proxy_set_header Host $host;</pre>
       kv('<span class="ic-dollar"></span> Доллары', UI.fmtMoney(r.dollars)) +
       kv('<span class="ic-gold"></span> Золото', UI.fmtNum(r.gold)) +
       kv('🏦 Банк', UI.fmtMoney(r.bank)) +
-      kv('🎫 Жетоны помилования', UI.fmtNum(r.tokens)) +
+      kv('🕊 Жетоны перемирия', UI.fmtNum(r.tokens)) +
       kv('📈 Очки навыков', UI.fmtNum(r.skillPoints)) +
       kv('👂 Уши (трофейные)', UI.fmtNum(r.earsTrophy)) +
-      kv('👂 Свои уши', `${r.earsCurrent}/${r.earsMax}`) +
+      kv('🛡 Части герба', `${r.crestParts}/${r.crestPartsMax}`) +
       kv('💣 Мины (растяжки)', UI.fmtNum(r.landmines)) +
       kv('❤️ Здоровье', `${UI.fmtNum(r.hp.cur)}/${UI.fmtNum(r.hp.max)}`) +
       kv('⚡ Энергия', `${UI.fmtNum(r.en.cur)}/${UI.fmtNum(r.en.max)}`) +
@@ -2774,7 +2774,7 @@ proxy_set_header Host $host;</pre>
       kv('🚜 Всего техники', UI.fmtNum(s.power.armyTotal)) +
       kv('Бои (атак/побед/пораж.)', `${b.attacks} / ${b.wins} / ${b.losses}`) +
       kv('Защита (побед/пораж.)', `${b.defWins} / ${b.defLosses}`) +
-      kv('☠️ Фаталити', UI.fmtNum(b.fatalities));
+      kv('🛡 Проникновений в штаб', UI.fmtNum(b.breaches));
 
     // Армия
     const armyHtml = listOrEmpty(s.army, x =>
@@ -3794,14 +3794,14 @@ proxy_set_header Host $host;</pre>
       };
 
       const rowColor = e => {
-        if (/\/(attack|fatality|war)/.test(e.path))  return '#ff4d4d22';
+        if (/\/(attack|breach|war)/.test(e.path))  return '#ff4d4d22';
         if (/\/buy|\/build|\/container/.test(e.path)) return '#4dff9922';
         if (/\/legion/.test(e.path))                  return '#4d9fff22';
         if (/\/(login|register)/.test(e.path))        return '#ff9f4d22';
         return 'transparent';
       };
       const iconFor = e => {
-        if (/\/(attack|fatality|war|battle)/.test(e.path)) return '⚔️';
+        if (/\/(attack|breach|war|battle)/.test(e.path)) return '⚔️';
         if (/\/buy/.test(e.path))  return '🛒';
         if (/\/build/.test(e.path)) return '🏗';
         if (/\/legion/.test(e.path)) return '🏛';

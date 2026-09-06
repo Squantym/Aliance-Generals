@@ -1,7 +1,7 @@
 // Курс молодого бойца + поручения:
 // (1) бюджет курса: золото ≤ 500, доллары ≤ 100 Bn;
 // (2) все события курса реально доставляются (attack/buy_unit/win/build_income/mission_step);
-// (3) новые daily-счётчики earsCut/saboteursBought учитываются;
+// (3) новые daily-счётчики crestsTorn/saboteursBought учитываются;
 // (4) требование техники в спецоперации зависит от уровня операции.
 const assert = require('assert');
 process.env.MONGODB_URI = '';
@@ -42,7 +42,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   ok('курс полностью пройден событиями (нет тупиковых шагов)', u.tutorial.done === true);
   eq('пройдены все шаги', u.tutorial.step, c.TUTORIAL.length);
 
-  console.log('\n[3] Новые daily-счётчики: earsCut и saboteursBought');
+  console.log('\n[3] Новые daily-счётчики: crestsTorn и saboteursBought');
   // saboteursBought бампится при покупке диверсантов
   const rec = Object.values(player.users()).find(x => x.name === 'Новобранец');
   rec.dollars = 1e15; rec.gold = 1e9; rec.level = 50;
@@ -51,7 +51,7 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   const d1 = daily.ensureDaily(rec).counters.saboteursBought || 0;
   ok('saboteursBought вырос после покупки', d1 > d0);
   // Поручения используют эти счётчики
-  ok('есть поручение на earsCut', c.DAILY_QUESTS.some(q => q.counter === 'earsCut'));
+  ok('есть поручение на crestsTorn', c.DAILY_QUESTS.some(q => q.counter === 'crestsTorn'));
   ok('есть поручение на saboteursBought', c.DAILY_QUESTS.some(q => q.counter === 'saboteursBought'));
 
   console.log('\n[4] Требование техники в спецоперации зависит от уровня операции');

@@ -28,8 +28,8 @@ user.level = 50;
 
 console.log('\n── 1. Воспроизведение бага (как было до фикса) ──');
 // Сезон начисляет очки
-seasons.onFatalityEar(user);
-seasons.onFatalityEar(user);
+seasons.onBreachCrest(user);
+seasons.onBreachCrest(user);
 seasons.onWin && seasons.onWin(user);
 const earsAfterSeason = user.weekly && user.weekly.ears;
 ok(earsAfterSeason === 2, `сезон ведёт счёт в user.weekly (ears=${earsAfterSeason})`);
@@ -47,7 +47,7 @@ ok(user.weeklyQuests && user.weeklyQuests.week && user.weeklyQuests.counters.att
 // И обратно: сезонный хук не трогает прогресс поручений
 daily.bump(user, 'wins', 3);
 const questCountersBefore = JSON.stringify(user.weeklyQuests.counters);
-seasons.onFatalityEar(user);
+seasons.onBreachCrest(user);
 ok(JSON.stringify(user.weeklyQuests.counters) === questCountersBefore,
    'сезонный хук не стирает прогресс недельных поручений');
 ok(user.weekly.ears === 3, `сезонные уши растут дальше (ears=${user.weekly.ears})`);
@@ -63,7 +63,7 @@ ok(victim.weeklyQuests && victim.weeklyQuests.counters.attacks === 40,
 ok(victim.weeklyQuests.accepted.w_meatgrinder, 'принятые поручения пережили миграцию');
 ok(!victim.weekly || !victim.weekly.week,
    'поле weekly освобождено для сезона');
-seasons.onFatalityEar(victim);
+seasons.onBreachCrest(victim);
 ok(victim.weekly && victim.weekly.weekId && victim.weekly.ears === 1,
    'сезон пересоздал свой объект и снова считает очки');
 

@@ -45,7 +45,7 @@ for (const f of fs.readdirSync(path.join(ROOT, 'public/js/screens'))) {
 
   console.log('\n[3] Маршрут соответствует смыслу задания');
   const expect = {
-    attacks: 'war', wins: 'war', fatalities: 'war', earsCut: 'war',
+    attacks: 'war', wins: 'war', breaches: 'war', crestsTorn: 'war',
     missionStages: 'missions', unitsBought: 'units', buildingsBuilt: 'buildings',
     bankDeposited: 'bank/storage', clubPlayed: 'club', marketBought: 'market/buffs',
     saboteursBought: 'saboteurs',

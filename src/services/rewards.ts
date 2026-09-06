@@ -16,7 +16,7 @@ import type { User, Notices } from '../types';
 interface RewardPayload {
   dollars?: number;      // доллары (игровая валюта)
   gold?: number;         // золото (премиум)
-  tokens?: number;       // жетоны помилования
+  tokens?: number;       // жетоны перемирия
   ears?: number;         // трофейные уши
   skillPoints?: number;  // очки навыков
   xp?: number;           // опыт

@@ -37,7 +37,7 @@
   // быстрее, чем читает каждую строку.
   const rowColor = (e) => {
     const p = String(e.path || '');
-    if (/\/(attack|fatality|war)/.test(p)) return '#ff4d4d22';
+    if (/\/(attack|breach|war)/.test(p)) return '#ff4d4d22';
     if (/\/buy|\/build|\/container/.test(p)) return '#4dff9922';
     if (/\/legion/.test(p)) return '#4d9fff22';
     if (/\/(login|register)/.test(p)) return '#ff9f4d22';
@@ -45,7 +45,7 @@
   };
   const iconFor = (e) => {
     const p = String(e.path || '');
-    if (/\/(attack|fatality|war|battle)/.test(p)) return '⚔️';
+    if (/\/(attack|breach|war|battle)/.test(p)) return '⚔️';
     if (/\/buy/.test(p)) return '🛒';
     if (/\/build/.test(p)) return '🏗';
     if (/\/legion/.test(p)) return '🏛';

@@ -38,7 +38,7 @@ eq('после атаки rating = очки атаки', u1.weekly.rating, P.att
 seasons.onWin(u1);
 eq('победа: wins=1', u1.weekly.wins, 1);
 eq('победа добавила очки', u1.weekly.rating, P.attack + P.win);
-seasons.onFatalityEar(u1);
+seasons.onBreachCrest(u1);
 eq('ухо: ears=1', u1.weekly.ears, 1);
 seasons.onMercy(u1);
 eq('помилование: mercy=1', u1.weekly.mercy, 1);
@@ -49,7 +49,7 @@ eq('миссия: missions=1', u1.weekly.missions, 1);
 seasons.onMissionComplete(u1);
 seasons.onAllianceRecruit(u1);
 eq('альянс: alliance=1', u1.weekly.alliance, 1);
-const expectRating = P.attack + P.win + P.fatalityEar + P.mercy + P.loot + P.missionStep + P.missionComplete + P.allianceRecruit;
+const expectRating = P.attack + P.win + P.breachCrest + P.mercy + P.loot + P.missionStep + P.missionComplete + P.allianceRecruit;
 eq('итоговый рейтинг = сумме очков', u1.weekly.rating, expectRating);
 ok('все очки в диапазоне 3..10', Object.values(P).every((v) => v >= 3 && v <= 10));
 

@@ -48,7 +48,7 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
  db.save('users');
  let wins=0, atkDodges=0, tgtDodges=0;
  for(let i=0;i<40;i++){
-   strong.lastAttackAt=0; strong.pendingFatality=null; strong.pendingBankHack=null; strong.pendingMineDefuse=null;
+   strong.lastAttackAt=0; strong.pendingBreach=null; strong.pendingBankHack=null; strong.pendingMineDefuse=null;
    // Техника теперь реально расходуется в бою (потери 1-10 / 10-30 единиц),
    // поэтому восстанавливаем составы: тест изучает формулу урона, а не расход
    giveArmy(strong,hiUnit,500); giveArmy(weak,loUnit,1);
@@ -69,7 +69,7 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
  giveArmy(weak,loUnit,1); strong.skills.agility=100; // теперь слабый бьёт сильного
  let weakWins=0, weakAtkDodges=0;
  for(let i=0;i<40;i++){
-   weak.lastAttackAt=0; weak.pendingFatality=null; weak.pendingBankHack=null; weak.pendingMineDefuse=null;
+   weak.lastAttackAt=0; weak.pendingBreach=null; weak.pendingBankHack=null; weak.pendingMineDefuse=null;
    giveArmy(strong,hiUnit,500); giveArmy(weak,loUnit,1);   // составы фиксированы
    const mxW=player.maxima(weak); weak.res.hp.cur=mxW.hp; weak.res.am.cur=mxW.am; weak.res.en.cur=mxW.en; strong.res.hp.cur=player.maxima(strong).hp;
    const r=battle.attack(weak, strong.id, N());
@@ -87,7 +87,7 @@ function giveArmy(u,unit,count){ u.units=u.units||{}; u.units[unit.id]={0:count,
  strong.skills.agility=0; weak.skills.agility=0; giveArmy(strong,hiUnit,500); giveArmy(weak,loUnit,1); db.save('users');
  let sWins=0, lessDmg=0, total=0, minDealt=Infinity;
  for(let i=0;i<1500;i++){
-   strong.lastAttackAt=0; strong.pendingFatality=null; strong.pendingBankHack=null; strong.pendingMineDefuse=null;
+   strong.lastAttackAt=0; strong.pendingBreach=null; strong.pendingBankHack=null; strong.pendingMineDefuse=null;
    giveArmy(strong,hiUnit,500); giveArmy(weak,loUnit,1);   // составы фиксированы
    const mx=player.maxima(strong); strong.res.hp.cur=mx.hp; strong.res.am.cur=mx.am; strong.res.en.cur=mx.en;
    weak.res.hp.cur=player.maxima(weak).hp;

@@ -104,7 +104,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // возврате платежа списать неиспользованное КУПЛЕННОЕ, не тронув
   // заработанное. Поле есть только у плативших: ноль не хранится.
   goldPaid:           { owner: 'player',     note: 'часть баланса, купленная за деньги' },
-  tokens:             { owner: 'player',     note: 'жетоны милосердия' },
+  tokens:             { owner: 'player',     note: 'жетоны перемирия' },
   ears:               { owner: 'battle',     note: 'собранные уши (трофеи)' },
   status:             { owner: 'player',     note: 'статус/титул' },
   counters:           { owner: 'player',     note: 'накопительные счётчики' },
@@ -126,12 +126,14 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   effects:            { owner: 'effects',    note: 'активные эффекты (допинг, наёмник)' },
 
   // ── Уши: состояние собственных ушей игрока ─────────────────────
-  earsCurrent:        { owner: 'battle',     note: 'сколько ушей на месте (0..2)' },
-  earsLost:           { owner: 'battle',     note: 'сколько потеряно' },
-  earsLostAt:         { owner: 'battle',     note: 'когда потеряны (для отрастания)' },
-  earCutters:         { owner: 'battle',     note: 'кто отрезал — для санкций' },
-  earMessage:         { owner: 'battle',     note: 'сообщение от обидчика' },
-  earPenaltyUntil:    { owner: 'battle',     note: 'штраф за потерю ушей' },
+  crestParts:        { owner: 'battle',     note: 'сколько ушей на месте (0..2)' },
+  crestPartsLost:           { owner: 'battle',     note: 'сколько потеряно' },
+  crestLostAt:         { owner: 'battle',     note: 'когда потеряны (для отрастания)' },
+  crestTakers:         { owner: 'battle',     note: 'кто отрезал — для санкций' },
+  crestMessage:         { owner: 'battle',     note: 'сообщение от обидчика' },
+  // earPenaltyUntil остался в СТАРЫХ сохранениях: миграция в player.refresh
+  // его удаляет. Строка нужна, чтобы реестр не спотыкался о наследие.
+  earPenaltyUntil:    { owner: 'battle',     note: 'НАСЛЕДИЕ: прежний срок штрафа, удаляется миграцией' },
   vsRecord:           { owner: 'battle',     note: 'личные счёты с игроками' },
 
   // ── Группы ─────────────────────────────────────────────────────
@@ -156,7 +158,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   offlineWar:         { owner: 'warReport',  note: 'сводка «пока вас не было»: нападавшие, ущерб, ракеты, санкции' },
 
   // ── Незавершённые действия (модальные окна) ────────────────────
-  pendingFatality:    { owner: 'battle',     note: 'решение судьбы поверженного' },
+  pendingBreach:    { owner: 'battle',     note: 'решение судьбы поверженного' },
   pendingBankHack:    { owner: 'battle',     note: 'взлом сейфа в процессе' },
   pendingMineDefuse:  { owner: 'battle',     note: 'разминирование в процессе' },
   pendingRocketHits:  { owner: 'lasers',     note: 'входящие ракетные удары' },
@@ -233,7 +235,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   blocks:             { owner: 'social',     note: 'чёрный список игрока' },
   refRewarded:        { owner: 'referrals',  note: 'награда за приглашение выдана' },
   refLevel50Paid:     { owner: 'referrals',  note: 'выплата за 50-й уровень приглашённого' },
-  adminEars:          { owner: 'admin',      note: 'уши, выданные администрацией' },
+  adminCrests:          { owner: 'admin',      note: 'уши, выданные администрацией' },
   adminTokens:        { owner: 'admin',      note: 'жетоны, выданные администрацией' },
 
   // Поля, которые встречаются на объектах БОТОВ и во временных структурах

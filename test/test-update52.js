@@ -35,26 +35,26 @@ console.log('\n── 3a. Ответ фаталити содержит дета�
 const HOUR = 3600 * 1000;
 // Одно ухо: трофея «Тесак мясника» нет
 hero.trophies = {};
-victim.earsCurrent = 2; victim.skills.agility = 0;
-hero.pendingFatality = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
-const r1 = battle.fatality(hero, 'ear', []);
+victim.crestParts = 2; victim.skills.agility = 0;
+hero.pendingBreach = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
+const r1 = battle.breach(hero, 'ear', []);
 ok(r1.choice === 'ear', 'фаталити выполнено');
 ok(r1.doubleCut === false, 'без трофея срезано ОДНО ухо (doubleCut=false) — окно скажет «Ухо отрезано»');
 ok(r1.victimName === 'Жертва', `в ответе есть имя жертвы: ${r1.victimName}`);
-ok(victim.earsCurrent === 1, `у жертвы осталось ушей: ${victim.earsCurrent}`);
+ok(victim.crestParts === 1, `у жертвы осталось ушей: ${victim.crestParts}`);
 
 // Оба уха: трофей на максимум
 const butcher = (config.TROPHIES || []).find((t) => t.id === 'butcher' || t.effect === 'double_ear' || t.id === 'cleaver');
-victim.earsCurrent = 2;
+victim.crestParts = 2;
 hero.trophies = {};
 // Ставим все трофеи на максимальный уровень — среди них «Тесак мясника»
 for (const t of (config.TROPHIES || [])) hero.trophies[t.id] = t.max || 10;
-hero.pendingFatality = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
+hero.pendingBreach = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
 let sawDouble = false, sawSingle = false, restoredSeen = false;
 for (let i = 0; i < 60; i++) {
-  victim.earsCurrent = 2; victim.earsLost = 0; victim.earsLostAt = []; victim.trophies = {};
-  hero.pendingFatality = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
-  const r = battle.fatality(hero, 'ear', []);
+  victim.crestParts = 2; victim.crestPartsLost = 0; victim.crestLostAt = []; victim.trophies = {};
+  hero.pendingBreach = { targetId: victim.id, name: victim.name, isBot: false, exp: Date.now() + HOUR };
+  const r = battle.breach(hero, 'ear', []);
   if (r.doubleCut) sawDouble = true; else sawSingle = true;
   if (r.restored) restoredSeen = true;
 }
@@ -62,7 +62,7 @@ ok(sawDouble, 'с трофеем «Тесак мясника» бывает ср
 ok(typeof r1.restored === 'boolean', 'в ответе есть признак restored (жертва восстановила ухо хирургом)');
 
 console.log('\n── 3b. Ускользнувшая жертва ──');
-victim.earsCurrent = 2; victim.skills.agility = 100;   // максимальная ловкость
+victim.crestParts = 2; victim.skills.agility = 100;   // максимальная ловкость
 hero.trophies = {};
 let escaped = null;
 // Ускользание перенесено в момент ПЛЕНЕНИЯ: жертва уходит сразу после
@@ -77,7 +77,7 @@ ok(!/choice: 'escaped'/.test(battleSrcEsc),
    'фаталити больше не может сорваться ускользанием');
 
 console.log('\n── 3c. Фронт: окна вместо тостов ──');
-ok(app.includes('_showFatalityEscaped'), 'есть окно «Жертва ускользнула» (было — короткий тост)');
+ok(app.includes('_showBreachEscaped'), 'есть окно «Жертва ускользнула» (было — короткий тост)');
 ok(app.includes('Отрезаны ОБА уха'), 'окно различает срез обоих ушей');
 ok(app.includes('одно ухо'), 'окно явно говорит про одно ухо');
 ok(app.includes('Тесак мясника') && app.includes('сработал'), 'в окне объяснено, что сработал трофей');

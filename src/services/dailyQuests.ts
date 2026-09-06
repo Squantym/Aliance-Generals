@@ -45,7 +45,7 @@ function ensureDaily(user: User): any {
 // вызова (бой, стройка, покупка техники, спецоперации). Для них здесь
 // ведётся только дневной учёт, иначе выйдет двойной счёт.
 const COUNTED_ELSEWHERE = new Set([
-  'attacks', 'wins', 'fatalities', 'earsCut',
+  'attacks', 'wins', 'breaches', 'crestsTorn',
   'buildingsBuilt', 'unitsBought', 'missionStages',
 ]);
 

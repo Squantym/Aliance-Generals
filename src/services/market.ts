@@ -310,7 +310,7 @@ function applyCommanderUntil(winner: User, commander: any, expiresAt: number): v
     pushOne('upkeep_pct', -100);
     pushOne('income_pct', 100);
   } else {
-    // Обычные и флаговые эффекты (atk_pct, def_pct, invite_unlimited, fatality_immunity)
+    // Обычные и флаговые эффекты (atk_pct, def_pct, invite_unlimited, breach_immunity)
     pushOne(eff.type, eff.value);
   }
 }

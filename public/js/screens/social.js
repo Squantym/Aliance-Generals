@@ -84,7 +84,7 @@ async function renderGroupScreen(c, kind) {
           let resStr = '';
           if (c) {
             resStr = `${UI.fmtNum(c.reserves)} <span class="ic-reserve"></span> РЕЗ`;
-            if (c.ears)   resStr += ` ${c.ears} <span class="ic-ear"></span>`;
+            if (c.ears)   resStr += ` ${c.ears} <span class="ic-crest"></span>`;
             if (c.tokens) resStr += ` ${c.tokens} <span class="ic-token"></span>`;
           }
           const isBuilt = b.level > 0;
@@ -113,7 +113,7 @@ async function renderGroupScreen(c, kind) {
 
         const buildingsTab = `
           <div class="card">
-            <p class="muted small">Постройки — эндгейм контент. Цена высокая: <span class="ic-dollar"></span>500 млрд и выше из казны легиона. Для улучшений потребуются уши <span class="ic-ear"></span> и жетоны <span class="ic-token"></span> из казначейства.</p>
+            <p class="muted small">Постройки — эндгейм контент. Цена высокая: <span class="ic-dollar"></span>500 млрд и выше из казны легиона. Для улучшений потребуются гербы <span class="ic-crest"></span> и жетоны <span class="ic-token"></span> из казначейства.</p>
           </div>
           <div class="name mt" style="padding:0 16px">⚔️ Боевые постройки и казармы</div>
           ${btBldHtml}`;
@@ -139,7 +139,7 @@ async function renderGroupScreen(c, kind) {
               } else if (t.level >= t.maxLevel) {
                 statusHtml = '<p class="gold small mt center">Макс. уровень ✔</p>';
               } else if (nd) {
-                let reqStr = `${UI.fmtNum(nd.priceReserves)} <span class="ic-reserve"></span> РЕЗ + ${nd.earReq} <span class="ic-ear"></span>`;
+                let reqStr = `${UI.fmtNum(nd.priceReserves)} <span class="ic-reserve"></span> РЕЗ + ${nd.earReq} <span class="ic-crest"></span>`;
                 if (nd.gloryReq > 0) reqStr += ` · Слава: ${nd.gloryReq} ⭐`;
                 statusHtml = `
                   <div class="kv mt"><span class="k">Цена ур.${t.level+1}</span><span class="v">${reqStr}</span></div>
@@ -196,7 +196,7 @@ async function renderGroupScreen(c, kind) {
 
         // ── Вкладка: Магазин ──────────────────────────────────────────
         const shopItems = [
-          // Боевые (за уши)
+          // Боевые (за гербы)
           { id:'gas_grenade',     name:'Газовая шашка',         desc:'Запрещает лечение противнику 30 сек.',               earCost:1 },
           { id:'flashbang',       name:'Светошумовая граната',   desc:'Обездвиживает противника на 20 сек.',                earCost:1 },
           { id:'assault_grenade', name:'Наступательная граната', desc:'Наносит 1000% урона от обычной атаки.',              earCost:1 },
@@ -210,11 +210,11 @@ async function renderGroupScreen(c, kind) {
         ];
         const shopTab = `
           <div class="card">
-            <p class="muted small">Боевые предметы покупаются за <span class="ic-ear"></span> уши, вспомогательные — за <span class="ic-token"></span> жетоны. Покупает лидер, используют все.</p>
-            <p class="muted small mt">Боевые: <b><span class="ic-ear"></span> уши</b> &nbsp;·&nbsp; Вспомогательные: <b><span class="ic-token"></span> жетоны</b></p>
+            <p class="muted small">Боевые предметы покупаются за <span class="ic-crest"></span> гербы, вспомогательные — за <span class="ic-token"></span> жетоны. Покупает лидер, используют все.</p>
+            <p class="muted small mt">Боевые: <b><span class="ic-crest"></span> гербы</b> &nbsp;·&nbsp; Вспомогательные: <b><span class="ic-token"></span> жетоны</b></p>
           </div>
           ${shopItems.map(i => {
-            const costIcon = i.earCost ? `${i.earCost} <span class="ic-ear"></span>` : `${i.tokenCost} <span class="ic-token"></span>`;
+            const costIcon = i.earCost ? `${i.earCost} <span class="ic-crest"></span>` : `${i.tokenCost} <span class="ic-token"></span>`;
             const category = i.earCost ? 'Боевой' : 'Вспомог.';
             return `
             <div class="card item-card">
@@ -333,19 +333,19 @@ async function renderGroupScreen(c, kind) {
           </div>
           <div class="card">
             <div class="name">🗄 Казначейство ресурсов</div>
-            <p class="muted small">Уши и жетоны используются для улучшения построек легиона.</p>
-            <div class="kv mt"><span class="k">Уши <span class="ic-ear"></span></span><span class="v">${UI.fmtNum(L.treasuryEars || 0)}</span></div>
+            <p class="muted small">Гербы и жетоны используются для улучшения построек легиона.</p>
+            <div class="kv mt"><span class="k">Гербы <span class="ic-crest"></span></span><span class="v">${UI.fmtNum(L.treasuryEars || 0)}</span></div>
             <div class="kv"><span class="k">Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(L.treasuryTokens || 0)}</span></div>
-            <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.ears || 0)} <span class="ic-ear"></span>, ${UI.fmtNum(App.me.tokens || 0)} <span class="ic-token"></span>):</p>
+            <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.ears || 0)} <span class="ic-crest"></span>, ${UI.fmtNum(App.me.tokens || 0)} <span class="ic-token"></span>):</p>
             <div class="field-row mt">
               <input type="number" min="1" placeholder="Ушей" id="dep-ears">
               <input type="number" min="1" placeholder="Жетонов" id="dep-tokens">
               <button class="btn btn-orange btn-inline" id="dep-res-go">Внести</button>
             </div>
-            ${(App.me.adminEars || 0) > 0 || (App.me.adminTokens || 0) > 0 ? `
+            ${(App.me.adminCrests || 0) > 0 || (App.me.adminTokens || 0) > 0 ? `
             <hr class="hr">
             <p class="muted small">Ресурсы от администратора (не учитываются в статистике, но можно внести в казну):</p>
-            <div class="kv mt"><span class="k">Адм. Уши <span class="ic-ear"></span></span><span class="v">${UI.fmtNum(App.me.adminEars || 0)}</span></div>
+            <div class="kv mt"><span class="k">Адм. гербы <span class="ic-crest"></span></span><span class="v">${UI.fmtNum(App.me.adminCrests || 0)}</span></div>
             <div class="kv"><span class="k">Адм. Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(App.me.adminTokens || 0)}</span></div>
             <div class="field-row mt">
               <input type="number" min="1" placeholder="Адм. ушей" id="dep-adm-ears">
@@ -364,7 +364,7 @@ async function renderGroupScreen(c, kind) {
             <div class="name">📜 История казны</div>
             ${(L.treasuryHistory && L.treasuryHistory.length) ? L.treasuryHistory.map(h => {
               const parts = [];
-              if (h.ears)     parts.push(`<b class="gold">${UI.fmtNum(h.ears)}</b> <span class="ic-ear"></span>`);
+              if (h.ears)     parts.push(`<b class="gold">${UI.fmtNum(h.ears)}</b> <span class="ic-crest"></span>`);
               if (h.tokens)   parts.push(`<b class="gold">${UI.fmtNum(h.tokens)}</b> <span class="ic-token"></span>`);
               if (h.reserves) parts.push(`<b class="gold">${UI.fmtNum(h.reserves)}</b> РЕЗ`);
               return `<div class="hist-row">
@@ -428,7 +428,7 @@ async function renderGroupScreen(c, kind) {
               <div class="kv"><span class="k">Победы</span><span class="v" style="color:var(--green)">${(L2.battleStats || {}).wins || 0}</span></div>
               <div class="kv"><span class="k">Поражения</span><span class="v" style="color:var(--red)">${(L2.battleStats || {}).losses || 0}</span></div>
               <div class="kv"><span class="k">Резервы</span><span class="v gold">${UI.fmtNum(L2.reserves || 0)} <span class="ic-reserve"></span> РЕЗ</span></div>
-              <div class="kv"><span class="k">Уши <span class="ic-ear"></span></span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
+              <div class="kv"><span class="k">Гербы <span class="ic-crest"></span></span><span class="v">${UI.fmtNum(L2.treasuryEars || 0)}</span></div>
               <div class="kv"><span class="k">Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(L2.treasuryTokens || 0)}</span></div>
               <div class="kv mt"><span class="k">Ваше звание</span><span class="v gold">${L2.myRankName || 'Новобранец'}</span></div>
             </div>
@@ -1787,28 +1787,28 @@ App.screens.notifications = async (c) => {
         <div class="kv"><span class="k">Уничтожено техники</span><span class="v dmg-take">${UI.fmtNum(p.techDestroyedCount||0)} ед.${p.techLostText ? ' ('+UI.esc(p.techLostText)+')' : ''}</span></div>
         <div class="kv"><span class="k">Разрушено зданий</span><span class="v dmg-take">${UI.fmtNum(p.buildingsDestroyedCount||0)} ед.${p.destroyedBuildingsText ? ' ('+UI.esc(p.destroyedBuildingsText)+')' : ''}</span></div>
         <button class="btn btn-orange mt rocket-view" data-rep='${encodeURIComponent(JSON.stringify(p))}' style="width:100%">🔍 Посмотреть результат удара</button>`;
-    } else if (n.kind === 'fatality_ear') {
+    } else if (n.kind === 'breach_crest') {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt">✂️ Совершил фаталити и отрезал вам ${p.doubleCut ? '<b style="color:var(--red)">оба уха одним ударом</b>' : 'ухо'} <span class="ic-ear"></span>.${p.restored ? ' <span style="color:var(--green)">Но вы мгновенно восстановили ухо полевым хирургом! 🩹</span>' : ''}</p>`;
-    } else if (n.kind === 'fatality_escape') {
+        <p class="small mt">🛡 Проник в ваш штаб и сорвал ${p.doubleCut ? '<b style="color:var(--red)">сразу две части герба</b>' : 'часть герба'} <span class="ic-crest"></span>.${p.restored ? ' <span style="color:var(--green)">Но ремонтная бригада вернула часть на место! 🔧</span>' : ''}</p>`;
+    } else if (n.kind === 'breach_escape') {
       body = `
         <div class="kv"><span class="k">Кто пытался</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt" style="color:var(--green)">💨 Вы ускользнули от фаталити благодаря ловкости!</p>`;
-    } else if (n.kind === 'fatality_mercy') {
+        <p class="small mt" style="color:var(--green)">💨 Охрана штаба сработала — проникновение отбито!</p>`;
+    } else if (n.kind === 'breach_truce') {
       body = `
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <p class="small mt" style="color:var(--money)"><span class="ic-token"></span> Мог совершить фаталити, но помиловал вас.</p>`;
+        <p class="small mt" style="color:var(--money)"><span class="ic-token"></span> Проник в штаб, но герб не тронул — заключил перемирие.</p>`;
     } else {
       body = `<p class="muted small mt">${when}</p>`;
     }
 
     return `
       <div class="card" data-notif="${n.id}" style="${n.read ? 'opacity:.65' : ''}">
-        <div class="name">${n.kind === 'rocket_result' ? '🚀' : (n.kind.includes('lost') || n.kind === 'rocket_hit') ? '⚠️' : (n.kind.includes('defended') || n.kind === 'fatality_mercy') ? '✅' : '<span class="ic-bell"></span>'} ${UI.esc(n.title)}</div>
+        <div class="name">${n.kind === 'rocket_result' ? '🚀' : (n.kind.includes('lost') || n.kind === 'rocket_hit') ? '⚠️' : (n.kind.includes('defended') || n.kind === 'breach_truce') ? '✅' : '<span class="ic-bell"></span>'} ${UI.esc(n.title)}</div>
         ${body}
       </div>`;
   };

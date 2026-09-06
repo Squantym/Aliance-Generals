@@ -10,6 +10,7 @@
 const assert = require('assert');
 const db      = require('../dist/src/core/db');
 const config  = require('../dist/config/gameConfig');
+const CREST_PARTS = require('../dist/config/gameConfig').CREST.PARTS;
 const player  = require('../dist/src/services/player');
 const battle  = require('../dist/src/services/battle');
 const market  = require('../dist/src/services/market');
@@ -31,10 +32,10 @@ function mk(id) {
     skills: { energy: 0, health: 0, ammo: 0, cruelty: 0, agility: 0 },
     res: { hp: { cur: 100, t }, en: { cur: 100, t }, am: { cur: 5, t } },
     units: {}, buildings: {}, secretDevs: {}, superSecret: 0, trophies: {},
-    counters: { fatalities: 0, earsCut: 0 },
-    battle: { fatalities: 0, attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0 },
-    effects: [], ears: 0, earsLost: 0, earsCurrent: 2, earsLostAt: [],
-    earPenaltyUntil: 0, earCutters: [null, null], earMessage: null,
+    counters: { breaches: 0, crestsTorn: 0 },
+    battle: { breaches: 0, attacks: 0, wins: 0, losses: 0, defWins: 0, defLosses: 0 },
+    effects: [], ears: 0, crestPartsLost: 0, crestParts: CREST_PARTS, crestLostAt: [],
+    earPenaltyUntil: 0, crestTakers: new Array(CREST_PARTS).fill(null), crestMessage: null,
     missions: {}, achStages: {}, allianceId: null, legionId: null,
     lastIncomeAt: t,
   };
@@ -111,11 +112,11 @@ reset();
 const B1 = mk('a'); B1.trophies = { butcher: 10 };
 const V1 = mk('v');
 um['a'] = B1; um['v'] = V1;
-B1.pendingFatality = { targetId: 'v', isBot: false, exp: Date.now() + 60000 };
+B1.pendingBreach = { targetId: 'v', isBot: false, exp: Date.now() + 60000 };
 Math.random = () => 0.1;                 // двойной срез срабатывает
-battle.fatality(B1, 'ear', []);
+battle.breach(B1, 'crest', []);
 Math.random = realRandom;
-eq('срезано оба уха', V1.earsLost, 2);
+eq('срезано оба уха', V1.crestPartsLost, 2);
 eq('рейтинг нападавшего +3 за каждое ухо', B1.rating, 6);
 eq('рейтинг жертвы −3 за каждое ухо', V1.rating, -6);
 
@@ -123,11 +124,11 @@ console.log('\n    и за одно ухо по-прежнему +3');
 reset();
 const B2 = mk('a'); const V2 = mk('v');
 um['a'] = B2; um['v'] = V2;
-B2.pendingFatality = { targetId: 'v', isBot: false, exp: Date.now() + 60000 };
+B2.pendingBreach = { targetId: 'v', isBot: false, exp: Date.now() + 60000 };
 Math.random = () => 0.99;                // двойной срез НЕ срабатывает
-battle.fatality(B2, 'ear', []);
+battle.breach(B2, 'crest', []);
 Math.random = realRandom;
-eq('срезано одно ухо', V2.earsLost, 1);
+eq('срезано одно ухо', V2.crestPartsLost, 1);
 eq('рейтинг нападавшего +3', B2.rating, 3);
 
 // ───────────────────────────────────────────────────────────────────
@@ -272,9 +273,9 @@ console.log('\n    послание на профиле — помечена ж�
 reset(); marked = [];
 const I = mk('cutter'); const J = mk('vic2');
 um['cutter'] = I; um['vic2'] = J;
-J.earCutters = [{ id: 'cutter', name: 'cutter' }, { id: 'cutter', name: 'cutter' }];
+J.crestTakers = [{ id: 'cutter', name: 'cutter' }, { id: 'cutter', name: 'cutter' }];
 battle.leaveEarMessage(I, 'vic2', 'сдавайся', []);
-ok('послание записано', !!(J.earMessage && J.earMessage.text));
+ok('послание записано', !!(J.crestMessage && J.crestMessage.text));
 ok('жертва помечена к записи', marked.includes('vic2'));
 
 db.markUser = realMark;

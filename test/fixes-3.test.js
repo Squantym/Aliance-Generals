@@ -58,7 +58,7 @@ const def0 = config.CONTRACTS_POOL.find((x) => c0.id.startsWith(x.id));
 // повторяем оба вызова, как это делает боевой код
 const ach = require(ROOT + '/dist/src/services/achievements');
 daily.bump(pl, def0.counter, c0.target);
-const COUNTED_ELSEWHERE = ['attacks','wins','fatalities','earsCut','buildingsBuilt','unitsBought','missionStages'];
+const COUNTED_ELSEWHERE = ['attacks','wins','breaches','crestsTorn','buildingsBuilt','unitsBought','missionStages'];
 if (COUNTED_ELSEWHERE.includes(def0.counter)) ach.bump(pl, def0.counter, c0.target, []);
 const view2 = features.contractsView(pl).contracts.find((x) => x.id === c0.id);
 ok(view2.current > 0, `прогресс пошёл: ${view2.current}/${view2.target}`);
@@ -68,7 +68,7 @@ console.log('\n── 2б. Нет двойного счёта ──');
 // Боевые счётчики увеличиваются через achievements.bump, поэтому
 // daily.bump не должен добавлять их второй раз
 const achMod = require(ROOT + '/dist/src/services/achievements');
-for (const key of ['attacks', 'wins', 'fatalities', 'unitsBought', 'missionStages']) {
+for (const key of ['attacks', 'wins', 'breaches', 'unitsBought', 'missionStages']) {
   const was = (pl.counters || {})[key] || 0;
   daily.bump(pl, key, 1);
   ok((pl.counters[key] || 0) === was, `«${key}»: daily.bump не трогает накопительный — учёт в другом месте`);
@@ -77,28 +77,28 @@ for (const key of ['attacks', 'wins', 'fatalities', 'unitsBought', 'missionStage
 }
 
 console.log('\n── 3. Щадящие требования к трудным действиям ──');
-ok(config.HARD_COUNTERS.includes('fatalities') && config.HARD_COUNTERS.includes('earsCut'),
+ok(config.HARD_COUNTERS.includes('breaches') && config.HARD_COUNTERS.includes('crestsTorn'),
    'фаталити и уши считаются трудными действиями');
 // Базовое правило: уровень/10, сложность добавляет 1-2 действия
 for (const [lvl, expect] of [[10, 1], [20, 2], [30, 3], [50, 5], [100, 10]]) {
-  const t = config.dailyQuestTarget(8, 1.0, lvl, 'fatalities');
+  const t = config.dailyQuestTarget(8, 1.0, lvl, 'breaches');
   ok(t === expect, `простое поручение на ур. ${lvl}: ${t} фаталити (правило: ${expect})`);
 }
-const midFat = config.dailyQuestTarget(8, 1.6, 100, 'fatalities');
+const midFat = config.dailyQuestTarget(8, 1.6, 100, 'breaches');
 ok(midFat === 11, `поручение средней сложности на 100 ур.: ${midFat} (+1 к базовому)`);
-const hardFat = config.dailyQuestTarget(50, 2.4, 300, 'fatalities');
+const hardFat = config.dailyQuestTarget(50, 2.4, 300, 'breaches');
 ok(hardFat <= 35, `сложное на 300 уровне: ${hardFat} — раньше было 384`);
-const earQuest = config.DAILY_QUESTS.find((q) => q.counter === 'earsCut');
-ok(config.dailyQuestTarget(earQuest.base, earQuest.diff, 10, 'earsCut') <= 3,
+const earQuest = config.DAILY_QUESTS.find((q) => q.counter === 'crestsTorn');
+ok(config.dailyQuestTarget(earQuest.base, earQuest.diff, 10, 'crestsTorn') <= 3,
    'уши на 10 уровне — не больше трёх');
 // Обычные счётчики не тронуты
 ok(config.dailyQuestTarget(60, 1.0, 300, 'attacks') > 100,
    'требования к обычным действиям (атаки) остались прежними');
 // Контракты
 const fatContract = config.CONTRACTS_POOL.find((c) => c.id === 'c_fatal');
-ok(config.contractTarget(fatContract.targets[0], 10, 'fatalities') === 1,
+ok(config.contractTarget(fatContract.targets[0], 10, 'breaches') === 1,
    'контракт «Палач» на 10 уровне — одно фаталити');
-ok(config.contractTarget(fatContract.targets[0], 100, 'fatalities') === 10,
+ok(config.contractTarget(fatContract.targets[0], 100, 'breaches') === 10,
    'на 100 уровне — десять');
 ok(config.contractTarget(8, 100, 'unitsBought') > 8, 'обычные контракты считаются по-старому');
 

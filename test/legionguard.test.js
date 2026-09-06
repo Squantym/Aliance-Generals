@@ -82,7 +82,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${JSON.stringify(a)} !== ${
  eq('привязка apply=crit_heal', def.apply, 'crit_heal');
 
  console.log('\n[6] Вклады в казну: история и рейтинг');
- V.ears=5000; V.tokens=10; G.ears=1052; V.adminEars=999; db.save('users');
+ V.ears=5000; V.tokens=10; G.ears=1052; V.adminCrests=999; db.save('users');
  legion.depositResources(V,3000,10,false,N());
  legion.depositResources(G,1052,0,false,N());
  const L=legion.view(V).mine;

@@ -24,7 +24,7 @@ const PLAYER = {
 // Стоимость одного уровня навыка в очках
 const SKILL_COSTS = { energy: 1, health: 1, ammo: 2, cruelty: 3, agility: 3 };
 
-// Потолки навыков. За ними прокачка бесполезна: крит/фаталити/уворот
+// Потолки навыков. За ними прокачка бесполезна: крит/проникновение/уворот
 // упираются в 50%. Жестокость — 90 (крит-часть 0.05+0.005·90 = 0.50),
 // ловкость — 100 (уворот 0.005·100 = 0.50). Остальные навыки без потолка
 // (линейный прирост максимумов). Навыки без ключа здесь качаются без ограничений.
@@ -87,8 +87,8 @@ const VIP = {
   UPKEEP_CUT_PCT: 15,
   INCOME_BONUS_PCT: 15,
 
-  // 15. Гарантированный уход от фаталити — независимо от ловкости.
-  FATALITY_IMMUNITY_PER_DAY: 3,
+  // 15. Гарантированный уход из своего штаба — независимо от ловкости.
+  BREACH_IMMUNITY_PER_DAY: 3,
 
   // 16. Опыт.
   XP_BONUS_PCT: 30,
@@ -975,7 +975,7 @@ const MARKET_ITEMS = [
   { id: 'energy_boost', name: 'Стимулятор «Адреналин-Х»', kind: 'buff', effect: { type: 'energy_regen_pct', value: 50 }, durMin: 240, gold: 18,
     desc: '+50% к скорости восстановления энергии на 4 часа.' },
   { id: 'crit_boost', name: 'Тактический анализатор «Ястреб»', kind: 'buff', effect: { type: 'crit_bonus', value: 20 }, durMin: 120, gold: 28,
-    desc: '+20% к шансу крит. удара И к шансу фаталити СВЕРХ лимита 50% на 2 часа.' },
+    desc: '+20% к шансу крит. удара И к шансу проникновения в штаб СВЕРХ лимита 50% на 2 часа.' },
   { id: 'dodge_boost', name: 'Маскировочный комплекс «Призрак»', kind: 'buff', effect: { type: 'dodge_bonus', value: 20 }, durMin: 120, gold: 28,
     desc: '+20% к шансу уворота СВЕРХ лимита 50% на 2 часа.' },
 
@@ -1041,7 +1041,7 @@ const COMMANDERS = [
   { id: 'fortress', name: 'Гидеон Роук',   effect: { type: 'def_pct',  value: 100 }, desc: '+100% к защите на 24 часа' },
   { id: 'tycoon',  name: 'Лазар Вэйн',      effect: { type: 'economy_combo', value: 100 }, desc: 'Содержание техники −100% и доход построек +100% на 24 часа' },
   { id: 'envoy',   name: 'Эйден Роу',       effect: { type: 'invite_unlimited', value: 1 }, desc: 'Дипломат: безлимитные приглашения в альянс (без ограничений в час) на 24 часа' },
-  { id: 'ghost',   name: 'Сайлас Неверн',   effect: { type: 'fatality_immunity', value: 1 }, desc: 'Защита от фаталити: вам не смогут сделать фаталити в течение 24 часов' },
+  { id: 'ghost',   name: 'Сайлас Неверн',   effect: { type: 'breach_immunity', value: 1 }, desc: 'Охрана штаба: в ваш штаб не смогут проникнуть в течение 24 часов' },
 ];
 const AUCTION = { LOTS: 5, MIN_BID: 500, BID_STEP: 50, RENT_HOURS: 24 };
 
@@ -1333,14 +1333,14 @@ const DAILY_QUESTS = [
     name: 'Перевооружение',  flavor: 'Старьё на свалку — фронту нужен свежий металл. Массовая закупка техники, майор ждёт.' },
 
   // ── Наёмник «Гадюка» — грязная работа ──────────────────────────
-  { id: 'g_wet',     char: 'gadyuka',  counter: 'fatalities', route: 'war',    base: 8,   diff: 1.6, icon: '💀',
-    name: 'Мокрое дело',     flavor: 'Плачу за результат, не за попытки. Доведи бои до фаталити — чисто и тихо.' },
-  { id: 'g_collect', char: 'gadyuka',  counter: 'earsCut', route: 'war',       base: 6,   diff: 1.6, icon: '👂',
-    name: 'Коллекция',       flavor: 'У меня хобби, знаешь ли. Принеси ушей — за каждое отдельная благодарность.' },
+  { id: 'g_wet',     char: 'gadyuka',  counter: 'breaches', route: 'war',    base: 8,   diff: 1.6, icon: '💀',
+    name: 'Мокрое дело',     flavor: 'Плачу за результат, не за попытки. Доводи дело до штаба — чисто и тихо.' },
+  { id: 'g_collect', char: 'gadyuka',  counter: 'crestsTorn', route: 'war',       base: 6,   diff: 1.6, icon: '👂',
+    name: 'Коллекция',       flavor: 'У меня хобби, знаешь ли. Неси гербы — за каждый отдельная благодарность.' },
   { id: 'g_quiet',   char: 'gadyuka',  counter: 'saboteursBought', route: 'saboteurs', base: 30, diff: 1.0, icon: '🥷',
     name: 'Тихие люди',      flavor: 'Война выигрывается в тени. Набери диверсантов — пусть враг не спит спокойно.' },
-  { id: 'g_reap',    char: 'gadyuka',  counter: 'fatalities', route: 'war',    base: 20,  diff: 2.4, icon: '☠',
-    name: 'Жатва',           flavor: 'Сегодня косим по-крупному. Череда фаталити — и мой заказчик будет доволен.' },
+  { id: 'g_reap',    char: 'gadyuka',  counter: 'breaches', route: 'war',    base: 20,  diff: 2.4, icon: '☠',
+    name: 'Жатва',           flavor: 'Сегодня работаем по-крупному. Череда взятых штабов — и заказчик будет доволен.' },
 
   // ── Аналитик Тесла — спецоперации ──────────────────────────────
   { id: 't_field',   char: 'tesla',    counter: 'missionStages', route: 'missions', base: 20,  diff: 1.0, icon: '📋',
@@ -1410,16 +1410,16 @@ function missionStagesTarget(diff: number, level: number): number {
 
 // Итоговое требование поручения (с учётом сложности и уровня).
 // counter передаётся, чтобы спецоперации считались по своему диапазону.
-// Трудные действия зависят от чужой активности: фаталити и уши можно
+// Трудные действия зависят от чужой активности: штабы и гербы можно
 // получить, только если противник подставился. Общая формула давала
-// невыполнимые цели (384 фаталити в сутки на 300 уровне), поэтому для
+// невыполнимые цели (384 штаба в сутки на 300 уровне), поэтому для
 // них своя шкала: на 10 уровне — одно действие, дальше +1 за каждые
 // 10 уровней. Сложность поручения умножает результат.
-const HARD_COUNTERS = ['fatalities', 'earsCut', 'merciesGiven'];
+const HARD_COUNTERS = ['breaches', 'crestsTorn', 'trucesMade'];
 // Ровно по правилу владельца: на 10 уровне — одно действие, дальше +1
 // за каждые полные 10 уровней. Сложность поручения НЕ умножает цель, а
 // добавляет одно-два действия — иначе на высоких уровнях снова выходят
-// десятки фаталити в сутки.
+// десятки штабов в сутки.
 function hardTarget(diff: number, level: number): number {
   const byLevel = Math.max(1, Math.floor(Math.max(1, level) / 10));
   const extra = (diff || 1) >= 2.4 ? 2 : ((diff || 1) >= 1.6 ? 1 : 0);
@@ -1462,9 +1462,9 @@ const WEEKLY_QUESTS = [
     name: 'Индустриализация',    flavor: 'Неделя — и я хочу видеть новый промышленный район. Стройте.' },
   { id: 'w_arsenal',   char: 'kovac',    counter: 'unitsBought',    route: 'units',          base: 700,     diff: 2.0, icon: '🏭',
     name: 'Арсенал',             flavor: 'Ангары должны трещать. Закупай технику всю неделю — война длинная.' },
-  { id: 'w_bloodprice', char: 'gadyuka', counter: 'fatalities',     route: 'war',            base: 25,      diff: 2.4, icon: '💀',
+  { id: 'w_bloodprice', char: 'gadyuka', counter: 'breaches',     route: 'war',            base: 25,      diff: 2.4, icon: '💀',
     name: 'Цена крови',          flavor: 'Недельный подряд. Работа грязная, оплата достойная — считать не буду.' },
-  { id: 'w_collection', char: 'gadyuka', counter: 'earsCut',        route: 'war',            base: 30,      diff: 2.4, icon: '👂',
+  { id: 'w_collection', char: 'gadyuka', counter: 'crestsTorn',        route: 'war',            base: 30,      diff: 2.4, icon: '👂',
     name: 'Коллекция',           flavor: 'Пополни мою коллекцию за неделю. Я не спрашиваю, где ты их взял.' },
   { id: 'w_campaign',  char: 'tesla',    counter: 'missionStages',  route: 'missions',       base: 0,       diff: 2.4, icon: '🛰',
     name: 'Долгая кампания',     flavor: 'Недельный цикл спецоперций. Мне нужен объём данных, а не отдельные вылазки.' },
@@ -1597,11 +1597,11 @@ const TROPHIES = [
   { id: 'license',   name: 'Лицензия на убийство',        desc: 'Усиливает критический урон: на макс. уровне крит наносит ×6 от базового урона (база крита ×2, трофей добавляет ещё +200%).', perLvl: 20,  apply: 'crit',    expensive: true },
   { id: 'radar',     name: 'Радар',                       desc: '−5% энергии на миссиях за уровень (макс. 50%).',       perLvl: 5,   apply: 'mission_energy' },
   { id: 'banner',    name: 'Знамя победы',                desc: 'Каждое присланное союзником подкрепление даёт больше мощи: +1.5% за уровень трофея (базовый бонус подкрепления — 2%).', perLvl: 1.5, apply: 'reinforce' },
-  { id: 'sewing',    name: 'Набор полевого хирурга',      desc: 'Шанс мгновенно восстановить отрезанное ухо +6% за уровень (макс. 60%).', perLvl: 6, apply: 'ear_restore' },
+  { id: 'sewing',    name: 'Ремонтная бригада',           desc: 'Шанс мгновенно вернуть сорванную часть герба +6% за уровень (макс. 60%).', perLvl: 6, apply: 'ear_restore' },
   // Крит-лечение медика в бою легиона. Раньше шанс ошибочно зависел от
   // ЛОВКОСТИ (стат уворота) — теперь у него собственный трофей.
   { id: 'red_cross', name: 'Орден «Красный крест»',       desc: 'Шанс критического лечения в бою легиона +4.5% за уровень (база 5%, на макс. уровне — 50%). Крит-лечение восстанавливает союзнику 100–330 HP вместо 20–40. Работает только для роли «Медик».', perLvl: 4.5, apply: 'crit_heal', expensive: true },
-  { id: 'butcher',   name: 'Тесак мясника',               desc: 'Шанс отрезать СРАЗУ ОБА уха при фаталити +6% за уровень (макс. 60%).', perLvl: 6, apply: 'double_ear', expensive: true },
+  { id: 'butcher',   name: 'Таран штаба',                 desc: 'Шанс сорвать СРАЗУ ДВЕ части герба +6% за уровень (макс. 60%).', perLvl: 6, apply: 'double_ear', expensive: true },
   { id: 'hospital',  name: 'Полевой госпиталь',           desc: '−5% к цене лечения в госпитале за уровень (макс. 50%).', perLvl: 5, apply: 'hospital' },
   { id: 'supply',    name: 'Снабженческие линии',         desc: '−5% к содержанию техники за уровень (макс. 50%).',     perLvl: 5,   apply: 'upkeep' },
   // Трофеи скорости восстановления: −7.5% времени за уровень → на 10-м
@@ -1680,10 +1680,10 @@ const ACHIEVEMENTS = [
     titles: ['Боец', 'Ликвидатор', 'Истребитель', 'Гроза врагов', 'Бог войны'] },
   { id: 'attacks',    name: 'Агрессор',          desc: 'Совершить нападений',       counter: 'attacks',        steps: [50, 500, 5000, 50000, 500000],
     titles: ['Задира', 'Агрессор', 'Налётчик', 'Каратель', 'Беспощадный'] },
-  { id: 'fatalities', name: 'Палач',             desc: 'Совершить фаталити',        counter: 'fatalities',     steps: [1, 10, 100, 1000, 10000],
+  { id: 'breaches', name: 'Взломщик штабов',   desc: 'Проникнуть в штаб',         counter: 'breaches',     steps: [1, 10, 100, 1000, 10000],
     titles: ['Мститель', 'Палач', 'Душегуб', 'Жнец', 'Ангел смерти'] },
-  { id: 'ears',       name: 'Охотник за ушами',  desc: 'Отрезать ушей',             counter: 'earsCut',        steps: [1, 10, 100, 1000, 10000],
-    titles: ['Резник', 'Охотник за ушами', 'Коллекционер ушей', 'Мясник', 'Потрошитель'] },
+  { id: 'crests',     name: 'Собиратель гербов', desc: 'Сорвать гербов',            counter: 'crestsTorn',        steps: [1, 10, 100, 1000, 10000],
+    titles: ['Налётчик', 'Собиратель гербов', 'Коллекционер знамён', 'Гроза штабов', 'Знаменосец'] },
   { id: 'units',      name: 'Коллекционер',      desc: 'Купить техники',            counter: 'unitsBought',    steps: [10, 100, 1000, 10000, 100000],
     titles: ['Снабженец', 'Коллекционер', 'Арсенальщик', 'Командарм', 'Властелин армий'] },
   { id: 'builder',    name: 'Строитель',         desc: 'Построить сооружений',      counter: 'buildingsBuilt', steps: [10, 100, 1000, 10000, 100000],
@@ -1698,10 +1698,10 @@ const ACHIEVEMENTS = [
   // ── Новые достижения ───────────────────────────────────────────
   { id: 'deaths',        name: 'Смертник',            desc: 'Подорваться на минах насмерть', counter: 'deaths',            steps: [1, 10, 50, 250, 1000],
     titles: ['Подрывник', 'Смертник', 'Ходячий мертвец', 'Неубиваемый', 'Бессмертный'] },
-  { id: 'fatDodges',     name: 'Неуловимый',          desc: 'Уйти от вражеского фаталити',    counter: 'dodgesInFatality',  steps: [1, 10, 50, 250, 1000],
+  { id: 'breachDodges',  name: 'Неуловимый',          desc: 'Отбить проникновение в свой штаб', counter: 'dodgesInBreach',  steps: [1, 10, 50, 250, 1000],
     titles: ['Везунчик', 'Неуловимый', 'Скользкий', 'Призрак клинка', 'Заговорённый'] },
-  { id: 'mercies',       name: 'Милосердный',         desc: 'Помиловать при фаталити',        counter: 'merciesGiven',      steps: [1, 10, 100, 1000, 10000],
-    titles: ['Благородный', 'Милосердный', 'Даритель пощады', 'Гуманист', 'Ангел-хранитель'] },
+  { id: 'truces',        name: 'Миротворец',          desc: 'Заключить перемирие в штабе',    counter: 'trucesMade',      steps: [1, 10, 100, 1000, 10000],
+    titles: ['Парламентёр', 'Миротворец', 'Посредник', 'Дипломат', 'Хранитель мира'] },
   { id: 'legionWins',    name: 'Легионер',            desc: 'Победить в боях легиона',        counter: 'legionWins',        steps: [1, 10, 50, 250, 1000],
     titles: ['Новобранец легиона', 'Легионер', 'Ветеран легиона', 'Герой легиона', 'Легенда легиона'] },
   { id: 'losses',        name: 'Битый',               desc: 'Потерпеть поражений в боях',     counter: 'losses',            steps: [10, 100, 1000, 10000, 100000],
@@ -1715,7 +1715,7 @@ const ACHIEVEMENTS = [
   { id: 'legionShield',  name: 'Щит легиона',         desc: 'Прикрыть союзников от урона',    counter: 'legionDamageCovered', steps: [200, 2000, 20000, 200000, 2000000],
     titles: ['Прикрытие', 'Щит легиона', 'Живая стена', 'Бастион', 'Несокрушимый'] },
   { id: 'legionMedic',   name: 'Медик легиона',       desc: 'Вылечить HP союзников',          counter: 'legionHpHealed',    steps: [200, 2000, 20000, 200000, 2000000],
-    titles: ['Санитар', 'Медик легиона', 'Полевой хирург', 'Спаситель', 'Чудотворец'] },
+    titles: ['Санитар', 'Медик легиона', 'Ведущий хирург', 'Спаситель', 'Чудотворец'] },
 ];
 const ACH_DOLLARS = [5000, 30000, 180000, 1080000, 6500000];
 const ACH_GOLD =    [0,    0,     5,      15,      40];
@@ -2159,22 +2159,28 @@ const BATTLE = {
   // 0.10 → новичок теряет максимум 1 единицу за бой, развитый игрок
   // (вместимость 300+) упирается уже в абсолютный потолок 10/30.
   UNIT_LOSS_ARMY_PCT: 0.10,
-  FATALITY_HP_PCT: 0.15,
-  FATALITY_WINDOW_MS: 3 * 60 * 1000,
+  BREACH_HP_PCT: 0.15,
+  BREACH_WINDOW_MS: 3 * 60 * 1000,
   BOTS_TTL_MS: 15 * 60 * 1000,
 };
 
-// ---------- УШИ ----------
-// У игрока максимум 2 уха. Когда оба отрезаны — нельзя совершать
-// фаталити, и на 6 часов действует штраф -10% к атаке и защите.
-// Одно ухо восстанавливается естественным путём за 6 часов, либо можно
-// восстановить мгновенно за 20 золота.
-const EARS = {
-  MAX: 2,
-  REGROW_MS: 6 * 60 * 60 * 1000,   // 6 часов на естественное восстановление одного уха
-  PENALTY_PCT: 0.10,               // -10% к атаке и защите при 0 ушей
-  PENALTY_MS: 6 * 60 * 60 * 1000,  // штраф длится 6 часов после потери второго уха
-  RESTORE_GOLD: 20,                // мгновенное восстановление одного уха за золото
+// ---------- ГЕРБ ШТАБА ----------
+// У каждого командующего на штабе висит герб из трёх частей. Ворвавшийся
+// в штаб срывает одну часть — и уносит её как трофей.
+//
+// ШТРАФ СЧИТАЕТСЯ ОТ ЧИСЛА СОРВАННЫХ ЧАСТЕЙ и отдельного таймера не
+// имеет: 5% за часть, то есть 5 / 10 / 15 процентов к атаке и защите.
+// Раньше штраф был выключателем — ровно 10% на шесть часов и только
+// когда сорвано всё, — и до последнего срыва потери не значили ничего.
+// Теперь он спадает сам, по мере того как части возвращаются на место:
+// через два часа 15% превращаются в 10%, ещё через два — в 5%, и через
+// шесть часов герб цел. Отдельный «срок штрафа» стал бы вторым
+// источником правды и однажды разошёлся бы с самим гербом.
+const CREST = {
+  PARTS: 3,                          // частей в гербе
+  REGROW_MS: 2 * 60 * 60 * 1000,     // одна часть — 2 часа, все три — 6
+  PENALTY_PER_PART_PCT: 0.05,        // 5% за каждую сорванную часть: 5/10/15
+  RESTORE_GOLD: 20,                  // мгновенно вернуть одну часть за золото
 };
 // ---------- ПОЛ ИГРОКА ----------
 // Нужен не для галочки: сцены проникновения в штаб сняты отдельно для
@@ -2259,11 +2265,11 @@ const LOGIN_STREAK = {
 // Титулы (разблокируются за вехи; видны в профиле)
 const TITLES = [
   { id: 'recruit',     name: 'Новобранец',     desc: 'Начни игру',                  cond: { type: 'always' } },
-  { id: 'butcher',     name: 'Палач',          desc: 'Отрежь 10 ушей',              cond: { type: 'earsCut', value: 10 } },
+  { id: 'butcher',     name: 'Знаменосец',     desc: 'Сорви 10 гербов',             cond: { type: 'crestsTorn', value: 10 } },
   { id: 'warlord',     name: 'Полководец',     desc: 'Выиграй 100 боёв',            cond: { type: 'wins', value: 100 } },
   { id: 'tycoon',      name: 'Магнат',         desc: 'Заработай $1 млрд всего',     cond: { type: 'moneyEarned', value: 1000000000 } },
   { id: 'veteran',    name: 'Ветеран',        desc: 'Достигни 50 уровня',          cond: { type: 'level', value: 50 } },
-  { id: 'executioner', name: 'Каратель',       desc: 'Соверши 50 фаталити',         cond: { type: 'fatalities', value: 50 } },
+  { id: 'executioner', name: 'Каратель',       desc: 'Проникни в 50 штабов',        cond: { type: 'breaches', value: 50 } },
   { id: 'collector',   name: 'Коллекционер',   desc: 'Купи 1000 единиц техники',    cond: { type: 'unitsBought', value: 1000 } },
   { id: 'legend',      name: 'Легенда войны',  desc: 'Достигни 100 уровня',         cond: { type: 'level', value: 100 } },
 ];
@@ -2277,9 +2283,9 @@ const CONTRACTS_POOL = [
   { id: 'c_win',     char: 'volkov',   name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins', route: 'war',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
   { id: 'c_buy',     char: 'kovac',    name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought', route: 'units',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
   { id: 'c_build',   char: 'morozova', name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', route: 'buildings', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
-  { id: 'c_ear',     char: 'gadyuka',  name: 'Трофеи',      desc: 'Отрежь {n} ушей',               counter: 'earsCut', route: 'war',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
+  { id: 'c_ear',     char: 'gadyuka',  name: 'Трофеи',      desc: 'Сорви {n} гербов',              counter: 'crestsTorn', route: 'war',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
   { id: 'c_mission', char: 'tesla',    name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages', route: 'missions',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
-  { id: 'c_fatal',   char: 'gadyuka',  name: 'Палач',       desc: 'Соверши {n} фаталити',          counter: 'fatalities', route: 'war',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
+  { id: 'c_fatal',   char: 'gadyuka',  name: 'Штурмовик',   desc: 'Проникни в {n} штабов',         counter: 'breaches', route: 'war',     targets: [1, 2, 4],   rewardGold: [22, 38, 60] },
   { id: 'c_market',  char: 'kovac',    name: 'Контрабанда', desc: 'Купи {n} на чёрном рынке',      counter: 'marketBought', route: 'market/buffs',   targets: [2, 4, 7],   rewardGold: [15, 24, 38] },
 ];
 const CONTRACTS_PER_DAY = 3;
@@ -2287,7 +2293,7 @@ const CONTRACTS_PER_DAY = 3;
 // Контракты тоже усложняются с уровнем: цель растёт (1x→~5x), а награда
 // золотом — умереннее (1x→3x), т.к. золото — премиум-валюта.
 function contractTarget(base: number, level: number, counter?: string): number {
-  // Фаталити и уши — по щадящей шкале: базовая ступень контракта
+  // Штабы и гербы — по щадящей шкале: базовая ступень контракта
   // умножается на «одно действие за каждые 10 уровней»
   if (counter && HARD_COUNTERS.includes(counter)) {
     // Ступени контракта добавляют действия, а не умножают:
@@ -2532,8 +2538,8 @@ const SEASON = {
     attack: 3,            // совершил атаку
     win: 5,               // победа в бою
     loot: 3,              // успешный грабёж (за бой с добычей)
-    fatalityEar: 10,      // фаталити — отрезал ухо
-    mercy: 7,             // помилование (жетон милосердия)
+    breachCrest: 10,      // проникновение — сорвал часть герба
+    mercy: 7,             // перемирие (жетон перемирия)
     missionStep: 4,       // выполнил шаг спецоперации
     missionComplete: 10,  // полностью прошёл конфликт
     allianceRecruit: 8,   // принял игрока в альянс
@@ -2542,8 +2548,8 @@ const SEASON = {
   categories: [
     { id: 'rating',   metric: 'rating',   name: 'Общий рейтинг',  icon: '🏆', unit: 'очк.',    money: false },
     { id: 'wins',     metric: 'wins',     name: 'Победы в боях',  icon: '⚔️', unit: 'побед',   money: false },
-    { id: 'ears',     metric: 'ears',     name: 'Отрезано ушей',  icon: '👂', unit: 'ушей',    money: false },
-    { id: 'mercy',    metric: 'mercy',    name: 'Помилования',    icon: '🕊', unit: 'помил.',   money: false },
+    { id: 'crests',   metric: 'ears',     name: 'Сорвано гербов', icon: '🛡', unit: 'гербов',  money: false },
+    { id: 'mercy',    metric: 'mercy',    name: 'Перемирия',      icon: '🕊', unit: 'перем.',   money: false },
     { id: 'loot',     metric: 'loot',     name: 'Награблено',     icon: '💰', unit: '$',        money: true  },
     { id: 'alliance', metric: 'alliance', name: 'Набор в альянс', icon: '🤝', unit: 'бойцов',  money: false },
     { id: 'missions', metric: 'missions', name: 'Спецоперации',   icon: '🎯', unit: 'шагов',   money: false },
@@ -2582,7 +2588,7 @@ export = {
   LEGION_BATTLE_BUILDINGS, LEGION_BATTLE_BUILDING_BY_ID, battleBuildingCostAt, battleBuildingLegionReq,
   LEGION_TECHS, LEGION_TECH_BY_ID,
   LEGION_SHOP_ITEMS, LEGION_SHOP_ITEM_BY_ID,
-  BATTLE, EARS, BOT_NAMES,
+  BATTLE, CREST, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
   VIP, LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget, contractReward,

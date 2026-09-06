@@ -230,8 +230,8 @@ function report(user: any): any {
     battle: {
       attacks: (user.counters || {}).attacks || 0,
       wins: (user.counters || {}).wins || 0,
-      fatalities: (user.counters || {}).fatalities || 0,
-      earsCut: (user.counters || {}).earsCut || 0,
+      breaches: (user.counters || {}).breaches || 0,
+      crestsTorn: (user.counters || {}).crestsTorn || 0,
       buildingsBuilt: (user.counters || {}).buildingsBuilt || 0,
       missionStages: (user.counters || {}).missionStages || 0,
     },

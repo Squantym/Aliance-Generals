@@ -3,8 +3,9 @@
 // Список из 10 целей: реальные игроки в диапазоне ±10 уровней и 2–3
 // бота-террориста. Каждое обновление списка генерирует новый набор.
 // Атака тратит 1 боеприпас. Победа = грабёж наличных + опыт.
-// При крите и почти полном уничтожении доступно фаталити:
-// отрезать ухо (ресурс «ухо») или отпустить (ресурс «жетон»).
+// При крите и почти полном уничтожении открывается проникновение в
+// штаб: сорвать часть герба (трофей «герб») или заключить перемирие
+// (трофей «жетон перемирия»).
 // ===================================================================
 
 import config = require('../../config/gameConfig');
@@ -139,7 +140,7 @@ function makeBot(user: User): any {
     rating: Math.round(power * (0.5 + Math.random() * 1.5)),
     wins: u.rnd(50, 500) * level,
     losses: u.rnd(10, 100) * level,
-    fatalities: u.rnd(0, 50) * Math.max(1, Math.floor(level / 10)),
+    breaches: u.rnd(0, 50) * Math.max(1, Math.floor(level / 10)),
     createdDaysAgo: u.rnd(7, 800),
     allianceId, allianceName, allianceMembers,
   };
@@ -177,14 +178,14 @@ function botProfile(botId: string, viewer: User): any {
     battle: {
       wins: b.wins, losses: b.losses,
       defWins: Math.floor(b.wins * 0.4), defLosses: Math.floor(b.losses * 0.6),
-      fatalities: b.fatalities,
+      breaches: b.breaches,
     },
     power: { atk: b.power, def: Math.round(b.power * 0.85), taken: 30 },
     capacity: 30,
     units: [],
     createdDaysAgo: b.createdDaysAgo,
-    ears: Math.floor(b.fatalities * 0.6),
-    tokens: Math.floor(b.fatalities * 0.4),
+    ears: Math.floor(b.breaches * 0.6),
+    tokens: Math.floor(b.breaches * 0.4),
   };
 }
 
@@ -338,7 +339,7 @@ function removeUnits(victim: any, armyEntries: any[], toLoseWanted: number, _unu
 
 // ---------- ГЛАВНАЯ ФУНКЦИЯ: атака цели ----------
 function attack(user: User, targetId: string, notices: Notices) {
-  if (user.pendingFatality) throw new u.ApiError('Сначала решите судьбу поверженного врага (фаталити)!');
+  if (user.pendingBreach) throw new u.ApiError('Сначала закончите дело в штабе поверженного врага!');
   if (user.pendingBankHack) throw new u.ApiError('Сначала решите, что делать с сейфом (взломать или продолжить бой)!');
   if (user.pendingMineDefuse) throw new u.ApiError('Сначала разберитесь с миной!');
   // Кулдаун атак — 1 секунда (защита от спама). Считаем его сразу, чтобы
@@ -512,7 +513,7 @@ function mineSacrifice(user: User, notices: Notices) {
   return { mineDefused: true, sacrificed: true, ...battleResult };
 }
 
-// ----- Резолв самого боя: расчёт мощи, победа/поражение, грабёж, фаталити -----
+// ----- Резолв самого боя: расчёт мощи, победа/поражение, грабёж, проникновение в штаб -----
 // aArmy — армия атакующего, УЖЕ посчитанная в proceedToCombat (или взятая
 // из «замороженного» состояния на момент подрыва на мине).
 function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, notices: Notices) {
@@ -636,7 +637,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   // Была ли цель под санкцией НА МОМЕНТ БОЯ. Фиксируем ДО checkPayout:
   // добивающий удар закрывает санкцию выплатой награды, и если проверять
   // позже, охотник успевал бы и забрать награду, и отрезать ухо тем же
-  // ударом. По цели под санкцией фаталити не даётся вообще.
+  // ударом. По цели под санкцией в штаб не пускают вообще.
   const targetUnderSanction = !isBot && (() => {
     try { return require('./sanctions').isUnderSanction(target.id); } catch (e) { return false; }
   })();
@@ -790,55 +791,55 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     : u.rnd(B.XP_LOSS_MIN, B.XP_LOSS_MAX);
   const xp = player.addXp(user, xpBase, notices); // реальный XP с бонусами страны/легиона/админа
 
-  // ----- Окно фаталити -----
+  // ----- Окно проникновения в штаб -----
   // Доступно против реальных игроков И ботов-игроков (псевдоигроков с
   // позывными и флагами). На обычных террористах (💀) — нельзя, это
   // безликая массовка.
-  const fatalityAllowed = !isBot || (isBot && target.isPlayerLike);
-  // Наёмник «Призрак Нерушимый» (fatality_immunity) защищает жертву:
-  // окно фаталити против неё не появляется в течение 24ч.
+  const breachAllowed = !isBot || (isBot && target.isPlayerLike);
+  // Наёмник «Призрак Нерушимый» (breach_immunity) защищает жертву:
+  // окно проникновения против неё не появляется в течение 24ч.
   const targetImmune = !isBot && (target.effects || []).some(
-    (e: any) => e.type === 'fatality_immunity' && e.expiresAt > Date.now()
+    (e: any) => e.type === 'breach_immunity' && e.expiresAt > Date.now()
   );
-  let fatality = false;
-  let fatalityDodged = false;
-  // Фаталити доступно только тому, кто РЕАЛЬНО побеждает противника.
+  let breach = false;
+  let breachDodged = false;
+  // Проникновение доступно только тому, кто РЕАЛЬНО побеждает противника.
   // Если по личной истории боёв игрок проигрывает этой цели чаще, чем
-  // выигрывает — шанс фаталити над ней блокируется (нельзя «фармить»
-  // фаталити над тем, кто обычно сильнее).
-  let fatalityVsOk = true;
+  // выигрывает — шанс проникновения над ней блокируется (нельзя
+  // «фармить» штабы того, кто обычно сильнее).
+  let breachVsOk = true;
   if (!isBot) {
     const rec = (user.vsRecord || {})[target.id] || { wins: 0, losses: 0 };
-    if (rec.losses > rec.wins) fatalityVsOk = false;
+    if (rec.losses > rec.wins) breachVsOk = false;
   }
-  // Цель под санкцией — фаталити НЕ срабатывает (флаг targetUnderSanction
+  // Цель под санкцией — проникновение НЕ срабатывает (флаг targetUnderSanction
   // зафиксирован выше, ДО выплаты награды). По ней идёт охота за наградой,
-  // и добивать её ради уха нельзя: ни окна фаталити, ни отрезания ушей.
-  if (!targetUnderSanction && !targetImmune && fatalityAllowed && fatalityVsOk && win && crit && targetHpAfter <= targetMaxHp * B.FATALITY_HP_PCT) {
-    // Жестокость даёт ШАНС совершить фаталити (не гарантию): 0.5% за
+  // и добивать её ради герба нельзя: ни окна штаба, ни срыва частей.
+  if (!targetUnderSanction && !targetImmune && breachAllowed && breachVsOk && win && crit && targetHpAfter <= targetMaxHp * B.BREACH_HP_PCT) {
+    // Жестокость даёт ШАНС проникнуть в штаб (не гарантию): 0.5% за
     // уровень навыка, максимум 50%. Допинг «Ястреб» (crit_bonus) усиливает
     // не только крит в бою, но и этот шанс — раньше учитывался только в
-    // critChance, из-за чего покупка допинга не ощущалась на фаталити.
-    const fatalityChance = Math.min(0.50, user.skills.cruelty * 0.005 + (player.effMul(user, 'crit_bonus') - 1));
-    if (Math.random() < fatalityChance) {
+    // critChance, из-за чего покупка допинга не ощущалась на проникновении.
+    const breachChance = Math.min(0.50, user.skills.cruelty * 0.005 + (player.effMul(user, 'crit_bonus') - 1));
+    if (Math.random() < breachChance) {
       // Ловкость защитника даёт шанс «ускользнуть» от занесённого клинка:
       // 0.5% за уровень, максимум 50%. Применяется только к реальным игрокам.
       const escapeChance = isBot ? 0 : Math.min(0.50, target.skills.agility * 0.005);
       // VIP: три гарантированных ухода в сутки, независимо от ловкости.
       // Проверяем ДО броска — иначе удачный бросок «съедал» бы попытку.
-      // Раньше эта защита стояла на шаге фаталити, но там ускользание
+      // Раньше эта защита стояла на шаге проникновения, но там ускользание
       // уже не проверяется: уходить надо в момент пленения.
-      const vipSaved = isBot ? false : require('./vip').tryFatalityImmunity(target);
+      const vipSaved = isBot ? false : require('./vip').tryBreachImmunity(target);
       if (vipSaved || Math.random() < escapeChance) {
-        fatalityDodged = true;
+        breachDodged = true;
         // Достижение «Неуловимый» — у ЦЕЛИ (реальный игрок ушёл от клинка)
-        ach.bump(target, 'dodgesInFatality', 1, []);
+        ach.bump(target, 'dodgesInBreach', 1, []);
       } else {
-        fatality = true;
-        user.pendingFatality = {
+        breach = true;
+        user.pendingBreach = {
           targetId: target.id,
           name: target.name, isBot,
-          exp: Date.now() + B.FATALITY_WINDOW_MS,
+          exp: Date.now() + B.BREACH_WINDOW_MS,
         };
       }
     }
@@ -899,15 +900,15 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     enemySaboteurs: isBot ? [] : sabBrief(target),
     enemyDefenseBuildings: defenseBuildings,
     myLosses, enemyLosses,
-    fatality, fatalityDodged,
+    breach, breachDodged,
   };
 
   // ----- Сейф банка: низкий шанс ПОСЛЕ боя -----
   // Только реальные игроки (у ботов нет банка), трофей «Медвежатник» ≥ 1,
-  // у жертвы есть деньги в банке. Не наслаиваем сейф на нерешённое фаталити —
+  // у жертвы есть деньги в банке. Не наслаиваем сейф на нерешённый штаб —
   // одно окно решения за раз. tryOffer сам ставит pendingBankHack и вернёт
   // { encounter:'bank_hack', ... } с параметрами окна для клиента.
-  if (!isBot && !user.pendingFatality) {
+  if (!isBot && !user.pendingBreach) {
     const offer = bankHack.tryOffer(user, target);
     if (offer) Object.assign(result, offer);
   }
@@ -915,190 +916,201 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   return result;
 }
 
-// ---------- Фаталити: «ухо» или «жетон» ----------
-function fatality(user: User, choice: string, notices: Notices) {
-  const pf: any = user.pendingFatality;
+// ---------- Проникновение в штаб: сорвать герб или заключить перемирие ----------
+//
+// Ворвавшийся в штаб решает: сорвать часть герба (трофей и штраф для
+// хозяина штаба) или заключить перемирие и уйти с жетоном.
+//
+// Герб состоит из трёх частей, но в коллекцию нападавшему идёт ЦЕЛЫЙ
+// герб за каждую сорванную часть: он выносит из штаба знак, а не щепку,
+// и в профиле у него висит трофей, а не осколок. Хозяин же видит именно
+// части — сколько снято из трёх.
+function breach(user: User, choice: string, notices: Notices) {
+  const pf: any = user.pendingBreach;
   if (!pf || pf.exp < Date.now()) {
-    user.pendingFatality = null;
+    user.pendingBreach = null;
     throw new u.ApiError('Момент упущен — враг уполз с поля боя.');
   }
-  // Если цель — реальный игрок без ушей, фаталити совершить нельзя вообще
+  // Если у цели уже сорван весь герб, рвать нечего — в штаб не пускаем
   if (!pf.isBot) {
-    // Санкцию могли объявить уже ПОСЛЕ того, как открылось окно фаталити:
-    // в этом случае окно закрывается, ухо не режется (по цели под санкцией
+    // Санкцию могли объявить уже ПОСЛЕ того, как открылось окно штаба:
+    // в этом случае окно закрывается, герб не рвётся (по цели под санкцией
     // идёт охота за наградой, а не за трофеем).
     try {
       if (require('./sanctions').isUnderSanction(pf.targetId)) {
-        user.pendingFatality = null;
-        throw new u.ApiError(`На «${pf.name}» объявлена санкция — фаталити по цели под санкцией невозможно.`);
+        user.pendingBreach = null;
+        throw new u.ApiError(`На «${pf.name}» объявлена санкция — в штаб цели под санкцией не проникнуть.`);
       }
     } catch (e) {
       if (e instanceof u.ApiError) throw e;
     }
     const victimCheck = player.users()[pf.targetId];
     if (victimCheck) {
-      player.refresh(victimCheck); // актуализируем earsCurrent (регенерация)
-      if (victimCheck.earsCurrent <= 0) {
-        user.pendingFatality = null;
-        throw new u.ApiError(`У «${victimCheck.name}» уже нет ушей — фаталити невозможно совершить.`);
+      player.refresh(victimCheck); // актуализируем части герба (восстановление)
+      if (victimCheck.crestParts <= 0) {
+        user.pendingBreach = null;
+        throw new u.ApiError(`Герб «${victimCheck.name}» уже сорван целиком — рвать нечего.`);
       }
-      // Ускользание проверяется РАНЬШЕ — в момент пленения, сразу после
+      // Ускользание проверяется РАНЬШЕ — в момент прорыва, сразу после
       // победы в бою (см. escapeChance выше). Здесь повторной проверки
       // нет намеренно: игрок уже видит пленного и заносит клинок, и
       // отнимать добычу на этом шаге — обман ожиданий. Кто увернулся,
-      // до окна фаталити просто не доходит.
+      // до окна штаба просто не доходит.
     }
   }
-  user.pendingFatality = null;
-  user.battle.fatalities++;
-  // Детали для окна результата: одно ухо или оба (трофей «Тесак мясника»),
+  user.pendingBreach = null;
+  user.battle.breaches++;
+  // Детали для окна результата: одна часть герба или две (трофей «Таран штаба»),
   // и не восстановила ли жертва ухо полевым хирургом
   let outDoubleCut = false, outRestored = false;
-  ach.bump(user, 'fatalities', 1, notices);
-  require('./dailyQuests').bump(user, 'fatalities', 1);
+  ach.bump(user, 'breaches', 1, notices);
+  require('./dailyQuests').bump(user, 'breaches', 1);
 
-  if (choice === 'ear') {
+  if (choice === 'crest') {
     user.ears++;
-    ach.bump(user, 'earsCut', 1, notices);
-    require('./dailyQuests').bump(user, 'earsCut', 1); // ежедневное поручение «Коллекция»
-    player.addRating(user, 3); // рейтинг: отрезал ухо +3
-    try { require('./seasons').onFatalityEar(user); } catch (e) {}
-    let canLeaveMessage = false;  // true, если этот игрок отрезал ОБА уха
+    ach.bump(user, 'crestsTorn', 1, notices);
+    require('./dailyQuests').bump(user, 'crestsTorn', 1); // ежедневное поручение «Коллекция»
+    player.addRating(user, 3); // рейтинг: сорвал герб +3
+    try { require('./seasons').onBreachCrest(user); } catch (e) {}
+    let canLeaveMessage = false;  // true, если этот игрок сорвал ВЕСЬ герб
     if (!pf.isBot) {
       const victim = player.users()[pf.targetId];
       if (victim) {
-        // Трофей «Тесак мясника»: шанс отрезать СРАЗУ ОБА уха
+        // Трофей «Таран штаба»: шанс сорвать СРАЗУ ДВЕ части одним рывком
         const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
-        const doubleCut = victim.earsCurrent >= 2 && Math.random() * 100 < doublePct;
+        const doubleCut = victim.crestParts >= 2 && Math.random() * 100 < doublePct;
         outDoubleCut = doubleCut;
         const cutsToMake = doubleCut ? 2 : 1;
         if (doubleCut) {
-          // Второе ухо: раньше оно попадало в коллекцию и в поручения, но
-          // НЕ в сезонный рейтинг — из-за этого у владельцев «Тесака
-          // мясника» цифра в рейтинге ушей отставала от реально срезанных.
+          // Вторая часть: раньше она попадала в коллекцию и в поручения,
+          // но НЕ в сезонный рейтинг — из-за этого у владельцев трофея
+          // цифра в рейтинге отставала от реально сорванного.
           user.ears++;
-          require('./dailyQuests').bump(user, 'earsCut', 1);
-          ach.bump(user, 'earsCut', 1, notices);
+          require('./dailyQuests').bump(user, 'crestsTorn', 1);
+          ach.bump(user, 'crestsTorn', 1, notices);
           player.addRating(user, 3);
-          try { require('./seasons').onFatalityEar(user); } catch (e) {}
+          try { require('./seasons').onBreachCrest(user); } catch (e) {}
         }
 
-        if (!victim.earCutters) victim.earCutters = [null, null];
+        if (!victim.crestTakers) victim.crestTakers = new Array(config.CREST.PARTS).fill(null);
         for (let k = 0; k < cutsToMake; k++) {
-          victim.earsLost++;
-          victim.earsCurrent = Math.max(0, victim.earsCurrent - 1);
-          victim.earsLostAt.push(Date.now());
-          const cutIndex = config.EARS.MAX - victim.earsCurrent - 1;
-          const slot = Math.max(0, Math.min(config.EARS.MAX - 1, cutIndex));
-          victim.earCutters[slot] = { id: user.id, name: user.name };
-          player.addRating(victim, -3); // рейтинг жертвы: тебе отрезали ухо −3
+          victim.crestPartsLost++;
+          victim.crestParts = Math.max(0, victim.crestParts - 1);
+          victim.crestLostAt.push(Date.now());
+          const cutIndex = config.CREST.PARTS - victim.crestParts - 1;
+          const slot = Math.max(0, Math.min(config.CREST.PARTS - 1, cutIndex));
+          victim.crestTakers[slot] = { id: user.id, name: user.name };
+          player.addRating(victim, -3); // рейтинг жертвы: у тебя сорвали часть герба −3
           // Явно помечаем ЖЕРТВУ к записи. Слой http сохраняет только
           // того, кто сделал запрос, — то есть атакующего. Сейчас жертву
           // спасает то, что addRating помечает её сам, но это побочный
-          // эффект: уберут штраф рейтинга — и потеря уха перестанет
+          // эффект: уберут штраф рейтинга — и потеря части перестанет
           // доживать до диска, оставаясь только в памяти процесса.
           db.markUser(victim.id);
         }
         // Рейтинг за второе ухо (+3) начисляется ВЫШЕ, в блоке doubleCut,
         // вместе с коллекцией, поручением и сезонным зачётом. Здесь стояло
         // второе такое же начисление — оставшееся от прежней версии, когда
-        // блока выше ещё не было. Владелец «Тесака мясника» получал за
+        // блока выше ещё не было. Владелец «Тарана штаба» получал за
         // двойной срез +9 вместо +6 и тихо обгонял всех в рейтинге.
 
-        // Трофей жертвы «Полевой хирург»: шанс мгновенно восстановить ухо.
-        // Восстанавливает ОДНО ухо (последнее отрезанное). Если восстановил —
-        // нападавший уже не отрезал «оба», и послание оставить нельзя.
+        // Трофей хозяина штаба «Ремонтная бригада»: шанс мгновенно
+        // вернуть часть герба на место (последнюю сорванную). Если
+        // вернул — герб уже не сорван целиком, и послание оставить нельзя.
         const restorePct = trophies.discountPct ? trophies.discountPct(victim, 'ear_restore') : 0;
         let restored = false;
-        if (restorePct > 0 && Math.random() * 100 < restorePct && victim.earsCurrent < config.EARS.MAX) {
-          victim.earsCurrent = Math.min(config.EARS.MAX, victim.earsCurrent + 1);
-          if (victim.earsLostAt.length > 0) victim.earsLostAt.pop();
-          // Снимаем последнюю отметку об отрезавшем (ухо вернулось)
-          const lostNow = config.EARS.MAX - victim.earsCurrent;
-          if (lostNow < 2) victim.earCutters[1] = null;
-          if (lostNow < 1) victim.earCutters[0] = null;
+        if (restorePct > 0 && Math.random() * 100 < restorePct && victim.crestParts < config.CREST.PARTS) {
+          victim.crestParts = Math.min(config.CREST.PARTS, victim.crestParts + 1);
+          if (victim.crestLostAt.length > 0) victim.crestLostAt.pop();
+          // Снимаем отметки о тех, чьи части вернулись на место
+          const lostNow = config.CREST.PARTS - victim.crestParts;
+          for (let k = lostNow; k < config.CREST.PARTS; k++) victim.crestTakers[k] = null;
           restored = true;
           outRestored = true;
-          player.addRating(victim, 3); // ухо восстановлено — возвращаем рейтинг жертве
+          player.addRating(victim, 3); // часть вернулась — возвращаем рейтинг хозяину
         }
 
-        // Послание можно оставить только если СЕЙЧАС оба уха отрезаны этим игроком
-        const c0 = victim.earCutters[0], c1 = victim.earCutters[1];
-        if (c0 && c1 && c0.id === user.id && c1.id === user.id) {
-          canLeaveMessage = true;
-        }
+        // Послание можно оставить, только если ВЕСЬ герб сорван этим
+        // игроком: сорвал одну часть из трёх — расписываться не за что.
+        canLeaveMessage = victim.crestTakers.length === config.CREST.PARTS
+          && victim.crestTakers.every((t: any) => t && t.id === user.id);
 
-        let penaltyNote = '';
-        if (victim.earsCurrent <= 0) {
-          victim.earPenaltyUntil = Date.now() + config.EARS.PENALTY_MS;
-          penaltyNote = ' Оба уха отрезаны — штраф −10% к атаке и защите на 6 часов.';
-        }
-        const cutMsg = doubleCut ? 'оба уха одним ударом' : 'ухо';
-        const restMsg = restored ? ' Но жертва мгновенно восстановила ухо полевым хирургом!' : '';
-        notifications.push(victim.id, 'fatality_ear', `${user.name} совершил фаталити и отрезал вам ${cutMsg}${restored ? ', но вы восстановили ухо' : ''}`, {
+        // Отдельного срока штрафа больше нет: он считается от числа
+        // сорванных частей и спадает сам, когда они возвращаются на
+        // место (см. crestPartsGone в player.ts).
+        const goneNow = Math.max(0, config.CREST.PARTS - victim.crestParts);
+        const penaltyNote = goneNow > 0
+          ? ` Сорвано частей: ${goneNow} из ${config.CREST.PARTS} — штраф −${Math.round(goneNow * config.CREST.PENALTY_PER_PART_PCT * 100)}% к атаке и защите.`
+          : '';
+        const cutMsg = doubleCut ? 'сразу две части герба' : 'часть герба';
+        const restMsg = restored ? ' Но ремонтная бригада успела вернуть часть на место!' : '';
+        notifications.push(victim.id, 'breach_crest',
+          `${user.name} проник в ваш штаб и сорвал ${cutMsg}${restored ? ', но часть удалось вернуть' : ''}`, {
           attackerName: user.name, attackerId: user.id, at: Date.now(),
-          earsLeft: victim.earsCurrent, penaltyApplied: victim.earsCurrent <= 0,
+          partsLeft: victim.crestParts,
+          partsGone: Math.max(0, config.CREST.PARTS - victim.crestParts),
           doubleCut, restored,
         });
-        notices.push(`✂️ Фаталити! Отрезано: ${cutMsg} (трофеев-ушей всего: ${user.ears}).${penaltyNote}${restMsg}`);
+        notices.push(`🛡 Штаб взят! Сорвано: ${cutMsg} (гербов в коллекции: ${user.ears}).${penaltyNote}${restMsg}`);
       } else {
-        // Бот: постоянного состояния ушей у него нет, но трофей «Тесак
-        // мясника» всё равно даёт шанс отрезать СРАЗУ ОБА уха — в коллекцию.
+        // Бот: своего герба у него нет, но трофей «Таран штаба» всё равно
+        // даёт шанс вынести из штаба сразу два знака.
         const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
         const doubleCut = Math.random() * 100 < doublePct;
         outDoubleCut = doubleCut;
         if (doubleCut) {
-          user.ears++;                                    // второе ухо в коллекцию
-          ach.bump(user, 'earsCut', 1, notices);
-          require('./dailyQuests').bump(user, 'earsCut', 1);
+          user.ears++;                                    // второй герб в коллекцию
+          ach.bump(user, 'crestsTorn', 1, notices);
+          require('./dailyQuests').bump(user, 'crestsTorn', 1);
           player.addRating(user, 3);
-          try { require('./seasons').onFatalityEar(user); } catch (e) {}   // и в сезонный рейтинг
+          try { require('./seasons').onBreachCrest(user); } catch (e) {}   // и в сезонный рейтинг
         }
-        notices.push(`✂️ Фаталити! ${doubleCut ? 'Отрезаны СРАЗУ ОБА уха' : 'Трофейное ухо'} — в коллекцию (всего: ${user.ears}).`);
+        notices.push(`🛡 Штаб взят! ${doubleCut ? 'Вынесено СРАЗУ ДВА герба' : 'Трофейный герб'} — в коллекцию (всего: ${user.ears}).`);
       }
     } else {
-      // Жертва-игрок не найдена (редкий случай): та же логика, что для бота.
+      // Хозяин штаба не найден (редкий случай): та же логика, что для бота.
       const doublePct = trophies.discountPct ? trophies.discountPct(user, 'double_ear') : 0;
       if (Math.random() * 100 < doublePct) user.ears++;
-      notices.push(`✂️ Фаталити! Трофейное ухо отправлено в коллекцию (всего: ${user.ears}).`);
+      notices.push(`🛡 Штаб взят! Трофейный герб отправлен в коллекцию (всего: ${user.ears}).`);
     }
-    // Детали нужны окну результата: одно ухо срезано или оба (трофей
-    // «Тесак мясника»), и не восстановила ли жертва ухо хирургом
+    // Детали нужны окну результата: сорвана одна часть или две (трофей
+    // «Таран штаба»), и не вернула ли ремонтная бригада часть на место
     return {
-      choice, ears: user.ears, tokens: user.tokens, canLeaveMessage,
+      choice, crests: user.ears, tokens: user.tokens, canLeaveMessage,
       victimId: pf.isBot ? null : pf.targetId,
       doubleCut: outDoubleCut, restored: outRestored, victimName: pf.name || null,
     };
   }
 
-  // Отпускаем: +1 жетон милосердия
+  // Заключаем перемирие: +1 жетон
   user.tokens++;
-  ach.bump(user, 'merciesGiven', 1, notices); // достижение «Милосердный»
-  player.addRating(user, 3); // рейтинг: жетон (помилование) +3
+  ach.bump(user, 'trucesMade', 1, notices); // достижение «Миротворец»
+  player.addRating(user, 3); // рейтинг: перемирие +3
   try { require('./seasons').onMercy(user); } catch (e) {}
   if (!pf.isBot) {
     const victim = player.users()[pf.targetId];
     if (victim) {
-      notifications.push(victim.id, 'fatality_mercy', `${user.name} мог совершить фаталити, но помиловал вас`, {
+      notifications.push(victim.id, 'breach_truce',
+        `${user.name} проник в ваш штаб, но герб не тронул — заключено перемирие`, {
         attackerName: user.name, attackerId: user.id, at: Date.now(),
       });
     }
   }
-  notices.push(`🎖 Враг отпущен. Получен жетон милосердия (всего: ${user.tokens}).`);
+  notices.push(`🕊 Перемирие заключено. Получен жетон перемирия (всего: ${user.tokens}).`);
   return {
-    choice, ears: user.ears, tokens: user.tokens,
-    doubleCut: outDoubleCut,     // срезаны оба уха (сработал трофей)
-    restored: outRestored,       // жертва восстановила ухо хирургом
+    choice, crests: user.ears, tokens: user.tokens,
+    doubleCut: outDoubleCut,     // сорвано сразу две части (сработал трофей)
+    restored: outRestored,       // хозяин вернул часть на место
     victimName: pf.name || null,
   };
 }
 
-// Оставить послание на профиле жертвы — доступно только тому, кто отрезал
-// ОБА уха этому игроку. Послание видно всем в профиле жертвы.
+// Оставить послание в профиле хозяина штаба — доступно только тому, кто
+// сорвал ВЕСЬ герб. Послание видно всем в его профиле.
 function leaveEarMessage(user: User, victimId: string, text: string, notices: Notices) {
   const victim = player.users()[victimId];
   if (!victim) throw new u.ApiError('Игрок не найден');
-  const c = victim.earCutters;
+  const c = victim.crestTakers;
   const bothByUser = c && c[0] && c[1] && c[0].id === user.id && c[1].id === user.id;
   if (!bothByUser) throw new u.ApiError('Оставить послание может только тот, кто отрезал оба уха этому игроку');
   const clean = String(text || '').trim().slice(0, 200);
@@ -1106,7 +1118,7 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
     // Пустой текст = отказ оставить послание
     return { ok: true, left: false };
   }
-  victim.earMessage = { byId: user.id, byName: user.name, text: clean };
+  victim.crestMessage = { byId: user.id, byName: user.name, text: clean };
   // Послание пишется в ЧУЖОЙ профиль, а http сохраняет только автора
   // запроса. Без явной пометки надпись жила до перезапуска процесса и
   // пропадала — причём повторно оставить её уже нельзя, оба уха срезаны
@@ -1117,6 +1129,6 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
 }
 
 export = {
-  opponents, attack, fatality, leaveEarMessage, botProfile, peekBot, removeUnits,
+  opponents, attack, breach, leaveEarMessage, botProfile, peekBot, removeUnits,
   bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice, unitLossCount,
   lossesToText,};

@@ -61,7 +61,7 @@ function ensureWeek(user: User) {
 const P = () => config.SEASON.points;
 function onAttack(user: User)        { ensureWeek(user).rating += P().attack; }
 function onWin(user: User)           { const w = ensureWeek(user); w.wins++;  w.rating += P().win; }
-function onFatalityEar(user: User)   { const w = ensureWeek(user); w.ears++;  w.rating += P().fatalityEar; }
+function onBreachCrest(user: User)   { const w = ensureWeek(user); w.ears++;  w.rating += P().breachCrest; }
 function onMercy(user: User)         { const w = ensureWeek(user); w.mercy++; w.rating += P().mercy; }
 function onLoot(user: User, amount: number) {
   if (!(amount > 0)) return;
@@ -269,7 +269,7 @@ function adminForceRollover(adminUser: User, notices: Notices) {
 
 export = {
   weekId, weekEndsAt, view, rolloverIfNeeded,
-  onAttack, onWin, onFatalityEar, onMercy, onLoot,
+  onAttack, onWin, onBreachCrest, onMercy, onLoot,
   onMissionStep, onMissionComplete, onAllianceRecruit,
   adminSetRewards, adminForceRollover,
 };

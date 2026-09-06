@@ -27,14 +27,14 @@ function mkUser(id, name, isAdmin) {
     workshops: 0, modernQueue: [],
     buildings: { sklad: 3 },
     secretDevs: { kara: 4 }, superSecret: 1,
-    ears: 15, tokens: 6, earsLost: 0, earsCurrent: c.EARS.MAX, earsLostAt: [], earPenaltyUntil: 0,
-    earCutters: [null, null], earMessage: null,
-    battle: { attacks: 50, wins: 30, losses: 20, defWins: 8, defLosses: 4, fatalities: 3 },
-    counters: { wins: 30, attacks: 50, fatalities: 3, unitsBought: 0, buildingsBuilt: 0, missionStages: 7, earsCut: 5, moneyEarned: 0, battleLoot: 0, level: 25 },
+    ears: 15, tokens: 6, crestPartsLost: 0, crestParts: c.CREST.PARTS, crestLostAt: [], earPenaltyUntil: 0,
+    crestTakers: [null, null], crestMessage: null,
+    battle: { attacks: 50, wins: 30, losses: 20, defWins: 8, defLosses: 4, breaches: 3 },
+    counters: { wins: 30, attacks: 50, breaches: 3, unitsBought: 0, buildingsBuilt: 0, missionStages: 7, crestsTorn: 5, moneyEarned: 0, battleLoot: 0, level: 25 },
     achStages: {}, missions: {}, tutorial: { step: 3, done: true }, effects: [],
     trophies: Object.assign(Object.fromEntries(c.TROPHIES.map((t) => [t.id, 0])), { medal: 3 }),
     club: {}, allianceId: null, legionId: null, lastIncomeAt: now,
-    pendingFatality: null, lastChatAt: 0, trophyQueue: [],
+    pendingBreach: null, lastChatAt: 0, trophyQueue: [],
     landmines: 4,
     saboteurs: { ground: 120, sea: 30, air: 0, secret: 15, building: 8, suicide: 2 },
     saboteurLimits: { ground: 90, sea: 50, air: 50, secret: 50, building: 50 },
@@ -63,7 +63,7 @@ eq('золото', s.resources.gold, 4200);
 eq('банк', s.resources.bank, 100000);
 eq('жетоны', s.resources.tokens, 6);
 eq('очки навыков', s.resources.skillPoints, 3);
-eq('трофейные уши', s.resources.earsTrophy, 15);
+eq('трофейные гербы', s.resources.crestsTrophy, 15);
 eq('мины (растяжки)', s.resources.landmines, 4);
 eq('HP max посчитан (база 100 + здоровье 8×10)', s.resources.hp.max, 180);
 ok('HP cur ≤ max', s.resources.hp.cur <= s.resources.hp.max);
@@ -80,7 +80,7 @@ ok('защита > 0', s.power.def > 0);
 eq('всего техники (100+20+5)', s.power.armyTotal, 125);
 eq('боёв атак', s.battle.attacks, 50);
 eq('побед', s.battle.wins, 30);
-eq('фаталити', s.battle.fatalities, 3);
+eq('фаталити', s.battle.breaches, 3);
 
 console.log('\n[4] Армия / постройки / секретки / трофеи');
 eq('позиций техники (3 Mk-слота)', s.army.length, 3);

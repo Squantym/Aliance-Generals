@@ -6,7 +6,7 @@
 // поля игрока сам — иначе при изменении условий пришлось бы править
 // два десятка мест.
 //
-// Суточные счётчики (лечение, иммунитет к фаталити, замены поручений)
+// Суточные счётчики (лечение, охрана штаба, замены поручений)
 // сбрасываются в 00:00 по московскому времени — как и остальные
 // суточные механики игры.
 // ═══════════════════════════════════════════════════════════════════
@@ -56,7 +56,7 @@ function left(user: any, kind: 'heal' | 'immunity' | 'reroll'): number {
   if (!isVip(user)) return 0;
   const caps: any = {
     heal: V.HOSPITAL_FREE_PER_DAY,
-    immunity: V.FATALITY_IMMUNITY_PER_DAY,
+    immunity: V.BREACH_IMMUNITY_PER_DAY,
     reroll: V.QUEST_REROLLS_PER_DAY,
   };
   return Math.max(0, caps[kind] - (daily(user)[kind] || 0));
@@ -126,8 +126,8 @@ function incomeMul(user: any): number {
   return isVip(user) ? 1 + V.INCOME_BONUS_PCT / 100 : 1;
 }
 
-// 15. Гарантированный уход от фаталити. Расходует одно использование.
-function tryFatalityImmunity(user: any): boolean {
+// 15. Гарантированно отбитое проникновение. Расходует одно использование.
+function tryBreachImmunity(user: any): boolean {
   return spend(user, 'immunity');
 }
 
@@ -229,7 +229,7 @@ function benefits() {
     { icon: '🏷', title: `Скидка ${V.MARKET_DISCOUNT_PCT}%`, text: `На весь чёрный рынок. Складывается с акциями, но не больше ${V.MARKET_DISCOUNT_CAP_PCT}%.` },
     { icon: '🪙', title: `+${V.GOLD_PURCHASE_BONUS_PCT}% золота`, text: 'К любой покупке золота, поверх действующей акции.' },
     { icon: '🏭', title: 'Выгодная экономика', text: `Содержание техники дешевле на ${V.UPKEEP_CUT_PCT}%, доход построек выше на ${V.INCOME_BONUS_PCT}%.` },
-    { icon: '🛡', title: 'Защита от фаталити', text: `${V.FATALITY_IMMUNITY_PER_DAY} гарантированных уходов в сутки — независимо от ловкости.` },
+    { icon: '🛡', title: 'Охрана штаба', text: `${V.BREACH_IMMUNITY_PER_DAY} гарантированных отбитых проникновения в сутки — независимо от ловкости.` },
     { icon: '⭐', title: `+${V.XP_BONUS_PCT}% опыта`, text: 'За любые действия.' },
     { icon: '🚛', title: `Потери меньше на ${V.UNIT_LOSS_CUT_PCT}%`, text: 'Техника в бою гибнет реже.' },
     { icon: '✏️', title: 'Смена позывного', text: `Бесплатно раз в ${V.RENAME_FREE_DAYS} дней.` },
@@ -244,6 +244,6 @@ export = {
   spyFreePerDay, reinforcePerDay, contractsPerDay,
   marketDiscountPct, goldPurchaseBonusPct,
   upkeepMul, incomeMul, xpMul, unitLossMul,
-  tryFatalityImmunity, mineTriggerBonusPct,
+  tryBreachImmunity, mineTriggerBonusPct,
   canRenameFree, markRenameUsed, mskDayKey,
 };

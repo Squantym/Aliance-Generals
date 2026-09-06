@@ -124,8 +124,8 @@ db.load('battles', {})['b1'] = { combatants: { [victim.id]: { userId: victim.id 
 const world = db.load('world', { chat: [], auctions: [], seq: 1 });
 world.chat = [{ id: 1, userId: victim.id, text: 'привет' }, { id: 2, userId: wit.id, text: 'ответ' }];
 // Перекрёстные ссылки у свидетеля
-wit.earCutters = [{ id: victim.id, name: 'Жертва' }, null];
-wit.earMessage = { byId: victim.id, byName: 'Жертва', text: 'послание' };
+wit.crestTakers = [{ id: victim.id, name: 'Жертва' }, null];
+wit.crestMessage = { byId: victim.id, byName: 'Жертва', text: 'послание' };
 wit.vsRecord = { [victim.id]: { wins: 3, losses: 1 } };
 wit.effects = [{ id: 'e1', type: 'sabotage', hostile: true, byId: victim.id, expiresAt: Date.now() + 1e6 }];
 db.load('sessions', {})['токен-жертвы'] = victim.id;
@@ -167,8 +167,8 @@ ok(!b1.combatants[victimId] && b1.activity[victimId] === undefined, 'убран 
 ok(db.load('world', {}).chat.length === 1, 'сообщения в чате удалены');
 
 // Перекрёстные ссылки у свидетеля — чтобы не было битых ссылок в профиле
-ok(wit.earCutters[0] === null, 'ссылка «кто отрезал ухо» очищена');
-ok(wit.earMessage === null, 'послание от удалённого игрока стёрто');
+ok(wit.crestTakers[0] === null, 'ссылка «кто отрезал ухо» очищена');
+ok(wit.crestMessage === null, 'послание от удалённого игрока стёрто');
 ok(!wit.vsRecord[victimId], 'личная история боёв очищена');
 ok(wit.effects.length === 0, 'вражеские эффекты от удалённого сняты');
 
