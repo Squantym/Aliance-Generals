@@ -155,7 +155,7 @@ function sanitizeInput(str: string): string {
 function users(): Record<string, User> { return db.load<Record<string, User>>('users', {}); }
 function sessions(): Record<string, string> { return db.load<Record<string, string>>('sessions', {}); }
 
-function newUser(id: string, name: string, email_: string, passHash: string, salt: string, country: string, isAdmin: boolean, emailVerified: boolean): User {
+function newUser(id: string, name: string, email_: string, passHash: string, salt: string, country: string, isAdmin: boolean, emailVerified: boolean, gender?: string): User {
   const now = Date.now();
   return {
     id, name, email: email_, passHash, salt, isAdmin,
@@ -165,7 +165,13 @@ function newUser(id: string, name: string, email_: string, passHash: string, sal
     emailVerifyCode: emailVerified ? null : newCode(),
     emailVerifyCodeExp: emailVerified ? 0 : now + CODE_TTL_MS,
     emailVerifyTries: 0,
-    country, status: '', createdAt: now, lastSeen: now,
+    country,
+    // Неизвестный пол не подставляем молча: сцены штаба сняты отдельно
+    // для мужчин и женщин, и «по умолчанию мужской» у половины игроков
+    // выглядел бы как чужой персонаж. Пустое значение — честное «не
+    // выбран», его чинит смена пола на рынке.
+    gender: config.GENDER_BY_ID[String(gender || '')] ? String(gender) : 'm',
+    status: '', createdAt: now, lastSeen: now,
     level: 1, xp: 0,
     dollars: config.PLAYER.START_DOLLARS,
     gold: config.PLAYER.START_GOLD,
@@ -398,7 +404,7 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   return { name };
 }
 
-async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any, fp?: string, consents?: any) {
+async function register(login: string, password: string, emailAddr: string, country: string, ip: string, ua?: string, hints?: any, fp?: string, consents?: any, gender?: string) {
   checkHeavy('register', ip);
   // БАГ 24: очистка управляющих символов
   login = sanitizeInput(login).trim();
@@ -480,7 +486,7 @@ async function register(login: string, password: string, emailAddr: string, coun
   if (takenName) throw new u.ApiError('Такой позывной уже занят');
   if (takenMail) throw new u.ApiError('Этот email уже используется');
 
-  const newU = newUser(id, login, emailAddr, passHash, salt, country, false, autoVerified);
+  const newU = newUser(id, login, emailAddr, passHash, salt, country, false, autoVerified, gender);
   // Согласия пишем сразу, вместе с версией документа, временем и адресом.
   // Это и есть доказательство: без версии нельзя показать, ЧТО именно
   // человек принял, а без времени и адреса — что принял он.

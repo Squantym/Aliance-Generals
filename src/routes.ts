@@ -205,7 +205,7 @@ function registerRoutes(app: any) {
     if (blocked) throw new u.ApiError(blocked);
     consent.checkRequired(req.body.consents);
     return auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua,
-      (req as any).hints, (req as any).fp, req.body.consents);
+      (req as any).hints, (req as any).fp, req.body.consents, req.body.gender);
   }, { open: true });
   app.add('POST', '/api/login', (req) =>
     auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
@@ -642,6 +642,7 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/passport',         (req) => passport.view(req.user));
   app.add('POST', '/api/passport/name',    act((req, n) => passport.changeName(req.user, req.body.newName, n)));
   app.add('POST', '/api/passport/country', act((req, n) => passport.changeCountry(req.user, req.body.country, n)));
+  app.add('POST', '/api/passport/gender',  act((req, n) => passport.changeGender(req.user, req.body.gender, n)));
 
   // ---------- Ежедневные задания ----------
   app.add('GET',  '/api/daily',            (req) => dailyQuests.list(req.user));

@@ -5058,3 +5058,14 @@ body.is-test-world { padding-top: 22px; }
 @supports not (aspect-ratio: 1) {
   .club-hero img { height: 150px; }
 }
+
+/* ---------- ВЫБОР ПОЛА ----------
+   Две кнопки вместо списка: вариантов два, и выпадающий список ради них
+   добавлял бы лишнее нажатие. Выбранный вариант виден рамкой, а не
+   галочкой — на телефоне так заметнее. */
+.rg-g.on, .gender-cur {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(233,199,92,.08);
+}
+.gender-cur { opacity: .75; cursor: default; }

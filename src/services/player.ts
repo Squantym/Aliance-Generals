@@ -1064,6 +1064,18 @@ function tutorialView(user: User) {
   };
 }
 
+// ── Пол и обращение ───────────────────────────────────────────────
+// Звание «генерал» женской формы в русском не имеет: «генеральша» —
+// это жена генерала, а не звание. Поэтому звание одно, различает
+// обращение: «Господин генерал» / «Госпожа генерал».
+function genderId(user: User): string {
+  const g = String((user as any).gender || '');
+  return config.GENDER_BY_ID[g] ? g : 'm';
+}
+function genderTitle(user: User): string {
+  return config.GENDER_BY_ID[genderId(user)].title;
+}
+
 function mePayload(user: User): any {
   const atk = totalPower(user, "atk");
   const def = totalPower(user, "def");
@@ -1071,6 +1083,9 @@ function mePayload(user: User): any {
   return {
     id: user.id, name: user.name, isAdmin: !!user.isAdmin,
     country: user.country, flag: flag(user), status: user.status,
+    // Пол и обращение считает сервер: иначе экран и сцены штаба
+    // разошлись бы в том, кем игрок себя видит.
+    gender: genderId(user), genderTitle: genderTitle(user),
     level: user.level, xp: user.xp, xpNext: config.xpToNext(user.level),
     rank: rank(user.level), rating: rating(user),
     dollars: user.dollars, gold: user.gold, bank: user.bank,
@@ -1264,6 +1279,7 @@ function publicProfile(target: User, viewer: User): any {
 
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,
+    gender: genderId(target), genderTitle: genderTitle(target),
     // Роль в проекте: сотрудников видно всем, чтобы игроки знали, к кому
     // обращаться и от кого исходят требования в чате
     staffRole: (() => { try { return require('./roles').roleOf(target); } catch (e) { return null; } })(),

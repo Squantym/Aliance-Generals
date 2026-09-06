@@ -53,6 +53,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   resetToken:         { owner: 'auth',       note: 'токен сброса пароля' },
   resetTokenExp:      { owner: 'auth',       note: 'срок действия токена сброса' },
   country:            { owner: 'auth',       note: 'флаг/страна' },
+  gender:             { owner: 'auth',       note: 'пол: m/f — сцены штаба и обращение' },
   createdAt:          { owner: 'auth',       note: 'дата регистрации' },
   lastSeen:           { owner: 'player',     note: 'последняя активность' },
   isAdmin:            { owner: 'auth',       note: 'права администратора (наследие; ведущее поле — role)' },

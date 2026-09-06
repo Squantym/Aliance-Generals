@@ -433,6 +433,8 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/rename':                 return `✏️ Сменил позывной на «${body.name || '—'}»`;
       case '/api/passport/name':          return `📇 Изменил имя в паспорте на «${body.name || '—'}»`;
       case '/api/passport/country':       return `🏳 Сменил страну на «${body.country || '—'}»`;
+      case '/api/passport/gender':
+        return '⚧ Сменил пол в личном деле: ' + (body.gender === 'f' ? 'женский' : 'мужской');
       case '/api/account/create':         return `👥 Создал нового персонажа «${body.nick || body.name || '—'}»`;
       case '/api/account/switch':         return '🔄 Переключился на другого персонажа';
       case '/api/account/login':          return `🆔 Задал логин аккаунта «${body.login || '—'}»`;

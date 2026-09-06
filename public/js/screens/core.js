@@ -103,6 +103,14 @@ App.screens.auth = async (c) => {
       </div>
       <label for="rg-pass">Пароль (минимум 8 символов, буквы + цифры)</label>
       <input type="password" id="rg-pass" autocomplete="new-password" required placeholder="Не менее 8 символов" minlength="8">
+      <label>Пол командующего</label>
+      <div class="field-row" id="rg-gender">
+        <button type="button" class="btn btn-inline grow rg-g on" data-g="m">♂ Мужской</button>
+        <button type="button" class="btn btn-inline grow rg-g" data-g="f">♀ Женский</button>
+      </div>
+      <p class="muted small" style="margin:4px 0 8px">От этого зависит обращение и то, кого вы увидите
+        в сценах проникновения в штаб. Позже можно сменить на чёрном рынке.</p>
+
       <label for="rg-country">Страна (даёт постоянный бонус)</label>
       <select id="rg-country" required>${countryOptions}</select>
       <div id="rg-country-bonus" class="card" style="margin-top:8px;background:rgba(233,199,92,.06);border-color:var(--gold)">
@@ -208,6 +216,15 @@ App.screens.auth = async (c) => {
   // Обновление блока бонуса страны
   const countrySel = document.getElementById('rg-country');
   if (countrySel) { countrySel.onchange = updateCountryBonus; updateCountryBonus(); }
+
+  // Выбор пола: две кнопки вместо выпадающего списка — вариантов два,
+  // и список ради двух пунктов только добавляет нажатие.
+  [...document.querySelectorAll("#rg-gender .rg-g")].forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll("#rg-gender .rg-g").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on");
+    };
+  });
 
   // Общее завершение: сохранить токен, загрузить игрока, на главную
   const finish = async (token) => {
@@ -340,6 +357,8 @@ App.screens.auth = async (c) => {
         email: document.getElementById('rg-email').value,
         password: pass,
         country: document.getElementById('rg-country').value,
+        gender: (document.querySelector('#rg-gender .rg-g.on') || {}).dataset
+          ? document.querySelector('#rg-gender .rg-g.on').dataset.g : 'm',
         consents,
       });
       if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора');
@@ -1022,6 +1041,7 @@ App.screens.profile = async (c, param) => {
         </div>
         <div class="pf2-info">
           <div class="kv" style="padding:2px 0"><span class="k">Звание:</span><span class="v" style="color:var(--green);font-weight:700">${UI.esc(p.rank)}</span></div>
+          <div class="kv" style="padding:2px 0"><span class="k">Обращение:</span><span class="v">${UI.esc(p.genderTitle || "Господин генерал")}</span></div>
           <div class="pf2-stats-label">Статистика:</div>
           <div class="kv" style="padding:2px 0"><span class="k">победы</span><span class="v">${UI.fmtNum((p.battle.wins||0) + (p.battle.defWins||0))}</span></div>
           <div class="kv" style="padding:2px 0"><span class="k">поражения</span><span class="v">${UI.fmtNum((p.battle.losses||0) + (p.battle.defLosses||0))}</span></div>

@@ -296,7 +296,8 @@ App.screens.market = async (c, param) => {
       <div class="title">Чёрный рынок</div>
       ${tabsHtml}
       <div class="card">
-        <p class="muted small">Контакт в министерстве оформит вам новые документы — но не дёшево. Каждая следующая смена в 2 раза дороже предыдущей.</p>
+        <p class="muted small">Контакт в министерстве оформит вам новые документы — но не дёшево.
+          Позывной и гражданство дорожают вдвое с каждой сменой, пол — ровным шагом.</p>
       </div>
 
       <div class="card">
@@ -320,7 +321,32 @@ App.screens.market = async (c, param) => {
         </select>
         <button class="btn btn-orange mt" id="pp-country-go">Сменить гражданство за <span class="ic-gold"></span> ${UI.fmtNum(p.countryPrice)}</button>
         ${p.countryChanges > 0 ? `<p class="muted small center mt">Гражданство менялось ${p.countryChanges} раз(а)</p>` : ''}
+      </div>
+
+      <div class="card">
+        <div class="name">${(p.genders.find((g) => g.id === p.currentGender) || {}).icon || '⚧'} Новое личное дело</div>
+        <p class="muted small mt">Сейчас: <b>${UI.esc((p.genders.find((g) => g.id === p.currentGender) || {}).title || '—')}</b>.
+          От этого зависит обращение и то, кого вы видите в сценах проникновения в штаб.</p>
+        <div class="field-row mt">
+          ${p.genders.map((g) => `
+            <button class="btn btn-inline grow gender-pick${g.id === p.currentGender ? ' gender-cur' : ''}"
+              data-gender="${g.id}" ${g.id === p.currentGender ? 'disabled' : ''}>${g.icon} ${UI.esc(g.name)}</button>`).join('')}
+        </div>
+        <p class="muted small mt">Смена стоит <span class="ic-gold"></span> ${UI.fmtNum(p.genderPrice)}${p.genderChanges > 0
+          ? ` · меняли ${p.genderChanges} раз(а)` : ''}.</p>
       </div>`;
+
+    [...c.querySelectorAll('.gender-pick')].forEach((b) => { b.onclick = async () => {
+      const g = b.dataset.gender;
+      const info = p.genders.find((x) => x.id === g) || {};
+      if (!await UI.confirm(`Сменить на «${info.name}» за ${p.genderPrice} золота? Обращение станет «${info.title}».`,
+          { title: 'Смена личного дела', icon: info.icon || '⚧', okText: 'Сменить' })) return;
+      try {
+        await API.post('/api/passport/gender', { gender: g });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    }; });
 
     document.getElementById('pp-name-go').onclick = async () => {
       const newName = document.getElementById('pp-newname').value.trim();

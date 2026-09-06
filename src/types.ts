@@ -122,6 +122,7 @@ export interface User {
   lastMailError?: string;          // почему не ушло последнее письмо (для панели)
   lastMailAt?: number;             // когда пытались отправить
   country: string;
+  gender?: string;       // 'm' | 'f' — влияет на сцены и обращение
   status: string;
   createdAt: number;
   lastSeen: number;

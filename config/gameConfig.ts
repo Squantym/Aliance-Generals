@@ -2176,6 +2176,26 @@ const EARS = {
   PENALTY_MS: 6 * 60 * 60 * 1000,  // штраф длится 6 часов после потери второго уха
   RESTORE_GOLD: 20,                // мгновенное восстановление одного уха за золото
 };
+// ---------- ПОЛ ИГРОКА ----------
+// Нужен не для галочки: сцены проникновения в штаб сняты отдельно для
+// мужчин и женщин, и показывать женщине мужскую сцену — то же самое, что
+// показывать чужого персонажа.
+//
+// Про обращение. У звания «генерал» женской формы в русском языке нет:
+// «генеральша» исторически означает ЖЕНУ генерала, а не звание, и в игре
+// про командующих это звучало бы понижением. Поэтому звание одно на
+// всех, а различает обращение — ровно так, как это принято в армии.
+const GENDERS = [
+  { id: 'm', name: 'Мужской', title: 'Господин генерал', short: 'Генерал',  icon: '♂' },
+  { id: 'f', name: 'Женский', title: 'Госпожа генерал',  short: 'Генерал',  icon: '♀' },
+];
+const GENDER_BY_ID: Record<string, any> = Object.fromEntries(GENDERS.map((g) => [g.id, g]));
+// Смена пола на чёрном рынке: первая — 50, каждая следующая на 50 дороже.
+// Рост линейный, а не удвоением как у позывного: пол меняют не ради
+// обхода репутации, и запирать эту дверь ценой в тысячи не за чем.
+const GENDER_CHANGE_BASE_GOLD = 50;
+const GENDER_CHANGE_STEP_GOLD = 50;
+
 const BOT_NAMES = ['Террорист «Шакал»','Боевик «Кобра»','Полевой командир «Гюрза»','Наёмник «Гиена»','Террорист «Скорпион»','Боевик «Варан»','Главарь «Койот»','Диверсант «Аспид»'];
 
 // Боты-игроки (имитируют живых игроков). Имя собирается из частей.
@@ -2547,6 +2567,7 @@ export = {
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
   COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
   RIDDLES, CLUB, LOTTERY,
+  GENDERS, GENDER_BY_ID, GENDER_CHANGE_BASE_GOLD, GENDER_CHANGE_STEP_GOLD,
   CARD_RANKS, CARD_SUITS, CARD_DECK, CARD_BACK, cardInfo, handSum,
   TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, boostGoldFor, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,
