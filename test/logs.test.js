@@ -50,7 +50,10 @@ console.log('\n[6] Исправленные пути (раньше показы�
 has('контейнер /api/market/open', lt.describe('/api/market/open', { tier: 2, qty: 1 }, {}), 'тир 2');
 has('уши /api/ears/restore', lt.describe('/api/ears/restore', {}, { cost: 20 }), 'ухо');
 has('клуб преферанс /api/club/pref/hit', lt.describe('/api/club/pref/hit', {}, {}), 'преферанс');
-has('клуб пристрелка /api/club/arty/shoot', lt.describe('/api/club/arty/shoot', {}, {}), 'пристрелка');
+has('клуб рейд /api/club/raid/pull', lt.describe('/api/club/raid/pull', {}, {}), 'рейд');
+has('клуб сейф /api/club/safe/try', lt.describe('/api/club/safe/try', { guess: '123456' }, {}), 'сейф');
+has('клуб дуэль /api/club/tactic/play', lt.describe('/api/club/tactic/play', { kind: 'air' }, {}), 'авиаци');
+has('займ /api/lottery/buy', lt.describe('/api/lottery/buy', { count: 3 }, {}), 'займ');
 has('клуб кости /api/club/dice/finish', lt.describe('/api/club/dice/finish', {}, {}), 'кости');
 has('клуб аукцион /api/club/bids/play', lt.describe('/api/club/bids/play', {}, {}), 'аукцион');
 has('покупка золота /api/payments/create', lt.describe('/api/payments/create', { packageId: 'p1' }, {}), 'золот');

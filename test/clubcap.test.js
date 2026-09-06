@@ -39,20 +39,6 @@ let passed = 0, failed = 0;
 const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 const nx = [];
 
-// Все коды сейфа — для игры «называй код, не противоречащий подсказкам».
-// Так играет думающий человек, и это верхняя граница сложности.
-const ALL_CODES = [];
-for (let a = 0; a < 10; a++) for (let b = 0; b < 10; b++)
-  for (let c = 0; c < 10; c++) for (let d = 0; d < 10; d++) {
-    const s = '' + a + b + c + d;
-    if (new Set(s).size === 4) ALL_CODES.push(s);
-  }
-const bulls = (g, code) => {
-  let bl = 0, cw = 0;
-  for (let i = 0; i < g.length; i++) { if (g[i] === code[i]) bl++; else if (code.includes(g[i])) cw++; }
-  return bl + ':' + cw;
-};
-
 (async () => {
   await db.init();
   await auth.register('Клубный', 'пароль123', 'k@t.ru', 'ru', '1.1.1.1');
@@ -62,19 +48,14 @@ const bulls = (g, code) => {
   // Кулдауны в тесте снимаем руками: нас интересует потолок, а не то,
   // сколько реального времени нужно просидеть.
   const clearCd = () => { if (U.club && U.club.cd) for (const k of Object.keys(U.club.cd)) U.club.cd[k] = 0; };
-  const playSafe = () => {
-    club.safeStart(U);
-    let pool = ALL_CODES;
-    for (let t = 0; t < C.SAFE_TRIES; t++) {
-      const g = pool[Math.floor(Math.random() * pool.length)];
-      const r = club.safeTry(U, g, nx);
-      if (r.result === 'win') return r;
-      if (r.result === 'fail') return r;
-      const key = r.bulls + ':' + r.cows;
-      pool = pool.filter((x) => bulls(g, x) === key);
-      if (!pool.length) pool = ALL_CODES;
-    }
-    return null;
+  // Долбим потолок ночным рейдом: рубеж проставляем сами, чтобы проверка
+  // не зависела от того, как лёг бросок. Нас интересует ПОТОЛОК, а не
+  // везение.
+  const playRaid = (step) => {
+    clearCd();
+    club.raidStart(U);
+    U.club.raid.step = step || 3;
+    return club.raidPull(U, nx);
   };
 
   console.log('\n── 1. Потолок настроен и виден игроку ──');
@@ -86,16 +67,14 @@ const bulls = (g, code) => {
 
   console.log('\n── 2. Сколько ни играй, больше потолка не выдадут ──');
   const before = U.gold;
-  // Заведомо больше партий, чем нужно, чтобы упереться
-  for (let i = 0; i < 400; i++) { clearCd(); playSafe(); }
+  for (let i = 0; i < 200; i++) playRaid(6);      // заведомо больше, чем нужно
   const earned = U.gold - before;
-  ok(`за 400 партий выдано ${earned} 🪙, не больше потолка ${C.DAILY_GOLD_CAP}`,
+  ok(`за 200 вылазок выдано ${earned} 🪙, не больше потолка ${C.DAILY_GOLD_CAP}`,
      earned <= C.DAILY_GOLD_CAP);
   ok('и потолок действительно выбран (иначе проверка ничего не значит)',
      earned === C.DAILY_GOLD_CAP);
   ok('счётчик расхода сходится с выданным', U.club.dayGold === earned);
-  const vFull = club.view(U);
-  ok('игроку показано, что остатка нет', vFull.budget.left === 0);
+  ok('игроку показано, что остатка нет', club.view(U).budget.left === 0);
 
   console.log('\n── 3. После полуночи по Москве счётчик сбрасывается ──');
   // Подменяем не время, а записанные сутки: так проверяется именно
@@ -103,9 +82,8 @@ const bulls = (g, code) => {
   U.club.day = 'вчера';
   const v1 = club.view(U);
   ok('новые сутки — снова полный лимит', v1.budget.spent === 0 && v1.budget.left === C.DAILY_GOLD_CAP);
-  clearCd();
   const g1 = U.gold;
-  for (let i = 0; i < 400; i++) { clearCd(); playSafe(); }
+  for (let i = 0; i < 200; i++) playRaid(6);
   ok('и во вторые сутки выдан ровно потолок', U.gold - g1 === C.DAILY_GOLD_CAP);
 
   console.log('\n── 4. Источник золота помечен ──');
@@ -116,35 +94,41 @@ const bulls = (g, code) => {
 
   console.log('\n── 5. Общий перерыв после выигрыша ──');
   U.club.day = 'ещё одни сутки';
-  clearCd();
-  let won = null;
-  for (let i = 0; i < 60 && !won; i++) {
-    clearCd();
-    const r = playSafe();
-    if (r && r.result === 'win') won = r;
-  }
-  ok('выигрыш случился (иначе проверять нечего)', !!won);
+  playRaid(2);
   const cdSec = club.view(U).sharedCooldownSec;
   ok(`после выигрыша взведён общий перерыв (${cdSec} с)`, cdSec > 0);
-  ok('перерыв примерно нужной длины',
-     Math.abs(cdSec - C.SHARED_CD_MIN * 60) <= 2);
+  ok('перерыв примерно нужной длины', Math.abs(cdSec - C.SHARED_CD_MIN * 60) <= 2);
+  // Личные кулдауны игр снимаем: проверяем именно ОБЩИЙ перерыв, иначе
+  // рейд отказал бы по своему собственному таймеру и проверка ничего бы
+  // не доказала.
+  const shared = U.club.cd.all;
+  clearCd();
+  U.club.cd.all = shared;
   let blocked = 0;
   for (const start of [() => club.prefStart(U), () => club.diceStart(U),
-                       () => club.artyStart(U), () => club.tacticStart(U)]) {
+                       () => club.raidStart(U), () => club.tacticStart(U)]) {
     try { start(); } catch (e) { if (/перерыв/i.test(e.message)) blocked++; }
   }
   ok('перерыв закрывает ВСЕ игры, а не одну', blocked === 4);
+  // Общий сейф — тоже часть клуба и тоже под перерывом
+  let safeBlocked = false;
+  try { club.safeTry(U, '123456', nx); } catch (e) { safeBlocked = /перерыв/i.test(e.message); }
+  ok('и общий сейф в том числе', safeBlocked);
 
-  console.log('\n── 6. Сейф стал проигрываемым ──');
-  // Восемь попыток на четыре неповторяющиеся цифры не проигрывались
-  // никогда. Это была не мини-игра, а рента.
-  U.club.day = 'сутки для замера';
-  let wins = 0;
-  const N = 600;
-  for (let i = 0; i < N; i++) { clearCd(); U.club.dayGold = 0; const r = playSafe(); if (r && r.result === 'win') wins++; }
-  const wr = wins / N;
-  ok(`идеальный решатель выигрывает ${(wr * 100).toFixed(0)}%, а не всегда`, wr < 0.95);
-  ok('но игра не превратилась в безнадёжную', wr > 0.5);
+  console.log('\n── 6. Ночной рейд: жадность наказана арифметикой ──');
+  // Если лучшая остановка — последний рубеж, решения в игре нет: надо
+  // просто всегда идти до конца. Смысл появляется только когда ожидание
+  // где-то в середине выше, чем в конце.
+  const risks = C.RAID_RISK_PCT, loots = C.RAID_LOOT;
+  let survive = 1;
+  const ev = risks.map((r, i) => { survive *= (100 - r) / 100; return loots[i] * survive; });
+  const best = ev.indexOf(Math.max(...ev));
+  ok(`лучшая остановка — ${best + 1}-й рубеж из ${risks.length}, а не последний`,
+     best < risks.length - 1);
+  ok(`дойти до конца хуже, чем остановиться вовремя (${ev[best].toFixed(1)} против ${ev[ev.length - 1].toFixed(1)})`,
+     ev[best] > ev[ev.length - 1]);
+  ok('первый рубеж не лучший — идти хотя бы раз стоит', best > 0);
+
 
   console.log('\n── 7. Тактическая дуэль: привычку генерала можно прочитать ──');
   const KINDS = ['ground', 'air', 'sea'];

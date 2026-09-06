@@ -38,47 +38,58 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   ok('минного поля нет', v.mine === undefined);
   ok('полосы препятствий нет', v.run === undefined);
   ok('штабной партии нет', v.duel === undefined);
-  ok('артиллерия добавлена', !!v.arty);
+  ok('артиллерии больше нет', v.arty === undefined);
+  ok('ночной рейд добавлен', !!v.raid);
   ok('кости добавлены', !!v.dice);
   ok('аукцион добавлен', !!v.bids);
-  ok('старых функций нет в API', !club.mineStart && !club.runStart && !club.duelStart);
-  ok('новые функции есть', !!club.artyStart && !!club.diceStart && !!club.bidsPlay);
+  ok('тактическая дуэль добавлена', !!v.tactic);
+  ok('старых функций нет в API',
+     !club.mineStart && !club.runStart && !club.duelStart && !club.artyStart && !club.safeStart);
+  ok('новые функции есть', !!club.raidStart && !!club.diceStart && !!club.bidsPlay && !!club.tacticStart);
 
-  console.log('\n[2] Артиллерия: подсказки и награда за скорость');
-  club.artyStart(p);
-  const target = p.club.arty.target;
-  ok(`дистанция в диапазоне ${c.CLUB.ARTY_MIN}..${c.CLUB.ARTY_MAX}`, target >= c.CLUB.ARTY_MIN && target <= c.CLUB.ARTY_MAX);
-  // Заведомо неверный выстрел → корректная подсказка
-  const wrong = target > c.CLUB.ARTY_MIN ? c.CLUB.ARTY_MIN : c.CLUB.ARTY_MAX;
-  const miss = club.artyShoot(p, wrong, []);
-  eq('промах распознан', miss.result, 'miss');
-  eq('подсказка верная', miss.hint, wrong > target ? 'over' : 'under');
-  // Точный выстрел → награда
-  const goldBefore = p.gold;
-  const hit = club.artyShoot(p, target, []);
-  eq('попадание засчитано', hit.result, 'hit');
-  ok('золото начислено', p.gold > goldBefore);
-  ok('награда в диапазоне 10..20', hit.reward >= c.CLUB.ARTY_REWARD_MIN && hit.reward <= 20);
-  ok('после победы кулдаун', club.view(p).arty.state === 'cooldown');
-  // Раннее попадание выгоднее позднего
-  clearCd(); club.artyStart(p);
-  const t2 = p.club.arty.target;
-  const fast = club.artyShoot(p, t2, []).reward;
-  clearCd(); club.artyStart(p);
-  const t3 = p.club.arty.target;
-  const other = t3 > c.CLUB.ARTY_MIN ? c.CLUB.ARTY_MIN : c.CLUB.ARTY_MAX;
-  club.artyShoot(p, other, []);
-  const slow = club.artyShoot(p, t3, []).reward;
-  ok(`попадание с 1-го выстрела выгоднее (${fast} > ${slow})`, fast > slow);
+  console.log('\n[2] Ночной рейд: добыча растёт вместе с риском');
+  clearCd();
+  const rv = club.raidStart(p);
+  eq('рубежей столько, сколько задано', rv.total, c.CLUB.RAID_RISK_PCT.length);
+  eq('рубежей взято ноль', rv.step, 0);
+  eq('уносить пока нечего', rv.loot, 0);
+  ok('риск следующего рубежа показан ДО решения', rv.nextRisk === c.CLUB.RAID_RISK_PCT[0]);
+  ok('и добыча за него тоже', rv.nextLoot === c.CLUB.RAID_LOOT[0]);
+  // Риск обязан расти вместе с добычей — иначе решения нет, надо просто идти до конца
+  const risks = c.CLUB.RAID_RISK_PCT, loots = c.CLUB.RAID_LOOT;
+  ok('риск строго растёт', risks.every((x, i) => i === 0 || x > risks[i - 1]));
+  ok('добыча строго растёт', loots.every((x, i) => i === 0 || x > loots[i - 1]));
+  eq('рядов риска и добычи поровну', risks.length, loots.length);
 
-  console.log('\n[3] Артиллерия: патроны кончаются');
-  clearCd(); club.artyStart(p);
-  const t4 = p.club.arty.target;
-  const miss4 = t4 > c.CLUB.ARTY_MIN ? c.CLUB.ARTY_MIN : c.CLUB.ARTY_MAX;
-  let last;
-  for (let i = 0; i < c.CLUB.ARTY_SHOTS; i++) last = club.artyShoot(p, miss4, []);
-  eq('после всех промахов — проигрыш', last.result, 'lost');
-  eq('цель раскрыта', last.target, t4);
+  console.log('\n[3] Рейд: отход и срыв');
+  // Проходим рубеж принудительно, минуя случайность: нас интересует
+  // расчёт добычи, а не то, повезло ли броску.
+  clearCd(); club.raidStart(p);
+  p.club.raid.step = 3;
+  const gRaid = p.gold;
+  const home = club.raidPull(p, []);
+  eq('отход засчитан', home.result, 'home');
+  eq('добыча по третьему рубежу', home.reward, c.CLUB.RAID_LOOT[2]);
+  eq('золото начислено ровно на добычу', p.gold, gRaid + c.CLUB.RAID_LOOT[2]);
+  ok('после отхода кулдаун', club.view(p).raid.state === 'cooldown');
+
+  clearCd(); club.raidStart(p);
+  const empty = club.raidPull(p, []);
+  eq('отход без взятых рубежей — пусто', empty.result, 'empty');
+  eq('и без золота', empty.reward, 0);
+
+  // Срыв: подменяем риск на гарантированный, чтобы проверить потерю
+  clearCd(); club.raidStart(p);
+  p.club.raid.step = 4;
+  const saved = c.CLUB.RAID_RISK_PCT[4];
+  c.CLUB.RAID_RISK_PCT[4] = 100;
+  const gLost = p.gold;
+  const lost = club.raidPush(p, []);
+  c.CLUB.RAID_RISK_PCT[4] = saved;
+  eq('срыв на рубеже', lost.result, 'lost');
+  eq('потеряна вся набранная добыча', lost.lostLoot, c.CLUB.RAID_LOOT[3]);
+  eq('золота не прибавилось', p.gold, gLost);
+  throws('после срыва идти некуда', () => club.raidPush(p, []));
 
   console.log('\n[4] Кости: комбинации, перебросы, выплата');
   clearCd();
@@ -136,7 +147,7 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   console.log('\n[7] Игры засчитываются в ежедневное поручение');
   const daily = require('../dist/src/services/dailyQuests');
   const before = daily.ensureDaily(p).counters.clubPlayed || 0;
-  clearCd(); club.artyStart(p); club.artyShoot(p, 1, []);
+  clearCd(); club.raidStart(p); club.raidPush(p, []);
   ok('счётчик clubPlayed вырос', (daily.ensureDaily(p).counters.clubPlayed || 0) > before);
 
   console.log(`\n✅ Все проверки пройдены: ${passed}`);

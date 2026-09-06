@@ -272,10 +272,11 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/pref/start': return '🃏 Клуб: начал военный преферанс';
       case '/api/club/pref/hit':   return '🃏 Клуб (преферанс): взял карту';
       case '/api/club/pref/stand': return '🃏 Клуб (преферанс): остановился';
-      case '/api/club/safe/start': return '🔐 Клуб: подошёл к сейфу';
-      case '/api/club/safe/try':   return '🔐 Клуб (сейф): попытка кода';
-      case '/api/club/arty/start': return '🎯 Клуб: занял позицию (пристрелка)';
-      case '/api/club/arty/shoot': return '🎯 Клуб (пристрелка): выстрел';
+      case '/api/club/safe/try':
+        return '🔐 Клуб (общий сейф): попытка кода ' + String(body.guess || '');
+      case '/api/club/raid/start': return '🌒 Клуб: вывел группу в ночной рейд';
+      case '/api/club/raid/push':  return '🌒 Клуб (рейд): пошёл на следующий рубеж';
+      case '/api/club/raid/pull':  return '🌒 Клуб (рейд): отошёл с добычей';
       case '/api/club/dice/start':  return '🎲 Клуб: бросил военные кости';
       case '/api/club/dice/reroll': return '🎲 Клуб (кости): переброс';
       case '/api/club/dice/finish': return '🎲 Клуб (кости): забрал результат';

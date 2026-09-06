@@ -332,12 +332,12 @@ async function main() {
 
   console.log('10. Клуб офицеров');
   // Клуб переписан целиком: вместо загадки, угадайки и армрестлинга —
-  // четыре игры (очко, сейф, артиллерия, кости) плюс ставки. Тест
+  // игры клуба (очко, общий сейф, ночной рейд, кости, дуэль) и ставки. Тест
   // тянул старый API и падал на первой же строке, скрывая всё, что
   // идёт ниже по сценарию.
   const club = (await get('/api/club', A)).data;
   check('клуб отдаёт свои игры',
-        !!club.pref && !!club.safe && !!club.arty && !!club.dice && !!club.tactic,
+        !!club.pref && !!club.safe && !!club.raid && !!club.dice && !!club.tactic,
         'получено: ' + Object.keys(club).join(', '));
   check('клуб показывает суточный предел золота',
         !!club.budget && typeof club.budget.cap === 'number' && club.budget.cap > 0,
@@ -371,21 +371,38 @@ async function main() {
   }
 
   // Сейф: подбор кода по принципу «быки и коровы».
-  const safeStart = await post('/api/club/safe/start', A);
-  clubCheck('сейф: попытка начата', safeStart, (r) => r.data.triesLeft > 0);
-  const digits = safeStart.data.digits || 4;
-  const guessCode = '1234567890'.slice(0, digits);      // цифры не повторяются
+  // Сейф общий: «начать» его нельзя, он один на весь мир и всегда открыт,
+  // пока не вскрыт. Проверяем, что маска и история видны всем.
+  check('сейф: общая маска отдаётся',
+        typeof club.safe.mask === 'string' && club.safe.mask.length === club.safe.digits,
+        'safe: ' + JSON.stringify(club.safe).slice(0, 140));
+  check('сейф: история попыток анонимна',
+        Array.isArray(club.safe.history)
+        && club.safe.history.every((h) => h.guess && h.tag && !h.name),
+        'история: ' + JSON.stringify(club.safe.history).slice(0, 140));
+  const digits = club.safe.digits || 6;
+  const guessCode = '1234567890'.slice(0, digits);
   const safeTry = await post('/api/club/safe/try', A, { guess: guessCode });
   clubCheck('сейф: подсказка по коду получена', safeTry,
-            (r) => typeof r.data.bulls === 'number' && typeof r.data.cows === 'number', started(safeStart));
+            (r) => typeof r.data.bulls === 'number' && typeof r.data.cows === 'number');
+  // Вторая попытка подряд обязана упереться в личный таймер — на нём
+  // держится вся защита общего сейфа от перебора.
+  const safeAgain = await post('/api/club/safe/try', A, { guess: guessCode });
+  check('сейф: вторая попытка подряд отклонена таймером', safeAgain.status === 400,
+        'ответ: ' + safeAgain.status + ' ' + JSON.stringify(safeAgain.data).slice(0, 120));
   const badCode = await post('/api/club/safe/try', A, { guess: '11' });
-  clubCheck('сейф: неверный формат кода отклонён', badCode, (r) => r.status === 400, started(safeStart));
+  check('сейф: неверная длина кода отклонена', badCode.status === 400);
 
   // Артиллерия: пристрелка по расстоянию.
-  const artyStart = await post('/api/club/arty/start', A);
-  clubCheck('артиллерия: наводка начата', artyStart, () => true);
-  const artyShot = await post('/api/club/arty/shoot', A, { distance: 50 });
-  clubCheck('артиллерия: выстрел обработан', artyShot, (r) => !!r.data, started(artyStart));
+  const raidStart = await post('/api/club/raid/start', A);
+  clubCheck('рейд: группа вышла', raidStart,
+            (r) => r.data.total > 0 && typeof r.data.nextRisk === 'number');
+  const raidPush = await post('/api/club/raid/push', A);
+  clubCheck('рейд: рубеж отработан', raidPush,
+            (r) => ['passed', 'lost'].includes(r.data.result), started(raidStart));
+  const raidPull = await post('/api/club/raid/pull', A);
+  clubCheck('рейд: отход обработан', raidPull,
+            (r) => ['home', 'empty'].includes(r.data.result) || r.status === 400, started(raidStart));
 
   // Кости: бросок, переброс, подсчёт.
   const diceStart = await post('/api/club/dice/start', A);

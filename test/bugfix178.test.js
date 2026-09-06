@@ -291,29 +291,39 @@ const cnt = (p) => Number(((p.daily && p.daily.counters) || {}).clubPlayed || 0)
 
 reset();
 const S = mk('a'); um['a'] = S;
-club.safeStart(S);
 let bad = 0;
-for (const wrong of ['', 'абв', '11', '111111', '1123']) {   // мусор, не по длине, с повторами
+// Сейф теперь общий и шестизначный. Мусор, короткий и длинный ввод —
+// всё это до кода не доходит и поручение закрывать не должно.
+for (const wrong of ['', 'абв', '11', '1234', '12345678']) {
   try { club.safeTry(S, wrong, []); } catch (e) { bad++; }
 }
 eq('все пять кривых попыток отклонены', bad, 5);
 eq('счётчик клуба не сдвинулся', cnt(S), 0);
-const triesBefore = S.club.safe.triesLeft;
-club.safeTry(S, '1234', []);
+club.safeTry(S, '123456', []);
 eq('настоящая попытка засчитана в поручение', cnt(S), 1);
-ok(`настоящая попытка потратила ход (${triesBefore} → ${S.club.safe.triesLeft})`,
-   S.club.safe.triesLeft < triesBefore);
+// И она же обязана взвести личный таймер — иначе сейф ломается перебором
+const safeCrack = require('../dist/src/services/safeCrack');
+ok('настоящая попытка взвела таймер', safeCrack.view(S).myCooldownSec > 0);
 
-console.log('\n    то же в артиллерии');
+console.log('\n    то же в ночном рейде');
 reset();
 const R = mk('a'); um['a'] = R;
-club.artyStart(R);
 let bad2 = 0;
-for (const wrong of [0, -50, 999999]) {
-  try { club.artyShoot(R, wrong, []); } catch (e) { bad2++; }
+// Ход без вышедшей группы и отход без неё же — оба должны быть отвергнуты
+// ДО того, как поручение что-то засчитает.
+for (const call of [() => club.raidPush(R, []), () => club.raidPull(R, [])]) {
+  try { call(); } catch (e) { bad2++; }
 }
-eq('выстрелы вне допустимой дистанции отклонены', bad2, 3);
+eq('ходы без вышедшей группы отклонены', bad2, 2);
 eq('счётчик клуба не сдвинулся', cnt(R), 0);
+// А на последнем рубеже идти дальше некуда — тоже отказ без засчёта
+club.raidStart(R);
+R.club.raid.step = config.CLUB.RAID_RISK_PCT.length;
+let bad2b = 0;
+try { club.raidPush(R, []); } catch (e) { bad2b++; }
+eq('за последним рубежом хода нет', bad2b, 1);
+eq('и он не засчитан в поручение', cnt(R), 0);
+
 
 console.log('\n    и в аукционе ставок');
 reset();

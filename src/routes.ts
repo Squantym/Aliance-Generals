@@ -608,11 +608,12 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/club/pref/hit',   act((req, n) => club.prefHit(req.user, n)));
   app.add('POST', '/api/club/pref/stand', act((req, n) => club.prefStand(req.user, n)));
   // 2. Сейф штаба
-  app.add('POST', '/api/club/safe/start', act((req) => club.safeStart(req.user)));
+  // Сейф общий: «начать» его нельзя, он всегда один и открыт для всех
   app.add('POST', '/api/club/safe/try',   act((req, n) => club.safeTry(req.user, req.body.guess, n)));
   // 3. Артиллерийская пристрелка
-  app.add('POST', '/api/club/arty/start', act((req) => club.artyStart(req.user)));
-  app.add('POST', '/api/club/arty/shoot', act((req, n) => club.artyShoot(req.user, req.body.distance, n)));
+  app.add('POST', '/api/club/raid/start', act((req) => club.raidStart(req.user)));
+  app.add('POST', '/api/club/raid/push',  act((req, n) => club.raidPush(req.user, n)));
+  app.add('POST', '/api/club/raid/pull',  act((req, n) => club.raidPull(req.user, n)));
   // 4. Военные кости
   app.add('POST', '/api/club/dice/start',  act((req) => club.diceStart(req.user)));
   app.add('POST', '/api/club/dice/reroll', act((req, n) => club.diceReroll(req.user, req.body.keep, n)));

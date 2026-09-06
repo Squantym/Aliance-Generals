@@ -416,49 +416,74 @@ App.screens.club = async (c) => {
       <button class="btn btn-orange mt" id="pref-start">Сесть за стол</button>`;
   }
 
-  // ── 2. СЕЙФ ШТАБА ─────────────────────────────────────────────
+  // ── 2. СЕЙФ ШТАБА: ОДИН на весь мир ───────────────────────────
+  // Главное на карточке — общая маска: то, что мир уже вскрыл. Она и
+  // есть «счёт» этой игры, поэтому крупная и наверху.
   let safeHtml;
   const sf = data.safe;
-  if (sf.state === 'active') {
-    const hist = (sf.history || []).map((h) =>
-      `<div class="kv"><span class="k" style="font-family:monospace;letter-spacing:3px">${h.guess}</span>
-        <span class="v">🎯 ${h.bulls} точно · 🔄 ${h.cows} не на месте</span></div>`).join('');
+  const maskHtml = sf.mask.split('').map((ch) =>
+    `<span class="sf-d${ch === '*' ? ' sf-hidden' : ''}">${ch}</span>`).join('');
+  const hist = (sf.history || []).map((h) =>
+    `<div class="field-row small sf-row">
+       <span class="sf-guess grow">${UI.esc(h.guess)}</span>
+       <span class="muted">взломщик ${UI.esc(h.tag)}</span>
+     </div>`).join('');
+  const histBlock = hist
+    ? `<p class="muted small mt">Последние попытки — чьи, не показывается:</p><div>${hist}</div>`
+    : '<p class="muted small mt">К этому сейфу ещё никто не подходил.</p>';
+
+  if (sf.state === 'locked') {
     safeHtml = `
-      <p class="small">Подберите ${sf.digits}-значный код (цифры не повторяются). Осталось попыток: <b class="gold">${sf.triesLeft}</b></p>
-      <p class="muted small">🎯 — цифра на своём месте, 🔄 — есть в коде, но не там.</p>
-      ${hist ? `<div class="mt">${hist}</div>` : ''}
-      <div class="field-row mt">
-        <input type="text" id="safe-guess" maxlength="${sf.digits}" inputmode="numeric" placeholder="${'0'.repeat(sf.digits)}" style="font-family:monospace;letter-spacing:4px">
-        <button class="btn btn-orange btn-inline" id="safe-go">Ввести</button>
-      </div>`;
-  } else if (sf.state === 'cooldown') {
-    safeHtml = cdLine(sf.cooldownSec);
+      <div class="sf-mask">${maskHtml}</div>
+      <p class="center"><b class="gold">Сейф вскрыт!</b></p>
+      ${sf.last ? `<p class="muted small center">Взял <b>${UI.esc(sf.last.name)}</b> с ${sf.last.attempts}-й попытки мира.</p>` : ''}
+      <p class="muted small center mt">Новый сейф привезут через <b>${UI.fmtTimer(sf.lockedSec)}</b> — для всех сразу.</p>`;
   } else {
     safeHtml = `
-      <p class="muted small">Взломайте код за ${sf.tries} попыток методом дедукции. Награда <span class="ic-gold"></span> ${sf.reward}.</p>
-      <button class="btn btn-orange mt" id="safe-start">Подойти к сейфу</button>`;
+      <div class="sf-mask">${maskHtml}</div>
+      <p class="muted small center">Открыто цифр: <b>${sf.opened}</b> из ${sf.digits}
+        · попыток мира <b>${sf.attempts}</b> · взломщиков <b>${sf.crackers}</b></p>
+      <p class="muted small mt">Сейф ОДИН на всех. Любая попытка — чья угодно — навсегда
+        открывает цифры, которые оказались на своём месте. В коде ${sf.digits} цифр,
+        одна цифра может встретиться до ${sf.maxRepeat} раз. Вскрывшему —
+        <span class="ic-gold"></span> ${sf.reward}.</p>
+      ${histBlock}
+      ${sf.myCooldownSec > 0
+        ? `<p class="muted small mt">⏳ Отмычки остывают: <b>${UI.fmtTimer(sf.myCooldownSec)}</b></p>`
+        : `<div class="field-row mt">
+             <input type="text" id="safe-guess" maxlength="${sf.digits}" inputmode="numeric"
+               placeholder="${'0'.repeat(sf.digits)}" class="sf-input" style="flex:1">
+             <button class="btn btn-orange btn-inline" id="safe-go">Ввести</button>
+           </div>
+           <p class="muted small">Между попытками — ${sf.tryCdSec} с. После ввода вам лично
+             скажут, сколько цифр есть в коде, но стоят не на своём месте.</p>`}`;
   }
 
-  // ── 3. АРТИЛЛЕРИЙСКАЯ ПРИСТРЕЛКА ──────────────────────────────
-  let artyHtml;
-  const ar = data.arty;
-  if (ar.state === 'active') {
-    const hist = (ar.history || []).map((h) =>
-      `<div class="kv"><span class="k">${h.guess} м</span><span class="v">${h.hint === 'over' ? '⬇️ перелёт — бери меньше' : '⬆️ недолёт — бери больше'}</span></div>`).join('');
-    artyHtml = `
-      <p class="small">Дистанция от <b>${ar.min}</b> до <b>${ar.max}</b>. Выстрелов осталось: <b class="gold">${ar.shotsLeft}</b></p>
-      <p class="muted small">За попадание сейчас: <span class="ic-gold"></span> ${ar.nextReward}</p>
-      ${hist ? `<div class="mt">${hist}</div>` : ''}
+  // ── 3. НОЧНОЙ РЕЙД ────────────────────────────────────────────
+  let raidHtml;
+  const rd = data.raid;
+  if (rd.state === 'active') {
+    raidHtml = `
+      <p class="small">Взято рубежей: <b class="gold">${rd.step}</b> из ${rd.total}
+        · добыча при отходе: <span class="ic-gold"></span> <b>${rd.loot}</b></p>
+      ${rd.atEnd
+        ? '<p class="muted small">Рубежи кончились — отходите, дальше идти некуда.</p>'
+        : `<p class="muted small">Следующий рубеж: риск сорваться <b style="color:var(--red)">${rd.nextRisk}%</b>,
+             добыча вырастет до <span class="ic-gold"></span> <b>${rd.nextLoot}</b>.
+             Сорвались — теряете всё набранное.</p>`}
       <div class="field-row mt">
-        <input type="number" id="arty-dist" min="${ar.min}" max="${ar.max}" placeholder="дистанция" style="flex:1">
-        <button class="btn btn-orange btn-inline" id="arty-go">💥 Огонь</button>
+        ${rd.atEnd ? '' : '<button class="btn btn-inline grow" id="raid-push">Дальше</button>'}
+        <button class="btn btn-orange btn-inline grow" id="raid-pull">Отойти с добычей</button>
       </div>`;
-  } else if (ar.state === 'cooldown') {
-    artyHtml = cdLine(ar.cooldownSec);
+  } else if (rd.state === 'cooldown') {
+    raidHtml = cdLine(rd.cooldownSec);
   } else {
-    artyHtml = `
-      <p class="muted small">Корректировщик подскажет «перелёт» или «недолёт». Угадайте дистанцию (${ar.min}–${ar.max}) за ${ar.shots} выстрелов. Чем быстрее — тем больше приз: <span class="ic-gold"></span> ${ar.rewardMin}–${ar.rewardMax}.</p>
-      <button class="btn btn-orange mt" id="arty-start">Занять позицию</button>`;
+    raidHtml = `
+      <p class="muted small">Группа идёт через ${rd.total} рубежей. После каждого добыча растёт,
+        но растёт и риск: сорвались — теряете всё, что набрали. Уносит только тот, кто вовремя отошёл.
+        Первый рубеж: риск ${rd.firstRisk}%, добыча <span class="ic-gold"></span> ${rd.firstLoot}.
+        До последнего — <span class="ic-gold"></span> ${rd.maxLoot}, если дойдёте.</p>
+      <button class="btn btn-orange mt" id="raid-start">🌒 Вывести группу</button>`;
   }
 
   // ── 4. ВОЕННЫЕ КОСТИ ──────────────────────────────────────────
@@ -590,7 +615,7 @@ App.screens.club = async (c) => {
     <div class="card"><div class="name">⚔ Тактическая дуэль</div><div class="mt">${tacticHtml}</div></div>
     <div class="card"><div class="name">🗝 Сейф штаба</div><div class="mt">${safeHtml}</div></div>
     <div class="card"><div class="name">🃏 Военный преферанс</div><div class="mt">${prefHtml}</div></div>
-    <div class="card"><div class="name">🎯 Артиллерийская пристрелка</div><div class="mt">${artyHtml}</div></div>
+    <div class="card"><div class="name">🌒 Ночной рейд</div><div class="mt">${raidHtml}</div></div>
     <div class="card"><div class="name">🎲 Военные кости</div><div class="mt">${diceHtml}</div></div>
     <div class="card"><div class="name">💼 Штабной аукцион</div><div class="mt">${bidsHtml}</div></div>`;
 
@@ -607,19 +632,33 @@ App.screens.club = async (c) => {
     if (r && r.result === 'lose') UI.toast(`🃏 Генерал сильнее: ${r.mySum} против ${r.dealerSum}.`);
     await App.refreshMe(); App.rerender();
   };
-  // Сейф
-  if (R('safe-start')) R('safe-start').onclick = async () => { if (await post('/api/club/safe/start')) App.rerender(); };
+  // Сейф: общий на весь мир, «начать» его нельзя
   if (R('safe-go')) R('safe-go').onclick = async () => {
     const r = await post('/api/club/safe/try', { guess: R('safe-guess').value });
-    if (r && r.result === 'fail') UI.toast(`🗝 Сейф заблокирован! Код был: ${r.code}`);
+    if (r && r.result === 'win') UI.toast(`🗝 Сейф ваш! Код ${r.code}. +🪙 ${r.reward}`);
+    // Личная подсказка: сколько цифр есть в коде, но не на своём месте.
+    // Общей её делать нельзя — вместе с общей маской это выдало бы код.
+    if (r && r.result === 'miss') {
+      UI.toast(r.cows > 0
+        ? `🔄 Не на своём месте: ${r.cows}` + (r.bulls ? ` · открыто новых: ${r.bulls}` : '')
+        : (r.bulls ? `🎯 На своём месте: ${r.bulls}` : '❌ Ни одной цифры из кода'));
+    }
     await App.refreshMe(); App.rerender();
   };
-  // Артиллерия
-  if (R('arty-start')) R('arty-start').onclick = async () => { if (await post('/api/club/arty/start')) App.rerender(); };
-  if (R('arty-go')) R('arty-go').onclick = async () => {
-    const r = await post('/api/club/arty/shoot', { distance: R('arty-dist').value });
-    if (r && r.result === 'hit') UI.toast(`🎯 Попадание с ${r.shots}-го выстрела! +🪙 ${r.reward}`);
-    if (r && r.result === 'lost') UI.toast(`💨 Цель ушла. Дистанция была ${r.target} м.`);
+  const safeInput = R('safe-guess');
+  if (safeInput) safeInput.onkeydown = (e) => { if (e.key === 'Enter' && R('safe-go')) R('safe-go').click(); };
+
+  // Ночной рейд
+  if (R('raid-start')) R('raid-start').onclick = async () => { if (await post('/api/club/raid/start')) App.rerender(); };
+  if (R('raid-push')) R('raid-push').onclick = async () => {
+    const r = await post('/api/club/raid/push');
+    if (r && r.result === 'lost') UI.toast(`💥 Сорвались на ${r.step}-м рубеже. Потеряно ${r.lostLoot} 🪙 добычи.`);
+    await App.refreshMe(); App.rerender();
+  };
+  if (R('raid-pull')) R('raid-pull').onclick = async () => {
+    const r = await post('/api/club/raid/pull');
+    if (r && r.result === 'home') UI.toast(`🌒 Группа вернулась. +🪙 ${r.reward}`);
+    if (r && r.result === 'empty') UI.toast('Группа вернулась ни с чем — рубежей не взяли.');
     await App.refreshMe(); App.rerender();
   };
   // Кости: клик по кубику — оставить/перебросить (визуальная отметка)

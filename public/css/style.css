@@ -4907,3 +4907,30 @@ body.is-test-world { padding-top: 22px; }
   font-size: 30px; font-weight: 800; color: var(--gold);
   line-height: 1.1; letter-spacing: .02em;
 }
+
+/* ---------- ОБЩИЙ СЕЙФ ----------
+   Маска — главное на экране: это счёт всего мира, а не личный прогресс.
+   Поэтому крупно, моноширинно и с явной разницей между открытой цифрой
+   и звёздочкой: издалека должно быть видно, близко ли к вскрытию. */
+.sf-mask {
+  display: flex; justify-content: center; gap: 6px;
+  padding: 12px 0 8px; flex-wrap: wrap;
+}
+.sf-d {
+  min-width: 34px; padding: 6px 4px; text-align: center;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 26px; font-weight: 800; line-height: 1;
+  color: var(--gold); background: rgba(255,255,255,.05);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.sf-d.sf-hidden { color: var(--dim); opacity: .5; }
+.sf-row { padding: 2px 0; border-bottom: 1px solid var(--border); }
+.sf-row:last-child { border-bottom: 0; }
+.sf-guess {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 3px;
+}
+.sf-input {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 6px; text-align: center; font-size: 18px;
+}

@@ -23,6 +23,7 @@
 import config = require('../../config/gameConfig');
 import u = require('../core/utils');
 import player = require('./player');
+import safeCrack = require('./safeCrack');
 import type { User, Notices } from '../types';
 
 const C = config.CLUB;
@@ -31,10 +32,10 @@ const C = config.CLUB;
 function clubState(user: User): any {
   if (!user.club) user.club = {};
   const c: any = user.club;
-  if (!c.cd) c.cd = {};           // кулдауны: { all, pref, safe, arty, dice, bids, tactic }
+  if (!c.cd) c.cd = {};           // кулдауны: { all, pref, raid, dice, bids, tactic }
   if (c.pref === undefined) c.pref = null;
   if (c.safe === undefined) c.safe = null;
-  if (c.arty === undefined) c.arty = null;
+  if (c.raid === undefined) c.raid = null;
   if (c.dice === undefined) c.dice = null;
   if (c.tactic === undefined) c.tactic = null;
   return c;
@@ -108,8 +109,8 @@ function view(user: User) {
     budget: { cap: b.cap, spent: b.spent, left: b.left },
     sharedCooldownSec: cdLeft(c, 'all'),
     pref: prefView(c),
-    safe: safeView(c),
-    arty: artyView(c),
+    safe: safeView(user),
+    raid: raidView(c),
     dice: diceView(c),
     bids: bidsView(c),
     tactic: tacticView(c),
@@ -196,168 +197,126 @@ function prefStand(user: User, notices: Notices) {
 }
 
 // ===================================================================
-// 2. СЕЙФ ШТАБА — взломай 4-значный код за 8 попыток.
-//    «Быки» (точная цифра на месте) и «коровы» (цифра есть, но не там).
-//    Цифры в коде не повторяются. Классический Mastermind/Быки-коровы.
+// 2. СЕЙФ ШТАБА — ОДИН код на весь мир, ломают сообща.
+//    Правила и устройство — в src/services/safeCrack.ts. Здесь только
+//    оболочка: общий перерыв клуба и выдача золота через payout(),
+//    потому что другой двери к золоту в клубе нет.
 // ===================================================================
-function genSafeCode(digits: number): string {
-  const pool = ['0','1','2','3','4','5','6','7','8','9'];
-  u.shuffle(pool);
-  return pool.slice(0, digits).join('');
-}
-
-function safeView(c: any) {
-  if (c.safe) {
-    return {
-      state: 'active',
-      digits: C.SAFE_DIGITS,
-      triesLeft: c.safe.triesLeft,
-      history: c.safe.history,  // [{ guess, bulls, cows }]
-    };
-  }
-  const left = cdLeft(c, 'safe');
-  if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return {
-    state: 'ready', digits: C.SAFE_DIGITS, tries: C.SAFE_TRIES,
-    rewardMax: safeReward(1), rewardMin: safeReward(C.SAFE_TRIES),
-  };
-}
-
-// Награда за вскрытие с N-й попытки. Плоская награда не различала
-// угадавшего с первого раза и дожавшего на последней — а разница между
-// ними и есть вся игра.
-function safeReward(tryNo: number): number {
-  return Math.max(C.SAFE_REWARD_MIN, C.SAFE_REWARD_BASE - tryNo * C.SAFE_REWARD_STEP);
-}
-
-function safeStart(user: User) {
-  const c = clubState(user);
-  if (c.safe) return safeView(c);
-  if (cdLeft(c, 'safe') > 0) throw new u.ApiError('Сейф на таймере блокировки. Загляните позже.');
-  gate(c);
-  c.safe = { code: genSafeCode(C.SAFE_DIGITS), triesLeft: C.SAFE_TRIES, tries: 0, history: [] };
-  return safeView(c);
+function safeView(user: User) {
+  return safeCrack.view(user);
 }
 
 function safeTry(user: User, guess: string, notices: Notices) {
   const c = clubState(user);
-  if (!c.safe) throw new u.ApiError('Сначала подойдите к сейфу');
-  const g = String(guess || '').replace(/\D/g, '');
-  if (g.length !== C.SAFE_DIGITS) throw new u.ApiError(`Введите ${C.SAFE_DIGITS} цифры`);
-  if (new Set(g.split('')).size !== C.SAFE_DIGITS) {
-    throw new u.ApiError('Цифры в коде не повторяются — введите разные');
-  }
-  // Поручение засчитываем только за НАСТОЯЩУЮ попытку. Раньше строка
-  // стояла выше проверок: запрос с мусором вместо кода падал ошибкой,
-  // попытка сейфа не тратилась — а «сыграл в клубе» засчитывалось.
-  // Отменённый запрос не откатывает уже изменённого игрока, поэтому
-  // поручение закрывалось вообще без игры.
+  gate(c);
+  const r = safeCrack.attempt(user, guess);
+  // Поручение засчитываем за НАСТОЯЩУЮ попытку: safeCrack уже отверг бы
+  // мусор вместо кода и слишком частый запрос.
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  const code = c.safe.code;
-  let bulls = 0, cows = 0;
-  for (let i = 0; i < code.length; i++) {
-    if (g[i] === code[i]) bulls++;
-    else if (code.includes(g[i])) cows++;
-  }
-  c.safe.triesLeft--;
-  c.safe.tries = (c.safe.tries || 0) + 1;
-  c.safe.history.push({ guess: g, bulls, cows });
 
-  if (bulls === C.SAFE_DIGITS) {
-    const tries = c.safe.tries;
-    c.safe = null;
-    const reward = payout(user, 'safe', safeReward(tries), notices);
-    notices.push(`🗝 Сейф вскрыт с ${tries}-й попытки!${reward ? ' +🪙 ' + reward : ''}`);
-    return { result: 'win', bulls, cows, tries, reward };
+  if (r.result === 'win') {
+    const reward = payout(user, 'safe', r.reward, notices);
+    notices.push(`🗝 Сейф вскрыт! Код был ${r.code}, попыток ушло ${r.attempts}.`
+      + (reward ? ` +🪙 ${reward}` : ''));
+    return { ...r, reward };
   }
-  if (c.safe.triesLeft <= 0) {
-    const code2 = c.safe.code;
-    c.safe = null;
-    setCd(c, 'safe', C.SAFE_CD_FAIL_MIN);
-    return { result: 'fail', bulls, cows, code: code2 };
-  }
-  return { result: 'continue', bulls, cows, triesLeft: c.safe.triesLeft };
+  return r;
 }
+
 // ===================================================================
-// 3. АРТИЛЛЕРИЙСКАЯ ПРИСТРЕЛКА — угадай дистанцию до цели.
-//    Загадано число ARTY_MIN..ARTY_MAX. После каждого выстрела корректировщик
-//    говорит «перелёт» или «недолёт». Чем меньше выстрелов — тем больше приз.
-//    Патроны кончились — цель ушла, награды нет.
+// 3. НОЧНОЙ РЕЙД — игра про остановку, а не про угадывание.
+//
+//    Группа идёт через рубежи. После каждого взятого рубежа добыча
+//    растёт, но растёт и риск сорваться на следующем; сорвался —
+//    потерял всё, что набрал. Отойти можно в любой момент.
+//
+//    Вероятность следующего рубежа показана игроку ЧЕСТНО, до решения.
+//    Игра втёмную была бы просто рулеткой: решение имеет смысл, только
+//    если известна цена риска.
+//
+//    По расчёту лучшая остановка — третий рубеж (ожидание 5.1 🪙).
+//    Дойти до шестого можно, но ожидание там 2.6 — жадность наказана
+//    арифметикой, а не окриком.
 // ===================================================================
-function artyView(c: any) {
-  if (c.arty) {
+function raidRisk(step: number): number {
+  const arr: number[] = C.RAID_RISK_PCT;
+  return arr[Math.min(step, arr.length) - 1];
+}
+function raidLoot(step: number): number {
+  const arr: number[] = C.RAID_LOOT;
+  return step <= 0 ? 0 : arr[Math.min(step, arr.length) - 1];
+}
+
+function raidView(c: any) {
+  if (c.raid) {
+    const done = c.raid.step;
+    const last = (C.RAID_RISK_PCT as number[]).length;
     return {
       state: 'active',
-      min: C.ARTY_MIN, max: C.ARTY_MAX,
-      shotsLeft: c.arty.shotsLeft,
-      history: c.arty.history,        // [{ guess, hint: 'over'|'under' }]
-      nextReward: artyReward(c.arty.shots + 1),
+      step: done,
+      total: last,
+      loot: raidLoot(done),                                  // что унесём, если отойти сейчас
+      nextRisk: done < last ? raidRisk(done + 1) : null,     // цена следующего шага
+      nextLoot: done < last ? raidLoot(done + 1) : null,
+      atEnd: done >= last,
     };
   }
-  const left = cdLeft(c, 'arty');
+  const left = cdLeft(c, 'raid');
   if (left > 0) return { state: 'cooldown', cooldownSec: left };
   return {
-    state: 'ready', min: C.ARTY_MIN, max: C.ARTY_MAX, shots: C.ARTY_SHOTS,
-    rewardMax: artyReward(1), rewardMin: artyReward(C.ARTY_SHOTS),
+    state: 'ready',
+    total: (C.RAID_RISK_PCT as number[]).length,
+    firstRisk: raidRisk(1),
+    firstLoot: raidLoot(1),
+    maxLoot: raidLoot((C.RAID_LOOT as number[]).length),
   };
 }
 
-// Награда за попадание с N-го выстрела
-function artyReward(shotNo: number): number {
-  return Math.max(C.ARTY_REWARD_MIN, C.ARTY_REWARD_BASE - shotNo * C.ARTY_REWARD_STEP);
-}
-
-function artyStart(user: User) {
+function raidStart(user: User) {
   const c = clubState(user);
-  if (c.arty) return artyView(c);
-  if (cdLeft(c, 'arty') > 0) throw new u.ApiError('Батарея перезаряжается. Загляните позже.');
+  if (c.raid) return raidView(c);
+  if (cdLeft(c, 'raid') > 0) throw new u.ApiError('Группа отдыхает после выхода. Загляните позже.');
   gate(c);
-  c.arty = {
-    target: u.rnd(C.ARTY_MIN, C.ARTY_MAX),
-    shotsLeft: C.ARTY_SHOTS,
-    shots: 0,
-    history: [] as any[],
-  };
-  return artyView(c);
+  c.raid = { step: 0 };
+  return raidView(c);
 }
 
-function artyShoot(user: User, distance: number | string, notices: Notices) {
+// Шаг вперёд: бросок против риска следующего рубежа
+function raidPush(user: User, notices: Notices) {
   const c = clubState(user);
-  if (!c.arty) throw new u.ApiError('Сначала займите огневую позицию');
-
-  const guess = u.toInt(distance);
-  if (guess < C.ARTY_MIN || guess > C.ARTY_MAX) {
-    throw new u.ApiError(`Дистанция должна быть от ${C.ARTY_MIN} до ${C.ARTY_MAX}`);
-  }
-  // Только после проверки дистанции — см. пояснение в safeTry
+  if (!c.raid) throw new u.ApiError('Группа не вышла на маршрут');
+  const last = (C.RAID_RISK_PCT as number[]).length;
+  if (c.raid.step >= last) throw new u.ApiError('Дальше рубежей нет — отходите с добычей');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
-  c.arty.shots++;
-  c.arty.shotsLeft--;
-  const target = c.arty.target;
-
-  if (guess === target) {
-    const shots = c.arty.shots;
-    c.arty = null;
-    const reward = payout(user, 'arty', artyReward(shots), notices);
-    setCd(c, 'arty', C.ARTY_CD_WIN_MIN);
-    notices.push(`🎯 Прямое попадание с ${shots}-го выстрела!${reward ? ' +🪙 ' + reward : ''}`);
-    return { result: 'hit', target, shots, reward };
+  const next = c.raid.step + 1;
+  const risk = raidRisk(next);
+  if (u.rnd(1, 100) <= risk) {
+    const lost = raidLoot(c.raid.step);
+    c.raid = null;
+    setCd(c, 'raid', C.RAID_CD_FAIL_MIN);
+    return { result: 'lost', step: next, risk, lostLoot: lost };
   }
+  c.raid.step = next;
+  return { result: 'passed', ...raidView(c) };
+}
 
-  const hint = guess > target ? 'over' : 'under';   // перелёт / недолёт
-  c.arty.history.push({ guess, hint });
-
-  if (c.arty.shotsLeft <= 0) {
-    c.arty = null;
-    setCd(c, 'arty', C.ARTY_CD_FAIL_MIN);
-    return { result: 'lost', target };
+// Отход с добычей — единственный способ что-то унести
+function raidPull(user: User, notices: Notices) {
+  const c = clubState(user);
+  if (!c.raid) throw new u.ApiError('Группа не вышла на маршрут');
+  const step = c.raid.step;
+  if (step <= 0) {
+    // Отойти, не взяв ни одного рубежа, можно — но и уносить нечего.
+    // Кулдаун за это не ставим: игрок ничего не сыграл.
+    c.raid = null;
+    return { result: 'empty', step: 0, reward: 0 };
   }
-  return {
-    result: 'miss', hint, guess,
-    shotsLeft: c.arty.shotsLeft,
-    nextReward: artyReward(c.arty.shots + 1),
-  };
+  c.raid = null;
+  const reward = payout(user, 'raid', raidLoot(step), notices);
+  setCd(c, 'raid', C.RAID_CD_WIN_MIN);
+  notices.push(`🌒 Группа вернулась с ${step}-го рубежа.${reward ? ' +🪙 ' + reward : ''}`);
+  return { result: 'home', step, reward };
 }
 
 // ===================================================================
@@ -625,8 +584,8 @@ function tacticPlay(user: User, kind: any, notices: Notices) {
 export = {
   view,
   prefStart, prefHit, prefStand,
-  safeStart, safeTry,
-  artyStart, artyShoot,
+  safeTry,
+  raidStart, raidPush, raidPull,
   diceStart, diceReroll, diceFinish,
   bidsPlay,
   tacticStart, tacticPlay,

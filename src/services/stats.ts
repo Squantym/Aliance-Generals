@@ -77,7 +77,7 @@ const GOLD_SOURCES: Record<string, string> = {
   // падал в «Прочее»: addGold звали без источника.
   club_pref: 'Клуб: преферанс',
   club_safe: 'Клуб: сейф',
-  club_arty: 'Клуб: артиллерия',
+  club_raid: 'Клуб: ночной рейд',
   club_dice: 'Клуб: кости',
   club_bids: 'Клуб: аукцион',
   club_tactic: 'Клуб: тактическая дуэль',
