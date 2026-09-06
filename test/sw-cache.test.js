@@ -81,8 +81,15 @@ ok(/[\"']\/(?:css|js)\/[^\"'?]+\.(?:css|js)[\"']/.test(html),
 console.log('\n── 8. Подгружаемые экраны ──');
 const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
 ok(/get BUILD\(\)/.test(app), 'версия клиента вычисляется из адреса app.js');
-ok(/\/js\/screens\/\$\{file\}\.js\?v=\$\{App\.BUILD\}/.test(app),
-   'экраны запрашиваются с меткой — их адреса собираются в коде');
+// Раньше здесь требовалось, чтобы экраны запрашивались с App.BUILD —
+// то есть с хэшем app.js, одним на все экраны. Именно это и не давало
+// правкам доходить: пока не менялся app.js, адрес экрана оставался
+// прежним, а версионированные адреса отдаются immutable на год. Тест
+// закреплял поломку как требование. Теперь наоборот.
+ok(/\/js\/screens\/\$\{file}\.js\?v=\$\{App._screenVer\(file\)}/.test(app),
+   'экраны запрашиваются с версией СВОЕГО файла');
+ok(!/\/js\/screens\/\$\{file}\.js\?v=\$\{App.BUILD}/.test(app),
+   'общая версия app.js экранам больше не подставляется');
 ok(/связь прямая: свежий/.test(app),
    'в коде объяснено, почему версия берётся из адреса');
 ok(/hasHashParam = !!\(query && query\.includes\('v='\)\)/.test(http2),
@@ -126,8 +133,15 @@ const { JSDOM } = require(ROOT + '/node_modules/jsdom');
   let App;
   eval(fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8').replace(/^const App = /m, 'App = '));
   ok(App.BUILD === 'abc12345', `версия взята из адреса: ${App.BUILD}`);
-  ok(/\/js\/screens\/\$\{file\}\.js\?v=\$\{App\.BUILD\}/.test(appSrc),
-     'экраны запрашиваются с этой версией');
+  // Поведение, а не текст: без карты берётся запасной вариант, с картой —
+  // версия конкретного экрана.
+  ok(App._screenVer('market') === 'abc12345',
+     'без карты экран берёт запасную версию');
+  w.__SCREENS = { market: 'deadbeef', war: 'feedface' };
+  ok(App._screenVer('market') === 'deadbeef' && App._screenVer('war') === 'feedface',
+     'с картой каждый экран берёт свою версию');
+  ok(App._screenVer('market') !== App._screenVer('war'),
+     'и версии разных экранов не совпадают');
 }
 
 console.log('\n── 11. Страница всегда свежая ──');

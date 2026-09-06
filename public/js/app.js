@@ -3079,6 +3079,28 @@ const App = {
 
   _screenFile(name) { return App._SCREEN_FILES[name] || null; },
 
+  // Версия КОНКРЕТНОГО экрана. Сервер кладёт в страницу карту
+  // window.__SCREENS = { market: 'a1b2c3d4', war: '...' } — хэш каждого
+  // файла по его собственному содержимому.
+  //
+  // Раньше здесь стоял App.BUILD, то есть хэш app.js, один на все
+  // экраны. Пока не менялся app.js, адрес /js/screens/market.js?v=…
+  // оставался прежним — а версионированные адреса отдаются как
+  // immutable на ГОД. Значит правка экрана не доходила до игрока вовсе:
+  // ни перезагрузка страницы, ни сброс кеша сервером не помогали.
+  // По истории выпусков market.js менялся трижды подряд, app.js — ни
+  // разу; ровно столько правок и не дошло.
+  //
+  // Запасной вариант (карты нет — старая страница из кеша) оставляем
+  // прежним: лучше лишний раз перекачать, чем показать вчерашний экран.
+  _screenVer(file) {
+    try {
+      const m = window.__SCREENS;
+      if (m && m[file]) return m[file];
+    } catch (e) {}
+    return App.BUILD;
+  },
+
   // Загружаем файл один раз. Повторные обращения ждут ту же загрузку,
   // иначе быстрые переходы туда-сюда качали бы файл дважды.
   _loadScreen(name) {
@@ -3088,7 +3110,7 @@ const App = {
 
     const p = new Promise((resolve) => {
       const el = document.createElement('script');
-      el.src = `/js/screens/${file}.js?v=${App.BUILD}`;
+      el.src = `/js/screens/${file}.js?v=${App._screenVer(file)}`;
       el.async = false;
       el.onload = () => { App._loadedScreens[file] = true; resolve(); };
       el.onerror = () => {
@@ -3116,7 +3138,7 @@ const App = {
         if (App._loadedScreens[file] || App._loadingScreens[file]) continue;
         const el = document.createElement('link');
         el.rel = 'prefetch';
-        el.href = `/js/screens/${file}.js?v=${App.BUILD}`;
+        el.href = `/js/screens/${file}.js?v=${App._screenVer(file)}`;
         document.head.appendChild(el);
       }
     });

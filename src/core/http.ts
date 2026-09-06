@@ -441,10 +441,26 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   // ── HTML: подставляем хэши в ссылки (меняется в рантайме) ───────
   if (ext === '.html') {
     const data = fs.readFileSync(filePath);
-    const html = data.toString('utf8').replace(
+    let html = data.toString('utf8').replace(
       /(["'])(\/(?:css|js)\/[^"'?]+\.(?:css|js))\1/g,
       (full, quote, relPath) => `${quote}${assetHash.versioned(relPath)}${quote}`
     );
+    // Экраны грузятся из кода, а не тегом, поэтому регулярка выше их не
+    // видит. Отдаём странице карту «экран → его собственный хэш».
+    //
+    // Раньше App._loadScreen подставлял ВСЕМ экранам один хэш — от
+    // app.js. Значит правка в market.js не доходила до игрока, пока не
+    // менялся сам app.js: адрес /js/screens/market.js?v=<хэш app.js>
+    // оставался прежним, а такие адреса отдаются как immutable на год.
+    // По истории: за пять последних выпусков market.js менялся трижды,
+    // app.js — ни разу.
+    try {
+      const map = assetHash.screenMap();
+      if (Object.keys(map).length) {
+        html = html.replace('</head>',
+          '<script>window.__SCREENS=' + JSON.stringify(map) + ';</script>' + String.fromCharCode(10) + '</head>');
+      }
+    } catch (e) { /* без карты экраны возьмут запасную версию */ }
     const body = Buffer.from(html, 'utf8');
     const etag = '"' + crypto.createHash('md5').update(body).digest('hex').slice(0, 16) + '"';
 

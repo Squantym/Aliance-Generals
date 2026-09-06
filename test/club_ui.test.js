@@ -235,6 +235,13 @@ const baseLot = () => ({
      /банк 🪙 600/.test(html) && /ставка 🪙 10/.test(html));
   ok('суточный предел показан и здесь', /cap-bar/.test(html));
   ok('столов и карт на входе нет', c.querySelectorAll('.pf-card').length === 0);
+  ok('в шапке клуба есть картинка', c.querySelectorAll('.club-hero img').length === 1);
+  ok('и она берётся из файла раздела, а не из эмодзи',
+     /\/img\/menu\/club\.webp/.test(html));
+  // Шапка только на входе: внутри игры она отнимала бы экран у стола.
+  await render(baseClub(), baseLot(), 'pref');
+  ok('внутри игры шапки нет', c.querySelectorAll('.club-hero').length === 0);
+  html = await render(baseClub(), baseLot());   // возвращаемся ко входу
 
   console.log('\n── 15. Страница преферанса: правила до игры ──');
   // Игра платная, значит правила и цена должны быть видны ДО того, как

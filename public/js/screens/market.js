@@ -736,6 +736,7 @@ App.screens.club = async (c, param) => {
       ${back}`;
   } else {
     c.innerHTML = `
+      <div class="club-hero"><img src="/img/menu/club.webp" alt="Клуб офицеров" loading="eager"></div>
       <div class="title">Клуб офицеров</div>
       <p class="muted small" style="margin:-4px 4px 10px">Выберите развлечение. После выигрыша в бесплатных играх — общий перерыв на весь клуб.</p>
       ${capHtml}

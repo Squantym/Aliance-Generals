@@ -55,4 +55,31 @@ function versioned(relPath: string): string {
   return h ? `${relPath}?v=${h}` : relPath;
 }
 
-export = { versioned, hashOf };
+// ── Хэши экранов, подгружаемых по требованию ──────────────────────
+//
+// Экраны (public/js/screens/*.js) грузятся не тегом в HTML, а из кода:
+// App._loadScreen подставляет версию сам. Раньше он брал ОДНУ версию —
+// хэш app.js — и подставлял её всем экранам сразу. Из-за этого правка в
+// market.js не доходила до игроков, если сам app.js не менялся: адрес
+// /js/screens/market.js?v=<хэш app.js> оставался прежним, а такие адреса
+// отдаются как immutable на год.
+//
+// Проверено по истории: за пять последних выпусков market.js менялся
+// трижды, app.js — ни разу. То есть игроки, открывшие игру до них,
+// остались бы на старом экране до следующего года.
+//
+// Поэтому отдаём странице карту «имя экрана → его собственный хэш».
+function screenMap(): Record<string, string> {
+  const out: Record<string, string> = {};
+  const dir = path.join(PUBLIC_DIR, 'js', 'screens');
+  let names: string[];
+  try { names = fs.readdirSync(dir); } catch (e) { return out; }
+  for (const n of names) {
+    if (!n.endsWith('.js')) continue;
+    const h = hashOf('/js/screens/' + n);
+    if (h) out[n.slice(0, -3)] = h;
+  }
+  return out;
+}
+
+export = { versioned, hashOf, screenMap };

@@ -5033,3 +5033,24 @@ body.is-test-world { padding-top: 22px; }
   padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 14px;
 }
 .pref-stake:last-of-type { border-bottom: 0; }
+
+/* ---------- КЛУБ: КАРТИНКА В ШАПКЕ ----------
+   Ширина по контейнеру, высота ограничена: на телефоне картинка не должна
+   съедать экран так, чтобы кнопки игр ушли за сгиб. object-fit: cover
+   обрезает по краям, а не плющит — иначе арт выглядел бы растянутым. */
+.club-hero {
+  margin: 0 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  line-height: 0;
+  background: rgba(0,0,0,.25);
+}
+.club-hero img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+@media (max-width: 480px) { .club-hero img { height: 110px; } }
