@@ -236,8 +236,8 @@ const baseLot = () => ({
   ok('суточный предел показан и здесь', /cap-bar/.test(html));
   ok('столов и карт на входе нет', c.querySelectorAll('.pf-card').length === 0);
   ok('в шапке клуба есть картинка', c.querySelectorAll('.club-hero img').length === 1);
-  ok('и она берётся из файла раздела, а не из эмодзи',
-     /\/img\/menu\/club\.webp/.test(html));
+  ok('и это отдельный баннер, а не иконка меню',
+     /\/img\/club\/hero\.webp/.test(html));
   // Шапка только на входе: внутри игры она отнимала бы экран у стола.
   await render(baseClub(), baseLot(), 'pref');
   ok('внутри игры шапки нет', c.querySelectorAll('.club-hero').length === 0);
