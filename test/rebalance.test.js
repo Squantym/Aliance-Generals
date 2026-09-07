@@ -45,9 +45,13 @@ ok('добавлен контракт на спецоперации', c.CONTRACT
 ok('добавлен контракт на фаталити', c.CONTRACTS_POOL.some(x=>x.id==='c_fatal'));
 eq('цель контракта ур.1 = база', c.contractTarget(10,1), 10);
 ok('цель контракта ур.300 ≈ 5x', c.contractTarget(10,300) >= 49 && c.contractTarget(10,300) <= 51);
-eq('награда контракта ур.1 = база', c.contractReward(20,1), 20);
-ok('награда контракта ур.300 ≈ 3x (умереннее)', c.contractReward(20,300) >= 59 && c.contractReward(20,300) <= 61);
-console.log('     контракт база(цель10/зол20): ур.1='+c.contractTarget(10,1)+'/'+c.contractReward(20,1)+' ур.300='+c.contractTarget(10,300)+'/'+c.contractReward(20,300));
+// Золота за контракты больше нет — штаб платит техникой по ступеням
+eq('ступеней награды три', c.CONTRACT_UNITS.length, 3);
+ok('и они растут: 100 → 300 единиц',
+   c.CONTRACT_UNITS[0]===100 && c.CONTRACT_UNITS[2]===300 && c.CONTRACT_UNITS[1]>c.CONTRACT_UNITS[0]);
+ok('золотой формулы награды больше нет', c.contractReward === undefined);
+console.log('     контракт база(цель10): ур.1='+c.contractTarget(10,1)+' ур.300='+c.contractTarget(10,300)
+  +' · техника за ступени: '+c.CONTRACT_UNITS.join('/'));
 
 console.log('\n[6] Интеграция: features применяет масштаб к контрактам');
 process.env.MONGODB_URI='';
@@ -66,8 +70,20 @@ const DATA=path.join(process.cwd(),'data'); if(fs.existsSync(DATA))fs.rmSync(DAT
  // сравним по одному и тому же контракту (id совпадает — реролла не было)
  const lowById=Object.fromEntries(vLow.contracts.map(x=>[x.id,x]));
  let scaledUp=false;
- for(const h of vHigh.contracts){ const l=lowById[h.id]; if(l && h.target>l.target && h.reward>=l.reward) scaledUp=true; }
+ // reward больше нет — контракт платит техникой; сравниваем цель и то,
+ // что техника в награде соответствует уровню (на 300 она другая).
+ let payGrew=false;
+ for(const h of vHigh.contracts){
+   const l=lowById[h.id];
+   if(l && h.target>l.target) scaledUp=true;
+   if(l && JSON.stringify((h.rewardUnits||[]).map(x=>x.id)) !== JSON.stringify((l.rewardUnits||[]).map(x=>x.id))) payGrew=true;
+ }
  ok('на ур.300 цель контракта выросла vs ур.1', scaledUp);
+ ok('и техника в награде другая — по уровню игрока', payGrew);
+ ok('награда контракта — техника, а не золото',
+    vHigh.contracts.every(x=>Array.isArray(x.rewardUnits) && x.rewardUnits.length>0 && x.reward===undefined));
+ ok('и её количество из конфига',
+    vHigh.contracts.every(x=>c.CONTRACT_UNITS.includes(x.rewardTotal)));
 
  console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
  process.exit(0);

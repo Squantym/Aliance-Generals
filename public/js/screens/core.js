@@ -673,22 +673,37 @@ App.screens.dailytasks = async (c) => {
   const d = await API.get('/api/contracts');
   c.innerHTML = `
     <div class="title">📑 Контракты</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Боевые задания от штаба. Обновляются каждый день в 00:00 МСК. Выполняйте и забирайте награду.</p>
-    ${d.contracts.length ? d.contracts.map((ct) => `
-      <div class="card${ct.route && !ct.done ? ' quest-clickable' : ''}" ${ct.route && !ct.done ? `data-goto="${ct.route}"` : ''}>
-        <div class="contract-head">
-          ${ct.char ? App.instrImg(ct.char, 58) : ''}
-          <div class="contract-head-info">
-            <div class="name">${UI.esc(ct.name)} ${ct.claimed ? '<span class="badge">✅ выполнено</span>' : ''}</div>
-            ${ct.charName ? `<div class="muted small">${UI.esc(ct.charName)}${ct.charRole ? ` · ${UI.esc(ct.charRole)}` : ''}</div>` : ''}
-          </div>
+    <p class="muted small" style="margin:-4px 4px 10px">Наряды снабжения от штаба: платят не золотом, а техникой вашего уровня.
+      Обновляются каждый день в 00:00 МСК.</p>
+    ${d.contracts.length ? d.contracts.map((ct, i) => `
+      <div class="ct-card${ct.done && !ct.claimed ? ' ct-ready' : ''}${ct.claimed ? ' ct-done' : ''}${ct.route && !ct.done ? ' quest-clickable' : ''}"
+           ${ct.route && !ct.done ? `data-goto="${ct.route}"` : ''}>
+        <div class="ct-strip">
+          <span class="ct-no">НАРЯД № ${String(i + 1).padStart(2, '0')}</span>
+          <span class="ct-name">${UI.esc(ct.name)}</span>
+          ${ct.claimed ? '<span class="ct-stamp">ЗАКРЫТ</span>'
+            : (ct.done ? '<span class="ct-stamp ct-stamp-ok">ВЫПОЛНЕН</span>' : '')}
         </div>
-        <p class="muted small">${UI.esc(ct.desc)}</p>
-        ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
-        <div class="kv mt"><span class="k">Награда</span><span class="v gold"><span class="ic-gold"></span> ${ct.reward}</span></div>
-        ${ct.route && !ct.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
-        ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? 'Забрать награду' : 'Не выполнено'}</button>` : ''}
-      </div>`).join('') : '<div class="card center muted">Заданий нет. Загляните позже.</div>'}`;
+        <div class="ct-body">
+          <div class="ct-task">${UI.esc(ct.desc)}</div>
+          ${UI.bar(ct.current, ct.target, 'xp', `${ct.current} / ${ct.target}`)}
+          <div class="ct-pay">
+            <div class="ct-pay-head">Отгрузка со склада — <b>${UI.fmtNum(ct.rewardTotal)}</b> ед.</div>
+            <div class="ct-units">
+              ${(ct.rewardUnits || []).map((x) => `
+                <div class="ct-unit" title="${UI.esc(x.name)}">
+                  ${UI.img('units', x.id, 46)}
+                  <span class="ct-unit-n">×${UI.fmtNum(x.count)}</span>
+                  <span class="ct-unit-name">${UI.esc(x.name)}</span>
+                </div>`).join('')}
+            </div>
+          </div>
+          ${ct.route && !ct.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
+          ${!ct.claimed ? `<button class="btn btn-orange mt" data-claim="${ct.id}" ${ct.done ? '' : 'disabled'} style="width:100%">${ct.done ? '📦 Принять технику' : 'Наряд не закрыт'}</button>` : ''}
+        </div>
+        ${ct.charName ? `<div class="ct-sign">${ct.char ? App.instrImg(ct.char, 28) : ''}
+          <span>подписал: <b>${UI.esc(ct.charName)}</b>${ct.charRole ? ', ' + UI.esc(ct.charRole) : ''}</span></div>` : ''}
+      </div>`).join('') : '<div class="card center muted">Нарядов нет. Загляните позже.</div>'}`;
   c.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async (ev) => {
     ev.stopPropagation(); // клик по кнопке не должен уводить на экран выполнения
     try { await API.post('/api/contracts/claim', { contractId: b.dataset.claim }); await App.refreshMe(); App.rerender(); }

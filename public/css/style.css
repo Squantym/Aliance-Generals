@@ -5209,3 +5209,52 @@ body.is-test-world { padding-top: 22px; }
 .club-live.act { background: linear-gradient(90deg, #8e3326, #a8452e); }
 .club-live.act b { color: #ffd7c2; }
 body.has-club-bar #header { top: 32px; }
+
+/* ══════ КОНТРАКТЫ: НАРЯД СНАБЖЕНИЯ ══════
+   Раньше контракт выглядел как обычное поручение — та же карточка, тот
+   же портрет заказчика, — и на экране «Поручения штаба» два раздела
+   отличались только заголовком. Теперь это бланк наряда: полоса с
+   номером, задача, отгрузка техникой и подпись внизу. */
+.ct-card {
+  border: 1px solid var(--border); border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(0,0,0,.12));
+  margin-bottom: 10px; overflow: hidden;
+}
+.ct-card.ct-ready { border-color: var(--green); }
+.ct-card.ct-done  { opacity: .62; }
+.ct-strip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  background: repeating-linear-gradient(135deg, rgba(233,199,92,.06) 0 8px, transparent 8px 16px);
+}
+.ct-no {
+  font-size: 10.5px; letter-spacing: 1.2px; color: var(--dim);
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+.ct-name { font-weight: 700; font-size: 14px; color: var(--gold); flex: 1; }
+.ct-stamp {
+  font-size: 10.5px; letter-spacing: 1.5px; font-weight: 800;
+  color: var(--dim); border: 1.5px solid var(--dim); border-radius: 4px;
+  padding: 1px 6px; transform: rotate(-4deg);
+}
+.ct-stamp-ok { color: var(--green); border-color: var(--green); }
+.ct-body { padding: 8px 10px 10px; }
+.ct-task { font-size: 13px; margin-bottom: 6px; }
+.ct-pay { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 7px; }
+.ct-pay-head { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+.ct-pay-head b { color: var(--gold); }
+.ct-units { display: flex; gap: 8px; flex-wrap: wrap; }
+.ct-unit {
+  flex: 1 1 90px; min-width: 90px; text-align: center;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px;
+  background: rgba(255,255,255,.02);
+}
+.ct-unit img { display: block; margin: 0 auto; }
+.ct-unit-n { display: block; font-weight: 800; font-size: 13px; color: var(--gold); margin-top: 2px; }
+.ct-unit-name { display: block; font-size: 10.5px; color: var(--dim); line-height: 1.15; margin-top: 1px; }
+.ct-sign {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 10px; border-top: 1px solid var(--border);
+  font-size: 11.5px; color: var(--dim); background: rgba(0,0,0,.14);
+}
+.ct-sign img { border-radius: 50%; }

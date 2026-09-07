@@ -60,8 +60,19 @@ type Match = {
 
 type Store = { queue: QueueEntry[]; matches: Match[]; seq: number };
 
+// ВНИМАНИЕ: структуру восстанавливаем при КАЖДОМ чтении, а не только
+// при первом. Обнуление мира чистит коллекции «на месте» — у объекта
+// удаляются все ключи, потому что сервисы держат на него ссылку. Для
+// словаря это правильно, а для коллекции со структурой это значит, что
+// из { queue, matches, seq } остаётся {} — и первый же st.queue.filter()
+// роняет весь клуб пятисоткой. Ровно это и случилось на боевом сервере
+// после обнуления мира: коллекция clubmatch лежала в базе как «{}».
 function store(): Store {
-  return db.load<Store>('clubmatch', { queue: [], matches: [], seq: 0 });
+  const st = db.load<Store>('clubmatch', { queue: [], matches: [], seq: 0 });
+  if (!Array.isArray(st.queue)) st.queue = [];
+  if (!Array.isArray(st.matches)) st.matches = [];
+  if (typeof st.seq !== 'number') st.seq = 0;
+  return st;
 }
 
 function kassa(): any { return require('./club').kassa; }

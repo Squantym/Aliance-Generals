@@ -2397,9 +2397,9 @@ const TITLE_BY_ID: Record<string, any> = Object.fromEntries(TITLES.map((t) => [t
 // У каждого контракта теперь есть ЗАКАЗЧИК (char) — тот же состав, что
 // выдаёт поручения. В карточке показывается его портрет, а не эмодзи.
 const CONTRACTS_POOL = [
-  { id: 'c_attack',  char: 'volkov',   name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks', route: 'war',        targets: [5, 10, 15], rewardGold: [15, 25, 40] },
+  { id: 'c_attack',  char: 'volkov',   name: 'Зачистка',    desc: 'Соверши {n} атак',              counter: 'attacks', route: 'war',        targets: [5, 10, 15] },
   { id: 'c_win',     char: 'volkov',   name: 'Триумф',      desc: 'Выиграй {n} боёв',              counter: 'wins', route: 'war',           targets: [3, 6, 10],  rewardGold: [20, 32, 50] },
-  { id: 'c_buy',     char: 'kovac',    name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought', route: 'units',    targets: [8, 15, 30], rewardGold: [12, 20, 32] },
+  { id: 'c_buy',     char: 'kovac',    name: 'Снабжение',   desc: 'Купи {n} единиц техники',       counter: 'unitsBought', route: 'units',    targets: [8, 15, 30] },
   { id: 'c_build',   char: 'morozova', name: 'Стройка',     desc: 'Построй {n} зданий',            counter: 'buildingsBuilt', route: 'buildings', targets: [3, 6, 10],  rewardGold: [16, 26, 40] },
   { id: 'c_ear',     char: 'gadyuka',  name: 'Трофеи',      desc: 'Сорви {n} гербов',              counter: 'crestsTorn', route: 'war',        targets: [2, 4, 6],   rewardGold: [25, 40, 60] },
   { id: 'c_mission', char: 'tesla',    name: 'Операция',    desc: 'Пройди {n} шагов спецоперации', counter: 'missionStages', route: 'missions',  targets: [3, 6, 10],  rewardGold: [18, 28, 44] },
@@ -2421,8 +2421,56 @@ function contractTarget(base: number, level: number, counter?: string): number {
   }
   return Math.max(base, Math.round(base * (1 + Math.min(4, (level - 1) / 75))));
 }
-function contractReward(baseGold: number, level: number): number {
-  return Math.round(baseGold * (1 + Math.min(2, (level - 1) / 150)));
+// ---------- НАГРАДА КОНТРАКТА: ТЕХНИКА, А НЕ ЗОЛОТО ----------
+// Золото за контракты убрано: клуб офицеров и так единственный источник
+// свободного золота, а контракты выдавали его каждый день трижды. Теперь
+// штаб платит тем, чем и должен платить штаб, — техникой.
+//
+// Сколько: 100 / 200 / 300 единиц по ступеням контракта.
+// Какой: только той, что игроку уже открыта по уровню, и РАЗНОЙ —
+// по одному виду из каждого рода войск. Точный вид выбирается из трёх
+// последних доступных, детерминированно от номера контракта: иначе
+// награда была бы одинаковой каждый день.
+const CONTRACT_UNITS = [100, 200, 300];
+const CONTRACT_UNIT_CHOICE = 3;      // из скольких последних доступных выбираем
+
+function _hash32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+// Разбивка награды по видам техники. Одинакова при показе и при выдаче:
+// один и тот же seed даёт один и тот же результат, иначе игрок видел бы
+// в карточке одно, а получал другое.
+function contractUnitPicks(level: number, total: number, seed: string): any[] {
+  const lvl = Math.max(1, level || 1);
+  const rng = _mulberry32(_hash32(String(seed || '')));
+  const picked: any[] = [];
+  for (const type of ['ground', 'air', 'sea']) {
+    const open = UNITS.filter((u: any) => u.type === type && u.unlock <= lvl);
+    if (!open.length) continue;                       // род войск ещё не открыт
+    const tail = open.slice(-CONTRACT_UNIT_CHOICE);   // три последних доступных
+    picked.push(tail[Math.floor(rng() * tail.length)]);
+  }
+  if (!picked.length) return [];
+  // Делим общее число по видам: первому — больше, последнему — меньше.
+  // Так награда выглядит осмысленно («сорок танков и двадцать самолётов»),
+  // а не тремя одинаковыми кучками.
+  const weights = picked.length === 3 ? [0.4, 0.35, 0.25] : (picked.length === 2 ? [0.6, 0.4] : [1]);
+  const out: any[] = [];
+  let left = Math.max(1, Math.round(total || 0));
+  for (let i = 0; i < picked.length; i++) {
+    const isLast = i === picked.length - 1;
+    const n = isLast ? left : Math.max(1, Math.round(total * weights[i]));
+    out.push({ id: picked[i].id, name: picked[i].name, type: picked[i].type, count: Math.max(1, n) });
+    left -= n;
+    if (left <= 0 && !isLast) { break; }
+  }
+  return out;
+}
+function contractUnitsTotal(tier: number): number {
+  return CONTRACT_UNITS[Math.max(0, Math.min(CONTRACT_UNITS.length - 1, tier || 0))];
 }
 
 // Косметика профиля (рамки и фоны за золото)
@@ -2710,7 +2758,8 @@ export = {
   BATTLE, CREST, BOT_NAMES,
   BOT_PLAYER_PREFIXES, BOT_PLAYER_CORES, BOT_PLAYER_SUFFIXES, BOT_PLAYER_FLAGS,
   BANK, HOSPITAL, hospitalPrice, GOLD_PACKAGES, GOLD_PACKAGE_BY_ID, CHAT, MAIL,
-  VIP, LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget, contractReward,
+  VIP, LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget,
+  CONTRACT_UNITS, contractUnitPicks, contractUnitsTotal,
   HARD_COUNTERS, hardTarget,
   COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS, REINFORCE,
 };

@@ -183,6 +183,14 @@ function snapshotCounter(user: User, counter: string): number {
   return (user.counters as any)[counter] || 0;
 }
 
+// Из чего складывается разбивка награды: номер контракта и день его
+// выдачи. Один и тот же контракт даёт одну и ту же технику весь день —
+// иначе игрок видел бы в карточке одно, а в ангаре находил другое.
+function contractSeed(user: User, contractId: string): string {
+  const day = (user as any).contractsDay || '';
+  return String(contractId) + '@' + String(day);
+}
+
 function contractsView(user: User) {
   rollContracts(user);
   return {
@@ -196,11 +204,15 @@ function contractsView(user: User) {
       const done = current >= target;
       // Заказчик контракта — для портрета в карточке
       const ch = config.DAILY_CHARS[def.char] || null;
+      const total = config.contractUnitsTotal(tier);
       return {
         id: ct.id, name: def.name, route: def.route || null,
         desc: def.desc.replace('{n}', String(target)),
         current: Math.min(current, target), target,
-        reward: config.contractReward(def.rewardGold[tier], user.level),
+        // Награда — техника, а не золото. Разбивка считается от номера
+        // контракта, поэтому в карточке и при выдаче она одна и та же.
+        rewardUnits: config.contractUnitPicks(user.level, total, contractSeed(user, ct.id)),
+        rewardTotal: total,
         done, claimed: !!ct.claimed,
         char: def.char || null,
         charName: ch ? ch.name : null,
@@ -223,11 +235,19 @@ function claimContract(user: User, contractId: string, notices: Notices) {
   const current = Math.max(0, snapshotCounter(user, def.counter) - (ct.baseCounter || 0));
   if (current < target) throw new u.ApiError('Контракт ещё не выполнен');
 
-  const reward = config.contractReward(def.rewardGold[tier], user.level);
-  player.addGold(user, reward, 'contract');
+  const total = config.contractUnitsTotal(tier);
+  const picks = config.contractUnitPicks(user.level, total, contractSeed(user, ct.id));
+  // Техника падает прямо в ангар, на нулевую ступень улучшения — туда
+  // же, куда попадает купленная. Вместимость армии тут ни при чём: она
+  // ограничивает выход в бой, а не хранение.
+  for (const pick of picks) {
+    const box = player.ensureUnit(user, pick.id);
+    box[0] = (Number(box[0]) || 0) + pick.count;
+  }
   ct.claimed = true;
   db.markUser(user.id);
-  notices.push(`📋 Контракт «${def.name}» выполнен! +🪙 ${reward}`);
+  const list = picks.map((x: any) => `${x.name} ×${x.count}`).join(', ');
+  notices.push(`📋 Контракт «${def.name}» выполнен! Штаб передал технику: ${list}`);
   return contractsView(user);
 }
 

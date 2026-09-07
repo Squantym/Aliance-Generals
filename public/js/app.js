@@ -17,8 +17,13 @@ const App = {
   // ── Флаги стран: эмодзи → картинка ──
   _FLAG_MAP: { '🇧🇾':'by', '🇩🇪':'de', '🇰🇿':'kz', '🇨🇳':'cn', '🇷🇺':'ru', '🇺🇸':'us', '🇺🇦':'ua' },
   _flagImg(flag, cls) {
-    const code = this._FLAG_MAP[flag];
-    if (!code) return flag || '';
+    // Принимаем и эмодзи («🇷🇺»), и код страны («ru»): в сводке «пока вас
+    // не было» сервер долгое время писал именно код, и эти записи уже
+    // лежат у игроков — без второй строки они так и остались бы
+    // надписью «US» посреди флагов.
+    const raw = String(flag || '');
+    const code = this._FLAG_MAP[raw] || (/^[a-z]{2}$/i.test(raw) ? raw.toLowerCase() : null);
+    if (!code) return raw;
     return `<img src="/img/flags/${code}.webp" class="flag-img ${cls || ''}" alt="" loading="lazy" decoding="async">`;
   },
 

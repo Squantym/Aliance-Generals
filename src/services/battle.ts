@@ -735,7 +735,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       try {
         require('./warReport').onAttack(target, {
           defeat: true, moneyLost: loot, losses: defUnitLosses,
-          by: { id: user.id, name: user.name, flag: (user as any).country || '', level: user.level },
+          by: { id: user.id, name: user.name, flag: player.flag(user), level: user.level },
         });
       } catch (e) {}
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
@@ -769,7 +769,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       try {
         require('./warReport').onAttack(target, {
           defeat: false, losses: defWinLosses,
-          by: { id: user.id, name: user.name, flag: (user as any).country || '', level: user.level },
+          by: { id: user.id, name: user.name, flag: player.flag(user), level: user.level },
         });
       } catch (e) {}
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
