@@ -29,7 +29,7 @@ function check(user: User, notices?: Notices): void {
       const dollars = config.ACH_DOLLARS[s - 1];
       const gold = config.ACH_GOLD[s - 1];
       player.addMoney(user, dollars, true);
-      if (gold) player.addGold(user, gold);
+      if (gold) player.addGold(user, gold, 'achievement');
       const text = `🏆 Достижение «${a.name}» — этап ${s}/5! Награда: $${u.fmt(dollars)}${gold ? ` и 🪙 ${gold}` : ''}`;
       if (notices) notices.push(text);
       notifications.push(user.id, 'achievement', `Достижение: ${a.name}`, { text });

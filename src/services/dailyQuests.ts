@@ -176,7 +176,7 @@ function weeklyClaim(user: User, questId: string, notices: Notices) {
   const reward = config.weeklyQuestReward(quest.diff, user.level, quest);
   player.addMoney(user, reward.dollars, true);
   player.addXp(user, reward.xp, notices);
-  if (reward.gold) player.addGold(user, reward.gold);
+  if (reward.gold) player.addGold(user, reward.gold, 'quest');
   const ch = config.DAILY_CHARS[quest.char];
   notices.push(`🎁 ${ch ? ch.name + ': ' : ''}награда за недельное «${quest.name}»: +${reward.xp} XP, +$${u.fmt(reward.dollars)}` +
     (reward.gold ? `, 🪙 ${reward.gold}` : ''));
@@ -194,7 +194,7 @@ function weeklyClaimBonus(user: User, notices: Notices) {
   if (!allDone) throw new u.ApiError('Примите и выполните все недельные поручения');
   w.bonusClaimed = true;
   const bonus = config.weeklyAllBonusGold(user.level);
-  player.addGold(user, bonus);
+  player.addGold(user, bonus, 'quest');
   notices.push(`🎉 Все недельные поручения выполнены! Бонус: 🪙 ${bonus}`);
   return { gold: bonus };
 }
@@ -291,7 +291,7 @@ function claim(user: User, questId: string, notices: Notices) {
   const reward = config.dailyQuestReward(quest.diff, user.level, quest);
   player.addMoney(user, reward.dollars, true);
   player.addXp(user, reward.xp, notices);
-  if (reward.gold) player.addGold(user, reward.gold);   // контрабанда: возврат золота
+  if (reward.gold) player.addGold(user, reward.gold, 'quest');   // контрабанда: возврат золота
   const ch = config.DAILY_CHARS[quest.char];
   notices.push(`🎁 ${ch ? ch.name + ': ' : ''}награда за «${quest.name}»: +${reward.xp} XP, +$${u.fmt(reward.dollars)}` +
     (reward.gold ? `, 🪙 ${reward.gold}` : ''));
@@ -385,7 +385,7 @@ function claimBonus(user: User, notices: Notices) {
   if (!allDone) throw new u.ApiError('Примите и выполните все поручения дня, чтобы получить бонус');
   d.bonusClaimed = true;
   const bonus = config.dailyAllBonusGold(user.level);
-  player.addGold(user, bonus);
+  player.addGold(user, bonus, 'quest');
   notices.push(`🎉 Все поручения дня выполнены! Бонус: 🪙 ${bonus}`);
   return { gold: bonus };
 }

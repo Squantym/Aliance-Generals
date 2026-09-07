@@ -92,6 +92,55 @@ const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
   ok(noName.length ? `без русского имени: ${noName.join(', ')}` : 'все статьи расхода названы по-русски',
      noName.length === 0);
 
+  console.log('\n── 3б. У КАЖДОГО начисления золота есть источник ──');
+  // Так «Прочее» и разрасталось: player.addGold звали без третьего
+  // аргумента, и золото за достижения, поручения, контракты, награду за
+  // вход, приглашения и обучение сваливалось в одну безымянную кучу.
+  // На боевом сервере в ней набралось 4 573 🪙 — и понять, откуда они,
+  // по статистике было нельзя.
+  const noSrc = [];
+  for (const n of services) {
+    const src = fs.readFileSync(path.join(ROOT, 'src/services', n), 'utf8');
+    src.split('\n').forEach((l, i) => {
+      if (l.trim().startsWith('//') || l.trim().startsWith('*')) return;
+      if (!/player\.addGold\(|^\s*addGold\(/.test(l)) return;
+      if (/function addGold/.test(l)) return;
+      // Третий аргумент обязателен: строка, переменная или выражение —
+      // главное, чтобы он был. Считаем запятые ВЕРХНЕГО уровня: внутри
+      // аргументов бывают свои скобки (addGold(t, addInt('gold'), ...)),
+      // и простым регулярным выражением их не разобрать.
+      const at = l.indexOf('addGold(') + 'addGold('.length;
+      let depth = 1, args = 1;
+      for (let k = at; k < l.length && depth > 0; k++) {
+        const ch = l[k];
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        else if (ch === ',' && depth === 1) args++;
+      }
+      if (args < 3) noSrc.push(`${n}:${i + 1}`);
+    });
+  }
+  ok(noSrc.length ? `начисления без источника: ${noSrc.join(', ')}`
+     : 'ни одно начисление золота не идёт без источника', noSrc.length === 0);
+
+  // Источник есть, а имени нет — и в сводке владельца снова английское
+  // слово. Проверяем сразу и это: ключ до двоеточия («season:Итоги
+  // сезона — 1 место» → «season») обязан быть в словаре доходов.
+  const incBodyEarly = statsSrc.slice(statsSrc.indexOf('const GOLD_SOURCES'),
+                                     statsSrc.indexOf('};', statsSrc.indexOf('const GOLD_SOURCES')));
+  const incNames = new Set([...incBodyEarly.matchAll(/^\s*([a-z_]+)\s*:/gm)].map((m) => m[1]));
+  const usedIn = new Set();
+  for (const n of services) {
+    const src = fs.readFileSync(path.join(ROOT, 'src/services', n), 'utf8');
+    for (const m of src.matchAll(/addGold\([^;]*?,\s*'([a-z_]+)(?::[^']*)?'/g)) usedIn.add(m[1]);
+  }
+  ok(`источники начислений найдены в коде (${usedIn.size})`, usedIn.size >= 5);
+  // Имя ищем в ОБОИХ словарях: addGold с отрицательной суммой — это
+  // списание (так покупается билет займа), и его статья живёт в расходах.
+  const incNoName = [...usedIn].filter((k) => !incNames.has(k) && !named.has(k));
+  ok(incNoName.length ? `источники без русского имени: ${incNoName.join(', ')}`
+     : 'все источники начислений названы по-русски', incNoName.length === 0);
+
   console.log('\n── 4. Статьи клуба названы все, включая доходные ──');
   // Клуб — крупнейший источник золота в игре, и статей у него больше
   // всего. Ставка списывается, выигрыш начисляется, взнос возвращается —

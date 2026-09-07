@@ -69,7 +69,7 @@ function claimLoginReward(user: User, notices: Notices) {
   const p = (user as any).pendingLoginReward;
   if (!p) throw new u.ApiError('Награда за вход уже получена');
   if (p.dollars) player.addMoney(user, p.dollars, false);
-  if (p.gold) player.addGold(user, p.gold);
+  if (p.gold) player.addGold(user, p.gold, 'login');
   (user as any).pendingLoginReward = null;
   db.markUser(user.id);
   const parts: string[] = [];
@@ -224,7 +224,7 @@ function claimContract(user: User, contractId: string, notices: Notices) {
   if (current < target) throw new u.ApiError('Контракт ещё не выполнен');
 
   const reward = config.contractReward(def.rewardGold[tier], user.level);
-  player.addGold(user, reward);
+  player.addGold(user, reward, 'contract');
   ct.claimed = true;
   db.markUser(user.id);
   notices.push(`📋 Контракт «${def.name}» выполнен! +🪙 ${reward}`);
@@ -324,7 +324,7 @@ function applyReferral(user: User, code: string, notices: Notices) {
   // Новичок получает золото сразу. Пригласивший — НЕ сразу:
   //  • награду за достижение другом 50 уровня (см. onReferralLevelUp)
   //  • 10% от золота, купленного другом (см. onReferralPurchase)
-  player.addGold(user, config.REFERRAL.inviteeGold);
+  player.addGold(user, config.REFERRAL.inviteeGold, 'referral');
 
   inviter.refCount = (inviter.refCount || 0) + 1;
   db.markUser(user.id); db.markUser(inviter.id);
@@ -344,7 +344,7 @@ function onReferralLevelUp(user: User): void {
   const inviter = users()[user.referredBy];
   if (!inviter) return;
   user.refLevel50Paid = true;
-  player.addGold(inviter, config.REFERRAL.level50Reward);
+  player.addGold(inviter, config.REFERRAL.level50Reward, 'referral');
   inviter.tokens = (inviter.tokens || 0) + config.REFERRAL.level50Tokens;
   db.markUser(user.id); db.markUser(inviter.id);
   try {
@@ -361,7 +361,7 @@ function onReferralPurchase(user: User, goldBought: number): void {
   if (!inviter) return;
   const share = Math.floor(goldBought * config.REFERRAL.purchaseSharePct / 100);
   if (share <= 0) return;
-  player.addGold(inviter, share);
+  player.addGold(inviter, share, 'referral');
   inviter.refEarnings = (inviter.refEarnings || 0) + share;
   db.markUser(user.id); db.markUser(inviter.id);
   try {
@@ -591,7 +591,7 @@ function adminEndSeason(adminUser: User, body: any, notices: Notices) {
   for (let i = 0; i < Math.min(3, ranked.length); i++) {
     const { p } = ranked[i];
     if ((ranked[i].rating || 0) <= 0) break;
-    player.addGold(p, rewards[i].gold);
+    player.addGold(p, rewards[i].gold, 'season:Итоги сезона — ' + (i + 1) + ' место');
     p.tokens = (p.tokens || 0) + rewards[i].tokens;
     winners.push(`${i + 1}. ${p.name} (🪙 ${rewards[i].gold}, 🎖 ${rewards[i].tokens})`);
     try {

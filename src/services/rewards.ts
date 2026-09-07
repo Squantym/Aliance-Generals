@@ -139,7 +139,7 @@ function creditReward(user: User, p: RewardPayload, source?: string): void {
   // Источник с подробностью («Итоги недели — 1 место») берём из заголовка
   // награды: иначе всё сваливалось бы в «Прочее» и владелец не понимал,
   // за что именно человек получил золото
-  if (p.gold)        player.addGold(user, p.gold, source || 'other');
+  if (p.gold)        player.addGold(user, p.gold, source || 'admin');
   if (p.tokens)      user.tokens = (user.tokens || 0) + p.tokens;
   if (p.ears)        user.ears = (user.ears || 0) + p.ears;
   if (p.skillPoints) user.skillPoints = Math.max(0, (user.skillPoints || 0) + p.skillPoints);
