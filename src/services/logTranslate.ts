@@ -80,7 +80,7 @@ function clubGameName(id: any): string {
 
 function tacticKindName(id: any): string {
   switch (String(id || '')) {
-    case 'ground': return 'наземные войска';
+    case 'ground': return 'пехоту';
     case 'air':    return 'авиацию';
     case 'sea':    return 'флот';
     default:       return 'род войск';

@@ -687,9 +687,21 @@ App.screens.club = async (c, param) => {
   let interceptHtml;
   const ic = data.intercept;
   const icName = (n) => 'АБВГ'[Math.floor(n / 3)] + ((n % 3) + 1);
-  const icGrid = (cls) => `<div class="ic-grid">${
-    Array.from({ length: ic.cells }, (_, n) =>
-      `<button class="ic-cell ${cls}" data-cell="${n}">${icName(n)}</button>`).join('')}</div>`;
+  // Клетки — куски одной и той же карты: та же карта, что на картинке
+  // игры, разложена сеткой 3×2 фоном. Выбранная клетка подсвечивается и
+  // получает метку — свою (укрытие) или цели (наводка).
+  const icGrid = (cls, mark) => `<div class="ic-grid">${
+    Array.from({ length: ic.cells }, (_, n) => {
+      // Проценты подобраны под саму картинку: шесть клеток накрывают
+      // стол с картой в нижней правой части кадра и не захватывают ни
+      // руку, ни бар на заднем плане (см. background-size у .ic-cell).
+      const col = n % 3, row = Math.floor(n / 3);
+      const pos = `${[39, 68, 97][col]}% ${[64, 94][row]}%`;
+      return `<button class="ic-cell ${cls}" data-cell="${n}" style="background-position:${pos}">
+        <span class="ic-name">${icName(n)}</span>
+        <span class="ic-mark">${mark}</span>
+      </button>`;
+    }).join('')}</div>`;
   const icLast = pvpLast(ic, (L) => !L.hide ? '' : `
     <p class="muted small center">Вы прятались в <b>${icName(L.hide.mine)}</b>,
       соперник — в <b>${icName(L.hide.foe)}</b>.
@@ -701,9 +713,9 @@ App.screens.club = async (c, param) => {
       ? `${foeLine(ic)}<p class="center mt">📡 Радиограмма ушла. Ждём хода соперника.</p>`
       : `${foeLine(ic)}
         <p class="muted small mt"><b>1.</b> Где прячете свой штаб:</p>
-        ${icGrid('ic-hide')}
+        ${icGrid('ic-hide', '🏴')}
         <p class="muted small mt"><b>2.</b> Куда даёте наводки (${ic.guesses}):</p>
-        ${icGrid('ic-aim')}
+        ${icGrid('ic-aim', '🎯')}
         <button class="btn btn-orange mt" id="ic-send" style="width:100%" disabled>📡 Передать в штаб</button>
         <p class="muted small center mt">Не успеете — ход сделает жребий.</p>`;
   } else if (ic.state === 'cooldown') {
@@ -795,11 +807,20 @@ App.screens.club = async (c, param) => {
       <b>${lot.sold} / ${lot.maxTickets}</b>
     </div>
     <div class="cap-bar mt"><i style="width:${lot.maxTickets ? Math.min(100, Math.round(lot.sold / lot.maxTickets * 100)) : 0}%"></i></div>
+    ${lot.myTickets > 0 ? `
+    <div class="lot-mine mt">
+      <span class="lot-ticket lot-ticket-${lot.myTickets >= 20 ? 3 : (lot.myTickets >= 5 ? 2 : 1)}">
+        ${'<img src="/img/club/ticket.webp" alt="Билет" loading="lazy">'
+          .repeat(lot.myTickets >= 20 ? 3 : (lot.myTickets >= 5 ? 2 : 1))}
+        <i class="lot-ticket-num">${lot.myTickets}</i></span>
+      <span class="grow small">Ваши билеты<br><b class="gold">${lot.myTickets}</b>
+        <span class="muted">· шанс ${lot.myChancePct}%</span></span>
+    </div>` : `
     <div class="field-row mt">
       <span class="grow small">Ваши билеты</span>
-      <b class="gold">${lot.myTickets}</b>
-      <span class="small muted">шанс ${lot.myChancePct}%</span>
-    </div>
+      <b class="muted">нет</b>
+      <span class="small muted">шанс 0%</span>
+    </div>`}
     <p class="muted small mt">Шанс — это доля ваших билетов среди проданных.
       Купили 1 из 10 проданных — 10%. Купили 1 из 1000 — 0.1%.
       Чем больше продано, тем дороже стоит один и тот же шанс.</p>
@@ -818,11 +839,22 @@ App.screens.club = async (c, param) => {
   // ── ТАКТИЧЕСКАЯ ДУЭЛЬ ─────────────────────────────────────────
   let tacticHtml;
   const dl = data.tactic;
-  const kindBtn = (k) => `<button class="btn btn-inline tactic-kind" data-kind="${k.id}">${k.icon} ${UI.esc(k.name)}</button>`;
+  // Род войск выбирается картинкой, а не подписью: наставление клуба
+  // нарисовано теми же самыми фигурами, и глазами это читается быстрее.
+  const kindBtn = (k) => `
+    <button class="tactic-kind" data-kind="${k.id}" title="${UI.esc(k.note || '')}">
+      <img src="${UI.esc(k.img)}" alt="${UI.esc(k.name)}" loading="lazy">
+      <span>${UI.esc(k.name)}</span>
+    </button>`;
+  const kindPic = (id, kinds) => {
+    const k = (kinds || []).find((x) => x.id === id);
+    return k && k.img
+      ? `<img class="kind-mini" src="${UI.esc(k.img)}" alt="${UI.esc(k.name)}" loading="lazy"> ${UI.esc(k.name)}`
+      : UI.esc(id);
+  };
   const roundRow = (r, kinds) => {
-    const nm = (id) => { const k = kinds.find((x) => x.id === id); return k ? k.icon + ' ' + k.name : id; };
     const mark = r.res === 'win' ? '<b class="gold">победа</b>' : (r.res === 'lose' ? '<b style="color:var(--red)">поражение</b>' : 'ничья');
-    return `<div class="field-row small"><span class="grow">${nm(r.mine)} против ${nm(r.foe)}</span>${mark}</div>`;
+    return `<div class="field-row small tac-row"><span class="grow">${kindPic(r.mine, kinds)} против ${kindPic(r.foe, kinds)}</span>${mark}</div>`;
   };
   if (dl.state === 'active') {
     tacticHtml = `
@@ -830,16 +862,23 @@ App.screens.club = async (c, param) => {
       ${dl.rounds.length ? `<div class="mt">${dl.rounds.map((r) => roundRow(r, dl.kinds)).join('')}</div>` : ''}
       <p class="muted small mt">Генерал выбирает вслепую, каждый раунд заново.
         Предсказать нечего — только удача.</p>
-      <div class="field-row mt">${dl.kinds.map(kindBtn).join('')}</div>`;
+      <div class="tac-kinds mt">${dl.kinds.map(kindBtn).join('')}</div>
+      <p class="muted small center">${dl.kinds.map((k) =>
+        `${UI.esc(k.name)} › ${UI.esc(k.beatsRu || k.beats)}`).join(' · ')}</p>`;
   } else if (dl.state === 'cooldown') {
     tacticHtml = cdLine(dl.cooldownSec);
   } else {
+    // Правила показаны наставлением клуба, а не пересказом: круг на
+    // картинке и круг в коде — одно и то же, и разойтись им нельзя.
     tacticHtml = `
-      <p class="muted small">Три рода войск бьют друг друга по кругу:
-        ${dl.kinds.map((k) => `${k.icon} ${UI.esc(k.name)} — ${UI.esc(k.note)}`).join('; ')}.
-        До ${dl.needed} побед. Награда <span class="ic-gold"></span> ${dl.rewardMin}–${dl.rewardMax}:
+      <img class="tac-rules" src="/img/club/tactic.webp" alt="Кто кого побеждает"
+           width="1600" height="900" loading="lazy">
+      <p class="muted small mt">${dl.kinds.map((k) =>
+        `<b>${UI.esc(k.name)}</b> бьёт ${UI.esc(k.beatsRu || k.beats)} — ${UI.esc(k.note)}`
+      ).join(';<br>')}. Одинаковый выбор — ничья.</p>
+      <p class="muted small">До ${dl.needed} побед. Награда <span class="ic-gold"></span> ${dl.rewardMin}–${dl.rewardMax}:
         чем чище разгром, тем больше.</p>
-      <button class="btn btn-orange mt" id="tactic-start">⚔ Вызвать генерала</button>`;
+      <button class="btn btn-orange mt" id="tactic-start" style="width:100%">⚔ Вызвать генерала</button>`;
   }
 
   // ── Суточный предел: виден всегда ────────────────────────────
@@ -911,22 +950,27 @@ App.screens.club = async (c, param) => {
     </a>`).join('');
 
   const back = '<p class="mt"><a class="btn btn-inline" href="#club">‹ В клуб офицеров</a></p>';
+  // pic — картинка игры в шапке её страницы. Есть не у всех: у трёх игр
+  // рисунка пока нет, и вешать вместо него заглушку хуже, чем не вешать
+  // ничего.
   const PAGES = {
-    pref:    { icon: '🃏', name: 'Военный преферанс',  html: prefHtml },
-    safe:    { icon: '🗝', name: 'Сейф штаба',          html: safeHtml },
-    lottery: { icon: '🎟', name: 'Военный займ',        html: lotHtml },
+    pref:    { icon: '🃏', name: 'Военный преферанс',  html: prefHtml,   pic: 'pref' },
+    safe:    { icon: '🗝', name: 'Сейф штаба',          html: safeHtml,   pic: 'safe' },
+    lottery: { icon: '🎟', name: 'Военный займ',        html: lotHtml,    pic: 'lottery' },
     tactic:  { icon: '⚔', name: 'Тактическая дуэль',    html: tacticHtml },
     convoy:  { icon: '🚚', name: 'Ночной караван',      html: convoyHtml },
     sapper:  { icon: '🧨', name: 'Сапёрная тропа',       html: sapperHtml },
     bookie:  { icon: '🏁', name: 'Полевой тотализатор',  html: bookieHtml },
-    intercept: { icon: '📡', name: 'Радиоперехват',       html: interceptHtml },
-    sniper:  { icon: '🔭', name: 'Снайперская дуэль',     html: sniperHtml },
-    thimble: { icon: '🍲', name: 'Напёрстки полевой кухни', html: thimbleHtml },
+    intercept: { icon: '📡', name: 'Радиоперехват',       html: interceptHtml, pic: 'intercept' },
+    sniper:  { icon: '🔭', name: 'Снайперская дуэль',     html: sniperHtml, pic: 'sniper' },
+    thimble: { icon: '🍲', name: 'Напёрстки полевой кухни', html: thimbleHtml, pic: 'thimble' },
   };
 
   if (PAGES[game]) {
     const g = PAGES[game];
     c.innerHTML = `
+      ${g.pic ? `<div class="club-hero game-hero"><img src="/img/club/${g.pic}.webp"
+           alt="${UI.esc(g.name)}" width="1600" height="900" loading="eager"></div>` : ''}
       <div class="title">${g.icon} ${UI.esc(g.name)}</div>
       ${game === 'pref' ? '' : capHtml}
       <div class="card">${g.html}</div>

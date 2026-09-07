@@ -5104,14 +5104,86 @@ body.is-test-world { padding-top: 22px; }
 
 /* ── Радиоперехват: две сетки квадратов, укрытие и наводки ── */
 .ic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px; }
+/* Клетка — кусок той же карты, что на картинке игры: разложена
+   сеткой через background-size/position, поэтому шесть квадратов
+   складываются в одну карту, а не в шесть одинаковых плиток. */
 .ic-cell {
-  aspect-ratio: 1.6 / 1; border: 1px solid var(--border); border-radius: 8px;
-  background: rgba(255,255,255,.02); color: var(--text);
-  font-size: 15px; font-weight: 600; cursor: pointer;
-  transition: border-color .15s ease, background .15s ease;
+  position: relative; aspect-ratio: 1.5 / 1;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background-image: url(/img/club/intercept.webp);
+  background-size: 440% 444%;
+  color: var(--text); cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
 }
-.ic-cell:hover { border-color: var(--gold); }
-.ic-cell.on { border-color: var(--orange); background: rgba(214,138,46,.16); color: var(--gold); }
+.ic-cell::after {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(8,10,6,.55); transition: background .15s ease;
+}
+.ic-cell .ic-name {
+  position: absolute; left: 6px; bottom: 4px; z-index: 2;
+  font-size: 13px; font-weight: 700; letter-spacing: .5px;
+  color: #e8e2cf; text-shadow: 0 1px 3px #000;
+}
+.ic-cell .ic-mark {
+  position: absolute; right: 5px; top: 3px; z-index: 2;
+  font-size: 15px; opacity: 0; transform: scale(.6);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.ic-cell:hover { border-color: var(--gold); transform: translateY(-1px); }
+.ic-cell:hover::after { background: rgba(8,10,6,.38); }
+.ic-cell.on {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 1px var(--orange) inset, 0 0 14px rgba(214,138,46,.35);
+}
+.ic-cell.on::after { background: rgba(214,138,46,.28); }
+.ic-cell.on .ic-name { color: #ffe9b8; }
+.ic-cell.on .ic-mark { opacity: 1; transform: scale(1); }
+
+/* Тактическая дуэль: наставление и выбор рода войск картинками */
+/* height:auto обязателен: у картинки есть атрибуты width/height, и без
+   него ширина тянется по карточке, а высота остаётся 900 — наставление
+   растягивается вдвое. */
+.tac-rules { width: 100%; height: auto; border-radius: 10px; display: block; }
+.tac-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tac-kinds .tactic-kind {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 4px 6px; border: 1px solid var(--border); border-radius: 10px;
+  background: rgba(255,255,255,.02); color: var(--text); cursor: pointer;
+  transition: border-color .15s ease, transform .1s ease;
+}
+.tac-kinds .tactic-kind img { width: 100%; max-width: 84px; height: 62px; object-fit: contain; }
+.tac-kinds .tactic-kind span { font-size: 12px; font-weight: 600; }
+.tac-kinds .tactic-kind:hover { border-color: var(--gold); transform: translateY(-2px); }
+.kind-mini { width: 22px; height: 18px; object-fit: contain; vertical-align: middle; }
+.tac-row { align-items: center; }
+
+/* Военный займ: билет с числом в углу */
+.lot-mine { display: flex; align-items: center; gap: 12px; }
+/* Пачка билетов: чем больше куплено, тем толще стопка — один слой до
+   пяти билетов, два до двадцати, три дальше. Точное число всё равно
+   стоит в углу, стопка нужна, чтобы разницу было видно не читая. */
+.lot-ticket { position: relative; flex: none; display: block; width: 108px; }
+.lot-ticket img { width: 108px; height: auto; display: block; }
+.lot-ticket img:not(:first-child) {
+  position: absolute; left: 0; top: 0;
+  box-shadow: -2px -2px 6px rgba(0,0,0,.45);
+}
+.lot-ticket-2 { padding: 5px 5px 0 0; }
+.lot-ticket-2 img:nth-child(2) { transform: translate(5px, -5px); }
+.lot-ticket-3 { padding: 10px 10px 0 0; }
+.lot-ticket-3 img:nth-child(2) { transform: translate(5px, -5px); }
+.lot-ticket-3 img:nth-child(3) { transform: translate(10px, -10px); }
+.lot-ticket-num {
+  position: absolute; right: -6px; top: -8px; min-width: 28px; padding: 2px 7px;
+  border-radius: 999px; background: var(--orange); color: #1a1206;
+  font-size: 13px; font-weight: 800; font-style: normal; text-align: center;
+  border: 1px solid rgba(0,0,0,.35);
+  box-shadow: 0 1px 6px rgba(0,0,0,.5);
+}
+
+/* Картинка игры в шапке её страницы: чуть выше, чем баннер клуба, и по
+   центру кадра — сюжет у всех семи картинок именно там. */
+.club-hero.game-hero img { aspect-ratio: 16 / 7; object-position: center 45%; }
 
 /* ── Снайперская дуэль: два стрелка и журнал ── */
 .sn-duel {

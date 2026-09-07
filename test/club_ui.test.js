@@ -105,9 +105,13 @@ const baseClub = () => ({
   tactic: {
     state: 'ready', needed: 3, rewardMin: 6, rewardMax: 12,
     kinds: [
-      { id: 'ground', icon: '🛡', name: 'Наземные', beats: 'air', note: 'ПВО сбивает авиацию' },
-      { id: 'air', icon: '✈', name: 'Авиация', beats: 'sea', note: 'авиация топит флот' },
-      { id: 'sea', icon: '🚢', name: 'Флот', beats: 'ground', note: 'флот накрывает берег' },
+      // Круг тот же, что на наставлении клуба: пехота › флот › авиация › пехота
+      { id: 'ground', icon: '🪖', name: 'Пехота', beats: 'sea', beatsRu: 'флот',
+        img: '/img/club/kind-ground.webp', note: 'десант берёт корабли у берега' },
+      { id: 'sea', icon: '🚢', name: 'Флот', beats: 'air', beatsRu: 'авиацию',
+        img: '/img/club/kind-sea.webp', note: 'корабельное ПВО сбивает авиацию' },
+      { id: 'air', icon: '✈', name: 'Авиация', beats: 'ground', beatsRu: 'пехоту',
+        img: '/img/club/kind-air.webp', note: 'авиация накрывает пехоту с воздуха' },
     ],
   },
 });
@@ -227,7 +231,9 @@ const baseLot = () => ({
   };
   html = await render(cl, baseLot(), 'tactic');
   ok('счёт показан', /<b class="gold">2<\/b> : <b>1<\/b>/.test(html));
-  ok('история раундов видна', /Наземные против/.test(html));
+  ok('история раундов видна', /Пехота против/.test(html));
+  ok('и роды войск в ней — картинками, а не буквами',
+     c.querySelectorAll('.tac-row .kind-mini').length === 4);
   ok('подсказки про привычку генерала больше нет — читать нечего',
      !/повторяет то, чем выиграл/.test(html) && /выбирает вслепую/.test(html));
   ok('три кнопки родов войск', c.querySelectorAll('.tactic-kind').length === 3);
@@ -309,16 +315,86 @@ const baseLot = () => ({
   ok('на перерыве котелков нет', c.querySelectorAll('.th-pot').length === 0);
   ok('но видно, где был паёк', /№3/.test(html) && /4:00/.test(html));
 
+  console.log('\n── 5ж. Картинки клуба на месте ──');
+  // Ссылка на несуществующий файл — это пустой прямоугольник у игрока и
+  // 404 в логах, а в разметке всё «правильно». Поэтому каждый путь
+  // проверяется по диску.
+  const seenPics = new Set();
+  for (const g of ['', 'pref', 'safe', 'lottery', 'tactic', 'intercept', 'sniper', 'thimble']) {
+    const cl2 = baseClub();
+    if (g === 'tactic') { cl2.tactic.state = 'ready'; }
+    const h = await render(cl2, baseLot(), g || undefined);
+    for (const m of h.matchAll(/\/img\/club\/[a-z0-9-]+\.webp/g)) seenPics.add(m[0]);
+  }
+  ok(`картинок клуба в разметке (${seenPics.size})`, seenPics.size >= 8);
+  const missing = [...seenPics].filter((u) => !fs.existsSync(__dirname + '/../public' + u));
+  ok(missing.length ? `нет файлов: ${missing.join(', ')}` : 'все картинки клуба лежат на диске',
+     missing.length === 0);
+
+  console.log('\n── 5з. Тактическая дуэль: наставление и роды войск ──');
+  html = await render(baseClub(), baseLot(), 'tactic');
+  ok('наставление показано картинкой, а не пересказом', /\/img\/club\/tactic\.webp/.test(html));
+  // Текст под наставлением обязан совпадать с ним: игрок, прочитавший
+  // картинку, не должен обнаружить в игре обратный круг.
+  ok('пехота бьёт флот', /<b>Пехота<\/b> бьёт флот/.test(html));
+  ok('флот бьёт авиацию', /<b>Флот<\/b> бьёт авиацию/.test(html));
+  ok('авиация бьёт пехоту', /<b>Авиация<\/b> бьёт пехоту/.test(html));
+  ok('сказано и про ничью', /Одинаковый выбор — ничья/.test(html));
+  cl = baseClub();
+  cl.tactic = Object.assign({}, cl.tactic, { state: 'active', my: 0, foe: 0, rounds: [] });
+  html = await render(cl, baseLot(), 'tactic');
+  ok('род войск выбирается картинкой', c.querySelectorAll('.tac-kinds .tactic-kind img').length === 3);
+  ok('и у каждой кнопки своя', new Set([...c.querySelectorAll('.tac-kinds img')]
+     .map((i) => i.getAttribute('src'))).size === 3);
+
+  console.log('\n── 5и. Радиоперехват: клетки — куски карты ──');
+  cl = baseClub();
+  cl.intercept = Object.assign({}, cl.intercept, {
+    state: 'match', match: { id: 'i2', foeName: 'Сосед', deadlineSec: 120, moved: false } });
+  html = await render(cl, baseLot(), 'intercept');
+  const icCells = [...c.querySelectorAll('.ic-hide')];
+  ok('клетки подписаны квадратами', icCells.map((b) => b.textContent.trim().slice(0, 2)).join(',')
+     .indexOf('А1') === 0);
+  // Каждая клетка показывает СВОЙ кусок карты — иначе это шесть
+  // одинаковых плиток, а не поле.
+  ok('у каждой клетки свой участок карты',
+     new Set(icCells.map((b) => b.style.backgroundPosition)).size === 6);
+  ok('метки укрытия и наводки разные',
+     c.querySelector('.ic-hide .ic-mark').textContent === '🏴'
+     && c.querySelector('.ic-aim .ic-mark').textContent === '🎯');
+  ok('до выбора не подсвечено ничего', c.querySelectorAll('.ic-cell.on').length === 0);
+  c.querySelector('.ic-hide[data-cell="2"]').onclick();
+  c.querySelector('.ic-aim[data-cell="4"]').onclick();
+  ok('выбранные клетки подсвечены', c.querySelectorAll('.ic-cell.on').length === 2);
+  ok('и подсветка стоит именно на выбранных',
+     c.querySelector('.ic-hide[data-cell="2"]').classList.contains('on')
+     && c.querySelector('.ic-aim[data-cell="4"]').classList.contains('on'));
+
   console.log('\n── 7. Военный займ ──');
   html = await render(baseClub(), baseLot(), 'lottery');
   ok('банк крупно', /lot-pot-num/.test(html) && /600/.test(html));
   ok('продано билетов видно', /40 \/ 1000/.test(html));
   ok('свои билеты и шанс', /<b class="gold">2<\/b>/.test(html) && /шанс 5%/.test(html));
+  // Билет — картинкой, число куплённых — в углу самого билета
+  ok('билет показан картинкой', c.querySelectorAll('.lot-ticket img').length >= 1);
+  ok('и число билетов стоит в углу', c.querySelector('.lot-ticket-num').textContent === '2');
+  ok('до пяти билетов стопка в один слой', c.querySelectorAll('.lot-ticket img').length === 1);
+  let lt = baseLot(); lt.myTickets = 7;
+  html = await render(baseClub(), lt, 'lottery');
+  ok('от пяти — стопка в два слоя', c.querySelectorAll('.lot-ticket img').length === 2);
+  lt = baseLot(); lt.myTickets = 40;
+  html = await render(baseClub(), lt, 'lottery');
+  ok('от двадцати — в три', c.querySelectorAll('.lot-ticket img').length === 3);
+  ok('и число прежнее — точное', c.querySelector('.lot-ticket-num').textContent === '40');
+  lt = baseLot(); lt.myTickets = 0; lt.myChancePct = 0;
+  html = await render(baseClub(), lt, 'lottery');
+  ok('без билетов картинки нет', c.querySelectorAll('.lot-ticket').length === 0);
+  ok('и сказано, что билетов нет', /Ваши билеты[\s\S]{0,80}нет/.test(html));
   ok('кнопка покупки есть', !!c.querySelector('#lot-buy'));
   ok('прошлый тираж показан', /Соседний/.test(html));
 
   console.log('\n── 8. Билеты кончились ──');
-  let lt = baseLot(); lt.left = 0; lt.sold = 1000; lt.pot = 15000;
+  lt = baseLot(); lt.left = 0; lt.sold = 1000; lt.pot = 15000;
   html = await render(baseClub(), lt, 'lottery');
   ok('покупку убрали', !c.querySelector('#lot-buy'));
   ok('и объяснили почему', /Билеты кончились/.test(html));
@@ -402,9 +478,13 @@ const baseLot = () => ({
   ok('в шапке клуба есть картинка', c.querySelectorAll('.club-hero img').length === 1);
   ok('и это отдельный баннер, а не иконка меню',
      /\/img\/club\/hero\.webp/.test(html));
-  // Шапка только на входе: внутри игры она отнимала бы экран у стола.
-  await render(baseClub(), baseLot(), 'pref');
-  ok('внутри игры шапки нет', c.querySelectorAll('.club-hero').length === 0);
+  // Внутри игры своя картинка, а не общая шапка клуба: иначе на всех
+  // десяти страницах висел бы один и тот же баннер.
+  html = await render(baseClub(), baseLot(), 'pref');
+  ok('у страницы игры своя картинка', /\/img\/club\/pref\.webp/.test(html));
+  ok('и это не общая шапка клуба', !/\/img\/club\/hero\.webp/.test(html));
+  html = await render(baseClub(), baseLot(), 'sniper');
+  ok('и у каждой игры она своя', /\/img\/club\/sniper\.webp/.test(html));
   html = await render(baseClub(), baseLot());   // возвращаемся ко входу
 
   console.log('\n── 15. Страница преферанса: правила до игры ──');

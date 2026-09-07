@@ -229,7 +229,42 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
     p.gold = keep;
   } finally { utils.rnd = realRnd; }
 
-  console.log('\n[8] Игры засчитываются в ежедневное поручение');
+  console.log('\n[8] Тактическая дуэль: круг как в наставлении клуба');
+  // На картинке /img/club/tactic.webp нарисовано: пехота побеждает флот,
+  // флот побеждает авиацию, авиация побеждает пехоту. Игрок играет по
+  // ней, поэтому код обязан считать так же — обратный круг наказывал бы
+  // ровно тех, кто прочитал правила.
+  clearCd();
+  const kinds = club.view(p).tactic.kinds;
+  const beatsOf = (id) => (kinds.find((k) => k.id === id) || {}).beats;
+  eq('пехота бьёт флот', beatsOf('ground'), 'sea');
+  eq('флот бьёт авиацию', beatsOf('sea'), 'air');
+  eq('авиация бьёт пехоту', beatsOf('air'), 'ground');
+  ok('у каждого рода войск своя картинка',
+     kinds.length === 3 && new Set(kinds.map((k) => k.img)).size === 3);
+  const noPic = kinds.filter((k) => !fs.existsSync(path.join(process.cwd(), 'public', String(k.img || ''))));
+  ok(noPic.length ? `нет файлов: ${noPic.map((k) => k.img).join(', ')}` : 'и все они лежат на диске',
+     noPic.length === 0);
+  ok('и подпись «кого бьёт» — в винительном падеже',
+     kinds.every((k) => typeof k.beatsRu === 'string' && k.beatsRu.length > 2));
+  // Считает ли круг так, как нарисован: генерала подменяем, чтобы
+  // проверять правило, а не бросок.
+  const realPick = utils.pick;
+  const duel = (mine, foeKind) => {
+    clearCd();
+    utils.pick = () => foeKind;
+    try { club.tacticStart(p); return club.tacticPlay(p, mine, []).last.res; }
+    finally { utils.pick = realPick; }
+  };
+  eq('пехота против флота — победа', duel('ground', 'sea'), 'win');
+  eq('флот против авиации — победа', duel('sea', 'air'), 'win');
+  eq('авиация против пехоты — победа', duel('air', 'ground'), 'win');
+  eq('флот против пехоты — поражение', duel('sea', 'ground'), 'lose');
+  eq('авиация против флота — поражение', duel('air', 'sea'), 'lose');
+  eq('пехота против авиации — поражение', duel('ground', 'air'), 'lose');
+  eq('одинаковый выбор — ничья', duel('ground', 'ground'), 'draw');
+
+  console.log('\n[9] Игры засчитываются в ежедневное поручение');
   const daily = require('../dist/src/services/dailyQuests');
   const before = daily.ensureDaily(p).counters.clubPlayed || 0;
   clearCd(); club.convoyGo(p, 'mountain', 'mountain', []);

@@ -720,10 +720,20 @@ function bookieBet(user: User, squadId: any, notices: Notices) {
 //    выиграл, и уходит от того, которым проиграл. История дуэли видна
 //    игроку целиком — значит привычку можно прочитать и наказать.
 // ===================================================================
+// Треугольник взят с наставления клуба (img/club/tactic.webp) и обязан
+// совпадать с ним до стрелки: пехота бьёт флот, флот бьёт авиацию,
+// авиация бьёт пехоту. Раньше в коде стоял обратный круг — игрок,
+// прочитавший наставление, играл бы ровно наоборот.
 const TACTIC_KINDS = [
-  { id: 'ground', icon: '🛡', name: 'Наземные', beats: 'air',    note: 'ПВО сбивает авиацию' },
-  { id: 'air',    icon: '✈', name: 'Авиация',  beats: 'sea',    note: 'авиация топит флот' },
-  { id: 'sea',    icon: '🚢', name: 'Флот',     beats: 'ground', note: 'флот накрывает берег' },
+  // beatsRu — «кого бьёт» в винительном падеже, ровно как подписано на
+  // наставлении. Склонять на клиенте нечем: «Флот бьёт авиация» — это
+  // первое, что получится из name.
+  { id: 'ground', icon: '🪖', name: 'Пехота',  beats: 'sea',    beatsRu: 'флот',
+    img: '/img/club/kind-ground.webp', note: 'десант берёт корабли у берега' },
+  { id: 'sea',    icon: '🚢', name: 'Флот',    beats: 'air',    beatsRu: 'авиацию',
+    img: '/img/club/kind-sea.webp',    note: 'корабельное ПВО сбивает авиацию' },
+  { id: 'air',    icon: '✈', name: 'Авиация', beats: 'ground', beatsRu: 'пехоту',
+    img: '/img/club/kind-air.webp',    note: 'авиация накрывает пехоту с воздуха' },
 ];
 const TACTIC_BY_ID: Record<string, any> = Object.fromEntries(TACTIC_KINDS.map((k) => [k.id, k]));
 
