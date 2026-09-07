@@ -23,6 +23,7 @@
 import config = require('../../config/gameConfig');
 import u = require('../core/utils');
 import player = require('./player');
+import db = require('../core/db');
 import safeCrack = require('./safeCrack');
 import antibot = require('./antibot');
 import type { User, Notices } from '../types';
@@ -36,8 +37,8 @@ function clubState(user: User): any {
   if (!c.cd) c.cd = {};           // кулдауны: { all, pref, raid, dice, bids, tactic }
   if (c.pref === undefined) c.pref = null;
   if (c.safe === undefined) c.safe = null;
-  if (c.raid === undefined) c.raid = null;
-  if (c.dice === undefined) c.dice = null;
+  if (c.sapper === undefined) c.sapper = null;
+
   if (c.tactic === undefined) c.tactic = null;
   return c;
 }
@@ -156,9 +157,9 @@ function view(user: User) {
     sharedCooldownSec: cdLeft(c, 'all'),
     pref: prefView(c),
     safe: safeView(user),
-    raid: raidView(c),
-    dice: diceView(c),
-    bids: bidsView(c),
+    convoy: convoyView(Object.assign({ __uid: user.id }, c)),
+    sapper: sapperView(c),
+    bookie: bookieView(c),
     tactic: tacticView(c),
   };
 }
@@ -202,6 +203,22 @@ function cardsOut(ids: string[]): any[] {
   return (ids || []).map((id) => config.cardInfo(id)).filter(Boolean);
 }
 
+// Пример каждой карты для правил: ранг, чего стоит и картинка.
+function prefRankTable(): any[] {
+  const suits: string[] = config.CARD_SUITS.map((x: any) => x.id);
+  return config.CARD_RANKS.map((r: any, i: number) => {
+    const info = config.cardInfo(r.id + '-' + suits[i % suits.length]);
+    return {
+      rank: r.label,
+      value: r.value,
+      soft: !!r.soft,          // туз: при переборе считается за 1
+      img: info ? info.img : null,
+      suit: info ? info.suit : '',
+      red: info ? info.red : false,
+    };
+  });
+}
+
 function prefView(c: any) {
   if (c.pref) {
     return {
@@ -220,6 +237,12 @@ function prefView(c: any) {
   return {
     state: 'ready', target: C.PREF_TARGET, dealerStop: C.PREF_DEALER_STOP,
     entry: C.PREF_ENTRY_GOLD, win: C.PREF_WIN_GOLD, cdMin: C.PREF_CD_MIN,
+    // Таблица достоинств — с картинками настоящих карт. Считает её
+    // СЕРВЕР по той же колоде, что и раздаёт: выпиши клиент эти
+    // значения у себя — и однажды он покажет «валет 2», когда на
+    // сервере уже 3. Масти взяты вразнобой, чтобы это выглядело
+    // сдачей, а не таблицей.
+    ranks: prefRankTable(),
     // Вероятность выигрыша наружу НЕ отдаётся: игрок садится за стол, а
     // не читает таблицу шансов.
   };
@@ -338,266 +361,287 @@ function safeTry(user: User, guess: string, notices: Notices) {
 }
 
 // ===================================================================
-// 3. НОЧНОЙ РЕЙД — игра про остановку, а не про угадывание.
+// 3. НОЧНОЙ КАРАВАН — единственная игра клуба против ЖИВЫХ игроков.
 //
-//    Группа идёт через рубежи. После каждого взятого рубежа добыча
-//    растёт, но растёт и риск сорваться на следующем; сорвался —
-//    потерял всё, что набрал. Отойти можно в любой момент.
+// Ты ведёшь караван одним из трёх маршрутов. На маршрутах ждут засады,
+// оставленные другими игроками. Прошёл — добыча; напоролся — караван
+// потерян, а золото уходит тому, кто засаду поставил. После прохода
+// (удачного или нет) ты сам оставляешь засаду.
 //
-//    Вероятность следующего рубежа показана игроку ЧЕСТНО, до решения.
-//    Игра втёмную была бы просто рулеткой: решение имеет смысл, только
-//    если известна цена риска.
+// Почему это устойчиво к скриптам: предсказывать нечего. У сервера тут
+// нет ни шаблона, ни оптимальной стратегии — есть только решения живых
+// людей, принятые минуту назад. Бот угадывает ровно так же, как человек.
 //
-//    По расчёту лучшая остановка — третий рубеж (ожидание 5.1 🪙).
-//    Дойти до шестого можно, но ожидание там 2.6 — жадность наказана
-//    арифметикой, а не окриком.
+// Засады расходуются: сработавшая снимается. Иначе за сутки все три
+// маршрута стали бы смертельными и игра встала бы.
 // ===================================================================
-function raidRisk(step: number): number {
-  const arr: number[] = C.RAID_RISK_PCT;
-  return arr[Math.min(step, arr.length) - 1];
-}
-function raidLoot(step: number): number {
-  const arr: number[] = C.RAID_LOOT;
-  return step <= 0 ? 0 : arr[Math.min(step, arr.length) - 1];
+type Ambush = { route: string; byId: string; byName: string; at: number };
+type ConvoyEvent = { route: string; hit: boolean; at: number; tag: string };
+type ConvoyStore = { ambushes: Ambush[]; log: ConvoyEvent[] };
+
+function convoyStore(): ConvoyStore {
+  return db.load<ConvoyStore>('convoy', { ambushes: [], log: [] });
 }
 
-function raidView(c: any) {
-  if (c.raid) {
-    const done = c.raid.step;
-    const last = (C.RAID_RISK_PCT as number[]).length;
-    return {
-      state: 'active',
-      step: done,
-      total: last,
-      loot: raidLoot(done),                                  // что унесём, если отойти сейчас
-      nextRisk: done < last ? raidRisk(done + 1) : null,     // цена следующего шага
-      nextLoot: done < last ? raidLoot(done + 1) : null,
-      atEnd: done >= last,
-    };
-  }
-  const left = cdLeft(c, 'raid');
-  if (left > 0) return { state: 'cooldown', cooldownSec: left };
+// Метка каравана в общей сводке — анонимная и своя на каждый выход.
+// По имени было бы видно, кто где ходит, и маршруты читались бы по
+// знакомым позывным, а не по риску.
+function convoyTag(): string {
+  return 'К-' + u.rnd(10, 99);
+}
+
+function convoyView(c: any) {
+  const st = convoyStore();
+  const left = cdLeft(c, 'convoy');
+  const routes = (C.CONVOY_ROUTES as any[]).map((r) => ({ id: r.id, name: r.name, icon: r.icon }));
   return {
-    state: 'ready',
-    total: (C.RAID_RISK_PCT as number[]).length,
-    firstRisk: raidRisk(1),
-    firstLoot: raidLoot(1),
-    maxLoot: raidLoot((C.RAID_LOOT as number[]).length),
+    state: left > 0 ? 'cooldown' : 'ready',
+    cooldownSec: left,
+    routes,
+    // Сколько засад в округе ВСЕГО — но не по маршрутам. Раскрой
+    // распределение, и все пойдут по чистому: выбирать станет нечего.
+    ambushes: st.ambushes.length,
+    loot: C.CONVOY_LOOT,
+    ambushPay: C.CONVOY_AMBUSH_PAY,
+    // Последние выходы: по ним и читается обстановка. Это единственная
+    // подсказка, и она общая для всех.
+    log: (st.log || []).slice(0, C.CONVOY_LOG),
+    myAmbush: st.ambushes.find((a) => a.byId === (c.__uid || '')) || null,
   };
 }
 
-function raidStart(user: User) {
+// Провести караван маршрутом route и оставить засаду на маршруте ambush
+function convoyGo(user: User, route: any, ambush: any, notices: Notices) {
   const c = clubState(user);
-  beat(user, 'raid');
-  if (c.raid) return raidView(c);
-  if (cdLeft(c, 'raid') > 0) throw new u.ApiError('Группа отдыхает после выхода. Загляните позже.');
-  gate(c);
-  c.raid = { step: 0 };
-  return raidView(c);
-}
-
-// Шаг вперёд: бросок против риска следующего рубежа
-function raidPush(user: User, notices: Notices) {
-  const c = clubState(user);
-  if (!c.raid) throw new u.ApiError('Группа не вышла на маршрут');
-  beat(user, 'raid');
-  const last = (C.RAID_RISK_PCT as number[]).length;
-  if (c.raid.step >= last) throw new u.ApiError('Дальше рубежей нет — отходите с добычей');
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
-
-  const next = c.raid.step + 1;
-  const risk = raidRisk(next);
-  if (u.rnd(1, 100) <= risk) {
-    const lost = raidLoot(c.raid.step);
-    c.raid = null;
-    setCd(c, 'raid', C.RAID_CD_FAIL_MIN);
-    return { result: 'lost', step: next, risk, lostLoot: lost };
-  }
-  c.raid.step = next;
-  return { result: 'passed', ...raidView(c) };
-}
-
-// Отход с добычей — единственный способ что-то унести
-function raidPull(user: User, notices: Notices) {
-  const c = clubState(user);
-  if (!c.raid) throw new u.ApiError('Группа не вышла на маршрут');
-  beat(user, 'raid');
-  const step = c.raid.step;
-  if (step <= 0) {
-    // Отойти, не взяв ни одного рубежа, можно — но и уносить нечего.
-    // Кулдаун за это не ставим: игрок ничего не сыграл.
-    c.raid = null;
-    return { result: 'empty', step: 0, reward: 0 };
-  }
-  c.raid = null;
-  const reward = payout(user, 'raid', raidLoot(step), notices);
-  setCd(c, 'raid', C.RAID_CD_WIN_MIN);
-  notices.push(`🌒 Группа вернулась с ${step}-го рубежа.${reward ? ' +🪙 ' + reward : ''}`);
-  return { result: 'home', step, reward };
-}
-
-// ===================================================================
-// 4. ВОЕННЫЕ КОСТИ — 5 кубиков, до DICE_REROLLS перебросов.
-//    Оставляешь нужные кубики, остальные перебрасываешь. В конце
-//    считается комбинация (от «двух пар» до «полного залпа»).
-// ===================================================================
-function diceCombo(dice: number[]): { id: string; name: string; gold: number } | null {
-  const counts: Record<number, number> = {};
-  for (const d of dice) counts[d] = (counts[d] || 0) + 1;
-  const values = Object.values(counts).sort((a, b) => b - a);
-  const uniq = Object.keys(counts).map(Number).sort((a, b) => a - b);
-  const pay = (id: string) => C.DICE_PAYOUTS.find((p: any) => p.id === id) || null;
-
-  if (values[0] === 5) return pay('five');
-  if (values[0] === 4) return pay('four');
-  if (values[0] === 3 && values[1] === 2) return pay('full');
-  // Стрит: 5 разных подряд (1-5 или 2-6)
-  if (uniq.length === 5 && uniq[4] - uniq[0] === 4) return pay('straight');
-  if (values[0] === 3) return pay('three');
-  if (values[0] === 2 && values[1] === 2) return pay('twopair');
-  return null;
-}
-
-function diceView(c: any) {
-  if (c.dice) {
-    return {
-      state: 'active',
-      dice: c.dice.dice,
-      rerollsLeft: c.dice.rerollsLeft,
-      combo: diceCombo(c.dice.dice),   // текущая комбинация (подсказка игроку)
-      payouts: C.DICE_PAYOUTS,
-    };
-  }
-  const left = cdLeft(c, 'dice');
-  if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return {
-    state: 'ready', count: C.DICE_COUNT, rerolls: C.DICE_REROLLS,
-    payouts: C.DICE_PAYOUTS,
-    rewardMax: Math.max(...C.DICE_PAYOUTS.map((p: any) => p.gold)),
-    rewardMin: Math.min(...C.DICE_PAYOUTS.map((p: any) => p.gold)),
-  };
-}
-
-function rollDice(n: number): number[] {
-  return Array.from({ length: n }, () => u.rnd(1, 6));
-}
-
-function diceStart(user: User) {
-  const c = clubState(user);
-  beat(user, 'dice');
-  if (c.dice) return diceView(c);
-  if (cdLeft(c, 'dice') > 0) throw new u.ApiError('Кости ещё у другого расчёта. Загляните позже.');
-  gate(c);
-  c.dice = { dice: rollDice(C.DICE_COUNT), rerollsLeft: C.DICE_REROLLS };
-  require('./dailyQuests').bump(user, 'clubPlayed', 1);
-  return diceView(c);
-}
-
-// keep — массив индексов кубиков, которые ОСТАВЛЯЕМ; остальные перебрасываются
-function diceReroll(user: User, keep: any, notices: Notices) {
-  const c = clubState(user);
-  if (!c.dice) throw new u.ApiError('Сначала бросьте кости');
-  beat(user, 'dice');
-  if (c.dice.rerollsLeft <= 0) throw new u.ApiError('Перебросы кончились — забирайте результат');
-  const keepSet = new Set((Array.isArray(keep) ? keep : []).map((x: any) => u.toInt(x)));
-  c.dice.dice = c.dice.dice.map((d: number, i: number) => (keepSet.has(i) ? d : u.rnd(1, 6)));
-  c.dice.rerollsLeft--;
-  return { result: 'rerolled', dice: c.dice.dice, rerollsLeft: c.dice.rerollsLeft, combo: diceCombo(c.dice.dice) };
-}
-
-function diceFinish(user: User, notices: Notices) {
-  const c = clubState(user);
-  if (!c.dice) throw new u.ApiError('Нет активной игры');
-  beat(user, 'dice');
-  const dice = c.dice.dice.slice();
-  const combo = diceCombo(dice);
-  c.dice = null;
-  if (!combo) {
-    setCd(c, 'dice', C.DICE_CD_FAIL_MIN);
-    return { result: 'nothing', dice };
-  }
-  const reward = payout(user, 'dice', combo.gold, notices);
-  setCd(c, 'dice', C.DICE_CD_WIN_MIN);
-  notices.push(`🎲 ${combo.name}!${reward ? ' +🪙 ' + reward : ''}`);
-  return { result: 'win', dice, combo, reward };
-}
-
-// ===================================================================
-// 5. ШТАБНОЙ АУКЦИОН — слепые ставки против генералов.
-//    У вас BIDS_POINTS очков влияния и BIDS_LOTS лотов. Распределяете
-//    очки между лотами втёмную; соперники делают то же самое. Лот
-//    достаётся тому, кто поставил больше. Ничья — лот уходит казне.
-// ===================================================================
-const BID_LOT_NAMES = ['Партия боеприпасов', 'Трофейная техника', 'Разведданные'];
-
-function bidsView(c: any) {
-  const left = cdLeft(c, 'bids');
-  if (left > 0) return { state: 'cooldown', cooldownSec: left };
-  return {
-    state: 'ready',
-    points: C.BIDS_POINTS,
-    lots: BID_LOT_NAMES.slice(0, C.BIDS_LOTS),
-    rivals: C.BIDS_RIVALS,
-    perLot: C.BIDS_REWARD_PER_LOT,
-    sweepBonus: C.BIDS_SWEEP_BONUS,
-    rewardMax: C.BIDS_LOTS * C.BIDS_REWARD_PER_LOT + C.BIDS_SWEEP_BONUS,
-  };
-}
-
-// Соперник распределяет очки случайно, но осмысленно (не все в один лот)
-function rivalBids(): number[] {
-  const lots = C.BIDS_LOTS;
-  let left = C.BIDS_POINTS;
-  const out: number[] = [];
-  for (let i = 0; i < lots - 1; i++) {
-    // берём случайную долю остатка, чтобы ставки были разнообразными
-    const take = u.rnd(0, Math.max(0, Math.round(left * 0.7)));
-    out.push(take);
-    left -= take;
-  }
-  out.push(left);
-  return out;
-}
-
-function bidsPlay(user: User, bids: any, notices: Notices) {
-  const c = clubState(user);
-  beat(user, 'bids');
-  if (cdLeft(c, 'bids') > 0) throw new u.ApiError('Аукцион уже закрыт. Загляните позже.');
+  beat(user, 'convoy');
+  if (cdLeft(c, 'convoy') > 0) throw new u.ApiError('Караван ещё в пути. Загляните позже.');
   gate(c);
 
-  const arr = (Array.isArray(bids) ? bids : []).map((x: any) => Math.max(0, u.toInt(x, 0)));
-  if (arr.length !== C.BIDS_LOTS) throw new u.ApiError(`Нужно указать ставку по каждому из ${C.BIDS_LOTS} лотов`);
-  const total = arr.reduce((s, x) => s + x, 0);
-  if (total > C.BIDS_POINTS) throw new u.ApiError(`Всего очков влияния: ${C.BIDS_POINTS}, вы распределили ${total}`);
-  // Только после проверки ставок — см. пояснение в safeTry
+  const rId = String(route || '');
+  const aId = String(ambush || '');
+  const known = (C.CONVOY_ROUTES as any[]).map((r) => r.id);
+  if (!known.includes(rId)) throw new u.ApiError('Выберите маршрут');
+  if (!known.includes(aId)) throw new u.ApiError('Выберите, где оставить засаду');
   require('./dailyQuests').bump(user, 'clubPlayed', 1);
 
-  // Ставки соперников
-  const rivals: number[][] = [];
-  for (let i = 0; i < C.BIDS_RIVALS; i++) rivals.push(rivalBids());
-
-  const lots: any[] = [];
-  let won = 0;
-  for (let i = 0; i < C.BIDS_LOTS; i++) {
-    const mine = arr[i];
-    const best = Math.max(...rivals.map((r) => r[i]));
-    const win = mine > best;           // строго больше: при равенстве лот уходит казне
-    if (win) won++;
-    lots.push({ name: BID_LOT_NAMES[i], my: mine, rivalBest: best, win });
+  const st = convoyStore();
+  // Срабатывает САМАЯ СТАРАЯ засада на маршруте: так они расходуются по
+  // очереди, а не копятся у самых активных.
+  const idx = st.ambushes.findIndex((a) => a.route === rId && a.byId !== user.id);
+  const hit = idx >= 0;
+  let killer: Ambush | null = null;
+  if (hit) {
+    killer = st.ambushes[idx];
+    st.ambushes.splice(idx, 1);
   }
 
-  let reward = won * C.BIDS_REWARD_PER_LOT;
-  const sweep = won === C.BIDS_LOTS;
-  if (sweep) reward += C.BIDS_SWEEP_BONUS;
-
-  if (reward > 0) {
-    reward = payout(user, 'bids', reward, notices);
-    setCd(c, 'bids', C.BIDS_CD_WIN_MIN);
-    notices.push(`💼 Аукцион: выиграно лотов ${won}/${C.BIDS_LOTS}${sweep ? ' (все!)' : ''}.${reward ? ' +🪙 ' + reward : ''}`);
+  let reward = 0;
+  if (!hit) {
+    reward = payout(user, 'convoy', C.CONVOY_LOOT, notices);
+    notices.push(`🚚 Караван прошёл ${routeName(rId)}.` + (reward ? ` +🪙 ${reward}` : ''));
   } else {
-    setCd(c, 'bids', C.BIDS_CD_FAIL_MIN);
+    setCd(c, 'convoy', C.CONVOY_CD_MIN);
+    notices.push(`💥 Засада на ${routeName(rId)} — караван потерян.`);
+    // Платит не проигравший, а игра: отнимать золото у того, кто и так
+    // потерял караван, значит наказывать дважды за одно.
+    const owner = player.users()[killer!.byId];
+    if (owner) {
+      const paid = payout(owner, 'convoy', C.CONVOY_AMBUSH_PAY, []);
+      db.markUser(owner.id);
+      try {
+        require('./notifications').push(owner.id, 'convoy_ambush',
+          `Ваша засада на маршруте «${routeName(rId)}» сработала. +🪙 ${paid}`, { gold: paid });
+      } catch (e) {}
+    }
   }
-  return { result: reward > 0 ? 'win' : 'lost', lots, won, sweep, reward };
+  if (!hit) setCd(c, 'convoy', C.CONVOY_CD_MIN);
+
+  // Своя засада: одна на игрока. Старую снимаем — иначе один человек
+  // за сутки заминировал бы все маршруты.
+  const mine = st.ambushes.findIndex((a) => a.byId === user.id);
+  if (mine >= 0) st.ambushes.splice(mine, 1);
+  st.ambushes.push({ route: aId, byId: user.id, byName: user.name, at: Date.now() });
+  if (st.ambushes.length > C.CONVOY_MAX_AMBUSHES) st.ambushes.shift();
+
+  st.log = [{ route: rId, hit, at: Date.now(), tag: convoyTag() }]
+    .concat(st.log || []).slice(0, 20);
+  db.save('convoy');
+
+  return { result: hit ? 'ambushed' : 'through', route: rId, ambush: aId, reward,
+           by: hit && killer ? killer.byName : null };
+}
+
+function routeName(id: string): string {
+  const r = (C.CONVOY_ROUTES as any[]).find((x) => x.id === id);
+  return r ? r.name : id;
+}
+
+// ===================================================================
+// 4. САПЁРНАЯ ТРОПА — игра про то, когда остановиться.
+//
+// Поле из SAPPER_CELLS клеток, в нём SAPPER_MINES мин. Открываешь по
+// одной, добыча растёт, забрать можно в любой момент. Наступил — теряешь
+// всё набранное.
+//
+// Мины ставятся ПРИ ПЕРВОМ ХОДЕ, а не при открытии поля: иначе номера
+// заминированных клеток лежали бы в состоянии игрока ещё до того, как он
+// сделал ход, и попали бы в ответ сервера при любой невнимательности.
+// ===================================================================
+function sapperLoot(opened: number): number {
+  const arr: number[] = C.SAPPER_LOOT;
+  if (opened <= 0) return 0;
+  return arr[Math.min(opened, arr.length) - 1];
+}
+
+function sapperView(c: any) {
+  if (c.sapper) {
+    const opened: number[] = c.sapper.opened || [];
+    return {
+      state: 'active',
+      cells: C.SAPPER_CELLS,
+      mines: C.SAPPER_MINES,
+      opened,
+      loot: sapperLoot(opened.length),
+      nextLoot: opened.length < (C.SAPPER_LOOT as number[]).length ? sapperLoot(opened.length + 1) : null,
+      // Риск следующего шага показан честно: игра про решение, а
+      // решение втёмную — это просто рулетка.
+      nextRiskPct: opened.length < (C.SAPPER_LOOT as number[]).length
+        ? Math.round((C.SAPPER_MINES / (C.SAPPER_CELLS - opened.length)) * 100) : null,
+    };
+  }
+  const left = cdLeft(c, 'sapper');
+  if (left > 0) return { state: 'cooldown', cooldownSec: left };
+  return {
+    state: 'ready', cells: C.SAPPER_CELLS, mines: C.SAPPER_MINES,
+    firstLoot: sapperLoot(1), maxLoot: sapperLoot((C.SAPPER_LOOT as number[]).length),
+    maxSteps: (C.SAPPER_LOOT as number[]).length,
+  };
+}
+
+function sapperStart(user: User) {
+  const c = clubState(user);
+  beat(user, 'sapper');
+  if (c.sapper) return sapperView(c);
+  if (cdLeft(c, 'sapper') > 0) throw new u.ApiError('Сапёры отдыхают. Загляните позже.');
+  gate(c);
+  c.sapper = { opened: [], mines: null };
+  return sapperView(c);
+}
+
+function sapperStep(user: User, cell: any, notices: Notices) {
+  const c = clubState(user);
+  if (!c.sapper) throw new u.ApiError('Тропа не начата');
+  beat(user, 'sapper');
+  const n = u.toInt(cell, -1);
+  if (n < 0 || n >= C.SAPPER_CELLS) throw new u.ApiError('Такой клетки нет');
+  if ((c.sapper.opened || []).includes(n)) throw new u.ApiError('Эта клетка уже открыта');
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
+
+  // Мины расставляются в момент ПЕРВОГО хода и обходят выбранную клетку:
+  // подорваться первым же шагом, ничего не решив, — не игра, а щелчок по
+  // носу. Дальше расстановка не меняется.
+  if (!c.sapper.mines) {
+    const pool: number[] = [];
+    for (let i = 0; i < C.SAPPER_CELLS; i++) if (i !== n) pool.push(i);
+    u.shuffle(pool);
+    c.sapper.mines = pool.slice(0, C.SAPPER_MINES);
+  }
+
+  if ((c.sapper.mines as number[]).includes(n)) {
+    const lost = sapperLoot((c.sapper.opened || []).length);
+    const mines = c.sapper.mines;
+    c.sapper = null;
+    setCd(c, 'sapper', C.SAPPER_CD_MIN);
+    return { result: 'boom', cell: n, mines, lostLoot: lost };
+  }
+
+  c.sapper.opened.push(n);
+  const done = c.sapper.opened.length >= (C.SAPPER_LOOT as number[]).length;
+  return { result: done ? 'maxed' : 'clear', cell: n, ...sapperView(c), atEnd: done };
+}
+
+function sapperTake(user: User, notices: Notices) {
+  const c = clubState(user);
+  if (!c.sapper) throw new u.ApiError('Тропа не начата');
+  beat(user, 'sapper');
+  const opened = (c.sapper.opened || []).length;
+  if (opened <= 0) {
+    // Уйти, не сделав ни шага, можно — но и уносить нечего. Кулдаун за
+    // это не ставим: игрок ничего не сыграл.
+    c.sapper = null;
+    return { result: 'empty', reward: 0 };
+  }
+  c.sapper = null;
+  const reward = payout(user, 'sapper', sapperLoot(opened), notices);
+  setCd(c, 'sapper', C.SAPPER_CD_MIN);
+  notices.push(`🧨 Тропа пройдена: ${opened} клеток.` + (reward ? ` +🪙 ${reward}` : ''));
+  return { result: 'taken', opened, reward };
+}
+
+// ===================================================================
+// 5. ПОЛЕВОЙ ТОТАЛИЗАТОР — ставка на учения трёх отделений.
+//
+// Вторая платная игра клуба после преферанса, и по той же причине:
+// платная игра с отрицательным ожиданием не поддаётся автоматизации в
+// принципе. Чем усерднее скрипт, тем быстрее он в нуле — арифметику не
+// обойти ни удачей, ни ботом.
+//
+// Коэффициент считается из честного (100/шанс) и урезается на маржу.
+// Считает его СЕРВЕР и отдаёт готовым: посчитай клиент сам — и однажды
+// он покажет одну выплату, а начислит другую.
+// ===================================================================
+function bookieOdds(chancePct: number): number {
+  const fair = 100 / Math.max(1, chancePct);
+  return Math.round(fair * (1 - C.BOOKIE_MARGIN) * 100) / 100;
+}
+
+function bookieView(c: any) {
+  const left = cdLeft(c, 'bookie');
+  const squads = (C.BOOKIE_SQUADS as any[]).map((sq) => ({
+    id: sq.id, name: sq.name, icon: sq.icon,
+    odds: bookieOdds(sq.chance),
+    payout: Math.round(C.BOOKIE_STAKE * bookieOdds(sq.chance)),
+    // Сам шанс наружу не отдаём: игрок делает ставку, а не читает
+    // таблицу вероятностей. Коэффициент и так говорит о фаворите.
+  }));
+  if (left > 0) return { state: 'cooldown', cooldownSec: left, stake: C.BOOKIE_STAKE, squads };
+  return { state: 'ready', stake: C.BOOKIE_STAKE, squads, last: c.bookieLast || null };
+}
+
+function bookieBet(user: User, squadId: any, notices: Notices) {
+  const c = clubState(user);
+  beat(user, 'bookie');
+  if (cdLeft(c, 'bookie') > 0) throw new u.ApiError('Учения ещё идут. Загляните позже.');
+  gate(c);
+  const sq = (C.BOOKIE_SQUADS as any[]).find((x) => x.id === String(squadId || ''));
+  if (!sq) throw new u.ApiError('Выберите отделение');
+  const stake = C.BOOKIE_STAKE;
+  if ((user.gold || 0) < stake) throw new u.ApiError(`Ставка — 🪙 ${stake}, у вас ${user.gold || 0}`);
+
+  player.spendGold(user, stake, 'club_bookie_stake');
+  refundBudget(c, stake);
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
+
+  // Победитель разыгрывается по шансам из конфига
+  let roll = u.rnd(1, 100);
+  let winner: any = (C.BOOKIE_SQUADS as any[])[0];
+  for (const s of (C.BOOKIE_SQUADS as any[])) {
+    roll -= s.chance;
+    if (roll <= 0) { winner = s; break; }
+  }
+
+  setCd(c, 'bookie', C.BOOKIE_CD_MIN);
+  const won = winner.id === sq.id;
+  let reward = 0;
+  if (won) {
+    reward = payout(user, 'bookie', Math.round(stake * bookieOdds(sq.chance)), notices, false);
+    notices.push(`🏁 ${winner.name} первым на финише — ставка сыграла.` + (reward ? ` +🪙 ${reward}` : ''));
+  } else {
+    notices.push(`🏁 Первым пришло ${winner.name}. Ставка не сыграла.`);
+  }
+  c.bookieLast = { winner: winner.id, winnerName: winner.name, mine: sq.id, won, at: Date.now() };
+  return { result: won ? 'win' : 'lose', winner: winner.id, winnerName: winner.name,
+           mine: sq.id, stake, reward };
 }
 
 
@@ -714,8 +758,8 @@ export = {
   view,
   prefStart, prefHit, prefStand,
   safeTry,
-  raidStart, raidPush, raidPull,
-  diceStart, diceReroll, diceFinish,
-  bidsPlay,
+  convoyGo,
+  sapperStart, sapperStep, sapperTake,
+  bookieBet,
   tacticStart, tacticPlay,
 };

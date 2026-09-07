@@ -281,6 +281,12 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/dice/reroll': return '🎲 Клуб (кости): переброс';
       case '/api/club/dice/finish': return '🎲 Клуб (кости): забрал результат';
       case '/api/club/bids/play':  return '💼 Клуб: сделал ставки на штабном аукционе';
+      case '/api/club/convoy/go':
+        return '🚚 Клуб (караван): вышел маршрутом ' + String(body.route || '—');
+      case '/api/club/sapper/start': return '🧨 Клуб: вышел на сапёрную тропу';
+      case '/api/club/sapper/step':  return '🧨 Клуб (тропа): открыл клетку ' + String(body.cell);
+      case '/api/club/sapper/take':  return '🧨 Клуб (тропа): забрал добычу';
+      case '/api/club/bookie/bet':   return '🏁 Клуб (тотализатор): ставка на ' + String(body.squad || '—');
       case '/api/club/tactic/start': return '⚔ Клуб: вызвал генерала на тактическую дуэль';
       case '/api/club/tactic/play':
         return '⚔ Клуб (дуэль): выставил ' + tacticKindName(body.kind);

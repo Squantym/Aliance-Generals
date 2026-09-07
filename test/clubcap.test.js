@@ -59,11 +59,16 @@ const nx = [];
   // Долбим потолок ночным рейдом: рубеж проставляем сами, чтобы проверка
   // не зависела от того, как лёг бросок. Нас интересует ПОТОЛОК, а не
   // везение.
-  const playRaid = (step) => {
+  // Долбим потолок сапёрной тропой: клетки открываем принудительно,
+  // чтобы проверка не зависела от того, где легли мины. Нас интересует
+  // ПОТОЛОК, а не везение.
+  const playRaid = (steps) => {
     clearCd();
-    club.raidStart(U);
-    U.club.raid.step = step || 3;
-    return club.raidPull(U, nx);
+    club.sapperStart(U);
+    U.club.sapper.mines = [];                 // мин нет: проверяем потолок
+    U.club.sapper.opened = [];
+    for (let k = 0; k < (steps || 3); k++) U.club.sapper.opened.push(k);
+    return club.sapperTake(U, nx);
   };
 
   console.log('\n── 1. Потолок настроен и виден игроку ──');
@@ -75,9 +80,9 @@ const nx = [];
 
   console.log('\n── 2. Сколько ни играй, больше потолка не выдадут ──');
   const before = U.gold;
-  for (let i = 0; i < 200; i++) playRaid(6);      // заведомо больше, чем нужно
+  for (let i = 0; i < 200; i++) playRaid(7);      // заведомо больше, чем нужно
   const earned = U.gold - before;
-  ok(`за 200 вылазок выдано ${earned} 🪙, не больше потолка ${C.DAILY_GOLD_CAP}`,
+  ok(`за 200 проходов выдано ${earned} 🪙, не больше потолка ${C.DAILY_GOLD_CAP}`,
      earned <= C.DAILY_GOLD_CAP);
   ok('и потолок действительно выбран (иначе проверка ничего не значит)',
      earned === C.DAILY_GOLD_CAP);
@@ -91,7 +96,7 @@ const nx = [];
   const v1 = club.view(U);
   ok('новые сутки — снова полный лимит', v1.budget.spent === 0 && v1.budget.left === C.DAILY_GOLD_CAP);
   const g1 = U.gold;
-  for (let i = 0; i < 200; i++) playRaid(6);
+  for (let i = 0; i < 200; i++) playRaid(7);
   ok('и во вторые сутки выдан ровно потолок', U.gold - g1 === C.DAILY_GOLD_CAP);
 
   console.log('\n── 4. Источник золота помечен ──');
@@ -102,7 +107,7 @@ const nx = [];
 
   console.log('\n── 5. Общий перерыв после выигрыша ──');
   U.club.day = 'ещё одни сутки';
-  playRaid(2);
+  playRaid(3);
   const cdSec = club.view(U).sharedCooldownSec;
   ok(`после выигрыша взведён общий перерыв (${cdSec} с)`, cdSec > 0);
   ok('перерыв примерно нужной длины', Math.abs(cdSec - C.SHARED_CD_MIN * 60) <= 2);
@@ -112,10 +117,10 @@ const nx = [];
   const shared = U.club.cd.all;
   clearCd();
   U.club.cd.all = shared;
-  // Преферанса в списке нет намеренно: он платный и общему перерыву не
-  // подчиняется — это отдельно проверяется в разделе 10.
+  // Платных игр в списке нет намеренно: преферанс и тотализатор общему
+  // перерыву не подчиняются — это отдельно проверяется в разделе 10.
   let blocked = 0;
-  for (const start of [() => club.diceStart(U), () => club.raidStart(U),
+  for (const start of [() => club.convoyGo(U, 'mountain', 'coast', nx), () => club.sapperStart(U),
                        () => club.tacticStart(U)]) {
     try { start(); } catch (e) { if (/перерыв/i.test(e.message)) blocked++; }
   }
@@ -125,19 +130,24 @@ const nx = [];
   try { club.safeTry(U, '123456', nx); } catch (e) { safeBlocked = /перерыв/i.test(e.message); }
   ok('и общий сейф в том числе', safeBlocked);
 
-  console.log('\n── 6. Ночной рейд: жадность наказана арифметикой ──');
+  console.log('\n── 6. Сапёрная тропа: жадность наказана арифметикой ──');
   // Если лучшая остановка — последний рубеж, решения в игре нет: надо
   // просто всегда идти до конца. Смысл появляется только когда ожидание
   // где-то в середине выше, чем в конце.
-  const risks = C.RAID_RISK_PCT, loots = C.RAID_LOOT;
+  // Считаем ожидание для каждой остановки: с каждой открытой клеткой
+  // мины занимают всё большую долю оставшихся.
+  const loots = C.SAPPER_LOOT;
   let survive = 1;
-  const ev = risks.map((r, i) => { survive *= (100 - r) / 100; return loots[i] * survive; });
+  const ev = loots.map((loot, i) => {
+    survive *= (C.SAPPER_CELLS - i - C.SAPPER_MINES) / (C.SAPPER_CELLS - i);
+    return loot * survive;
+  });
   const best = ev.indexOf(Math.max(...ev));
-  ok(`лучшая остановка — ${best + 1}-й рубеж из ${risks.length}, а не последний`,
-     best < risks.length - 1);
-  ok(`дойти до конца хуже, чем остановиться вовремя (${ev[best].toFixed(1)} против ${ev[ev.length - 1].toFixed(1)})`,
+  ok(`лучшая остановка — ${best + 1}-я клетка из ${loots.length}, а не последняя`,
+     best < loots.length - 1);
+  ok(`идти до конца хуже, чем остановиться вовремя (${ev[best].toFixed(1)} против ${ev[ev.length - 1].toFixed(1)})`,
      ev[best] > ev[ev.length - 1]);
-  ok('первый рубеж не лучший — идти хотя бы раз стоит', best > 0);
+  ok('первая клетка не лучшая — ходить хотя бы раз стоит', best > 0);
 
   console.log('\n── 7. Тактическая дуэль: читать нечего ──');
   // Раньше генерал играл по привычке, и внимательный игрок брал 64%

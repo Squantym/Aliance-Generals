@@ -37,3 +37,7 @@ android/store_icon.png
 android/app/src/main/res/
 .claude/settings.local.json
 .claude/settings.local.json
+
+# Рабочие каталоги локальных инструментов, в игру не входят
+.claude/
+.preview-tmp/

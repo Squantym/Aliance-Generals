@@ -39,7 +39,6 @@ const INTERNAL = new Set([
   'setCd',            // club.ts: перезарядка из констант конфига
   'addSeasonRating',  // features.ts: сейчас вообще не вызывается
   'buildRound',       // tournaments.ts: номер раунда считает сам код
-  'rollDice',         // club.ts: число костей — константа C.DICE_COUNT
   // buildings.ts: считалки цены. Число к ним приходит уже очищенным из
   // build(), где стоит u.clamp(u.toInt(qty, 1), 1, 100000); сами по себе
   // они из маршрутов не вызываются.

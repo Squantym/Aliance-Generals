@@ -611,15 +611,11 @@ function registerRoutes(app: any) {
   // Сейф общий: «начать» его нельзя, он всегда один и открыт для всех
   app.add('POST', '/api/club/safe/try',   act((req, n) => club.safeTry(req.user, req.body.guess, n)));
   // 3. Артиллерийская пристрелка
-  app.add('POST', '/api/club/raid/start', act((req) => club.raidStart(req.user)));
-  app.add('POST', '/api/club/raid/push',  act((req, n) => club.raidPush(req.user, n)));
-  app.add('POST', '/api/club/raid/pull',  act((req, n) => club.raidPull(req.user, n)));
-  // 4. Военные кости
-  app.add('POST', '/api/club/dice/start',  act((req) => club.diceStart(req.user)));
-  app.add('POST', '/api/club/dice/reroll', act((req, n) => club.diceReroll(req.user, req.body.keep, n)));
-  app.add('POST', '/api/club/dice/finish', act((req, n) => club.diceFinish(req.user, n)));
-  // 5. Штабной аукцион
-  app.add('POST', '/api/club/bids/play',   act((req, n) => club.bidsPlay(req.user, req.body.bids, n)));
+  app.add('POST', '/api/club/convoy/go',    act((req, n) => club.convoyGo(req.user, req.body.route, req.body.ambush, n)));
+  app.add('POST', '/api/club/sapper/start', act((req) => club.sapperStart(req.user)));
+  app.add('POST', '/api/club/sapper/step',  act((req, n) => club.sapperStep(req.user, req.body.cell, n)));
+  app.add('POST', '/api/club/sapper/take',  act((req, n) => club.sapperTake(req.user, n)));
+  app.add('POST', '/api/club/bookie/bet',   act((req, n) => club.bookieBet(req.user, req.body.squad, n)));
 
   app.add('POST', '/api/club/tactic/start', act((req) => club.tacticStart(req.user)));
   app.add('POST', '/api/club/tactic/play',  act((req, n) => club.tacticPlay(req.user, req.body.kind, n)));

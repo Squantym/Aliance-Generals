@@ -3502,7 +3502,7 @@ const App = {
     if (document.getElementById('ach-popup')) return;
     App._shownAchIds.add(next.id);
 
-    const rewardText = `$${UI.fmtMoney(next.dollars || 0)}${next.gold ? ` и 🪙 ${next.gold}` : ''}`;
+    const rewardText = `$${UI.fmtMoney(next.dollars || 0)}${next.gold ? ` и <span class="ic-gold"></span> ${next.gold}` : ''}`;
     const popup = document.createElement('div');
     popup.id = 'ach-popup';
     popup.className = 'game-dialog-overlay';

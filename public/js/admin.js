@@ -32,7 +32,7 @@ const Admin = {
 
   // ── Иконки валют: ровно те же, что в игре ────────────────────────
   // В игре доллары и золото показываются картинками (.ic-dollar,
-  // .ic-gold), а в панели половина мест рисовала эмодзи 🪙 и 💵.
+  // .ic-gold), а в панели половина мест рисовала эмодзи монеты и 💵.
   // Разница мелкая, но именно из-за таких мелочей панель читается как
   // «другая программа»: глаз ищет знакомый значок и не находит.
   // Эмодзи оставлены только в уведомлениях — там разметки нет.
@@ -2587,9 +2587,9 @@ proxy_set_header Host $host;</pre>
                 <br><span class="muted small">Ур.${p.level} · ID: ${p.id}</span>
               </td>
               <td class="adm-stat" data-l="$" style="padding:8px;text-align:right;font-size:12px">${UI.fmtMoney(p.dollars)}</td>
-              <td class="adm-stat" data-l="🪙" style="padding:8px;text-align:right;font-size:12px">${Admin.ICG} ${UI.fmtNum(p.gold)}</td>
-              <td class="adm-stat" data-l="👂" style="padding:8px;text-align:right;font-size:12px">${p.crestParts ?? p.ears}</td>
-              <td class="adm-stat" data-l="🎖" style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
+              <td class="adm-stat" data-l="зол." style="padding:8px;text-align:right;font-size:12px">${Admin.ICG} ${UI.fmtNum(p.gold)}</td>
+              <td class="adm-stat" data-l="герб" style="padding:8px;text-align:right;font-size:12px">${p.crestParts ?? p.ears}</td>
+              <td class="adm-stat" data-l="жет." style="padding:8px;text-align:right;font-size:12px">${p.tokens}</td>
               <td class="adm-acts" style="padding:8px;white-space:nowrap">
                 <button class="btn btn-inline" data-view="${p.id}" title="Досье игрока">👁</button>
                 ${Admin.can('economy') ? `<button class="btn btn-orange btn-inline" data-pick="${p.id}">Выдать</button>` : ''}

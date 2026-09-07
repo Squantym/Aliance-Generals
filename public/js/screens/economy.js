@@ -368,8 +368,8 @@ App._renderMines = async (c, tabsHtml) => {
     } else {
       const goldLine = r.found
         ? (r.extracted
-          ? `<p style="color:var(--gold)"><b>🪙 Найдено ${r.foundGold} золота — добыто! +${r.goldGained}</b></p>`
-          : `<p style="color:var(--orange)">🪙 Найдено ${r.foundGold} золота, но добыть не удалось (шанс был ${r.extractChancePct}%).</p>`)
+          ? `<p style="color:var(--gold)"><b><span class="ic-gold"></span> Найдено ${r.foundGold} золота — добыто! +${r.goldGained}</b></p>`
+          : `<p style="color:var(--orange)"><span class="ic-gold"></span> Найдено ${r.foundGold} золота, но добыть не удалось (шанс был ${r.extractChancePct}%).</p>`)
         : `<p class="muted">Золото в этот раз не нашли.</p>`;
       inner = `${goldLine}
         <p style="color:var(--money)"><span class="ic-dollar"></span> Деньги: +${UI.fmtNum(r.money)}${r.goldGained <= 0 ? ' <span class="muted small">(повышенные)</span>' : ''}</p>

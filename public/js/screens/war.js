@@ -1808,7 +1808,7 @@ App.renderUpgradesPage = async () => {
         <span>💨 уворот ${Math.round(up.stats.dodgeChance * 100)}%</span>
         <span>🛡 −${Math.round(up.stats.damageReduce * 1000) / 10}% урона</span>
         <span>💚 крит-лечение ${Math.round(up.stats.healCritChance * 100)}%</span>
-        <span>🪙 награда +${Math.round(up.stats.rewardBonus * 100)}%</span>
+        <span><span class="ic-gold"></span> награда +${Math.round(up.stats.rewardBonus * 100)}%</span>
       </div>
     </div>
 

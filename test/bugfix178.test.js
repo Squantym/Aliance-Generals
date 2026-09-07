@@ -298,34 +298,35 @@ eq('настоящая попытка засчитана в поручение',
 const safeCrack = require('../dist/src/services/safeCrack');
 ok('настоящая попытка взвела таймер', safeCrack.view(S).myCooldownSec > 0);
 
-console.log('\n    то же в ночном рейде');
+console.log('\n    то же на сапёрной тропе');
 reset();
 const R = mk('a'); um['a'] = R;
 let bad2 = 0;
-// Ход без вышедшей группы и отход без неё же — оба должны быть отвергнуты
-// ДО того, как поручение что-то засчитает.
-for (const call of [() => club.raidPush(R, []), () => club.raidPull(R, [])]) {
+// Шаг и отход без начатой тропы — оба должны быть отвергнуты ДО того,
+// как поручение что-то засчитает.
+for (const call of [() => club.sapperStep(R, 0, []), () => club.sapperTake(R, [])]) {
   try { call(); } catch (e) { bad2++; }
 }
-eq('ходы без вышедшей группы отклонены', bad2, 2);
+eq('ходы без начатой тропы отклонены', bad2, 2);
 eq('счётчик клуба не сдвинулся', cnt(R), 0);
-// А на последнем рубеже идти дальше некуда — тоже отказ без засчёта
-club.raidStart(R);
-R.club.raid.step = config.CLUB.RAID_RISK_PCT.length;
+// Клетка вне поля и уже открытая — тоже отказ без засчёта
+club.sapperStart(R);
 let bad2b = 0;
-try { club.raidPush(R, []); } catch (e) { bad2b++; }
-eq('за последним рубежом хода нет', bad2b, 1);
-eq('и он не засчитан в поручение', cnt(R), 0);
+try { club.sapperStep(R, 999, []); } catch (e) { bad2b++; }
+eq('клетки вне поля нет', bad2b, 1);
+eq('и она не засчитана в поручение', cnt(R), 0);
 
 
-console.log('\n    и в аукционе ставок');
+console.log('\n    и на полевом тотализаторе');
 reset();
 const Q = mk('a'); um['a'] = Q;
+Q.gold = 1000;                    // золото есть: проверяем разбор ставки, а не кассу
 let bad3 = 0;
-for (const wrong of [[], [1], [999999, 0, 0, 0, 0, 0, 0, 0]]) {
-  try { club.bidsPlay(Q, wrong, []); } catch (e) { bad3++; }
+for (const wrong of ['', 'delta', 'альфа']) {
+  try { club.bookieBet(Q, wrong, []); } catch (e) { bad3++; }
 }
-eq('кривые наборы ставок отклонены', bad3, 3);
+eq('ставки на несуществующие отделения отклонены', bad3, 3);
 eq('счётчик клуба не сдвинулся', cnt(Q), 0);
+eq('и золото не списано', Q.gold, 1000);
 
 console.log(`\n═══ Всего проверок: ${passed} ═══`);

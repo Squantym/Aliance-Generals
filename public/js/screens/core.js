@@ -1314,7 +1314,7 @@ App.screens.profile = async (c, param) => {
         await App.refreshMe();
         UI.toast(r.live
           ? '🛰 Спутник-шпион ведёт цель в реальном времени (3 дня)'
-          : `🔭 Разведка проведена. Осталось бесплатной: ${r.spyLeft} (далее 🪙 20)`);
+          : `🔭 Разведка проведена. Осталось бесплатной: ${r.spyLeft} (далее <span class="ic-gold"></span> 20)`);
         App.rerender(); // перерисовать профиль — данные раскроются ниже
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };

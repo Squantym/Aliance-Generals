@@ -242,6 +242,46 @@ const UI = {
   },
 
   // Всплывающее уведомление внизу экрана
+  // ═══ ЗОЛОТАЯ МОНЕТА ВМЕСТО ЭМОДЗИ ═══════════════════════════════
+  //
+  // Эмодзи 🪙 рисует шрифт устройства, и во многих системах его просто
+  // НЕТ — на его месте пустой квадрат. Валюта игры не должна зависеть
+  // от того, обновлял ли игрок шрифты: у нас есть своя картинка
+  // (/img/icons/gold.webp, класс .ic-gold), и подставлять надо её.
+  //
+  // Сложность в том, что эмодзи приходит и с сервера — в текстах
+  // уведомлений («+🪙 20»). Вставлять серверный текст как HTML нельзя:
+  // в нём бывают позывные игроков, а это готовая дыра. Поэтому здесь
+  // два разных инструмента:
+  //
+  //   coinNodes()  — собирает УЗЛЫ DOM, ничего не парся. Для мест, где
+  //                  текст пришёл снаружи (тосты).
+  //   coinHtml()   — подставляет значок в УЖЕ ЭКРАНИРОВАННУЮ строку.
+  //                  Для мест, где экранирование уже сделано.
+  COIN: '🪙',
+  ICON_GOLD: '<span class="ic-gold"></span>',
+
+  // Разбивает текст на узлы, заменяя монету на картинку. Безопасно для
+  // любого текста: HTML тут не разбирается вообще.
+  coinNodes(text) {
+    const out = document.createDocumentFragment();
+    const parts = String(text == null ? '' : text).split(UI.COIN);
+    parts.forEach((part, i) => {
+      if (part) out.appendChild(document.createTextNode(part));
+      if (i < parts.length - 1) {
+        const ic = document.createElement('span');
+        ic.className = 'ic-gold';
+        out.appendChild(ic);
+      }
+    });
+    return out;
+  },
+
+  // Только для строк, которые УЖЕ прошли UI.esc().
+  coinHtml(escaped) {
+    return String(escaped == null ? '' : escaped).split(UI.COIN).join(UI.ICON_GOLD);
+  },
+
   toast(msg) {
     const box = document.getElementById('toasts');
     if (!box) return;
@@ -257,7 +297,9 @@ const UI = {
     while (box.children.length >= 2) box.firstChild.remove();
     const el = document.createElement('div');
     el.className = 'toast';
-    el.textContent = msg;
+    // Не textContent: монету надо показать картинкой. Узлы собираются
+    // вручную, разбора HTML нет — серверный текст остаётся текстом.
+    el.appendChild(UI.coinNodes(msg));
     el.onclick = () => el.remove();
     box.appendChild(el);
     // Появляется и исчезает за ~2 секунды (короткое угасание в конце)
@@ -334,7 +376,7 @@ const UI = {
         <div class="game-dialog">
           ${opts.icon ? `<div class="game-dialog-icon">${opts.icon}</div>` : ''}
           ${opts.title ? `<div class="game-dialog-title">${UI.esc(opts.title)}</div>` : ''}
-          <div class="game-dialog-body">${opts.html ? message : UI.esc(message).replace(/\n/g, '<br>')}</div>
+          <div class="game-dialog-body">${opts.html ? message : UI.coinHtml(UI.esc(message)).replace(/\n/g, '<br>')}</div>
           <div class="game-dialog-actions">
             <button class="btn ${okClass}" id="gd-ok">${UI.esc(opts.okText || 'Подтвердить')}</button>
             <button class="btn btn-inline" id="gd-cancel">${UI.esc(opts.cancelText || 'Отмена')}</button>

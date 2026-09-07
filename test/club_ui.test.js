@@ -2,8 +2,9 @@
 // test/club_ui.test.js — экран клуба рисуется во всех состояниях
 //
 // Экран переписан целиком: общий сейф с маской и анонимной историей,
-// ночной рейд вместо артиллерии, тактическая дуэль, «Военный займ» и
-// полоса суточного предела. Каждое из них имеет несколько состояний —
+// ночной караван, сапёрная тропа и полевой тотализатор вместо рейда,
+// костей и аукциона, тактическая дуэль, «Военный займ» и полоса
+// суточного предела. Каждое из них имеет несколько состояний —
 // открыт / закрыт / на таймере, — и любое из них может не отрисоваться
 // молча: шаблон падает, экран остаётся пустым, а сервер при этом
 // отвечает исправно, и по логам всё в порядке.
@@ -41,7 +42,22 @@ const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
 const baseClub = () => ({
   budget: { cap: 100, spent: 40, left: 60 },
   sharedCooldownSec: 0,
-  pref: { state: 'ready', target: 21, dealerStop: 17, entry: 10, win: 20, cdMin: 5 },
+  // ranks приходят с сервера готовыми — вместе с картинками карт:
+  // считать стоимость на клиенте значило бы держать вторую копию правил.
+  pref: {
+    state: 'ready', target: 21, dealerStop: 17, entry: 10, win: 20, cdMin: 5,
+    ranks: [
+      { rank: '6', value: 6, soft: false, img: '/img/cards/06-spades.webp', suit: '♠', red: false },
+      { rank: '7', value: 7, soft: false, img: '/img/cards/07-clubs.webp', suit: '♣', red: false },
+      { rank: '8', value: 8, soft: false, img: '/img/cards/08-hearts.webp', suit: '♥', red: true },
+      { rank: '9', value: 9, soft: false, img: '/img/cards/09-diamonds.webp', suit: '♦', red: true },
+      { rank: '10', value: 10, soft: false, img: '/img/cards/10-spades.webp', suit: '♠', red: false },
+      { rank: 'В', value: 2, soft: false, img: '/img/cards/jack-clubs.webp', suit: '♣', red: false },
+      { rank: 'Д', value: 3, soft: false, img: '/img/cards/queen-hearts.webp', suit: '♥', red: true },
+      { rank: 'К', value: 4, soft: false, img: '/img/cards/king-diamonds.webp', suit: '♦', red: true },
+      { rank: 'Т', value: 11, soft: true, img: '/img/cards/ace-spades.webp', suit: '♠', red: false },
+    ],
+  },
   safe: {
     state: 'open', digits: 6, maxRepeat: 2, rewardMin: 15, rewardMax: 20,
     fund: { total: 250, spent: 90, left: 160 },
@@ -52,9 +68,30 @@ const baseClub = () => ({
     ],
     lockedSec: 0, myCooldownSec: 0, tryCdSec: 60, last: null,
   },
-  raid: { state: 'ready', total: 6, firstRisk: 12, firstLoot: 3, maxLoot: 32 },
-  dice: { state: 'ready', count: 5, rerolls: 2, payouts: [{ id: 'five', name: 'Полный залп', gold: 20 }], rewardMax: 20, rewardMin: 8 },
-  bids: { state: 'ready', points: 20, lots: ['Лот А', 'Лот Б', 'Лот В'], rivals: 3, perLot: 6, sweepBonus: 4, rewardMax: 22 },
+  convoy: {
+    state: 'ready', loot: 8, ambushPay: 10, ambushes: 4, myAmbush: null,
+    routes: [
+      { id: 'mountain', name: 'Горный перевал', icon: '⛰' },
+      { id: 'coast', name: 'Побережье', icon: '🌊' },
+      { id: 'steppe', name: 'Степь', icon: '🌾' },
+    ],
+    log: [
+      // by в ответе — приманка: даже если сервер однажды начнёт присылать
+      // имя, показывать его в общей сводке нельзя, иначе маршруты
+      // читаются по знакомым позывным, а не по риску.
+      { route: 'coast', hit: true, at: Date.now(), tag: 'К-42', by: 'Соседний' },
+      { route: 'steppe', hit: false, at: Date.now() - 60000, tag: 'К-07', by: 'Дальний' },
+    ],
+  },
+  sapper: { state: 'ready', cells: 9, mines: 2, firstLoot: 2, maxLoot: 35, maxSteps: 7 },
+  bookie: {
+    state: 'ready', stake: 10, last: null,
+    squads: [
+      { id: 'alpha', name: 'Отделение «Альфа»', icon: '🔴', odds: 1.7, payout: 17 },
+      { id: 'bravo', name: 'Отделение «Браво»', icon: '🔵', odds: 2.83, payout: 28 },
+      { id: 'charlie', name: 'Отделение «Чарли»', icon: '🟢', odds: 4.25, payout: 43 },
+    ],
+  },
   tactic: {
     state: 'ready', needed: 3, rewardMin: 6, rewardMax: 12,
     kinds: [
@@ -124,17 +161,52 @@ const baseLot = () => ({
   ok('видно, сколько ждать нового', /Новый сейф привезут/.test(html));
   ok('ввода нет', !c.querySelector('#safe-guess'));
 
-  console.log('\n── 5. Ночной рейд ──');
+  console.log('\n── 5. Ночной караван ──');
+  html = await render(baseClub(), baseLot(), 'convoy');
+  ok('маршрут выбирается кнопкой', c.querySelectorAll('.cv-go').length === 3);
+  ok('и место засады тоже', c.querySelectorAll('.cv-amb').length === 3);
+  // Пока не выбраны оба, выводить караван нельзя: иначе игрок отправлял
+  // бы его, не поставив засаду, и терял половину игры.
+  ok('пока не выбрано — кнопка выхода заперта', c.querySelector('#cv-send').disabled === true);
+  ok('видно, сколько засад в округе', /засад: <b>4<\/b>/.test(html));
+  ok('но не видно, на каких маршрутах', !/Побережье[^<]*засад/.test(html));
+  ok('чужие выходы видны', c.querySelectorAll('.cv-row').length === 2);
+  ok('и они анонимны — только метка каравана',
+     /К-42/.test(html) && !/Соседний/.test(html) && !/Дальний/.test(html));
+  cl = baseClub(); cl.convoy = { state: 'cooldown', cooldownSec: 480, routes: [], log: [] };
+  html = await render(cl, baseLot(), 'convoy');
+  ok('на перерыве выйти нельзя', !c.querySelector('#cv-send') && /Доступно через 8:00/.test(html));
+
+  console.log('\n── 5б. Сапёрная тропа ──');
+  html = await render(baseClub(), baseLot(), 'sapper');
+  ok('до выхода — только кнопка старта',
+     !!c.querySelector('#sp-start') && c.querySelectorAll('.sp-cell').length === 0);
+  ok('края добычи названы заранее', /span> 2,/.test(html) && /span> 35,/.test(html));
   cl = baseClub();
-  cl.raid = { state: 'active', step: 2, total: 6, loot: 6, nextRisk: 28, nextLoot: 10, atEnd: false };
-  html = await render(cl, baseLot(), 'raid');
-  ok('видно взятые рубежи', /Взято рубежей: <b class="gold">2<\/b>/.test(html));
-  ok('цена следующего шага названа ДО решения', /28%/.test(html) && /10<\/b>/.test(html));
-  ok('обе кнопки есть', !!c.querySelector('#raid-push') && !!c.querySelector('#raid-pull'));
-  cl.raid = { state: 'active', step: 6, total: 6, loot: 32, nextRisk: null, nextLoot: null, atEnd: true };
-  html = await render(cl, baseLot(), 'raid');
-  ok('на последнем рубеже кнопки «дальше» нет', !c.querySelector('#raid-push'));
-  ok('а отойти можно', !!c.querySelector('#raid-pull'));
+  cl.sapper = { state: 'active', cells: 9, mines: 2, opened: [0, 3], loot: 5, nextLoot: 9, nextRiskPct: 29 };
+  html = await render(cl, baseLot(), 'sapper');
+  ok('поле разложено целиком', c.querySelectorAll('.sp-cell').length === 9);
+  ok('открытые клетки повторно не нажать', c.querySelectorAll('.sp-cell[disabled]').length === 2);
+  ok('риск следующего шага показан ДО решения', /29%/.test(html));
+  ok('и добыча за него тоже', /<b>9<\/b>/.test(html));
+  ok('забрать можно в любой момент', !!c.querySelector('#sp-take'));
+  cl.sapper = { state: 'active', cells: 9, mines: 2, opened: [0, 1, 2, 3, 4, 5, 6], loot: 35, nextLoot: null, nextRiskPct: null };
+  html = await render(cl, baseLot(), 'sapper');
+  ok('в конце тропы рисковать не предлагают', /Дальше идти некуда/.test(html));
+  ok('а забрать — по-прежнему да', !!c.querySelector('#sp-take'));
+
+  console.log('\n── 5в. Полевой тотализатор ──');
+  html = await render(baseClub(), baseLot(), 'bookie');
+  ok('три отделения — три кнопки', c.querySelectorAll('.bk-bet').length === 3);
+  ok('коэффициент виден', /×1\.7/.test(html) && /×4\.25/.test(html));
+  ok('и готовая выплата тоже', /17<\/b>/.test(html) && /43<\/b>/.test(html));
+  ok('шанс отделения игроку не показывают', !/50%/.test(html) && !/шанс/.test(html));
+  cl = baseClub();
+  cl.bookie = { state: 'cooldown', cooldownSec: 360, stake: 10, squads: [],
+                last: { winner: 'bravo', winnerName: 'Отделение «Браво»', mine: 'alpha', won: false } };
+  html = await render(cl, baseLot(), 'bookie');
+  ok('на перерыве ставок не принимают', c.querySelectorAll('.bk-bet').length === 0);
+  ok('но итог прошлого забега виден', /Браво/.test(html) && /не сыграла/.test(html));
 
   console.log('\n── 6. Тактическая дуэль ──');
   cl = baseClub();
@@ -217,7 +289,7 @@ const baseLot = () => ({
   html = await render(cl, baseLot(), 'pref');
   ok('исход назван', /Партия ваша/.test(html));
   ok('счёт показан', /<b>20<\/b> против <b>18<\/b>/.test(html));
-  ok('награда названа', /\+🪙 15/.test(html));
+  ok('награда названа', /\+<span class="ic-gold"><\/span> 15/.test(html));
   ok('обе руки всё ещё на столе', c.querySelectorAll('.pf-card').length === 5);
   ok('и таймер до следующей партии', /Доступно через/.test(html));
 
@@ -229,10 +301,14 @@ const baseLot = () => ({
   ok('заголовок клуба', /Клуб офицеров/.test(html));
   ok('кнопок ровно семь — по числу игр', c.querySelectorAll('.club-btn').length === 7);
   ok('каждая ведёт на свою страницу',
-     ['pref', 'safe', 'lottery', 'tactic', 'raid', 'dice', 'bids']
+     ['pref', 'safe', 'lottery', 'tactic', 'convoy', 'sapper', 'bookie']
        .every((g) => !!c.querySelector('.club-btn[href="#club/' + g + '"]')));
   ok('на кнопке видно состояние игры — заходить ради проверки не надо',
-     /банк 🪙 600/.test(html) && /ставка 🪙 10/.test(html));
+     /банк <span class="ic-gold"><\/span> 600/.test(html)
+     && /ставка <span class="ic-gold"><\/span> 10/.test(html));
+  // Квадратик вместо монеты — это шрифт без эмодзи у игрока, поэтому
+  // золото везде рисуется картинкой.
+  ok('эмодзи-монеты на входе в клуб не осталось', html.indexOf('🪙') < 0);
   ok('суточный предел показан и здесь', /cap-bar/.test(html));
   ok('столов и карт на входе нет', c.querySelectorAll('.pf-card').length === 0);
   ok('в шапке клуба есть картинка', c.querySelectorAll('.club-hero img').length === 1);
@@ -249,12 +325,20 @@ const baseLot = () => ({
   App._prefLast = null;
   html = await render(baseClub(), baseLot(), 'pref');
   ok('стоимость КАЖДОЙ карты расписана', c.querySelectorAll('.pref-val').length === 9);
+  // Карты показаны картинками из колоды, а не буквами: подпись «В2»
+  // игроку ничего не говорит, а сама карта — говорит.
+  ok('каждая карта — картинка из колоды',
+     c.querySelectorAll('.pref-val img').length === 9
+     && [...c.querySelectorAll('.pref-val img')].every((i) => /\/img\/cards\//.test(i.getAttribute('src'))));
   ok('валет 2, дама 3, король 4, туз 11',
-     /<b>В<\/b>2/.test(html) && /<b>Д<\/b>3/.test(html) && /<b>К<\/b>4/.test(html) && /<b>Т<\/b>11/.test(html));
+     /title="В — 2 очк\."/.test(html) && /title="Д — 3 очк\."/.test(html)
+     && /title="К — 4 очк\."/.test(html) && /title="Т — 11 очк\."/.test(html));
   ok('правило туза объяснено', /туз.{0,80}за 1/i.test(html));
   ok('сказано, что ничья — проигрыш', /Ничья считается его победой/.test(html));
-  ok('ставка названа до начала', /Ставка за партию/.test(html) && /🪙 10/.test(html));
-  ok('выигрыш назван', /🪙 20/.test(html));
+  ok('ставка названа до начала',
+     /Ставка за партию<\/span><b><span class="ic-gold"><\/span> 10<\/b>/.test(html));
+  ok('выигрыш назван', /Выигрыш<\/span><b class="gold"><span class="ic-gold"><\/span> 20<\/b>/.test(html));
+  ok('эмодзи-монеты на странице игры не осталось', html.indexOf('🪙') < 0);
   ok('перерыв назван', /5 мин/.test(html));
   ok('игра НЕ началась сама — есть кнопка старта', !!c.querySelector('#pref-start'));
   ok('и карт на столе ещё нет', c.querySelectorAll('.pf-card').length === 0);

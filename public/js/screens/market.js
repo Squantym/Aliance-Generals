@@ -460,8 +460,11 @@ App.screens.club = async (c, param) => {
       Перебрали — проигрыш сразу. <b>Ничья считается его победой.</b></p>
     <p class="muted small mt">Колода на 36 карт. Сколько стоит какая:</p>
     <div class="pref-vals">
-      ${[['6','6'],['7','7'],['8','8'],['9','9'],['10','10'],['В','2'],['Д','3'],['К','4'],['Т','11']]
-        .map(([r, v]) => `<span class="pref-val"><b>${r}</b>${v}</span>`).join('')}
+      ${(pf.ranks || []).map((r) => `
+        <span class="pref-val" title="${UI.esc(r.rank)} — ${r.value} очк.">
+          <img src="${UI.esc(r.img)}" alt="" loading="lazy">
+          <b>${r.value}</b>
+        </span>`).join('')}
     </div>
     <p class="muted small mt">Туз стоит 11, но если рука перебирает — считается за 1.
       Масть на очки не влияет.</p>`;
@@ -485,7 +488,7 @@ App.screens.club = async (c, param) => {
       <div class="pf-result ${last.result === 'win' ? 'pf-win' : 'pf-lose'}">
         ${last.result === 'win' ? '🏆 Партия ваша'
           : (last.result === 'bust' ? '💥 Перебор' : '🎖 Генерал забрал')}
-        · <b>${last.mySum}</b> против <b>${last.foeSum}</b>${last.reward ? ` · +🪙 ${last.reward}` : ''}
+        · <b>${last.mySum}</b> против <b>${last.foeSum}</b>${last.reward ? ` · +<span class="ic-gold"></span> ${last.reward}` : ''}
       </div>
       ${tableHtml(last.foe, last.foeSum, last.hand, last.mySum)}`;
     if (pf.state === 'cooldown') {
@@ -494,10 +497,10 @@ App.screens.club = async (c, param) => {
       prefHtml = outcome + `
         ${prefRules}
         <div class="pref-stake mt">
-          <span class="grow">Ставка за партию</span><b>🪙 ${pf.entry}</b>
+          <span class="grow">Ставка за партию</span><b><span class="ic-gold"></span> ${pf.entry}</b>
         </div>
         <div class="pref-stake">
-          <span class="grow">Выигрыш</span><b class="gold">🪙 ${pf.win}</b>
+          <span class="grow">Выигрыш</span><b class="gold"><span class="ic-gold"></span> ${pf.win}</b>
         </div>
         <p class="muted small mt">Между партиями — ${pf.cdMin} мин.</p>
         <button class="btn btn-orange mt" id="pref-start" style="width:100%">🃏 Начать игру · ставка <span class="ic-gold"></span> ${pf.entry}</button>`;
@@ -558,78 +561,96 @@ App.screens.club = async (c, param) => {
              скажут, сколько цифр есть в коде, но стоят не на своём месте.</p>`}`;
   }
 
-  // ── 3. НОЧНОЙ РЕЙД ────────────────────────────────────────────
-  let raidHtml;
-  const rd = data.raid;
-  if (rd.state === 'active') {
-    raidHtml = `
-      <p class="small">Взято рубежей: <b class="gold">${rd.step}</b> из ${rd.total}
-        · добыча при отходе: <span class="ic-gold"></span> <b>${rd.loot}</b></p>
-      ${rd.atEnd
-        ? '<p class="muted small">Рубежи кончились — отходите, дальше идти некуда.</p>'
-        : `<p class="muted small">Следующий рубеж: риск сорваться <b style="color:var(--red)">${rd.nextRisk}%</b>,
-             добыча вырастет до <span class="ic-gold"></span> <b>${rd.nextLoot}</b>.
-             Сорвались — теряете всё набранное.</p>`}
-      <div class="field-row mt">
-        ${rd.atEnd ? '' : '<button class="btn btn-inline grow" id="raid-push">Дальше</button>'}
-        <button class="btn btn-orange btn-inline grow" id="raid-pull">Отойти с добычей</button>
+  // ── 3. НОЧНОЙ КАРАВАН ─────────────────────────────────────────
+  // Единственная игра клуба против живых игроков: засады на маршрутах
+  // ставят другие. Поэтому и подсказка тут одна — общая сводка выходов.
+  let convoyHtml;
+  const cv = data.convoy;
+  if (cv.state === 'cooldown') {
+    convoyHtml = cdLine(cv.cooldownSec);
+  } else {
+    const cvLog = (cv.log || []).map((e) => {
+      const r = (cv.routes.find((x) => x.id === e.route) || {});
+      return `<div class="field-row small cv-row">
+        <span class="grow">${r.icon || ''} ${UI.esc(r.name || e.route)}</span>
+        <span class="${e.hit ? 'cv-hit' : 'cv-ok'}">${e.hit ? '💥 засада' : '✅ прошёл'}</span>
+        <span class="muted">${UI.esc(e.tag)}</span>
       </div>`;
-  } else if (rd.state === 'cooldown') {
-    raidHtml = cdLine(rd.cooldownSec);
-  } else {
-    raidHtml = `
-      <p class="muted small">Группа идёт через ${rd.total} рубежей. После каждого добыча растёт,
-        но растёт и риск: сорвались — теряете всё, что набрали. Уносит только тот, кто вовремя отошёл.
-        Первый рубеж: риск ${rd.firstRisk}%, добыча <span class="ic-gold"></span> ${rd.firstLoot}.
-        До последнего — <span class="ic-gold"></span> ${rd.maxLoot}, если дойдёте.</p>
-      <button class="btn btn-orange mt" id="raid-start">🌒 Вывести группу</button>`;
+    }).join('');
+    convoyHtml = `
+      <p class="muted small">Ведите караван одним из трёх маршрутов. Засады на них ставят
+        другие игроки: прошли — добыча <span class="ic-gold"></span> ${cv.loot};
+        напоролись — караван потерян, а <span class="ic-gold"></span> ${cv.ambushPay}
+        уходят тому, кто засаду поставил.</p>
+      <p class="muted small">В округе замечено засад: <b>${cv.ambushes}</b>. Где именно — неизвестно;
+        читать обстановку можно только по чужим выходам.</p>
+      ${cvLog ? `<p class="muted small mt">Последние выходы:</p><div>${cvLog}</div>` : ''}
+      <p class="muted small mt"><b>1.</b> Каким маршрутом идёте:</p>
+      <div class="field-row">
+        ${cv.routes.map((r) => `<button class="btn btn-inline grow cv-go" data-route="${r.id}">${r.icon} ${UI.esc(r.name)}</button>`).join('')}
+      </div>
+      <p class="muted small mt"><b>2.</b> Где оставите свою засаду${cv.myAmbush ? ' (прежняя снимется)' : ''}:</p>
+      <div class="field-row">
+        ${cv.routes.map((r) => `<button class="btn btn-inline grow cv-amb" data-amb="${r.id}">${r.icon} ${UI.esc(r.name)}</button>`).join('')}
+      </div>
+      <button class="btn btn-orange mt" id="cv-send" style="width:100%" disabled>🚚 Выводить караван</button>`;
   }
 
-  // ── 4. ВОЕННЫЕ КОСТИ ──────────────────────────────────────────
-  let diceHtml;
-  const dc = data.dice;
-  const diceFaces = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-  if (dc.state === 'active') {
-    const cubes = dc.dice.map((d, i) =>
-      `<button class="dice-cube" data-dice="${i}" title="Нажмите, чтобы оставить/перебросить">${diceFaces[d]}</button>`).join('');
-    diceHtml = `
-      <p class="small">Ваш бросок: <span class="muted small">нажмите на кубики, которые ОСТАВИТЬ</span></p>
-      <div class="dice-row mt">${cubes}</div>
-      <p class="small mt">Комбинация: <b class="gold">${dc.combo ? dc.combo.name + ' — ' + dc.combo.gold + ' 🪙' : 'пока ничего'}</b></p>
-      <p class="muted small">Перебросов осталось: <b>${dc.rerollsLeft}</b></p>
-      <div class="field-row mt">
-        <button class="btn btn-inline" id="dice-reroll" ${dc.rerollsLeft <= 0 ? 'disabled' : ''}>🎲 Перебросить</button>
-        <button class="btn btn-orange btn-inline" id="dice-finish">✅ Забрать результат</button>
-      </div>`;
-  } else if (dc.state === 'cooldown') {
-    diceHtml = cdLine(dc.cooldownSec);
+  // ── 4. САПЁРНАЯ ТРОПА ─────────────────────────────────────────
+  let sapperHtml;
+  const sp = data.sapper;
+  if (sp.state === 'active') {
+    const spCells = [];
+    for (let n = 0; n < sp.cells; n++) {
+      const open = (sp.opened || []).includes(n);
+      spCells.push(`<button class="sp-cell${open ? ' sp-open' : ''}" data-cell="${n}"${open ? ' disabled' : ''}>${open ? '✅' : ''}</button>`);
+    }
+    sapperHtml = `
+      <p class="small">Открыто клеток: <b class="gold">${(sp.opened || []).length}</b>
+        · добыча при отходе: <span class="ic-gold"></span> <b>${sp.loot}</b></p>
+      ${sp.nextRiskPct != null
+        ? `<p class="muted small">Следующая клетка: риск наступить на мину
+             <b style="color:var(--red)">${sp.nextRiskPct}%</b>, добыча вырастет до
+             <span class="ic-gold"></span> <b>${sp.nextLoot}</b>.</p>`
+        : '<p class="muted small">Дальше идти некуда — забирайте добычу.</p>'}
+      <div class="sp-field">${spCells.join('')}</div>
+      <button class="btn btn-orange mt" id="sp-take" style="width:100%">🧨 Забрать добычу</button>`;
+  } else if (sp.state === 'cooldown') {
+    sapperHtml = cdLine(sp.cooldownSec);
   } else {
-    diceHtml = `
-      <p class="muted small">Бросьте ${dc.count} кубиков и соберите комбинацию за ${dc.rerolls} переброса. Награда <span class="ic-gold"></span> ${dc.rewardMin}–${dc.rewardMax}.</p>
-      <div class="muted small mt">${dc.payouts.map(p => `${p.name} — 🪙 ${p.gold}`).join('<br>')}</div>
-      <button class="btn btn-orange mt" id="dice-start">Бросить кости</button>`;
+    sapperHtml = `
+      <p class="muted small">Поле из ${sp.cells} клеток, в нём ${sp.mines} мины. Открывайте по одной:
+        каждая чистая клетка увеличивает добычу, забрать её можно в любой момент.
+        Наступили на мину — теряете всё набранное.
+        Первая клетка даёт <span class="ic-gold"></span> ${sp.firstLoot},
+        последняя — <span class="ic-gold"></span> ${sp.maxLoot}, если дойдёте.</p>
+      <button class="btn btn-orange mt" id="sp-start">🧨 Выйти на тропу</button>`;
   }
 
-  // ── 5. ШТАБНОЙ АУКЦИОН ────────────────────────────────────────
-  let bidsHtml;
-  const bd = data.bids;
-  if (bd.state === 'cooldown') {
-    bidsHtml = cdLine(bd.cooldownSec);
+  // ── 5. ПОЛЕВОЙ ТОТАЛИЗАТОР ────────────────────────────────────
+  let bookieHtml;
+  const bk = data.bookie;
+  const bkLast = bk.last
+    ? `<p class="muted small mt">Прошлый забег: первым пришло <b>${UI.esc(bk.last.winnerName)}</b> —
+         ваша ставка ${bk.last.won ? '<b class="gold">сыграла</b>' : 'не сыграла'}.</p>`
+    : '';
+  if (bk.state === 'cooldown') {
+    bookieHtml = cdLine(bk.cooldownSec) + bkLast;
   } else {
-    bidsHtml = `
-      <p class="muted small">У вас <b class="gold">${bd.points}</b> очков влияния. Распределите их между лотами втёмную — против ${bd.rivals} генералов. Лот забирает тот, кто поставил больше (при равенстве лот уходит казне).</p>
-      <p class="muted small">За лот <span class="ic-gold"></span> ${bd.perLot}, за все сразу +<span class="ic-gold"></span> ${bd.sweepBonus}.</p>
-      ${bd.lots.map((name, i) => `
-        <div class="field-row mt">
-          <span class="grow small">${UI.esc(name)}</span>
-          <input type="number" class="bids-input" data-bid="${i}" min="0" max="${bd.points}" value="0" style="width:80px">
-        </div>`).join('')}
-      <p class="small mt">Распределено: <b id="bids-total">0</b> / ${bd.points}</p>
-      <button class="btn btn-orange mt" id="bids-go" style="width:100%">💼 Сделать ставки</button>`;
+    bookieHtml = `
+      <p class="muted small">Три отделения бегут учения. Ставка <span class="ic-gold"></span> ${bk.stake}
+        на одно из них; выплата зависит от коэффициента.</p>
+      <div class="mt">
+        ${bk.squads.map((s) => `
+          <button class="btn btn-inline bk-bet" data-squad="${s.id}" style="width:100%;margin-bottom:6px">
+            <span class="grow">${s.icon} ${UI.esc(s.name)}</span>
+            <span class="muted small">×${s.odds}</span>
+            <b class="gold"><span class="ic-gold"></span> ${s.payout}</b>
+          </button>`).join('')}
+      </div>
+      ${bkLast}`;
   }
 
-
-  // ── ВОЕННЫЙ ЗАЙМ (лотерея) ────────────────────────────────────
   // Главное на карточке — банк и шанс. Оба считает сервер; здесь их
   // только показываем, чтобы клиент и сервер не разошлись в арифметике.
   const lotHtml = `
@@ -717,23 +738,24 @@ App.screens.club = async (c, param) => {
     { id: 'pref',    icon: '🃏', name: 'Военный преферанс',
       note: pf.state === 'active' ? 'партия идёт'
           : (pf.state === 'cooldown' ? timer(pf.cooldownSec)
-          : `ставка 🪙 ${pf.entry}, выигрыш 🪙 ${pf.win}`) },
+          : `ставка <span class="ic-gold"></span> ${pf.entry}, выигрыш <span class="ic-gold"></span> ${pf.win}`) },
     { id: 'safe',    icon: '🗝', name: 'Сейф штаба',
       note: sf.state === 'locked' ? 'вскрыт · ' + timer(sf.lockedSec)
           : `${sf.mask} · открыто ${sf.opened} из ${sf.digits}` },
     { id: 'lottery', icon: '🎟', name: 'Военный займ',
-      note: `банк 🪙 ${UI.fmtNum(lot.pot)} · до розыгрыша ${UI.fmtTimer(lot.secondsLeft)}` },
+      note: `банк <span class="ic-gold"></span> ${UI.fmtNum(lot.pot)} · до розыгрыша ${UI.fmtTimer(lot.secondsLeft)}` },
     { id: 'tactic',  icon: '⚔', name: 'Тактическая дуэль',
       note: dl.state === 'active' ? `счёт ${dl.my}:${dl.foe}`
           : (dl.state === 'cooldown' ? timer(dl.cooldownSec) : `до ${dl.needed} побед`) },
-    { id: 'raid',    icon: '🌒', name: 'Ночной рейд',
-      note: rd.state === 'active' ? `взято рубежей ${rd.step}`
-          : (rd.state === 'cooldown' ? timer(rd.cooldownSec) : 'дойти и вовремя отойти') },
-    { id: 'dice',    icon: '🎲', name: 'Военные кости',
-      note: st(data.dice) === 'active' ? 'бросок сделан'
-          : (st(data.dice) === 'cooldown' ? timer(data.dice.cooldownSec) : '5 кубиков, 2 переброса') },
-    { id: 'bids',    icon: '💼', name: 'Штабной аукцион',
-      note: st(data.bids) === 'cooldown' ? timer(data.bids.cooldownSec) : 'слепые ставки на три лота' },
+    { id: 'convoy',  icon: '🚚', name: 'Ночной караван',
+      note: st(data.convoy) === 'cooldown' ? timer(data.convoy.cooldownSec)
+          : `засад в округе: ${data.convoy.ambushes}` },
+    { id: 'sapper',  icon: '🧨', name: 'Сапёрная тропа',
+      note: st(data.sapper) === 'active' ? `открыто клеток ${(data.sapper.opened || []).length}`
+          : (st(data.sapper) === 'cooldown' ? timer(data.sapper.cooldownSec) : 'идти и вовремя остановиться') },
+    { id: 'bookie',  icon: '🏁', name: 'Полевой тотализатор',
+      note: st(data.bookie) === 'cooldown' ? timer(data.bookie.cooldownSec)
+          : `ставка <span class="ic-gold"></span> ${data.bookie.stake} на одно из трёх отделений` },
   ];
   const hubHtml = GAMES.map((g) => `
     <a class="card club-btn" href="#club/${g.id}">
@@ -748,9 +770,9 @@ App.screens.club = async (c, param) => {
     safe:    { icon: '🗝', name: 'Сейф штаба',          html: safeHtml },
     lottery: { icon: '🎟', name: 'Военный займ',        html: lotHtml },
     tactic:  { icon: '⚔', name: 'Тактическая дуэль',    html: tacticHtml },
-    raid:    { icon: '🌒', name: 'Ночной рейд',         html: raidHtml },
-    dice:    { icon: '🎲', name: 'Военные кости',       html: diceHtml },
-    bids:    { icon: '💼', name: 'Штабной аукцион',     html: bidsHtml },
+    convoy:  { icon: '🚚', name: 'Ночной караван',      html: convoyHtml },
+    sapper:  { icon: '🧨', name: 'Сапёрная тропа',       html: sapperHtml },
+    bookie:  { icon: '🏁', name: 'Полевой тотализатор',  html: bookieHtml },
   };
 
   if (PAGES[game]) {
@@ -809,34 +831,50 @@ App.screens.club = async (c, param) => {
   const safeInput = R('safe-guess');
   if (safeInput) safeInput.onkeydown = (e) => { if (e.key === 'Enter' && R('safe-go')) R('safe-go').click(); };
 
-  // Ночной рейд
-  if (R('raid-start')) R('raid-start').onclick = async () => { if (await post('/api/club/raid/start')) App.rerender(); };
-  if (R('raid-push')) R('raid-push').onclick = async () => {
-    const r = await post('/api/club/raid/push');
-    if (r && r.result === 'lost') UI.toast(`💥 Сорвались на ${r.step}-м рубеже. Потеряно ${r.lostLoot} 🪙 добычи.`);
+  // Ночной караван: маршрут и место засады выбираются двумя рядами
+  // кнопок, и выйти можно только выбрав оба — иначе игрок отправлял бы
+  // караван, не поставив засаду, и терял половину смысла игры.
+  let cvRoute = null, cvAmb = null;
+  const cvSync = () => {
+    const btn = R('cv-send');
+    if (btn) btn.disabled = !(cvRoute && cvAmb);
+  };
+  [...c.querySelectorAll('.cv-go')].forEach((b) => { b.onclick = () => {
+    c.querySelectorAll('.cv-go').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on'); cvRoute = b.dataset.route; cvSync();
+  }; });
+  [...c.querySelectorAll('.cv-amb')].forEach((b) => { b.onclick = () => {
+    c.querySelectorAll('.cv-amb').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on'); cvAmb = b.dataset.amb; cvSync();
+  }; });
+  if (R('cv-send')) R('cv-send').onclick = async () => {
+    const r = await post('/api/club/convoy/go', { route: cvRoute, ambush: cvAmb });
+    if (r && r.result === 'ambushed') UI.toast('💥 Засада! Караван потерян.');
     await App.refreshMe(); App.rerender();
   };
-  if (R('raid-pull')) R('raid-pull').onclick = async () => {
-    const r = await post('/api/club/raid/pull');
-    if (r && r.result === 'home') UI.toast(`🌒 Группа вернулась. +🪙 ${r.reward}`);
-    if (r && r.result === 'empty') UI.toast('Группа вернулась ни с чем — рубежей не взяли.');
+
+  // Сапёрная тропа
+  if (R('sp-start')) R('sp-start').onclick = async () => {
+    if (await post('/api/club/sapper/start')) App.rerender();
+  };
+  [...c.querySelectorAll('.sp-cell')].forEach((b) => { b.onclick = async () => {
+    const r = await post('/api/club/sapper/step', { cell: b.dataset.cell });
+    if (r && r.result === 'boom') UI.toast('💥 Мина! Вся добыча потеряна.');
+    await App.refreshMe(); App.rerender();
+  }; });
+  if (R('sp-take')) R('sp-take').onclick = async () => {
+    const r = await post('/api/club/sapper/take');
+    if (r && r.result === 'empty') UI.toast('Вы ушли, не сделав ни шага.');
     await App.refreshMe(); App.rerender();
   };
-  // Кости: клик по кубику — оставить/перебросить (визуальная отметка)
-  c.querySelectorAll('[data-dice]').forEach((btn) => {
-    btn.onclick = () => btn.classList.toggle('dice-keep');
-  });
-  if (R('dice-start')) R('dice-start').onclick = async () => { if (await post('/api/club/dice/start')) App.rerender(); };
-  if (R('dice-reroll')) R('dice-reroll').onclick = async () => {
-    const keep = [...c.querySelectorAll('[data-dice].dice-keep')].map((b) => b.dataset.dice);
-    await post('/api/club/dice/reroll', { keep });
-    App.rerender();
-  };
-  if (R('dice-finish')) R('dice-finish').onclick = async () => {
-    const r = await post('/api/club/dice/finish');
-    if (r && r.result === 'nothing') UI.toast('🎲 Комбинация не собралась. В другой раз!');
+
+  // Полевой тотализатор
+  [...c.querySelectorAll('.bk-bet')].forEach((b) => { b.onclick = async () => {
+    const r = await post('/api/club/bookie/bet', { squad: b.dataset.squad });
+    if (r && r.result === 'lose') UI.toast('🏁 Первым пришло ' + r.winnerName + '. Ставка не сыграла.');
     await App.refreshMe(); App.rerender();
-  };
+  }; });
+
   // Лотерея
   if (R('lot-buy')) R('lot-buy').onclick = async () => {
     const n = parseInt((R('lot-count') || {}).value, 10) || 1;
@@ -875,20 +913,6 @@ App.screens.club = async (c, param) => {
   });
   App._prefSeen = seen;
 
-  // Аукцион: живой счётчик распределённых очков
-  const bidInputs = [...c.querySelectorAll('.bids-input')];
-  const recount = () => {
-    const sum = bidInputs.reduce((s2, el) => s2 + (parseInt(el.value, 10) || 0), 0);
-    if (R('bids-total')) R('bids-total').textContent = sum;
-  };
-  bidInputs.forEach((el) => el.oninput = recount);
-  if (R('bids-go')) R('bids-go').onclick = async () => {
-    const bids = bidInputs.map((el) => parseInt(el.value, 10) || 0);
-    const r = await post('/api/club/bids/play', { bids });
-    if (r && r.result === 'lost') UI.toast('💼 Все лоты ушли генералам. Не в этот раз.');
-    if (r && r.result === 'win') UI.toast(`💼 Выиграно лотов: ${r.won}. +🪙 ${r.reward}`);
-    await App.refreshMe(); App.rerender();
-  };
 };
 
 // ---------- ТРОФЕИ ----------
