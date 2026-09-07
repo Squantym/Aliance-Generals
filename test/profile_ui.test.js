@@ -93,6 +93,38 @@ const profile = (over) => Object.assign({
   ok('без портрета показана заглушка', !!c.querySelector('.pf2-avatar-stub'));
   ok('и кнопка предлагает поставить', /Поставить/.test(c.querySelector('#pf-avatar-btn').textContent));
 
+  console.log('\n── 3б. Окно выбора портрета ──');
+  // Проверка именно поведением, а не по исходнику: окно строится на
+  // клиенте, и «показывает только своё» — это про то, сколько ячеек в
+  // нём оказалось, а не про то, какие строки есть в app.js.
+  const cfgAv = require('../dist/config/gameConfig').AVATARS;
+  const openPicker = (who) => {
+    const old = document.getElementById('avatar-picker');
+    if (old) old.remove();
+    App.me = Object.assign({}, me, who);
+    App._showAvatarPicker(null);
+    const box = document.getElementById('avatar-picker');
+    return [...box.querySelectorAll('[data-avatar]')].map((b) => b.dataset.avatar);
+  };
+  const manSees = openPicker({ gender: 'm', staffRole: null });
+  ok('мужчина видит только мужские портреты',
+     manSees.join() === cfgAv.male.join());
+  const womanSees = openPicker({ gender: 'f', staffRole: null });
+  ok('женщина — только женские', womanSees.join() === cfgAv.female.join());
+  ok('и чужой половины в окне нет',
+     !womanSees.some((id) => cfgAv.male.includes(id)));
+  // Служебные портреты — только штабу, и это тоже должно быть видно
+  // в самом окне, а не только в отказе сервера.
+  ok('обычному игроку служебный портрет не показан',
+     !manSees.some((id) => cfgAv.staff.includes(id)));
+  const staffSees = openPicker({ gender: 'm', staffRole: 'admin' });
+  ok('штабу он показан', cfgAv.staff.every((id) => staffSees.includes(id)));
+  ok('вместе со своей половиной, а не вместо неё',
+     cfgAv.male.every((id) => staffSees.includes(id)));
+  const box = document.getElementById('avatar-picker');
+  ok('и группа подписана', /Штаб/.test(box.textContent));
+  box.remove();
+
   console.log('\n── 4. Карточка профиля и игральная карта — разные классы ──');
   // Из-за общего имени профиль складывался в шестьдесят пикселей. Класс
   // игральной карты живёт в экране клуба, карточка профиля — здесь;

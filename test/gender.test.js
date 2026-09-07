@@ -147,6 +147,46 @@ const nx = [];
   const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
   ok('окно выбора аватара смотрит на пол', /App.me && App.me.gender === 'f'/.test(appSrc));
 
+  console.log(String.fromCharCode(10) + '── 6в. Служебный портрет — только штабу ──');
+  // Портрет из набора staff доступен лишь тем, у кого есть роль в
+  // проекте. Пол на него не смотрит: это служебный портрет, а не
+  // мужской или женский набор.
+  const staffPic = cfg.AVATARS.staff[0];
+  ok('служебный портрет заведён', !!staffPic);
+  M.role = null; M.isAdmin = false; M.gender = 'm'; M.avatar = undefined;
+  let noRole = null;
+  try { player.setAvatar(M, staffPic); } catch (e) { noRole = e; }
+  ok('обычному игроку его не поставить', !!noRole);
+  ok('и портрет остался пустым', !M.avatar);
+  M.role = 'admin';
+  player.setAvatar(M, staffPic);
+  ok('администратору — ставится', M.avatar === staffPic);
+  F.role = 'moderator'; F.gender = 'f'; F.avatar = undefined;
+  player.setAvatar(F, staffPic);
+  ok('и женщине из штаба тоже — он вне пола', F.avatar === staffPic);
+  // Смена пола не должна его снимать: он не мужской и не женский
+  F.gold = 10000;
+  const noteS = [];
+  passport.changeGender(F, 'm', noteS);
+  ok('смена пола служебный портрет не трогает', F.avatar === staffPic);
+  F.role = null; M.role = null;
+  // Файлы всех портретов лежат на диске: битая ссылка — это пустой
+  // прямоугольник у игрока и 404 в логах при внешне верной разметке.
+  const missing = cfg.AVATAR_IDS.filter(
+    (id) => !fs.existsSync(path.join(ROOT, 'public/img/avatars', id + '.webp')));
+  ok(missing.length ? `нет файлов: ${missing.join(', ')}` : 'все портреты лежат на диске',
+     missing.length === 0);
+  // Клиент держит свой список — он обязан совпадать с конфигом, иначе
+  // окно выбора покажет портрет, который сервер не примет.
+  const appSrc2 = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+  const block = (appSrc2.match(/_AVATARS:[\s\S]*?\},/) || [''])[0];
+  for (const group of ['male', 'female', 'staff']) {
+    const inApp = (block.match(new RegExp(group + "\\s*:\\s*\\[([^\\]]*)\\]")) || ['', ''])[1]
+      .split(',').map((x) => x.trim().replace(/'/g, '')).filter(Boolean);
+    ok(`список ${group} на клиенте совпадает с конфигом`,
+       inApp.join() === cfg.AVATARS[group].join());
+  }
+
   console.log('\n── 7. Сцены есть для обоих ──');
   // Ради этого всё и затевалось: у каждой сцены должна быть пара.
   const dir = path.join(ROOT, 'public/img/breach');

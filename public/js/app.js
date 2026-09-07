@@ -133,7 +133,8 @@ const App = {
   },
 
   // ── Аватары профиля ──
-  _AVATARS: { male: ['m1','m2','m3','m4','m5','m6'], female: ['f1','f2','f3','f4','f5','f6'] },
+  _AVATARS: { male: ['m1','m2','m3','m4','m5','m6'], female: ['f1','f2','f3','f4','f5','f6'],
+              staff: ['s1'] },
   // Окно выбора аватара. Показываем ТОЛЬКО свою половину списка:
   // командующий-мужчина с женским портретом — это не «свобода выбора», а
   // путаница в бою и в списках. Сервер проверяет то же самое отдельно:
@@ -147,6 +148,9 @@ const App = {
       </button>`;
     const female = !!(App.me && App.me.gender === 'f');
     const list = female ? this._AVATARS.female : this._AVATARS.male;
+    // Портреты штаба — только тем, у кого есть роль в проекте. Сервер
+    // проверяет то же самое: окно можно обойти запросом.
+    const staff = (App.me && App.me.staffRole) ? this._AVATARS.staff : [];
     const m = document.createElement('div');
     m.id = 'avatar-picker';
     m.className = 'game-dialog-overlay';
@@ -155,6 +159,8 @@ const App = {
         <div class="game-dialog-title">📷 Выбор аватара</div>
         <div class="avatar-group-label">${female ? '👩 Женские' : '👨 Мужские'}</div>
         <div class="avatar-grid">${list.map(cell).join('')}</div>
+        ${staff.length ? `<div class="avatar-group-label">🎖 Штаб</div>
+        <div class="avatar-grid">${staff.map(cell).join('')}</div>` : ''}
         <p class="muted small" style="margin:8px 0 0">Портреты — по полу командующего.
           Сменить пол можно на чёрном рынке.</p>
         <div class="game-dialog-actions" style="margin-top:14px">

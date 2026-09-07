@@ -1047,11 +1047,16 @@ const AUCTION = { LOTS: 5, MIN_BID: 500, BID_STEP: 50, RENT_HOURS: 24 };
 
 // ---------- АВАТАРЫ ПРОФИЛЯ ----------
 // Картинки лежат в /img/avatars/<id>.webp. m — мужские, f — женские.
+// staff — портреты штаба: их видит и может поставить только тот, у кого
+// есть роль в проекте (владелец, арбитр, администратор, комиссар,
+// модератор). Пол на них не смотрит: это служебный портрет, а не
+// «мужской/женский» набор.
 const AVATARS = {
   male: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'],
   female: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6'],
+  staff: ['s1'],
 };
-const AVATAR_IDS = [...AVATARS.male, ...AVATARS.female];
+const AVATAR_IDS = [...AVATARS.male, ...AVATARS.female, ...AVATARS.staff];
 
 // ---------- КЛУБ ОФИЦЕРОВ ----------
 const RIDDLES = [

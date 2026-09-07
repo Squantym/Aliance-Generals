@@ -1216,6 +1216,11 @@ function genderId(user: User): string {
   const g = String((user as any).gender || '');
   return config.GENDER_BY_ID[g] ? g : 'm';
 }
+// Есть ли у игрока роль в проекте. Через try: сломанный модуль ролей не
+// должен ронять профиль — в худшем случае служебный портрет недоступен.
+function isStaff(user: User): boolean {
+  try { return !!require('./roles').roleOf(user); } catch (e) { return false; }
+}
 function genderTitle(user: User): string {
   return config.GENDER_BY_ID[genderId(user)].title;
 }
@@ -1563,8 +1568,18 @@ function renameSelf(user: User, newName: string, notices: Notices) {
 function setAvatar(user: User, avatarId: string) {
   if (avatarId === '' || avatarId === null) { user.avatar = undefined; db.markUser(user.id); return { avatar: null }; }
   if (!config.AVATAR_IDS.includes(avatarId)) throw new u.ApiError('Неизвестный аватар');
-  // Портрет — по полу командующего. Окно выбора и так показывает только
-  // свою половину, но окно можно обойти запросом, а эту строку нельзя.
+  // Портреты штаба — только для тех, у кого есть роль в проекте. Пол на
+  // них не смотрит, а вот роль проверяется здесь: окно выбора их просто
+  // не показывает, но окно обходится запросом.
+  if ((config.AVATARS.staff as string[]).includes(avatarId)) {
+    if (!isStaff(user)) throw new u.ApiError('Этот портрет — служебный');
+    user.avatar = avatarId;
+    db.markUser(user.id);
+    return { avatar: avatarId };
+  }
+  // Остальные портреты — по полу командующего. Окно выбора и так
+  // показывает только свою половину, но окно можно обойти запросом, а
+  // эту строку нельзя.
   const mine: string[] = genderId(user) === 'f' ? config.AVATARS.female : config.AVATARS.male;
   if (!mine.includes(avatarId)) {
     throw new u.ApiError('Этот портрет не для вашего пола. Сменить пол можно на чёрном рынке.');

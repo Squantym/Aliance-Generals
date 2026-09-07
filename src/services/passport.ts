@@ -107,7 +107,8 @@ function changeGender(user: User, newGender: string, notices: Notices) {
   // Портрет — по полу, и после смены старый остаётся чужим. Снимаем его
   // молча: заставлять игрока лезть искать, почему «портрет не для вашего
   // пола», ради одного клика незачем.
-  const mine: string[] = g === 'f' ? config.AVATARS.female : config.AVATARS.male;
+  const mine: string[] = (g === 'f' ? config.AVATARS.female : config.AVATARS.male)
+    .concat(config.AVATARS.staff);        // служебный портрет вне пола
   const had = (user as any).avatar;
   if (had && !mine.includes(had)) {
     (user as any).avatar = undefined;
