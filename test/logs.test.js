@@ -50,7 +50,7 @@ console.log('\n[6] Исправленные пути (раньше показы�
 has('контейнер /api/market/open', lt.describe('/api/market/open', { tier: 2, qty: 1 }, {}), 'тир 2');
 has('уши /api/ears/restore', lt.describe('/api/ears/restore', {}, { cost: 20 }), 'ухо');
 has('клуб преферанс /api/club/pref/hit', lt.describe('/api/club/pref/hit', {}, {}), 'преферанс');
-has('клуб караван /api/club/convoy/go', lt.describe('/api/club/convoy/go', { route: 'coast' }, {}), 'караван');
+has('клуб напёрстки /api/club/thimble/play', lt.describe('/api/club/thimble/play', { pot: 1 }, {}), 'напёрстк');
 has('клуб сейф /api/club/safe/try', lt.describe('/api/club/safe/try', { guess: '123456' }, {}), 'сейф');
 has('клуб дуэль /api/club/tactic/play', lt.describe('/api/club/tactic/play', { kind: 'air' }, {}), 'авиаци');
 has('займ /api/lottery/buy', lt.describe('/api/lottery/buy', { count: 3 }, {}), 'займ');

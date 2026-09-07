@@ -610,13 +610,6 @@ function registerRoutes(app: any) {
   // 2. Сейф штаба
   // Сейф общий: «начать» его нельзя, он всегда один и открыт для всех
   app.add('POST', '/api/club/safe/try',   act((req, n) => club.safeTry(req.user, req.body.guess, n)));
-  // 3. Артиллерийская пристрелка
-  app.add('POST', '/api/club/convoy/go',    act((req, n) => club.convoyGo(req.user, req.body.route, req.body.ambush, n)));
-  app.add('POST', '/api/club/sapper/start', act((req) => club.sapperStart(req.user)));
-  app.add('POST', '/api/club/sapper/step',  act((req, n) => club.sapperStep(req.user, req.body.cell, n)));
-  app.add('POST', '/api/club/sapper/take',  act((req, n) => club.sapperTake(req.user, n)));
-  app.add('POST', '/api/club/bookie/bet',   act((req, n) => club.bookieBet(req.user, req.body.squad, n)));
-
   app.add('POST', '/api/club/tactic/start', act((req) => club.tacticStart(req.user)));
   app.add('POST', '/api/club/tactic/play',  act((req, n) => club.tacticPlay(req.user, req.body.kind, n)));
   // Напёрстки полевой кухни

@@ -561,97 +561,7 @@ App.screens.club = async (c, param) => {
              скажут, сколько цифр есть в коде, но стоят не на своём месте.</p>`}`;
   }
 
-  // ── 3. НОЧНОЙ КАРАВАН ─────────────────────────────────────────
-  // Единственная игра клуба против живых игроков: засады на маршрутах
-  // ставят другие. Поэтому и подсказка тут одна — общая сводка выходов.
-  let convoyHtml;
-  const cv = data.convoy;
-  if (cv.state === 'cooldown') {
-    convoyHtml = cdLine(cv.cooldownSec);
-  } else {
-    const cvLog = (cv.log || []).map((e) => {
-      const r = (cv.routes.find((x) => x.id === e.route) || {});
-      return `<div class="field-row small cv-row">
-        <span class="grow">${r.icon || ''} ${UI.esc(r.name || e.route)}</span>
-        <span class="${e.hit ? 'cv-hit' : 'cv-ok'}">${e.hit ? '💥 засада' : '✅ прошёл'}</span>
-        <span class="muted">${UI.esc(e.tag)}</span>
-      </div>`;
-    }).join('');
-    convoyHtml = `
-      <p class="muted small">Ведите караван одним из трёх маршрутов. Засады на них ставят
-        другие игроки: прошли — добыча <span class="ic-gold"></span> ${cv.loot};
-        напоролись — караван потерян, а <span class="ic-gold"></span> ${cv.ambushPay}
-        уходят тому, кто засаду поставил.</p>
-      <p class="muted small">В округе замечено засад: <b>${cv.ambushes}</b>. Где именно — неизвестно;
-        читать обстановку можно только по чужим выходам.</p>
-      ${cvLog ? `<p class="muted small mt">Последние выходы:</p><div>${cvLog}</div>` : ''}
-      <p class="muted small mt"><b>1.</b> Каким маршрутом идёте:</p>
-      <div class="field-row">
-        ${cv.routes.map((r) => `<button class="btn btn-inline grow cv-go" data-route="${r.id}">${r.icon} ${UI.esc(r.name)}</button>`).join('')}
-      </div>
-      <p class="muted small mt"><b>2.</b> Где оставите свою засаду${cv.myAmbush ? ' (прежняя снимется)' : ''}:</p>
-      <div class="field-row">
-        ${cv.routes.map((r) => `<button class="btn btn-inline grow cv-amb" data-amb="${r.id}">${r.icon} ${UI.esc(r.name)}</button>`).join('')}
-      </div>
-      <button class="btn btn-orange mt" id="cv-send" style="width:100%" disabled>🚚 Выводить караван</button>`;
-  }
-
-  // ── 4. САПЁРНАЯ ТРОПА ─────────────────────────────────────────
-  let sapperHtml;
-  const sp = data.sapper;
-  if (sp.state === 'active') {
-    const spCells = [];
-    for (let n = 0; n < sp.cells; n++) {
-      const open = (sp.opened || []).includes(n);
-      spCells.push(`<button class="sp-cell${open ? ' sp-open' : ''}" data-cell="${n}"${open ? ' disabled' : ''}>${open ? '✅' : ''}</button>`);
-    }
-    sapperHtml = `
-      <p class="small">Открыто клеток: <b class="gold">${(sp.opened || []).length}</b>
-        · добыча при отходе: <span class="ic-gold"></span> <b>${sp.loot}</b></p>
-      ${sp.nextRiskPct != null
-        ? `<p class="muted small">Следующая клетка: риск наступить на мину
-             <b style="color:var(--red)">${sp.nextRiskPct}%</b>, добыча вырастет до
-             <span class="ic-gold"></span> <b>${sp.nextLoot}</b>.</p>`
-        : '<p class="muted small">Дальше идти некуда — забирайте добычу.</p>'}
-      <div class="sp-field">${spCells.join('')}</div>
-      <button class="btn btn-orange mt" id="sp-take" style="width:100%">🧨 Забрать добычу</button>`;
-  } else if (sp.state === 'cooldown') {
-    sapperHtml = cdLine(sp.cooldownSec);
-  } else {
-    sapperHtml = `
-      <p class="muted small">Поле из ${sp.cells} клеток, в нём ${sp.mines} мины. Открывайте по одной:
-        каждая чистая клетка увеличивает добычу, забрать её можно в любой момент.
-        Наступили на мину — теряете всё набранное.
-        Первая клетка даёт <span class="ic-gold"></span> ${sp.firstLoot},
-        последняя — <span class="ic-gold"></span> ${sp.maxLoot}, если дойдёте.</p>
-      <button class="btn btn-orange mt" id="sp-start">🧨 Выйти на тропу</button>`;
-  }
-
-  // ── 5. ПОЛЕВОЙ ТОТАЛИЗАТОР ────────────────────────────────────
-  let bookieHtml;
-  const bk = data.bookie;
-  const bkLast = bk.last
-    ? `<p class="muted small mt">Прошлый забег: первым пришло <b>${UI.esc(bk.last.winnerName)}</b> —
-         ваша ставка ${bk.last.won ? '<b class="gold">сыграла</b>' : 'не сыграла'}.</p>`
-    : '';
-  if (bk.state === 'cooldown') {
-    bookieHtml = cdLine(bk.cooldownSec) + bkLast;
-  } else {
-    bookieHtml = `
-      <p class="muted small">Три отделения бегут учения. Ставка <span class="ic-gold"></span> ${bk.stake}
-        на одно из них; выплата зависит от коэффициента.</p>
-      <div class="mt">
-        ${bk.squads.map((s) => `
-          <button class="btn btn-inline bk-bet" data-squad="${s.id}" style="width:100%;margin-bottom:6px">
-            <span class="grow">${s.icon} ${UI.esc(s.name)}</span>
-            <span class="muted small">×${s.odds}</span>
-            <b class="gold"><span class="ic-gold"></span> ${s.payout}</b>
-          </button>`).join('')}
-      </div>
-      ${bkLast}`;
-  }
-
-  // ── 7-8. ИГРЫ ПРОТИВ ЖИВОГО СОПЕРНИКА ─────────────────────────
+  // ── 4-5. ИГРЫ ПРОТИВ ЖИВОГО СОПЕРНИКА ─────────────────────────
   // У обеих одинаковое начало: очередь, взнос, ожидание. Поэтому общие
   // куски разметки сделаны один раз — расходятся игры только в бою.
   const qWait = (v, id) => `
@@ -683,7 +593,7 @@ App.screens.club = async (c, param) => {
       ${extra ? extra(L) : ''}`;
   };
 
-  // ── 7. РАДИОПЕРЕХВАТ ──────────────────────────────────────────
+  // ── 4. РАДИОПЕРЕХВАТ ──────────────────────────────────────────
   let interceptHtml;
   const ic = data.intercept;
   const icName = (n) => 'АБВГ'[Math.floor(n / 3)] + ((n % 3) + 1);
@@ -730,7 +640,7 @@ App.screens.club = async (c, param) => {
       ${qJoin(ic, 'intercept', '📡 Встать в очередь')}`;
   }
 
-  // ── 8. СНАЙПЕРСКАЯ ДУЭЛЬ ──────────────────────────────────────
+  // ── 5. СНАЙПЕРСКАЯ ДУЭЛЬ ──────────────────────────────────────
   let sniperHtml;
   const sn = data.sniper;
   const snLast = pvpLast(sn, (L) => !L.log || !L.log.length ? '' :
@@ -774,7 +684,7 @@ App.screens.club = async (c, param) => {
       ${qJoin(sn, 'sniper', '🔭 Встать в очередь')}`;
   }
 
-  // ── 9. НАПЁРСТКИ ПОЛЕВОЙ КУХНИ ────────────────────────────────
+  // ── 6. НАПЁРСТКИ ПОЛЕВОЙ КУХНИ ────────────────────────────────
   let thimbleHtml;
   const th = data.thimble;
   const thLast = th.last
@@ -918,15 +828,6 @@ App.screens.club = async (c, param) => {
     { id: 'tactic',  icon: '⚔', name: 'Тактическая дуэль',
       note: dl.state === 'active' ? `счёт ${dl.my}:${dl.foe}`
           : (dl.state === 'cooldown' ? timer(dl.cooldownSec) : `до ${dl.needed} побед`) },
-    { id: 'convoy',  icon: '🚚', name: 'Ночной караван',
-      note: st(data.convoy) === 'cooldown' ? timer(data.convoy.cooldownSec)
-          : `засад в округе: ${data.convoy.ambushes}` },
-    { id: 'sapper',  icon: '🧨', name: 'Сапёрная тропа',
-      note: st(data.sapper) === 'active' ? `открыто клеток ${(data.sapper.opened || []).length}`
-          : (st(data.sapper) === 'cooldown' ? timer(data.sapper.cooldownSec) : 'идти и вовремя остановиться') },
-    { id: 'bookie',  icon: '🏁', name: 'Полевой тотализатор',
-      note: st(data.bookie) === 'cooldown' ? timer(data.bookie.cooldownSec)
-          : `ставка <span class="ic-gold"></span> ${data.bookie.stake} на одно из трёх отделений` },
     // Живые игры: на кнопке видно главное — идёт ли бой и не ждут ли хода
     { id: 'intercept', icon: '📡', name: 'Радиоперехват',
       note: ic.state === 'match' ? (ic.match.moved ? 'ждём соперника' : '❗ ваш ход')
@@ -958,9 +859,6 @@ App.screens.club = async (c, param) => {
     safe:    { icon: '🗝', name: 'Сейф штаба',          html: safeHtml,   pic: 'safe' },
     lottery: { icon: '🎟', name: 'Военный займ',        html: lotHtml,    pic: 'lottery' },
     tactic:  { icon: '⚔', name: 'Тактическая дуэль',    html: tacticHtml },
-    convoy:  { icon: '🚚', name: 'Ночной караван',      html: convoyHtml },
-    sapper:  { icon: '🧨', name: 'Сапёрная тропа',       html: sapperHtml },
-    bookie:  { icon: '🏁', name: 'Полевой тотализатор',  html: bookieHtml },
     intercept: { icon: '📡', name: 'Радиоперехват',       html: interceptHtml, pic: 'intercept' },
     sniper:  { icon: '🔭', name: 'Снайперская дуэль',     html: sniperHtml, pic: 'sniper' },
     thimble: { icon: '🍲', name: 'Напёрстки полевой кухни', html: thimbleHtml, pic: 'thimble' },
@@ -1023,43 +921,6 @@ App.screens.club = async (c, param) => {
   };
   const safeInput = R('safe-guess');
   if (safeInput) safeInput.onkeydown = (e) => { if (e.key === 'Enter' && R('safe-go')) R('safe-go').click(); };
-
-  // Ночной караван: маршрут и место засады выбираются двумя рядами
-  // кнопок, и выйти можно только выбрав оба — иначе игрок отправлял бы
-  // караван, не поставив засаду, и терял половину смысла игры.
-  let cvRoute = null, cvAmb = null;
-  const cvSync = () => {
-    const btn = R('cv-send');
-    if (btn) btn.disabled = !(cvRoute && cvAmb);
-  };
-  [...c.querySelectorAll('.cv-go')].forEach((b) => { b.onclick = () => {
-    c.querySelectorAll('.cv-go').forEach((x) => x.classList.remove('on'));
-    b.classList.add('on'); cvRoute = b.dataset.route; cvSync();
-  }; });
-  [...c.querySelectorAll('.cv-amb')].forEach((b) => { b.onclick = () => {
-    c.querySelectorAll('.cv-amb').forEach((x) => x.classList.remove('on'));
-    b.classList.add('on'); cvAmb = b.dataset.amb; cvSync();
-  }; });
-  if (R('cv-send')) R('cv-send').onclick = async () => {
-    const r = await post('/api/club/convoy/go', { route: cvRoute, ambush: cvAmb });
-    if (r && r.result === 'ambushed') UI.toast('💥 Засада! Караван потерян.');
-    await App.refreshMe(); App.rerender();
-  };
-
-  // Сапёрная тропа
-  if (R('sp-start')) R('sp-start').onclick = async () => {
-    if (await post('/api/club/sapper/start')) App.rerender();
-  };
-  [...c.querySelectorAll('.sp-cell')].forEach((b) => { b.onclick = async () => {
-    const r = await post('/api/club/sapper/step', { cell: b.dataset.cell });
-    if (r && r.result === 'boom') UI.toast('💥 Мина! Вся добыча потеряна.');
-    await App.refreshMe(); App.rerender();
-  }; });
-  if (R('sp-take')) R('sp-take').onclick = async () => {
-    const r = await post('/api/club/sapper/take');
-    if (r && r.result === 'empty') UI.toast('Вы ушли, не сделав ни шага.');
-    await App.refreshMe(); App.rerender();
-  };
 
   // ── Игры против живого соперника: очередь, ходы, самообновление ──
   [...c.querySelectorAll('[data-queue]')].forEach((b) => { b.onclick = async () => {
@@ -1130,13 +991,6 @@ App.screens.club = async (c, param) => {
       await new Promise((res) => setTimeout(res, 700));
       await App.refreshMe(); App.rerender();
     }
-  }; });
-
-  // Полевой тотализатор
-  [...c.querySelectorAll('.bk-bet')].forEach((b) => { b.onclick = async () => {
-    const r = await post('/api/club/bookie/bet', { squad: b.dataset.squad });
-    if (r && r.result === 'lose') UI.toast('🏁 Первым пришло ' + r.winnerName + '. Ставка не сыграла.');
-    await App.refreshMe(); App.rerender();
   }; });
 
   // Лотерея

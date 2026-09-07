@@ -298,34 +298,31 @@ eq('настоящая попытка засчитана в поручение',
 const safeCrack = require('../dist/src/services/safeCrack');
 ok('настоящая попытка взвела таймер', safeCrack.view(S).myCooldownSec > 0);
 
-console.log('\n    то же на сапёрной тропе');
+console.log(String.fromCharCode(10) + '    то же в напёрстках');
 reset();
 const R = mk('a'); um['a'] = R;
+R.gold = 1000;                    // золото есть: проверяем разбор хода, а не кассу
 let bad2 = 0;
-// Шаг и отход без начатой тропы — оба должны быть отвергнуты ДО того,
-// как поручение что-то засчитает.
-for (const call of [() => club.sapperStep(R, 0, []), () => club.sapperTake(R, [])]) {
-  try { call(); } catch (e) { bad2++; }
+// Котелка вне стола нет — отказ обязан прийти ДО того, как поручение
+// что-то засчитает, и ДО того, как со счёта уйдёт ставка.
+for (const wrong of [-1, 99, 'котелок']) {
+  try { club.thimblePlay(R, wrong, []); } catch (e) { bad2++; }
 }
-eq('ходы без начатой тропы отклонены', bad2, 2);
+eq('ходы по несуществующим котелкам отклонены', bad2, 3);
 eq('счётчик клуба не сдвинулся', cnt(R), 0);
-// Клетка вне поля и уже открытая — тоже отказ без засчёта
-club.sapperStart(R);
-let bad2b = 0;
-try { club.sapperStep(R, 999, []); } catch (e) { bad2b++; }
-eq('клетки вне поля нет', bad2b, 1);
-eq('и она не засчитана в поручение', cnt(R), 0);
+eq('и ставка не списана', R.gold, 1000);
 
-
-console.log('\n    и на полевом тотализаторе');
+console.log(String.fromCharCode(10) + '    и на снайперской дуэли');
 reset();
 const Q = mk('a'); um['a'] = Q;
-Q.gold = 1000;                    // золото есть: проверяем разбор ставки, а не кассу
+Q.gold = 1000;
+const cm = require('../dist/src/services/clubMatch');
 let bad3 = 0;
-for (const wrong of ['', 'delta', 'альфа']) {
-  try { club.bookieBet(Q, wrong, []); } catch (e) { bad3++; }
+// Выстрел и прицеливание без боя: соперника нет, значит и хода нет.
+for (const act of ['shoot', 'aim', 'закурить']) {
+  try { cm.sniperAct(Q, act, []); } catch (e) { bad3++; }
 }
-eq('ставки на несуществующие отделения отклонены', bad3, 3);
+eq('ходы без начатой дуэли отклонены', bad3, 3);
 eq('счётчик клуба не сдвинулся', cnt(Q), 0);
 eq('и золото не списано', Q.gold, 1000);
 

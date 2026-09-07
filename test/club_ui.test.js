@@ -2,9 +2,9 @@
 // test/club_ui.test.js — экран клуба рисуется во всех состояниях
 //
 // Экран переписан целиком: общий сейф с маской и анонимной историей,
-// ночной караван, сапёрная тропа и полевой тотализатор вместо рейда,
-// костей и аукциона, тактическая дуэль, «Военный займ» и полоса
-// суточного предела. Каждое из них имеет несколько состояний —
+// тактическая дуэль, две игры против живого соперника, напёрстки,
+// «Военный займ» и полоса суточного предела. Каждое из них имеет
+// несколько состояний —
 // открыт / закрыт / на таймере, — и любое из них может не отрисоваться
 // молча: шаблон падает, экран остаётся пустым, а сервер при этом
 // отвечает исправно, и по логам всё в порядке.
@@ -67,30 +67,6 @@ const baseClub = () => ({
       { guess: '341111', tag: 'К07', at: Date.now() - 60000 },
     ],
     lockedSec: 0, myCooldownSec: 0, tryCdSec: 60, last: null,
-  },
-  convoy: {
-    state: 'ready', loot: 8, ambushPay: 10, ambushes: 4, myAmbush: null,
-    routes: [
-      { id: 'mountain', name: 'Горный перевал', icon: '⛰' },
-      { id: 'coast', name: 'Побережье', icon: '🌊' },
-      { id: 'steppe', name: 'Степь', icon: '🌾' },
-    ],
-    log: [
-      // by в ответе — приманка: даже если сервер однажды начнёт присылать
-      // имя, показывать его в общей сводке нельзя, иначе маршруты
-      // читаются по знакомым позывным, а не по риску.
-      { route: 'coast', hit: true, at: Date.now(), tag: 'К-42', by: 'Соседний' },
-      { route: 'steppe', hit: false, at: Date.now() - 60000, tag: 'К-07', by: 'Дальний' },
-    ],
-  },
-  sapper: { state: 'ready', cells: 9, mines: 2, firstLoot: 2, maxLoot: 35, maxSteps: 7 },
-  bookie: {
-    state: 'ready', stake: 10, last: null,
-    squads: [
-      { id: 'alpha', name: 'Отделение «Альфа»', icon: '🔴', odds: 1.7, payout: 17 },
-      { id: 'bravo', name: 'Отделение «Браво»', icon: '🔵', odds: 2.83, payout: 28 },
-      { id: 'charlie', name: 'Отделение «Чарли»', icon: '🟢', odds: 4.25, payout: 43 },
-    ],
   },
   intercept: {
     state: 'ready', entry: 5, win: 15, cells: 6, guesses: 2,
@@ -174,53 +150,6 @@ const baseLot = () => ({
   ok('назван тот, кто взял', /Взломщик/.test(html) && /23-й попытки/.test(html));
   ok('видно, сколько ждать нового', /Новый сейф привезут/.test(html));
   ok('ввода нет', !c.querySelector('#safe-guess'));
-
-  console.log('\n── 5. Ночной караван ──');
-  html = await render(baseClub(), baseLot(), 'convoy');
-  ok('маршрут выбирается кнопкой', c.querySelectorAll('.cv-go').length === 3);
-  ok('и место засады тоже', c.querySelectorAll('.cv-amb').length === 3);
-  // Пока не выбраны оба, выводить караван нельзя: иначе игрок отправлял
-  // бы его, не поставив засаду, и терял половину игры.
-  ok('пока не выбрано — кнопка выхода заперта', c.querySelector('#cv-send').disabled === true);
-  ok('видно, сколько засад в округе', /засад: <b>4<\/b>/.test(html));
-  ok('но не видно, на каких маршрутах', !/Побережье[^<]*засад/.test(html));
-  ok('чужие выходы видны', c.querySelectorAll('.cv-row').length === 2);
-  ok('и они анонимны — только метка каравана',
-     /К-42/.test(html) && !/Соседний/.test(html) && !/Дальний/.test(html));
-  cl = baseClub(); cl.convoy = { state: 'cooldown', cooldownSec: 480, routes: [], log: [] };
-  html = await render(cl, baseLot(), 'convoy');
-  ok('на перерыве выйти нельзя', !c.querySelector('#cv-send') && /Доступно через 8:00/.test(html));
-
-  console.log('\n── 5б. Сапёрная тропа ──');
-  html = await render(baseClub(), baseLot(), 'sapper');
-  ok('до выхода — только кнопка старта',
-     !!c.querySelector('#sp-start') && c.querySelectorAll('.sp-cell').length === 0);
-  ok('края добычи названы заранее', /span> 2,/.test(html) && /span> 35,/.test(html));
-  cl = baseClub();
-  cl.sapper = { state: 'active', cells: 9, mines: 2, opened: [0, 3], loot: 5, nextLoot: 9, nextRiskPct: 29 };
-  html = await render(cl, baseLot(), 'sapper');
-  ok('поле разложено целиком', c.querySelectorAll('.sp-cell').length === 9);
-  ok('открытые клетки повторно не нажать', c.querySelectorAll('.sp-cell[disabled]').length === 2);
-  ok('риск следующего шага показан ДО решения', /29%/.test(html));
-  ok('и добыча за него тоже', /<b>9<\/b>/.test(html));
-  ok('забрать можно в любой момент', !!c.querySelector('#sp-take'));
-  cl.sapper = { state: 'active', cells: 9, mines: 2, opened: [0, 1, 2, 3, 4, 5, 6], loot: 35, nextLoot: null, nextRiskPct: null };
-  html = await render(cl, baseLot(), 'sapper');
-  ok('в конце тропы рисковать не предлагают', /Дальше идти некуда/.test(html));
-  ok('а забрать — по-прежнему да', !!c.querySelector('#sp-take'));
-
-  console.log('\n── 5в. Полевой тотализатор ──');
-  html = await render(baseClub(), baseLot(), 'bookie');
-  ok('три отделения — три кнопки', c.querySelectorAll('.bk-bet').length === 3);
-  ok('коэффициент виден', /×1\.7/.test(html) && /×4\.25/.test(html));
-  ok('и готовая выплата тоже', /17<\/b>/.test(html) && /43<\/b>/.test(html));
-  ok('шанс отделения игроку не показывают', !/50%/.test(html) && !/шанс/.test(html));
-  cl = baseClub();
-  cl.bookie = { state: 'cooldown', cooldownSec: 360, stake: 10, squads: [],
-                last: { winner: 'bravo', winnerName: 'Отделение «Браво»', mine: 'alpha', won: false } };
-  html = await render(cl, baseLot(), 'bookie');
-  ok('на перерыве ставок не принимают', c.querySelectorAll('.bk-bet').length === 0);
-  ok('но итог прошлого забега виден', /Браво/.test(html) && /не сыграла/.test(html));
 
   console.log('\n── 6. Тактическая дуэль ──');
   cl = baseClub();
@@ -458,14 +387,13 @@ const baseLot = () => ({
 
 
   console.log('\n── 14. Вход в клуб — кнопки, а не простыня ──');
-  // Семь игр на одной странице не помещались на экран телефона, а
+  // Все игры на одной странице не помещались на экран телефона, а
   // правила платной игры показать в такой простыне было негде.
   html = await render(baseClub(), baseLot());        // без адреса игры
   ok('заголовок клуба', /Клуб офицеров/.test(html));
-  ok('кнопок ровно десять — по числу игр', c.querySelectorAll('.club-btn').length === 10);
+  ok('кнопок ровно семь — по числу игр', c.querySelectorAll('.club-btn').length === 7);
   ok('каждая ведёт на свою страницу',
-     ['pref', 'safe', 'lottery', 'tactic', 'convoy', 'sapper', 'bookie',
-      'intercept', 'sniper', 'thimble']
+     ['pref', 'safe', 'lottery', 'tactic', 'intercept', 'sniper', 'thimble']
        .every((g) => !!c.querySelector('.club-btn[href="#club/' + g + '"]')));
   ok('на кнопке видно состояние игры — заходить ради проверки не надо',
      /банк <span class="ic-gold"><\/span> 600/.test(html)

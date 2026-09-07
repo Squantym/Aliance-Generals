@@ -56,19 +56,23 @@ const nx = [];
     if (U.club && U.club.cd) for (const k of Object.keys(U.club.cd)) U.club.cd[k] = 0;
     U.behavior = null;   // см. пояснение в test/cards: здесь проверяется потолок, а не пульс
   };
-  // Долбим потолок ночным рейдом: рубеж проставляем сами, чтобы проверка
-  // не зависела от того, как лёг бросок. Нас интересует ПОТОЛОК, а не
-  // везение.
-  // Долбим потолок сапёрной тропой: клетки открываем принудительно,
-  // чтобы проверка не зависела от того, где легли мины. Нас интересует
-  // ПОТОЛОК, а не везение.
-  const playRaid = (steps) => {
+  // Долбим потолок тактической дуэлью — единственной бесплатной игрой
+  // клуба, у которой предсказуемая награда. Генерала подменяем, чтобы
+  // проверка не зависела от броска: нас интересует ПОТОЛОК, а не везение.
+  const utils = require('../dist/src/core/utils');
+  const playWin = () => {
     clearCd();
-    club.sapperStart(U);
-    U.club.sapper.mines = [];                 // мин нет: проверяем потолок
-    U.club.sapper.opened = [];
-    for (let k = 0; k < (steps || 3); k++) U.club.sapper.opened.push(k);
-    return club.sapperTake(U, nx);
+    const realPick = utils.pick;
+    utils.pick = () => 'sea';                 // генерал всегда выставляет флот
+    try {
+      club.tacticStart(U);
+      // Играем, ПОКА дуэль идёт, а не ровно три раунда: незаконченная
+      // партия с прошлого раздела продолжилась бы с накопленным счётом,
+      // и третий ход пришёлся бы уже на пустое место.
+      let r = null;
+      while (U.club.tactic) r = club.tacticPlay(U, 'ground', nx);
+      return r;                               // пехота бьёт флот — разгром
+    } finally { utils.pick = realPick; }
   };
 
   console.log('\n── 1. Потолок настроен и виден игроку ──');
@@ -80,7 +84,7 @@ const nx = [];
 
   console.log('\n── 2. Сколько ни играй, больше потолка не выдадут ──');
   const before = U.gold;
-  for (let i = 0; i < 200; i++) playRaid(7);      // заведомо больше, чем нужно
+  for (let i = 0; i < 200; i++) playWin(7);      // заведомо больше, чем нужно
   const earned = U.gold - before;
   ok(`за 200 проходов выдано ${earned} 🪙, не больше потолка ${C.DAILY_GOLD_CAP}`,
      earned <= C.DAILY_GOLD_CAP);
@@ -96,7 +100,7 @@ const nx = [];
   const v1 = club.view(U);
   ok('новые сутки — снова полный лимит', v1.budget.spent === 0 && v1.budget.left === C.DAILY_GOLD_CAP);
   const g1 = U.gold;
-  for (let i = 0; i < 200; i++) playRaid(7);
+  for (let i = 0; i < 200; i++) playWin(7);
   ok('и во вторые сутки выдан ровно потолок', U.gold - g1 === C.DAILY_GOLD_CAP);
 
   console.log('\n── 4. Источник золота помечен ──');
@@ -107,47 +111,28 @@ const nx = [];
 
   console.log('\n── 5. Общий перерыв после выигрыша ──');
   U.club.day = 'ещё одни сутки';
-  playRaid(3);
+  playWin(3);
   const cdSec = club.view(U).sharedCooldownSec;
   ok(`после выигрыша взведён общий перерыв (${cdSec} с)`, cdSec > 0);
   ok('перерыв примерно нужной длины', Math.abs(cdSec - C.SHARED_CD_MIN * 60) <= 2);
   // Личные кулдауны игр снимаем: проверяем именно ОБЩИЙ перерыв, иначе
-  // рейд отказал бы по своему собственному таймеру и проверка ничего бы
-  // не доказала.
+  // дуэль отказала бы по своему собственному таймеру и проверка ничего
+  // бы не доказала.
   const shared = U.club.cd.all;
   clearCd();
   U.club.cd.all = shared;
-  // Платных игр в списке нет намеренно: преферанс и тотализатор общему
-  // перерыву не подчиняются — это отдельно проверяется в разделе 10.
+  // Платных игр в списке нет намеренно: преферанс, напёрстки и обе игры
+  // с очередью общему перерыву не подчиняются — это отдельно
+  // проверяется в разделе 10.
   let blocked = 0;
-  for (const start of [() => club.convoyGo(U, 'mountain', 'coast', nx), () => club.sapperStart(U),
-                       () => club.tacticStart(U)]) {
+  for (const start of [() => club.tacticStart(U), () => club.safeTry(U, '123456', nx)]) {
     try { start(); } catch (e) { if (/перерыв/i.test(e.message)) blocked++; }
   }
-  ok('перерыв закрывает ВСЕ бесплатные игры, а не одну', blocked === 3);
+  ok('перерыв закрывает ВСЕ бесплатные игры, а не одну', blocked === 2);
   // Общий сейф — тоже часть клуба и тоже под перерывом
   let safeBlocked = false;
   try { club.safeTry(U, '123456', nx); } catch (e) { safeBlocked = /перерыв/i.test(e.message); }
   ok('и общий сейф в том числе', safeBlocked);
-
-  console.log('\n── 6. Сапёрная тропа: жадность наказана арифметикой ──');
-  // Если лучшая остановка — последний рубеж, решения в игре нет: надо
-  // просто всегда идти до конца. Смысл появляется только когда ожидание
-  // где-то в середине выше, чем в конце.
-  // Считаем ожидание для каждой остановки: с каждой открытой клеткой
-  // мины занимают всё большую долю оставшихся.
-  const loots = C.SAPPER_LOOT;
-  let survive = 1;
-  const ev = loots.map((loot, i) => {
-    survive *= (C.SAPPER_CELLS - i - C.SAPPER_MINES) / (C.SAPPER_CELLS - i);
-    return loot * survive;
-  });
-  const best = ev.indexOf(Math.max(...ev));
-  ok(`лучшая остановка — ${best + 1}-я клетка из ${loots.length}, а не последняя`,
-     best < loots.length - 1);
-  ok(`идти до конца хуже, чем остановиться вовремя (${ev[best].toFixed(1)} против ${ev[ev.length - 1].toFixed(1)})`,
-     ev[best] > ev[ev.length - 1]);
-  ok('первая клетка не лучшая — ходить хотя бы раз стоит', best > 0);
 
   console.log('\n── 7. Тактическая дуэль: читать нечего ──');
   // Раньше генерал играл по привычке, и внимательный игрок брал 64%
@@ -217,7 +202,12 @@ const nx = [];
   ok('и он откатывает бюджет обратно',
      /c\.dayGold = b\.spent \+ back;[\s\S]{0,120}player\.addGold\(user, back/.test(src));
   const payoutCalls = (src.match(/payout\(user, '/g) || []).length;
-  ok(`каждая игра выдаёт золото через payout (${payoutCalls} вызовов)`, payoutCalls >= 6);
+  ok(`игры клуба выдают золото через payout (${payoutCalls} вызовов)`, payoutCalls >= 4);
+  // Второй модуль клуба (игры с живой очередью) своей кассы не имеет и
+  // иметь не должен: заведи он свою — потолок её не увидит.
+  const mSrc = fs.readFileSync(path.join(ROOT, 'src/services/clubMatch.ts'), 'utf8');
+  ok('игры с очередью денег сами не трогают', !/player\.(addGold|spendGold)\(/.test(mSrc));
+  ok('и берут их только из кассы клуба', /kassa\(\)/.test(mSrc) && /k\.payout\(/.test(mSrc));
 
   console.log('\n── 10. Платная игра живёт по своим правилам ──');
   // Общий перерыв придуман, чтобы придержать РАЗДАЧУ бесплатного
@@ -227,7 +217,7 @@ const nx = [];
   U.club.day = "сутки для платной игры";
   clearCd();
   U.gold = 100000;
-  playRaid(2);                                  // бесплатная победа взвела перерыв
+  playWin(2);                                  // бесплатная победа взвела перерыв
   ok('после бесплатной игры общий перерыв стоит', club.view(U).sharedCooldownSec > 0);
   let prefBlocked = false;
   try { club.prefStart(U, nx); } catch (e) { prefBlocked = /перерыв/i.test(e.message); }

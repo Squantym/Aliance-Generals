@@ -359,14 +359,14 @@ async function main() {
   }
 
   console.log('10. Клуб офицеров');
-  // Клуб переписан целиком: вместо загадки, угадайки и армрестлинга —
-  // очко, общий сейф, караван, сапёрная тропа, тотализатор, дуэль и
-  // ставки. Тест тянул старый API и падал на первой же строке, скрывая
-  // всё, что идёт ниже по сценарию.
+  // Клуб переписан не раз, и каждый раз убранная игра оставляла хвост:
+  // тест тянул старый API и падал на первой же строке, скрывая всё, что
+  // идёт ниже по сценарию. Сейчас в клубе очко, общий сейф, дуэль,
+  // напёрстки, две игры с живой очередью и «Военный займ».
   const club = (await get('/api/club', A)).data;
   check('клуб отдаёт свои игры',
-        !!club.pref && !!club.safe && !!club.convoy && !!club.sapper
-        && !!club.bookie && !!club.tactic,
+        !!club.pref && !!club.safe && !!club.tactic && !!club.thimble
+        && !!club.intercept && !!club.sniper,
         'получено: ' + Object.keys(club).join(', '));
   check('клуб показывает суточный предел золота',
         !!club.budget && typeof club.budget.cap === 'number' && club.budget.cap > 0,
@@ -443,45 +443,6 @@ async function main() {
   const badCode = await post('/api/club/safe/try', A, { guess: '11' });
   check('сейф: неверная длина кода отклонена', badCode.status === 400);
 
-  // Ночной караван: маршрут против засад живых игроков.
-  check('караван: маршруты названы',
-        Array.isArray(club.convoy.routes) && club.convoy.routes.length === 3,
-        'convoy: ' + JSON.stringify(club.convoy).slice(0, 140));
-  const cvRoute = (club.convoy.routes[0] || {}).id || 'mountain';
-  const convoyGo = await post('/api/club/convoy/go', A, { route: cvRoute, ambush: cvRoute });
-  clubCheck('караван: выход обработан', convoyGo,
-            (r) => ['through', 'ambushed'].includes(r.data.result));
-  const convoyBad = await post('/api/club/convoy/go', A, { route: 'метро', ambush: cvRoute });
-  check('караван: выдуманный маршрут отклонён', convoyBad.status === 400,
-        'ответ: ' + convoyBad.status + ' ' + JSON.stringify(convoyBad.data).slice(0, 120));
-
-  // Сапёрная тропа: шаг, добыча, отход.
-  const spStart = await post('/api/club/sapper/start', A);
-  clubCheck('сапёр: тропа открыта', spStart,
-            (r) => r.data.state === 'active' && r.data.cells > 0);
-  const spStep = await post('/api/club/sapper/step', A, { cell: 0 });
-  clubCheck('сапёр: шаг сделан', spStep,
-            (r) => ['clear', 'boom', 'maxed'].includes(r.data.result), started(spStart));
-  const spTake = await post('/api/club/sapper/take', A);
-  clubCheck('сапёр: отход обработан', spTake,
-            (r) => ['taken', 'empty'].includes(r.data.result) || r.status === 400, started(spStart));
-
-  // Полевой тотализатор: игра платная, и у свежего игрока золота может
-  // не быть — отказ «ставка» здесь такое же правильное поведение, как
-  // и у очка.
-  check('тотализатор: ставка и коэффициенты названы до игры',
-        club.bookie.stake > 0 && Array.isArray(club.bookie.squads)
-        && club.bookie.squads.every((s) => s.odds > 0 && s.payout > 0),
-        'bookie: ' + JSON.stringify(club.bookie).slice(0, 160));
-  const bkSquad = (club.bookie.squads[0] || {}).id || 'alpha';
-  const bkBet = await post('/api/club/bookie/bet', A, { squad: bkSquad });
-  if (bkBet.status === 400 && /Ставка/i.test(String((bkBet.data || {}).error || ''))) {
-    skip('тотализатор: забег отработан', 'у игрока меньше золота, чем стоит ставка');
-  } else {
-    clubCheck('тотализатор: забег отработан', bkBet,
-              (r) => ['win', 'lose'].includes(r.data.result) && !!r.data.winnerName);
-  }
-
   // Тактическая дуэль: три рода войск бьют друг друга по кругу.
   const tacStart = await post('/api/club/tactic/start', A);
   clubCheck('дуэль: вызов принят', tacStart, (r) => Array.isArray(r.data.kinds) && r.data.kinds.length === 3);
@@ -536,7 +497,7 @@ async function main() {
   // Защита от скриптов: сам этот тест ходит машинной скоростью, значит
   // клуб обязан был это заметить. Если ни один club-запрос выше не
   // получил придержку — детектор снова мёртв, как было до 201.
-  const botGuard = await post('/api/club/sapper/start', A);
+  const botGuard = await post('/api/club/thimble/play', A, { pot: 0 });
   check('клуб придерживает машинный темп запросов',
         botGuard.status === 400 && /Штаб проверяет|перерыв/i.test(String((botGuard.data || {}).error || '')),
         'ответ: ' + botGuard.status + ' ' + JSON.stringify(botGuard.data).slice(0, 120));

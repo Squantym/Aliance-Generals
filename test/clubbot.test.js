@@ -65,7 +65,10 @@ const nx = [];
   const kassaAt = exportedAll.indexOf('kassa:');
   const exported = kassaAt >= 0 ? exportedAll.slice(0, kassaAt) : exportedAll;
   const names = exported.split(/[,\s]+/).map((x) => x.trim()).filter((x) => /^[a-zA-Z]/.test(x));
-  ok(`экспортируемых функций найдено (${names.length})`, names.length >= 10);
+  // Порог низкий намеренно: игры в клубе меняются, и упасть эта
+  // проверка должна не от того, что игру убрали, а от того, что разбор
+  // экспорта сломался и проверять стало нечего.
+  ok(`экспортируемых функций найдено (${names.length})`, names.length >= 6);
   const noPulse = [];
   for (const name of names) {
     if (name === 'view') continue;               // просмотр золота не приносит

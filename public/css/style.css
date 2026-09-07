@@ -3366,6 +3366,7 @@ body.theme-noir .field-hint { color: #8a8a92; }
 .db-ok { color: #8fd47a; font-size: 12px; }
 .db-more summary { cursor: pointer; font-size: 12.5px; color: var(--orange-1); }
 /* История сохранений базы: список копий вместо одного лишь их числа */
+
 .bk-list { max-height: 220px; overflow-y: auto; }
 .bk-row {
   display: flex; align-items: center; gap: 8px;
@@ -3374,7 +3375,6 @@ body.theme-noir .field-hint { color: #8a8a92; }
 .bk-row:last-child { border-bottom: none; }
 .bk-kind { flex: 0 0 auto; font-size: 13px; }
 .bk-when { font-variant-numeric: tabular-nums; white-space: nowrap; }
-
 /* Сверка с копией: что было у игрока до сбоя */
 .rec-form { display: flex; gap: 6px; flex-wrap: wrap; }
 .rec-form > select, .rec-form > input { flex: 1 1 140px; min-width: 0; width: auto; }
@@ -3890,6 +3890,7 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
    экранах колонка не вмещала и его обрезало. Точка занимает несколько
    точек ширины, а точное число видно в подсказке и на самом экране
    навыков, куда ведёт нажатие. */
+
 .sp-dot {
   display: inline-block; margin-left: 3px; vertical-align: super;
   font-size: 9px; line-height: 1; color: var(--orange-1);
@@ -5074,33 +5075,6 @@ body.is-test-world { padding-top: 22px; }
   background: rgba(233,199,92,.08);
 }
 .gender-cur { opacity: .75; cursor: default; }
-
-/* ---------- НОЧНОЙ КАРАВАН И САПЁРНАЯ ТРОПА ----------
-   Выбранный маршрут виден рамкой: на телефоне галочка в кнопке теряется,
-   а рамка читается боковым зрением. */
-.cv-go.on, .cv-amb.on {
-  border-color: var(--gold); color: var(--gold);
-  background: rgba(233,199,92,.10);
-}
-.cv-row { padding: 2px 0; border-bottom: 1px solid var(--border); }
-.cv-row:last-child { border-bottom: 0; }
-.cv-hit { color: var(--red); }
-.cv-ok  { color: var(--green); }
-
-/* Поле сапёра — квадрат три на три, кнопки крупные под палец */
-.sp-field {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 6px; margin: 10px 0; max-width: 220px; margin-left: auto; margin-right: auto;
-}
-.sp-cell {
-  aspect-ratio: 1 / 1; min-height: 56px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: rgba(255,255,255,.04); color: var(--text);
-  font-size: 20px; cursor: pointer;
-  transition: border-color .15s ease, background .15s ease;
-}
-.sp-cell:hover:not(:disabled) { border-color: var(--gold); background: rgba(233,199,92,.08); }
-.sp-cell.sp-open { border-color: var(--green); background: rgba(90,180,90,.10); cursor: default; }
 
 /* ── Радиоперехват: две сетки квадратов, укрытие и наводки ── */
 .ic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px; }

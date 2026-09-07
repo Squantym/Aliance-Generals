@@ -1023,6 +1023,20 @@ function refresh(user: User): void {
   }
   if (!user.club) user.club = {};
 
+  // Убранные игры клуба оставляют в сохранении хвосты: недоигранная
+  // тропа, кулдауны, итог прошлого забега. Кода этих игр больше нет,
+  // читать их некому — но лежать они будут вечно, поэтому вычищаем при
+  // первом же обновлении игрока. Строку можно удалить через месяц после
+  // выката: к тому времени refresh() пройдёт у всех.
+  const clubGone = ['mine', 'run', 'duel', 'arty', 'raid', 'dice', 'bids',
+                    'convoy', 'sapper', 'bookie'];
+  const cl: any = user.club;
+  for (const g of clubGone) {
+    delete cl[g];
+    delete cl[g + 'Last'];
+    if (cl.cd) delete cl.cd[g];
+  }
+
   // Миграция: поля секретных разработок (могут отсутствовать у старых аккаунтов)
   if (!user.secretDevs || typeof user.secretDevs !== 'object') user.secretDevs = {};
   if (user.superSecret === undefined || user.superSecret === null) user.superSecret = 0;
