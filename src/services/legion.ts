@@ -1096,7 +1096,7 @@ function battleResult(battleId: string): any {
 }
 
 function adminStartBattle(adminUser: User, legionAId: string, legionBId: string, notices: Notices): any {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'legions', 'управление легионами');
   const r = systemStartBattle(legionAId, legionBId);
   if (!r.ok) {
     const msg = r.reason === 'invalid' ? 'Выберите два разных легиона'
@@ -1115,7 +1115,7 @@ function adminStartBattle(adminUser: User, legionAId: string, legionBId: string,
 // (без списания у игрока — «создание» ресурсов админом). resource:
 // 'treasury' ($) | 'reserves' (РЕЗ) | 'ears' (уши) | 'tokens' (жетоны). ──
 function adminDeposit(adminUser: User, legionId: string, amount: number, notices: Notices, resource?: string) {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'legions', 'управление легионами');
   const l = legions()[legionId];
   if (!l) throw new u.ApiError('Легион не найден');
   ensureLegionFields(l);
@@ -1176,7 +1176,7 @@ function adminLegionInfo(legionId: string): any {
 // patch может содержать любое подмножество полей. Пустая строка/undefined —
 // поле не трогаем. Значения задаются АБСОЛЮТНО (set, а не +=).
 function adminSetLegion(adminUser: User, legionId: string, patch: any, notices: Notices): any {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'legions', 'управление легионами');
   const l = legions()[legionId];
   if (!l) throw new u.ApiError('Легион не найден');
   ensureLegionFields(l);

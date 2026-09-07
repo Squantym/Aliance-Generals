@@ -10,6 +10,15 @@ const u = require('../dist/src/core/utils');
 const player = require('../dist/src/services/player');
 const mines = require('../dist/src/services/mines');
 
+// Права сотрудника даёт ЗОНА, а не старое поле isAdmin. Выдаём роли
+// «администратор» все разделы: иначе проверка отказала бы в правах, и
+// тест ругался бы не на то, ради чего написан.
+try {
+  const _z = require('../dist/src/core/db').load('roleZones', {});
+  _z.admin = require('../dist/src/services/roles').ALL_ZONES.slice();
+} catch (e) {}
+
+
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
 const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); passed++; console.log(`  ✅ ${n} (= ${a})`); };
@@ -186,7 +195,7 @@ eq('старые шахты обнулены', U.mines.length, 0);
 eq('версия схемы обновлена', U.minesSchemaV, M.SCHEMA_V);
 
 console.log('\n[10] Админ: обнулить шахты у всех');
-const A = mkUser('adm'); A.isAdmin = true; usersMap['adm'] = A;
+const A = mkUser('adm'); A.isAdmin = true; A.role = 'admin'; usersMap['adm'] = A;
 const V = mkUser('victim'); V.mines = [{ id: 'x', status: 'idle' }]; V.minesSchemaV = M.SCHEMA_V; usersMap['victim'] = V;
 mines.wipeAllMines(A, N);
 eq('у victim шахты обнулены', V.mines.length, 0);

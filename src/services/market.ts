@@ -464,7 +464,7 @@ function adminCommandersList(): any {
 }
 
 function adminGrantCommander(adminUser: User, body: any, notices: Notices): any {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'economy', 'выдача наёмников');
   const pl = require('./player');
   const users = pl.users();
 
@@ -506,7 +506,7 @@ function extended(existing: any): string { return existing ? 'продлён, ' 
 
 // Отозвать наёмника у игрока (на случай ошибочной выдачи)
 function adminRevokeCommander(adminUser: User, body: any, notices: Notices): any {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'economy', 'выдача наёмников');
   const pl = require('./player');
   const users = pl.users();
   let target: any = body.userId ? users[body.userId] : null;

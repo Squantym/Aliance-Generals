@@ -387,7 +387,7 @@ function dismissResult(user: User, plotId: string, notices: Notices) {
 
 // ---------- АДМИН: обнулить все шахты у всех игроков ----------
 function wipeAllMines(adminUser: User, notices: Notices) {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'moderation', 'сброс шахт');
   const users = player.users();
   let n = 0;
   for (const uid of Object.keys(users)) {

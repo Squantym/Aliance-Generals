@@ -15,6 +15,15 @@ const admin = require('../dist/src/services/admin');
 const groups = require('../dist/src/services/groups');
 const legion = require('../dist/src/services/legion');
 
+// Права сотрудника даёт ЗОНА, а не старое поле isAdmin. Выдаём роли
+// «администратор» все разделы: иначе проверка отказала бы в правах, и
+// тест ругался бы не на то, ради чего написан.
+try {
+  const _z = require('../dist/src/core/db').load('roleZones', {});
+  _z.admin = require('../dist/src/services/roles').ALL_ZONES.slice();
+} catch (e) {}
+
+
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
 const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); passed++; console.log(`  ✅ ${n} (= ${a})`); };
@@ -221,7 +230,7 @@ console.log('\n[6] Admin: депозит в казну ЛЮБОГО легион
   const lid = leader.legionId;
 
   const adminU = mkUser('u_admin2', 'Админ2');
-  adminU.isAdmin = true;   // adminDeposit теперь требует прав администратора
+  adminU.isAdmin = true; adminU.role = 'admin';   // adminDeposit требует зоны «Легионы»
   usersMap['u_admin2'] = adminU;
   const goldBefore = adminU.gold, dollarsBefore = adminU.dollars;
 

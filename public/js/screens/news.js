@@ -187,7 +187,11 @@
 
   App.screens.newsedit = async (c, param) => {
     await App.refreshMe();
-    if (!App.me || !App.me.isAdmin) { c.innerHTML = '<div class="card center muted">Доступно только администратору.</div>'; return; }
+    // Редактор открывает тот, у кого есть раздел «Новости», а не тот, у
+    // кого стоит старое поле isAdmin: сотруднику с выданной зоной экран
+    // молча отвечал «только для администратора».
+    const canEdit = !!(App.me && (App.me.staffZones || []).indexOf('news') >= 0);
+    if (!canEdit) { c.innerHTML = '<div class="card center muted">Нужен раздел «Новости» в правах сотрудника.</div>'; return; }
 
     // Загружаем черновик: существующий пост или новый
     if (!App._newsDraft || App._newsDraft._loadedFor !== (param || 'new')) {

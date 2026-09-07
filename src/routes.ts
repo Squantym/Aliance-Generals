@@ -909,8 +909,10 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/legion/chat',              act((req, n) => legion.chatPost(req.user, req.body.text, n)));
   app.add('GET',  '/api/legion/public/:id',        (req) => legion.publicView(req.params.id, req.user));
   // Админ-привилегии прямо в аккаунте (проверка isAdmin — внутри обработчиков)
-  app.add('POST', '/api/legion/admin-join',        act((req, n) => require('./services/groups').adminJoin(req.user, 'legion', req.body.legionId, n)));
-  app.add('POST', '/api/legion/admin-deposit',     act((req, n) => legion.adminDeposit(req.user, req.body.legionId, req.body.amount, n, req.body.resource)));
+  // Админские ручки легиона живут не под /api/admin, но контроль у них
+  // тот же: зона «Легионы» (см. ZONE_RULES).
+  app.add('POST', '/api/legion/admin-join',        act((req, n) => require('./services/groups').adminJoin(req.user, 'legion', req.body.legionId, n)), { admin: true });
+  app.add('POST', '/api/legion/admin-deposit',     act((req, n) => legion.adminDeposit(req.user, req.body.legionId, req.body.amount, n, req.body.resource)), { admin: true });
 
   // ---------- Новости (чтение — всем; управление — админу, проверка в сервисе) ----------
   app.add('GET',  '/api/news',        (req) => require('./services/news').list(req.user));
@@ -1035,10 +1037,13 @@ function registerRoutes(app: any) {
     return vip.revoke(req.user, target, n);
   }), { admin: true });
 
-  app.add('POST', '/api/news/create', act((req, n) => require('./services/news').create(req.user, req.body, n)));
-  app.add('POST', '/api/news/update', act((req, n) => require('./services/news').update(req.user, req.body.id, req.body, n)));
-  app.add('POST', '/api/news/delete', act((req, n) => require('./services/news').remove(req.user, req.body.id, n)));
-  app.add('POST', '/api/news/pin',    act((req, n) => require('./services/news').togglePin(req.user, req.body.id, n)));
+  // { admin: true } — запрос проходит через общий контроль зон (зона
+  // «Новости»), а сам сервис проверяет её ещё раз: попытка обойти адрес
+  // должна упираться в оба замка, а не в один.
+  app.add('POST', '/api/news/create', act((req, n) => require('./services/news').create(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/news/update', act((req, n) => require('./services/news').update(req.user, req.body.id, req.body, n)), { admin: true });
+  app.add('POST', '/api/news/delete', act((req, n) => require('./services/news').remove(req.user, req.body.id, n)), { admin: true });
+  app.add('POST', '/api/news/pin',    act((req, n) => require('./services/news').togglePin(req.user, req.body.id, n)), { admin: true });
   app.add('POST', '/api/legion/battle/join',       act((req, n) => legion.joinBattle(req.user, req.body.role, n)));
   app.add('POST', '/api/legion/battle/ready',      act((req, n) => legion.setReady(req.user, req.body.ready, n)));
   app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));

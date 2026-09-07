@@ -10,6 +10,14 @@ const path = require('path'), fs = require('fs');
 require('./_guard');   // не даёт стереть боевую data/
 const DATA = path.join(process.cwd(), 'data'); if (fs.existsSync(DATA)) fs.rmSync(DATA, { recursive: true, force: true });
 const db = require('../dist/src/core/db');
+// Права сотрудника даёт ЗОНА, а не старое поле isAdmin. Выдаём роли
+// «администратор» все разделы: иначе проверка отказала бы в правах, и
+// тест ругался бы не на то, ради чего написан.
+try {
+  const _z = require('../dist/src/core/db').load('roleZones', {});
+  _z.admin = require('../dist/src/services/roles').ALL_ZONES.slice();
+} catch (e) {}
+
 const auth = require('../dist/src/services/auth');
 const player = require('../dist/src/services/player');
 const market = require('../dist/src/services/market');
@@ -26,7 +34,7 @@ const RENT_MS = c.AUCTION.RENT_HOURS * 3600 * 1000;
   await auth.register('Боец', 'password1', 'b@a.com', 'ru', '1.1.1.2');
   const admin = Object.values(player.users()).find(x => x.name === 'Главком');
   const target = Object.values(player.users()).find(x => x.name === 'Боец');
-  admin.isAdmin = true;
+  admin.isAdmin = true; admin.role = 'admin';
 
   console.log('\n[1] Список наёмников для админки');
   const list = market.adminCommandersList();

@@ -168,7 +168,7 @@ function onNotification(userId: string, kind: string, title: string, payload: an
 
 // Админская рассылка всем подписанным
 async function broadcast(adminUser: any, title: string, body: string, notices: any) {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'support', 'рассылка уведомлений');
   const t = String(title || '').trim().slice(0, 80);
   const b = String(body || '').trim().slice(0, 200);
   if (!t) throw new u.ApiError('Укажите заголовок');

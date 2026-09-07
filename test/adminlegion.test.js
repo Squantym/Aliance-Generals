@@ -6,6 +6,14 @@ const path = require('path'), fs = require('fs');
 require('./_guard');   // не даёт стереть боевую data/
 const DATA = path.join(process.cwd(), 'data'); if (fs.existsSync(DATA)) fs.rmSync(DATA, { recursive: true, force: true });
 const db = require('../dist/src/core/db');
+// Права сотрудника даёт ЗОНА, а не старое поле isAdmin. Выдаём роли
+// «администратор» все разделы: иначе проверка отказала бы в правах, и
+// тест ругался бы не на то, ради чего написан.
+try {
+  const _z = require('../dist/src/core/db').load('roleZones', {});
+  _z.admin = require('../dist/src/services/roles').ALL_ZONES.slice();
+} catch (e) {}
+
 const legion = require('../dist/src/services/legion');
 const lb = require('../dist/src/services/legionBattle');
 let passed = 0;
@@ -17,7 +25,7 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   await db.init();
   const lm = db.load('legions', {});
   lm['L1'] = { id: 'L1', name: 'Тестион', leaderId: 'u1', members: ['u1'], requests: [], buildings: {}, battleBuildings: {} };
-  const admin = { id: 'a1', name: 'Админ', isAdmin: true };
+  const admin = { id: 'a1', name: 'Админ', isAdmin: true, role: 'admin' };
   const notAdmin = { id: 'u2', name: 'Юзер', isAdmin: false };
 
   console.log('\n[1] adminLegionInfo отдаёт состояние по умолчанию');

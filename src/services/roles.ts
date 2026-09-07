@@ -203,6 +203,15 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // владельческой зоной значило бы, что разобрать «у меня всё пропало»
   // может только владелец — а это самая частая задача сотрудника.
   [/^\/api\/admin\/player-history/,                 'players'],
+  // Новости. Зона «Новости» существовала, но НИ ОДИН её адрес сюда не
+  // попадал: сервис проверял старое поле isAdmin напрямую, и сотрудник с
+  // выданным разделом получал «Только для администратора». Читать
+  // новости может кто угодно — размечаем только управление ими.
+  [/^\/api\/news\/(create|update|delete|pin)$/,     'news'],
+  // Легион: часть админских ручек живёт не под /api/admin, а под
+  // /api/legion/admin-*. Тот же случай — адрес не размечен, права не
+  // работают.
+  [/^\/api\/legion\/admin-/,                        'legions'],
 ];
 
 function zoneOfPath(pathname: string): Zone | null {
@@ -218,6 +227,18 @@ function canAccessZone(user: any, zone: Zone | null): boolean {
   if (!r) return false;
   if (!zone) return false;                              // незнакомый адрес — нет
   return zonesOfRole(r).includes(zone);
+}
+
+// Проверка с отказом. Нужна сервисам: раньше каждый писал свою проверку
+// по старому полю isAdmin, и все они разошлись с настройкой зон —
+// сотрудник с выданным разделом всё равно получал «Только для
+// администратора».
+function assertZone(user: any, zone: Zone, what?: string): void {
+  if (canAccessZone(user, zone)) return;
+  const z = ZONE_INFO.find((x) => x.id === zone);
+  throw new u.ApiError(what
+    ? `Недостаточно прав: ${what}`
+    : `Недостаточно прав — нужен раздел «${z ? z.name : zone}»`);
 }
 
 // Зоны, доступные конкретному пользователю — для интерфейса панели
@@ -667,7 +688,7 @@ function humanMinutes(m: number): string {
 
 export = {
   roleOf, isOwner, isAdmin, isModerator, roleLabel, roleTag, adminPowersEnabled, rankOf, CAN_ASSIGN,
-  zoneOfPath, canAccessZone, zonesFor, zonesOfRole,
+  zoneOfPath, canAccessZone, assertZone, zonesFor, zonesOfRole,
   permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES, OWNER_ONLY_ZONES,
   setRole, staffList, canManage,
   banChat, unbanChat, chatBanInfo, bannedList, humanMinutes, assertCanWritePublic,

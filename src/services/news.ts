@@ -65,8 +65,11 @@ function cleanBlocks(blocks: any): NewsBlock[] {
   return blocks.map(cleanBlock).filter(Boolean).slice(0, 100) as NewsBlock[];
 }
 
+// Право управлять новостями даёт ЗОНА «Новости», а не старое поле
+// isAdmin. Сотрудник с ролью и выданным разделом получал отказ именно
+// здесь: роль лежит в user.role, а флага isAdmin у него нет.
 function requireAdmin(user: User): void {
-  if (!user || !user.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(user, 'news', 'управление новостями');
 }
 
 // ── Список постов (для всех): закреплённые сверху, затем свежие ──
@@ -79,7 +82,12 @@ function list(user: User): any {
       blocks: p.blocks, authorName: p.authorName,
       createdAt: p.createdAt, updatedAt: p.updatedAt, pinned: !!p.pinned,
     }));
-  return { posts, canManage: !!(user && user.isAdmin) };
+  // Кнопки редактирования показываем по той же зоне, по которой
+  // пропускаем действие: иначе кнопка есть, а нажатие даёт отказ.
+  const canManage = (() => {
+    try { return require('./roles').canAccessZone(user, 'news'); } catch (e) { return false; }
+  })();
+  return { posts, canManage };
 }
 
 // ── Один пост ──

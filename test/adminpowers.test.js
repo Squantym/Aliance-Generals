@@ -12,6 +12,15 @@ const legion = require('../dist/src/services/legion');
 const groups = require('../dist/src/services/groups');
 const news = require('../dist/src/services/news');
 
+// Права сотрудника даёт ЗОНА, а не старое поле isAdmin. Выдаём роли
+// «администратор» все разделы: иначе проверка отказала бы в правах, и
+// тест ругался бы не на то, ради чего написан.
+try {
+  const _z = require('../dist/src/core/db').load('roleZones', {});
+  _z.admin = require('../dist/src/services/roles').ALL_ZONES.slice();
+} catch (e) {}
+
+
 let passed = 0;
 const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  ✅ ' + n); };
 const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); passed++; console.log(`  ✅ ${n} (= ${a})`); };

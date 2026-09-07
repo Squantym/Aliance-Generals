@@ -467,7 +467,7 @@ function leave(user: User, kind: string, notices: Notices) {
 
 // ── АДМИН: вступить в ЛЮБУЮ группу без заявки и одобрения лидера ──
 function adminJoin(adminUser: User, kind: string, groupId: string, notices: Notices) {
-  if (!adminUser || !adminUser.isAdmin) throw new u.ApiError('Только для администратора');
+  require('./roles').assertZone(adminUser, 'legions', 'управление объединениями');
   const def = defOf(kind);
   const all = coll(kind);
   const g = all[groupId];
