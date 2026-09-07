@@ -26,6 +26,8 @@ interface PaymentOrder {
   id: string;
   userId: string;
   packageId: string;
+  offerId?: string;        // заказ на набор «Спецпредложений», а не на пакет золота
+  title?: string;
   gold: number;
   priceRub: number;
   status: 'pending' | 'paid' | 'failed' | 'cancelled';
@@ -69,6 +71,28 @@ function createOrder(user: User, packageId: string, notices: Notices) {
   return { orderId: order.id, status: order.status, payUrl: null };
 }
 
+// Заказ на набор из «Спецпредложений». Отличается от пакета золота
+// только тем, что выдаётся при подтверждении: сам набор знает, что в
+// нём лежит (offers.grantPaid).
+function createOfferOrder(user: User, offer: { id: string; title: string; priceRub: number }, notices: Notices) {
+  const order: PaymentOrder = {
+    id: u.uid(16),
+    userId: user.id,
+    packageId: 'offer:' + offer.id,
+    offerId: offer.id,
+    title: offer.title,
+    gold: 0,
+    priceRub: offer.priceRub,
+    status: 'pending',
+    createdAt: Date.now(),
+  };
+  const all = store();
+  all[order.id] = order;
+  db.save('payments');
+  notices.push(`🛒 Заказ на «${offer.title}» создан. Онлайн-оплата появится после подключения платёжной системы.`);
+  return { orderId: order.id, status: order.status, payUrl: null };
+}
+
 // История заказов игрока
 function myOrders(user: User) {
   const all = store();
@@ -77,6 +101,7 @@ function myOrders(user: User) {
     .sort((a, b) => b.createdAt - a.createdAt)
     .map((o) => ({
       id: o.id, gold: o.gold, priceRub: o.priceRub,
+      title: o.title || null, offerId: o.offerId || null,
       status: o.status, createdAt: o.createdAt, paidAt: o.paidAt || null,
     }));
   return { orders: list };
@@ -92,6 +117,23 @@ function confirmPayment(orderId: string): { ok: boolean } {
   const players: Record<string, User> = require('./player').users();
   const user = players[order.userId];
   if (!user) return { ok: false };
+
+  // Заказ на набор: содержимое выдаёт сам набор, золота в нём может не
+  // быть вовсе. Дальше по коду — только пакеты золота.
+  if (order.offerId) {
+    const notices: string[] = [];
+    let given: string[] = [];
+    try { given = require('./offers').grantPaid(user, order.offerId, notices); } catch (e) {}
+    order.status = 'paid';
+    order.paidAt = Date.now();
+    db.save('payments');
+    db.markUser(user.id);
+    try {
+      require('./notifications').push(order.userId, 'payment_done',
+        `🎁 Набор «${order.title || 'Спецпредложение'}» получен: ${given.join(', ')}`, { orderId });
+    } catch (e) {}
+    return { ok: true };
+  }
 
   // Начисляем с учётом акции и VIP: подписка добавляет свои 15% ПОВЕРХ
   // действующей акции (акция +50% и VIP +15% дают +65%)
@@ -120,4 +162,4 @@ function confirmPayment(orderId: string): { ok: boolean } {
   return { ok: true };
 }
 
-export = { packages, createOrder, myOrders, confirmPayment };
+export = { packages, createOrder, createOfferOrder, myOrders, confirmPayment };

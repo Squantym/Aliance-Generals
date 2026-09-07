@@ -287,6 +287,18 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/tactic/play':
         return '⚔ Клуб (дуэль): выставил ' + tacticKindName(body.kind);
       case '/api/club/thimble/play': return '🍲 Клуб (напёрстки): ставка на котелок ' + String(body.pot);
+
+      // ── Спецпредложения (наборы) ───────────────────────────────
+      case '/api/offers/buy':
+        return '🎁 Купил набор за золото';
+      case '/api/offers/order':
+        return '🎁 Заказал набор за рубли';
+      case '/api/admin/offers/save':
+        return '🎁 Сохранил набор «' + String(body.title || '—') + '»'
+             + (body.priceGold ? ', 🪙 ' + body.priceGold : '')
+             + (body.priceRub ? ', ' + body.priceRub + ' ₽' : '');
+      case '/api/admin/offers/delete':
+        return '🗑 Удалил набор из спецпредложений';
       case '/api/club/queue/join':
         return '⏳ Клуб: встал в очередь — ' + clubGameName(body.game);
       case '/api/club/queue/leave':

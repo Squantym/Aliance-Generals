@@ -198,6 +198,61 @@ function containersView(user: User) {
   };
 }
 
+// Выдача содержимого контейнеров БЕЗ оплаты. Отдельно от покупки, потому
+// что открывать контейнеры умеет не только чёрный рынок: то же самое
+// кладут в наборы «Спецпредложений». Деньги, счётчики поручений и
+// история покупки остаются на стороне вызывающего — здесь только сам
+// розыгрыш содержимого.
+function openContainersFree(user: User, c: any, qty: number, notices: Notices): { droppedAll: string[]; droppedCount: Record<string, number> } {
+  // Количество приводим здесь же: функцию зовёт и покупка, и набор
+  // «Спецпредложений», и надеяться, что каждый вызывающий проверил
+  // число за нас, — ровно тот случай, когда однажды не проверит.
+  const count = u.clamp(u.toInt(qty, 1), 1, 100);
+  const droppedAll: string[] = [];
+  const droppedCount: Record<string, number> = {};
+  for (let n = 0; n < count; n++) {
+    // Шанс 150% = 1 гарантированная разработка + 50% на вторую
+    let drops = Math.floor(c.chance / 100);
+    if (Math.random() * 100 < c.chance % 100) drops++;
+    for (let i = 0; i < drops; i++) {
+      const dev = u.pick(config.SECRET_DEVS);
+      user.secretDevs[dev.id] = (user.secretDevs[dev.id] || 0) + 1;
+      droppedAll.push(dev.name);
+      droppedCount[dev.name] = (droppedCount[dev.name] || 0) + 1;
+    }
+  }
+  if (droppedAll.length === 0) {
+    notices.push(`📦 Открыто ${count} контейнер(ов) — пусто. На войне бывает и так.`);
+  } else {
+    notices.push(`📦 Открыто ${count} контейнер(ов). Выпало: ${droppedAll.join(', ')}!`);
+  }
+  // Проверяем, не собрался ли полный комплект из 9 разработок
+  player.syncSuper(user, notices);
+  db.markUser(user.id);
+  return { droppedAll, droppedCount };
+}
+
+// Наёмник на СРОК: аукцион даёт сутки, админ — сколько скажет, набор
+// «Спецпредложения» — сколько записано в наборе. Одна дверь на всех.
+function grantCommanderDays(user: User, commanderId: string, days: number, notices: Notices): any {
+  const commander = config.COMMANDERS.find((m: any) => m.id === commanderId);
+  if (!commander) throw new u.ApiError('Наёмник не найден');
+  const d = Math.max(1, u.toInt(days, 1));
+  const now = Date.now();
+  const existing = (user.effects || []).find(
+    (e: any) => e.commanderId === commander.id && e.expiresAt > now
+  );
+  const base = existing ? existing.expiresAt : now;
+  const expiresAt = base + d * 24 * 3600 * 1000;
+  applyCommanderUntil(user, commander, expiresAt);
+  db.markUser(user.id);
+  if (notices) {
+    notices.push(`🎖 Наёмник «${commander.name}» с вами ${d} дн.` +
+      (existing ? ' (срок продлён)' : ''));
+  }
+  return { commanderId: commander.id, name: commander.name, days: d, expiresAt };
+}
+
 function openContainer(user: User, tier: number | string, notices: Notices, qty?: number) {
   const c = config.CONTAINERS.find((x) => x.tier === u.toInt(tier));
   if (!c) throw new u.ApiError('Такого контейнера не существует');
@@ -217,29 +272,7 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   // расхода, а та удваивала сумму и потому убрана.
   player.spendGold(user, totalPrice, 'container');
 
-  // Открываем qty контейнеров подряд, суммируя выпавшее
-  const droppedAll: string[] = [];
-  const droppedCount: Record<string, number> = {};
-  for (let n = 0; n < qty; n++) {
-    // Шанс 150% = 1 гарантированная разработка + 50% на вторую
-    let drops = Math.floor(c.chance / 100);
-    if (Math.random() * 100 < c.chance % 100) drops++;
-    for (let i = 0; i < drops; i++) {
-      const dev = u.pick(config.SECRET_DEVS);
-      user.secretDevs[dev.id] = (user.secretDevs[dev.id] || 0) + 1;
-      droppedAll.push(dev.name);
-      droppedCount[dev.name] = (droppedCount[dev.name] || 0) + 1;
-    }
-  }
-
-  if (droppedAll.length === 0) {
-    notices.push(`📦 Открыто ${qty} контейнер(ов) — пусто. На войне бывает и так.`);
-  } else {
-    notices.push(`📦 Открыто ${qty} контейнер(ов). Выпало: ${droppedAll.join(', ')}!`);
-  }
-
-  // Проверяем, не собрался ли полный комплект из 9 разработок
-  player.syncSuper(user, notices);
+  const { droppedAll, droppedCount } = openContainersFree(user, c, qty, notices);
 
   // Сохраняем в историю открытий (последние 10)
   const historyEntry = {
@@ -546,5 +579,5 @@ function adminCommanderHolders(): any {
   return { holders: out.sort((a, b) => b.expiresAt - a.expiresAt) };
 }
 
-export = { itemsList, buyItem, containersView, openContainer, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
+export = { itemsList, buyItem, containersView, openContainer, openContainersFree, grantCommanderDays, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
   adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,};

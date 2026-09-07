@@ -1303,6 +1303,7 @@ const Admin = {
       { id: 'mercs',     label: '🥷 Наёмники',        zone: 'economy' },
       { id: 'discounts', label: '🏷 Акции',           zone: 'discounts' },
       { id: 'buffs',     label: '🎉 Бонусы',          zone: 'economy' },
+      { id: 'offers',    label: '🎁 Наборы',          zone: 'economy' },
     ].filter((x) => Admin.can(x.zone));
     if (!subs.length) { c.innerHTML = '<div class="card"><p class="muted">Раздел недоступен.</p></div>'; return; }
     if (!subs.some((x) => x.id === Admin._econTab)) Admin._econTab = subs[0].id;
@@ -1320,6 +1321,7 @@ const Admin = {
     if (Admin._econTab === 'mercs')     return Admin.renderMercs(body);
     if (Admin._econTab === 'discounts') return Admin.renderDiscounts(body);
     if (Admin._econTab === 'buffs')     return Admin.renderBuffs(body);
+    if (Admin._econTab === 'offers')    return Admin.renderOffers(body);
   },
 
   // ── История сохранений базы ──────────────────────────────────────
@@ -3842,6 +3844,227 @@ proxy_set_header Host $host;</pre>
   },
 
   // ── Вкладка: Скидки ─────────────────────────────────────────────
+  // ══════ КОНСТРУКТОР НАБОРОВ «СПЕЦПРЕДЛОЖЕНИЯ» ══════════════════
+  // Набор собирается здесь и сразу появляется в банке у игроков.
+  // Черновик держим в памяти вкладки: состав меняется построчно, и
+  // перечитывать его из полей на каждый чих было бы и дольше, и
+  // ненадёжнее.
+  _offerDraft: null,
+  _offerPalette: null,
+
+  renderOffers(c) {
+    c.innerHTML = '<div class="loading">Загрузка наборов…</div>';
+    Admin.loadOffers(c);
+  },
+
+  async loadOffers(c) {
+    const box = c || document.getElementById('econ-body');
+    let data;
+    try { data = await API.get('/api/admin/offers'); }
+    catch (e) { box.innerHTML = `<div class="card"><p class="muted">⛔ ${UI.esc(e.message)}</p></div>`; return; }
+    Admin._offerPalette = data.palette;
+    const when = (ts) => ts ? new Date(ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+    box.innerHTML = `
+      <div class="card">
+        <div class="name">🎁 Наборы для банка</div>
+        <p class="muted small mt">Набор — это состав, цена и срок. Собранный набор появляется у игроков
+          в банке, вкладка «Спецпредложения». Цену можно поставить в золоте, в рублях или в обоих:
+          рублёвая покупка создаёт заказ и выдаётся после подтверждения оплаты.</p>
+        <button class="btn btn-orange mt" id="of-new" style="width:100%">➕ Собрать новый набор</button>
+      </div>
+      <div id="of-form"></div>
+      ${data.offers.length ? data.offers.map((o) => `
+        <div class="card">
+          <div class="field-row">
+            <span class="grow"><b>${UI.esc(o.emoji)} ${UI.esc(o.title)}</b>
+              ${o.active ? '<span class="badge green">идёт</span>' : '<span class="badge">выключен</span>'}</span>
+            <span class="muted small">продано: ${UI.fmtNum(o.sold || 0)}</span>
+          </div>
+          ${o.note ? `<div class="muted small">${UI.esc(o.note)}</div>` : ''}
+          <div class="muted small mt">${o.itemsText.map((t) => UI.esc(t)).join(' · ')}</div>
+          <div class="kv mt"><span class="k">Цена</span><span class="v">
+            ${o.priceGold ? `<span class="ic-gold"></span> ${UI.fmtNum(o.priceGold)}` : ''}
+            ${o.priceGold && o.priceRub ? ' · ' : ''}
+            ${o.priceRub ? `${UI.fmtNum(o.priceRub)} ₽` : ''}</span></div>
+          <div class="kv"><span class="k">Показ</span><span class="v">${when(o.startAt)} → ${when(o.endAt)}</span></div>
+          <div class="kv"><span class="k">В одни руки</span><span class="v">${o.limitPerPlayer || 'без ограничения'}</span></div>
+          <div class="field-row mt">
+            <button class="btn btn-inline grow" data-of-edit="${o.id}">✏️ Изменить</button>
+            <button class="btn btn-inline grow" data-of-toggle="${o.id}">${o.enabled ? '⏸ Выключить' : '▶️ Включить'}</button>
+            <button class="btn btn-red btn-inline" data-of-del="${o.id}">🗑</button>
+          </div>
+        </div>`).join('') : '<div class="card center muted">Наборов пока нет.</div>'}`;
+
+    document.getElementById('of-new').onclick = () => {
+      Admin._offerDraft = { id: '', title: '', emoji: '🎁', note: '', items: [],
+                            priceGold: 0, priceRub: 0, oldPriceGold: 0, oldPriceRub: 0,
+                            startAt: 0, endAt: 0, limitPerPlayer: 1, enabled: true };
+      Admin._renderOfferForm();
+    };
+    box.querySelectorAll('[data-of-edit]').forEach((b) => { b.onclick = () => {
+      const o = data.offers.find((x) => x.id === b.dataset.ofEdit);
+      Admin._offerDraft = JSON.parse(JSON.stringify(o));
+      Admin._renderOfferForm();
+    }; });
+    box.querySelectorAll('[data-of-toggle]').forEach((b) => { b.onclick = async () => {
+      const o = data.offers.find((x) => x.id === b.dataset.ofToggle);
+      try {
+        await API.post('/api/admin/offers/save', Object.assign({}, o, { enabled: !o.enabled }));
+        Admin.loadOffers();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    }; });
+    box.querySelectorAll('[data-of-del]').forEach((b) => { b.onclick = async () => {
+      if (!await UI.confirm('Удалить набор? Уже купленные наборы у игроков останутся.')) return;
+      try { await API.post('/api/admin/offers/delete', { id: b.dataset.ofDel }); Admin.loadOffers(); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    }; });
+  },
+
+  // Значение <input type="datetime-local"> ↔ метка времени
+  _dtValue(ts) {
+    if (!ts) return '';
+    const d = new Date(ts - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  },
+  _dtParse(v) { return v ? new Date(v).getTime() : 0; },
+
+  _renderOfferForm() {
+    const d = Admin._offerDraft;
+    const pal = Admin._offerPalette || { types: [], mercs: [], containers: [], units: [] };
+    const wrap = document.getElementById('of-form');
+    if (!d) { wrap.innerHTML = ''; return; }
+    const needsOf = (type) => (pal.types.find((t) => t.id === type) || {}).needs || 'qty';
+    // Строка состава: тип, предмет (если нужен) и число (количество/дни)
+    const itemRow = (it, i) => {
+      const needs = needsOf(it.type);
+      const pick = needs.indexOf('id') === 0 || needs.indexOf('tier') === 0;
+      let options = '';
+      if (it.type === 'merc') options = pal.mercs.map((m) => `<option value="${m.id}" ${m.id === it.id ? 'selected' : ''}>${UI.esc(m.name)}</option>`).join('');
+      if (it.type === 'container') options = pal.containers.map((x) => `<option value="${x.tier}" ${x.tier === it.tier ? 'selected' : ''}>${UI.esc(x.name)}</option>`).join('');
+      if (it.type === 'unit') options = pal.units.map((x) => `<option value="${x.id}" ${x.id === it.id ? 'selected' : ''}>${UI.esc(x.name)} (ур. ${x.unlock})</option>`).join('');
+      const numLabel = needs.indexOf('days') >= 0 ? 'дней' : 'кол-во';
+      const numValue = needs.indexOf('days') >= 0 ? (it.days || 1) : (it.qty || 1);
+      return `
+        <div class="field-row mt of-item" data-i="${i}">
+          <select class="of-type" style="flex:1.2">
+            ${pal.types.map((t) => `<option value="${t.id}" ${t.id === it.type ? 'selected' : ''}>${UI.esc(t.name)}</option>`).join('')}
+          </select>
+          ${pick ? `<select class="of-pick" style="flex:1.6">${options}</select>` : ''}
+          <input type="number" class="of-num" min="1" value="${numValue}" style="width:100px" placeholder="${numLabel}">
+          <button class="btn btn-red btn-inline of-del" data-i="${i}">✕</button>
+        </div>`;
+    };
+    wrap.innerHTML = `
+      <div class="card" style="border-color:var(--gold)">
+        <div class="name">${d.id ? '✏️ Изменение набора' : '➕ Новый набор'}</div>
+        <div class="field-row mt">
+          <input type="text" id="of-emoji" value="${UI.esc(d.emoji || '🎁')}" style="width:64px" placeholder="🎁">
+          <input type="text" id="of-title" value="${UI.esc(d.title || '')}" style="flex:1" placeholder="Название набора">
+        </div>
+        <input type="text" id="of-note" class="mt" value="${UI.esc(d.note || '')}" style="width:100%" placeholder="Короткое описание (необязательно)">
+
+        <div class="name mt">Состав</div>
+        <div id="of-items">${(d.items || []).map(itemRow).join('') || '<p class="muted small">Пока пусто — добавьте позицию.</p>'}</div>
+        <button class="btn btn-inline mt" id="of-add">➕ Добавить позицию</button>
+
+        <div class="name mt">Цена</div>
+        <div class="field-row">
+          <span class="small muted" style="width:90px">Золото</span>
+          <input type="number" id="of-price-gold" min="0" value="${d.priceGold || 0}" style="flex:1" placeholder="цена">
+          <input type="number" id="of-old-gold" min="0" value="${d.oldPriceGold || 0}" style="flex:1" placeholder="было">
+        </div>
+        <div class="field-row mt">
+          <span class="small muted" style="width:90px">Рубли</span>
+          <input type="number" id="of-price-rub" min="0" value="${d.priceRub || 0}" style="flex:1" placeholder="цена">
+          <input type="number" id="of-old-rub" min="0" value="${d.oldPriceRub || 0}" style="flex:1" placeholder="было">
+        </div>
+        <p class="muted small mt">Ноль — значит «за это не продаётся». «Было» показывается перечёркнутым.</p>
+
+        <div class="name mt">Показ</div>
+        <div class="field-row">
+          <span class="small muted" style="width:90px">С</span>
+          <input type="datetime-local" id="of-start" value="${Admin._dtValue(d.startAt)}" style="flex:1">
+        </div>
+        <div class="field-row mt">
+          <span class="small muted" style="width:90px">По</span>
+          <input type="datetime-local" id="of-end" value="${Admin._dtValue(d.endAt)}" style="flex:1">
+        </div>
+        <div class="field-row mt">
+          <span class="small muted" style="width:90px">В одни руки</span>
+          <input type="number" id="of-limit" min="0" value="${d.limitPerPlayer || 0}" style="width:90px" placeholder="0 — без">
+          <label class="grow small"><input type="checkbox" id="of-enabled" ${d.enabled ? 'checked' : ''}> показывать игрокам</label>
+        </div>
+        <p class="muted small">Пустые даты — «сразу и бессрочно». Ноль в «одни руки» — без ограничения.</p>
+
+        <div class="field-row mt">
+          <button class="btn btn-orange grow" id="of-save">💾 Сохранить</button>
+          <button class="btn btn-inline" id="of-cancel">Отмена</button>
+        </div>
+      </div>`;
+
+    // Правки состава сразу пишем в черновик — форма перерисовывается
+    const readItems = () => {
+      wrap.querySelectorAll('.of-item').forEach((row) => {
+        const i = Number(row.dataset.i);
+        const it = d.items[i]; if (!it) return;
+        it.type = row.querySelector('.of-type').value;
+        const pickEl = row.querySelector('.of-pick');
+        const num = Number(row.querySelector('.of-num').value) || 1;
+        const needs = needsOf(it.type);
+        if (it.type === 'container') it.tier = pickEl ? Number(pickEl.value) : 1;
+        else if (pickEl) it.id = pickEl.value;
+        if (needs.indexOf('days') >= 0) { it.days = num; delete it.qty; }
+        else { it.qty = num; delete it.days; }
+      });
+    };
+    wrap.querySelectorAll('.of-type').forEach((sel) => { sel.onchange = () => {
+      readItems();
+      const i = Number(sel.closest('.of-item').dataset.i);
+      const t = sel.value;
+      // Тип сменился — сбрасываем чужие поля, иначе в наборе остался бы
+      // наёмник с номером контейнера
+      d.items[i] = { type: t, qty: 1, days: 1 };
+      if (t === 'merc') d.items[i].id = (pal.mercs[0] || {}).id;
+      if (t === 'unit') d.items[i].id = (pal.units[0] || {}).id;
+      if (t === 'container') d.items[i].tier = (pal.containers[0] || {}).tier;
+      Admin._renderOfferForm();
+    }; });
+    wrap.querySelectorAll('.of-del').forEach((b) => { b.onclick = () => {
+      readItems();
+      d.items.splice(Number(b.dataset.i), 1);
+      Admin._renderOfferForm();
+    }; });
+    document.getElementById('of-add').onclick = () => {
+      readItems();
+      d.items.push({ type: 'gold', qty: 100 });
+      Admin._renderOfferForm();
+    };
+    document.getElementById('of-cancel').onclick = () => { Admin._offerDraft = null; Admin._renderOfferForm(); };
+    document.getElementById('of-save').onclick = async () => {
+      readItems();
+      const payload = {
+        id: d.id || '',
+        title: document.getElementById('of-title').value,
+        emoji: document.getElementById('of-emoji').value,
+        note: document.getElementById('of-note').value,
+        items: d.items,
+        priceGold: Number(document.getElementById('of-price-gold').value) || 0,
+        priceRub: Number(document.getElementById('of-price-rub').value) || 0,
+        oldPriceGold: Number(document.getElementById('of-old-gold').value) || 0,
+        oldPriceRub: Number(document.getElementById('of-old-rub').value) || 0,
+        startAt: Admin._dtParse(document.getElementById('of-start').value),
+        endAt: Admin._dtParse(document.getElementById('of-end').value),
+        limitPerPlayer: Number(document.getElementById('of-limit').value) || 0,
+        enabled: document.getElementById('of-enabled').checked,
+      };
+      try {
+        await API.post('/api/admin/offers/save', payload);
+        Admin._offerDraft = null;
+        Admin.loadOffers();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  },
+
   renderDiscounts(c) {
     c.innerHTML = '<div class="loading">Загрузка скидок…</div>';
     Admin.loadDiscounts(c);

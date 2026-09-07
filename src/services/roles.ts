@@ -143,6 +143,9 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/db\//,                          'database'],
   [/^\/api\/admin\/(discount|discounts)$/,          'discounts'],
   [/^\/api\/admin\/(grant|grant-all|take|rewards|merc|vip)/, 'economy'],
+  // Конструктор «Спецпредложений» — та же зона, что и выдача ресурсов:
+  // набор раздаёт ровно то же самое, только через витрину и за деньги.
+  [/^\/api\/admin\/offers/,                        'economy'],
   [/^\/api\/admin\/global-buffs?$/,                 'economy'],
   [/^\/api\/admin\/claim-gift$/,                    'economy'],
   [/^\/api\/admin\/season\//,                      'season'],

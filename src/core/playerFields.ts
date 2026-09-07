@@ -150,6 +150,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   achStages:          { owner: 'achievements', note: 'ступени достижений' },
   pendingAchievements: { owner: 'achievements', note: 'очередь окон достижений' },
   club:               { owner: 'club',       note: 'клуб (партии, ставки)' },
+  offersBought:       { owner: 'offers',     note: 'сколько раз игрок брал каждый набор «Спецпредложений»' },
   tutorial:           { owner: 'tutorial',   note: 'обучение' },
   loginStreak:        { owner: 'features',   note: 'серия ежедневных входов' },
   lastLoginDay:       { owner: 'features',   note: 'день последнего входа (для серии)' },

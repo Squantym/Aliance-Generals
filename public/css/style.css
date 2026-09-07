@@ -5258,3 +5258,27 @@ body.has-club-bar #header { top: 32px; }
   font-size: 11.5px; color: var(--dim); background: rgba(0,0,0,.14);
 }
 .ct-sign img { border-radius: 50%; }
+
+/* ══════ СПЕЦПРЕДЛОЖЕНИЯ: наборы в банке ══════
+   Карточка набора — витрина, а не список: сперва что внутри, потом
+   цена. Состав приходит с сервера уже разобранным, здесь только показ. */
+.offer-card { border-color: var(--gold); }
+.offer-head { display: flex; align-items: flex-start; gap: 8px; }
+.offer-emoji { font-size: 26px; line-height: 1; }
+.offer-timer {
+  flex: 0 0 auto; font-size: 11.5px; color: var(--orange-1);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px;
+}
+.offer-items {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px; margin-top: 8px;
+}
+.offer-item {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px;
+  font-size: 12px; background: rgba(255,255,255,.02);
+}
+.offer-item img { width: 28px; height: 28px; object-fit: contain; flex: 0 0 auto; }
+.offer-buy { display: flex; gap: 8px; }
+.offer-buy .btn { width: auto; }
+.offer-buy s { font-size: 11px; }

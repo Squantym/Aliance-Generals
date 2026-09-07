@@ -47,6 +47,7 @@ const GOLD_SPENDING: Record<string, string> = {
   lot_buff: 'Лоты: допинг',
   lot_bid: 'Лоты: ставки',
   lottery_ticket: 'Военный займ: билеты',
+  offer: 'Спецпредложения: наборы',
   club_pref: 'Клуб: ставка в преферансе',
   club_bookie_stake: 'Клуб: ставка в тотализаторе',
   club_thimble_stake: 'Клуб: ставка в напёрстках',
@@ -84,6 +85,7 @@ const GOLD_SOURCES: Record<string, string> = {
   vip: 'VIP-подписка',
   // Клуб — крупнейший источник золота в игре, и до сих пор он весь
   // падал в «Прочее»: addGold звали без источника.
+  offer: 'Спецпредложения: из набора',
   club_pref: 'Клуб: преферанс',
   club_safe: 'Клуб: сейф',
   club_convoy: 'Клуб: ночной караван',

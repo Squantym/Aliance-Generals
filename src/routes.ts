@@ -2172,6 +2172,15 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/payments/packages', (req) => payments.packages());
   app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
   app.add('POST', '/api/payments/create',   act((req, n) => payments.createOrder(req.user, req.body.packageId, n)));
+
+  // ---------- Спецпредложения (наборы) ----------
+  // Витрина открыта всем, конструктор — по зоне «Ресурсы».
+  app.add('GET',  '/api/offers',            (req) => require('./services/offers').catalog(req.user));
+  app.add('POST', '/api/offers/buy',        act((req, n) => require('./services/offers').buyForGold(req.user, req.body.offerId, n)));
+  app.add('POST', '/api/offers/order',      act((req, n) => require('./services/offers').orderForRub(req.user, req.body.offerId, n)));
+  app.add('GET',  '/api/admin/offers',      (req) => require('./services/offers').adminList(req.user), { admin: true });
+  app.add('POST', '/api/admin/offers/save', act((req, n) => require('./services/offers').adminSave(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/offers/delete', act((req, n) => require('./services/offers').adminRemove(req.user, req.body.id, n)), { admin: true });
 };
 
 export = registerRoutes;
