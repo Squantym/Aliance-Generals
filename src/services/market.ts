@@ -121,6 +121,9 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
     // Отдельный счётчик по КОНКРЕТНОМУ товару: поручения на контрабанду
     // называют товар явно, поэтому общего счётчика покупок им мало
     require('./dailyQuests').bump(user, 'buy:' + item.id, 1);
+    // И сколько золота на него ФАКТИЧЕСКИ ушло: поручение возвращает
+    // половину потраченного, а цена бывает со скидкой.
+    require('./dailyQuests').bump(user, 'goldOn:' + item.id, price);
   };
 
   if (item.kind === 'debuff') {
@@ -207,6 +210,9 @@ function openContainer(user: User, tier: number | string, notices: Notices, qty?
   require('./dailyQuests').bump(user, 'marketBought', 1);
   // Счётчик по конкретному контейнеру (для поручений на контрабанду)
   require('./dailyQuests').bump(user, 'buy:' + c.id, qty);
+  // Потраченное золото — по факту, со скидкой: половину от него вернёт
+  // поручение на контрабанду.
+  require('./dailyQuests').bump(user, 'goldOn:' + c.id, totalPrice);
   // Категория именно 'container': раньше она жила во второй записи
   // расхода, а та удваивала сумму и потому убрана.
   player.spendGold(user, totalPrice, 'container');

@@ -1429,10 +1429,24 @@ function smuggleItemName(itemId: string): string {
   const it = MARKET_ITEM_BY_ID[itemId];
   return it ? it.name : itemId;
 }
-// Золото за поручение = половина потраченного на товар
+// Ожидаемое золото за поручение — для показа ДО выполнения: половина
+// цены товара по прайсу. Фактическая выплата считается иначе (см.
+// smuggleGoldBack): игрок мог купить со скидкой, и возвращать ему
+// половину прайса значило бы отдать больше, чем он потратил.
 function smuggleGoldReward(quest: any): number {
   if (!quest || !quest.item || !quest.fixedTarget) return 0;
   return Math.round(quest.fixedTarget * smuggleItemGold(quest.item) * (quest.goldBack || GOLD_BACK_PCT));
+}
+// Фактическая выплата: половина ИМЕННО потраченного золота. При скидке
+// 50% на контейнеры прежняя формула возвращала всё потраченное целиком —
+// то есть контейнеры доставались бесплатно.
+function smuggleGoldBack(quest: any, spentGold: number): number {
+  if (!quest || !quest.item) return 0;
+  const spent = Math.max(0, Math.round(spentGold || 0));
+  const back = Math.round(spent * (quest.goldBack || GOLD_BACK_PCT));
+  // Больше половины прайса не платим никогда: страховка на случай, если
+  // счётчик потраченного однажды посчитает лишнего.
+  return Math.min(back, smuggleGoldReward(quest));
 }
 
 // ---- Шаги спецоперций: отдельный, СИЛЬНО урезанный диапазон ----
@@ -1450,6 +1464,48 @@ function missionStagesTarget(diff: number, level: number): number {
   const byDiff = byLevel * (0.6 + 0.4 * (diff || 1));   // diff 1.0 → ×1.0, diff 2.4 → ×1.56
   return Math.max(MISSION_STAGES_MIN, Math.min(MISSION_STAGES_MAX, Math.round(byDiff)));
 }
+
+// ---------- ЧТО ИМЕННО НАДО СДЕЛАТЬ ----------
+// Раньше в условии стояло название поручения и число: «Стройка века —
+// 192». Что делать — было понятно только из реплики заказчика, да и то
+// не всегда: «Серые поставки — 20» не говорит вообще ни о чём. Теперь
+// требование пишется действием и предметом: «Построить 192 здания».
+//
+// Формы существительного — три: 1 здание, 2 здания, 5 зданий.
+function plural3(n: number, forms: [string, string, string]): string {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return forms[2];
+  if (b > 1 && b < 5) return forms[1];
+  if (b === 1) return forms[0];
+  return forms[2];
+}
+const QUEST_DEMANDS: Record<string, { verb: string; forms: [string, string, string]; money?: boolean }> = {
+  attacks:         { verb: 'Совершить',  forms: ['атаку', 'атаки', 'атак'] },
+  wins:            { verb: 'Победить в', forms: ['бою', 'боях', 'боях'] },
+  bankDeposited:   { verb: 'Положить в банк', forms: ['', '', ''], money: true },
+  buildingsBuilt:  { verb: 'Построить',  forms: ['здание', 'здания', 'зданий'] },
+  unitsBought:     { verb: 'Купить',     forms: ['единицу техники', 'единицы техники', 'единиц техники'] },
+  marketBought:    { verb: 'Купить',     forms: ['товар на чёрном рынке', 'товара на чёрном рынке', 'товаров на чёрном рынке'] },
+  saboteursBought: { verb: 'Нанять',     forms: ['диверсанта', 'диверсантов', 'диверсантов'] },
+  missionStages:   { verb: 'Пройти',     forms: ['шаг спецоперации', 'шага спецопераций', 'шагов спецопераций'] },
+  clubPlayed:      { verb: 'Сыграть',    forms: ['партию в клубе офицеров', 'партии в клубе офицеров', 'партий в клубе офицеров'] },
+  breaches:        { verb: 'Проникнуть в', forms: ['штаб', 'штаба', 'штабов'] },
+  crestsTorn:      { verb: 'Сорвать',    forms: ['герб штаба', 'герба штабов', 'гербов штабов'] },
+  trucesMade:      { verb: 'Получить',   forms: ['жетон перемирия', 'жетона перемирия', 'жетонов перемирия'] },
+};
+function questDemand(counter: string, target: number, quest?: any): string {
+  const n = Math.max(0, Math.round(target || 0));
+  // Покупка конкретного товара: называем товар, а не счётчик
+  if (quest && quest.item) {
+    return `Купить ${n} × «${smuggleItemName(quest.item)}» на чёрном рынке`;
+  }
+  const d = QUEST_DEMANDS[String(counter || '')];
+  if (!d) return `Выполнить: ${n}`;
+  if (d.money) return `${d.verb} $${fmtMoneyShort(n)}`;
+  return `${d.verb} ${n.toLocaleString('ru-RU')} ${plural3(n, d.forms)}`;
+}
+// Короткая запись денег для текста поручения: 500 000 → «500 000»
+function fmtMoneyShort(n: number): string { return Math.round(n).toLocaleString('ru-RU'); }
 
 // Итоговое требование поручения (с учётом сложности и уровня).
 // counter передаётся, чтобы спецоперации считались по своему диапазону.
@@ -1545,9 +1601,12 @@ function weeklyQuestReward(diff: number, level: number, quest?: any): { xp: numb
     gold: smuggleGoldReward(quest),
   };
 }
-// Бонус за выполнение ВСЕХ недельных поручений (золото)
-function weeklyAllBonusGold(level: number): number {
-  return (150 + Math.floor(level / 2)) * 5;
+// Бонус за выполнение ВСЕХ недельных поручений (золото). Число ровное и
+// не зависит от уровня: раньше формула давала 750–1500 🪙 в неделю, и
+// недельный бонус в одиночку перекрывал весь клуб офицеров.
+const WEEKLY_ALL_BONUS_GOLD = 100;
+function weeklyAllBonusGold(_level: number): number {
+  return WEEKLY_ALL_BONUS_GOLD;
 }
 // Ключ недели (понедельник, UTC) — используется и для сброса, и для выбора
 function weekUtcKey(d?: Date): string {
@@ -1584,9 +1643,12 @@ function pickWeeklyQuests(weekKey: string): string[] {
   return picked;
 }
 
-// Бонус за выполнение ВСЕХ активных поручений дня — растёт с уровнем (золото).
-function dailyAllBonusGold(level: number): number {
-  return 150 + Math.floor(level / 2); // ур.1 = 150 🪙 → ур.300 = 300 🪙
+// Бонуса за все поручения дня БОЛЬШЕ НЕТ. Он выдавал 150–300 🪙 в сутки
+// каждому, кто просто доиграл день до конца, — то есть печатал золото
+// за усидчивость, а не за что-то трудное. Награда за сами поручения
+// (деньги и опыт) осталась.
+function dailyAllBonusGold(_level: number): number {
+  return 0;
 }
 
 // Детерминированный ГПСЧ от строки-ключа дня (одинаков для всех игроков в сутках)
@@ -2630,6 +2692,7 @@ export = {
   spyReveal, SPY_LIVE_MS,
   DAILY_QUESTS, DAILY_QUEST_BY_ID, DAILY_CHARS, DAILY_PICK_COUNT,
   dailyQuestTarget, dailyQuestReward, dailyAllBonusGold, pickDailyQuests, dailyGrowth,
+  questDemand, smuggleGoldBack, WEEKLY_ALL_BONUS_GOLD,
   WEEKLY_QUESTS, WEEKLY_QUEST_BY_ID, WEEKLY_PICK_COUNT, WEEKLY_REWARD_MULT, WEEKLY_STAGES_MULT,
   weeklyQuestTarget, weeklyQuestReward, weeklyAllBonusGold, pickWeeklyQuests, weekUtcKey,
   smuggleGoldReward, smuggleItemGold, smuggleItemName, GOLD_BACK_PCT,

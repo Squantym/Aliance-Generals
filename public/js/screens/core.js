@@ -2083,16 +2083,16 @@ App.screens.daily = async (c) => {
     </div>
     <div class="card center">
       <p class="muted small">${isWeekly
-        ? `На этой неделе активно <b>${d.total}</b> особых поручений — лимиты и награды кратно выше дневных, за каждое дают ещё и золото.`
+        ? `На этой неделе активно <b>${d.total}</b> особых поручений — лимиты и награды кратно выше дневных.`
         : `Сегодня активно <b>${d.total}</b> поручений от заказчиков (меняются каждый день).`}
         Выполнено: <b>${d.doneCount} / ${d.total}</b> · ${resetText}</p>
-      ${d.allDone && !d.bonusClaimed ? `
+      ${!d.bonusGold ? '' : (d.allDone && !d.bonusClaimed ? `
         <button class="btn btn-orange mt" id="daily-bonus">🎉 Забрать бонус за все: <span class="ic-gold"></span> ${d.bonusGold}</button>
       ` : d.bonusClaimed ? `
         <p class="small mt" style="color:var(--money)">✅ Бонус <span class="ic-gold"></span> ${d.bonusGold} за все поручения уже получен</p>
       ` : `
-        <p class="small mt muted">Выполните все ${d.total} поручений — бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
-      `}
+        <p class="small mt muted">Выполните все поручения ${isWeekly ? 'недели' : 'дня'} — бонус <span class="ic-gold"></span> ${d.bonusGold}</p>
+      `)}
     </div>
     ${App.me && App.me.vip ? `
       <div class="vip-bulk">
@@ -2130,11 +2130,11 @@ App.screens.daily = async (c) => {
                   <div class="grow">
                     <div class="name">${q.char ? App.instrImg(q.char, 26) : q.icon} ${UI.esc(q.name)} ${diffBadge(q.difficulty)}</div>
                     <div class="muted small" style="font-style:italic;margin:2px 0 4px">«${UI.esc(q.flavor)}»</div>
-                    <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.name)}</b> — ${UI.fmtNum(q.target)} ${q.done ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
+                    <div class="small" style="margin-bottom:6px">Условие: <b>${UI.esc(q.demand || (q.name + ' — ' + UI.fmtNum(q.target)))}</b> ${q.done ? '<span style="color:var(--money)">(выполнено)</span>' : ''}</div>
                     ${q.accepted
                       ? UI.bar(q.progress, q.target, 'xp', `${UI.fmtNum(q.progress)} / ${UI.fmtNum(q.target)}`)
                       : '<div class="muted small quest-not-accepted">Поручение не принято — прогресс не идёт</div>'}
-                    <div class="small mt">Награда: +${UI.fmtNum(q.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(q.reward.dollars)}${q.reward.gold ? `, <span class="ic-gold"></span> ${UI.fmtNum(q.reward.gold)}` : ''}</div>
+                    <div class="small mt">Награда: +${UI.fmtNum(q.reward.xp)} XP, +<span class="ic-dollar"></span>${UI.fmtNum(q.reward.dollars)}${q.reward.gold ? `, <span class="ic-gold"></span> ${UI.fmtNum(q.reward.gold)}` : ''}${q.item ? '<span class="muted"> — вернётся половина потраченного</span>' : ''}</div>
                     ${q.route && q.accepted && !q.done ? '<div class="small quest-go">➜ Нажмите, чтобы перейти к выполнению</div>' : ''}
                   </div>
                   <div style="margin-left:8px">${q.claimed

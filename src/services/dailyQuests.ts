@@ -106,6 +106,16 @@ function ensureWeekly(user: User): any {
   return w;
 }
 
+// Сколько золота игрок потратил на товар поручения ПОСЛЕ того, как его
+// принял. Считается так же, как прогресс: от базы на момент принятия —
+// иначе покупки прошлой недели зачлись бы в эту.
+function spentOnItem(box: any, quest: any): number {
+  const acc = box.accepted[quest.id];
+  if (!acc || !quest.item) return 0;
+  const now = box.counters['goldOn:' + quest.item] || 0;
+  return Math.max(0, now - (acc.baseGold || 0));
+}
+
 function weeklyProgress(w: any, quest: any): number {
   const acc = w.accepted[quest.id];
   if (!acc) return 0;
@@ -135,6 +145,7 @@ function weeklyList(user: User) {
       char: q.char, charName: ch.name, charRole: ch.role, charIcon: ch.icon, charIntro: (ch as any).intro || '',
       diff: q.diff, difficulty: q.diff >= 2.4 ? 'hard' : (q.diff >= 1.6 ? 'medium' : 'easy'),
       target, progress: Math.min(progress, target),
+      demand: config.questDemand(q.counter, target, q),
       accepted, done, claimed: !!w.claimed[q.id],
       reward: { xp: rw.xp, dollars: rw.dollars, gold: rw.gold || 0 },
       item: q.item ? { id: q.item, name: config.smuggleItemName(q.item), gold: config.smuggleItemGold(q.item) } : null,
@@ -157,7 +168,8 @@ function weeklyAccept(user: User, questId: string, notices: Notices) {
   if (!quest) throw new u.ApiError('Поручение не найдено');
   if (w.accepted[questId]) throw new u.ApiError('Поручение уже принято');
   if (w.claimed[questId]) throw new u.ApiError('Это поручение уже выполнено на этой неделе');
-  w.accepted[questId] = { at: Date.now(), base: w.counters[quest.counter] || 0 };
+  w.accepted[questId] = { at: Date.now(), base: w.counters[quest.counter] || 0,
+                          baseGold: quest.item ? (w.counters['goldOn:' + quest.item] || 0) : 0 };
   const ch = config.DAILY_CHARS[quest.char];
   notices.push(`📋 ${ch ? ch.name + ': ' : ''}недельное поручение «${quest.name}» принято.`);
   return { accepted: true, questId };
@@ -174,6 +186,7 @@ function weeklyClaim(user: User, questId: string, notices: Notices) {
   if (weeklyProgress(w, quest) < target) throw new u.ApiError('Поручение ещё не выполнено');
   w.claimed[questId] = true;
   const reward = config.weeklyQuestReward(quest.diff, user.level, quest);
+  if (quest.item) reward.gold = config.smuggleGoldBack(quest, spentOnItem(w, quest));
   player.addMoney(user, reward.dollars, true);
   player.addXp(user, reward.xp, notices);
   if (reward.gold) player.addGold(user, reward.gold, 'quest');
@@ -230,7 +243,8 @@ function accept(user: User, questId: string, notices: Notices) {
   if (!quest) throw new u.ApiError('Поручение не найдено');
   if (d.accepted[questId]) throw new u.ApiError('Поручение уже принято');
   if (d.claimed[questId]) throw new u.ApiError('Это поручение уже выполнено сегодня');
-  d.accepted[questId] = { at: Date.now(), base: d.counters[quest.counter] || 0 };
+  d.accepted[questId] = { at: Date.now(), base: d.counters[quest.counter] || 0,
+                          baseGold: quest.item ? (d.counters['goldOn:' + quest.item] || 0) : 0 };
   const ch = config.DAILY_CHARS[quest.char];
   notices.push(`📋 ${ch ? ch.name + ': ' : ''}поручение «${quest.name}» принято. Прогресс пошёл.`);
   return { accepted: true, questId };
@@ -253,6 +267,10 @@ function list(user: User) {
       char: q.char, charName: ch.name, charRole: ch.role, charIcon: ch.icon, charIntro: (ch as any).intro || '',
       diff: q.diff, difficulty: q.diff >= 2.4 ? 'hard' : (q.diff >= 1.6 ? 'medium' : 'easy'),
       target, progress: Math.min(progress, target),
+      // Что именно надо сделать — словами: «Построить 192 здания».
+      // Раньше стояло название поручения и число, и по «Серые поставки —
+      // 20» понять задачу было нельзя.
+      demand: config.questDemand(q.counter, target, q),
       accepted, done, claimed: !!d.claimed[q.id],
       reward: { xp: rw.xp, dollars: rw.dollars, gold: rw.gold || 0 },
       item: q.item ? { id: q.item, name: config.smuggleItemName(q.item), gold: config.smuggleItemGold(q.item) } : null,
@@ -289,6 +307,10 @@ function claim(user: User, questId: string, notices: Notices) {
   if (progress < target) throw new u.ApiError('Поручение ещё не выполнено');
   d.claimed[questId] = true;
   const reward = config.dailyQuestReward(quest.diff, user.level, quest);
+  // Контрабанда возвращает половину ПОТРАЧЕННОГО, а не половину прайса:
+  // товар мог быть куплен со скидкой, и по прайсу вышло бы, что игрок
+  // получил назад больше, чем отдал.
+  if (quest.item) reward.gold = config.smuggleGoldBack(quest, spentOnItem(d, quest));
   player.addMoney(user, reward.dollars, true);
   player.addXp(user, reward.xp, notices);
   if (reward.gold) player.addGold(user, reward.gold, 'quest');   // контрабанда: возврат золота
@@ -375,6 +397,12 @@ function reroll(user: User, questId: string, notices: Notices) {
 }
 
 function claimBonus(user: User, notices: Notices) {
+  // Бонуса за все поручения дня больше нет: он выдавал золото за
+  // усидчивость. Маршрут оставлен, чтобы старый клиент из кеша получил
+  // внятный отказ, а не «500».
+  if (!config.dailyAllBonusGold(user.level)) {
+    throw new u.ApiError('Бонус за все поручения дня отменён');
+  }
   const d = ensureDaily(user);
   if (d.bonusClaimed) throw new u.ApiError('Бонус уже получен сегодня');
   const ids = activeQuestIds(user);

@@ -774,7 +774,16 @@ async function main() {
   check('цель задания растёт с уровнем',
         dq.dailyQuestTarget(100, 1, 300, null, 0) > dq.dailyQuestTarget(100, 1, 1, null, 0),
         `ур.1 → ${dq.dailyQuestTarget(100, 1, 1, null, 0)}, ур.300 → ${dq.dailyQuestTarget(100, 1, 300, null, 0)}`);
-  check('за все задания положен бонус золотом', daily.bonusGold > 0);
+  // Дневного бонуса золотом больше нет — он выдавал 150–300 🪙 просто за
+  // то, что игрок доиграл день. Недельный остался, но ровно 100.
+  check('за все дневные задания золота не дают', daily.bonusGold === 0,
+        'bonusGold: ' + daily.bonusGold);
+  const weekly = (await get('/api/weekly', A)).data;
+  check('а за все недельные — ровно 100', weekly.bonusGold === 100,
+        'bonusGold недели: ' + weekly.bonusGold);
+  check('и в поручении сказано, что делать',
+        Array.isArray(daily.quests) && daily.quests.every((q) => typeof q.demand === 'string' && q.demand.length > 8),
+        'первое: ' + JSON.stringify((daily.quests || [])[0] || {}).slice(0, 140));
   // Попытка получить бонус до выполнения должна провалиться
   const earlyBonus = await post('/api/daily/bonus', A);
   check('бонус нельзя забрать пока не выполнены все', earlyBonus.status === 400);
