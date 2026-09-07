@@ -203,10 +203,19 @@ const nx = [];
   // именно по исходнику — поведение будущей, ещё не написанной игры
   // прогнать нельзя, а забыть про payout() можно.
   const src = fs.readFileSync(path.join(ROOT, 'src/services/club.ts'), 'utf8');
+  // Вызовов ровно два, и оба — не игры: выдача через потолок (payout) и
+  // возврат внесённого взноса (giveBack). Возврат золота не печатает —
+  // он отдаёт игроку его же ставку и тут же откатывает бюджет обратно,
+  // иначе ничья расширяла бы суточный потолок на ровном месте.
   const addGoldCalls = (src.match(/player\.addGold\(/g) || []).length;
-  ok(`player.addGold зовётся ровно один раз (найдено ${addGoldCalls}) — из payout()`,
-     addGoldCalls === 1);
-  ok('и этот вызов помечает источник', /player\.addGold\(user, give, 'club_' \+ game\)/.test(src));
+  ok(`player.addGold зовётся дважды (найдено ${addGoldCalls}) — payout() и giveBack()`,
+     addGoldCalls === 2);
+  ok('и этот вызов помечает источник — строкой из карты статей',
+     /player\.addGold\(user, give, GAIN_SRC\[game\]/.test(src));
+  ok('второй вызов — только возврат взноса',
+     /player\.addGold\(user, back, BACK_SRC\[game\]/.test(src));
+  ok('и он откатывает бюджет обратно',
+     /c\.dayGold = b\.spent \+ back;[\s\S]{0,120}player\.addGold\(user, back/.test(src));
   const payoutCalls = (src.match(/payout\(user, '/g) || []).length;
   ok(`каждая игра выдаёт золото через payout (${payoutCalls} вызовов)`, payoutCalls >= 6);
 

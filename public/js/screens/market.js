@@ -651,6 +651,138 @@ App.screens.club = async (c, param) => {
       ${bkLast}`;
   }
 
+  // ── 7-8. ИГРЫ ПРОТИВ ЖИВОГО СОПЕРНИКА ─────────────────────────
+  // У обеих одинаковое начало: очередь, взнос, ожидание. Поэтому общие
+  // куски разметки сделаны один раз — расходятся игры только в бою.
+  const qWait = (v, id) => `
+    <p class="center mt"><b>Ищем соперника…</b></p>
+    <p class="muted small center">Ждём ещё ${UI.fmtTimer(v.queue.ttlSec)}. Не найдётся —
+      взнос вернётся целиком.</p>
+    <p class="muted small center">В очереди сейчас: <b>${v.waiting}</b></p>
+    <button class="btn btn-inline mt" style="width:100%" data-leave="${id}">Выйти из очереди</button>`;
+  const qJoin = (v, id, label) => `
+    <div class="pref-stake mt"><span class="grow">Взнос</span>
+      <b><span class="ic-gold"></span> ${v.entry}</b></div>
+    <div class="pref-stake"><span class="grow">Выигрыш</span>
+      <b class="gold"><span class="ic-gold"></span> ${v.win}</b></div>
+    <p class="muted small mt">Соперник — живой игрок из очереди. Ничья возвращает взнос обоим.
+      Между боями — ${v.cdMin} мин.</p>
+    <p class="muted small">В очереди сейчас: <b>${v.waiting}</b></p>
+    <button class="btn btn-orange mt" style="width:100%" data-queue="${id}">${label}</button>`;
+  const foeLine = (v) => `
+    <p class="muted small center">Соперник: <b>${UI.esc(v.match.foeName)}</b> ·
+      время хода <b>${UI.fmtTimer(v.match.deadlineSec)}</b></p>`;
+  const pvpLast = (v, extra) => {
+    if (!v.last) return '';
+    const L = v.last;
+    const head = L.result === 'win' ? '🏆 Победа' : (L.result === 'draw' ? '🤝 Ничья' : '🎖 Поражение');
+    return `<div class="pf-result ${L.result === 'win' ? 'pf-win' : (L.result === 'draw' ? '' : 'pf-lose')}">
+        ${head} · ${UI.esc(L.foeName)}${L.reward ? ` · +<span class="ic-gold"></span> ${L.reward}` : ''}
+      </div>
+      <p class="muted small center">${UI.esc(L.reason || '')}</p>
+      ${extra ? extra(L) : ''}`;
+  };
+
+  // ── 7. РАДИОПЕРЕХВАТ ──────────────────────────────────────────
+  let interceptHtml;
+  const ic = data.intercept;
+  const icName = (n) => 'АБВГ'[Math.floor(n / 3)] + ((n % 3) + 1);
+  const icGrid = (cls) => `<div class="ic-grid">${
+    Array.from({ length: ic.cells }, (_, n) =>
+      `<button class="ic-cell ${cls}" data-cell="${n}">${icName(n)}</button>`).join('')}</div>`;
+  const icLast = pvpLast(ic, (L) => !L.hide ? '' : `
+    <p class="muted small center">Вы прятались в <b>${icName(L.hide.mine)}</b>,
+      соперник — в <b>${icName(L.hide.foe)}</b>.
+      Ваши наводки: ${(L.hide.guess || []).map(icName).join(', ')}.</p>`);
+  if (ic.state === 'queue') {
+    interceptHtml = qWait(ic, 'intercept');
+  } else if (ic.state === 'match') {
+    interceptHtml = ic.match.moved
+      ? `${foeLine(ic)}<p class="center mt">📡 Радиограмма ушла. Ждём хода соперника.</p>`
+      : `${foeLine(ic)}
+        <p class="muted small mt"><b>1.</b> Где прячете свой штаб:</p>
+        ${icGrid('ic-hide')}
+        <p class="muted small mt"><b>2.</b> Куда даёте наводки (${ic.guesses}):</p>
+        ${icGrid('ic-aim')}
+        <button class="btn btn-orange mt" id="ic-send" style="width:100%" disabled>📡 Передать в штаб</button>
+        <p class="muted small center mt">Не успеете — ход сделает жребий.</p>`;
+  } else if (ic.state === 'cooldown') {
+    interceptHtml = icLast + cdLine(ic.cooldownSec);
+  } else {
+    interceptHtml = icLast + `
+      <p class="muted small">Шесть квадратов. Вы прячете свой штаб в одном из них и даёте
+        ${ic.guesses} наводки по квадратам соперника. Нашли его штаб, а он ваш — нет: победа.
+        Нашли оба — считается, чья наводка была раньше.</p>
+      <p class="muted small">Ход делается втёмную и один: и укрытие, и наводки уходят разом.
+        На него ${Math.round(ic.moveSec / 60)} мин; не успели — ходит жребий.</p>
+      ${qJoin(ic, 'intercept', '📡 Встать в очередь')}`;
+  }
+
+  // ── 8. СНАЙПЕРСКАЯ ДУЭЛЬ ──────────────────────────────────────
+  let sniperHtml;
+  const sn = data.sniper;
+  const snLast = pvpLast(sn, (L) => !L.log || !L.log.length ? '' :
+    `<div class="sn-log mt">${L.log.map((e) => `<div>${UI.esc(e.text)}</div>`).join('')}</div>`);
+  if (sn.state === 'queue') {
+    sniperHtml = qWait(sn, 'sniper');
+  } else if (sn.state === 'match') {
+    const M = sn.match;
+    const logHtml = (M.log || []).length
+      ? `<div class="sn-log mt">${M.log.map((e) => `<div><b>${e.round}.${e.turn}</b> ${UI.esc(e.text)}</div>`).join('')}</div>`
+      : '';
+    sniperHtml = `
+      <p class="muted small center">Раунд ${M.round} · ход ${M.turn} из ${sn.turns} ·
+        осталось <b>${UI.fmtTimer(M.deadlineSec)}</b></p>
+      <div class="sn-duel">
+        <div class="sn-side"><span class="muted small">Вы</span><b class="${M.sure ? 'sn-sure' : 'gold'}">${M.myAcc}%</b></div>
+        <div class="sn-vs">🎯</div>
+        <div class="sn-side"><span class="muted small">${UI.esc(M.foeName)}</span><b class="${M.foeAcc >= 100 ? 'sn-sure' : ''}">${M.foeAcc}%</b></div>
+      </div>
+      ${M.sure ? '<p class="muted small center">Соперник открылся — следующий выстрел наверняка.</p>' : ''}
+      ${logHtml}
+      ${M.acted
+        ? `<p class="center mt">✔ Ход принят: ${M.acted === 'shoot' ? 'выстрел' : 'прицеливание'}. Ждём соперника.</p>`
+        : `<div class="field-row mt">
+             ${M.canAim ? `<button class="btn btn-inline grow" id="sn-aim">🔭 ${UI.esc(M.aimLabel)}</button>` : ''}
+             <button class="btn btn-orange grow" id="sn-shoot">💥 Выстрелить · ${M.myAcc}%</button>
+           </div>
+           <p class="muted small center mt">${M.canAim
+             ? 'Промах выдаёт позицию: соперник ударит наверняка.'
+             : 'Последний ход — прицеливаться больше некуда.'}</p>`}`;
+  } else if (sn.state === 'cooldown') {
+    sniperHtml = snLast + cdLine(sn.cooldownSec);
+  } else {
+    sniperHtml = snLast + `
+      <p class="muted small">Семь ходов по ${sn.turnSec} секунд, часы общие на обоих.
+        Каждый ход: прицелиться (точность +${sn.accStep}%) или выстрелить.
+        Начинают оба с ${sn.accStart}%, предел — ${sn.accMax}%.</p>
+      <p class="muted small">Попал — забрал банк. Промахнулся — вспышка выдала позицию, и
+        следующий выстрел соперника бьёт наверняка. Промахнулись оба — дуэль начинается заново;
+        убили друг друга — взносы возвращаются.</p>
+      ${qJoin(sn, 'sniper', '🔭 Встать в очередь')}`;
+  }
+
+  // ── 9. НАПЁРСТКИ ПОЛЕВОЙ КУХНИ ────────────────────────────────
+  let thimbleHtml;
+  const th = data.thimble;
+  const thLast = th.last
+    ? `<p class="muted small center">Прошлая партия: паёк был под котелком
+         <b>№${th.last.hidden + 1}</b> — ${th.last.won ? '<b class="gold">вы угадали</b>' : 'вы ставили на №' + (th.last.pot + 1)}.</p>`
+    : '';
+  if (th.state === 'cooldown') {
+    thimbleHtml = thLast + cdLine(th.cooldownSec);
+  } else {
+    thimbleHtml = `
+      <p class="muted small">Кашевар прячет паёк под одним из трёх котелков и меняет их местами.
+        Ставка <span class="ic-gold"></span> ${th.entry}, угадали — <span class="ic-gold"></span> ${th.win}.
+        Между партиями ${th.cdMin} мин.</p>
+      <div class="th-row mt">
+        ${Array.from({ length: th.pots }, (_, n) =>
+          `<button class="th-pot" data-pot="${n}">🍲<span>№${n + 1}</span></button>`).join('')}
+      </div>
+      ${thLast}`;
+  }
+
   // Главное на карточке — банк и шанс. Оба считает сервер; здесь их
   // только показываем, чтобы клиент и сервер не разошлись в арифметике.
   const lotHtml = `
@@ -756,6 +888,20 @@ App.screens.club = async (c, param) => {
     { id: 'bookie',  icon: '🏁', name: 'Полевой тотализатор',
       note: st(data.bookie) === 'cooldown' ? timer(data.bookie.cooldownSec)
           : `ставка <span class="ic-gold"></span> ${data.bookie.stake} на одно из трёх отделений` },
+    // Живые игры: на кнопке видно главное — идёт ли бой и не ждут ли хода
+    { id: 'intercept', icon: '📡', name: 'Радиоперехват',
+      note: ic.state === 'match' ? (ic.match.moved ? 'ждём соперника' : '❗ ваш ход')
+          : (ic.state === 'queue' ? 'вы в очереди'
+          : (ic.state === 'cooldown' ? timer(ic.cooldownSec)
+          : `против живого игрока · взнос <span class="ic-gold"></span> ${ic.entry}`)) },
+    { id: 'sniper',  icon: '🔭', name: 'Снайперская дуэль',
+      note: sn.state === 'match' ? (sn.match.acted ? 'ждём соперника' : '❗ ваш ход')
+          : (sn.state === 'queue' ? 'вы в очереди'
+          : (sn.state === 'cooldown' ? timer(sn.cooldownSec)
+          : `дуэль на выдержку · взнос <span class="ic-gold"></span> ${sn.entry}`)) },
+    { id: 'thimble', icon: '🍲', name: 'Напёрстки полевой кухни',
+      note: th.state === 'cooldown' ? timer(th.cooldownSec)
+          : `ставка <span class="ic-gold"></span> ${th.entry}, выигрыш <span class="ic-gold"></span> ${th.win}` },
   ];
   const hubHtml = GAMES.map((g) => `
     <a class="card club-btn" href="#club/${g.id}">
@@ -773,6 +919,9 @@ App.screens.club = async (c, param) => {
     convoy:  { icon: '🚚', name: 'Ночной караван',      html: convoyHtml },
     sapper:  { icon: '🧨', name: 'Сапёрная тропа',       html: sapperHtml },
     bookie:  { icon: '🏁', name: 'Полевой тотализатор',  html: bookieHtml },
+    intercept: { icon: '📡', name: 'Радиоперехват',       html: interceptHtml },
+    sniper:  { icon: '🔭', name: 'Снайперская дуэль',     html: sniperHtml },
+    thimble: { icon: '🍲', name: 'Напёрстки полевой кухни', html: thimbleHtml },
   };
 
   if (PAGES[game]) {
@@ -867,6 +1016,77 @@ App.screens.club = async (c, param) => {
     if (r && r.result === 'empty') UI.toast('Вы ушли, не сделав ни шага.');
     await App.refreshMe(); App.rerender();
   };
+
+  // ── Игры против живого соперника: очередь, ходы, самообновление ──
+  [...c.querySelectorAll('[data-queue]')].forEach((b) => { b.onclick = async () => {
+    if (await post('/api/club/queue/join', { game: b.dataset.queue })) { await App.refreshMe(); App.rerender(); }
+  }; });
+  [...c.querySelectorAll('[data-leave]')].forEach((b) => { b.onclick = async () => {
+    if (await post('/api/club/queue/leave', { game: b.dataset.leave })) { await App.refreshMe(); App.rerender(); }
+  }; });
+
+  // Радиоперехват: укрытие одно, наводок ровно столько, сколько задано.
+  // Кнопка отправки заперта, пока не выбрано и то и другое — иначе ход
+  // ушёл бы наполовину заполненным и жребий доделал бы его за игрока.
+  let icHide = null; const icAim = [];
+  const icSync = () => {
+    const btn = R('ic-send');
+    if (btn) btn.disabled = !(icHide !== null && icAim.length === ic.guesses);
+  };
+  [...c.querySelectorAll('.ic-hide')].forEach((b) => { b.onclick = () => {
+    c.querySelectorAll('.ic-hide').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on'); icHide = Number(b.dataset.cell); icSync();
+  }; });
+  [...c.querySelectorAll('.ic-aim')].forEach((b) => { b.onclick = () => {
+    const n = Number(b.dataset.cell);
+    const at = icAim.indexOf(n);
+    if (at >= 0) { icAim.splice(at, 1); b.classList.remove('on'); }
+    else {
+      if (icAim.length >= ic.guesses) {
+        const drop = icAim.shift();
+        const old = c.querySelector(`.ic-aim[data-cell="${drop}"]`);
+        if (old) old.classList.remove('on');
+      }
+      icAim.push(n); b.classList.add('on');
+    }
+    icSync();
+  }; });
+  if (R('ic-send')) R('ic-send').onclick = async () => {
+    if (await post('/api/club/intercept/move', { hide: icHide, guess: icAim })) {
+      await App.refreshMe(); App.rerender();
+    }
+  };
+
+  // Снайперская дуэль
+  const snAct = async (action) => {
+    if (await post('/api/club/sniper/act', { action })) { await App.refreshMe(); App.rerender(); }
+  };
+  if (R('sn-aim')) R('sn-aim').onclick = () => snAct('aim');
+  if (R('sn-shoot')) R('sn-shoot').onclick = () => snAct('shoot');
+
+  // Пока идёт бой или тикает очередь, страница обновляется сама: часы
+  // общие, и ход соперника случается без участия этого браузера.
+  const liveGame = (game === 'intercept' && ic) || (game === 'sniper' && sn);
+  if (liveGame && (liveGame.state === 'match' || liveGame.state === 'queue')) {
+    const t = setInterval(() => {
+      // Не затираем начатый выбор игрока и не поллим в фоне
+      if (document.hidden || c.querySelector('.ic-cell.on')) return;
+      App.rerender();
+    }, 3000);
+    App._tear = () => clearInterval(t);
+  }
+
+  // Напёрстки полевой кухни
+  [...c.querySelectorAll('.th-pot')].forEach((b) => { b.onclick = async () => {
+    const r = await post('/api/club/thimble/play', { pot: b.dataset.pot });
+    if (r) {
+      const found = c.querySelector(`.th-pot[data-pot="${r.hidden}"]`);
+      if (found) found.classList.add(r.result === 'win' ? 'th-win' : 'th-lose');
+      // Небольшая пауза: иначе перерисовка съедала бы показ котелка
+      await new Promise((res) => setTimeout(res, 700));
+      await App.refreshMe(); App.rerender();
+    }
+  }; });
 
   // Полевой тотализатор
   [...c.querySelectorAll('.bk-bet')].forEach((b) => { b.onclick = async () => {

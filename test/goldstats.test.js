@@ -92,6 +92,32 @@ const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { fa
   ok(noName.length ? `без русского имени: ${noName.join(', ')}` : 'все статьи расхода названы по-русски',
      noName.length === 0);
 
+  console.log('\n── 4. Статьи клуба названы все, включая доходные ──');
+  // Клуб — крупнейший источник золота в игре, и статей у него больше
+  // всего. Ставка списывается, выигрыш начисляется, взнос возвращается —
+  // три разных названия на игру, и любое из них может остаться
+  // английским. Проверка ищет их не по вызовам, а по самим строкам:
+  // касса клуба обязана держать их литералами, а не склеивать из id.
+  const incBody = statsSrc.slice(statsSrc.indexOf('const GOLD_SOURCES'),
+                                statsSrc.indexOf('};', statsSrc.indexOf('const GOLD_SOURCES')));
+  const incNamed = new Set([...incBody.matchAll(/^\s*([a-z_]+)\s*:/gm)].map((m) => m[1]));
+  ok(`словарь доходов разобран (${incNamed.size} имён)`, incNamed.size > 5);
+  const clubSrc = ['club.ts', 'clubMatch.ts']
+    .map((n) => fs.readFileSync(path.join(ROOT, 'src/services', n), 'utf8')).join('\n');
+  const clubKeys = new Set([
+    ...[...clubSrc.matchAll(/(?:addGold|spendGold)\([^)]*'(club_[a-z_]+)'/g)].map((m) => m[1]),
+    ...[...clubSrc.matchAll(/^\s*[a-z]+:\s*'(club_[a-z_]+)',/gm)].map((m) => m[1]),
+  ]);
+  ok(`статьи клуба найдены (${clubKeys.size})`, clubKeys.size >= 6);
+  const clubNoName = [...clubKeys].filter((k) => !named.has(k) && !incNamed.has(k));
+  ok(clubNoName.length ? `статьи клуба без имени: ${clubNoName.join(', ')}`
+     : 'все статьи клуба названы по-русски', clubNoName.length === 0);
+  // Склейка вида 'club_' + game сюда не попадает — а значит, и в сводку
+  // владельца попадёт обрубком. Ловим её отдельно.
+  const glued = [...clubSrc.matchAll(/'(club_)'\s*\+/g)].map((m) => m[1]);
+  ok(glued.length ? `имя статьи склеивается из кусков: ${glued.join(', ')}`
+     : 'имена статей клуба — целые строки, а не склейка', glued.length === 0);
+
   console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });

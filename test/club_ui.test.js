@@ -92,6 +92,16 @@ const baseClub = () => ({
       { id: 'charlie', name: 'Отделение «Чарли»', icon: '🟢', odds: 4.25, payout: 43 },
     ],
   },
+  intercept: {
+    state: 'ready', entry: 5, win: 15, cells: 6, guesses: 2,
+    moveSec: 180, cdMin: 10, ttlMin: 10, waiting: 1, last: null,
+  },
+  sniper: {
+    state: 'ready', entry: 10, win: 25, turns: 7, turnSec: 30,
+    accStart: 20, accStep: 10, accMax: 80, roundsMax: 3,
+    cdMin: 10, ttlMin: 10, waiting: 0, last: null,
+  },
+  thimble: { state: 'ready', pots: 3, entry: 10, win: 20, cdMin: 5, last: null },
   tactic: {
     state: 'ready', needed: 3, rewardMin: 6, rewardMax: 12,
     kinds: [
@@ -222,6 +232,83 @@ const baseLot = () => ({
      !/повторяет то, чем выиграл/.test(html) && /выбирает вслепую/.test(html));
   ok('три кнопки родов войск', c.querySelectorAll('.tactic-kind').length === 3);
 
+  console.log('\n── 5г. Радиоперехват: очередь и ход ──');
+  html = await render(baseClub(), baseLot(), 'intercept');
+  ok('до очереди — кнопка входа', !!c.querySelector('[data-queue="intercept"]'));
+  ok('взнос и выигрыш названы монетой, а не квадратом',
+     /Взнос<\/span>\s*<b><span class="ic-gold"><\/span> 5<\/b>/.test(html) && html.indexOf('🪙') < 0);
+  ok('сетки квадратов до боя нет', c.querySelectorAll('.ic-cell').length === 0);
+  cl = baseClub();
+  cl.intercept = Object.assign({}, cl.intercept, {
+    state: 'queue', queue: { waitedSec: 20, ttlSec: 580 }, waiting: 2 });
+  html = await render(cl, baseLot(), 'intercept');
+  ok('в очереди видно ожидание и выход', /Ищем соперника/.test(html) && !!c.querySelector('[data-leave="intercept"]'));
+  ok('и сколько ещё ждать', /9:40/.test(html));
+  cl = baseClub();
+  cl.intercept = Object.assign({}, cl.intercept, {
+    state: 'match', match: { id: 'i1', foeName: 'Сосед', deadlineSec: 175, moved: false } });
+  html = await render(cl, baseLot(), 'intercept');
+  ok('в бою видно соперника и время хода', /Сосед/.test(html) && /2:55/.test(html));
+  ok('две сетки по шесть квадратов',
+     c.querySelectorAll('.ic-hide').length === 6 && c.querySelectorAll('.ic-aim').length === 6);
+  // Полдхода отправить нельзя: жребий доделал бы его за игрока
+  ok('кнопка отправки заперта до полного хода', c.querySelector('#ic-send').disabled === true);
+  c.querySelector('.ic-hide[data-cell="0"]').onclick();
+  c.querySelector('.ic-aim[data-cell="1"]').onclick();
+  ok('с одной наводкой всё ещё заперта', c.querySelector('#ic-send').disabled === true);
+  c.querySelector('.ic-aim[data-cell="2"]').onclick();
+  ok('с укрытием и двумя наводками — открыта', c.querySelector('#ic-send').disabled === false);
+  // Третья наводка вытесняет первую, а не добавляется к ним
+  c.querySelector('.ic-aim[data-cell="3"]').onclick();
+  ok('наводок остаётся ровно две', c.querySelectorAll('.ic-aim.on').length === 2);
+  ok('и отправка по-прежнему открыта', c.querySelector('#ic-send').disabled === false);
+  cl.intercept.match.moved = true;
+  html = await render(cl, baseLot(), 'intercept');
+  ok('после хода полей выбора нет', c.querySelectorAll('.ic-cell').length === 0);
+  ok('но сказано, чего ждём', /Ждём хода соперника/.test(html));
+
+  console.log('\n── 5д. Снайперская дуэль ──');
+  cl = baseClub();
+  cl.sniper = Object.assign({}, cl.sniper, {
+    state: 'match',
+    match: { id: 's1', foeName: 'Сосед', round: 1, turn: 3, deadlineSec: 18,
+             myAcc: 40, foeAcc: 40, sure: false, acted: null, canAim: true,
+             aimLabel: 'Сделать поправку на ветер', log: [{ round: 1, turn: 2, text: 'Оба выжидают.' }] },
+  });
+  html = await render(cl, baseLot(), 'sniper');
+  ok('видно раунд и ход', /Раунд 1 · ход 3 из 7/.test(html));
+  // Точность соперника видна: дуэль симметричная, и решение «стрелять
+  // или ждать» принимается по обоим числам, а не по своему одному.
+  const snSides = [...c.querySelectorAll('.sn-side')];
+  ok('и точность обоих', snSides.length === 2 && snSides.every((s) => /\d+%/.test(s.textContent)));
+  ok('под чужим числом — имя соперника', /Сосед/.test(snSides[1].textContent));
+  ok('подпись прицела — с сервера, по ходу', /Сделать поправку на ветер/.test(html));
+  ok('выстрел показывает свой шанс', /Выстрелить · 40%/.test(html));
+  ok('обе кнопки на месте', !!c.querySelector('#sn-aim') && !!c.querySelector('#sn-shoot'));
+  ok('журнал дуэли виден', /Оба выжидают/.test(html));
+  cl.sniper.match.acted = 'aim';
+  html = await render(cl, baseLot(), 'sniper');
+  ok('после хода кнопок нет', !c.querySelector('#sn-aim') && !c.querySelector('#sn-shoot'));
+  cl.sniper.match.acted = null;
+  cl.sniper.match.turn = 7; cl.sniper.match.canAim = false; cl.sniper.match.myAcc = 80;
+  html = await render(cl, baseLot(), 'sniper');
+  ok('на последнем ходу прицела нет', !c.querySelector('#sn-aim') && !!c.querySelector('#sn-shoot'));
+  cl.sniper.match.turn = 4; cl.sniper.match.canAim = true; cl.sniper.match.sure = true; cl.sniper.match.myAcc = 100;
+  html = await render(cl, baseLot(), 'sniper');
+  ok('открывшегося соперника видно', /следующий выстрел наверняка/.test(html) && /100%/.test(html));
+
+  console.log('\n── 5е. Напёрстки полевой кухни ──');
+  html = await render(baseClub(), baseLot(), 'thimble');
+  ok('три котелка', c.querySelectorAll('.th-pot').length === 3);
+  ok('ставка и выигрыш монетой', /<span class="ic-gold"><\/span> 10/.test(html)
+     && /<span class="ic-gold"><\/span> 20/.test(html));
+  cl = baseClub();
+  cl.thimble = Object.assign({}, cl.thimble, { state: 'cooldown', cooldownSec: 240,
+    last: { pot: 0, hidden: 2, won: false } });
+  html = await render(cl, baseLot(), 'thimble');
+  ok('на перерыве котелков нет', c.querySelectorAll('.th-pot').length === 0);
+  ok('но видно, где был паёк', /№3/.test(html) && /4:00/.test(html));
+
   console.log('\n── 7. Военный займ ──');
   html = await render(baseClub(), baseLot(), 'lottery');
   ok('банк крупно', /lot-pot-num/.test(html) && /600/.test(html));
@@ -299,9 +386,10 @@ const baseLot = () => ({
   // правила платной игры показать в такой простыне было негде.
   html = await render(baseClub(), baseLot());        // без адреса игры
   ok('заголовок клуба', /Клуб офицеров/.test(html));
-  ok('кнопок ровно семь — по числу игр', c.querySelectorAll('.club-btn').length === 7);
+  ok('кнопок ровно десять — по числу игр', c.querySelectorAll('.club-btn').length === 10);
   ok('каждая ведёт на свою страницу',
-     ['pref', 'safe', 'lottery', 'tactic', 'convoy', 'sapper', 'bookie']
+     ['pref', 'safe', 'lottery', 'tactic', 'convoy', 'sapper', 'bookie',
+      'intercept', 'sniper', 'thimble']
        .every((g) => !!c.querySelector('.club-btn[href="#club/' + g + '"]')));
   ok('на кнопке видно состояние игры — заходить ради проверки не надо',
      /банк <span class="ic-gold"><\/span> 600/.test(html)

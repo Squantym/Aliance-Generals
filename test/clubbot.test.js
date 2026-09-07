@@ -58,7 +58,12 @@ const nx = [];
   ok('beat() существует и зовёт antibot', /function beat\(/.test(src) && /antibot\.track\(/.test(src));
   ok('и применяет замедление', /antibot\.throttleSec\(/.test(src));
   // Каждая экспортируемая функция клуба обязана пройти через beat()
-  const exported = (src.match(/export = \{([\s\S]*?)\};/) || [])[1] || '';
+  const exportedAll = (src.match(/export = \{([\s\S]*?)\};/) || [])[1] || '';
+  // kassa — не игра, а касса клуба: её зовут ИЗ игр, каждая из которых
+  // уже прошла через пульс. Требовать beat() от payout() и cdLeft()
+  // значит стучать в детектор дважды за одно действие.
+  const kassaAt = exportedAll.indexOf('kassa:');
+  const exported = kassaAt >= 0 ? exportedAll.slice(0, kassaAt) : exportedAll;
   const names = exported.split(/[,\s]+/).map((x) => x.trim()).filter((x) => /^[a-zA-Z]/.test(x));
   ok(`экспортируемых функций найдено (${names.length})`, names.length >= 10);
   const noPulse = [];
@@ -72,6 +77,21 @@ const nx = [];
   }
   ok(noPulse.length ? `мимо пульса ходят: ${noPulse.join(', ')}` : 'мимо пульса не ходит ни одна игра',
      noPulse.length === 0);
+
+  // Игры против живого соперника живут в отдельном модуле — и это как
+  // раз тот случай, когда про пульс легче всего забыть: файл другой,
+  // касса чужая, а золото то же самое.
+  const mSrc = fs.readFileSync(path.join(ROOT, 'src/services/clubMatch.ts'), 'utf8');
+  const mNoPulse = [];
+  for (const name of ['enqueue', 'leaveQueue', 'interceptMove', 'sniperAct']) {
+    const at = mSrc.indexOf('function ' + name + '(');
+    if (at < 0) { mNoPulse.push(name + ' (нет такой)'); continue; }
+    let end = mSrc.indexOf('\nfunction ', at + 1);
+    if (end < 0) end = mSrc.length;
+    if (!/\bbeat\(user,/.test(mSrc.slice(at, end))) mNoPulse.push(name);
+  }
+  ok(mNoPulse.length ? `в живых играх мимо пульса: ${mNoPulse.join(', ')}`
+     : 'живые игры тоже стучат в пульс', mNoPulse.length === 0);
 
   console.log('\n── 2. Машинный ритм ловится ──');
   // До правки эта проверка была бы красной при любом числе действий.

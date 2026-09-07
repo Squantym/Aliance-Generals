@@ -5101,3 +5101,57 @@ body.is-test-world { padding-top: 22px; }
 }
 .sp-cell:hover:not(:disabled) { border-color: var(--gold); background: rgba(233,199,92,.08); }
 .sp-cell.sp-open { border-color: var(--green); background: rgba(90,180,90,.10); cursor: default; }
+
+/* ── Радиоперехват: две сетки квадратов, укрытие и наводки ── */
+.ic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px; }
+.ic-cell {
+  aspect-ratio: 1.6 / 1; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(255,255,255,.02); color: var(--text);
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.ic-cell:hover { border-color: var(--gold); }
+.ic-cell.on { border-color: var(--orange); background: rgba(214,138,46,.16); color: var(--gold); }
+
+/* ── Снайперская дуэль: два стрелка и журнал ── */
+.sn-duel {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 10px 0 6px;
+}
+.sn-side { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; }
+.sn-side b { font-size: 22px; }
+.sn-side b.sn-sure { color: var(--red); }
+.sn-vs { font-size: 20px; opacity: .7; }
+.sn-log {
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
+  font-size: 12px; color: var(--muted); max-height: 120px; overflow-y: auto;
+}
+.sn-log b { color: var(--gold); }
+
+/* ── Напёрстки: три котелка ── */
+.th-row { display: flex; gap: 8px; }
+.th-pot {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 14px 0 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: rgba(255,255,255,.02); color: var(--text); font-size: 30px; cursor: pointer;
+  transition: border-color .15s ease, transform .1s ease;
+}
+.th-pot span { font-size: 12px; color: var(--muted); }
+.th-pot:hover { border-color: var(--gold); transform: translateY(-2px); }
+.th-pot.th-win { border-color: var(--green); background: rgba(90,180,90,.12); }
+.th-pot.th-lose { border-color: var(--red); background: rgba(180,70,60,.10); }
+
+/* ── Полоска клуба: игрок в очереди или в бою ──
+   Липнет к самому верху, а шапка при этом опускается под неё: перекрыть
+   ресурсы игрока полоска не должна. */
+.club-live {
+  position: sticky; top: 0; z-index: 21;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 7px 12px; font-size: 12.5px; color: #fff; cursor: pointer;
+  background: linear-gradient(90deg, #6b4a1b, #8a5f22);
+  border-bottom: 1px solid rgba(0,0,0,.4);
+}
+.club-live b { color: #ffe08a; }
+.club-live.act { background: linear-gradient(90deg, #8e3326, #a8452e); }
+.club-live.act b { color: #ffd7c2; }
+body.has-club-bar #header { top: 32px; }

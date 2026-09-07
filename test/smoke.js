@@ -491,6 +491,48 @@ async function main() {
   const tacBad = await post('/api/club/tactic/play', A, { kind: 'бронепоезд' });
   clubCheck('дуэль: чужой род войск отклонён', tacBad, (r) => r.status === 400, started(tacStart));
 
+  // Напёрстки: игра платная, у свежего игрока золота может не быть
+  check('напёрстки: ставка и выигрыш названы до игры',
+        club.thimble.entry > 0 && club.thimble.win > club.thimble.entry && club.thimble.pots === 3,
+        'thimble: ' + JSON.stringify(club.thimble).slice(0, 120));
+  const thPlay = await post('/api/club/thimble/play', A, { pot: 0 });
+  if (thPlay.status === 400 && /Ставка/i.test(String((thPlay.data || {}).error || ''))) {
+    skip('напёрстки: партия сыграна', 'у игрока меньше золота, чем стоит ставка');
+  } else {
+    clubCheck('напёрстки: партия сыграна', thPlay,
+              (r) => ['win', 'lose'].includes(r.data.result) && typeof r.data.hidden === 'number');
+  }
+
+  // Живая очередь: соперника в дымовом тесте нет и быть не должно —
+  // проверяем, что игрок встаёт в очередь, видит это с любого экрана и
+  // может выйти, забрав взнос.
+  const liveIdle = await get('/api/club/live', A);
+  check('клуб: полоска очереди отвечает', liveIdle.status === 200 && !!liveIdle.data.kind,
+        'ответ: ' + liveIdle.status + ' ' + JSON.stringify(liveIdle.data).slice(0, 120));
+  const goldQ = (await get('/api/me', A)).data.gold || 0;
+  const qJoin = await post('/api/club/queue/join', A, { game: 'intercept' });
+  if (qJoin.status === 400 && /Ставка|перерыв|Штаб проверяет/i.test(String((qJoin.data || {}).error || ''))) {
+    skip('радиоперехват: очередь принимает', 'нет золота на взнос или общий перерыв');
+    skip('радиоперехват: выход возвращает взнос', 'в очередь не вставали');
+  } else {
+    check('радиоперехват: очередь принимает', qJoin.status === 200 && qJoin.data.state === 'queue',
+          'ответ: ' + qJoin.status + ' ' + JSON.stringify(qJoin.data).slice(0, 120));
+    const liveQ = await get('/api/club/live', A);
+    check('радиоперехват: очередь видна с любого экрана', liveQ.data.kind === 'queue',
+          'live: ' + JSON.stringify(liveQ.data).slice(0, 120));
+    const qLeave = await post('/api/club/queue/leave', A, { game: 'intercept' });
+    check('радиоперехват: выход возвращает взнос',
+          qLeave.status === 200 && ((await get('/api/me', A)).data.gold || 0) === goldQ,
+          'ответ: ' + qLeave.status + ' ' + JSON.stringify(qLeave.data).slice(0, 120));
+  }
+  // Ход без боя обязан быть отказом, а не тихим «ок»
+  const noMatch = await post('/api/club/intercept/move', A, { hide: 0, guess: [1, 2] });
+  check('радиоперехват: ход без боя отклонён', noMatch.status === 400,
+        'ответ: ' + noMatch.status + ' ' + JSON.stringify(noMatch.data).slice(0, 120));
+  const noDuel = await post('/api/club/sniper/act', A, { action: 'shoot' });
+  check('дуэль снайперов: выстрел без боя отклонён', noDuel.status === 400,
+        'ответ: ' + noDuel.status + ' ' + JSON.stringify(noDuel.data).slice(0, 120));
+
   // Защита от скриптов: сам этот тест ходит машинной скоростью, значит
   // клуб обязан был это заметить. Если ни один club-запрос выше не
   // получил придержку — детектор снова мёртв, как было до 201.

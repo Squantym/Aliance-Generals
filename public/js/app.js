@@ -478,6 +478,11 @@ const App = {
     // Периодическая синхронизация с сервером и посекундный тик шапки
     // pollMe вызывается только при действиях игрока
     setInterval(() => App.tickHeader(), 1000);
+    // Очередь и живой бой в клубе: пять секунд — компромисс между
+    // «узнать вовремя» и «не поллить сервер зря». Ход в дуэли длится
+    // тридцать секунд, так что об истечении игрок узнаёт заранее.
+    App._clubTick();
+    setInterval(() => { if (!document.hidden) App._clubTick(); }, 5000);
     // Автообновление боевого окна, пока оно открыто (чтобы видеть смену фаз
     // prep→active→done и действия других игроков без ручного нажатия).
     setInterval(() => {
@@ -3541,6 +3546,48 @@ const App = {
       } catch (e) { UI.toast('⛔ ' + e.message); }
       close();
     };
+  },
+
+  // ── Полоска клуба: очередь и живой бой ───────────────────────────
+  // Игры «Радиоперехват» и «Снайперская дуэль» идут ПО ЧАСАМ и против
+  // живого человека: пока игрок ходит по другим экранам, его ход может
+  // истечь, и за него сходит жребий. Поэтому состояние показывается с
+  // любого экрана, а не только из клуба.
+  _clubBarKind: null,
+  async _clubTick() {
+    if (!API.token()) return;
+    let d = null;
+    try { d = await API.get('/api/club/live'); } catch (e) { return; }
+    // Соперник нашёлся, пока игрок был на другом экране — сказать об этом
+    // один раз, а не на каждом опросе.
+    if (d && d.kind === 'match' && App._clubBarKind === 'queue') {
+      UI.toast(`⚔ Соперник найден: ${d.foeName}. Ваш ход!`);
+    }
+    App._clubBarKind = d ? d.kind : null;
+    App._clubBar(d);
+  },
+  _clubBar(d) {
+    const wrap = document.getElementById('wrap');
+    let el = document.getElementById('club-live-bar');
+    if (!d || d.kind === 'none' || !wrap) {
+      if (el) el.remove();
+      document.body.classList.remove('has-club-bar');
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'club-live-bar';
+      wrap.insertBefore(el, wrap.firstChild);
+    }
+    document.body.classList.add('has-club-bar');
+    const myMove = d.kind === 'match' && !d.moved;
+    el.className = 'club-live' + (myMove ? ' act' : '');
+    el.innerHTML = d.kind === 'queue'
+      ? `⏳ Очередь: <b>${UI.esc(d.title)}</b> · ищем соперника ${UI.fmtTimer(d.ttlSec)} — открыть`
+      : (myMove
+        ? `❗ <b>${UI.esc(d.title)}</b> против ${UI.esc(d.foeName)} — ваш ход, ${UI.fmtTimer(d.deadlineSec)}`
+        : `⚔ <b>${UI.esc(d.title)}</b> против ${UI.esc(d.foeName)} — ждём соперника ${UI.fmtTimer(d.deadlineSec)}`);
+    el.onclick = () => App.go('club/' + d.game);
   },
 
   // Баннер нападения террористов на шахту — на любом экране; ведёт в «Шахты».

@@ -13,11 +13,17 @@
 //
 // Мини-игры:
 //   1) Военный преферанс — добери до 21, не перебрав, против генерала.
-//   2) Сейф штаба — взломай 4-значный код («быки и коровы»).
-//   3) Артиллерийская пристрелка — угадай дистанцию (перелёт/недолёт).
-//   4) Военные кости — 5 кубиков и 2 переброса, собери комбинацию.
-//   5) Штабной аукцион — слепые ставки очками влияния против генералов.
+//   2) Сейф штаба — общий на весь мир код («быки и коровы»).
+//   3) Ночной караван — маршрут против засад живых игроков.
+//   4) Сапёрная тропа — идти дальше или забрать набранное.
+//   5) Полевой тотализатор — ставка на одно из трёх отделений.
+//   6) Тактическая дуэль — камень-ножницы-бумага на родах войск.
+//   9) Напёрстки полевой кухни — три котелка, ставка и честная треть.
 // Состояние каждой игры хранится в user.club.
+//
+// Игры 7 и 8 — «Радиоперехват» и «Снайперская дуэль» — идут против
+// живого человека, и состояние у них общее на двоих. Они живут в
+// src/services/clubMatch.ts, но золото берут отсюда же: через kassa.
 // ===================================================================
 
 import config = require('../../config/gameConfig');
@@ -68,7 +74,7 @@ function payout(user: User, game: string, want: number, notices: Notices, shared
   const give = Math.min(wanted, b.left);
   if (give > 0) {
     c.dayGold = b.spent + give;
-    player.addGold(user, give, 'club_' + game);
+    player.addGold(user, give, GAIN_SRC[game] || 'club_other');
   }
   // Общий кулдаун взводится за ПОБЕДУ, а не за выданное золото: упёршись
   // в потолок, игрок продолжает играть в том же темпе, просто без денег.
@@ -94,6 +100,59 @@ function payout(user: User, game: string, want: number, notices: Notices, shared
 function refundBudget(c: any, amount: number): void {
   const b = budget(c);
   c.dayGold = Math.max(0, b.spent - Math.max(0, Math.round(amount)));
+}
+
+// Статьи расхода и возврата — строками, а не склейкой из имени игры.
+// В сводке владельца каждая статья показывается по-русски (stats.ts), и
+// склеенное имя попало бы туда как «club_». Забыл строку — игра просто
+// не возьмёт взнос, и это видно сразу.
+const GAIN_SRC: Record<string, string> = {
+  pref:      'club_pref',
+  safe:      'club_safe',
+  convoy:    'club_convoy',
+  sapper:    'club_sapper',
+  bookie:    'club_bookie',
+  tactic:    'club_tactic',
+  thimble:   'club_thimble',
+  intercept: 'club_intercept',
+  sniper:    'club_sniper',
+};
+const STAKE_SRC: Record<string, string> = {
+  thimble:   'club_thimble_stake',
+  intercept: 'club_intercept_stake',
+  sniper:    'club_sniper_stake',
+};
+const BACK_SRC: Record<string, string> = {
+  thimble:   'club_thimble_back',
+  intercept: 'club_intercept_back',
+  sniper:    'club_sniper_back',
+};
+
+// Взнос за платную игру: и золото, и запись в бюджет — одним местом.
+// Раньше каждая игра делала это сама, и новая игра легко забывала
+// вернуть взнос в бюджет — потолок начинал считать валом.
+function takeStake(user: User, game: string, amount: number): void {
+  const need = Math.max(0, Math.round(amount));
+  const src = STAKE_SRC[game];
+  if (!src) throw new u.ApiError('Игра не заведена в кассе клуба');
+  if ((user.gold || 0) < need) {
+    throw new u.ApiError(`Ставка — 🪙 ${need}, у вас ${user.gold || 0}`);
+  }
+  player.spendGold(user, need, src);
+  refundBudget(clubState(user), need);
+}
+
+// Возврат взноса: ничья, отменённая очередь, несостоявшийся матч.
+// Бюджет откатываем обратно — иначе возврат считался бы выигрышем и
+// расширял суточный потолок на ровном месте.
+function giveBack(user: User, game: string, amount: number): number {
+  const back = Math.max(0, Math.round(amount));
+  if (back <= 0) return 0;
+  const c = clubState(user);
+  const b = budget(c);
+  c.dayGold = b.spent + back;
+  player.addGold(user, back, BACK_SRC[game] || 'club_back');
+  return back;
 }
 
 // ── ПУЛЬС: каждое действие клуба проходит через эту функцию ───────
@@ -161,6 +220,11 @@ function view(user: User) {
     sapper: sapperView(c),
     bookie: bookieView(c),
     tactic: tacticView(c),
+    thimble: thimbleView(c),
+    // Игры против живого соперника живут отдельным модулем: у них общая
+    // очередь, общие часы и состояние на двоих, а не в user.club.
+    intercept: require('./clubMatch').interceptView(user),
+    sniper: require('./clubMatch').sniperView(user),
   };
 }
 
@@ -754,6 +818,55 @@ function tacticPlay(user: User, kind: any, notices: Notices) {
   return { result: res, my: d.my, foe: d.foe, rounds: d.rounds, last: { mine, foe, res } };
 }
 
+// ===================================================================
+// 9. НАПЁРСТКИ ПОЛЕВОЙ КУХНИ — три котелка, под одним паёк.
+//
+//    Самая короткая игра клуба: одно нажатие, мгновенный ответ. Держится
+//    она не на защите, а на арифметике — ставка 10, выигрыш 20, шанс
+//    ровно треть. Ожидание 6.7 против 10, и никакая скорость перебора
+//    этого не меняет: чем больше партий, тем ближе результат к минусу.
+//    Котелок выбирается сервером в момент хода, поэтому «подсмотреть»
+//    его в ответе нельзя — его ещё не существует.
+// ===================================================================
+function thimbleView(c: any) {
+  const left = cdLeft(c, 'thimble');
+  return {
+    state: left > 0 ? 'cooldown' : 'ready',
+    cooldownSec: left,
+    pots: C.THIMBLE_POTS,
+    entry: C.THIMBLE_ENTRY,
+    win: C.THIMBLE_WIN,
+    cdMin: C.THIMBLE_CD_MIN,
+    last: c.thimbLast || null,
+  };
+}
+
+function thimblePlay(user: User, pot: any, notices: Notices) {
+  const c = clubState(user);
+  beat(user, 'thimble');
+  if (cdLeft(c, 'thimble') > 0) throw new u.ApiError('Кашевар перекладывает котелки. Загляните позже.');
+  gate(c);
+  const n = u.toInt(pot, -1);
+  if (n < 0 || n >= C.THIMBLE_POTS) throw new u.ApiError('Выберите котелок');
+
+  takeStake(user, 'thimble', C.THIMBLE_ENTRY);
+  require('./dailyQuests').bump(user, 'clubPlayed', 1);
+
+  const hidden = u.rnd(0, C.THIMBLE_POTS - 1);
+  const won = hidden === n;
+  setCd(c, 'thimble', C.THIMBLE_CD_MIN);
+  let reward = 0;
+  if (won) {
+    // Игра платная — общий перерыв на весь клуб она не взводит
+    reward = payout(user, 'thimble', C.THIMBLE_WIN, notices, false);
+    notices.push(`🍲 Паёк ваш!${reward ? ' +🪙 ' + reward : ''}`);
+  } else {
+    notices.push('🍲 Пусто. Паёк был под другим котелком.');
+  }
+  c.thimbLast = { pot: n, hidden, won, at: Date.now() };
+  return { result: won ? 'win' : 'lose', pot: n, hidden, reward, entry: C.THIMBLE_ENTRY };
+}
+
 export = {
   view,
   prefStart, prefHit, prefStand,
@@ -762,4 +875,10 @@ export = {
   sapperStart, sapperStep, sapperTake,
   bookieBet,
   tacticStart, tacticPlay,
+  thimblePlay,
+  // Касса клуба для игр, которые живут в другом модуле (clubMatch).
+  // Отдана намеренно одним объектом: чтобы новая игра не завела себе
+  // второй путь к золоту в обход потолка, ей нечем это сделать — кроме
+  // этих функций, наружу из клуба денег не выходит.
+  kassa: { clubState, budget, payout, takeStake, giveBack, gate, beat, setCd, cdLeft },
 };

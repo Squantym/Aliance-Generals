@@ -619,6 +619,17 @@ function registerRoutes(app: any) {
 
   app.add('POST', '/api/club/tactic/start', act((req) => club.tacticStart(req.user)));
   app.add('POST', '/api/club/tactic/play',  act((req, n) => club.tacticPlay(req.user, req.body.kind, n)));
+  // Напёрстки полевой кухни
+  app.add('POST', '/api/club/thimble/play', act((req, n) => club.thimblePlay(req.user, req.body.pot, n)));
+
+  // Игры против живого соперника: общая очередь, свои ходы у каждой.
+  // Полоска сверху опрашивает /api/club/live с любого экрана, поэтому
+  // ответ там намеренно крошечный.
+  app.add('GET',  '/api/club/live', (req) => require('./services/clubMatch').liveView(req.user));
+  app.add('POST', '/api/club/queue/join',  act((req, n) => require('./services/clubMatch').enqueue(req.user, req.body.game, n)));
+  app.add('POST', '/api/club/queue/leave', act((req, n) => require('./services/clubMatch').leaveQueue(req.user, req.body.game, n)));
+  app.add('POST', '/api/club/intercept/move', act((req, n) => require('./services/clubMatch').interceptMove(req.user, req.body.hide, req.body.guess, n)));
+  app.add('POST', '/api/club/sniper/act',     act((req, n) => require('./services/clubMatch').sniperAct(req.user, req.body.action, n)));
 
   // Военный займ (лотерея). Тиражи разыгрывает игровой тик, здесь только
   // просмотр и покупка билетов.

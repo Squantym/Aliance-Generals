@@ -33,9 +33,9 @@ ok(/recent = humanizeLogs\(/.test(routes), 'и карточка игрока');
 for (const [p, body, expect] of [
   ['/api/war/attack', { targetName: 'Боец' }, 'Атаковал'],
   ['/api/missions/start', { confId: 'x' }, 'спецоперации'],
-  ['/api/club/dice/start', {}, 'кости'],
+  ['/api/club/sniper/act', { action: 'shoot' }, 'выстрел'],
   ['/api/club/pref/hit', {}, 'преферанс'],
-  ['/api/club/bids/play', {}, 'аукцион'],
+  ['/api/club/thimble/play', { pot: 1 }, 'напёрстк'],
 ]) {
   const text = tr.describe(p, body);
   ok(!!text && text.includes(expect), `«${p}» → «${(text || '—').slice(0, 46)}»`);

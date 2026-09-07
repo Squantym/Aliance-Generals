@@ -69,6 +69,15 @@ function conflictName(id: string): string {
   const x = config.CONFLICT_BY_ID[id];
   return x ? x.name : String(id);
 }
+// Игры клуба с живой очередью: в журнале должно быть название, а не id
+function clubGameName(id: any): string {
+  switch (String(id || '')) {
+    case 'intercept': return 'радиоперехват';
+    case 'sniper':    return 'снайперская дуэль';
+    default:          return 'игра клуба';
+  }
+}
+
 function tacticKindName(id: any): string {
   switch (String(id || '')) {
     case 'ground': return 'наземные войска';
@@ -274,13 +283,6 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/pref/stand': return '🃏 Клуб (преферанс): остановился';
       case '/api/club/safe/try':
         return '🔐 Клуб (общий сейф): попытка кода ' + String(body.guess || '');
-      case '/api/club/raid/start': return '🌒 Клуб: вывел группу в ночной рейд';
-      case '/api/club/raid/push':  return '🌒 Клуб (рейд): пошёл на следующий рубеж';
-      case '/api/club/raid/pull':  return '🌒 Клуб (рейд): отошёл с добычей';
-      case '/api/club/dice/start':  return '🎲 Клуб: бросил военные кости';
-      case '/api/club/dice/reroll': return '🎲 Клуб (кости): переброс';
-      case '/api/club/dice/finish': return '🎲 Клуб (кости): забрал результат';
-      case '/api/club/bids/play':  return '💼 Клуб: сделал ставки на штабном аукционе';
       case '/api/club/convoy/go':
         return '🚚 Клуб (караван): вышел маршрутом ' + String(body.route || '—');
       case '/api/club/sapper/start': return '🧨 Клуб: вышел на сапёрную тропу';
@@ -290,6 +292,16 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/club/tactic/start': return '⚔ Клуб: вызвал генерала на тактическую дуэль';
       case '/api/club/tactic/play':
         return '⚔ Клуб (дуэль): выставил ' + tacticKindName(body.kind);
+      case '/api/club/thimble/play': return '🍲 Клуб (напёрстки): ставка на котелок ' + String(body.pot);
+      case '/api/club/queue/join':
+        return '⏳ Клуб: встал в очередь — ' + clubGameName(body.game);
+      case '/api/club/queue/leave':
+        return '⏳ Клуб: вышел из очереди — ' + clubGameName(body.game);
+      case '/api/club/intercept/move':
+        return '📡 Клуб (радиоперехват): штаб в ' + String(body.hide)
+             + ', наводки ' + (Array.isArray(body.guess) ? body.guess.join(', ') : '—');
+      case '/api/club/sniper/act':
+        return '🔭 Клуб (дуэль снайперов): ' + (body.action === 'shoot' ? 'выстрелил' : 'прицелился');
 
       // ── Военный займ (лотерея) ─────────────────────────────────
       case '/api/lottery/buy':
