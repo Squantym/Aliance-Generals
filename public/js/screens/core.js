@@ -1103,8 +1103,9 @@ App.screens.profile = async (c, param) => {
             : ''}
         </div>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
-      ${!own && App.me.alliance && App.me.alliance.leaderId === App.me.id && !p.alliance
-        ? `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс «${UI.esc(App.me.alliance.name)}»</button>` : ''}
+      ${(!own && !isBot) ? (p.myAlly
+        ? `<p class="muted small mt center">🤝 Уже в вашем альянсе</p>`
+        : `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс</button>`) : ''}
       ${!own && App.me.legion && App.me.legion.leaderId === App.me.id && !p.legion
         ? `<button class="btn btn-green mt" id="pf-invite-legion">🛡 Пригласить в легион «${UI.esc(App.me.legion.name)}»</button>` : ''}
     </div>
@@ -1369,7 +1370,12 @@ App.screens.profile = async (c, param) => {
   };
   const inv1 = document.getElementById('pf-invite-alliance');
   const inv2 = document.getElementById('pf-invite-legion');
-  if (inv1) inv1.onclick = invite('alliance');
+  // Личный альянс: заявка уходит по id и висит час
+  if (inv1) inv1.onclick = async () => {
+    inv1.disabled = true;
+    try { await API.post('/api/alliance/invite', { targetId: p.id }); }
+    catch (e) { inv1.disabled = false; UI.toast('⛔ ' + e.message); }
+  };
   if (inv2) inv2.onclick = invite('legion');
 };
 

@@ -31,6 +31,19 @@ const MERC = () => ([{ id: 'cmd_envoy_invite_unlimited', name: 'Эйден Ро�
   p.level = 100;                 // лимит альянса 1000
   p.allianceMembers = 0; p.allianceRoster = []; p.allianceDiplomats = 4;
   p.allianceInviteLog = []; p.effects = [];
+  // Цели для приглашений: ботов в альянс больше не зовут, значит
+  // нужны живые адресаты — по одному на каждую отправленную заявку.
+  const U = player.users();
+  const targets = [];
+  for (let i = 0; i < 30; i++) {
+    const id = 'live' + i;
+    U[id] = { id, name: 'Союзник' + i, level: 50, isBot: false, allianceRoster: [] };
+    targets.push(U[id]);
+  }
+  let next = 0;
+  const inviteOne = () => pa.invitePlayer(p, targets[next++].name, []);
+  const inbox = () => db.load('alliance_invites', {});
+  const sentTo = (t) => (inbox()[t.id] || []).some((x) => x.fromId === p.id);
 
   console.log('\n[1] Без наёмника: лимит работает как раньше');
   let v = pa.view(p);
@@ -40,7 +53,7 @@ const MERC = () => ([{ id: 'cmd_envoy_invite_unlimited', name: 'Эйден Ро�
   for (let i = 0; i < v.inviteLimit; i++) p.allianceInviteLog.push(Date.now());
   v = pa.view(p);
   eq('заявок не осталось', v.invitesLeft, 0);
-  throws('без наёмника приглашение отклонено', () => pa.inviteBot(p, []));
+  throws('без наёмника приглашение отклонено', () => inviteOne());
 
   console.log('\n[2] С наёмником: view сообщает о безлимите');
   p.effects = MERC();
@@ -51,12 +64,14 @@ const MERC = () => ([{ id: 'cmd_envoy_invite_unlimited', name: 'Эйден Ро�
   eq('заявок по-прежнему 0 (но это не мешает)', v.invitesLeft, 0);
 
   console.log('\n[3] Кнопка НЕ гаснет: приглашение проходит при 0 заявок');
-  const before = p.allianceMembers;
-  pa.inviteBot(p, []);
-  eq('боец принят несмотря на 0 заявок', p.allianceMembers, before + 1);
+  const base = next;
+  const first = targets[next];
+  inviteOne();
+  ok('заявка ушла несмотря на 0 оставшихся', sentTo(first));
   // Много подряд
-  for (let i = 0; i < 15; i++) pa.inviteBot(p, []);
-  eq('принято 16 бойцов подряд', p.allianceMembers, before + 16);
+  for (let i = 0; i < 15; i++) inviteOne();
+  eq('отправлено 16 заявок подряд', targets.filter(sentTo).length, 16);
+  ok('каждая лежит у своего адресата', targets.slice(base, base + 16).every(sentTo));
 
   console.log('\n[4] Заявки НЕ расходуются, пока активен наёмник');
   const logLen = (p.allianceInviteLog || []).length;
@@ -71,23 +86,24 @@ const MERC = () => ([{ id: 'cmd_envoy_invite_unlimited', name: 'Эйден Ро�
   p.effects = MERC();
   p.allianceInviteLog = [];
   p.level = 1;                    // лимит альянса = 10
-  p.allianceMembers = 10; p.allianceRoster = new Array(10).fill({ id: 'x', name: 'b', isBot: true });
+  p.allianceMembers = 10;
+  p.allianceRoster = []; for (let i = 0; i < 10; i++) p.allianceRoster.push({ id: 'old' + i, name: 'Ветеран' + i });
   v = pa.view(p);
   eq('лимит альянса 10', v.maxMembers, 10);
   ok('состав упёрся в лимит', v.members >= v.maxMembers);
-  throws('при полном альянсе приглашение отклонено даже с наёмником', () => pa.inviteBot(p, []));
+  throws('при полном альянсе приглашение отклонено даже с наёмником', () => inviteOne());
   // Освободили место — снова можно
   p.allianceMembers = 9; p.allianceRoster.pop();
-  pa.inviteBot(p, []);
-  eq('после освобождения места приглашение прошло', p.allianceMembers, 10);
+  const late = targets[next];
+  inviteOne();
+  ok('после освобождения места заявка прошла', sentTo(late));
 
   console.log('\n[6] Фронт: кнопка блокируется по правильному условию');
   const src = fs.readFileSync(path.join(ROOT, 'public/js/screens/social.js'), 'utf8');
-  ok('disabled учитывает безлимит', /data\.invitesLeft <= 0 && !data\.unlimitedInvite/.test(src));
-  ok('лимит альянса по-прежнему блокирует', /data\.members >= data\.maxMembers/.test(src));
   ok('показывается «без лимита»', /без лимита/.test(src));
-  ok('текст кнопки меняется при безлимите', /Пригласить бойца \(без лимита\)/.test(src));
+  ok('игроку объясняют, откуда безлимит', /снял почасовой лимит заявок/.test(src));
   ok('в групповом альянсе тоже учтено', /g\.unlimitedInvite/.test(src));
+  ok('набора ботов на экране больше нет', !/invite-bot/.test(src));
 
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);

@@ -42,7 +42,7 @@ console.log('\n[2] Предложение аптечки: сервер откл�
 }
 
 // ===================================================================
-console.log('\n[3] Набор личного альянса (кнопка «Пригласить бойца») засчитывается в сезон');
+console.log('\n[3] Набор личного альянса засчитывается в сезон');
 {
   const usersMap = db.load('users', {});
   for (const k of Object.keys(usersMap)) delete usersMap[k];
@@ -56,10 +56,12 @@ console.log('\n[3] Набор личного альянса (кнопка «Пр
   const notices = { push: () => {} };
 
   const u1 = mkUser('u_pa1', 'Набирающий');
-  usersMap['u_pa1'] = u1;
+  const u1b = mkUser('u_pa1b', 'Откликнувшийся');
+  usersMap['u_pa1'] = u1; usersMap['u_pa1b'] = u1b;
   const before = (u1.weekly && u1.weekly.alliance) || 0;
-  palliance.inviteBot(u1, notices);
-  ok('после набора бота weekly создан', !!u1.weekly);
+  palliance.invitePlayer(u1, 'Откликнувшийся', notices);
+  palliance.acceptInvite(u1b, u1.id, notices);
+  ok('после набора weekly создан', !!u1.weekly);
   eq('очко набора альянса засчитано (alliance=1)', u1.weekly.alliance, before + 1);
   ok('очки сезона (rating) начислены', u1.weekly.rating >= c.SEASON.points.allianceRecruit);
 

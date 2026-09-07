@@ -15,8 +15,36 @@ const A = config.ALLIANCE;
 const INVITE_BASE_PER_HOUR = 5;      // базовый лимит заявок в час
 const DIPLOMAT_BASE_COST = 200;      // первый дипломат — 200 золота
 const HOUR_MS = 3600 * 1000;
+// Сколько живёт приглашение. Раньше заявка висела в инбоксе вечно:
+// игрок мог принять зов месячной давности от человека, который давно
+// про него забыл, — и оба получали союзника, о котором не договаривались.
+const INVITE_TTL_MS = HOUR_MS;
 
 function users(): Record<string, User> { return require('./player').users(); }
+
+// Живые приглашения: старше часа не существуют. Фильтр применяется при
+// КАЖДОМ чтении, а не только в уборке, — иначе между уборками игрок
+// увидел бы просроченное и получил отказ уже после нажатия.
+function fresh(list: any[]): any[] {
+  const now = Date.now();
+  return (Array.isArray(list) ? list : []).filter((x: any) => now - Number(x.at || 0) < INVITE_TTL_MS);
+}
+
+// Уборка инбоксов — зовётся мировым тиком. Без неё просроченные заявки
+// копились бы в коллекции навсегда: показывать их перестали, а лежать
+// они продолжают.
+function sweepInvites(): number {
+  const inv = db.load<Record<string, any[]>>('alliance_invites', {});
+  let dropped = 0;
+  for (const id of Object.keys(inv)) {
+    const before = (inv[id] || []).length;
+    const left = fresh(inv[id]);
+    dropped += before - left.length;
+    if (left.length) inv[id] = left; else delete inv[id];
+  }
+  if (dropped) db.save('alliance_invites');
+  return dropped;
+}
 
 // Гарантируем поля личного альянса
 function ensure(user: User): void {
@@ -99,33 +127,8 @@ function view(user: User) {
     unlimitedName: mercEff ? (mercEff as any).name : null,
     unlimitedUntil: mercEff ? mercEff.expiresAt : null,
     nextDiplomatCost: nextDiplomatCost(user),
+    inviteTtlMin: Math.round(INVITE_TTL_MS / 60000),
   };
-}
-
-// ── Пригласить бота в альянс (расходует заявку в час, без золота) ──
-function inviteBot(user: User, notices: Notices) {
-  ensure(user);
-  if (user.allianceMembers! >= maxMembers(user)) {
-    throw new u.ApiError(`Лимит альянса: ${maxMembers(user)} (растёт с уровнем). Поднимите уровень.`);
-  }
-  const used = invitesUsedThisHour(user);
-  const limit = inviteLimit(user);
-  const unlimited = hasUnlimitedInvite(user);
-  if (!unlimited && used >= limit) {
-    throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
-  }
-  // При активном наёмнике заявка НЕ расходуется: иначе после окончания его
-  // действия игрок мгновенно упрётся в «лимит исчерпан» из-за накопленного лога.
-  if (!unlimited) logInvite(user);
-  user.allianceMembers!++;
-  const botNames = ['Ветеран', 'Снайпер', 'Сапёр', 'Радист', 'Танкист', 'Десантник', 'Пулемётчик', 'Разведчик', 'Гранатомётчик', 'Медик'];
-  const name = u.pick(botNames) + ' #' + Math.floor(Math.random() * 900 + 100);
-  user.allianceRoster!.push({ id: 'bot_' + u.uid(8), name, isBot: true });
-  db.save('users');
-  try { require('./seasons').onAllianceRecruit(user); } catch (e) {}
-  const leftMsg = unlimited ? 'без лимита (наёмник-дипломат)' : `${limit - used - 1}/час`;
-  notices.push(`🤝 Боец «${name}» вступил в ваш альянс! В строю: ${user.allianceMembers}. Заявок осталось: ${leftMsg}.`);
-  return view(user);
 }
 
 // ── Купить дипломата (+1 к лимиту заявок в час) ──────────────────
@@ -143,7 +146,7 @@ function buyDiplomat(user: User, notices: Notices) {
 }
 
 // ── Пригласить реального игрока (по позывному) ───────────────────
-function invitePlayer(user: User, targetName: string, notices: Notices) {
+function invitePlayer(user: User, targetName: string, notices: Notices, targetId?: string) {
   ensure(user);
   if (user.allianceMembers! >= maxMembers(user)) {
     throw new u.ApiError(`Лимит альянса: ${maxMembers(user)}. Поднимите уровень.`);
@@ -154,18 +157,27 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
   if (!unlimited && used >= limit) {
     throw new u.ApiError(`Лимит заявок исчерпан (${limit}/час). Купите дипломата, чтобы поднять лимит.`);
   }
+  // Цель: по id (кнопка в профиле) или по позывному (вкладка альянса)
+  const id = String(targetId || '').trim();
   const q = String(targetName || '').trim().toLowerCase();
-  if (!q) throw new u.ApiError('Введите позывной игрока');
-  const target = Object.values(users()).find((p) => p.name.toLowerCase() === q);
+  if (!id && !q) throw new u.ApiError('Введите позывной игрока');
+  const target = id ? users()[id] : Object.values(users()).find((p) => p.name.toLowerCase() === q);
   if (!target) throw new u.ApiError('Игрок не найден');
   if (target.id === user.id) throw new u.ApiError('Нельзя пригласить самого себя');
-  if (target.isBot) throw new u.ApiError('Это бот — приглашайте бойцов отдельной кнопкой');
+  // Ботов в альянс больше не зовут — ни кнопкой, ни по имени. Альянс
+  // существует ради живых союзников: подкрепления, совместные бои и
+  // прочее с ботом не работают, а вместимость армии он поднимал.
+  if (target.isBot) throw new u.ApiError('В альянс приглашают только живых игроков');
+  if ((user.allianceRoster || []).some((m: any) => m.id === target.id)) {
+    throw new u.ApiError('Этот игрок уже в вашем альянсе');
+  }
 
-  // Кладём заявку в инбокс цели
+  // Кладём заявку в инбокс цели. Просроченные сразу отбрасываем: иначе
+  // «вы уже приглашали» срабатывало бы на заявку, которой давно нет.
   const inv = db.load<Record<string, any[]>>('alliance_invites', {});
-  if (!inv[target.id]) inv[target.id] = [];
+  inv[target.id] = fresh(inv[target.id]);
   if (inv[target.id].some((x: any) => x.fromId === user.id)) {
-    throw new u.ApiError('Вы уже приглашали этого игрока');
+    throw new u.ApiError('Вы уже приглашали этого игрока — заявка ещё висит');
   }
   if (!unlimited) logInvite(user); // с наёмником заявки не расходуются
   inv[target.id].push({ fromId: user.id, fromName: user.name, at: Date.now() });
@@ -175,14 +187,24 @@ function invitePlayer(user: User, targetName: string, notices: Notices) {
     require('./notifications').push(target.id, 'alliance_invite',
       `🤝 ${user.name} приглашает вас в свой альянс`, { fromId: user.id, fromName: user.name });
   } catch (e) {}
-  notices.push(`✉️ Приглашение отправлено игроку «${target.name}». Заявок осталось: ${unlimited ? 'без лимита (наёмник-дипломат)' : `${limit - used - 1}/час`}.`);
+  notices.push(`✉️ Приглашение отправлено игроку «${target.name}» — оно ждёт ответа час. ` +
+    `Заявок осталось: ${unlimited ? 'без лимита (наёмник-дипломат)' : `${limit - used - 1}/час`}.`);
   return { ok: true };
 }
 
 // ── Список приглашений, пришедших игроку ──────────────────────────
 function myInvites(user: User) {
   const inv = db.load<Record<string, any[]>>('alliance_invites', {});
-  return { invites: inv[user.id] || [] };
+  const list = fresh(inv[user.id]);
+  inv[user.id] = list;
+  // Игрок должен видеть, сколько осталось: заявка живёт час, и «успею
+  // потом» здесь не работает.
+  return {
+    invites: list.map((x: any) => Object.assign({}, x, {
+      expiresInSec: Math.max(0, Math.ceil((Number(x.at || 0) + INVITE_TTL_MS - Date.now()) / 1000)),
+    })),
+    ttlMin: Math.round(INVITE_TTL_MS / 60000),
+  };
 }
 
 // ── Принять приглашение: +1 себе И +1 пригласившему ──────────────
@@ -190,9 +212,18 @@ function myInvites(user: User) {
 function acceptInvite(user: User, fromId: string, notices: Notices) {
   ensure(user);
   const inv = db.load<Record<string, any[]>>('alliance_invites', {});
-  const list = inv[user.id] || [];
+  const all = inv[user.id] || [];
+  const list = fresh(all);
+  inv[user.id] = list;
   const idx = list.findIndex((x: any) => x.fromId === fromId);
-  if (idx === -1) throw new u.ApiError('Приглашение не найдено');
+  if (idx === -1) {
+    // Разделяем «не было» и «истекло»: игрок должен понимать, что
+    // произошло, а не гадать, почему кнопка не сработала.
+    const wasExpired = all.some((x: any) => x.fromId === fromId);
+    throw new u.ApiError(wasExpired
+      ? 'Приглашение просрочено — оно действовало час'
+      : 'Приглашение не найдено');
+  }
 
   const inviter = users()[fromId];
   if (!inviter) throw new u.ApiError('Пригласивший игрок не найден');
@@ -253,7 +284,7 @@ function removeMember(user: User, memberId: string, notices: Notices) {
 }
 
 export = {
-  areAllies,
-  ensure, maxMembers, view, inviteBot, buyDiplomat, invitePlayer,
+  areAllies, sweepInvites, INVITE_TTL_MS,
+  ensure, maxMembers, view, buyDiplomat, invitePlayer,
   myInvites, acceptInvite, declineInvite, removeMember,
 };

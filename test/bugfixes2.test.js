@@ -87,16 +87,26 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   for (let i = 0; i < 5; i++) rec.allianceInviteLog.push(Date.now());
   rec.effects = [];
   db.save('users');
-  throws('без наёмника: приём бота отклонён (лимит исчерпан)', () => pa.inviteBot(rec, []));
+  // Живые адресаты: в альянс зовут только людей
+  const targets = [];
+  for (let i = 0; i < 6; i++) {
+    const id = 'ally' + i;
+    player.users()[id] = { id, name: 'Соратник' + i, level: 100, isBot: false, allianceRoster: [] };
+    targets.push(player.users()[id]);
+  }
+  let nextT = 0;
+  const invited = (t) => (db.load('alliance_invites', {})[t.id] || []).length > 0;
+  throws('без наёмника: заявка отклонена (лимит исчерпан)', () => pa.invitePlayer(rec, targets[nextT++].name, []));
 
   // Нанимаем наёмника: эффект invite_unlimited на 24ч
   rec.effects = [{ id: 'cmd_envoy_invite_unlimited', name: 'Эйден Роу', type: 'invite_unlimited', value: 1, expiresAt: Date.now() + 24 * 3600 * 1000, merc: true }];
-  const before = rec.allianceMembers;
-  pa.inviteBot(rec, []);
-  eq('с наёмником: бот принят несмотря на лимит', rec.allianceMembers, before + 1);
+  const one = targets[nextT];
+  pa.invitePlayer(rec, targets[nextT++].name, []);
+  ok('с наёмником: заявка ушла несмотря на лимит', invited(one));
   // И ещё несколько — лимит игнорируется
-  pa.inviteBot(rec, []); pa.inviteBot(rec, []);
-  eq('с наёмником можно принимать сверх лимита', rec.allianceMembers, before + 3);
+  const two = targets[nextT]; pa.invitePlayer(rec, targets[nextT++].name, []);
+  const three = targets[nextT]; pa.invitePlayer(rec, targets[nextT++].name, []);
+  ok('с наёмником можно звать сверх лимита', invited(two) && invited(three));
 
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);

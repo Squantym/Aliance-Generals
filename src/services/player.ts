@@ -1513,6 +1513,11 @@ function publicProfile(target: User, viewer: User): any {
     profileBg: target.profileBg || null,
     avatar: target.avatar || null,
     isOwn,
+    // Бот или живой. Фронт по этому флагу прячет то, что с ботом
+    // не работает: жалобы, «Дозор», приглашение в альянс.
+    isBot: !!(target as any).isBot,
+    // Уже ли мы в альянсе друг у друга — чтобы не звать повторно
+    myAlly: (() => { try { return require('./personalAlliance').areAllies(viewer, target); } catch (e) { return false; } })(),
     createdAt: target.createdAt, lastSeen: target.lastSeen || target.createdAt,
     online: (Date.now() - (target.lastSeen || 0)) < 5 * 60 * 1000,
     canAttack: !!viewer && viewer.id !== target.id &&

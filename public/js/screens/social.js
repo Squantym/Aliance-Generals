@@ -950,24 +950,12 @@ async function renderPersonalAlliance(c) {
   c.innerHTML = `
     <div class="title">🤝 Мой альянс</div>
     <div class="card">
-      <p class="muted small">Альянс — ваша личная команда. Каждый боец в строю даёт <b>+${data.perMember}</b> единиц техники в бой. Приглашайте бойцов и игроков по заявкам.</p>
-      <div class="kv mt"><span class="k">Бойцов в альянсе</span><span class="v gold" style="font-size:18px">${data.members} / ${data.maxMembers}</span></div>
+      <p class="muted small">Альянс — ваша личная команда из живых игроков. Каждый союзник в строю даёт <b>+${data.perMember}</b> единиц техники в бой.</p>
+      <div class="kv mt"><span class="k">Союзников в альянсе</span><span class="v gold" style="font-size:18px">${data.members} / ${data.maxMembers}</span></div>
       <div class="kv"><span class="k">Бонус техники в бой</span><span class="v gold">+${UI.fmtNum(data.bonusCapacity)}</span></div>
       <div class="kv"><span class="k">Заявок осталось (в час)</span><span class="v">${data.unlimitedInvite ? '<span class="gold">без лимита</span>' : `${data.invitesLeft} / ${data.inviteLimit}`}</span></div>
       <p class="muted small mt">Лимит альянса = ваш уровень × 10. Лимит заявок в час = 5 + дипломаты.</p>
       ${data.unlimitedInvite ? `<p class="small mt" style="color:var(--money)">🎖 Наёмник «${UI.esc(data.unlimitedName || 'дипломат')}» снял почасовой лимит заявок — приглашайте без ограничений, пока он в строю.</p>` : ''}
-    </div>
-
-    <div class="card">
-      <div class="name">🪖 Пригласить бойца</div>
-      <p class="muted small">Пригласите бойца в свой альянс. ${data.unlimitedInvite ? 'Наёмник снял часовой лимит — заявки не тратятся.' : 'Расходует одну заявку из часового лимита.'}</p>
-      <button class="btn btn-orange mt" id="al-invite-bot" ${data.members >= data.maxMembers || (data.invitesLeft <= 0 && !data.unlimitedInvite) ? 'disabled' : ''} style="width:100%">
-        ${data.members >= data.maxMembers
-          ? 'Лимит альянса достигнут'
-          : (data.invitesLeft <= 0 && !data.unlimitedInvite)
-            ? 'Заявки на час исчерпаны'
-            : (data.unlimitedInvite ? 'Пригласить бойца (без лимита)' : 'Пригласить бойца (заявка)')}
-      </button>
     </div>
 
     <div class="card">
@@ -980,7 +968,8 @@ async function renderPersonalAlliance(c) {
 
     <div class="card">
       <div class="name"><span class="ic-mail"></span> Пригласить игрока</div>
-      <p class="muted small">Пригласите реального игрока. Если он примет — вам обоим +1 в личный альянс. Расходует заявку.</p>
+      <p class="muted small">Позовите живого игрока по позывному — или откройте его профиль и нажмите «Пригласить в альянс».
+        Приглашение висит ${data.inviteTtlMin >= 60 ? Math.round(data.inviteTtlMin / 60) + ' ч' : data.inviteTtlMin + ' мин'}: не примет — пропадёт. Расходует заявку.</p>
       <div class="field-row mt">
         <input type="text" id="al-invite-name" placeholder="Позывной игрока">
         <button class="btn btn-orange btn-inline" id="al-invite-go">Пригласить</button>
@@ -992,7 +981,8 @@ async function renderPersonalAlliance(c) {
         <div class="name">📨 Приглашения вам (${invites.length})</div>
         ${invites.map((iv) => `
           <div class="list-row">
-            <div class="grow"><span class="name" onclick="App.go('profile/${iv.fromId}')" style="cursor:pointer">${UI.esc(iv.fromName)}</span> зовёт в альянс</div>
+            <div class="grow"><span class="name" onclick="App.go('profile/${iv.fromId}')" style="cursor:pointer">${UI.esc(iv.fromName)}</span> зовёт в альянс
+              ${iv.expiresInSec ? `<span class="muted small">· сгорит через ${Math.max(1, Math.round(iv.expiresInSec / 60))} мин</span>` : ''}</div>
             <button class="btn btn-green btn-inline" data-acc-inv="${iv.fromId}">✔</button>
             <button class="btn btn-red btn-inline" data-dec-inv="${iv.fromId}">✖</button>
           </div>`).join('')}
@@ -1006,13 +996,9 @@ async function renderPersonalAlliance(c) {
             <div class="grow">${m.isBot ? '🪖' : '👤'} ${m.isBot ? UI.esc(m.name) : `<span class="name" onclick="App.go('profile/${m.id}')" style="cursor:pointer">${UI.esc(m.name)}</span>`}</div>
             <button class="btn btn-red btn-inline" data-remove="${m.id}">Исключить</button>
           </div>`).join('')}
-      </div>` : '<div class="card center muted">В альянсе пока никого. Пригласите бойца или игрока.</div>'}`;
+      </div>` : '<div class="card center muted">В альянсе пока никого. Пригласите игрока по позывному или из его профиля.</div>'}`;
 
   const R = (id) => document.getElementById(id);
-  if (R('al-invite-bot')) R('al-invite-bot').onclick = async () => {
-    try { await API.post('/api/alliance/invite-bot'); await App.refreshMe(); App.rerender(); }
-    catch (e) { UI.toast('⛔ ' + e.message); }
-  };
   if (R('al-diplomat')) R('al-diplomat').onclick = async () => {
     try { await API.post('/api/alliance/diplomat'); await App.refreshMe(); App.rerender(); }
     catch (e) { UI.toast('⛔ ' + e.message); }
@@ -1020,7 +1006,7 @@ async function renderPersonalAlliance(c) {
   if (R('al-invite-go')) R('al-invite-go').onclick = async () => {
     const name = R('al-invite-name').value.trim();
     if (!name) { UI.toast('Введите позывной'); return; }
-    try { await API.post('/api/alliance/invite', { name }); UI.toast('✉️ Приглашение отправлено'); App.rerender(); }
+    try { await API.post('/api/alliance/invite', { name }); R('al-invite-name').value = ''; App.rerender(); }
     catch (e) { UI.toast('⛔ ' + e.message); }
   };
   c.querySelectorAll('[data-acc-inv]').forEach((b) => b.onclick = async () => {
