@@ -63,7 +63,7 @@ function budget(c: any): { cap: number; spent: number; left: number } {
 // Источник помечается («club_safe», «club_tactic»): раньше клуб звал
 // addGold без третьего аргумента, всё падало в «Прочее», и владелец не
 // видел в статистике крупнейший источник золота в игре.
-function payout(user: User, game: string, want: number, notices: Notices, sharedBreak = true): number {
+function payout(user: User, game: string, want: number, notices: Notices): number {
   const c = clubState(user);
   const b = budget(c);
   const wanted = Math.max(0, Math.round(want));
@@ -72,14 +72,10 @@ function payout(user: User, game: string, want: number, notices: Notices, shared
     c.dayGold = b.spent + give;
     player.addGold(user, give, GAIN_SRC[game] || 'club_other');
   }
-  // Общий кулдаун взводится за ПОБЕДУ, а не за выданное золото: упёршись
-  // в потолок, игрок продолжает играть в том же темпе, просто без денег.
-  //
-  // Платные игры из него исключены (sharedBreak=false). Общий перерыв
-  // придуман, чтобы придержать РАЗДАЧУ бесплатного золота; игра, за вход
-  // в которую заплачено, ничего бесплатного не раздаёт, и запирать из-за
-  // неё остальной клуб не за что.
-  if (sharedBreak) setCd(c, 'all', C.SHARED_CD_MIN);
+  // Общего перерыва на весь клуб больше нет: выигрыш в одной игре не
+  // запирает остальные. Темп задаёт СВОЙ кулдаун каждой игры, сумму —
+  // суточный потолок. Владелец потребовал этого прямо: перерыв должен
+  // быть у каждой игры свой.
   if (give < wanted) {
     notices.push(give > 0
       ? `🪙 Суточный предел клуба (${C.DAILY_GOLD_CAP}) достигнут: начислено ${give} вместо ${wanted}. Сброс в полночь по Москве.`
@@ -178,16 +174,6 @@ function beat(user: User, what: string): void {
   }
 }
 
-// Общий перерыв после выигрыша. Проверяется на ВХОДЕ в игру, но не
-// мешает доиграть уже начатую партию — иначе выигрыш в костях запирал
-// бы недоигранный сейф, и попытки в нём сгорали бы ни за что.
-function gate(c: any): void {
-  const left = cdLeft(c, 'all');
-  if (left > 0) {
-    throw new u.ApiError(`В клубе перерыв после выигрыша — ещё ${Math.ceil(left / 60)} мин.`);
-  }
-}
-
 function cdLeft(c: any, key: string): number {
   const now = Date.now();
   return Math.max(0, Math.ceil(((c.cd[key] || 0) - now) / 1000));
@@ -206,7 +192,6 @@ function view(user: User) {
     // Потолок показываем игроку честно и всегда. Скрытый предел
     // выглядит как поломка: награда молча стала нулём.
     budget: { cap: b.cap, spent: b.spent, left: b.left },
-    sharedCooldownSec: cdLeft(c, 'all'),
     pref: prefView(c),
     safe: safeView(user),
     tactic: tacticView(c),
@@ -307,8 +292,6 @@ function prefStart(user: User, notices?: Notices) {
   beat(user, 'pref');
   if (c.pref) return prefView(c);
   if (cdLeft(c, 'pref') > 0) throw new u.ApiError('Генерал ещё тасует колоду. Загляните позже.');
-  // gate(c) здесь НЕТ намеренно: за партию плачено, общий перерыв клуба
-  // её не касается (см. пояснение в payout).
   const entry = C.PREF_ENTRY_GOLD;
   if ((user.gold || 0) < entry) {
     throw new u.ApiError(`Ставка — 🪙 ${entry}, у вас ${user.gold || 0}`);
@@ -374,7 +357,7 @@ function prefStand(user: User, notices: Notices) {
 
   setCd(c, 'pref', C.PREF_CD_MIN);
   if (win) {
-    const reward = payout(user, 'pref', C.PREF_WIN_GOLD, notices, false);
+    const reward = payout(user, 'pref', C.PREF_WIN_GOLD, notices);
     notices.push(`🃏 Партия ваша! ${mySum} против ${foeSum}.` + (reward ? ` +🪙 ${reward}` : ''));
     return { result: 'win', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), reward, entry: C.PREF_ENTRY_GOLD };
   }
@@ -394,7 +377,6 @@ function safeView(user: User) {
 function safeTry(user: User, guess: string, notices: Notices) {
   const c = clubState(user);
   beat(user, 'safe');
-  gate(c);
   const r = safeCrack.attempt(user, guess);
   // Поручение засчитываем за НАСТОЯЩУЮ попытку: safeCrack уже отверг бы
   // мусор вместо кода и слишком частый запрос.
@@ -487,7 +469,6 @@ function tacticStart(user: User) {
   beat(user, 'tactic');
   if (c.tactic) return tacticView(c);
   if (cdLeft(c, 'tactic') > 0) throw new u.ApiError('Генерал разбирает прошлую дуэль. Загляните позже.');
-  gate(c);
   c.tactic = { my: 0, foe: 0, rounds: [] };
   return tacticView(c);
 }
@@ -519,6 +500,7 @@ function tacticPlay(user: User, kind: any, notices: Notices) {
     const foeScore = d.foe;
     const rounds = d.rounds;
     c.tactic = null;
+    setCd(c, 'tactic', C.TACTIC_CD_MIN);
     const reward = payout(user, 'tactic', tacticReward(foeScore), notices);
     notices.push(`⚔ Дуэль выиграна ${need}:${foeScore}!${reward ? ' +🪙 ' + reward : ''}`);
     return { result: 'win', my: need, foe: foeScore, rounds, reward, last: { mine, foe, res } };
@@ -560,7 +542,6 @@ function thimblePlay(user: User, pot: any, notices: Notices) {
   const c = clubState(user);
   beat(user, 'thimble');
   if (cdLeft(c, 'thimble') > 0) throw new u.ApiError('Кашевар перекладывает котелки. Загляните позже.');
-  gate(c);
   const n = u.toInt(pot, -1);
   if (n < 0 || n >= C.THIMBLE_POTS) throw new u.ApiError('Выберите котелок');
 
@@ -573,7 +554,7 @@ function thimblePlay(user: User, pot: any, notices: Notices) {
   let reward = 0;
   if (won) {
     // Игра платная — общий перерыв на весь клуб она не взводит
-    reward = payout(user, 'thimble', C.THIMBLE_WIN, notices, false);
+    reward = payout(user, 'thimble', C.THIMBLE_WIN, notices);
     notices.push(`🍲 Паёк ваш!${reward ? ' +🪙 ' + reward : ''}`);
   } else {
     notices.push('🍲 Пусто. Паёк был под другим котелком.');
@@ -592,5 +573,5 @@ export = {
   // Отдана намеренно одним объектом: чтобы новая игра не завела себе
   // второй путь к золоту в обход потолка, ей нечем это сделать — кроме
   // этих функций, наружу из клуба денег не выходит.
-  kassa: { clubState, budget, payout, takeStake, giveBack, gate, beat, setCd, cdLeft },
+  kassa: { clubState, budget, payout, takeStake, giveBack, beat, setCd, cdLeft },
 };

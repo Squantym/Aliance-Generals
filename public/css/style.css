@@ -2589,6 +2589,11 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 .pf2-meta b { color: var(--green); font-weight: 700; }
 .pf2-status { margin-top: 6px; }
 .pf2-edit-status { color: var(--green); text-decoration: underline; text-underline-offset: 2px; }
+/* Обращение под именем: мелко и негромко — это подпись, а не звание */
+.pf2-gender {
+  margin-top: 2px; font-size: 11.5px; letter-spacing: .3px;
+  color: var(--dim); text-transform: none;
+}
 .pf2-row { display: flex; gap: 12px; margin-top: 10px; align-items: stretch; }
 /* Колонка с аватаркой: сама картинка + кнопка под ней. Без обёртки
    кнопка становилась соседом аватарки в строке и растягивалась во всю
@@ -4950,7 +4955,10 @@ body.is-test-world { padding-top: 22px; }
   display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px;
   min-height: 92px; scrollbar-width: thin;
 }
-.pf-card {
+/* Игральная карта преферанса. Класс намеренно НЕ .pf-card: так уже
+   называется карточка «Личного дела», и общий класс ломал профиль —
+   он схлопывался до 60 пикселей и прятал всё, включая кнопку аватара. */
+.pref-card {
   position: relative; flex: 0 0 auto;
   width: 60px; aspect-ratio: 2 / 3;
   border-radius: 6px; overflow: hidden;
@@ -4958,7 +4966,7 @@ body.is-test-world { padding-top: 22px; }
   box-shadow: 0 2px 6px rgba(0,0,0,.35);
   background: #efe9dc;                       /* цвет рубашки, пока грузится */
 }
-.pf-card img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.pref-card img { width: 100%; height: 100%; display: block; object-fit: cover; }
 
 /* Рубашка лежит поверх лица и уезжает при раздаче. Сделано именно так,
    а не переворотом контейнера: если анимация не отработает (старый
@@ -4968,8 +4976,8 @@ body.is-test-world { padding-top: 22px; }
   position: absolute; inset: 0; display: block; opacity: 0;
   background: url('/img/cards/card-back.webp') center/cover no-repeat;
 }
-.pf-card.pf-deal { animation: pf-in .34s cubic-bezier(.2,.9,.3,1.2) both; }
-.pf-card.pf-deal .pf-back { animation: pf-flip .34s ease-in both; }
+.pref-card.pf-deal { animation: pf-in .34s cubic-bezier(.2,.9,.3,1.2) both; }
+.pref-card.pf-deal .pf-back { animation: pf-flip .34s ease-in both; }
 @keyframes pf-in {
   from { opacity: 0; transform: translate(26px, -34px) rotate(9deg) scale(.86); }
   to   { opacity: 1; transform: none; }
@@ -4985,10 +4993,10 @@ body.is-test-world { padding-top: 22px; }
 
 /* Кому движение мешает — карты просто появляются на месте, лицом вверх */
 @media (prefers-reduced-motion: reduce) {
-  .pf-card.pf-deal { animation: none; }
-  .pf-card.pf-deal .pf-back { animation: none; opacity: 0; }
+  .pref-card.pf-deal { animation: none; }
+  .pref-card.pf-deal .pf-back { animation: none; opacity: 0; }
 }
-@media (min-width: 520px) { .pf-card { width: 72px; } }
+@media (min-width: 520px) { .pref-card { width: 72px; } }
 
 /* Ранг и масть поверх угла карты. На рисунке они есть, но при ширине
    карты в 72 px занимают около шести пикселей — формально видно, на

@@ -77,7 +77,8 @@ const nx = [];
 
   console.log('\n── 1. Потолок настроен и виден игроку ──');
   ok('потолок задан числом', typeof C.DAILY_GOLD_CAP === 'number' && C.DAILY_GOLD_CAP > 0);
-  ok('общий кулдаун задан', typeof C.SHARED_CD_MIN === 'number' && C.SHARED_CD_MIN > 0);
+  ok('у дуэли свой кулдаун', typeof C.TACTIC_CD_MIN === 'number' && C.TACTIC_CD_MIN > 0);
+  ok('общего кулдауна на клуб больше нет', C.SHARED_CD_MIN === undefined);
   const v0 = club.view(U);
   ok('в ответе есть остаток на сутки', v0.budget && v0.budget.cap === C.DAILY_GOLD_CAP);
   ok('в начале суток потрачено ноль', v0.budget.spent === 0 && v0.budget.left === C.DAILY_GOLD_CAP);
@@ -109,30 +110,30 @@ const nx = [];
      Object.keys(got).some((k) => k.indexOf('club_') === 0));
   ok('и не свалено в «Прочее»', !got.other);
 
-  console.log('\n── 5. Общий перерыв после выигрыша ──');
+  console.log(String.fromCharCode(10) + '── 5. Перерыв у каждой игры СВОЙ ──');
+  // Общего перерыва на весь клуб больше нет: выигрыш в дуэли не должен
+  // запирать сейф и займ. Владелец потребовал этого прямо, и проверка
+  // стережёт обратное — что перерыв снова не стал общим.
   U.club.day = 'ещё одни сутки';
-  playWin(3);
-  const cdSec = club.view(U).sharedCooldownSec;
-  ok(`после выигрыша взведён общий перерыв (${cdSec} с)`, cdSec > 0);
-  ok('перерыв примерно нужной длины', Math.abs(cdSec - C.SHARED_CD_MIN * 60) <= 2);
-  // Личные кулдауны игр снимаем: проверяем именно ОБЩИЙ перерыв, иначе
-  // дуэль отказала бы по своему собственному таймеру и проверка ничего
-  // бы не доказала.
-  const shared = U.club.cd.all;
   clearCd();
-  U.club.cd.all = shared;
-  // Платных игр в списке нет намеренно: преферанс, напёрстки и обе игры
-  // с очередью общему перерыву не подчиняются — это отдельно
-  // проверяется в разделе 10.
-  let blocked = 0;
-  for (const start of [() => club.tacticStart(U), () => club.safeTry(U, '123456', nx)]) {
-    try { start(); } catch (e) { if (/перерыв/i.test(e.message)) blocked++; }
+  playWin();
+  ok('после выигрыша взведён перерыв ИМЕННО дуэли', club.view(U).tactic.cooldownSec > 0);
+  ok('и он примерно нужной длины',
+     Math.abs(club.view(U).tactic.cooldownSec - C.TACTIC_CD_MIN * 60) <= 2);
+  ok('общего перерыва в ответе клуба нет', club.view(U).sharedCooldownSec === undefined);
+  // Соседние игры выигрыш в дуэли не запирает — ни платные, ни сейф
+  let blockedByOther = 0;
+  // Ловим ЛЮБОЙ отказ по времени, а не только слово «перерыв»: у каждой
+  // игры своя формулировка («Кашевар перекладывает котелки. Загляните
+  // позже»), и проверка по одному слову пропустила бы половину случаев.
+  for (const start of [() => club.safeTry(U, '123456', nx), () => club.thimblePlay(U, 0, nx)]) {
+    try { start(); } catch (e) { if (/перерыв|позже|остыва/i.test(e.message)) blockedByOther++; }
   }
-  ok('перерыв закрывает ВСЕ бесплатные игры, а не одну', blocked === 2);
-  // Общий сейф — тоже часть клуба и тоже под перерывом
-  let safeBlocked = false;
-  try { club.safeTry(U, '123456', nx); } catch (e) { safeBlocked = /перерыв/i.test(e.message); }
-  ok('и общий сейф в том числе', safeBlocked);
+  ok('выигрыш в дуэли не запер соседние игры', blockedByOther === 0);
+  // А своя игра — заперта, и это как раз то, чего мы хотим
+  let duelBlocked = false;
+  try { club.tacticStart(U); } catch (e) { duelBlocked = /Загляните позже|перерыв/i.test(e.message); }
+  ok('а сама дуэль до конца своего перерыва закрыта', duelBlocked);
 
   console.log('\n── 7. Тактическая дуэль: читать нечего ──');
   // Раньше генерал играл по привычке, и внимательный игрок брал 64%
@@ -209,32 +210,34 @@ const nx = [];
   ok('игры с очередью денег сами не трогают', !/player\.(addGold|spendGold)\(/.test(mSrc));
   ok('и берут их только из кассы клуба', /kassa\(\)/.test(mSrc) && /k\.payout\(/.test(mSrc));
 
-  console.log('\n── 10. Платная игра живёт по своим правилам ──');
-  // Общий перерыв придуман, чтобы придержать РАЗДАЧУ бесплатного
-  // золота. Преферанс платный: за партию внесена ставка, и запирать
-  // из-за него остальной клуб не за что — как и его самого чужими
-  // выигрышами.
+  console.log(String.fromCharCode(10) + '── 10. Игры не запирают друг друга ──');
+  // Раньше любой бесплатный выигрыш взводил перерыв на весь клуб, и
+  // платные игры из него приходилось исключать вручную. Теперь правило
+  // одно для всех: своя игра — свой перерыв, соседям до него дела нет.
   U.club.day = "сутки для платной игры";
   clearCd();
   U.gold = 100000;
-  playWin(2);                                  // бесплатная победа взвела перерыв
-  ok('после бесплатной игры общий перерыв стоит', club.view(U).sharedCooldownSec > 0);
+  playWin();                                    // выиграли дуэль
   let prefBlocked = false;
-  try { club.prefStart(U, nx); } catch (e) { prefBlocked = /перерыв/i.test(e.message); }
-  ok('но за платный стол он сесть не мешает', !prefBlocked);
+  try { club.prefStart(U, nx); } catch (e) { prefBlocked = /перерыв|позже/i.test(e.message); }
+  ok('после выигранной дуэли за платный стол сесть можно', !prefBlocked);
+  club.prefStand(U, nx);                        // доигрываем, чтобы не мешала
 
-  // И наоборот: победа за платным столом не запирает бесплатные игры
-  clearCd();
-  let sharedAfterPref = null;
-  for (let i = 0; i < 200 && sharedAfterPref === null; i++) {
+  // И наоборот: победа за платным столом не запирает дуэль
+  let duelAfterPref = null;
+  for (let i = 0; i < 200 && duelAfterPref === null; i++) {
     clearCd();
     U.club.dayGold = 0;
     club.prefStart(U, nx);
     const r = club.prefStand(U, nx);
-    if (r.result === 'win') sharedAfterPref = club.view(U).sharedCooldownSec;
+    if (r.result === 'win') {
+      U.club.cd.pref = 0;                       // снимаем только СВОЙ кулдаун преферанса
+      try { club.tacticStart(U); duelAfterPref = true; }
+      catch (e) { duelAfterPref = false; }
+    }
   }
-  ok('победа за платным столом случилась', sharedAfterPref !== null);
-  ok('и она НЕ взвела общий перерыв клуба', sharedAfterPref === 0);
+  ok('победа за платным столом случилась', duelAfterPref !== null);
+  ok('и она не заперла дуэль', duelAfterPref === true);
 
   console.log('\n── 11. Потолок считает НЕТТО, а не выплаты ──');
   // Считай мы по валовой выплате, десять партий преферанса (из них

@@ -104,6 +104,15 @@ function changeGender(user: User, newGender: string, notices: Notices) {
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
   require('./player').spendGold(user, price, 'passport');
   (user as any).gender = g;
+  // Портрет — по полу, и после смены старый остаётся чужим. Снимаем его
+  // молча: заставлять игрока лезть искать, почему «портрет не для вашего
+  // пола», ради одного клика незачем.
+  const mine: string[] = g === 'f' ? config.AVATARS.female : config.AVATARS.male;
+  const had = (user as any).avatar;
+  if (had && !mine.includes(had)) {
+    (user as any).avatar = undefined;
+    notices.push('📷 Прежний портрет снят — выберите новый в личном деле.');
+  }
   ensurePassport(user);
   (user as any).passport.genderChanges = genderChanges(user) + 1;
   db.markUser(user.id);

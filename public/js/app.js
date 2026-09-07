@@ -134,7 +134,10 @@ const App = {
 
   // ── Аватары профиля ──
   _AVATARS: { male: ['m1','m2','m3','m4','m5','m6'], female: ['f1','f2','f3','f4','f5','f6'] },
-  // Окно выбора аватара: мужские + женские; текущий подсвечен; можно снять.
+  // Окно выбора аватара. Показываем ТОЛЬКО свою половину списка:
+  // командующий-мужчина с женским портретом — это не «свобода выбора», а
+  // путаница в бою и в списках. Сервер проверяет то же самое отдельно:
+  // окно можно обойти запросом, проверку в player.setAvatar — нет.
   _showAvatarPicker(current) {
     const old = document.getElementById('avatar-picker');
     if (old) old.remove();
@@ -142,16 +145,18 @@ const App = {
       <button class="avatar-cell ${id === current ? 'sel' : ''}" data-avatar="${id}">
         <img src="/img/avatars/${id}.webp" alt="${id}" loading="lazy">
       </button>`;
+    const female = !!(App.me && App.me.gender === 'f');
+    const list = female ? this._AVATARS.female : this._AVATARS.male;
     const m = document.createElement('div');
     m.id = 'avatar-picker';
     m.className = 'game-dialog-overlay';
     m.innerHTML = `
       <div class="game-dialog" style="max-width:460px;width:100%;max-height:85vh;overflow-y:auto">
         <div class="game-dialog-title">📷 Выбор аватара</div>
-        <div class="avatar-group-label">👨 Мужские</div>
-        <div class="avatar-grid">${this._AVATARS.male.map(cell).join('')}</div>
-        <div class="avatar-group-label">👩 Женские</div>
-        <div class="avatar-grid">${this._AVATARS.female.map(cell).join('')}</div>
+        <div class="avatar-group-label">${female ? '👩 Женские' : '👨 Мужские'}</div>
+        <div class="avatar-grid">${list.map(cell).join('')}</div>
+        <p class="muted small" style="margin:8px 0 0">Портреты — по полу командующего.
+          Сменить пол можно на чёрном рынке.</p>
         <div class="game-dialog-actions" style="margin-top:14px">
           ${current ? '<button class="btn" id="avatar-clear">Убрать аватар</button>' : ''}
           <button class="btn" id="avatar-cancel">Закрыть</button>

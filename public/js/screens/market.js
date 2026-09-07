@@ -431,7 +431,7 @@ App.screens.club = async (c, param) => {
   // СЕРВЕР и присылает готовыми: посчитай их здесь заново — и однажды
   // клиент разойдётся с сервером в тузе, показав «21» при проигрыше.
   const cardHtml = (c) => `
-    <div class="pf-card" data-cid="${UI.esc(c.id)}" title="${UI.esc(c.rank + ' ' + c.suitName)}">
+    <div class="pref-card" data-cid="${UI.esc(c.id)}" title="${UI.esc(c.rank + ' ' + c.suitName)}">
       <img src="${UI.esc(c.img)}" alt="${UI.esc(c.rank + ' ' + c.suitName)}" loading="lazy">
       <b class="pf-rank${c.red ? ' pf-red' : ''}">${UI.esc(c.rank)}${UI.esc(c.suit)}</b>
       <i class="pf-back"></i>
@@ -804,8 +804,6 @@ App.screens.club = async (c, param) => {
       <p class="muted small mt">${bg.left > 0
         ? 'Осталось <b>' + bg.left + '</b> — сбрасывается в полночь по Москве.'
         : 'Предел исчерпан. Играть можно, золото снова пойдёт после полуночи по Москве.'}</p>
-      ${data.sharedCooldownSec > 0
-        ? '<p class="muted small">⏳ Перерыв после выигрыша: ' + UI.fmtTimer(data.sharedCooldownSec) + '</p>' : ''}
     </div>`;
 
 
@@ -877,7 +875,7 @@ App.screens.club = async (c, param) => {
     c.innerHTML = `
       <div class="club-hero"><img src="/img/club/hero.webp" alt="Клуб офицеров" width="1100" height="619" loading="eager"></div>
       <div class="title">Клуб офицеров</div>
-      <p class="muted small" style="margin:-4px 4px 10px">Выберите развлечение. После выигрыша в бесплатных играх — общий перерыв на весь клуб.</p>
+      <p class="muted small" style="margin:-4px 4px 10px">Выберите развлечение. У каждой игры свой перерыв; общий на сутки — только предел золота.</p>
       ${capHtml}
       ${hubHtml}`;
   }
@@ -1019,7 +1017,7 @@ App.screens.club = async (c, param) => {
   // невозможно. Поэтому помним, что уже показывали.
   const seen = App._prefSeen instanceof Set ? App._prefSeen : new Set();
   let fresh = 0;
-  c.querySelectorAll('.pf-card').forEach((el) => {
+  c.querySelectorAll('.pref-card').forEach((el) => {
     const cid = el.dataset.cid;
     if (seen.has(cid)) return;
     seen.add(cid);

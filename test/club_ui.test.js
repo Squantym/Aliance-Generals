@@ -331,11 +331,12 @@ const baseLot = () => ({
   console.log('\n── 9. Предел выбран и общий перерыв ──');
   cl = baseClub();
   cl.budget = { cap: 100, spent: 100, left: 0 };
-  cl.sharedCooldownSec = 300;
   html = await render(cl, baseLot());
   ok('сказано, что предел исчерпан', /Предел исчерпан/.test(html));
   ok('и что играть всё равно можно', /Играть можно/.test(html));
-  ok('перерыв показан таймером', /Перерыв после выигрыша/.test(html));
+  // Общего перерыва на весь клуб больше нет: у каждой игры свой кулдаун,
+  // и обещать игроку «перерыв на клуб» экран не должен.
+  ok('про общий перерыв на клуб нигде не сказано', !/перерыв на весь клуб/i.test(html));
 
   console.log('\n── 11. Военный преферанс: карты видны обе руки ──');
   const card = (id, rank, suit) => ({ id, rank, suit: '♠', suitName: suit, red: false, value: 10, img: '/img/cards/' + id + '.webp' });
@@ -347,7 +348,7 @@ const baseLot = () => ({
   };
   App._prefLast = null; App._prefSeen = null;
   html = await render(cl, baseLot(), 'pref');
-  ok('карты нарисованы картинками', c.querySelectorAll('.pf-card img').length === 4);
+  ok('карты нарисованы картинками', c.querySelectorAll('.pref-card img').length === 4);
   ok('пути ведут в /img/cards', /src="\/img\/cards\/10-spades\.webp"/.test(html));
   ok('рука генерала показана отдельно', /Генерал/.test(html));
   ok('и его сумма видна', /<b class="gold">13<\/b>/.test(html));
@@ -356,17 +357,17 @@ const baseLot = () => ({
   ok('обе кнопки на месте', !!c.querySelector('#pref-hit') && !!c.querySelector('#pref-stand'));
   ok('у каждой карты есть рубашка для раздачи', c.querySelectorAll('.pf-back').length === 4);
   ok('карты помечены id — по нему и анимируем только новые',
-     [...c.querySelectorAll('.pf-card')].every((el) => !!el.dataset.cid));
-  ok('новые карты получили анимацию раздачи', c.querySelectorAll('.pf-card.pf-deal').length === 4);
+     [...c.querySelectorAll('.pref-card')].every((el) => !!el.dataset.cid));
+  ok('новые карты получили анимацию раздачи', c.querySelectorAll('.pref-card.pf-deal').length === 4);
 
   console.log('\n── 12. Добор анимируется только для новой карты ──');
   cl.pref.hand.push(card('06-clubs', '6', 'трефы'));
   cl.pref.sum = 23;
   html = await render(cl, baseLot(), 'pref');
-  ok('всего карт стало пять', c.querySelectorAll('.pf-card').length === 5);
+  ok('всего карт стало пять', c.querySelectorAll('.pref-card').length === 5);
   ok('анимируется ровно одна — только что пришедшая',
-     c.querySelectorAll('.pf-card.pf-deal').length === 1);
-  ok('и это именно она', (c.querySelector('.pf-card.pf-deal') || {}).dataset.cid === '06-clubs');
+     c.querySelectorAll('.pref-card.pf-deal').length === 1);
+  ok('и это именно она', (c.querySelector('.pref-card.pf-deal') || {}).dataset.cid === '06-clubs');
 
   console.log('\n── 13. Итог партии остаётся на экране ──');
   // Иначе вскрытие мелькнёт на долю секунды и пропадёт вместе с
@@ -382,7 +383,7 @@ const baseLot = () => ({
   ok('исход назван', /Партия ваша/.test(html));
   ok('счёт показан', /<b>20<\/b> против <b>18<\/b>/.test(html));
   ok('награда названа', /\+<span class="ic-gold"><\/span> 15/.test(html));
-  ok('обе руки всё ещё на столе', c.querySelectorAll('.pf-card').length === 5);
+  ok('обе руки всё ещё на столе', c.querySelectorAll('.pref-card').length === 5);
   ok('и таймер до следующей партии', /Доступно через/.test(html));
 
 
@@ -402,7 +403,7 @@ const baseLot = () => ({
   // золото везде рисуется картинкой.
   ok('эмодзи-монеты на входе в клуб не осталось', html.indexOf('🪙') < 0);
   ok('суточный предел показан и здесь', /cap-bar/.test(html));
-  ok('столов и карт на входе нет', c.querySelectorAll('.pf-card').length === 0);
+  ok('столов и карт на входе нет', c.querySelectorAll('.pref-card').length === 0);
   ok('в шапке клуба есть картинка', c.querySelectorAll('.club-hero img').length === 1);
   ok('и это отдельный баннер, а не иконка меню',
      /\/img\/club\/hero\.webp/.test(html));
@@ -437,7 +438,7 @@ const baseLot = () => ({
   ok('эмодзи-монеты на странице игры не осталось', html.indexOf('🪙') < 0);
   ok('перерыв назван', /5 мин/.test(html));
   ok('игра НЕ началась сама — есть кнопка старта', !!c.querySelector('#pref-start'));
-  ok('и карт на столе ещё нет', c.querySelectorAll('.pf-card').length === 0);
+  ok('и карт на столе ещё нет', c.querySelectorAll('.pref-card').length === 0);
   ok('шанс на выигрыш игроку не показан',
      !/40\s*%/.test(html) && !/шанс/i.test(html) && !/вероятн/i.test(html));
   ok('есть возврат в клуб', !!c.querySelector('a[href="#club"]'));

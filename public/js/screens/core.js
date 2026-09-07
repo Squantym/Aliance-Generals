@@ -1021,6 +1021,7 @@ App.screens.profile = async (c, param) => {
         ${p.activeTitle ? `<span class="pf2-title">${UI.esc(p.activeTitle)}</span>` : ''}
         ${p.online ? '<span class="small" style="color:var(--green);font-weight:600">● Онлайн</span>' : '<span class="small muted">○ Не в сети</span>'}
       </div>
+      <div class="pf2-gender">${UI.esc(p.genderTitle || 'Господин Генерал')}</div>
       <div class="pf2-meta">
         <span>Ур. <b>${p.level}</b></span>
         ${(p.alliance && p.alliance.members) ? `<span>Ал. <b>${p.alliance.members}</b></span>` : ''}
@@ -1041,7 +1042,6 @@ App.screens.profile = async (c, param) => {
         </div>
         <div class="pf2-info">
           <div class="kv" style="padding:2px 0"><span class="k">Звание:</span><span class="v" style="color:var(--green);font-weight:700">${UI.esc(p.rank)}</span></div>
-          <div class="kv" style="padding:2px 0"><span class="k">Обращение:</span><span class="v">${UI.esc(p.genderTitle || "Господин генерал")}</span></div>
           <div class="pf2-stats-label">Статистика:</div>
           <div class="kv" style="padding:2px 0"><span class="k">победы</span><span class="v">${UI.fmtNum((p.battle.wins||0) + (p.battle.defWins||0))}</span></div>
           <div class="kv" style="padding:2px 0"><span class="k">поражения</span><span class="v">${UI.fmtNum((p.battle.losses||0) + (p.battle.defLosses||0))}</span></div>

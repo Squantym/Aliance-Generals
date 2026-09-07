@@ -100,7 +100,6 @@ function enqueue(user: User, game: Game, notices: Notices) {
   if (myMatch(st, user.id)) throw new u.ApiError('Вы уже в бою — доиграйте его');
   if (inQueue(st, user.id)) throw new u.ApiError('Вы уже в очереди');
   if (k.cdLeft(c, game) > 0) throw new u.ApiError('Перерыв после прошлого боя. Загляните позже.');
-  k.gate(c);
 
   k.takeStake(user, game, RULES[game].entry);
   st.queue.push({ game, id: user.id, name: user.name, at: Date.now(), ip: userIp(user) });
@@ -258,8 +257,7 @@ function finish(m: Match, winnerId: string | null, reason: string): void {
       // печатает: сколько внесли, столько и разошлось.
       reward = k.giveBack(p, m.game, rules.entry);
     } else if (winnerId === s.id) {
-      // Игра платная: общего перерыва на весь клуб она не взводит
-      reward = k.payout(p, m.game, rules.win, mine, false);
+      reward = k.payout(p, m.game, rules.win, mine);
     }
     k.setCd(c, m.game, rules.cd);
     (c as any)[m.game + 'Last'] = {

@@ -118,6 +118,35 @@ const nx = [];
   ok('без золота не сменить', !!poor);
   ok('пол при отказе не поменялся', M.gender === 'm');
 
+  console.log(String.fromCharCode(10) + '── 6б. Портрет — по полу ──');
+  // Мужчине женский портрет и наоборот: окно выбора показывает только
+  // свою половину, но окно обходится запросом — отказ обязан быть на
+  // сервере, иначе ограничение существует только на картинке.
+  const male = cfg.AVATARS.male[0], female = cfg.AVATARS.female[0];
+  M.gender = 'm'; M.avatar = undefined;
+  let wrongA = null;
+  try { player.setAvatar(M, female); } catch (e) { wrongA = e; }
+  ok('мужчине женский портрет не ставится', !!wrongA);
+  ok('и портрет остался пустым', !M.avatar);
+  player.setAvatar(M, male);
+  ok('свой — ставится', M.avatar === male);
+  F.gender = 'f'; F.avatar = undefined;
+  let wrongB = null;
+  try { player.setAvatar(F, male); } catch (e) { wrongB = e; }
+  ok('женщине мужской портрет не ставится', !!wrongB);
+  player.setAvatar(F, female);
+  ok('и ей свой — ставится', F.avatar === female);
+  ok('снять портрет можно всегда', player.setAvatar(F, '').avatar === null);
+  // Смена пола делает прежний портрет чужим — снимаем его сами
+  M.gold = 10000; M.gender = 'm'; player.setAvatar(M, male);
+  const notes = [];
+  passport.changeGender(M, 'f', notes);
+  ok('после смены пола чужой портрет снят', !M.avatar);
+  ok('и игроку про это сказано', notes.some((t) => /портрет/i.test(t)));
+  // Окно выбора на клиенте показывает ровно свою половину
+  const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+  ok('окно выбора аватара смотрит на пол', /App.me && App.me.gender === 'f'/.test(appSrc));
+
   console.log('\n── 7. Сцены есть для обоих ──');
   // Ради этого всё и затевалось: у каждой сцены должна быть пара.
   const dir = path.join(ROOT, 'public/img/breach');
