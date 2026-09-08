@@ -23,13 +23,19 @@ import player = require('./player');
 import auditLog = require('./auditLog');
 import type { User, Notices } from '../types';
 
-// Иерархия: владелец → арбитр (главный админ) → администратор
-//            владелец → комиссар (главный модератор) → дозор
-type Role = 'owner' | 'arbiter' | 'admin' | 'commissar' | 'moderator' | null;
+// Иерархия: арбитр (владелец проекта) → администратор
+//           арбитр → комиссар (главный модератор) → дозор
+//
+// Роли «арбитр» как отдельной должности больше нет. Она была лишней
+// прослойкой: между владельцем и администратором никто не работал, а
+// раздавать её было некому. Слово осталось как ПОДПИСЬ владельца —
+// внутри код по-прежнему знает его как 'owner', и переименовывать
+// идентификатор нельзя: он лежит в поле role у живых аккаунтов.
+type Role = 'owner' | 'admin' | 'commissar' | 'moderator' | null;
 
 // Старшинство: кто выше, тот управляет теми, кто ниже
 const RANK: Record<string, number> = {
-  owner: 100, arbiter: 80, admin: 60, commissar: 40, moderator: 20,
+  owner: 100, admin: 60, commissar: 40, moderator: 20,
 };
 const rankOf = (r: any): number => RANK[String(r)] || 0;
 
@@ -98,7 +104,6 @@ const ALL_ZONES: Zone[] = ZONE_INFO.map((z) => z.id);
 // когда роль получает возможности, о которых владелец не знал:
 // новая роль — пустой лист, а не набор допущений разработчика.
 const DEFAULT_ZONES: Record<string, Zone[]> = {
-  arbiter: [],
   admin: [],
   commissar: [],
   moderator: [],
@@ -265,7 +270,6 @@ function permissionsView() {
   return {
     zones: ZONE_INFO,
     roles: [
-      row('arbiter', 'Арбитр'),
       row('admin', 'Администратор'),
       row('commissar', 'Комиссар'),
       row('moderator', 'Дозор'),
@@ -280,7 +284,7 @@ function permissionsView() {
 function setRoleZone(actor: User, role: string, zone: string, enabled: boolean, notices: Notices) {
   if (!isOwner(actor)) throw new u.ApiError('Настраивать возможности ролей может только владелец');
   if (role === 'owner') throw new u.ApiError('У владельца всегда полный доступ — это нельзя изменить');
-  if (!['arbiter', 'admin', 'commissar', 'moderator'].includes(role)) throw new u.ApiError('Неизвестная роль');
+  if (!['admin', 'commissar', 'moderator'].includes(role)) throw new u.ApiError('Неизвестная роль');
   if (!ALL_ZONES.includes(zone as Zone)) throw new u.ApiError('Неизвестный раздел');
   // Опасные зоны роли «Дозор» не выдаются: его полномочия ограничены
   // общением намеренно, и открыть их «галочкой» нельзя
@@ -313,11 +317,11 @@ function setRoleZone(actor: User, role: string, zone: string, enabled: boolean, 
 // Вернуть роли настройку по умолчанию
 function resetRoleZones(actor: User, role: string, notices: Notices) {
   if (!isOwner(actor)) throw new u.ApiError('Настраивать возможности ролей может только владелец');
-  if (!['arbiter', 'admin', 'commissar', 'moderator'].includes(role)) throw new u.ApiError('Неизвестная роль');
+  if (!['admin', 'commissar', 'moderator'].includes(role)) throw new u.ApiError('Неизвестная роль');
   const saved: any = db.load('roleZones', {});
   delete saved[role];
   db.save('roleZones');
-  notices.push(`↩️ Возможности роли «${({ arbiter: 'Арбитр', admin: 'Администратор', commissar: 'Комиссар', moderator: 'Дозор' } as any)[role] || role}» сброшены к исходным`);
+  notices.push(`↩️ Возможности роли «${({ admin: 'Администратор', commissar: 'Комиссар', moderator: 'Дозор' } as any)[role] || role}» сброшены к исходным`);
   return permissionsView();
 }
 
@@ -325,7 +329,12 @@ function resetRoleZones(actor: User, role: string, notices: Notices) {
 function roleOf(user: any): Role {
   if (!user) return null;
   const r = user.role;
-  if (r === 'owner' || r === 'arbiter' || r === 'admin' || r === 'commissar' || r === 'moderator') return r;
+  // 'arbiter' — прежняя должность между владельцем и администратором.
+  // Роли больше нет, но поле могло остаться в старом аккаунте: считаем
+  // такого человека администратором, а не никем. Молча потерять доступ
+  // сотруднику — худший исход из возможных.
+  if (r === 'arbiter') return 'admin';
+  if (r === 'owner' || r === 'admin' || r === 'commissar' || r === 'moderator') return r;
   if (user.isAdmin) return 'admin';        // наследие: старый флаг без роли
   return null;
 }
@@ -358,8 +367,9 @@ function adminPowersEnabled(): boolean { return ADMIN_POWERS_ENABLED; }
 // Полное название роли — для карточек и списков
 function roleLabel(user: any): string {
   switch (roleOf(user)) {
-    case 'owner': return 'Владелец';
-    case 'arbiter': return 'Арбитр';
+    // Владелец подписан «Арбитром»: так его видят игроки и сотрудники.
+    // Права при этом владельческие — подпись их не меняет.
+    case 'owner': return 'Арбитр';
     case 'admin': return ADMIN_POWERS_ENABLED ? 'Администратор' : 'Администратор (без прав)';
     case 'commissar': return 'Комиссар';
     case 'moderator': return 'Дозор';
@@ -370,8 +380,7 @@ function roleLabel(user: any): string {
 // Короткая приписка к имени — маленьким шрифтом над строкой
 function roleTag(user: any): string {
   switch (roleOf(user)) {
-    case 'owner': return 'owner';
-    case 'arbiter': return 'arbiter';
+    case 'owner': return 'арбитр';
     case 'admin': return 'admin';
     case 'commissar': return 'commissar';
     case 'moderator': return 'дозор';
@@ -386,14 +395,12 @@ function roleTag(user: any): string {
 // Управлять можно только теми, кто НИЖЕ по старшинству, и назначать
 // роль строго ниже своей. Иначе администратор мог бы сделать себе равного
 // и потерялась бы вертикаль.
-//   владелец  → любые роли
-//   арбитр    → администратор, комиссар, дозор
+//   арбитр (владелец) → любые роли
 //   админ     → дозор
 //   комиссар  → дозор (он старший по чатам)
 //   дозор     → никого
 const CAN_ASSIGN: Record<string, Role[]> = {
-  owner:     ['arbiter', 'admin', 'commissar', 'moderator', null],
-  arbiter:   ['admin', 'commissar', 'moderator', null],
+  owner:     ['admin', 'commissar', 'moderator', null],
   admin:     ['moderator', null],
   commissar: ['moderator', null],
 };
@@ -404,8 +411,8 @@ function canManage(actor: any, target: any, newRole: Role): boolean {
   if (isOwner(actor)) return true;                        // владелец — любые роли
   if (!ADMIN_POWERS_ENABLED) return false;
   // Мало быть старшим по званию — нужно ещё и выданное право «Роли».
-  // Иначе арбитр без единой выданной возможности всё равно раздавал бы
-  // должности, а мы договорились: роль сама по себе прав не даёт.
+  // Иначе комиссар без единой выданной возможности всё равно раздавал
+  // бы должности, а мы договорились: роль сама по себе прав не даёт.
   if (!canAccessZone(actor, 'roles')) return false;
   const myRole = roleOf(actor);
   if (!myRole) return false;
@@ -419,7 +426,7 @@ function setRole(actor: User, targetId: string, role: Role, notices: Notices) {
   const users = player.users();
   const target = users[targetId];
   if (!target) throw new u.ApiError('Игрок не найден');
-  if (role !== null && !['owner', 'arbiter', 'admin', 'commissar', 'moderator'].includes(String(role))) {
+  if (role !== null && !['owner', 'admin', 'commissar', 'moderator'].includes(String(role))) {
     throw new u.ApiError('Неизвестная роль');
   }
   if (actor.id === target.id) throw new u.ApiError('Нельзя менять роль самому себе');
@@ -432,7 +439,7 @@ function setRole(actor: User, targetId: string, role: Role, notices: Notices) {
   if (!canManage(actor, target, role)) {
     const myRole = roleOf(actor);
     const canList = (CAN_ASSIGN[String(myRole)] || []).filter(Boolean)
-      .map((r) => ({ arbiter: 'арбитра', admin: 'администратора', commissar: 'комиссара', moderator: 'дозорного' } as any)[String(r)])
+      .map((r) => ({ admin: 'администратора', commissar: 'комиссара', moderator: 'дозорного' } as any)[String(r)])
       .join(', ');
     throw new u.ApiError(canList
       ? `Вы можете назначать: ${canList} — и только тем, кто ниже вас по старшинству`

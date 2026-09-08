@@ -287,7 +287,7 @@ const profMod = player.publicProfile(mod, other);
 ok(profMod.staffRole === 'moderator', 'профиль отдаёт роль сотрудника');
 ok(profMod.staffLabel === 'Дозор', `подпись в профиле: «${profMod.staffLabel}»`);
 const profOwner = player.publicProfile(owner, other);
-ok(profOwner.staffLabel === 'Владелец', 'у владельца своя подпись');
+ok(profOwner.staffLabel === 'Арбитр', `у владельца своя подпись: «${profOwner.staffLabel}»`);
 const profPlain = player.publicProfile(other, mod);
 ok(profPlain.staffRole === null, 'у обычного игрока роли нет');
 
@@ -302,8 +302,8 @@ ok(opp.filter((o) => o.isBot).every((o) => o.staffRole === null), 'у ботов
 const appMark = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
 ok(/staffMark\(role\)/.test(appMark), 'есть общий хелпер метки');
 ok(/moderator: *\{ tag: 'дозор'/.test(appMark), 'у дозорного приписка «дозор»');
-ok(/admin: *\{ tag: 'admin'/.test(appMark) && /owner: *\{ tag: 'owner'/.test(appMark),
-   'у администратора «admin», у владельца «owner»');
+ok(/admin: *\{ tag: 'admin'/.test(appMark) && /owner: *\{ tag: 'арбитр'/.test(appMark),
+   'у администратора «admin», у владельца «арбитр»');
 const warMark = fs.readFileSync(ROOT + '/public/js/screens/war.js', 'utf8');
 ok(/App\.staffMark\(o\.staffRole\)/.test(warMark), 'метка выводится в списке целей во вкладке «Война»');
 const coreMark = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');

@@ -920,11 +920,10 @@ const Admin = {
 
   // Подписи и права назначения — рядом с разметкой, потому что
   // используются и ею, и обработчиками, и панелью v2.
-  ROLE_LABEL: { owner: 'Владелец', arbiter: 'Арбитр', admin: 'Администратор',
+  ROLE_LABEL: { owner: 'Арбитр', admin: 'Администратор',
                 commissar: 'Комиссар', moderator: 'Дозор' },
   // Кого может назначать текущий сотрудник — совпадает с проверкой на сервере
-  ROLE_CAN: { owner: ['arbiter', 'admin', 'commissar', 'moderator'],
-              arbiter: ['admin', 'commissar', 'moderator'],
+  ROLE_CAN: { owner: ['admin', 'commissar', 'moderator'],
               admin: ['moderator'], commissar: ['moderator'] },
 
   // ── Экран «Роли»: обработчики ────────────────────────────────────
@@ -1085,7 +1084,7 @@ const Admin = {
                 <div class="grow"><b>${UI.esc(p.name)}</b> <span class="muted small">ур. ${p.level}</span>
                   ${p.role ? `<span class="badge">${UI.esc(label[p.role] || p.role)}</span>` : ''}</div>
                 ${canAssign.map((r) => `<button class="btn btn-inline" data-set="${p.id}" data-r="${r}" data-name="${UI.esc(p.name)}">${UI.esc(label[r])}</button>`).join('')}
-                ${myRole === 'owner' ? `<button class="btn btn-inline" data-set="${p.id}" data-r="owner" data-name="${UI.esc(p.name)}">Владелец</button>` : ''}
+                ${myRole === 'owner' ? `<button class="btn btn-inline" data-set="${p.id}" data-r="owner" data-name="${UI.esc(p.name)}">Арбитр</button>` : ''}
               </div>`).join('')
           : '<p class="muted small">Никого не найдено</p>';
         box.querySelectorAll('[data-set]').forEach((b) => {
@@ -1093,7 +1092,7 @@ const Admin = {
             const rn = label[b.dataset.r] || b.dataset.r;
             if (!await UI.confirm(
               `Назначить игроку <b>${UI.esc(b.dataset.name)}</b> роль <b>${UI.esc(rn)}</b>?` +
-              (b.dataset.r === 'owner' ? '<br><span class="muted small">Владелец получает полный доступ, включая выдачу ресурсов и управление базой.</span>' : ''),
+              (b.dataset.r === 'owner' ? '<br><span class="muted small">Арбитр — владелец проекта: полный доступ, включая выдачу ресурсов и управление базой.</span>' : ''),
               { title: 'Назначение роли', icon: '🛡', okText: 'Назначить', html: true, danger: b.dataset.r === 'owner' })) return;
             try {
               await API.post('/api/staff/role', { userId: b.dataset.set, role: b.dataset.r });

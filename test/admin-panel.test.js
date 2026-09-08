@@ -40,7 +40,6 @@ roles.setRole(own, mod.id, 'moderator', []);
 // как это и делается на практике
 for (const z of ['players','chat','moderation','security','support','legions','news','event','roles']) {
   try { roles.setRoleZone(own, 'admin', z, true, []); } catch (e) {}
-  try { roles.setRoleZone(own, 'arbiter', z, true, []); } catch (e) {}
 }
 try { roles.setRoleZone(own, 'moderator', 'chat', true, []); } catch (e) {}
 try { roles.setRoleZone(own, 'commissar', 'chat', true, []); roles.setRoleZone(own, 'commissar', 'roles', true, []); } catch (e) {}

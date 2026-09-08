@@ -1,6 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════
-// Пять ролей: владелец → арбитр → администратор, владелец → комиссар →
+// Четыре роли: арбитр (владелец) → администратор, арбитр → комиссар →
 // дозор. Проверяем старшинство, полномочия и компактные приписки.
+//
+// Роли «арбитр» как отдельной должности больше НЕТ: она была лишней
+// прослойкой между владельцем и администратором. Слово осталось как
+// подпись владельца — идентификатор роли в поле игрока по-прежнему
+// 'owner', и путать одно с другим нельзя: переименуй идентификатор —
+// и живые аккаунты остались бы без прав.
 // ═══════════════════════════════════════════════════════════════════
 const fs = require('fs');
 const path = require('path');
@@ -23,45 +29,59 @@ const roles = require(ROOT + '/dist/src/services/roles');
 try { const dbz = require(ROOT + '/dist/src/core/db'); const z = dbz.load('roleZones', {}); for (const k of Object.keys(z)) delete z[k]; dbz.save('roleZones'); } catch (e) {}
 
 async function main() {
-const names = [['Хозяин','o'],['Арбитр1','ar'],['Админ1','ad'],['Комиссар1','co'],['Дозор1','mo'],['Игрок','pl']];
+const names = [['Хозяин','o'],['Админ1','ad'],['Комиссар1','co'],['Дозор1','mo'],['Игрок','pl'],['Староста','ol']];
 for (const [n, e] of names) await auth.register(n, 'пароль123', e + '@t.ru', 'ru', '1.1.1.1');
 const U = player.users();
 const by = (n) => U[Object.keys(U).find((id) => U[id].name === n)];
-const own = by('Хозяин'), arb = by('Арбитр1'), adm = by('Админ1'),
-      com = by('Комиссар1'), mod = by('Дозор1'), pl = by('Игрок');
+const own = by('Хозяин'), adm = by('Админ1'),
+      com = by('Комиссар1'), mod = by('Дозор1'), pl = by('Игрок'), old = by('Староста');
 own.role = 'owner'; own.isAdmin = true;
-for (const [n, r] of [['Арбитр1','arbiter'],['Админ1','admin'],['Комиссар1','commissar'],['Дозор1','moderator']]) {
+for (const [n, r] of [['Админ1','admin'],['Комиссар1','commissar'],['Дозор1','moderator']]) {
   roles.setRole(own, by(n).id, r, []);
 }
 
-console.log('\n── 1. Пять ролей ──');
-ok(roles.roleOf(arb) === 'arbiter', 'арбитр назначен');
+console.log('\n── 1. Четыре роли ──');
+ok(roles.roleOf(own) === 'owner', 'владелец определяется');
+ok(roles.roleOf(adm) === 'admin', 'администратор назначен');
 ok(roles.roleOf(com) === 'commissar', 'комиссар назначен');
-ok(roles.roleLabel(arb) === 'Арбитр' && roles.roleLabel(com) === 'Комиссар', 'подписи ролей');
-ok(roles.rankOf('owner') > roles.rankOf('arbiter'), 'владелец старше арбитра');
-ok(roles.rankOf('arbiter') > roles.rankOf('admin'), 'арбитр старше администратора');
+ok(roles.roleLabel(own) === 'Арбитр', `владелец подписан «${roles.roleLabel(own)}», а не «Владелец»`);
+ok(roles.roleLabel(com) === 'Комиссар', 'подписи остальных ролей на месте');
+ok(roles.rankOf('owner') > roles.rankOf('admin'), 'арбитр старше администратора');
 ok(roles.rankOf('commissar') > roles.rankOf('moderator'), 'комиссар старше дозорного');
 
+console.log('\n── 1б. Роли «арбитр» больше нет ──');
+fails(() => roles.setRole(own, pl.id, 'arbiter', []), 'Неизвестная роль',
+      'назначить арбитром нельзя даже владельцу');
+fails(() => roles.setRoleZone(own, 'arbiter', 'chat', true, []), 'Неизвестная роль',
+      'и настроить упразднённой роли нечего');
+ok(roles.rankOf('arbiter') === 0, 'старшинства у неё не осталось');
+// Совместимость: у сотрудника со старой ролью в поле не должно молча
+// пропасть всё. Такой человек считается администратором.
+old.role = 'arbiter';
+ok(roles.roleOf(old) === 'admin', 'старая запись role=arbiter читается как администратор');
+ok(roles.roleLabel(old).startsWith('Администратор'), `и подписывается им же: «${roles.roleLabel(old)}»`);
+old.role = null;
+
 console.log('\n── 2. Права не выдаются вместе с ролью ──');
-for (const [who, u] of [['арбитр', arb], ['администратор', adm], ['комиссар', com], ['дозорный', mod]]) {
+for (const [who, u] of [['администратор', adm], ['комиссар', com], ['дозорный', mod]]) {
   ok(roles.zonesFor(u).length === 0, `${who}: сразу после назначения прав нет ни одного`);
 }
-ok(roles.isAdmin(arb) === false, 'арбитр без выданных прав в панель не войдёт');
+ok(roles.isAdmin(adm) === false, 'администратор без выданных прав в панель не войдёт');
 ok(roles.isModerator(com) === false, 'комиссар без права «Модерация чатов» чаты не модерирует');
 fails(() => roles.banChat(mod, pl.id, 60, 'x', [], ['global']), 'Нет права «Модерация чатов»',
       'дозорный не может блокировать чат, пока право не выдано');
-fails(() => roles.banAccount(arb, pl.id, 60, 'x', []), 'Нет права «Баны аккаунтов»',
-      'арбитр не может банить, пока право не выдано');
-fails(() => roles.setRole(arb, pl.id, 'moderator', []), 'Нет права «Роли»',
+fails(() => roles.banAccount(adm, pl.id, 60, 'x', []), 'Нет права «Баны аккаунтов»',
+      'администратор не может банить, пока право не выдано');
+fails(() => roles.setRole(adm, pl.id, 'moderator', []), 'Нет права «Роли»',
       'и не может назначать роли');
 
 console.log('\n── 3. Владелец выдаёт возможности ──');
-roles.setRoleZone(own, 'arbiter', 'chat', true, []);
-ok(roles.isModerator(arb) === true, 'после выдачи «Модерация чатов» арбитр модерирует чаты');
-roles.setRoleZone(own, 'arbiter', 'moderation', true, []);
-ok(roles.canAccessZone(arb, 'moderation'), 'после выдачи «Баны аккаунтов» — может банить');
-roles.setRoleZone(own, 'arbiter', 'roles', true, []);
-ok(roles.isAdmin(arb) === true, 'с выданными правами появляется доступ в панель');
+roles.setRoleZone(own, 'admin', 'chat', true, []);
+ok(roles.isModerator(adm) === true, 'после выдачи «Модерация чатов» администратор модерирует чаты');
+roles.setRoleZone(own, 'admin', 'moderation', true, []);
+ok(roles.canAccessZone(adm, 'moderation'), 'после выдачи «Баны аккаунтов» — может банить');
+roles.setRoleZone(own, 'admin', 'roles', true, []);
+ok(roles.isAdmin(adm) === true, 'с выданными правами появляется доступ в панель');
 roles.setRoleZone(own, 'moderator', 'chat', true, []);
 ok(roles.isModerator(mod) === true, 'дозорному тоже выдаётся модерация чатов');
 roles.banChat(mod, pl.id, 60, 'Оскорбления', [], ['global']);
@@ -75,7 +95,6 @@ ok(roles.zonesFor(own).length === 15, 'у владельца по-прежнем
 fails(() => roles.setRoleZone(own, 'admin', 'database', true, []), 'нельзя открыть',
       'управление базой не выдаётся никому, кроме владельца');
 // Для дальнейших проверок выдаём ролям права
-roles.setRoleZone(own, 'admin', 'roles', true, []);
 roles.setRoleZone(own, 'commissar', 'roles', true, []);
 roles.setRoleZone(own, 'commissar', 'chat', true, []);
 
@@ -84,26 +103,22 @@ const tryAssign = (actor, role) => {
   try { roles.setRole(actor, pl.id, role, []); roles.setRole(own, pl.id, null, []); return true; }
   catch (e) { return false; }
 };
-ok(tryAssign(own, 'arbiter') && tryAssign(own, 'commissar'), 'владелец назначает любые роли');
-ok(tryAssign(arb, 'admin') && tryAssign(arb, 'commissar') && tryAssign(arb, 'moderator'),
-   'арбитр назначает администраторов, комиссаров и дозорных');
-ok(!tryAssign(arb, 'arbiter'), 'но не равного себе арбитра');
+ok(tryAssign(own, 'admin') && tryAssign(own, 'commissar') && tryAssign(own, 'moderator'),
+   'арбитр назначает любые роли');
 ok(tryAssign(adm, 'moderator') && !tryAssign(adm, 'admin'), 'администратор — только дозорных');
 ok(tryAssign(com, 'moderator') && !tryAssign(com, 'commissar'), 'комиссар — только дозорных');
 ok(!tryAssign(mod, 'moderator'), 'дозорный не назначает никого');
 
 console.log('\n── 5. Нельзя трогать равных и старших ──');
-fails(() => roles.setRole(adm, arb.id, null, []), 'ниже вас по старшинству', 'админ не снимет арбитра');
 fails(() => roles.setRole(com, adm.id, null, []), 'ниже вас по старшинству', 'комиссар не тронет админа');
-fails(() => roles.setRole(arb, own.id, null, []), 'ниже вас по старшинству', 'арбитр не тронет владельца');
+fails(() => roles.setRole(adm, own.id, null, []), 'ниже вас по старшинству', 'администратор не тронет арбитра');
 const n1 = [];
-roles.setRole(arb, adm.id, null, n1);
-ok(roles.roleOf(adm) === null, 'зато арбитр может снять администратора');
-roles.setRole(own, adm.id, 'admin', []);
+roles.setRole(own, com.id, null, n1);
+ok(roles.roleOf(com) === null, 'зато арбитр снимает кого угодно');
+roles.setRole(own, com.id, 'commissar', []);
 
 console.log('\n── 6. Приписки к имени ──');
-ok(roles.roleTag(own) === 'owner', `владелец: «${roles.roleTag(own)}»`);
-ok(roles.roleTag(arb) === 'arbiter', `арбитр: «${roles.roleTag(arb)}»`);
+ok(roles.roleTag(own) === 'арбитр', `владелец: «${roles.roleTag(own)}» вместо «owner»`);
 ok(roles.roleTag(adm) === 'admin', `администратор: «${roles.roleTag(adm)}» вместо «Администратор»`);
 ok(roles.roleTag(com) === 'commissar', `комиссар: «${roles.roleTag(com)}»`);
 ok(roles.roleTag(mod) === 'дозор', `дозорный: «${roles.roleTag(mod)}»`);
@@ -113,21 +128,25 @@ console.log('\n── 7. Приписки в интерфейсе ──');
 const css = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
 ok(/\.role-tag \{[\s\S]{0,200}vertical-align: super/.test(css), 'приписка стоит по верхней линии текста');
 ok(/\.role-tag \{[\s\S]{0,120}font-size: 9px/.test(css), 'шрифт мелкий');
-for (const r of ['owner', 'arbiter', 'admin', 'commissar', 'moderator']) {
+for (const r of ['owner', 'admin', 'commissar', 'moderator']) {
   ok(css.includes(`.role-tag-${r}`), `у роли ${r} свой цвет приписки`);
 }
+ok(!css.includes('role-tag-arbiter') && !css.includes('chat-msg-arbiter'),
+   'стилей упразднённой роли в css не осталось');
 const soc = fs.readFileSync(ROOT + '/public/js/screens/social.js', 'utf8');
 ok(/<sup class="role-tag role-tag-\$\{msg\.staff\}"/.test(soc), 'в чате приписка выводится тегом sup');
 ok(/msg\.staffTag/.test(soc), 'используется короткая форма');
 const core = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
 ok(/<sup class="role-tag role-tag-\$\{p\.staffRole\}"/.test(core), 'в профиле тоже приписка');
 const app = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
-ok(/arbiter: *\{ tag: 'arbiter'/.test(app) && /commissar: *\{ tag: 'commissar'/.test(app),
-   'новые роли есть в метках списка целей');
+ok(/owner: *\{ tag: 'арбитр'/.test(app) && /commissar: *\{ tag: 'commissar'/.test(app),
+   'в метках списка целей владелец подписан арбитром');
+ok(!/arbiter:/.test(app), 'упразднённой роли в метках нет');
 
-console.log('\n── 8. Панель знает о новых ролях ──');
+console.log('\n── 8. Панель знает те же роли, что и сервер ──');
 const adminJs = fs.readFileSync(ROOT + '/public/js/admin.js', 'utf8');
-ok(/arbiter: 'Арбитр'/.test(adminJs) && /commissar: 'Комиссар'/.test(adminJs), 'подписи в панели');
+ok(/owner: 'Арбитр'/.test(adminJs) && /commissar: 'Комиссар'/.test(adminJs), 'подписи в панели');
+ok(!/arbiter/.test(adminJs), 'упразднённой роли в панели нет');
 // Раньше здесь сверялась точная строка кода панели — проверка ломалась
 // от переименования константы, а расхождение с сервером не ловила.
 // Теперь сверяем СОДЕРЖИМОЕ: кого панель предлагает назначить и кому
@@ -165,7 +184,8 @@ ok(mismatch.length === 0,
    'кнопки назначения совпадают с правами на сервере'
    + (mismatch.length ? ` — расходятся: ${mismatch.join(', ')}` : ''));
 const perms = roles.permissionsView();
-ok(perms.roles.length === 4, `настраиваются возможности всех четырёх ролей (${perms.roles.map((r) => r.name).join(', ')})`);
+ok(perms.roles.length === 3, `настраиваются возможности всех трёх ролей (${perms.roles.map((r) => r.name).join(', ')})`);
+ok(!perms.roles.some((r) => r.id === 'arbiter'), 'арбитра в настройке возможностей нет');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

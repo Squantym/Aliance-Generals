@@ -38,7 +38,7 @@ roles.setRole(own, a2.id, 'admin', []);
 // делает владелец во вкладке «Роли»
 const ALL_Z = ['players','chat','moderation','security','support','legions','news','event','roles','economy','discounts','season'];
 const grantAll = (role) => { for (const z of ALL_Z) { try { roles.setRoleZone(own, role, z, true, []); } catch (e) {} } };
-grantAll('admin'); grantAll('moderator'); grantAll('arbiter'); grantAll('commissar');
+grantAll('admin'); grantAll('moderator'); grantAll('commissar');
 
 console.log('\n── 1. Свободное обращение видят все сотрудники ──');
 support.createTicket(pl, 'other', 'Не приходит награда', 'Помогите', []);

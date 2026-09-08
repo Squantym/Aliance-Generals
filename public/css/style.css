@@ -3251,13 +3251,11 @@ body.theme-noir .field-hint { color: #8a8a92; }
   text-transform: lowercase; opacity: .95; white-space: nowrap;
 }
 .role-tag-owner     { color: var(--gold); }
-.role-tag-arbiter   { color: #d98cff; }
 .role-tag-admin     { color: var(--orange-1); }
 .role-tag-commissar { color: #4fd6b8; }
 .role-tag-moderator { color: #6fdcff; }
 
 /* Цвет текста сообщений по роли */
-.chat-msg-arbiter .chat-text   { color: #d98cff; }
 .chat-msg-commissar .chat-text { color: #4fd6b8; }
 
 /* Счётчик онлайна в подвале */

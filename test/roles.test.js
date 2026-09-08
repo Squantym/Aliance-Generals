@@ -56,7 +56,7 @@ try { roles.setRoleZone(owner, 'moderator', 'chat', true, []); } catch (e) {}
 ok(roles.roleOf(mod) === 'moderator', 'назначен модератор');
 ok(mod.isAdmin === false, 'у модератора НЕТ прав администратора — доступа к ресурсам и удалению аккаунтов не будет');
 ok(roles.roleLabel(mod) === 'Дозор', `подпись модератора: «${roles.roleLabel(mod)}»`);
-ok(roles.roleLabel(owner) === 'Владелец', 'подпись владельца');
+ok(roles.roleLabel(owner) === 'Арбитр', `подпись владельца: «${roles.roleLabel(owner)}»`);
 ok(roles.roleOf(admin) === 'admin', 'назначен администратор');
 ok(roles.isAdmin(admin) === true, 'после выдачи прав доступ в панель появился');
 ok(roles.isModerator(admin) === true, 'и модерация чатов — она тоже выдана');

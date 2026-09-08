@@ -39,7 +39,7 @@ roles.setRole(owner, mod.id, 'moderator', []);
 // делает владелец во вкладке «Роли»
 const ALL_Z = ['players','chat','moderation','security','support','legions','news','event','roles','economy','discounts','season'];
 const grantAll = (role) => { for (const z of ALL_Z) { try { roles.setRoleZone(owner, role, z, true, []); } catch (e) {} } };
-grantAll('admin'); grantAll('moderator'); grantAll('arbiter'); grantAll('commissar');
+grantAll('admin'); grantAll('moderator'); grantAll('commissar');
 
 console.log('\n── 1. Чат-бан закрывает публичные каналы ──');
 // Блокировка теперь адресная: по умолчанию закрываются общий чат и
