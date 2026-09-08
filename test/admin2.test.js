@@ -576,7 +576,10 @@ ok(location.hash === '#/gold', `«Назад» вернул к списку зо
 console.log('\n── 20. Экономика: подвкладка в ссылке и права по подвкладкам ──');
 location.hash = '#/econ';
 await wait(80);
-ok(document.querySelectorAll('#a2-main [data-t]').length === 4, 'четыре подвкладки у владельца');
+// Массовая выдача, наёмники, наборы, акции, бонусы
+ok(document.querySelectorAll('#a2-main [data-t]').length === 5, 'пять подвкладок у владельца');
+ok([...document.querySelectorAll('#a2-main [data-t]')].some((b) => b.dataset.t === 'offers'),
+   'среди них конструктор наборов — его тут не было, и собрать предложение было негде');
 document.querySelector('[data-t="discounts"]').click();
 await wait(80);
 ok(/t=discounts/.test(location.hash), `подвкладка попала в ссылку: ${location.hash}`);

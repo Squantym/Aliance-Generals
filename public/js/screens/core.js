@@ -1473,7 +1473,7 @@ App.screens.bank = async (c, param) => {
       <div class="tab ${tab === 'storage' ? 'active' : ''}" onclick="location.hash='#bank/storage'">${App.tabImg('bank_vault', 20)}Хранилище</div>
       <div class="tab ${tab === 'reserve' ? 'active' : ''}" onclick="location.hash='#bank/reserve'"><span class="ic-reserve"></span> Резерв</div>
       <div class="tab ${tab === 'gold'    ? 'active' : ''}" onclick="location.hash='#bank/gold'">${App.tabImg('bank_gold', 20)}Купить золото</div>
-      <div class="tab ${tab === 'offers'  ? 'active' : ''}" onclick="location.hash='#bank/offers'">🎁 Наборы</div>
+      <div class="tab ${tab === 'offers'  ? 'active' : ''}" onclick="location.hash='#bank/offers'">🎁 Спецпредложения</div>
     </div>`;
 
   // ── Спецпредложения: наборы, собранные в админ-панели ─────────────

@@ -177,6 +177,36 @@ const fails = (n, fn, part) => {
   ok('контейнеры на выбор', pal.containers.length === c.CONTAINERS.length);
   ok('техника на выбор', pal.units.length === c.UNITS.length);
 
+  console.log('[9] Набор доступен из ОБЕИХ панелей и виден игроку');
+  // Панелей две — старая (public/js/admin.js) и новая (admin2). Новая
+  // зовёт те же функции Admin.*, но список подвкладок держит СВОЙ, и
+  // конструктор наборов в него не попал: собрать предложение было негде,
+  // хотя весь код для этого лежал на месте. Сверяем списки целиком —
+  // одна забытая строка повторит ровно ту же пропажу.
+  const v1 = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
+  const v2 = fs.readFileSync(path.join(ROOT, 'public/js/admin2/econ.js'), 'utf8');
+  const idsOf = (src, block) => {
+    const m = src.slice(src.indexOf(block));
+    const list = m.slice(0, m.indexOf(']'));
+    const out = [];
+    const re = /id: '([a-z]+)'/g;
+    let m2;
+    while ((m2 = re.exec(list))) out.push(m2[1]);
+    return out;
+  };
+  const oldTabs = idsOf(v1, 'renderEcon(c) {');
+  const newTabs = idsOf(v2, 'const SUBS = [');
+  ok('в старой панели есть конструктор наборов', oldTabs.indexOf('offers') >= 0);
+  ok('и в новой тоже', newTabs.indexOf('offers') >= 0);
+  eq('подвкладки экономики в обеих панелях совпадают',
+     oldTabs.slice().sort().join(','), newTabs.slice().sort().join(','));
+  ok('новая панель рисует набор той же функцией', /fn: 'renderOffers'/.test(v2));
+  ok('функция сборки набора на месте', /renderOffers\(c\)/.test(v1) && /loadOffers/.test(v1));
+  // Витрина в банке: игрок ищет «Спецпредложения», а не «Наборы»
+  const bank = fs.readFileSync(path.join(ROOT, 'public/js/screens/core.js'), 'utf8');
+  ok('в банке есть вкладка спецпредложений', /bank\/offers'">🎁 Спецпредложения/.test(bank));
+  ok('витрина берёт наборы с сервера', /API\.get\('\/api\/offers'\)/.test(bank));
+
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });
