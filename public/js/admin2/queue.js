@@ -168,6 +168,26 @@
         <div class="a2-item-txt">${UI.esc(l.human || l.path || '')}
           <div class="a2-item-when">${UI.esc(ago(l.at))}</div></div></div>`).join('');
 
+    // ── Мои права ──────────────────────────────────────────────────
+    // Панель показывает только доступные разделы, поэтому «пропавшей»
+    // кнопки не существует — есть закрытый раздел. Без этого списка
+    // сотрудник гадает по меню, чего ему не выдали, и идёт спрашивать.
+    const acc = d.myAccess || [];
+    const allowed = acc.filter((z) => z.allowed);
+    const denied = acc.filter((z) => !z.allowed);
+    const rights = !acc.length ? '' : `
+      <details class="a2-card">
+        <summary style="cursor:pointer"><b>🔑 Мои права</b>
+          <span class="a2-muted"> — открыто ${allowed.length} из ${acc.length}</span></summary>
+        <p class="a2-muted">Права выдаёт владелец в разделе «Роли».</p>
+        ${allowed.map((z) => `<div class="a2-item"><div class="a2-item-ico">✓</div>
+          <div class="a2-item-txt"><b>${UI.esc(z.name)}</b>
+            <div class="a2-item-when">${UI.esc(z.note || '')}</div></div></div>`).join('')}
+        ${denied.map((z) => `<div class="a2-item" style="opacity:.6"><div class="a2-item-ico">·</div>
+          <div class="a2-item-txt">${UI.esc(z.name)}${z.ownerOnly ? ' <span class="a2-pill is-warn">только владелец</span>' : ''}
+            <div class="a2-item-when">${UI.esc(z.note || '')}</div></div></div>`).join('')}
+      </details>`;
+
     const p = d.players || {};
     el.innerHTML = `
       <div class="a2-title">Очередь работ</div>
@@ -205,9 +225,11 @@
 
         <div class="a2-card">
           <h3>Мои действия за сутки</h3>
+          <p class="a2-muted">Все действия сотрудников записываются. Это ваш собственный журнал.</p>
           ${mine || '<p class="a2-muted">Сегодня вы ещё ничего не делали.</p>'}
         </div>
-      </div>`;
+      </div>
+      ${rights}`;
   }
 
   A2.screens.queue = render;

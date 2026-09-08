@@ -10,15 +10,19 @@ let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 
 const adminJs = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
+// Панель ровно одна — v2. Список разделов держит её оболочка, а
+// admin.js остался набором экранов: своей строки вкладок у него нет.
+const shellJs = fs.readFileSync(path.join(ROOT, 'public/js/admin2/shell.js'), 'utf8');
 const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
 
 console.log('\n── 1. Вкладок стало меньше ──');
-const tabsBlock = /const tabs = \[([\s\S]*?)\];/.exec(adminJs)[1];
-const count = (tabsBlock.match(/id:'/g) || []).length;
-ok(count === 13, `вкладок в панели: ${count} (было 14; добавлены «Жалобы» и «Аналитика»)`);
-ok(/id:'econ'/.test(tabsBlock), 'экономические разделы объединены во вкладку «Экономика»');
-for (const gone of ["id:'tools'", "id:'mercs'", "id:'discounts'", "id:'buffs'", "id:'db'"]) {
-  ok(!tabsBlock.includes(gone), `отдельной вкладки ${gone} больше нет`);
+const tabsBlock = /NAV: \[([\s\S]*?)\n  \],/.exec(shellJs)[1];
+ok(!/const tabs = \[/.test(adminJs), 'своей строки вкладок у admin.js больше нет');
+ok(!/Обновить активную кнопку/.test(adminJs),
+   'и переключателя вкладок тоже — разделы выбирает оболочка v2');
+ok(/id: 'econ'/.test(tabsBlock), 'экономические разделы объединены в раздел «Экономика»');
+for (const gone of ["id: 'tools'", "id: 'mercs'", "id: 'discounts'", "id: 'buffs'", "id: 'db'"]) {
+  ok(!tabsBlock.includes(gone), `отдельного раздела ${gone} больше нет`);
 }
 ok(/renderEcon\(c\)/.test(adminJs), 'у «Экономики» свой экран с подвкладками');
 ok(/data-econ=/.test(adminJs), 'подвкладки переключаются');

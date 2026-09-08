@@ -53,16 +53,23 @@ ok(/\$\{\(d\.commanders \|\| \[\]\)\.map/.test(adminJs),
 ok(/\$\{\(h\.holders \|\| \[\]\)\.length/.test(adminJs), 'владельцы наёмников тоже защищены');
 
 console.log('\n── 5. Состав панели ──');
-const tabsBlock = /const tabs = \[([\s\S]*?)\];/.exec(adminJs)[1];
-const ids = [...tabsBlock.matchAll(/id:'(\w+)'/g)].map((m) => m[1]);
-ok(ids.length === 13, `вкладок: ${ids.length}`);
-for (const id of ['home', 'players', 'econ', 'events', 'tournament', 'legions', 'logs', 'support', 'tech', 'roles', 'gold']) {
-  ok(ids.includes(id), `вкладка «${id}» на месте`);
+// Панель ровно одна — v2, и список разделов держит её оболочка.
+// В admin.js остались только экраны: своей строки вкладок у него нет.
+const shellJs = fs.readFileSync(ROOT + '/public/js/admin2/shell.js', 'utf8');
+const navBlock = /NAV: \[([\s\S]*?)\n  \],/.exec(shellJs)[1];
+const ids = [...navBlock.matchAll(/id: '(\w+)'/g)].map((m) => m[1]);
+ok(!/const tabs = \[/.test(adminJs), 'своей строки вкладок в admin.js не осталось');
+for (const id of ['queue', 'players', 'econ', 'events', 'tournament', 'legions', 'logs', 'support', 'tech', 'roles', 'gold']) {
+  ok(ids.includes(id), `раздел «${id}» на месте`);
 }
-// У каждой вкладки есть обработчик
+// У каждого раздела есть экран: свой (A2.screens) или перенесённый (legacy)
+const a2 = fs.readdirSync(ROOT + '/public/js/admin2')
+  .map((f) => fs.readFileSync(ROOT + '/public/js/admin2/' + f, 'utf8')).join('\n');
 for (const id of ids) {
-  const handler = new RegExp(`Admin\\.tab === '${id}'\\)\\s*return Admin\\.render`);
-  ok(handler.test(adminJs), `у вкладки «${id}» есть экран`);
+  const own = new RegExp(`A2\\.screens\\.${id}\\b`).test(a2);
+  const legacyName = (new RegExp(`id: '${id}'[^}]*legacy: '(\\w+)'`).exec(navBlock) || [])[1];
+  const legacy = legacyName ? new RegExp(`\\b${legacyName}\\(`).test(adminJs) : false;
+  ok(own || legacy, `у раздела «${id}» есть экран${own ? ' (свой)' : ' (перенесённый)'}`);
 }
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);

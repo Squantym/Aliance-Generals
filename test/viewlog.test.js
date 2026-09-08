@@ -135,8 +135,8 @@ async function makePlayer(login, mail) {
   // Владелец искал её руками и попадал в первую версию.
   const meOwner = await get('/api/me', owner);
   ok('адрес панели пришёл', !!meOwner.d.staffPanel);
-  ok('и он ведёт во вторую версию', /\/v2$/.test(String(meOwner.d.staffPanel || '')));
-  ok('без ADMIN_PATH это запасной /admin', meOwner.d.staffPanel === '/admin/v2');
+  // Панель одна: голый адрес ведёт в неё же, хвост /v2 больше не нужен
+  ok('без ADMIN_PATH это запасной /admin', meOwner.d.staffPanel === '/admin');
   const mePlayer = await get('/api/me', player);
   ok('обычному игроку адрес не виден', !mePlayer.d.staffPanel);
 

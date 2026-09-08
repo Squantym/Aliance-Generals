@@ -44,32 +44,38 @@ for (const z of ['players','chat','moderation','security','support','legions','n
 try { roles.setRoleZone(own, 'moderator', 'chat', true, []); } catch (e) {}
 try { roles.setRoleZone(own, 'commissar', 'chat', true, []); roles.setRoleZone(own, 'commissar', 'roles', true, []); } catch (e) {}
 
-console.log('\n── 1. Панель открывается сводкой, а не списком ──');
-ok(/tab: 'home'/.test(adminJs), 'стартовая вкладка — «Сводка»');
-ok(/\{ id:'home', *label:'📊 Сводка', *group:'Люди' \}/.test(adminJs),
-   'вкладка есть и без ограничения по зоне — доступна всем сотрудникам');
-ok(/renderHome/.test(adminJs), 'у неё свой экран');
-ok(adminJs.indexOf("id:'home'") < adminJs.indexOf("id:'players'"), 'сводка стоит первой');
+// Панель ровно одна — v2. Рабочий стол сотрудника у неё свой:
+// «Очередь работ» (admin2/queue.js) вместо прежней «Сводки».
+const shellJs = fs.readFileSync(ROOT + '/public/js/admin2/shell.js', 'utf8');
+const queueJs = fs.readFileSync(ROOT + '/public/js/admin2/queue.js', 'utf8');
+const a2css = fs.readFileSync(ROOT + '/public/css/admin2.css', 'utf8');
 
-console.log('\n── 2. Сводка показывает, что требует внимания ──');
+console.log('\n── 1. Панель открывается очередью работ, а не списком ──');
+ok(/\{ id: 'queue',[^}]*group: 'Работа' \}/.test(shellJs),
+   'раздел есть и без ограничения по зоне — доступен всем сотрудникам');
+ok(/A2\.screens\.queue/.test(queueJs), 'у него свой экран');
+ok(shellJs.indexOf("id: 'queue'") < shellJs.indexOf("id: 'players'"), 'очередь стоит первой');
+ok(!fs.existsSync(ROOT + '/public/admin.html'), 'второй панели со своей сводкой не осталось');
+
+console.log('\n── 2. Очередь показывает, что требует внимания ──');
 ok(/\/api\/admin\/dashboard/.test(routes), 'есть роут сводки');
-ok(/Требует внимания/.test(adminJs), 'блок срочного');
-ok(/kind: d\.tickets\.oldest >= 24 \? 'hot' : 'warn'/.test(adminJs),
+ok(/Требует внимания/.test(queueJs), 'блок срочного');
+ok(/tone: old >= 24 \? 'hot' : 'warn'/.test(queueJs),
    'обращения старше суток помечаются как срочные');
-ok(css.includes('.adm-alert-hot'), 'для них свой цвет');
-ok(/самое старое ждёт/.test(adminJs), 'показывается возраст самого старого обращения');
-ok(/Ничего срочного/.test(adminJs), 'при пустой очереди — понятное сообщение, а не пустой экран');
-ok(/data-goto-tab/.test(adminJs), 'из сводки можно перейти сразу в нужный раздел');
+ok(a2css.includes('is-hot'), 'для них свой цвет');
+ok(/самое старое ждёт/.test(queueJs), 'показывается возраст самого старого обращения');
+ok(/Разбирать нечего/.test(queueJs), 'при пустой очереди — понятное сообщение, а не пустой экран');
+ok(/A2Router\.build\(/.test(queueJs), 'из очереди можно перейти сразу в нужный раздел');
 
 console.log('\n── 3. Сводка учитывает права ──');
 const dash = routes.slice(routes.indexOf("'/api/admin/dashboard'"), routes.indexOf("'/api/admin/player-card"));
 ok(/const has = \(z: string\) => zones\.indexOf\(z\) >= 0/.test(dash), 'проверяются зоны сотрудника');
 ok(/if \(has\('support'\)\)/.test(dash), 'обращения только тем, у кого есть поддержка');
 ok(/has\('moderation'\) \? roles\.bannedList\(\)/.test(dash), 'меры только тем, у кого есть модерация');
-ok(/has\('support'\) && d\.tickets\.open/.test(adminJs), 'интерфейс тоже сверяется с правами');
+ok(/has\('support'\) && d\.tickets && d\.tickets\.open/.test(queueJs), 'интерфейс тоже сверяется с правами');
 
 console.log('\n── 4. Поиск и карточка игрока ──');
-ok(/Найти игрока/.test(adminJs), 'поиск прямо на первом экране');
+ok(/Найти игрока/.test(shellJs), 'поиск игрока — в шапке панели, на любом экране');
 ok(/\/api\/admin\/player-card/.test(routes), 'есть роут карточки');
 ok(/showPlayerCard/.test(adminJs), 'карточка открывается окном');
 const card = routes.slice(routes.indexOf("'/api/admin/player-card"), routes.indexOf('БАЗА ДАННЫХ'));
@@ -88,7 +94,7 @@ ok(/Открыть профиль в игре/.test(adminJs), 'можно пер
 
 console.log('\n── 6. Окна мер работают внутри панели ──');
 // В админке не подключён app.js — окна из игры там недоступны
-const adminHtml = fs.readFileSync(ROOT + '/public/admin.html', 'utf8');
+const adminHtml = fs.readFileSync(ROOT + '/public/admin2.html', 'utf8');
 ok(!/js\/app\.js/.test(adminHtml), 'app.js в панель не подключён');
 ok(/banChatDialog/.test(adminJs), 'у панели своё окно блокировки чата');
 ok(/banAccountDialog/.test(adminJs), 'и своё окно блокировки аккаунта');
@@ -98,8 +104,8 @@ ok(/data-scope-all/.test(adminJs), 'в окне есть выбор канало
 ok(/adm-purge/.test(adminJs), 'и удаление сообщений');
 
 console.log('\n── 7. Прозрачность работы сотрудника ──');
-ok(/Мои действия за сутки/.test(adminJs), 'сотрудник видит собственный журнал');
-ok(/Все действия сотрудников записываются/.test(adminJs), 'об этом прямо сказано');
+ok(/Мои действия за сутки/.test(queueJs), 'сотрудник видит собственный журнал');
+ok(/Все действия сотрудников записываются/.test(queueJs), 'об этом прямо сказано');
 ok(/myActions/.test(dash), 'сервер отдаёт эти данные');
 ok(/listForUser\(me\.id/.test(dash), 'берутся действия именно этого сотрудника');
 

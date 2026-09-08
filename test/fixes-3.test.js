@@ -117,11 +117,12 @@ for (const src of ['quest', 'season', 'purchase', 'admin']) {
 }
 ok(/req\.query\.userId/.test(gl), 'выбирается конкретный игрок');
 ok(/const players = live/.test(gl), 'отдаётся список игроков для выбора');
-const adminJs = fs.readFileSync(ROOT + '/public/js/admin.js', 'utf8');
-ok(/id:'gold'/.test(adminJs), 'вкладка «Золото» есть в панели');
-ok(/ownerOnly:true/.test(adminJs), 'помечена как владельческая');
-ok(/t\.ownerOnly \|\| \(Admin\.me && Admin\.me\.staffRole === 'owner'\)/.test(adminJs),
-   'администратору вкладка не показывается');
+// Разделы перечисляет оболочка панели v2 — она теперь единственная
+const shellJs = fs.readFileSync(ROOT + '/public/js/admin2/shell.js', 'utf8');
+ok(/id: 'gold'/.test(shellJs), 'раздел «Золото» есть в панели');
+ok(/id: 'gold'[^}]*ownerOnly: true/.test(shellJs), 'помечен как владельческий');
+ok(/!item\.ownerOnly \|\| A2\.isOwner\(\)/.test(shellJs),
+   'администратору раздел не показывается');
 
 console.log('\n── 5. Счётчик онлайна ──');
 ok(/\/api\/online/.test(routes), 'есть роут счётчика');

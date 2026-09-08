@@ -1,34 +1,33 @@
 // ===================================================================
-// public/js/admin.js — Панель администратора «Генералов»
+// public/js/admin.js — ЭКРАНЫ штаба.
+//
+// Панель здесь ровно одна — v2 (public/js/admin2/). Этот файл больше
+// не панель: он поставляет разметку и обработчики разделов, а каркас —
+// боковое меню, адреса экранов, права, вход — держит оболочка v2.
+// Своя оболочка со строкой вкладок отсюда убрана вместе с admin.html:
+// две панели над одними и теми же экранами расходились (конструктор
+// наборов был в одной и отсутствовал в другой), а сотрудник видел
+// разный штаб в зависимости от того, по какой ссылке зашёл.
+//
+// Admin.render(), Admin.renderTab() и Admin.tab остаются: их зовёт
+// старый код разделов. Оболочка v2 переопределяет их на «перейти в
+// раздел / обновить экран» (см. admin2/shell.js).
 // ===================================================================
 
 const Admin = {
   selected: null,
-  tab: 'home',   // players | logs | discounts | buffs
+  tab: '',        // текущий раздел; выставляет оболочка v2
 
   // Роль и доступные зоны текущего сотрудника — по ним прячем разделы
   me: null,
   zones: [],
 
-  async init() {
-    if (API.token()) {
-      try {
-        const me = await API.get('/api/me');
-        // Пускаем по ЗОНАМ, а не по старому флагу isAdmin: у владельца их
-        // все, у администратора — свои, у модератора нет ни одной, и он
-        // работает прямо из чата
-        if (me.staffZones && me.staffZones.length) {
-          Admin.me = me;
-          Admin.zones = me.staffZones;
-          return Admin.render();
-        }
-        UI.toast(me.staffRole === 'moderator'
-          ? '⛔ Модератор работает из чата игры, панель ему не нужна'
-          : '⛔ У этой учётной записи нет доступа к панели');
-      } catch(e) {}
-    }
-    Admin.renderLogin();
-  },
+  // Заглушки на случай, если экран позовёт их до готовности оболочки
+  // (v2 подменяет обе в A2.render). Без них старый код падал бы на
+  // «Admin.renderTab is not a function» — молча и в неожиданном месте.
+  render() {},
+  renderTab() {},
+
 
   // ── Иконки валют: ровно те же, что в игре ────────────────────────
   // В игре доллары и золото показываются картинками (.ic-dollar,
@@ -141,114 +140,6 @@ const Admin = {
     document.getElementById('ad-pass').onkeydown = e => { if(e.key==='Enter') go(); };
   },
 
-  // Ссылка на панель v2. Адрес панели секретный (ADMIN_PATH), поэтому
-  // строим от ТЕКУЩЕГО пути, а не от жёсткого «/admin»: иначе кнопка
-  // вела бы на 404 у всех, кто маскировку включил.
-  // location проверяем: рендер гоняется и в тестах без окна браузера,
-  // и падение здесь роняло бы всю панель целиком.
-  _v2Href() {
-    try { return String(location.pathname).replace(/\/$/, '') + '/v2'; }
-    catch (e) { return '/admin/v2'; }
-  },
-
-  // ── Главный рендер с вкладками ──────────────────────────────────
-  render() {
-    // У каждой вкладки своя зона: разделы, недоступные сотруднику, просто
-    // не показываются — он не видит того, чем не может пользоваться
-    // Вкладки разложены по трём смысловым группам. Тринадцать кнопок
-    // подряд читались как сплошная лента, в которой «Жалобы» стояли
-    // рядом с «Турнирами»: глаз каждый раз искал нужную заново.
-    //   ЛЮДИ      — всё, что про игроков и разбор их дел
-    //   ИГРА      — содержимое мира: экономика, события, легионы
-    //   СЛУЖЕБНОЕ — то, чем пользуются редко и осторожно
-    const tabs = [
-      { id:'home',      label:'📊 Сводка',      group:'Люди' },
-      { id:'players',   label:'👥 Игроки',      zone:'players',    group:'Люди' },
-      { id:'reports',   label:'📨 Жалобы',      zone:'moderation', group:'Люди' },
-      { id:'support',   label:'🛟 Заявки',      zone:'support',    group:'Люди' },
-      // Вход по ЛЮБОМУ из экономических прав. Раньше вкладка требовала
-      // «Ресурсы», а подвкладка «Акции» — право «Акции»: сотруднику,
-      // которому выдали только акции, вкладка не показывалась вообще, и
-      // выданное право не имело входа в интерфейс.
-      { id:'econ',      label:'🛠 Экономика',   zones:['economy', 'discounts'], group:'Игра' },
-      { id:'events',    label:'🐉 Событие',     zone:'event',      group:'Игра' },
-      { id:'tournament',label:'⚔️ Турниры',     zone:'legions',    group:'Игра' },
-      { id:'legions',   label:'🎖 Легионы',     zone:'legions',    group:'Игра' },
-      { id:'analytics', label:'📈 Аналитика',   zone:'analytics',  group:'Служебное' },
-      { id:'logs',      label:'📋 Журнал',      zone:'players',    group:'Служебное' },
-      { id:'tech',      label:'🔧 Техника',     zone:'security',   group:'Служебное' },
-      { id:'roles',     label:'🛡 Роли',        zone:'roles',      group:'Служебное' },
-      { id:'gold',      label:'<span class="ic-gold"></span> Золото',      zone:'roles',      group:'Служебное', ownerOnly:true },
-    ];
-    const visible = (t) => {
-      // zone — одна зона, zones — любая из перечисленных
-      const byZone = t.zones ? t.zones.some((z) => Admin.can(z)) : (!t.zone || Admin.can(t.zone));
-      return byZone && (!t.ownerOnly || (Admin.me && Admin.me.staffRole === 'owner'));
-    };
-    const btnHtml = (t) => `<button class="btn btn-inline ${Admin.tab === t.id ? 'btn-orange' : ''}"
-      id="tab-${t.id}">${t.label}</button>`;
-    // Пустые группы не рисуем совсем: сотрудник с одной зоной не должен
-    // видеть три подписи, две из которых ни к чему не ведут
-    const groupHtml = (name) => {
-      const list = tabs.filter((t) => t.group === name && visible(t));
-      if (!list.length) return '';
-      return `<div class="adm-tabgroup">
-        <span class="adm-tabgroup-name">${name}</span>
-        ${list.map(btnHtml).join('')}
-      </div>`;
-    };
-    document.getElementById('content').innerHTML = `
-      <div class="adm-tabs">
-        ${['Люди', 'Игра', 'Служебное'].map(groupHtml).join('')}
-        <span style="margin-left:auto;align-self:center;display:flex;gap:6px">
-          <a href="${Admin._v2Href()}" class="btn btn-inline"
-             style="border-color:var(--gold);color:var(--gold)"
-             title="Новая панель: боковое меню, адрес у каждого экрана, очередь работ">✨ Панель v2</a>
-          <a href="/" class="btn btn-inline">← В игру</a>
-        </span>
-      </div>
-      <div id="tab-content" style="padding:8px 0"></div>`;
-
-    // Обработчики вешаем ТОЛЬКО на отрисованные вкладки. Скрытые по правам
-    // кнопки в разметке отсутствуют, и обращение к ним роняло весь рендер
-    // с ошибкой «Cannot set properties of null» — панель открывалась пустой.
-    tabs.forEach(t => {
-      const btn = document.getElementById('tab-' + t.id);
-      if (btn) btn.onclick = () => { Admin.tab = t.id; Admin.renderTab(); };
-    });
-    Admin._tabIds = tabs.filter(visible).map((t) => t.id);
-    // Если открыт раздел, к которому доступа нет — уводим на первый доступный
-    if (Admin._tabIds.length && Admin._tabIds.indexOf(Admin.tab) === -1) {
-      Admin.tab = Admin._tabIds[0];
-    }
-    Admin.renderTab();
-  },
-
-  renderTab() {
-    // Обновить активную кнопку
-    (Admin._tabIds || []).forEach(id => {
-      const btn = document.getElementById('tab-'+id);
-      if (btn) btn.className = `btn btn-inline ${Admin.tab===id?'btn-orange':''}`;
-    });
-    const c = document.getElementById('tab-content');
-    if (Admin.tab === 'home')      return Admin.renderHome(c);
-    if (Admin.tab === 'players')   return Admin.renderPlayers(c);
-    if (Admin.tab === 'econ')      return Admin.renderEcon(c);
-    if (Admin.tab === 'events')    return Admin.renderEvents(c);
-    if (Admin.tab === 'tournament')return Admin.renderTournament(c);
-    if (Admin.tab === 'legions')   return Admin.renderLegions(c);
-    if (Admin.tab === 'mercs')     return Admin.renderMercs(c);
-    if (Admin.tab === 'support')   return Admin.renderSupport(c);
-    if (Admin.tab === 'tech')      return Admin.renderTech(c);
-    if (Admin.tab === 'roles')     return Admin.renderRoles(c);
-    if (Admin.tab === 'gold')      return Admin.renderGold(c);
-    if (Admin.tab === 'logs')      return Admin.renderLogs(c);
-    if (Admin.tab === 'analytics') return Admin.renderAnalytics(c);
-    if (Admin.tab === 'reports')   return Admin.renderReports(c);
-    if (Admin.tab === 'discounts') return Admin.renderDiscounts(c);
-    if (Admin.tab === 'buffs')     return Admin.renderBuffs(c);
-  },
-
   // ── Вкладка: Игроки (поиск + карточки + выдача конкретному) ─────
   renderPlayers(c) {
     c.innerHTML = `
@@ -281,178 +172,6 @@ const Admin = {
   // операциями. Обе — необратимые, поэтому подтверждение вводится
   // руками, а не одним кликом.
   techTarget: null,
-
-  // ═══ СВОДКА — рабочий стол сотрудника ════════════════════════════
-  // Панель владельца — про настройку игры. Панель администратора — про
-  // ежедневную работу с людьми, поэтому открывается она сводкой: что
-  // требует внимания сейчас, кто под мерами, что я сам делал сегодня.
-  async renderHome(c) {
-    c.innerHTML = '<div class="loading">Собираю сводку…</div>';
-    let d = null;
-    try { d = await API.get('/api/admin/dashboard'); }
-    catch (e) { c.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
-
-    const has = (z) => (d.zones || []).indexOf(z) >= 0;
-    const ago = (ms) => {
-      if (!ms) return '—';
-      const m = Math.round((Date.now() - ms) / 60000);
-      if (m < 60) return `${m} мин назад`;
-      const h = Math.round(m / 60);
-      return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
-    };
-    const left = (until) => {
-      if (!until) return 'бессрочно';
-      const m = Math.max(0, Math.round((until - Date.now()) / 60000));
-      return m < 60 ? `${m} мин` : (m < 1440 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${Math.floor(m / 1440)} дн`);
-    };
-
-    // Что требует внимания — только по доступным разделам
-    const alerts = [];
-    if (has('support') && d.tickets.open) {
-      alerts.push({ kind: d.tickets.oldest >= 24 ? 'hot' : 'warn', icon: '🛟',
-        text: `Открытых обращений: <b>${d.tickets.open}</b>` +
-              (d.tickets.oldest ? ` · самое старое ждёт <b>${d.tickets.oldest} ч</b>` : ''),
-        tab: 'support', btn: 'Разобрать' });
-    }
-    if (has('moderation') && d.accountBansTotal) {
-      alerts.push({ kind: 'info', icon: '🚫',
-        text: `Заблокированных аккаунтов: <b>${d.accountBansTotal}</b>`, tab: 'players', btn: 'К игрокам' });
-    }
-    if (has('moderation') && d.chatBansTotal) {
-      alerts.push({ kind: 'info', icon: '🔇',
-        text: `Действующих блокировок чата: <b>${d.chatBansTotal}</b>`, tab: null });
-    }
-    if (has('moderation') && d.reportsNew) {
-      alerts.push({ kind: d.reportsNew >= 5 ? 'hot' : 'warn', icon: '📨',
-        text: `Неразобранных жалоб на игроков: <b>${d.reportsNew}</b>`,
-        tab: 'reports', btn: 'Разобрать' });
-    }
-
-    // Что сотруднику можно, а что нет — списком, без догадок по вкладкам
-    const acc = d.myAccess || [];
-    const allowed = acc.filter((z) => z.allowed), denied = acc.filter((z) => !z.allowed);
-    const accessHtml = `
-      <details class="card">
-        <summary style="cursor:pointer"><b>🔑 Мои права</b>
-          <span class="muted small"> — открыто ${allowed.length} из ${acc.length}</span></summary>
-        <p class="muted small mt">Панель показывает только доступные разделы, поэтому «пропавшей» кнопки
-          не существует — есть закрытый раздел. Здесь видно, какой именно и что он даёт.
-          Права выдаёт владелец во вкладке «Роли».</p>
-        <div class="mt">
-          ${allowed.map((z) => `<div class="adm-measure">
-            <span class="adm-measure-tag" style="background:var(--green)">есть</span>
-            <span class="grow"><b>${UI.esc(z.name)}</b> <span class="muted small">— ${UI.esc(z.note)}</span></span>
-          </div>`).join('')}
-          ${denied.map((z) => `<div class="adm-measure" style="opacity:.65">
-            <span class="adm-measure-tag">нет</span>
-            <span class="grow">${UI.esc(z.name)} <span class="muted small">— ${UI.esc(z.note)}</span></span>
-            ${z.ownerOnly ? '<span class="muted small">только владелец</span>' : ''}
-          </div>`).join('')}
-        </div>
-      </details>`;
-
-    c.innerHTML = `
-      <div class="adm-hello">
-        <div>
-          <div class="adm-hello-name">${UI.esc(d.me.name)}</div>
-          <div class="muted small">${UI.esc(d.me.label || '')} · доступно разделов: ${(d.zones || []).length}</div>
-        </div>
-        <div class="adm-hello-stats">
-          <div><b>${UI.fmtNum(d.players.online)}</b><span>в игре</span></div>
-          <div><b>${UI.fmtNum(d.players.newToday)}</b><span>новых за сутки</span></div>
-          <div><b>${UI.fmtNum(d.players.total)}</b><span>всего</span></div>
-        </div>
-      </div>
-
-      ${alerts.length ? `
-        <div class="card">
-          <div class="name">Требует внимания</div>
-          ${alerts.map((a, i) => `
-            <div class="adm-alert adm-alert-${a.kind}">
-              <span class="adm-alert-icon">${a.icon}</span>
-              <span class="grow">${a.text}</span>
-              ${a.tab ? `<button class="btn btn-inline" data-goto-tab="${a.tab}">${a.btn}</button>` : ''}
-            </div>`).join('')}
-        </div>
-      ` : `<div class="card center"><p class="muted">✅ Ничего срочного. Спокойная смена.</p></div>`}
-
-      <div class="card">
-        <div class="name">🔎 Найти игрока</div>
-        <p class="muted small mt">Позывной, часть имени или ID — откроется карточка со всеми мерами и действиями.</p>
-        <div class="field-row mt">
-          <input type="text" id="adm-q" class="field" placeholder="Позывной игрока…" style="flex:1">
-          <button class="btn btn-orange btn-inline" id="adm-find">Найти</button>
-        </div>
-        <div id="adm-found" class="mt"></div>
-      </div>
-
-      ${has('moderation') && (d.accountBans.length || d.chatBans.length) ? `
-        <div class="card">
-          <div class="name">Действующие меры</div>
-          ${d.accountBans.map((b) => `
-            <div class="adm-measure">
-              <span class="adm-measure-tag adm-tag-ban">бан</span>
-              <a href="#" class="grow adm-link" data-card="${b.id}">${UI.esc(b.name)}</a>
-              <span class="muted small">${UI.esc(b.reason)}</span>
-              <span class="adm-measure-left">${left(b.until)}</span>
-            </div>`).join('')}
-          ${d.chatBans.map((b) => `
-            <div class="adm-measure">
-              <span class="adm-measure-tag adm-tag-mute">чат</span>
-              <a href="#" class="grow adm-link" data-card="${b.id}">${UI.esc(b.name)}</a>
-              <span class="muted small">${UI.esc(b.scopeNames || '')}</span>
-              <span class="adm-measure-left">${left(b.until)}</span>
-            </div>`).join('')}
-        </div>` : ''}
-
-      <div class="card">
-        <div class="name">📋 Мои действия за сутки</div>
-        <p class="muted small mt">Все действия сотрудников записываются. Это ваш собственный журнал.</p>
-        <div class="mt">
-          ${(d.myActions || []).length
-            ? d.myActions.map((a) => `
-                <div class="adm-act">
-                  <span class="muted small">${ago(a.at)}</span>
-                  <span class="grow">${UI.esc(a.human || a.path || '—')}</span>
-                </div>`).join('')
-            : '<p class="muted small">Пока ничего не делали.</p>'}
-        </div>
-      </div>
-
-      ${accessHtml}`;
-
-    c.querySelectorAll('[data-goto-tab]').forEach((b) => {
-      b.onclick = () => { Admin.tab = b.dataset.gotoTab; Admin.renderTab(); };
-    });
-    c.querySelectorAll('[data-card]').forEach((a) => {
-      a.onclick = (ev) => { ev.preventDefault(); Admin.showPlayerCard(a.dataset.card); };
-    });
-    const find = async () => {
-      const q = (document.getElementById('adm-q') || {}).value || '';
-      const box = document.getElementById('adm-found');
-      if (q.trim().length < 2) { box.innerHTML = '<p class="muted small">Введите хотя бы 2 символа</p>'; return; }
-      box.innerHTML = '<div class="loading">Ищу…</div>';
-      try {
-        const r = await API.get('/api/mod/find?q=' + encodeURIComponent(q.trim()));
-        box.innerHTML = (r.players || []).length
-          ? r.players.map((p) => `
-              <div class="adm-measure">
-                <a href="#" class="grow adm-link" data-card="${p.id}">${UI.esc(p.name)}</a>
-                <span class="muted small">ур. ${p.level}</span>
-                ${p.banned ? '<span class="adm-measure-tag adm-tag-mute">чат</span>' : ''}
-                ${p.role ? `<span class="adm-measure-tag">${UI.esc(p.label)}</span>` : ''}
-              </div>`).join('')
-          : '<p class="muted small">Никого не найдено</p>';
-        box.querySelectorAll('[data-card]').forEach((a) => {
-          a.onclick = (ev) => { ev.preventDefault(); Admin.showPlayerCard(a.dataset.card); };
-        });
-      } catch (e) { box.innerHTML = `<p style="color:var(--red)">${UI.esc(e.message)}</p>`; }
-    };
-    const fb = document.getElementById('adm-find');
-    if (fb) fb.onclick = find;
-    const qi = document.getElementById('adm-q');
-    if (qi) qi.onkeydown = (ev) => { if (ev.key === 'Enter') find(); };
-  },
 
   // Окна блокировки внутри панели. В админке не подключён app.js, поэтому
   // окна из игры здесь недоступны — реализуем их отдельно и компактнее.

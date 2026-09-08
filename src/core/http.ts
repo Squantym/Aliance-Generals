@@ -351,11 +351,12 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     console.warn(`⚠️  ADMIN_PATH=${ADMIN_PATH} занят игрой — маскировка отключена, панель на /admin`);
     ADMIN_PATH = '';
   }
-  // ── Панель v2 ─────────────────────────────────────────────────────
-  // Живёт по ТОМУ ЖЕ секретному адресу с хвостом /v2. Отдельный файл
-  // /admin2.html закрыт так же, как /admin.html: иначе новая панель
-  // сама выдала бы существование старой — маскировка ADMIN_PATH
-  // обходилась бы одной строкой в адресе.
+  // ── Панель ────────────────────────────────────────────────────────
+  // Панель ровно одна — v2. Хвост /v2 в адресе оставлен рабочим:
+  // ссылка на него разослана сотрудникам и лежит в закладках, а вести
+  // человека на 404 из-за переезда — худший способ сообщить о нём.
+  // Прямые /admin2.html и /admin.html закрыты: иначе панель выдала бы
+  // себя в обход маскировки ADMIN_PATH одной строкой в адресе.
   const isAdmin2File = rel === '/admin2' || rel === '/admin2/' || rel === '/admin2.html';
   const v2Path = (ADMIN_PATH || '/admin') + '/v2';
   if (rel === v2Path || rel === v2Path + '/') {
@@ -370,12 +371,12 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
 
   const isAdminFile = rel === '/admin' || rel === '/admin/' || rel === '/admin.html';
   if (ADMIN_PATH && (rel === ADMIN_PATH || rel === ADMIN_PATH + '/')) {
-    rel = '/admin.html';
-  } else if (!ADMIN_PATH && isAdminFile) {
+    rel = '/admin2.html';
+  } else if (!ADMIN_PATH && (rel === '/admin' || rel === '/admin/')) {
     // Секретный путь не настроен — открываем панель по /admin как раньше.
     // Сама панель по-прежнему пускает только по правам, а каждый запрос
     // проверяется по зоне доступа.
-    rel = '/admin.html';
+    rel = '/admin2.html';
   } else if (isAdminFile) {
     // Кто-то стучится в стандартный адрес панели — это либо сканер, либо
     // попытка подбора. Записываем в лог: по нему видно, что вас щупают.
@@ -387,12 +388,12 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
     res.end('Not found');
     return;
   }
-  // Панель (и старая, и новая) не должна открываться внутри чужого окна
+  // Панель не должна открываться внутри чужого окна
   // ВООБЩЕ. Игру во фрейме держат легально — виджеты, встраивание в
   // сообщество; панель — никогда, и разница здесь принципиальная: поверх
   // её кнопок можно положить прозрачный слой и заставить сотрудника
   // нажать «удалить аккаунт» своими руками.
-  const isPanelPage = rel === '/admin.html' || rel === '/admin2.html';
+  const isPanelPage = rel === '/admin2.html';
 
   // Короткие адреса правовых документов: /terms и /privacy. Нужны, чтобы
   // ссылку можно было дать платёжному сервису или магазину приложений

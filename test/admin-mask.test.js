@@ -20,7 +20,7 @@ ok(/ADMIN_PATH && \(rel === ADMIN_PATH \|\| rel === ADMIN_PATH \+ '\/'\)/.test(h
 const adminBlock = http.slice(http.indexOf('} else if (isAdminFile) {'), http.indexOf('Короткие адреса правовых документов'));
 ok(adminBlock.includes('writeHead(404') && adminBlock.includes("end('Not found')"),
    'при заданном ADMIN_PATH адрес /admin отвечает 404, как несуществующая страница');
-ok(/} else if \(!ADMIN_PATH && isAdminFile\)/.test(http),
+ok(/} else if \(!ADMIN_PATH && \(rel === '\/admin' \|\| rel === '\/admin\/'\)\)/.test(http),
    'без настройки работает обычный /admin — доступ не теряется');
 ok(http.includes('Попытка открыть админ-панель'), 'обращения к /admin пишутся в журнал');
 

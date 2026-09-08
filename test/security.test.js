@@ -218,8 +218,8 @@ for (const [needle, why] of [
 }
 ok(/noFrame \? "frame-ancestors 'none'"/.test(csp),
    'панель нельзя показать в чужом окне — защита от прозрачного слоя поверх её кнопок');
-ok(/const isPanelPage = rel === '\/admin\.html' \|\| rel === '\/admin2\.html'/.test(httpSrc3),
-   'обе панели считаются панелью — новая не осталась без этой защиты');
+ok(/const isPanelPage = rel === '\/admin2\.html'/.test(httpSrc3),
+   'страница панели закрыта от показа в чужом окне');
 ok(/geolocation=\(\), microphone=\(\), camera=\(\)/.test(httpSrc3),
    'камера, микрофон и геолокация запрещены — игре они не нужны');
 // HSTS на домене без сертификата закрывает доступ месяцами, и откатить

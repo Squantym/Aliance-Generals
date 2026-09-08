@@ -15,24 +15,27 @@ const core = fs.readFileSync(path.join(ROOT, 'public/js/screens/core.js'), 'utf8
 const http = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
 
 console.log('\n── 1. Вход в панель — по зонам доступа ──');
-ok(/me\.staffZones && me\.staffZones\.length/.test(adminJs), 'панель пускает по зонам, а не по старому флагу isAdmin');
-ok(adminJs.includes('Модератор работает из чата'), 'модератору объясняют, что панель ему не нужна');
-ok(/У этой учётной записи нет доступа к панели/.test(adminJs), 'постороннему — понятный отказ');
-ok(/const me = await API\.get\('\/api\/me'\)[\s\S]{0,200}staffZones/.test(adminJs), 'после входа по паролю зоны тоже проверяются');
+// Панель ровно одна — v2. Вход и список разделов держит её оболочка,
+// admin.js остался набором экранов.
+const shellJs = fs.readFileSync(path.join(ROOT, 'public/js/admin2/shell.js'), 'utf8');
+ok(/me\.staffZones \|\| !me\.staffZones\.length|!me\.staffZones \|\| !me\.staffZones\.length/.test(shellJs),
+   'панель пускает по зонам, а не по старому флагу isAdmin');
+ok(shellJs.includes('Модератор работает из чата'), 'модератору объясняют, что панель ему не нужна');
+ok(/У этой учётной записи нет доступа к панели/.test(shellJs), 'постороннему — понятный отказ');
+ok(/me = await API\.get\('\/api\/me'\)[\s\S]{0,200}staffZones/.test(shellJs), 'после входа по паролю зоны тоже проверяются');
+ok(!fs.existsSync(path.join(ROOT, 'public/admin.html')), 'второго входа в штаб не осталось');
 
 console.log('\n── 2. Разделы скрыты по правам ──');
-// Вкладки собраны в группы, поэтому фильтр вынесен в visible(): проверяем
-// сам предикат, а не старую строчку с inline-условием
-ok(/const byZone = t\.zones \? t\.zones\.some\(\(z\) => Admin\.can\(z\)\)/.test(adminJs)
-   && /\.filter\(\(t\) => t\.group === name && visible\(t\)\)/.test(adminJs),
-   'недоступные вкладки не показываются');
-// Вкладка открывается по ЛЮБОМУ экономическому праву: сотруднику с одними
-// «Акциями» она раньше не показывалась вовсе, и выданное право не имело входа
-ok(/id:'econ',[^}]*zones:\['economy', 'discounts'\]/.test(adminJs),
-   'вкладка «Экономика» открывается по «Ресурсам» или «Акциям»');
-ok(/ownerOnly:true/.test(adminJs), 'журнал золота открыт только владельцу');
+ok(/item\.zones \? item\.zones\.some\(\(z\) => A2\.can\(z\)\)/.test(shellJs)
+   && /A2\.NAV\.filter\(A2\.visible\)/.test(shellJs),
+   'недоступные разделы не показываются');
+// Раздел открывается по ЛЮБОМУ экономическому праву: сотруднику с одними
+// «Акциями» он раньше не показывался вовсе, и выданное право не имело входа
+ok(/id: 'econ',[^}]*zones: \['economy', 'discounts'\]/.test(shellJs),
+   'раздел «Экономика» открывается по «Ресурсам» или «Акциям»');
+ok(/ownerOnly: true/.test(shellJs), 'журнал золота открыт только владельцу');
 ok(/Admin\.can\('database'\)/.test(adminJs), 'блок базы виден по праву на базу');
-ok(/Admin\._tabIds\.indexOf\(Admin\.tab\) === -1/.test(adminJs), 'если открытый раздел недоступен, сотрудника уводит на доступный');
+ok(/A2\.allowed\(\)/.test(shellJs), 'если открытый раздел недоступен, сотрудника уводит на доступный');
 ok(adminJs.includes('can(zone)'), 'есть проверка доступа к разделу');
 
 console.log('\n── 3. Секретный адрес не расходится по людям ──');
@@ -46,8 +49,12 @@ ok(/staffPanel:[\s\S]{0,400}return null;/.test(routes), 'остальным пр
 // рисовался, и владелец искал панель руками — попадая в первую версию.
 ok(/staffPanel:[\s\S]{0,600}\|\| '\/admin'/.test(routes),
    'без ADMIN_PATH адрес не пустой, а запасной /admin');
-ok(/staffPanel:[\s\S]{0,600}\+ '\/v2'/.test(routes),
-   'кнопка ведёт в новую панель, а не в первую версию');
+// Панель теперь одна: голый адрес ведёт в неё же, и хвост /v2 не нужен.
+// Старые ссылки с /v2 продолжают работать — их раздали сотрудникам.
+ok(!/staffPanel:[\s\S]{0,600}\+ '\/v2'/.test(routes),
+   'хвоста /v2 в ссылке не осталось — панель одна');
+ok(/v2Path[\s\S]{0,200}rel = '\/admin2\.html'/.test(http),
+   'но адрес с /v2 по-прежнему открывает панель');
 ok(core.includes('Открыть панель управления'), 'у сотрудника в настройках есть кнопка входа');
 ok(/App\.me\.staffPanel/.test(core), 'кнопка показывается только при наличии доступа');
 ok(core.includes('запоминать его не нужно'), 'сотруднику объяснено, что адрес знать не нужно');

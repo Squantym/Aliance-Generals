@@ -54,10 +54,13 @@ const c = document.getElementById('tab-content');
 
 console.log('\n[1] Вкладка есть и закрыта своей зоной');
 const src = fs.readFileSync(__dirname + '/../public/js/admin.js', 'utf8');
-const tabs = /const tabs = \[([\s\S]*?)\];/.exec(src)[1];
-ok('вкладка «Аналитика» в списке', /id:'analytics'/.test(tabs));
-ok('у вкладки своя зона, а не чужая', /id:'analytics'[^}]*zone:'analytics'/.test(tabs));
-ok('вкладка разводится в renderTab', /Admin\.tab === 'analytics'\)\s*return Admin\.renderAnalytics/.test(src));
+// Разделы перечисляет оболочка панели v2 — она теперь единственная
+const shell = fs.readFileSync(__dirname + '/../public/js/admin2/shell.js', 'utf8');
+const tabs = /NAV: \[([\s\S]*?)\n  \],/.exec(shell)[1];
+ok('раздел «Аналитика» в списке', /id: 'analytics'/.test(tabs));
+ok('у раздела своя зона, а не чужая', /id: 'analytics'[^}]*zone: 'analytics'/.test(tabs));
+ok('раздел ведёт на свой экран', /id: 'analytics'[^}]*legacy: 'renderAnalytics'/.test(tabs));
+ok('и экран на месте', /renderAnalytics\(c\)/.test(src));
 
 console.log('\n[2] Ошибку доступа показываем текстом, а не пустым экраном');
 API.get = async () => { throw new Error('Недостаточно прав'); };
