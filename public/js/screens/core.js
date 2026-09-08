@@ -1542,6 +1542,7 @@ App.screens.bank = async (c, param) => {
     c.innerHTML = `
       <div class="title">Банк · Покупка золота</div>
       ${tabs}
+      ${UI.saleBanner(data.discount)}
       <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. На крупных пакетах — бонусное золото.</p></div>
       ${!data.enabled ? `<div class="card center"><p class="muted">${UI.esc(data.note || 'Онлайн-оплата скоро будет доступна.')}</p></div>` : ''}
       ${data.packages.map((p) => `

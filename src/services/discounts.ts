@@ -25,6 +25,7 @@ const CATEGORIES: Record<string, string> = {
   mine:        'Шахты (золотодобыча)',
   silo:        'Ракетные шахты',
   saboteur:    'Диверсанты (пачки, смертники, лимиты)',
+  laser:       'Лазерные установки',
 };
 
 function store(): Record<string, any> { return db.load('discounts', {}); }
@@ -112,6 +113,42 @@ function allScheduled() {
     }));
 }
 
+// Куда ведёт акция: игрок из общего списка должен попадать сразу в тот
+// раздел, где скидка действует, а не искать его по меню.
+const SCREEN_OF: Record<string, string> = {
+  unit: 'units', building: 'buildings', modernize: 'production/workshops',
+  workshop: 'production/workshops', market: 'market/buffs', container: 'market/containers',
+  trophy: 'trophies', alliance: 'alliance', legion: 'legion', gold: 'bank',
+  mine: 'production/mines', silo: 'production/silos', saboteur: 'saboteurs',
+  laser: 'production/lasers',
+};
+
+// Короткая строка для полосы над разделом: «Скидка на … — 50%».
+// «Золото» стоит особняком: там не скидка, а надбавка к покупке, и
+// назвать её скидкой значит соврать игроку на самом видном месте.
+function headline(category: string, pct: number): string {
+  const label = CATEGORIES[category] || category;
+  return category === 'gold'
+    ? `Бонус +${pct}% к покупаемому золоту`
+    : `Скидка на «${label}» — ${pct}%`;
+}
+
+// Все действующие акции разом — для полосы со списком внизу страницы
+function activeList() {
+  const a = getActive();
+  const items = Object.keys(a).map((cat) => ({
+    category: cat,
+    label: CATEGORIES[cat] || cat,
+    headline: headline(cat, a[cat].pct),
+    pct: a[cat].pct,
+    expiresAt: a[cat].expires,
+    screen: SCREEN_OF[cat] || '',
+  }));
+  // Раньше кончается — выше в списке: по нему решают, куда бежать
+  items.sort((x, y) => x.expiresAt - y.expiresAt);
+  return { items };
+}
+
 // Информация об активной скидке для отображения в UI (или null)
 function info(category: string) {
   const a = getActive();
@@ -120,7 +157,9 @@ function info(category: string) {
     pct: a[category].pct,
     expiresAt: a[category].expires,
     label: CATEGORIES[category] || category,
+    headline: headline(category, a[category].pct),
+    screen: SCREEN_OF[category] || '',
   };
 }
 
-export = { getActive, info, pctOf, applyTo, bonusMul, set, categories, allScheduled, CATEGORIES };
+export = { getActive, info, activeList, headline, pctOf, applyTo, bonusMul, set, categories, allScheduled, CATEGORIES };

@@ -75,65 +75,78 @@
     }).join('');
   }
 
+  // Карточка поста в ленте — одна на все места, где лента показывается
+  function newsCard(p, canManage) {
+    const preview = renderBlocks((p.blocks || []).slice(0, 2));
+    const manageBtns = canManage ? `
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-inline" style="flex:1;padding:6px" onclick="event.stopPropagation();App.go('newsedit/${p.id}')">✏️ Изменить</button>
+        <button class="btn btn-inline" style="flex:1;padding:6px" data-news-pin="${p.id}">${p.pinned ? '📌 Открепить' : '📌 Закрепить'}</button>
+        <button class="btn btn-red" style="flex:1;padding:6px" data-news-del="${p.id}">🗑</button>
+      </div>` : '';
+    return `
+      <div class="news-card" data-news-open="${p.id}">
+        <div class="news-card-head">
+          <span class="news-emoji">${UI.esc(p.emoji || '📰')}</span>
+          <div style="flex:1;min-width:0">
+            <div class="news-title">${UI.esc(p.title)}</div>
+            <div class="news-meta">${p.pinned ? '<span class="badge gold" style="margin-right:6px">📌 Закреплено</span>' : ''}${p.tag ? `<span class="badge" style="margin-right:6px">${UI.esc(p.tag)}</span>` : ''}<span class="muted small">${UI.fmtDate(p.createdAt)}${p.authorName ? ' · ' + UI.esc(p.authorName) : ''}${p.updatedAt && p.updatedAt - p.createdAt > 60000 ? ' · ред.' : ''}</span></div>
+          </div>
+        </div>
+        <div class="news-preview">${preview}</div>
+        <div class="news-more muted small">Читать полностью →</div>
+        ${manageBtns}
+      </div>`;
+  }
+
+  // Обработчики ленты: открыть пост, закрепить, удалить
+  function bindFeed(box) {
+    box.querySelectorAll('[data-news-open]').forEach((el) => {
+      el.onclick = () => App.go('newsview/' + el.dataset.newsOpen);
+    });
+    box.querySelectorAll('[data-news-pin]').forEach((b) => b.onclick = async (e) => {
+      e.stopPropagation();
+      try { await API.post('/api/news/pin', { id: b.dataset.newsPin }); await App.refreshMe(); App.rerender(); }
+      catch (err) { UI.toast('⛔ ' + err.message); }
+    });
+    box.querySelectorAll('[data-news-del]').forEach((b) => b.onclick = async (e) => {
+      e.stopPropagation();
+      if (!await UI.confirm('Удалить эту новость?', { title: 'Удаление', icon: '🗑', okText: 'Удалить', danger: true })) return;
+      try { await API.post('/api/news/delete', { id: b.dataset.newsDel }); await App.refreshMe(); App.rerender(); }
+      catch (err) { UI.toast('⛔ ' + err.message); }
+    });
+  }
+
+  // Лента целиком — с загрузкой. Одна и та же и в разделе «Новости»,
+  // и во вкладке «Общение → Новости»: две разные вёрстки одного и того
+  // же списка неизбежно расходятся, что и произошло.
+  async function renderFeed(box, opts) {
+    if (!box) return;
+    const o = opts || {};
+    box.innerHTML = '<div class="loading">Загружаю новости…</div>';
+    let d;
+    try { d = await API.get('/api/news'); } catch (e) {
+      box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
+      return;
+    }
+    const canManage = !!d.canManage;
+    const posts = d.posts || [];
+    box.innerHTML = `
+      ${o.title ? `<div class="title">📰 Новости</div>
+        <p class="muted small" style="margin:-4px 4px 12px">Обновления, события и объявления по игре «Альянс Генералов».</p>` : ''}
+      ${canManage ? `<button class="btn btn-orange" style="width:100%;margin-bottom:12px" onclick="App.go('newsedit')">➕ Создать новость</button>` : ''}
+      ${posts.length ? posts.map((p) => newsCard(p, canManage)).join('')
+        : '<div class="card center muted" style="padding:30px 16px"><p style="font-size:38px;margin:0">📰</p><p class="mt">Новостей пока нет. Загляните позже!</p></div>'}`;
+    bindFeed(box);
+  }
+
   // Экспортируем рендерер (может пригодиться в других экранах)
-  window.NewsRender = { renderBlocks, parseInline };
+  window.NewsRender = { renderBlocks, parseInline, renderFeed, newsCard };
 
   // ---------- ЭКРАН: лента новостей ----------
   App.screens.news = async (c) => {
     await App.refreshMe();
-    let d;
-    try { d = await API.get('/api/news'); } catch (e) { d = { posts: [], canManage: false }; }
-    const canManage = !!d.canManage;
-
-    const adminBar = canManage
-      ? `<button class="btn btn-orange" style="width:100%;margin-bottom:12px" onclick="App.go('newsedit')">➕ Создать новость</button>`
-      : '';
-
-    const postsHtml = (d.posts && d.posts.length) ? d.posts.map((p) => {
-      const preview = renderBlocks((p.blocks || []).slice(0, 2));
-      const manageBtns = canManage ? `
-        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-inline" style="flex:1;padding:6px" onclick="event.stopPropagation();App.go('newsedit/${p.id}')">✏️ Изменить</button>
-          <button class="btn btn-inline" style="flex:1;padding:6px" data-news-pin="${p.id}">${p.pinned ? '📌 Открепить' : '📌 Закрепить'}</button>
-          <button class="btn btn-red" style="flex:1;padding:6px" data-news-del="${p.id}">🗑</button>
-        </div>` : '';
-      return `
-        <div class="news-card" data-news-open="${p.id}">
-          <div class="news-card-head">
-            <span class="news-emoji">${UI.esc(p.emoji || '📰')}</span>
-            <div style="flex:1;min-width:0">
-              <div class="news-title">${UI.esc(p.title)}</div>
-              <div class="news-meta">${p.pinned ? '<span class="badge gold" style="margin-right:6px">📌 Закреплено</span>' : ''}${p.tag ? `<span class="badge" style="margin-right:6px">${UI.esc(p.tag)}</span>` : ''}<span class="muted small">${UI.fmtDate(p.createdAt)}${p.updatedAt && p.updatedAt - p.createdAt > 60000 ? ' · ред.' : ''}</span></div>
-            </div>
-          </div>
-          <div class="news-preview">${preview}</div>
-          <div class="news-more muted small">Читать полностью →</div>
-          ${manageBtns}
-        </div>`;
-    }).join('') : '<div class="card center muted" style="padding:30px 16px"><p style="font-size:38px;margin:0">📰</p><p class="mt">Новостей пока нет. Загляните позже!</p></div>';
-
-    c.innerHTML = `
-      <div class="title">📰 Новости</div>
-      <p class="muted small" style="margin:-4px 4px 12px">Обновления, события и объявления по игре «Альянс Генералов».</p>
-      ${adminBar}
-      ${postsHtml}`;
-
-    // Открытие поста целиком
-    c.querySelectorAll('[data-news-open]').forEach((el) => {
-      el.onclick = () => App.go('newsview/' + el.dataset.newsOpen);
-    });
-    // Управление (админ)
-    c.querySelectorAll('[data-news-pin]').forEach((b) => b.onclick = async (e) => {
-      e.stopPropagation();
-      try { await API.post('/api/news/pin', { id: b.dataset.newsPin }); App.rerender(); }
-      catch (err) { UI.toast('⛔ ' + err.message); }
-    });
-    c.querySelectorAll('[data-news-del]').forEach((b) => b.onclick = async (e) => {
-      e.stopPropagation();
-      if (!await UI.confirm('Удалить эту новость?', { title: 'Удаление', icon: '🗑', okText: 'Удалить', danger: true })) return;
-      try { await API.post('/api/news/delete', { id: b.dataset.newsDel }); App.rerender(); }
-      catch (err) { UI.toast('⛔ ' + err.message); }
-    });
+    await renderFeed(c, { title: true });
   };
 
   // ---------- ЭКРАН: чтение одной новости ----------
@@ -299,6 +312,11 @@
         break;
       case 'image':
         body = `<div class="news-block-label">🖼 Картинка</div>
+          <div class="news-img-pick">
+            <button class="btn btn-inline" data-img-pick="${i}">📁 Загрузить файл</button>
+            <span class="muted small">или вставьте ссылку ниже</span>
+          </div>
+          <input type="file" accept="image/*" data-img-file="${i}" style="display:none">
           <input class="news-input" data-f="url" data-i="${i}" value="${UI.esc(b.url)}" placeholder="https://… (ссылка на изображение)">
           <input class="news-input" data-f="caption" data-i="${i}" value="${UI.esc(b.caption)}" placeholder="Подпись (необязательно)" style="margin-top:6px">
           ${safeUrl(b.url) ? `<img src="${safeUrl(b.url)}" style="max-width:100%;border-radius:6px;margin-top:8px" onerror="this.style.display='none'" loading="lazy" decoding="async">` : ''}`;
@@ -374,6 +392,27 @@
     c.querySelectorAll('[data-ordered]').forEach((el) => el.onchange = () => { syncFromDom(); dr.blocks[+el.dataset.ordered].ordered = el.checked; reRender(); });
     c.querySelectorAll('[data-item-add]').forEach((btn) => btn.onclick = () => { syncFromDom(); const bl = dr.blocks[+btn.dataset.itemAdd]; bl.items = bl.items || []; bl.items.push(''); reRender(); });
     c.querySelectorAll('[data-item-del]').forEach((btn) => btn.onclick = () => { syncFromDom(); const [i, j] = btn.dataset.itemDel.split('_').map(Number); dr.blocks[i].items.splice(j, 1); if (dr.blocks[i].items.length === 0) dr.blocks[i].items.push(''); reRender(); });
+
+    // Загрузка картинки файлом. Браузер сам ужимает снимок до разумного
+    // размера — сервер принимает ограниченный вес, а редактор новостей
+    // открывают с телефона, где любое фото весит мегабайты.
+    c.querySelectorAll('[data-img-pick]').forEach((btn) => btn.onclick = () => {
+      const inp = c.querySelector(`[data-img-file="${btn.dataset.imgPick}"]`);
+      if (inp) inp.click();
+    });
+    c.querySelectorAll('[data-img-file]').forEach((inp) => inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const i = +inp.dataset.imgFile;
+      syncFromDom();
+      UI.toast('📤 Загружаю картинку…');
+      try {
+        const data = await App._resizeImage(f, 1200, 1600);
+        const r = await API.post('/api/news/image', { image: data });
+        dr.blocks[i].url = r.url;
+        reRender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    });
 
     // Живой предпросмотр по вводу текста (без полной перерисовки — только preview)
     const preview = c.querySelector('.news-article-body');

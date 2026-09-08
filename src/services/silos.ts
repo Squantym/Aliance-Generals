@@ -171,6 +171,7 @@ function view(user: User) {
     silos: silos(user).map(siloView),
     nextSiloCostGold: nextSiloCost(user),
     unlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
+    discount: discounts.info('silo'),
   };
 }
 

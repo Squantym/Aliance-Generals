@@ -125,6 +125,7 @@ function view(user: User) {
     buildDollars: buildDollars(user),
     minutesOptions: stepRange(M.DESCENT_MIN_MINUTES, M.DESCENT_MAX_MINUTES, M.DESCENT_STEP_MINUTES),
     unlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
+    discount: discounts.info('mine'),
   };
 }
 

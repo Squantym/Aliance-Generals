@@ -151,8 +151,9 @@ ok(/data-croom="global"/.test(soc) && /data-croom="recruit"/.test(soc), 'у ча
 ok(/Позывные/.test(soc), 'вторая подвкладка названа «Позывные» — доска поиска соратников');
 ok(/App\.renderForum/.test(soc) && /App\.renderTopic/.test(soc), 'есть список тем и просмотр темы');
 ok(/_resizeImage/.test(soc), 'картинка уменьшается в браузере перед отправкой');
-ok(/maxW \/ img\.width/.test(soc), 'ширина приводится к заданному пределу');
-ok(/while \(out\.length > 600 \* 1024 && q > 0\.4\)/.test(soc), 'качество подбирается, пока файл не уложится в размер');
+const appCore = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
+ok(/maxW \/ img\.width/.test(appCore), 'ширина приводится к заданному пределу (ужиматель живёт в ядре)');
+ok(/while \(out\.length > 600 \* 1024 && q > 0\.4\)/.test(appCore), 'качество подбирается, пока файл не уложится в размер');
 ok(/data-page=/.test(soc), 'есть кнопки страниц');
 ok(/forum-title-staff/.test(soc), 'темы сотрудников выделяются');
 const css = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');

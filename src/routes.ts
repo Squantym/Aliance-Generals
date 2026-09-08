@@ -917,6 +917,10 @@ function registerRoutes(app: any) {
 
   // ---------- Новости (чтение — всем; управление — админу, проверка в сервисе) ----------
   app.add('GET',  '/api/news',        (req) => require('./services/news').list(req.user));
+  // Все действующие акции разом. Нужен полосе внизу страницы: игрок
+  // должен видеть скидку, даже когда он не в том разделе, где она
+  // действует, — иначе о ней узнают только те, кто и так туда зашёл.
+  app.add('GET',  '/api/discounts',   () => require('./services/discounts').activeList());
 
   // Сохранение уменьшенной картинки босса. Панель присылает её уже
   // сжатой до 400×400 — здесь только проверка и запись файлом, чтобы
@@ -1045,6 +1049,16 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/news/update', act((req, n) => require('./services/news').update(req.user, req.body.id, req.body, n)), { admin: true });
   app.add('POST', '/api/news/delete', act((req, n) => require('./services/news').remove(req.user, req.body.id, n)), { admin: true });
   app.add('POST', '/api/news/pin',    act((req, n) => require('./services/news').togglePin(req.user, req.body.id, n)), { admin: true });
+  // Картинка в новость. Тот же путь, что у форума: браузер уже ужал
+  // файл, сервер проверяет формат с размером и кладёт файлом.
+  app.add('POST', '/api/news/image', act((req) => {
+    require('./services/roles').assertZone(req.user, 'news', 'загрузка картинок в новости');
+    const url = saveForumImage(req.body.image);
+    if (!url) throw new u.ApiError('Файл не получен');
+    return { url };
+  }), { admin: true });
+  // Игрок закрыл полосу закреплённой новости — это его действие, не админское
+  app.add('POST', '/api/news/hide-banner', act((req) => require('./services/news').hideBanner(req.user, req.body.id)));
   app.add('POST', '/api/legion/battle/join',       act((req, n) => legion.joinBattle(req.user, req.body.role, n)));
   app.add('POST', '/api/legion/battle/ready',      act((req, n) => legion.setReady(req.user, req.body.ready, n)));
   app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));

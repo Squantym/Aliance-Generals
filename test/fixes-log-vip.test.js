@@ -45,8 +45,11 @@ ok(!/undefined/.test(tr.describe('/api/missions/start', {}) || ''),
 
 console.log('\n── 2. Картинки форума ──');
 const soc = fs.readFileSync(ROOT + '/public/js/screens/social.js', 'utf8');
-ok(/_resizeImage = \(file, maxW, maxH\)/.test(soc), 'ограничивается и ширина, и высота');
-ok(/Math\.min\(1, maxW \/ img\.width, \(maxH \|\| 1400\) \/ img\.height\)/.test(soc),
+// Сам ужиматель лежит в ядре (public/js/app.js): он нужен и форуму, и
+// редактору новостей, а «Общение» подгружается отдельным файлом.
+const appCore = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
+ok(/_resizeImage = \(file, maxW, maxH\)/.test(appCore), 'ограничивается и ширина, и высота');
+ok(/Math\.min\(1, maxW \/ img\.width, \(maxH \|\| 1400\) \/ img\.height\)/.test(appCore),
    'масштаб единый для обеих сторон — пропорции сохраняются');
 ok(/_resizeImage\(f, 900, 1400\)/.test(soc), 'заданы оба предела');
 // Проверяем расчёт на вертикальном скриншоте телефона

@@ -457,15 +457,31 @@ const UI = {
     return html + '</span>';
   },
 
-  // Окошко акции сверху раздела. discount = { pct, expiresAt, label } | null
+  // Сколько осталось до срока — словами. Секунды показываем только на
+  // последней минуте: раньше они не помогают решить, а мельтешат.
+  timeLeft(ms) {
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (d > 0) return `${d} д ${h} ч ${m} мин`;
+    if (h > 0) return `${h} ч ${m} мин ${String(s).padStart(2, '0')} с`;
+    if (m > 0) return `${m} мин ${String(s).padStart(2, '0')} с`;
+    return `${s} с`;
+  },
+
+  // Полоса акции над разделом: крупная строка «что и на сколько» и
+  // отсчёт под ней. Отсчёт живой — его каждую секунду обновляет общий
+  // тикер (см. App._tickSales): без него игрок видел «ещё 3 мин» на
+  // экране, открытом полчаса назад, и шёл покупать в закрывшуюся акцию.
+  // discount = { pct, expiresAt, label, headline? } | null
   saleBanner(discount) {
     if (!discount) return '';
-    const sec = Math.max(0, Math.floor((discount.expiresAt - Date.now()) / 1000));
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const left = h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+    const title = discount.headline || `Скидка на «${discount.label}» — ${discount.pct}%`;
     return `<div class="sale-banner">
-        🏷 <b>АКЦИЯ −${discount.pct}%</b> · ${UI.esc(discount.label)} · действует ещё ${left}
+        <div class="sale-banner-title">🏷 ${UI.esc(title)}</div>
+        <div class="sale-banner-left">до конца акции: <b data-sale-until="${discount.expiresAt}">${UI.timeLeft(discount.expiresAt - Date.now())}</b></div>
       </div>`;
   },
 

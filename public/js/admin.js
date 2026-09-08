@@ -3223,7 +3223,7 @@ proxy_set_header Host $host;</pre>
     box.innerHTML = `
       <div class="grant-panel">
         <div class="grant-head">
-          <b>🎁 ${p.flag} ${UI.esc(p.name)}</b>
+          <b>${p.flag} ${UI.esc(p.name)}</b>
           <span class="muted small">ур. ${p.level} · <span class="ic-dollar"></span>${UI.fmtMoney(p.dollars)} · ${Admin.ICG} ${UI.fmtNum(p.gold)}</span>
           <button class="btn btn-inline" id="g-cancel" style="margin-left:auto">✕</button>
         </div>
@@ -3231,10 +3231,10 @@ proxy_set_header Host $host;</pre>
         <div class="grant-grid">
           <label><span><span class="ic-dollar"></span> Доллары</span><input type="number" id="g-dollars" placeholder="0"></label>
           <label><span>${Admin.ICG} Золото</span><input type="number" id="g-gold" placeholder="0"></label>
-          <label><span>⭐ Опыт</span><input type="number" id="g-xp" placeholder="0"></label>
-          <label><span>📈 Очки</span><input type="number" id="g-skill" placeholder="0"></label>
-          <label><span>👂 Уши</span><input type="number" id="g-ears" placeholder="0"></label>
-          <label><span>🎖 Жетоны</span><input type="number" id="g-tokens" placeholder="0"></label>
+          <label><span><span class="g-ic-txt">XP</span> Опыт</span><input type="number" id="g-xp" placeholder="0"></label>
+          <label><span><span class="g-ic-txt">★</span> Очки навыков</span><input type="number" id="g-skill" placeholder="0"></label>
+          <label><span><span class="ic-crest"></span> Гербы</span><input type="number" id="g-ears" placeholder="0"></label>
+          <label><span><span class="ic-token"></span> Жетоны</span><input type="number" id="g-tokens" placeholder="0"></label>
         </div>
 
         <div class="grant-quick">
@@ -3249,11 +3249,11 @@ proxy_set_header Host $host;</pre>
         <details class="grant-more">
           <summary>Ещё: уровень, ресурсы, банк</summary>
           <div class="grant-grid mt">
-            <label><span>🎚 Уровень</span><input type="number" id="g-level" placeholder="—"></label>
+            <label><span><span class="g-ic-txt">Ур</span> Уровень</span><input type="number" id="g-level" placeholder="—"></label>
             <label><span><span class="ic-energy"></span> Энергия</span><input type="number" id="g-energy" placeholder="—"></label>
             <label><span><span class="ic-health"></span> Здоровье</span><input type="number" id="g-health" placeholder="—"></label>
             <label><span><span class="ic-ammo"></span> Боеприпасы</span><input type="number" id="g-ammo" placeholder="—"></label>
-            <label><span>🏦 Банк <span class="muted">(списание)</span></span><input type="number" id="g-bank" placeholder="0"></label>
+            <label><span><span class="g-ic-txt">Б</span> Банк <span class="muted">(списание)</span></span><input type="number" id="g-bank" placeholder="0"></label>
           </div>
         </details>
 

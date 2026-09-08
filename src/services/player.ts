@@ -1277,6 +1277,12 @@ function mePayload(user: User): any {
       ? user.crestLostAt[0] + config.CREST.REGROW_MS : null,
     crestRestoreCostGold: config.CREST.RESTORE_GOLD,
     capacity: capacity(user),
+    // Полоса закреплённой новости. Едет здесь, а не отдельным запросом:
+    // её показывают над любым экраном, и лишний поход на сервер на
+    // каждый переход между разделами не окупается одной строкой.
+    newsPin: (() => {
+      try { return require('./news').banner(user); } catch (e) { return null; }
+    })(),
     // Чего игрок ещё не подтвердил. У всех, кто регистрировался до
     // появления отметок, здесь непустой список: согласий у них нет — их
     // просто не спрашивали. Клиент по этому списку показывает окно,

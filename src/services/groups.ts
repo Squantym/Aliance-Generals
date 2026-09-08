@@ -100,6 +100,7 @@ function view(user: User, kind: string): any {
       }))
       .sort((x, y) => y.members - x.members)
       .slice(0, 20),
+    discount: discounts.info(def.discountCategory),
     rules: {
       createCost: createCost(kind),
       baseCreateCost: params.CREATE_COST,

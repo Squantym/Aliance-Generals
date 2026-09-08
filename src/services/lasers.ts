@@ -91,6 +91,7 @@ function view(user: User) {
     nextLaserCostGold: nextLaserCost(user),
     unlockLevel: config.PRODUCTION_UNLOCK_LEVEL,
     inFlight: interceptables(user),
+    discount: discounts.info('laser'),
   };
 }
 

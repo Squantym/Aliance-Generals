@@ -90,6 +90,33 @@ function list(user: User): any {
   return { posts, canManage };
 }
 
+// ── Полоса закреплённой новости (для всех экранов) ───────────────
+// Закрепили новость — игрок видит её строкой над игрой, пока не
+// закроет крестиком. Закрытие адресное: у каждой новости свой id, и
+// следующее объявление снова покажется всем. Иначе первый же закрытый
+// баннер выключил бы этот способ докричаться до игроков навсегда.
+function banner(user: User): any {
+  const hidden: string[] = Array.isArray((user as any).newsHidden) ? (user as any).newsHidden : [];
+  const pinned = Object.values(store())
+    .filter((p) => p.pinned && hidden.indexOf(p.id) === -1)
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (!pinned) return null;
+  return { id: pinned.id, title: pinned.title, emoji: pinned.emoji || '📰', tag: pinned.tag || '' };
+}
+
+// Игрок закрыл полосу: помним ровно id, а не «выключено вообще».
+// Список подрезаем — он растёт по одной строке на объявление и не
+// должен превращаться в вечный хвост в карточке игрока.
+function hideBanner(user: User, id: string): any {
+  const pid = String(id || '').trim();
+  if (!pid || !store()[pid]) throw new u.ApiError('Новость не найдена');
+  const hidden: string[] = Array.isArray((user as any).newsHidden) ? (user as any).newsHidden : [];
+  if (hidden.indexOf(pid) === -1) hidden.push(pid);
+  (user as any).newsHidden = hidden.slice(-30);
+  db.markUser(user.id);
+  return { ok: true };
+}
+
 // ── Один пост ──
 function get(id: string): any {
   const p = store()[id];
@@ -157,4 +184,4 @@ function togglePin(user: User, id: string, notices: Notices): any {
   return { id, pinned: p.pinned };
 }
 
-export = { list, get, create, update, remove, togglePin };
+export = { list, get, create, update, remove, togglePin, banner, hideBanner };

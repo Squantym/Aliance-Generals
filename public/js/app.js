@@ -494,6 +494,8 @@ const App = {
     // Периодическая синхронизация с сервером и посекундный тик шапки
     // pollMe вызывается только при действиях игрока
     setInterval(() => App.tickHeader(), 1000);
+    // Отсчёты акций — одним тикером на всю страницу (см. _tickSales)
+    setInterval(() => { if (!document.hidden) App._tickSales(); }, 1000);
     // Очередь и живой бой в клубе: пять секунд — компромисс между
     // «узнать вовремя» и «не поллить сервер зря». Ход в дуэли длится
     // тридцать секунд, так что об истечении игрок узнаёт заранее.
@@ -3667,6 +3669,10 @@ const App = {
       return;
     }
 
+    // Полоса закреплённой новости и список акций живут вне экрана:
+    // они должны быть видны везде, а не только там, где о них вспомнили.
+    App.renderPinnedNews();
+    App.renderSalesStrip();
     const screen = App.screens[name] || App.screens.home;
     // Результат боя показывается ТОЛЬКО пока игрок на экране «Война».
     // Если он ушёл на главную (или в любой другой раздел) — карточка боя
@@ -3743,6 +3749,83 @@ const App = {
     App._scrollToId = id;
     App._preserveScroll = true;
     App.route();
+  },
+
+  // ---------- ПОЛОСА ЗАКРЕПЛЁННОЙ НОВОСТИ ----------
+  // Что именно закреплено, приходит вместе с mePayload: полосу надо
+  // показать на любом экране, и отдельный запрос на каждый переход
+  // между разделами ради одной строки не окупается.
+  renderPinnedNews() {
+    const box = document.getElementById('pin-news');
+    if (!box) return;
+    const p = App.me && App.me.newsPin;
+    if (!p || !API.token()) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <div class="pin-news">
+        <span class="pin-news-emoji">${UI.esc(p.emoji || '📰')}</span>
+        <div class="pin-news-text" id="pin-news-open">
+          <span class="pin-news-label">Объявление</span>
+          <span class="pin-news-title">${UI.esc(p.title)}</span>
+        </div>
+        <button class="pin-news-x" id="pin-news-close" title="Больше не показывать это объявление">✕</button>
+      </div>`;
+    document.getElementById('pin-news-open').onclick = () => App.go('newsview/' + p.id);
+    document.getElementById('pin-news-close').onclick = async (e) => {
+      e.stopPropagation();
+      // Гасим сразу, не дожидаясь сервера: иначе крестик выглядит
+      // сломанным на медленной связи. Запись всё равно уйдёт.
+      box.innerHTML = '';
+      if (App.me) App.me.newsPin = null;
+      try { await API.post('/api/news/hide-banner', { id: p.id }); } catch (err) {}
+    };
+  },
+
+  // ---------- ВИТРИНА ДЕЙСТВУЮЩИХ АКЦИЙ ----------
+  // Внизу страницы, списком, когда акций больше одной: про скидку в
+  // чужом разделе игрок иначе не узнает — полоса висит только там, где
+  // скидка действует, и туда ещё надо зайти.
+  async renderSalesStrip() {
+    const box = document.getElementById('sales-strip');
+    if (!box) return;
+    if (!API.token()) { box.innerHTML = ''; return; }
+    // Список акций меняется редко — держим минуту, чтобы каждый переход
+    // между разделами не ходил на сервер
+    if (!App._sales || Date.now() - App._salesAt > 60000) {
+      try { App._sales = (await API.get('/api/discounts')).items || []; App._salesAt = Date.now(); }
+      catch (e) { App._sales = App._sales || []; }
+    }
+    const live = (App._sales || []).filter((x) => x.expiresAt > Date.now());
+    if (live.length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <div class="sales-strip">
+        <div class="sales-strip-head">🏷 Сейчас действуют акции: ${live.length}</div>
+        ${live.map((x) => `
+          <div class="sales-row" ${x.screen ? `data-sale-go="${UI.esc(x.screen)}"` : ''}>
+            <span class="sales-row-pct">−${x.pct}%</span>
+            <span class="sales-row-name">${UI.esc(x.label)}</span>
+            <span class="sales-row-left" data-sale-until="${x.expiresAt}">${UI.timeLeft(x.expiresAt - Date.now())}</span>
+          </div>`).join('')}
+      </div>`;
+    box.querySelectorAll('[data-sale-go]').forEach((el) => {
+      el.onclick = () => App.go(el.dataset.saleGo);
+    });
+  },
+
+  // Один тикер на все отсчёты акций: и на полосы над разделами, и на
+  // список внизу. Отдельный таймер на каждую полосу пришлось бы
+  // гасить при каждой перерисовке экрана, и один забытый продолжал бы
+  // работать в фоне до конца сессии.
+  _tickSales() {
+    const now = Date.now();
+    let ended = false;
+    document.querySelectorAll('[data-sale-until]').forEach((el) => {
+      const left = Number(el.dataset.saleUntil) - now;
+      if (left <= 0) { el.textContent = 'акция закончилась'; ended = true; return; }
+      el.textContent = UI.timeLeft(left);
+    });
+    // Акция кончилась прямо на глазах — цены на экране уже неверные,
+    // перечитываем список и обновляем витрину
+    if (ended) { App._sales = null; App.renderSalesStrip(); }
   },
 
   // ---------- ШАПКА ----------
@@ -3914,3 +3997,34 @@ const App = {
     };
   },
 };
+
+
+// ── Уменьшение картинки в браузере (форум и новости) ──────────────
+// Сервер принимает ограниченный размер, а игрок выбирает любое фото с
+// телефона: пересжатие снимает с него эту заботу. Живёт в ядре, потому
+// что нужно и «Общению», и редактору новостей — а они в разных файлах.
+App._resizeImage = (file, maxW, maxH) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => reject(new Error('Это не изображение'));
+    img.onload = () => {
+      // Ограничиваем И ширину, И высоту, сохраняя пропорции. Раньше
+      // считалась только ширина: вертикальный скриншот с телефона
+      // (1080×2400) превращался в полотно 900×2000 — тяжёлое и
+      // растягивающее всю тему.
+      const scale = Math.min(1, maxW / img.width, (maxH || 1400) / img.height);
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      // Подбираем качество, пока не уложимся в разумный вес
+      let q = 0.85, out = cv.toDataURL('image/jpeg', q);
+      while (out.length > 600 * 1024 && q > 0.4) { q -= 0.12; out = cv.toDataURL('image/jpeg', q); }
+      resolve(out);
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});

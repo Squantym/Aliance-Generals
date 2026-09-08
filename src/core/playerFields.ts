@@ -58,6 +58,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   lastSeen:           { owner: 'player',     note: 'последняя активность' },
   isAdmin:            { owner: 'auth',       note: 'права администратора (наследие; ведущее поле — role)' },
   role:               { owner: 'roles',      note: 'роль: owner (подписан «Арбитром») / admin / commissar / moderator' },
+  newsHidden:         { owner: 'news',       note: 'закрытые игроком полосы закреплённых новостей' },
   vipUntil:           { owner: 'vip',        note: 'до какого времени действует VIP-подписка' },
   stats:              { owner: 'stats',      note: 'расширенная статистика: время, деньги, золото, техника' },
   access:             { owner: 'access',     note: 'учёт входов: адреса, устройства, история' },

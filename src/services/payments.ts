@@ -43,7 +43,10 @@ function store(): Record<string, PaymentOrder> {
 
 // Каталог пакетов (для витрины)
 function packages() {
-  return { packages: PACKAGES, enabled: false, note: 'Платёжная система скоро будет доступна.' };
+  return {
+    packages: PACKAGES, enabled: false, note: 'Платёжная система скоро будет доступна.',
+    discount: require('./discounts').info('gold'),
+  };
 }
 
 // Создать заказ (заготовка). Реальная оплата появится после интеграции —

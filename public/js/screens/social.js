@@ -896,6 +896,7 @@ async function renderGroupScreen(c, kind) {
 
   c.innerHTML = `
     <div class="title">${label}</div>
+    ${UI.saleBanner(data.discount)}
     <div class="card">
       <p class="muted small">${rulesHint}</p>
       ${data.pendingFor ? `<p class="mt gold">⏳ Ваша заявка в «${UI.esc(data.pendingFor.name)}» ждёт решения лидера.</p>` : ''}
@@ -1178,35 +1179,6 @@ App.renderTopic = async (box, topicId) => {
   });
 };
 
-// Создание темы. Картинку уменьшаем ПРЯМО В БРАУЗЕРЕ до ширины 900px:
-// сервер принимает ограниченный размер, а игрок может выбрать любое фото
-// с телефона — пересжатие снимает с него эту заботу.
-App._resizeImage = (file, maxW, maxH) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
-  reader.onload = () => {
-    const img = new Image();
-    img.onerror = () => reject(new Error('Это не изображение'));
-    img.onload = () => {
-      // Ограничиваем И ширину, И высоту, сохраняя пропорции. Раньше
-      // считалась только ширина: вертикальный скриншот с телефона
-      // (1080×2400) превращался в полотно 900×2000 — тяжёлое и
-      // растягивающее всю тему.
-      const scale = Math.min(1, maxW / img.width, (maxH || 1400) / img.height);
-      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
-      const cv = document.createElement('canvas');
-      cv.width = w; cv.height = h;
-      cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      // Подбираем качество, пока не уложимся в разумный вес
-      let q = 0.85, out = cv.toDataURL('image/jpeg', q);
-      while (out.length > 600 * 1024 && q > 0.4) { q -= 0.12; out = cv.toDataURL('image/jpeg', q); }
-      resolve(out);
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-});
-
 App.showNewTopic = (box) => {
   App._newImg = null;
   const body = `
@@ -1261,28 +1233,17 @@ App.showNewTopic = (box) => {
   });
 };
 
-// Новости внутри «Общения» — тот же список, что и в разделе новостей
+// Новости внутри «Общения» — ровно та же лента, что и в разделе
+// новостей. Своя вёрстка здесь была, и она склеивала блоки поста в
+// один абзац: разметка **жирного** и {red|цвета} показывалась игроку
+// сырой, а картинки, списки и выноски пропадали вовсе.
 App.renderCommNews = async (box) => {
   if (!box) return;
-  box.innerHTML = '<div class="loading">Загружаю новости…</div>';
-  try {
-    const r = await API.get('/api/news');
-    const items = r.posts || [];
-    // Пост состоит из блоков — собираем текстовые в один абзац
-    const bodyOf = (p) => (p.blocks || [])
-      .map((b) => (b && (b.text || b.value || '')) || '')
-      .filter(Boolean).join('\n');
-    box.innerHTML = items.length
-      ? items.map((n) => `
-          <div class="card">
-            <div class="name">${n.pinned ? '📌 ' : ''}${n.emoji ? UI.esc(n.emoji) + ' ' : ''}${UI.esc(n.title || 'Новость')}</div>
-            <div class="muted small">${n.createdAt ? new Date(n.createdAt).toLocaleString('ru-RU') : ''}${n.authorName ? ' · ' + UI.esc(n.authorName) : ''}</div>
-            <div class="forum-text mt">${UI.esc(bodyOf(n)).replace(/\n/g, '<br>')}</div>
-          </div>`).join('')
-      : '<div class="card center"><p class="muted">Новостей пока нет.</p></div>';
-  } catch (e) {
-    box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`;
-  }
+  // Экран новостей лежит в отдельном файле и подгружается по
+  // требованию — во вкладке «Общение» его может ещё не быть
+  if (!window.NewsRender && App._loadScreen) { try { await App._loadScreen('news'); } catch (e) {} }
+  if (!window.NewsRender) { box.innerHTML = '<div class="card center muted">Новости не загрузились. Обновите страницу.</div>'; return; }
+  await window.NewsRender.renderFeed(box, {});
 };
 
 // Правила поведения в чате — открываются кнопкой, чтобы игрок мог
