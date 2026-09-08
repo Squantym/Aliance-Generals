@@ -114,6 +114,23 @@ const got = db.logsBetween(from, Date.now(), 'u1');
 ok(Array.isArray(got) && got.length === 2, `за 30 дней найдено записей: ${got.length}`);
 ok(db.logsBetween(from, Date.now(), 'нет-такого').length === 0, 'фильтр по игроку работает');
 
+console.log('\n── 10б. Удаление записей (json-режим) ──');
+// Тот же db.clearLogs, что зовёт владелец из панели, но здесь журнал
+// лежит массивом в памяти, а не в sqlite: на локальной разработке
+// работает именно эта ветка, и фильтры в ней свои.
+db.appendLog({ at: Date.now(), userId: 'u2', userName: 'Второй', path: '/api/свежее' });
+const beforeClear = db.logStats().count;
+const byUser = db.clearLogs({ userId: 'u2' });
+ok(byUser.removed === 1, `по игроку снято записей: ${byUser.removed}`);
+ok(db.logStats().count === beforeClear - 1, 'чужие записи на месте');
+db.appendLog({ at: Date.now() - 40 * 24 * 3600 * 1000, userId: 'u3', userName: 'Третий', path: '/api/древнее' });
+const byAge = db.clearLogs({ before: Date.now() - 30 * 24 * 3600 * 1000 });
+ok(byAge.removed >= 1, `по сроку снято записей: ${byAge.removed}`);
+ok(db.logsBetween(0, Date.now(), 'u3').length === 0, 'древней записи не осталось');
+ok(db.logsBetween(0, Date.now(), 'u1').length > 0, 'а свежие чужие целы');
+const allGone = db.clearLogs({});
+ok(allGone.removed > 0 && db.logStats().count === 0, `полная очистка снесла всё: ${allGone.removed}`);
+
 console.log('\n── 11. История сохранений в админке ──');
 const adm = fs.readFileSync(path.join(ROOT, 'public/js/admin.js'), 'utf8');
 ok(/_backupHistoryHtml/.test(adm), 'список копий вынесен в отдельную функцию');

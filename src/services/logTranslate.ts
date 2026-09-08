@@ -660,6 +660,16 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/alliance/diplomat':   return '🕊 Назначил дипломата альянса';
 
       // ── Администрирование ──────────────────────────────────────
+      // Тихая выдача в журнал не попадает (маршрут помечен noLog).
+      // Перевод оставлен намеренно: если пометку когда-нибудь снимут,
+      // запись должна читаться фразой, а не сырым адресом.
+      case '/api/admin/grant-quiet':
+        return `🤫 Тихо выдал «${body.targetName || body.userId || '—'}»: ${resourceList(body)}`;
+      case '/api/admin/logs/clear':
+        return '🗑 Очистил журнал действий'
+          + (body.userId ? ` игрока ${body.targetName || body.userId}` : '')
+          + (body.days ? ` старше ${body.days} дн.` : '')
+          + (body.all && !body.userId && !body.days ? ' — целиком' : '');
       case '/api/admin/take':
         return `➖ Изъял у «${body.targetName || body.userId || '—'}»: ${resourceList(body)}`;
       case '/api/admin/rewards/grant':

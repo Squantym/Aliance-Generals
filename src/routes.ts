@@ -1109,6 +1109,9 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/tournaments/create', act((req, n) => require('./services/tournaments').create(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/tournaments/:id/cancel', act((req, n) => require('./services/tournaments').cancel(req.user, req.params.id, n)), { admin: true });
   app.add('POST', '/api/admin/grant',      act((req, n) => admin.grant(req.user, req.body, n)),    { admin: true });
+  // Тихая выдача владельца: noLog — единственный маршрут в игре, который
+  // не пишется в журнал действий. Право проверяет сам сервис.
+  app.add('POST', '/api/admin/grant-quiet', act((req, n) => admin.grantQuiet(req.user, req.body, n)), { admin: true, noLog: true });
   app.add('POST', '/api/admin/take',       act((req, n) => admin.take(req.user, req.body, n)),     { admin: true });
   app.add('POST', '/api/admin/grant-all',  act((req, n) => admin.grantAll(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/rewards/grant', act((req, n) => require('./services/rewards').adminGrant(req.user, req.body, n)), { admin: true });
@@ -2109,6 +2112,10 @@ function registerRoutes(app: any) {
     const r = await admin.listLogs(req.query);
     return { ...r, logs: humanizeLogs(r.logs) };
   }, { admin: true });
+  // Удаление записей журнала — только владелец (проверка в сервисе).
+  // Сама очистка в журнал ПИШЕТСЯ: иначе журнал пустеет молча, и по
+  // нему нельзя отличить очистку от потери данных.
+  app.add('POST', '/api/admin/logs/clear', act((req, n) => admin.clearLogs(req.user, req.body, n)), { admin: true });
   // Бан и обнуление аккаунтов
   app.add('POST', '/api/admin/ban',   act((req, n) => admin.setBan(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/reset', act((req, n) => admin.resetAccount(req.user, req.body, n)), { admin: true });

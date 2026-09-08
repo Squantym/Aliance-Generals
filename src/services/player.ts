@@ -207,6 +207,17 @@ function addGold(user: User, amount: number, source?: string, paid?: boolean): v
   syncPaid(user);
 }
 
+// Начисление БЕЗ учёта источника — для тихой выдачи владельца.
+// Обычный addGold пишет источник в статистику игрока, и у него в
+// разделе «Откуда золото» появляется строка «Выдано администрацией».
+// Тихая выдача на то и тихая: следа не остаётся нигде, включая
+// собственную статистику игрока. Больше эту функцию звать неоткуда —
+// любое игровое начисление обязано называть свой источник.
+function addGoldSilent(user: User, amount: number): void {
+  user.gold = Math.max(0, Math.round(user.gold + amount));
+  syncPaid(user);
+}
+
 // Списание. Единственная точка, через которую золото уходит с баланса.
 // Раньше тридцать мест по всему коду делали `user.gold -= цена` напрямую,
 // и добавить к ним учёт источника было негде: пришлось бы править
@@ -1624,4 +1635,4 @@ export = { isXpBlocked, xpBlockLeftMin,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, addRating, rank, flag, findByName,
   bankDeposit, bankWithdraw, reserveForLegion, goldPackages, buyGold,
-  mePayload, publicProfile, setStatus, setAvatar, restoreEar, renameSelf, sellUnitsForDebt,};
+  addGoldSilent, mePayload, publicProfile, setStatus, setAvatar, restoreEar, renameSelf, sellUnitsForDebt,};

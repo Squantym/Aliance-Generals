@@ -729,6 +729,24 @@ function logsBetween(from: number, to: number, userId?: string, limit?: number):
     .slice(-n).reverse();
 }
 
+// Удаление записей журнала. Только владелец (проверка в admin.clearLogs).
+// Возвращает, сколько строк снято, — иначе по ответу «готово» нельзя
+// отличить очистку от промаха по фильтру.
+function clearLogs(opts: { userId?: string; before?: number } = {}): any {
+  const uid = opts.userId ? String(opts.userId) : '';
+  const before = Number(opts.before) || 0;
+  if (mode === 'sqlite') {
+    try { const r = sqlite.clearLogs({ userId: uid, before }); return { removed: (r.hot || 0) + (r.packs || 0), ...r }; }
+    catch (e) { return { removed: 0, hot: 0, packs: 0 }; }
+  }
+  const arr = load<any[]>('actionLogs', []) as any[];
+  const keep = arr.filter((e) => !((!uid || e.userId === uid) && (!before || (e.at || 0) < before)));
+  const removed = arr.length - keep.length;
+  arr.length = 0; for (const e of keep) arr.push(e);
+  save('actionLogs');
+  return { removed, hot: removed, packs: 0 };
+}
+
 // Последние N записей лога (опционально по игроку). Async — читает из БД.
 async function tailLogs(limit: number, userId?: string): Promise<any[]> {
   if (mode === 'sqlite') { try { return sqlite.tailLogs(limit, userId); } catch (e) { return []; } }
@@ -776,7 +794,7 @@ async function flushAllNow(): Promise<string[]> {
 
 export = {
   init, load, save, markUser, saveAll, loadedNames, peek, flushAllNow, appendLog, tailLogs, DATA_DIR,
-  logStats, logsBetween, LOG_KEEP_MS, playerFromBackup,
+  logStats, logsBetween, clearLogs, LOG_KEEP_MS, playerFromBackup,
   dropUser, findDuplicateUsers,
   // Своя база: защита данных и аналитика
   backupNow, backupsList, snapshotCollection, snapshotsList, snapshotRestore, sql, dbStats, closeDb,

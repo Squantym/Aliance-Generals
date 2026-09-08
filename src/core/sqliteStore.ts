@@ -668,6 +668,36 @@ function logStats(): any {
   }
 }
 
+// ═══ УДАЛЕНИЕ ЖУРНАЛА (только владелец, см. admin.clearLogs) ═════════
+// Чистим ОБА хранилища. Свежие записи лежат строками в action_logs,
+// старые — сжатыми сутками в log_packs, и удаление только первого
+// выглядело бы как очистка, а через минуту журнал «возвращался» бы:
+// чтение добирает недостающее из упакованных блоков.
+// Блок упаковки — это «сутки + игрок», поэтому и по игроку, и по дате
+// удаление получается точным, без распаковки и переписывания блоков.
+function clearLogs(opts: { userId?: string; before?: number } = {}): any {
+  const uid = opts.userId ? String(opts.userId) : '';
+  const before = Number(opts.before) || 0;
+  let hot = 0, packs = 0;
+  try {
+    const where: string[] = [], args: any[] = [];
+    if (uid) { where.push('user_id = ?'); args.push(uid); }
+    if (before) { where.push('at < ?'); args.push(before); }
+    const cond = where.length ? ' WHERE ' + where.join(' AND ') : '';
+    hot = (db.prepare('DELETE FROM action_logs' + cond).run(...args) as any).changes || 0;
+    const pw: string[] = [], pa: any[] = [];
+    if (uid) { pw.push('user_id = ?'); pa.push(uid); }
+    // Сутки целиком: блок за день удаляем, если весь день старше границы
+    if (before) { pw.push('day < ?'); pa.push(logDayKey(before)); }
+    const pc = pw.length ? ' WHERE ' + pw.join(' AND ') : '';
+    packs = (db.prepare('DELETE FROM log_packs' + pc).run(...pa) as any).changes || 0;
+  } catch (e) { /* журнал не должен ронять админку */ }
+  // Освобождённые страницы — обратно файловой системе, иначе после
+  // чистки база остаётся прежнего размера
+  try { reclaimSpace(20000); } catch (e) {}
+  return { hot, packs };
+}
+
 // Записи за период (для выгрузки и разбирательств). from/to — метки времени.
 // Читает и «горячие» строки, и упакованные блоки: снаружи журнал един,
 // и разбирательство по событию двухмесячной давности работает так же,
@@ -986,7 +1016,7 @@ export = {
   open, isOpen, file, close, driver,
   loadAllPlayers, loadAllCollections,
   writeBatch, deletePlayer,
-  appendLog, tailLogs, logStats, logsBetween, LOG_KEEP_MS, playerFromBackup,
+  appendLog, tailLogs, logStats, logsBetween, clearLogs, LOG_KEEP_MS, playerFromBackup,
   packOldLogs, readPacked, logDayKey, LOG_HOT_DAYS, reclaimSpace,
   savePlayerHistory, playerHistoryList, playerHistoryGet, playerHistoryAt,
   thinPlayerHistory, historyStats,

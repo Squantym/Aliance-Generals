@@ -196,13 +196,20 @@ function playerSnapshot(adminUser: User, targetId: string) {
 // Применить набор ресурсов к одному игроку
 // Возвращает строку что выдали (для лога)
 // ──────────────────────────────────────────────────────────────────
-function applyGrant(target: User, body: any): string[] {
+// quiet — тихая выдача владельца: не отмечаем источник в статистике
+// золота. Всё остальное считается так же, иначе тихая выдача давала бы
+// другой результат, чем обычная, и владелец не мог бы ей доверять.
+function applyGrant(target: User, body: any, quiet = false): string[] {
   player.refresh(target);
   const granted: string[] = [];
   const addInt = (field) => u.toInt(body[field], 0);
 
   if (addInt('dollars'))    { player.addMoney(target, addInt('dollars'), false);             granted.push(`$${u.fmt(addInt('dollars'))}`); }
-  if (addInt('gold'))       { player.addGold(target, addInt('gold'), 'admin');                        granted.push(`🪙 ${addInt('gold')}`); }
+  if (addInt('gold'))       {
+    if (quiet) player.addGoldSilent(target, addInt('gold'));
+    else player.addGold(target, addInt('gold'), 'admin');
+    granted.push(`🪙 ${addInt('gold')}`);
+  }
   if (addInt('skillPoints')){ target.skillPoints = Math.max(0, target.skillPoints + addInt('skillPoints')); granted.push(`${addInt('skillPoints')} оч. навыков`); }
 
   // Уровень выдаём через опыт: просто поднять число нельзя — от уровня
@@ -432,6 +439,68 @@ function grant(adminUser: User, body: any, notices: Notices) {
 
   notices.push(`✅ Выдано игроку ${target.name}: ${granted.join(', ')}`);
   return { player: brief(target) };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ТИХАЯ ВЫДАЧА — только владелец проекта
+// ══════════════════════════════════════════════════════════════════
+// Обычная выдача оставляет пять следов: запись в журнале действий,
+// строку в журнале сотрудников (он читает тот же журнал), снимок
+// игрока «перед выдачей ресурсов», подарочное окно с письмом игроку и
+// источник «Выдано администрацией» в его статистике золота.
+// Здесь не остаётся ни одного из них: сам маршрут помечен noLog, и
+// http.ts его не записывает.
+//
+// Право только у владельца, и проверяется оно ЗДЕСЬ, а не только на
+// маршруте: у ручки без журнала нет второй линии обороны — если
+// доступ утечёт, разбираться будет попросту не по чему.
+function grantQuiet(actor: User, body: any, notices: Notices) {
+  const roles = require('./roles');
+  if (!roles.isOwner(actor)) throw new u.ApiError('Тихая выдача доступна только владельцу проекта');
+  const target = player.users()[body.userId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  const granted = applyGrant(target, body, true);
+  if (!granted.length) throw new u.ApiError('Не указано, что выдавать');
+  // Та же запись на диск, что и в обычной выдаче: без неё выдача живёт
+  // только в памяти и пропадает при аварийном завершении процесса.
+  db.markUser(target.id);
+  notices.push(`🤫 Тихо выдано игроку ${target.name}: ${granted.join(', ')}. Следа нет ни в журнале, ни у игрока.`);
+  return { player: brief(target), quiet: true, granted };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// УДАЛЕНИЕ ЖУРНАЛА — только владелец проекта
+// ══════════════════════════════════════════════════════════════════
+// Журнал — единственная защита владельца от злоупотреблений теми
+// правами, что он раздал сотрудникам. Поэтому чистить его не может
+// никто, кроме него самого: ни администратор, ни арбитр, ни «Дозор» —
+// сколько бы зон им ни выдали. Сотрудник, способный стереть журнал,
+// способен стереть и след своего действия.
+//
+// Полная очистка требует явного all: true. Без этого пустое тело
+// запроса — опечатка в панели, оборванный ввод — стирало бы всё.
+function clearLogs(actor: User, body: any, notices: Notices) {
+  const roles = require('./roles');
+  if (!roles.isOwner(actor)) throw new u.ApiError('Очистку журнала может делать только владелец проекта');
+  const who = String(body.userId || '').trim();
+  let userId = '';
+  let whoName = '';
+  if (who) {
+    const users = player.users();
+    const found: any = users[who]
+      || Object.values(users).find((p: any) => String(p.name || '').toLowerCase() === who.toLowerCase());
+    if (!found) throw new u.ApiError('Игрок не найден');
+    userId = found.id; whoName = found.name;
+  }
+  const days = u.toInt(body.days, 0);
+  const before = days > 0 ? Date.now() - days * 86400000 : 0;
+  if (!userId && !before && body.all !== true) {
+    throw new u.ApiError('Укажите игрока, срок — или подтвердите полную очистку');
+  }
+  const r = db.clearLogs({ userId, before });
+  const scope = userId ? `игрока ${whoName}` : (before ? `старше ${days} дн.` : 'весь журнал');
+  notices.push(`🗑 Журнал очищен (${scope}): снято записей — ${r.removed}.`);
+  return { removed: r.removed, hot: r.hot, packs: r.packs, scope };
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -1076,7 +1145,7 @@ async function setPassword(adminUser: User, body: any, notices: Notices) {
 }
 
 export = {
-  listPlayers, grant, grantAll, take, claimGift,
+  listPlayers, grant, grantQuiet, grantAll, take, claimGift, clearLogs,
   discountCategories, setDiscount,
   listGlobalBuffs, setGlobalBuff,
   listLogs, setBan, resetAccount, resetParam, resetMissions, wipeGroups,

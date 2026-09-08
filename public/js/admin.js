@@ -3264,7 +3264,9 @@ proxy_set_header Host $host;</pre>
           <button class="btn btn-orange btn-inline" id="g-go">✅ Выдать</button>
           <button class="btn btn-red btn-inline" id="g-take">➖ Забрать</button>
           <button class="btn btn-inline" id="g-rw-toggle" style="border-color:var(--gold);color:var(--gold)">🎁 Письмом</button>
+          ${(Admin.me && Admin.me.staffRole === 'owner') ? `<button class="btn btn-inline" id="g-quiet" title="Без записи в журнале и без уведомления игроку" style="border-color:var(--dim);color:var(--dim)">🤫 Тихо</button>` : ''}
         </div>
+        ${(Admin.me && Admin.me.staffRole === 'owner') ? `<p class="muted small" style="margin:4px 0 0">«Тихо» — выдача без записи в журнале, без письма и окна игроку и без строки в его статистике золота.</p>` : ''}
 
         <div id="g-rw-box" class="grant-reward" style="display:none">
           <p class="muted small">Игрок заберёт награду сам — на главном экране или в почте.</p>
@@ -3327,6 +3329,22 @@ proxy_set_header Host $host;</pre>
         box.innerHTML = '';
         Admin.loadPlayers();
       } catch(e) { UI.toast('⛔ ' + e.message); }
+    };
+    // Тихая выдача владельца: то же, что «Выдать», но без следов.
+    // Записка игроку здесь не отправляется намеренно — она и есть след.
+    const quietBtn = document.getElementById('g-quiet');
+    if (quietBtn) quietBtn.onclick = async () => {
+      const v = id => (document.getElementById(id) || {}).value || '';
+      try {
+        await API.post('/api/admin/grant-quiet', {
+          userId: p.id,
+          dollars: v('g-dollars'), gold: v('g-gold'), xp: v('g-xp'),
+          skillPoints: v('g-skill'), ears: v('g-ears'), tokens: v('g-tokens'),
+          setLevel: v('g-level'), energy: v('g-energy'), health: v('g-health'), ammo: v('g-ammo'),
+        });
+        box.innerHTML = '';
+        Admin.loadPlayers();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     // Списание ресурсов (значения в полях = сколько ЗАБРАТЬ, включая банк)
     document.getElementById('g-take').onclick = async () => {
@@ -3746,6 +3764,18 @@ proxy_set_header Host $host;</pre>
         иначе в тысяче строк «купил танк» бан теряется.${(Admin.me && Admin.me.staffRole === 'owner')
           ? ' <a href="#" id="log-to-staff">Открыть журнал сотрудников →</a>' : ''}</p>
       </div>
+      ${(Admin.me && Admin.me.staffRole === 'owner') ? `
+      <div class="card" style="border-color:var(--red)">
+        <div class="name">🗑 Удаление записей журнала</div>
+        <p class="muted small">Только владелец проекта. Записи снимаются насовсем — и свежие, и упакованные.
+          Сама очистка останется в журнале одной строкой, иначе он пустеет молча.</p>
+        <div class="field-row mt">
+          <button class="btn btn-inline" id="log-del-user">Удалить записи игрока из поля выше</button>
+          <input type="number" id="log-del-days" placeholder="дней" min="1" max="365" style="width:80px">
+          <button class="btn btn-inline" id="log-del-old">Удалить старше N дней</button>
+        </div>
+        <button class="btn btn-red mt" id="log-del-all" style="width:100%">Очистить весь журнал</button>
+      </div>` : ''}
       <div id="ad-logs"><p class="muted center">Нажмите «Загрузить».</p></div>`;
 
     Admin._logFilter = 'all';
@@ -3754,6 +3784,28 @@ proxy_set_header Host $host;</pre>
       ev.preventDefault(); Admin.tab = 'roles'; Admin.renderTab();
     };
     document.getElementById('log-load').onclick = () => Admin.loadLogs();
+    // Удаление записей — только у владельца, и каждое с подтверждением:
+    // журнал не восстанавливается, откатить нечем.
+    const wipe = async (payload, question) => {
+      if (!await UI.confirm(question, { title: 'Удаление журнала', icon: '🗑', okText: 'Удалить', danger: true })) return;
+      try { await API.post('/api/admin/logs/clear', payload); Admin.loadLogs(); }
+      catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    const delUser = document.getElementById('log-del-user');
+    if (delUser) delUser.onclick = () => {
+      const uid = (document.getElementById('log-uid') || {}).value.trim();
+      if (!uid) { UI.toast('⛔ Укажите игрока в поле выше'); return; }
+      wipe({ userId: uid }, `Удалить все записи журнала игрока «${UI.esc(uid)}»?`);
+    };
+    const delOld = document.getElementById('log-del-old');
+    if (delOld) delOld.onclick = () => {
+      const days = parseInt((document.getElementById('log-del-days') || {}).value, 10);
+      if (!days || days < 1) { UI.toast('⛔ Укажите, сколько дней оставить'); return; }
+      wipe({ days }, `Удалить все записи старше ${days} дн.?`);
+    };
+    const delAll = document.getElementById('log-del-all');
+    if (delAll) delAll.onclick = () => wipe({ all: true },
+      'Очистить журнал действий ЦЕЛИКОМ? Пропадёт вся история действий игроков и сотрудников.');
     document.getElementById('log-filters').querySelectorAll('[data-filter]').forEach(btn => {
       btn.onclick = () => {
         Admin._logFilter = btn.dataset.filter;
