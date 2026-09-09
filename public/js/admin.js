@@ -3770,6 +3770,13 @@ proxy_set_header Host $host;</pre>
           <button class="btn btn-orange grow" id="of-save">💾 Сохранить</button>
           <button class="btn btn-inline" id="of-cancel">Отмена</button>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="name">👁 Как это увидит игрок</div>
+        <p class="muted small">Та же карточка, что в банке во вкладке «Спецпредложения», с теми же
+          картинками. Обновляется на каждую правку; кнопки покупки здесь не работают.</p>
+        <div id="of-preview" class="of-preview mt"><div class="loading">Собираю карточку…</div></div>
       </div>`;
 
     // Правки состава сразу пишем в черновик — форма перерисовывается
@@ -3810,25 +3817,60 @@ proxy_set_header Host $host;</pre>
       Admin._renderOfferForm();
     };
     document.getElementById('of-cancel').onclick = () => { Admin._offerDraft = null; Admin._renderOfferForm(); };
-    document.getElementById('of-save').onclick = async () => {
+
+    // Черновик собираем ОДИН раз для двух дел: сохранить и показать.
+    // Разойдись эти два сбора — предпросмотр показывал бы одно, а в
+    // базу уходило другое, и заметить это можно было бы только по
+    // жалобе игрока.
+    const payloadOf = () => {
       readItems();
-      const payload = {
+      const v = (id) => (document.getElementById(id) || {}).value;
+      return {
         id: d.id || '',
-        title: document.getElementById('of-title').value,
-        emoji: document.getElementById('of-emoji').value,
-        note: document.getElementById('of-note').value,
+        title: v('of-title'), emoji: v('of-emoji'), note: v('of-note'),
         items: d.items,
-        priceGold: Number(document.getElementById('of-price-gold').value) || 0,
-        priceRub: Number(document.getElementById('of-price-rub').value) || 0,
-        oldPriceGold: Number(document.getElementById('of-old-gold').value) || 0,
-        oldPriceRub: Number(document.getElementById('of-old-rub').value) || 0,
-        startAt: Admin._dtParse(document.getElementById('of-start').value),
-        endAt: Admin._dtParse(document.getElementById('of-end').value),
-        limitPerPlayer: Number(document.getElementById('of-limit').value) || 0,
+        priceGold: Number(v('of-price-gold')) || 0,
+        priceRub: Number(v('of-price-rub')) || 0,
+        oldPriceGold: Number(v('of-old-gold')) || 0,
+        oldPriceRub: Number(v('of-old-rub')) || 0,
+        startAt: Admin._dtParse(v('of-start')),
+        endAt: Admin._dtParse(v('of-end')),
+        limitPerPlayer: Number(v('of-limit')) || 0,
         enabled: document.getElementById('of-enabled').checked,
       };
+    };
+
+    // Карточку собирает СЕРВЕР тем же кодом, что и витрину игрока:
+    // описания позиций и картинки приходят готовыми. Считать их здесь
+    // заново значило бы завести вторую правду о составе набора.
+    Admin._offerPreview = async () => {
+      const box = document.getElementById('of-preview');
+      if (!box) return;
       try {
-        await API.post('/api/admin/offers/save', payload);
+        const r = await API.post('/api/admin/offers/preview', payloadOf());
+        box.innerHTML = OfferCard.html(r.offer, { preview: true })
+          + (r.active ? '' : '<p class="muted small center">Сейчас набор игрокам не показывается: '
+            + 'выключен или вне срока показа.</p>');
+      } catch (e) {
+        box.innerHTML = `<p class="muted small">Не собрать карточку: ${UI.esc(e.message)}</p>`;
+      }
+    };
+    // Перерисовываем не на каждый символ: набор правят «в поле», а
+    // запрос на каждую букву — это лишняя работа сервера впустую.
+    let previewTimer = null;
+    const bumpPreview = () => {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => Admin._offerPreview(), 350);
+    };
+    wrap.querySelectorAll('input, select, textarea').forEach((el) => {
+      el.addEventListener('input', bumpPreview);
+      el.addEventListener('change', bumpPreview);
+    });
+    Admin._offerPreview();
+
+    document.getElementById('of-save').onclick = async () => {
+      try {
+        await API.post('/api/admin/offers/save', payloadOf());
         Admin._offerDraft = null;
         Admin.loadOffers();
       } catch (e) { UI.toast('⛔ ' + e.message); }

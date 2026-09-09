@@ -1481,46 +1481,13 @@ App.screens.bank = async (c, param) => {
   // приходят с сервера уже разобранными. Здесь только витрина.
   if (tab === 'offers') {
     const { offers } = await API.get('/api/offers');
-    const money = (n) => UI.fmtNum(n);
-    const timer = (sec) => {
-      if (sec === null || sec === undefined) return '';
-      const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), mi = Math.floor((sec % 3600) / 60);
-      return d > 0 ? `${d} дн ${h} ч` : (h > 0 ? `${h} ч ${mi} мин` : `${mi} мин`);
-    };
+    // Карточку рисует общий модуль: ровно ту же разметку показывает
+    // предпросмотр в панели, поэтому владелец видит набор глазами игрока.
     c.innerHTML = `
       <div class="title">Банк · Спецпредложения</div>
       ${tabs}
       ${!offers.length ? '<div class="card center muted">Сейчас предложений нет. Загляните позже.</div>' : ''}
-      ${offers.map((o) => `
-        <div class="card offer-card">
-          <div class="offer-head">
-            <span class="offer-emoji">${UI.esc(o.emoji || '🎁')}</span>
-            <span class="grow"><b>${UI.esc(o.title)}</b>
-              ${o.note ? `<div class="muted small">${UI.esc(o.note)}</div>` : ''}</span>
-            ${o.endsInSec !== null ? `<span class="offer-timer">⏳ ${timer(o.endsInSec)}</span>` : ''}
-          </div>
-          <div class="offer-items">
-            ${o.items.map((it) => `
-              <div class="offer-item">
-                ${it.icon ? `<img src="${UI.esc(it.icon)}" alt="" loading="lazy">` : ''}
-                <span>${UI.esc(it.text)}</span>
-              </div>`).join('')}
-          </div>
-          ${o.limitPerPlayer
-            ? `<div class="muted small mt">В одни руки: ${o.limitPerPlayer} · вы взяли ${o.boughtByMe}</div>` : ''}
-          <div class="offer-buy mt">
-            ${o.priceGold ? `
-              <button class="btn btn-orange grow" data-offer-gold="${o.id}" ${o.canBuyGold ? '' : 'disabled'}>
-                ${o.oldPriceGold ? `<s class="muted">${money(o.oldPriceGold)}</s> ` : ''}
-                <span class="ic-gold"></span> ${money(o.priceGold)}
-              </button>` : ''}
-            ${o.priceRub ? `
-              <button class="btn btn-inline grow" data-offer-rub="${o.id}" ${o.canBuyRub ? '' : 'disabled'}>
-                ${o.oldPriceRub ? `<s class="muted">${money(o.oldPriceRub)} ₽</s> ` : ''}${money(o.priceRub)} ₽
-              </button>` : ''}
-          </div>
-          ${!o.canBuyGold && !o.canBuyRub ? '<p class="muted small center mt">Вы уже взяли этот набор</p>' : ''}
-        </div>`).join('')}`;
+      ${offers.map((o) => OfferCard.html(o)).join('')}`;
     c.querySelectorAll('[data-offer-gold]').forEach((b) => { b.onclick = async () => {
       if (!await UI.confirm('Купить набор за золото?')) return;
       try { await API.post('/api/offers/buy', { offerId: b.dataset.offerGold }); await App.refreshMe(); App.rerender(); }

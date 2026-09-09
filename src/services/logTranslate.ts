@@ -670,6 +670,8 @@ function describe(path: string, body?: any, result?: any): string | null {
           + (body.userId ? ` игрока ${body.targetName || body.userId}` : '')
           + (body.days ? ` старше ${body.days} дн.` : '')
           + (body.all && !body.userId && !body.days ? ' — целиком' : '');
+      case '/api/admin/offers/preview':
+        return '👁 Посмотрел, как набор выглядит у игрока';
       case '/api/news/image':
         return '🖼 Загрузил картинку для новости';
       case '/api/news/hide-banner':

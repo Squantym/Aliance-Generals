@@ -5341,3 +5341,9 @@ body.has-club-bar #header { top: 32px; }
 .offer-buy { display: flex; gap: 8px; }
 .offer-buy .btn { width: auto; }
 .offer-buy s { font-size: 11px; }
+/* Предпросмотр набора в панели: ширина как у колонки игры — иначе
+   карточка растягивается на весь экран и врёт про то, как она
+   ляжет у игрока на телефоне. */
+.of-preview { max-width: 460px; }
+.of-preview .offer-card { pointer-events: none; }
+.of-preview .offer-buy .btn { opacity: .9; }

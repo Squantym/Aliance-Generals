@@ -140,9 +140,22 @@ function describeItem(it: OfferItem): string {
   }
 }
 
-// Картинка для витрины: у техники и контейнеров она есть, у остального
-// хватает значка из описания
+// Картинка позиции для витрины. Берём ТЕ ЖЕ файлы, что игрок видит в
+// игре: значок золота из шапки, коробку контейнера с чёрного рынка,
+// портрет наёмника. Набор должен выглядеть набором вещей, а не
+// списком строк — по нему решают, платить или нет.
+//
+// Где своей картинки нет (опыт, VIP), возвращаем null: в описании
+// позиции уже стоит эмодзи, и подсовывать чужую картинку хуже, чем
+// не показать никакой.
+const ICON_OF: Record<string, string> = {
+  gold:    '/img/icons/gold.webp',
+  dollars: '/img/icons/dollar.webp',
+  tokens:  '/img/icons/truce.webp',      // жетоны перемирия
+  skill:   '/img/tabs/profile_skills.webp',
+};
 function itemIcon(it: OfferItem): string | null {
+  if (ICON_OF[it.type]) return ICON_OF[it.type];
   if (it.type === 'unit') return `/img/units/${it.id}.webp`;
   if (it.type === 'container') {
     const c = (config.CONTAINERS as any[]).find((x) => x.tier === it.tier);
@@ -235,27 +248,63 @@ function boughtCount(user: User, offerId: string): number {
   return Math.max(0, u.toInt(box[offerId], 0));
 }
 
+// Карточка набора в том виде, в каком её рисует витрина. Одна сборка
+// на две стороны: игроку в банк и владельцу в предпросмотр. Иначе
+// предпросмотр показывал бы «примерно то же», а расходиться он начал
+// бы с первой правки витрины.
+// Значок в начале описания нужен там, где картинки нет: в письмах и
+// уведомлениях. В карточке он лишний — рядом уже стоит настоящая
+// картинка, а на части систем эмодзи вдобавок рисуется квадратиком.
+function withoutLeadIcon(text: string): string {
+  return text.replace(/^[^0-9A-Za-zА-Яа-яЁё]+/u, '').trim() || text;
+}
+
+function showcase(o: Offer, mine: number) {
+  const left = o.limitPerPlayer ? Math.max(0, o.limitPerPlayer - mine) : null;
+  return {
+    id: o.id, title: o.title, note: o.note, emoji: o.emoji,
+    items: o.items.map((it) => {
+      const icon = itemIcon(it);
+      const text = describeItem(it);
+      return { text: icon ? withoutLeadIcon(text) : text, icon };
+    }),
+    priceGold: o.priceGold, priceRub: o.priceRub,
+    oldPriceGold: o.oldPriceGold, oldPriceRub: o.oldPriceRub,
+    endsInSec: o.endAt ? Math.max(0, Math.ceil((o.endAt - Date.now()) / 1000)) : null,
+    limitPerPlayer: o.limitPerPlayer, boughtByMe: mine, leftForMe: left,
+    canBuyGold: o.priceGold > 0 && (left === null || left > 0),
+    canBuyRub: o.priceRub > 0 && (left === null || left > 0),
+  };
+}
+
 function catalog(user: User) {
   const all = store();
-  const now = Date.now();
   const offers = Object.values(all)
     .filter(isActive)
     .sort((a, b) => (a.endAt || Infinity) - (b.endAt || Infinity) || b.createdAt - a.createdAt)
-    .map((o) => {
-      const mine = boughtCount(user, o.id);
-      const left = o.limitPerPlayer ? Math.max(0, o.limitPerPlayer - mine) : null;
-      return {
-        id: o.id, title: o.title, note: o.note, emoji: o.emoji,
-        items: o.items.map((it) => ({ text: describeItem(it), icon: itemIcon(it) })),
-        priceGold: o.priceGold, priceRub: o.priceRub,
-        oldPriceGold: o.oldPriceGold, oldPriceRub: o.oldPriceRub,
-        endsInSec: o.endAt ? Math.max(0, Math.ceil((o.endAt - now) / 1000)) : null,
-        limitPerPlayer: o.limitPerPlayer, boughtByMe: mine, leftForMe: left,
-        canBuyGold: o.priceGold > 0 && (left === null || left > 0),
-        canBuyRub: o.priceRub > 0 && (left === null || left > 0),
-      };
-    });
+    .map((o) => showcase(o, boughtCount(user, o.id)));
   return { offers };
+}
+
+// ── Предпросмотр для панели ───────────────────────────────────────
+// Владелец видит карточку ДО сохранения — ровно ту же, что увидит
+// игрок: собирает её тот же showcase из того же очищенного состава.
+// Черновик не сохраняется и в базу не попадает.
+function adminPreview(actor: User, data: any) {
+  require('./roles').assertZone(actor, 'economy', 'спецпредложения');
+  const d = data || {};
+  const draft: Offer = {
+    id: 'preview', title: String(d.title || '').trim().slice(0, 60) || 'Без названия',
+    note: String(d.note || '').trim().slice(0, 300),
+    emoji: String(d.emoji || '🎁').slice(0, 4) || '🎁',
+    items: (Array.isArray(d.items) ? d.items : []).map(cleanItem).filter(Boolean) as OfferItem[],
+    priceGold: Math.max(0, u.toInt(d.priceGold, 0)), priceRub: Math.max(0, u.toInt(d.priceRub, 0)),
+    oldPriceGold: Math.max(0, u.toInt(d.oldPriceGold, 0)), oldPriceRub: Math.max(0, u.toInt(d.oldPriceRub, 0)),
+    startAt: Math.max(0, u.toInt(d.startAt, 0)), endAt: Math.max(0, u.toInt(d.endAt, 0)),
+    limitPerPlayer: Math.max(0, u.toInt(d.limitPerPlayer, 0)),
+    enabled: d.enabled !== false, sold: 0, createdAt: Date.now(), createdBy: actor.id,
+  } as Offer;
+  return { offer: showcase(draft, 0), active: isActive(draft) };
 }
 
 // ── Выдача содержимого ────────────────────────────────────────────
@@ -360,6 +409,6 @@ function grantPaid(user: User, offerId: string, notices: Notices): string[] {
 
 export = {
   palette, describeItem, itemIcon,
-  adminList, adminSave, adminRemove,
+  adminList, adminSave, adminRemove, adminPreview, showcase,
   catalog, buyForGold, orderForRub, grantPaid,
 };

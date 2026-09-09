@@ -2205,6 +2205,9 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/offers/order',      act((req, n) => require('./services/offers').orderForRub(req.user, req.body.offerId, n)));
   app.add('GET',  '/api/admin/offers',      (req) => require('./services/offers').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/offers/save', act((req, n) => require('./services/offers').adminSave(req.user, req.body, n)), { admin: true });
+  // Предпросмотр карточки до сохранения: собирает её тот же код, что и
+  // витрину игрока. Ничего не пишет — только показывает.
+  app.add('POST', '/api/admin/offers/preview', (req) => require('./services/offers').adminPreview(req.user, req.body), { admin: true });
   app.add('POST', '/api/admin/offers/delete', act((req, n) => require('./services/offers').adminRemove(req.user, req.body.id, n)), { admin: true });
 };
 

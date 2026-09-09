@@ -207,6 +207,79 @@ const fails = (n, fn, part) => {
   ok('в банке есть вкладка спецпредложений', /bank\/offers'">🎁 Спецпредложения/.test(bank));
   ok('витрина берёт наборы с сервера', /API\.get\('\/api\/offers'\)/.test(bank));
 
+  console.log('\n[10] В карточке видны картинки товаров');
+  const shot = offers.showcase({
+    id: 'x', title: 'T', note: '', emoji: '🎁', priceGold: 1, priceRub: 0,
+    oldPriceGold: 0, oldPriceRub: 0, startAt: 0, endAt: 0, limitPerPlayer: 0,
+    enabled: true, sold: 0, createdAt: 0, createdBy: '',
+    items: [
+      { type: 'gold', qty: 300 }, { type: 'dollars', qty: 100 },
+      { type: 'tokens', qty: 5 }, { type: 'skill', qty: 2 },
+      { type: 'xp', qty: 50 }, { type: 'vip', days: 7 },
+      { type: 'merc', id: c.COMMANDERS[0].id, days: 3 },
+      { type: 'container', tier: c.CONTAINERS[0].tier, qty: 5 },
+      { type: 'unit', id: 'ground_10', qty: 50 },
+    ],
+  }, 0);
+  const byText = (part) => shot.items.find((x) => x.text.indexOf(part) >= 0);
+  for (const [what, part] of [['золото', 'золота'], ['деньги', '100'], ['жетоны', 'жетон'],
+                              ['очки навыков', 'навык'], ['наёмник', c.COMMANDERS[0].name],
+                              ['контейнер', c.CONTAINERS[0].name], ['техника', 'Т-62']]) {
+    const it = byText(part);
+    ok(`у позиции «${what}» есть картинка`, !!(it && it.icon));
+  }
+  // Файлы должны существовать: битая ссылка в карточке за деньги — хуже,
+  // чем отсутствие картинки
+  const broken = shot.items.filter((x) => x.icon && !fs.existsSync(path.join(ROOT, 'public', x.icon)));
+  ok(`все картинки на диске есть${broken.length ? ': нет ' + broken[0].icon : ''}`, broken.length === 0);
+  // Своей картинки у VIP и опыта нет — там остаётся значок в тексте
+  ok('у VIP картинки нет, но значок в тексте остался',
+     shot.items.some((x) => !x.icon && /👑/.test(x.text)));
+  // Дублирующий значок из текста убран: рядом стоит настоящая картинка,
+  // а на части систем эмодзи рисуется квадратиком
+  ok('в подписи с картинкой значка нет', !/[🪙💰🎖✨🥷📦🚜]/.test(byText('золота').text));
+  ok('но сама подпись цела', /300 золота/.test(byText('золота').text));
+
+  console.log('\n[11] Предпросмотр карточки в панели');
+  const draft = {
+    title: 'Черновик', emoji: '📦', note: 'заметка',
+    items: [{ type: 'gold', qty: 100 }, { type: 'дракон', qty: 1 }],
+    priceGold: 250, endAt: Date.now() - 1000,   // срок уже вышел
+  };
+  zonesBox.admin = [];   // сотруднику зону сняли
+  fails('без зоны предпросмотр не открыть', () => offers.adminPreview(S, draft), 'Недостаточно прав');
+  zonesBox.admin = ['economy'];
+  const pv = offers.adminPreview(O, draft).offer;
+  eq('заголовок в карточке', pv.title, 'Черновик');
+  eq('мусор в составе отброшен так же, как при сохранении', pv.items.length, 1);
+  ok('и у оставшейся позиции есть картинка', !!pv.items[0].icon);
+  eq('цена показана', pv.priceGold, 250);
+  eq('вне срока показа это видно', offers.adminPreview(O, draft).active, false);
+  // Предпросмотр ничего не сохраняет
+  // Считаем ДО первого показа: сохранись черновик под одним и тем же id,
+  // счётчик после второго показа уже не менялся бы, и проверка молчала
+  ok('в базу черновик не попал', !offers.adminList(O).offers.some((x) => x.id === 'preview'));
+  // Карточка предпросмотра и карточка витрины собираются одинаково
+  const saved = offers.adminSave(O, { title: 'Сравнение', priceGold: 10,
+    items: [{ type: 'container', tier: c.CONTAINERS[0].tier, qty: 2 }] }, nx);
+  const fromShop = offers.catalog(P).offers.find((x) => x.id === saved.id);
+  const fromPanel = offers.adminPreview(O, Object.assign({}, saved.offer)).offer;
+  eq('состав совпадает', JSON.stringify(fromPanel.items), JSON.stringify(fromShop.items));
+  eq('и цены тоже', fromPanel.priceGold, fromShop.priceGold);
+
+  console.log('\n[12] Карточка одна на витрину и на панель');
+  const cardJs = fs.readFileSync(path.join(ROOT, 'public/js/offercard.js'), 'utf8');
+  ok('модуль карточки есть', /OfferCard/.test(cardJs) && /offer-item/.test(cardJs));
+  ok('картинка позиции рисуется', /it\.icon \? `<img/.test(cardJs));
+  ok('битая картинка не оставляет пустой рамки', /onerror="this\.remove\(\)"/.test(cardJs));
+  ok('витрина зовёт общую карточку', /OfferCard\.html\(o\)/.test(bank));
+  ok('панель — её же, но без покупки', /OfferCard\.html\(r\.offer, \{ preview: true \}\)/.test(v1));
+  ok('в панели есть место под предпросмотр', /id="of-preview"/.test(v1));
+  ok('черновик собирается один раз на сохранение и показ', /payloadOf\(\)/.test(v1));
+  ok('модуль подключён в игре', /offercard\.js/.test(fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8')));
+  ok('и в панели', /offercard\.js/.test(fs.readFileSync(path.join(ROOT, 'public/admin2.html'), 'utf8')));
+  eq('адрес предпросмотра размечен зоной', roles.zoneOfPath('/api/admin/offers/preview'), 'economy');
+
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });
