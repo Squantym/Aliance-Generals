@@ -153,7 +153,7 @@ PORT="${PORT:-3000}"
 CODE=000
 for i in $(seq 1 30); do
   sleep 2
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT}/" || true)"
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/" || true)"
   [ "$CODE" = "200" ] && break
 done
 

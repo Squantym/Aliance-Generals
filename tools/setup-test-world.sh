@@ -96,7 +96,7 @@ pm2 save > /dev/null 2>&1 || true
 
 echo "[5/5] Проверяю"
 sleep 4
-CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${TEST_PORT}/" || true)"
+CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${TEST_PORT}/" || true)"
 if [ "$CODE" = "200" ]; then
   echo "      ✅ тестовый сервер отвечает на порту $TEST_PORT"
 else
