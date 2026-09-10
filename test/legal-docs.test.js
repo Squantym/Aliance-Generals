@@ -191,5 +191,58 @@ for (const r of refs) {
   if (!pat.test(body)) deadRefs.push(r[1] + ' ' + r[2]);
 }
 ok(deadRefs.length === 0, `все ссылки указывают на существующие пункты${deadRefs.length ? ': нет ' + deadRefs.join(', ') : ''}`);
+console.log('── 10. Документы готовы к модерации платёжного сервиса ──');
+// Модератор эквайера открывает документы как посторонний человек. Красная
+// подсказка на месте ИНН или цена, которую видно только после входа в
+// игру, — отказ в подключении.
+const WS = new RegExp(String.fromCharCode(92) + 's+', 'g');
+const legalSrc = read('js/legal.js');
+const legalBlock = legalSrc.slice(legalSrc.indexOf('var LEGAL = {'), legalSrc.indexOf('var HINT'));
+const emptyKeys = legalBlock.split(String.fromCharCode(10)).map((l) => l.trim()).filter((l) => /^[a-zA-Z]+: '',/.test(l)).map((l) => l.split(':')[0]);
+ok(emptyKeys.length === 0, `в LEGAL не осталось пустых значений${emptyKeys.length ? ': ' + emptyKeys.join(', ') : ''}`);
+ok(/phone: '[^']+'/.test(legalBlock), 'телефон для связи указан');
+ok(legalSrc.includes('<tr><th>Телефон</th>'), 'и выводится в блоке реквизитов каждого документа');
+
+// Проверка по отрисованной странице, а не по исходнику: подсказка
+// появляется только когда legal.js реально подставил значения.
+const { JSDOM } = require('jsdom');
+for (const f of ['terms.html', 'rules.html', 'payments.html', 'privacy.html', 'cookies.html',
+                 'consent-pdn.html', 'consent-public.html', 'consent-ads.html']) {
+  const dom = new JSDOM(read(f), { runScripts: 'outside-only' });
+  dom.window.eval(legalSrc);
+  dom.window.document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
+  const holes = dom.window.document.querySelectorAll('.doc-fill').length;
+  ok(holes === 0, `${f}: на странице нет незаполненных реквизитов${holes ? ' (пропусков: ' + holes + ')' : ''}`);
+}
+
+const payDoc = read('payments.html');
+const payFlat = payDoc.replace(WS, ' ');
+ok(!/Платежи пока не запущены/.test(payDoc) && !/приём платежей в Игре не запущен/.test(terms),
+   'плашки «платежи не запущены» заменены на «подключается»');
+// Цены пакетов публикуются для любого посетителя и обязаны совпадать с
+// тем, что продаёт игра: иначе цена в оферте и цена при оплате разойдутся.
+const PK = require(path.join(ROOT, 'dist/src/services/payments')).packages().packages;
+const table = payDoc.slice(payDoc.indexOf('2.6.'), payDoc.indexOf('2.7.'));
+ok(table.split('<tr><td>').length - 1 === PK.length, `в таблице цен ровно ${PK.length} пакета`);
+for (const p of PK) {
+  const row = '<tr><td>' + p.label + (p.bonus ? ' (' + p.bonus + ')' : '') + '</td><td>' + p.gold + '</td><td>' + p.priceRub + ' ₽</td></tr>';
+  ok(table.includes(row), `пакет «${p.label}» опубликован по цене игры: ${p.priceRub} ₽`);
+}
+const VIP = require(path.join(ROOT, 'dist/src/services/vip'));
+ok(payFlat.includes(VIP.PRICE_GOLD + ' Золота за ' + VIP.PRICE_DAYS + ' дней'),
+   `цена VIP в документе совпадает с игрой: ${VIP.PRICE_GOLD} за ${VIP.PRICE_DAYS} дней`);
+ok(/Налог на профессиональный доход/.test(payDoc) && /Мой налог/.test(payDoc),
+   'раздел чеков описывает режим самозанятого');
+ok(!/кассовой моделью/.test(payDoc), 'кассовых терминов 54-ФЗ в нём не осталось');
+// Номер редакции на странице и версия в согласиях — одна и та же цифра.
+// Разойдутся — игрок увидит «редакция 1.1», а спрашивать его не станут.
+const DOCS = require(path.join(ROOT, 'dist/src/services/consent')).DOCS;
+const redaction = (legalBlock.match(/redaction: '([^']+)'/) || [])[1];
+ok(DOCS.terms.v === redaction, `редакция на странице (${redaction}) совпадает с версией соглашения в согласиях (${DOCS.terms.v})`);
+const priv = read('privacy.html');
+ok(!priv.includes('текст уведомления</td>') && /текст сервису доставки недоступен/.test(priv),
+   'push-сети не названы получателями текста уведомлений');
+ok(!/шифрование резервных копий, вывозимых/.test(priv), 'политика не обещает шифрование несуществующего вывоза копий');
+
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);
