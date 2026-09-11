@@ -749,7 +749,7 @@ const Admin = {
         economy: 'выдавать и списывать деньги, золото и награды',
         discounts: 'менять акции и глобальные бонусы',
         roles: 'назначать и снимать роли другим сотрудникам',
-        season: 'менять награды сезона и завершать неделю',
+        season: 'менять награды сезона и завершать сезон досрочно',
         // «Игроки» ничего не ломает, но открывает досье КАЖДОГО: почту,
         // адреса, устройства, историю входов. Это персональные данные, и
         // выдавать к ним доступ стоит так же осознанно, как право
@@ -1921,7 +1921,7 @@ proxy_set_header Host $host;</pre>
   async renderEvents(c) {
     let season = null; try { season = await API.get('/api/season'); } catch (e) {}
     let ev = null; try { ev = await API.get('/api/event'); } catch (e) {}
-    const rw = (season && season.rewards) || [{ gold: 500, tokens: 3 }, { gold: 300, tokens: 2 }, { gold: 150, tokens: 1 }];
+    const rw = (season && season.rewards) || [{ gold: 500, tokens: 3 }, { gold: 300, tokens: 2 }, { gold: 100, tokens: 1 }];
     const fmtLeft = (ms) => {
       if (!ms || ms <= 0) return '—';
       const dd = Math.floor(ms / 86400000), hh = Math.floor((ms % 86400000) / 3600000);
@@ -2011,8 +2011,8 @@ proxy_set_header Host $host;</pre>
         ` : `<p class="muted small">Нет активного события. HP можно регулировать только у запущенного босса.</p>`}
       </div>
       <div class="card" style="margin-top:16px;border-color:var(--gold)">
-        <div class="name">🏆 Рейтинговый сезон (недельный)</div>
-        <p class="muted small mt">Автосброс каждую неделю: пн 00:00 — вс 23:59 МСК. Топ-3 КАЖДОЙ из 7 категорий получают награду, затем метрики обнуляются.${season ? ` Текущая неделя: <b>${season.weekId}</b>, до конца: <b>${fmtLeft(season.endsAt - Date.now())}</b>.` : ''}</p>
+        <div class="name">🏆 Рейтинговый сезон (${(season && season.seasonDays) || 15} дней)</div>
+        <p class="muted small mt">Автосброс раз в ${(season && season.seasonDays) || 15} дней по МСК. Топ-3 КАЖДОЙ из 7 категорий получают награду, затем метрики обнуляются. Администрация (кроме «Дозора») и игроки с блокировкой от месяца в зачёт не входят.${season ? ` Текущий сезон: <b>${season.weekId}</b>, до конца: <b>${fmtLeft(season.endsAt - Date.now())}</b>.` : ''}</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
           <div><label style="font-size:11px;color:var(--dim)">🥇 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g1" value="${rw[0].gold}"><input type="number" id="se-t1" value="${rw[0].tokens}"></div></div>
           <div><label style="font-size:11px;color:var(--dim)">🥈 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g2" value="${rw[1].gold}"><input type="number" id="se-t2" value="${rw[1].tokens}"></div></div>
@@ -2020,7 +2020,7 @@ proxy_set_header Host $host;</pre>
         </div>
         <button class="btn btn-orange mt" id="se-save" style="width:100%">💾 Сохранить награды</button>
         <hr class="hr">
-        <button class="btn btn-red" id="se-end" style="width:100%">🏁 Завершить неделю СЕЙЧАС (наградить топ-3 + обнулить)</button>
+        <button class="btn btn-red" id="se-end" style="width:100%">🏁 Завершить сезон СЕЙЧАС (наградить топ-3 + обнулить)</button>
       </div>`;
     const evVal = (id) => (document.getElementById(id) || {}).value || '';
     document.getElementById('ev-start').onclick = async () => {
@@ -2232,13 +2232,13 @@ proxy_set_header Host $host;</pre>
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
     document.getElementById('se-end').onclick = async () => {
-      if (!await Admin.danger({ title: 'Завершить неделю досрочно', word: 'ЗАВЕРШИТЬ',
-        what: 'Топ-3 каждой категории получат награды, все недельные метрики обнулятся.',
+      if (!await Admin.danger({ title: 'Завершить сезон досрочно', word: 'ЗАВЕРШИТЬ',
+        what: 'Топ-3 каждой категории получат награды, все метрики сезона обнулятся.',
         scope: 'сезонный рейтинг всех игроков' })) return;
       try {
         const r = await API.post('/api/admin/season/end', {});
         const n = Object.values(r.winners || {}).reduce((s, a) => s + a.length, 0);
-        UI.toast('🏁 Неделя завершена. Награждено призёров: ' + n);
+        UI.toast('🏁 Сезон завершён. Награждено призёров: ' + n);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   },

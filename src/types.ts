@@ -202,7 +202,7 @@ export interface User {
   reinforcements?: any[];   // активные подкрепления от союзников
   reinforceSent?: any[];    // отправленные за сутки (лимит 5/день)
   seasonId?: string;
-  // Еженедельные метрики рейтингового сезона (пн–вс МСК)
+  // Метрики рейтингового сезона (15 дней; имя поля осталось от недельного)
   weekly?: {
     weekId: string;
     rating: number; wins: number; ears: number; mercy: number;

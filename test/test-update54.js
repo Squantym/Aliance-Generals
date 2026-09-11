@@ -98,7 +98,7 @@ ok(winnersRuns.every((r) => r.split(',')[0] === 'Второй'), `первое �
 
 console.log('\n── 4. Фронт рейтинга: место видно явно ──');
 const core = fs.readFileSync(ROOT + '/public/js/screens/core.js', 'utf8');
-const winnersBlock = core.slice(core.indexOf('Итоги прошлой недели'), core.indexOf('Итоги прошлой недели') + 900);
+const winnersBlock = core.slice(core.indexOf('Итоги прошлого сезона'), core.indexOf('Итоги прошлого сезона') + 900);
 ok(winnersBlock.includes('rank-num'), 'у победителей прошлой недели показан номер места, а не только медаль');
 const topBlock = core.slice(core.indexOf('cat.top.map'), core.indexOf('cat.top.map') + 700);
 ok(topBlock.includes('rank-num'), 'в текущем топе номер места виден у всех, включая первую тройку');

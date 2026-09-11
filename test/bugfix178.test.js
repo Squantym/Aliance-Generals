@@ -163,7 +163,10 @@ for (const id of ids) {
   if (currency === 'gold') p.gold = 0; else p.dollars = 0;
   um[id] = p;
   fighters[id] = { id, name: id, flag: '', hp: 100, alive: true, seen: false,
-                   entered: false, kills: 0, killedIds: [], log: [] };
+                   entered: false, kills: 0, killedIds: [], log: [],
+                   // Боец помнит внесённое: без поля арена считает его записью
+                   // до снижения взносов и вернула бы старую цену
+                   paid: entry };
 }
 arenaStore.divs = arenaStore.divs || {};
 arenaStore.divs[div] = arenaStore.divs[div] || { ratings: {}, history: [] };

@@ -3,7 +3,8 @@
 //
 // Как устроено:
 //   • Бои стартуют каждые 15 минут от полуночи: 00:15, 00:30, 00:45…
-//   • Взнос 50 золота, весь банк достаётся единственному победителю.
+//   • Взнос 10 золота (Элита) или 1 млрд (Базовый), весь банк достаётся
+//     единственному победителю.
 //   • Характеристики у всех ОДИНАКОВЫЕ — уровень и техника не значат
 //     ничего. Это принципиально: арена про реакцию и выбор цели,
 //     а не про то, кто дольше играл.
@@ -30,7 +31,7 @@ const DIVISIONS = {
     name: 'Арена — базовый дивизион',
     short: 'Базовый',
     currency: 'money' as const,
-    entry: 1e12,                  // 1 Tr игровых денег
+    entry: 1e9,                   // 1 млрд игровых денег
     icon: '🥉',
   },
   elite: {
@@ -38,11 +39,19 @@ const DIVISIONS = {
     name: 'Арена — Элита',
     short: 'Элита',
     currency: 'gold' as const,
-    entry: 50,                    // 50 золота
+    entry: 10,                    // 10 золота
     icon: '👑',
   },
 };
 type DivId = keyof typeof DIVISIONS;
+
+// Взносы до снижения. Запись и бойцы, созданные до выката, не знают,
+// сколько заплатили, — а платили по старой цене. Без этой таблицы
+// отмена записи или несостоявшийся бой вернули бы 10 золота вместо 50.
+const LEGACY_ENTRY: Record<DivId, number> = { basic: 1e12, elite: 50 };
+function paidOf(rec: any, div: DivId): number {
+  return (rec && typeof rec.paid === 'number') ? rec.paid : LEGACY_ENTRY[div];
+}
 const DIV_IDS: DivId[] = ['basic', 'elite'];
 
 function divOf(raw: any): DivId {
@@ -58,7 +67,7 @@ const RATING_PER_WIN = 3;
 const RATING_PER_FAVOURITE = 3;   // за убийство самого рейтингового в бою
 
 // ---------- Правила ----------
-const ENTRY_GOLD = 50;             // взнос с каждого
+const ENTRY_GOLD = 10;             // взнос с каждого (Элита)
 const SLOT_MINUTES = 15;           // как часто стартуют бои
 const MIN_PLAYERS = 2;             // меньше — бой не состоится
 // Подготовка: полминуты перед боем, чтобы все успели открыть комнату
@@ -103,6 +112,7 @@ type Fighter = {
   killedIds: string[];      // кого добил — нужно для очков за фаворита
   damageDealt: number;
   log: Array<{ at: number; text: string }>;
+  paid?: number;              // сколько внёс — столько и вернуть при отмене
 };
 
 type Battle = {
@@ -121,7 +131,7 @@ type Battle = {
 
 // Состояние одного дивизиона
 type DivState = {
-  registered: Record<string, { id: string; name: string; flag: string; level: number; at: number }>;
+  registered: Record<string, { id: string; name: string; flag: string; level: number; at: number; paid?: number }>;
   slot: number;                   // на какой старт идёт запись
   battle: Battle | null;
   history: Array<{ id: string; slot: number; winnerName: string; pot: number; players: number }>;
@@ -177,10 +187,14 @@ function chargeEntry(user: any, div: DivId): void {
   else user.dollars = Math.max(0, Math.round(user.dollars - d.entry));
   db.markUser(user.id);
 }
-function refundEntry(user: any, div: DivId): void {
+// Возвращаем ровно внесённое, а не текущий взнос: цена могла смениться
+function refundEntry(user: any, div: DivId, amount: number): void {
   const d = DIVISIONS[div];
-  if (d.currency === 'gold') player.addGold(user, d.entry, 'arena_refund');
-  else player.addMoney(user, d.entry, false);
+  // Сумма берётся из записи в базе: битое поле не должно ни списать
+  // вместо возврата, ни разнести NaN по счёту
+  const v = Math.max(0, Math.round(Number(amount) || 0));
+  if (d.currency === 'gold') player.addGold(user, v, 'arena_refund');
+  else player.addMoney(user, v, false);
   db.markUser(user.id);
 }
 function payPot(user: any, div: DivId, pot: number): void {
@@ -193,9 +207,10 @@ function hasEntry(user: any, div: DivId): boolean {
   const d = DIVISIONS[div];
   return d.currency === 'gold' ? (user.gold || 0) >= d.entry : (user.dollars || 0) >= d.entry;
 }
-function fmtEntry(div: DivId): string {
+function fmtEntry(div: DivId, amount?: number): string {
   const d = DIVISIONS[div];
-  return d.currency === 'gold' ? `🪙 ${d.entry}` : `$${u.fmt(d.entry)}`;
+  const v = amount === undefined ? d.entry : amount;
+  return d.currency === 'gold' ? `🪙 ${v}` : `${u.fmt(v)}`;
 }
 
 // ---------- Время ----------
@@ -256,10 +271,10 @@ function tickDiv(div: DivId): void {
         for (const r of list) {
           const p = users[r.id];
           if (!p) continue;
-          refundEntry(p, div);
+          refundEntry(p, div, paidOf(r, div));
           try {
             require('./notifications').push(p.id, 'arena_cancel',
-              `⚔ Бой (${DIVISIONS[div].short}) не состоялся — участников меньше ${MIN_PLAYERS}. Взнос ${fmtEntry(div)} возвращён.`, {});
+              `⚔ Бой (${DIVISIONS[div].short}) не состоялся — участников меньше ${MIN_PLAYERS}. Взнос ${fmtEntry(div, paidOf(r, div))} возвращён.`, {});
           } catch (e) {}
         }
         db.save('users');
@@ -349,11 +364,13 @@ function startBattle(div: DivId, s: DivState, list: any[], now: number): void {
       skills: { medkit: SKILLS.medkit.uses, crit: SKILLS.crit.uses, armor: SKILLS.armor.uses, smoke: SKILLS.smoke.uses },
       rating: (table[r.id] && table[r.id].points) || 0,
       critUntil: 0, armorUntil: 0, kills: 0, killedIds: [], damageDealt: 0, log: [],
+      paid: paidOf(r, div),
     };
   }
   s.battle = {
     id: u.uid(10), div, slot: s.slot, startedAt: now, finishedAt: 0,
-    pot: list.length * DIVISIONS[div].entry,
+    // Банк — сумма реально внесённого, а не «участники × текущий взнос»
+    pot: list.reduce((n, r) => n + paidOf(r, div), 0),
     // Сначала подготовка, потом бой: игрок должен успеть открыть комнату
     fighters, winnerId: '', winnerName: '', state: 'preparing',
     prepareUntil: now + PREPARE_MS,
@@ -376,10 +393,10 @@ function cancelBattle(div: DivId, s: DivState, reason: string): void {
   for (const f of Object.values(b.fighters)) {
     const p = users[f.id];
     if (!p) continue;
-    refundEntry(p, div);
+    refundEntry(p, div, paidOf(f, div));
     try {
       require('./notifications').push(p.id, 'arena_cancel',
-        `⚔ ${reason}. Взнос ${fmtEntry(div)} возвращён.`, {});
+        `⚔ ${reason}. Взнос ${fmtEntry(div, paidOf(f, div))} возвращён.`, {});
     } catch (e) {}
   }
   db.save('users');
@@ -479,7 +496,7 @@ function finishBattle(div: DivId, s: DivState, winner: Fighter): void {
       ratingTotal: rec.points,
       // Изменение кошелька: победитель забирает банк за вычетом
       // собственного взноса, остальные теряют взнос
-      delta: isWinner ? (b.pot - entry) : -entry,
+      delta: isWinner ? (b.pot - paidOf(f, div)) : -paidOf(f, div),
     });
   }
   // Сортируем по месту: победитель первым, дальше по порядку выбывания
@@ -611,6 +628,7 @@ function register(user: User, divRaw: any, notices: Notices) {
   s.registered[user.id] = {
     id: user.id, name: user.name, flag: player.flag(user),
     level: user.level, at: Date.now(),
+    paid: DIVISIONS[div].entry,
   };
   db.save('arena');
   db.markUser(user.id);
@@ -623,11 +641,12 @@ function unregister(user: User, divRaw: any, notices: Notices) {
   const div = divOf(divRaw);
   const s = divState(div);
   if (!s.registered[user.id]) throw new u.ApiError('Вы не записаны на бой');
+  const paid = paidOf(s.registered[user.id], div);
   delete s.registered[user.id];
-  refundEntry(user, div);
+  refundEntry(user, div, paid);
   db.save('arena');
   db.markUser(user.id);
-  notices.push(`Запись отменена, взнос ${fmtEntry(div)} возвращён.`);
+  notices.push(`Запись отменена, взнос ${fmtEntry(div, paid)} возвращён.`);
   return view(user, div);
 }
 
@@ -660,7 +679,7 @@ function view(user: User, divRaw?: any) {
     nextStartAt: s.slot,
     secondsLeft: Math.max(0, Math.round((s.slot - now) / 1000)),
     registered: list,
-    pot: list.length * DIVISIONS[div].entry,
+    pot: Object.values(s.registered).reduce((n, r) => n + paidOf(r, div), 0),
     iAmRegistered: !!s.registered[user.id],
     myGold: user.gold || 0,
     myMoney: user.dollars || 0,

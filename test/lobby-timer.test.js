@@ -306,7 +306,7 @@ console.log('\n── 9. Арена: не набралось — всех сбр
   const solo = Object.values(player3.users())[0];
   solo.gold = 10000;
   arena3.register(solo, 'elite', []);
-  ok(solo.gold === 9950, 'взнос списан');
+  ok(solo.gold === 9990, 'взнос списан');
   const st3 = db3.load('arena', {}); st3.divs.elite.slot = Date.now() - 1000; db3.save('arena');
   arena3.tick();
   const raw3 = db3.load('arena', {}).divs.elite;

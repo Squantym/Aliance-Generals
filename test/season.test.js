@@ -23,13 +23,13 @@ function seed(id, name) { const u = mkUser(id, name); usersMap[id] = u; return u
 
 const P = c.SEASON.points;
 
-console.log('\n[1] Границы недели (пн 00:00 — вс 23:59 МСК)');
+console.log('\n[1] Границы сезона (15 дней от полуночи МСК)');
 const wid = seasons.weekId();
 ok('weekId формата YYYY-MM-DD', /^\d{4}-\d{2}-\d{2}$/.test(wid));
-ok('weekId указывает на понедельник', new Date(wid + 'T00:00:00Z').getUTCDay() === 1);
+eq('сезон длится 15 дней', seasons.SEASON_DAYS, 15);
 const endsAt = seasons.weekEndsAt();
-ok('конец недели в будущем', endsAt > Date.now());
-ok('до конца недели ≤ 7 дней', endsAt - Date.now() <= 7 * 86400000 + 1000);
+ok('конец сезона в будущем', endsAt > Date.now());
+ok('до конца сезона ≤ 15 дней', endsAt - Date.now() <= 15 * 86400000 + 1000);
 
 console.log('\n[2] Начисление очков по действиям (общий рейтинг 3–10)');
 const u1 = seed('u1', 'Боец');

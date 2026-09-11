@@ -147,7 +147,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // ── Задания, сезон, награды ────────────────────────────────────
   daily:              { owner: 'dailyQuests', note: 'ДНЕВНЫЕ поручения: день, счётчики, принятые, полученные' },
   weeklyQuests:       { owner: 'dailyQuests', note: 'НЕДЕЛЬНЫЕ ПОРУЧЕНИЯ. Раньше жили в weekly и стирали сезон' },
-  weekly:             { owner: 'seasons',    note: 'НЕДЕЛЬНЫЙ СЕЗОН: weekId и метрики рейтинга. Только seasons.ts!' },
+  weekly:             { owner: 'seasons',    note: 'РЕЙТИНГОВЫЙ СЕЗОН (15 дней): weekId и метрики. Только seasons.ts!' },
   missions:           { owner: 'missions',   note: 'спецоперации' },
   achStages:          { owner: 'achievements', note: 'ступени достижений' },
   pendingAchievements: { owner: 'achievements', note: 'очередь окон достижений' },

@@ -721,12 +721,13 @@ const App = {
   _typeRu(t) { return { ground: 'Наземная', air: 'Воздушная', sea: 'Морская' }[t] || t; },
   // Иконка внутренней вкладки меню (по ключу, напр. tech_air, legion_war)
   // «2026-07-20» → «20–26 июля»: подпись завершённой недели в рейтинге
-  _weekRange(weekId) {
+  // days — длительность зачёта: сезон теперь 15 дней, прошлые итоги могли быть недельными
+  _weekRange(weekId, days = 7) {
     const M = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
     const p = String(weekId || '').split('-');
     if (p.length !== 3) return String(weekId || '');
     const a = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
-    const b = new Date(a.getTime() + 6 * 86400000);
+    const b = new Date(a.getTime() + (days - 1) * 86400000);
     const sameMonth = a.getUTCMonth() === b.getUTCMonth();
     return sameMonth
       ? `${a.getUTCDate()}–${b.getUTCDate()} ${M[b.getUTCMonth()]}`

@@ -122,7 +122,7 @@ const HUMAN: Record<string, string> = {
   battles: 'бои', arena: 'арена', groupBattle: 'групповые бои', rockets: 'ракеты',
   sanctions: 'санкции', news: 'новости', broadcast: 'рассылки', mail: 'почта в игре',
   world: 'мир: чат и аукцион', world_event: 'событие мира', discounts: 'скидки',
-  dailyFame: 'слава за день', season: 'сезон', weeklySeason: 'недельный сезон',
+  dailyFame: 'слава за день', season: 'сезон', weeklySeason: 'рейтинговый сезон',
   sessions: 'открытые входы', analytics: 'аналитика', actionLogs: 'журнал действий',
   weeklyMetricsBackup: 'копия недельных метрик',
 };

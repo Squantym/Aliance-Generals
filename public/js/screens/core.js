@@ -2451,14 +2451,14 @@ App.screens.season = async (c) => {
     const box = document.getElementById('season-body');
     if (!box) return;
 
-    // Блок победителей — это ЗАВЕРШЁННАЯ неделя, отдельная от текущего топа.
+    // Блок победителей — это ЗАВЕРШЁННЫЙ сезон, отдельный от текущего топа.
     // Один и тот же игрок закономерно попадает в оба блока с разными
-    // цифрами; подписываем неделю датами, чтобы это не читалось как дубль.
-    const weekLabel = d.lastWeekId ? ` <span class="muted small">(${UI.esc(App._weekRange(d.lastWeekId))})</span>` : '';
+    // цифрами; подписываем сезон датами, чтобы это не читалось как дубль.
+    const weekLabel = d.lastWeekId ? ` <span class="muted small">(${UI.esc(App._weekRange(d.lastWeekId, d.lastSeasonDays || 7))})</span>` : '';
     const winnersHtml = (cat.winners && cat.winners.length) ? `
       <div class="card" style="border-color:var(--gold)">
-        <div class="name">🏆 Итоги прошлой недели${weekLabel}</div>
-        <div class="muted small" style="margin:-2px 0 6px">Завершённый зачёт. Текущая неделя считается заново — ниже.</div>
+        <div class="name">🏆 Итоги прошлого сезона${weekLabel}</div>
+        <div class="muted small" style="margin:-2px 0 6px">Завершённый зачёт. Текущий сезон считается заново — ниже.</div>
         ${cat.winners.map((w, i) => `
           <div class="list-row">
             <div class="grow"><span class="rank-num">${i + 1}.</span>${['🥇','🥈','🥉'][i] ? ' ' + ['🥇','🥈','🥉'][i] : ''} <span class="name" onclick="App.go('profile/${w.id}')" style="cursor:pointer">${App._flagImg(w.flag)} ${UI.esc(w.name)}</span></div>
@@ -2468,10 +2468,10 @@ App.screens.season = async (c) => {
 
     box.innerHTML = `
       <div class="card">
-        <div class="kv"><span class="k">⏳ До конца недели</span><span class="v gold" id="season-timer">${fmtLeft(d.endsAt - Date.now())}</span></div>
+        <div class="kv"><span class="k">⏳ До конца сезона</span><span class="v gold" id="season-timer">${fmtLeft(d.endsAt - Date.now())}</span></div>
         <div class="kv"><span class="k">${cat.icon} Ваш результат</span><span class="v">${val(cat, cat.myValue)} ${cat.unit}</span></div>
         <div class="kv"><span class="k">📍 Ваше место</span><span class="v">${cat.myRank ? '#' + cat.myRank : '—'}</span></div>
-        <p class="muted small mt">Топ-3 в конце недели (вс 23:59 МСК) получают: 🥇 <span class="ic-gold"></span>${rw[0]?.gold}/<span class="ic-token"></span>${rw[0]?.tokens} · 🥈 <span class="ic-gold"></span>${rw[1]?.gold}/<span class="ic-token"></span>${rw[1]?.tokens} · 🥉 <span class="ic-gold"></span>${rw[2]?.gold}/<span class="ic-token"></span>${rw[2]?.tokens}. Затем метрики обнуляются.</p>
+        <p class="muted small mt">Топ-3 в конце сезона получают: 🥇 <span class="ic-gold"></span>${rw[0]?.gold}/<span class="ic-token"></span>${rw[0]?.tokens} · 🥈 <span class="ic-gold"></span>${rw[1]?.gold}/<span class="ic-token"></span>${rw[1]?.tokens} · 🥉 <span class="ic-gold"></span>${rw[2]?.gold}/<span class="ic-token"></span>${rw[2]?.tokens}. Затем метрики обнуляются.</p>
       </div>
       ${winnersHtml}
       <div class="card">
@@ -2480,7 +2480,7 @@ App.screens.season = async (c) => {
           <div class="list-row" ${p.id === App.me.id ? 'style="background:rgba(255,180,0,.10);border-radius:8px;padding:4px 6px"' : ''}>
             <div class="grow"><span class="rank-num">${i + 1}.</span>${i < 3 ? ' ' + ['🥇','🥈','🥉'][i] : ''} <span class="name" onclick="App.go('profile/${p.id}')" style="cursor:pointer">${App._flagImg(p.flag)} ${UI.esc(p.name)}</span>${p.id === App.me.id ? ' <span class="gold small">(вы)</span>' : ''}</div>
             <span class="gold">${val(cat, p.value)}</span>
-          </div>`).join('') : '<p class="muted center">Пока пусто — заработайте очки на этой неделе!</p>'}
+          </div>`).join('') : '<p class="muted center">Пока пусто — заработайте очки в этом сезоне!</p>'}
       </div>`;
 
     // Активная кнопка подкатегории
@@ -2490,9 +2490,17 @@ App.screens.season = async (c) => {
     });
   };
 
+  // Кто вне зачёта, должен видеть причину, а не искать себя в таблице
+  const exclNote = d.excluded === 'staff'
+    ? '<div class="card"><p class="muted small" style="margin:0">🛡 Вы в администрации проекта — ваши действия в сезоне не учитываются.</p></div>'
+    : d.excluded === 'ban'
+      ? '<div class="card"><p class="muted small" style="margin:0">🚫 Пока действует блокировка на месяц и дольше, очки сезона обнуляются.</p></div>'
+      : '';
+  const days = d.seasonDays || 15;
   c.innerHTML = `
     <div class="title">🏆 Рейтинговый сезон</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Еженедельные рейтинги (пн 00:00 — вс 23:59 МСК). В каждой категории свой топ-20; топ-3 получают награды, затем обнуление.</p>
+    <p class="muted small" style="margin:-4px 4px 10px">Сезон длится ${days} дней${d.weekId ? ' (' + UI.esc(App._weekRange(d.weekId, days)) + ')' : ''}. В каждой категории свой топ-20; топ-3 получают награды, затем обнуление. Администрация проекта в зачёте не участвует.</p>
+    ${exclNote}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
       ${d.categories.map((x) => `<button class="btn btn-inline ${x.id === App._seasonCat ? 'btn-orange' : ''}" id="scat-${x.id}">${x.icon} ${UI.esc(x.name)}</button>`).join('')}
     </div>

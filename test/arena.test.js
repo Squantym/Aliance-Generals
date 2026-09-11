@@ -57,23 +57,23 @@ const slot = arena.nextSlot(new Date('2026-08-10T00:03:00Z').getTime());
 ok(new Date(slot).getUTCMinutes() === 15, `после 00:03 ближайший старт в 00:${new Date(slot).getUTCMinutes()}`);
 ok(arena.nextSlot(new Date('2026-08-10T00:20:00Z').getTime()) % (15 * 60000) === 0,
    'старты всегда кратны 15 минутам');
-ok(arena.ENTRY_GOLD === 50, `взнос ${arena.ENTRY_GOLD} золота`);
+ok(arena.ENTRY_GOLD === 10, `взнос ${arena.ENTRY_GOLD} золота`);
 ok(arena.MIN_PLAYERS === 2, `минимум участников: ${arena.MIN_PLAYERS}`);
 
 console.log('\n── 2. Запись и отмена ──');
 arena.register(ps[0], 'elite', []);
-ok(ps[0].gold === 950, `взнос списан: ${ps[0].gold}`);
+ok(ps[0].gold === 990, `взнос списан: ${ps[0].gold}`);
 fails(() => arena.register(ps[0], 'elite', []), 'уже записаны', 'дважды записаться нельзя');
 arena.unregister(ps[0], 'elite', []);
 ok(ps[0].gold === 1000, 'после отмены взнос возвращён полностью');
 fails(() => arena.unregister(ps[0], 'elite', []), 'не записаны', 'отменить незаписанному нельзя');
-ps[0].gold = 10;
+ps[0].gold = 9;
 fails(() => arena.register(ps[0], 'elite', []), 'Не хватает', 'без золота записаться нельзя');
 ps[0].gold = 1000;
 for (const p of ps) arena.register(p, 'elite', []);
 const v = arena.view(ps[0], 'elite');
 ok(v.registered.length === 4, `записалось: ${v.registered.length}`);
-ok(v.pot === 200, `банк растёт с каждым: ${v.pot}`);
+ok(v.pot === 40, `банк растёт с каждым: ${v.pot}`);
 ok(v.iAmRegistered === true, 'своя запись видна');
 
 console.log('\n── 3. Бой не идёт без людей ──');
@@ -97,7 +97,7 @@ ok(v2.battle && v2.battle.state === 'preparing', 'сначала идёт под
 // Теперь в комнату нужно зайти: не пришёл — за тебя играет бот
 ok(v2.battle.canEnter === true, 'во время подготовки зовут в комнату');
 ok(v2.battle.needEnter === true, 'признак «нужно занять место» выставлен');
-ok(v2.battle.pot === 200, `банк боя: ${v2.battle.pot}`);
+ok(v2.battle.pot === 40, `банк боя: ${v2.battle.pot}`);
 const prep = arena.battleState(ps[0]);
 ok(prep.preparing === true, 'состояние подготовки видно на экране');
 ok(prep.prepareLeftSec > 0 && prep.prepareLeftSec <= 30,
@@ -200,7 +200,7 @@ ok(fin.winnerName === 'Альфа', `победитель: ${fin.winnerName}`);
 ok(fin.iWon === true, 'победитель это видит');
 ok(ps[0].gold >= 1000 - arena.ENTRY_GOLD + pot,
    `приз выдан целиком: у победителя ${ps[0].gold} золота`);
-const others = [ps[1], ps[2], ps[3]].every((p) => p.gold === 950);
+const others = [ps[1], ps[2], ps[3]].every((p) => p.gold === 990);
 ok(others, 'проигравшие не получили ничего — взнос сгорел');
 
 console.log('\n── 11. Интерфейс ──');
@@ -235,9 +235,9 @@ for (const [m, r] of [['GET', '/api/arena'], ['POST', '/api/arena/register'],
 
 console.log('\n── 12. Два дивизиона ──');
 ok(arena.DIVISIONS.basic.currency === 'money', 'базовый — за игровые деньги');
-ok(arena.DIVISIONS.basic.entry === 1e12, `взнос базового: ${arena.DIVISIONS.basic.entry.toExponential(0)} (1 Tr)`);
+ok(arena.DIVISIONS.basic.entry === 1e9, `взнос базового: ${arena.DIVISIONS.basic.entry.toExponential(0)} (1 млрд)`);
 ok(arena.DIVISIONS.elite.currency === 'gold', 'элита — за золото');
-ok(arena.DIVISIONS.elite.entry === 50, `взнос элиты: ${arena.DIVISIONS.elite.entry}`);
+ok(arena.DIVISIONS.elite.entry === 10, `взнос элиты: ${arena.DIVISIONS.elite.entry}`);
 ok(arena.DIVISIONS.basic.name === 'Арена — базовый дивизион', arena.DIVISIONS.basic.name);
 ok(arena.DIVISIONS.elite.name === 'Арена — Элита', arena.DIVISIONS.elite.name);
 const vb = arena.view(ps[0], 'basic');
@@ -250,14 +250,14 @@ const dbase = db.load('arena', {}).divs.basic;
 dbase.registered = {}; dbase.battle = null; db.save('arena');
 const moneyBefore = ps[0].dollars, goldKept = ps[0].gold;
 for (const p of ps) arena.register(p, 'basic', []);
-ok(moneyBefore - ps[0].dollars === 1e12, 'списаны игровые деньги, а не золото');
+ok(moneyBefore - ps[0].dollars === 1e9, 'списаны игровые деньги, а не золото');
 ok(ps[0].gold === goldKept, 'золото не тронуто');
 fails(() => arena.register(ps[0], 'elite', []), 'уже записаны в дивизион',
       'в двух дивизионах сразу участвовать нельзя');
 startNow('basic');
 skipPrepare('arena', 'basic'); arena.view(ps[0], 'basic');
 const bb2 = db.load('arena', {}).divs.basic.battle;
-ok(bb2.pot === 4e12, `банк в деньгах: ${bb2.pot.toExponential(0)}`);
+ok(bb2.pot === 4e9, `банк в деньгах: ${bb2.pot.toExponential(0)}`);
 // Альфа добивает всех
 for (const foe of [ps[1], ps[2], ps[3]]) {
   const cur = db.load('arena', {}).divs.basic.battle;
@@ -550,6 +550,46 @@ console.log('\n── Разбор последнего боя при совпа
   st.results.newer = { id: 'newer', at: sameAt, seq: 1, rows: row(3) };
   db.save('arena');
   ok(arena.lastResultId(me) === 'newer', 'при разном времени побеждает более позднее');
+}
+
+console.log('\n── 14. Взнос снижен: кто платил по старой цене, получает старую ──');
+{
+  // Запись и бойцы до выката не знают, сколько внесли, — платили 50.
+  // Вернуть им новые 10 значило бы молча отнять по 40 золота.
+  const root = db.load('arena', {});
+  for (const d of ['basic', 'elite']) {
+    root.divs[d].registered = {}; root.divs[d].battle = null; root.divs[d].slot = Date.now() + 600000;
+  }
+  db.save('arena');
+  const st = root.divs.elite;
+  const [a, b] = [ps[0], ps[1]];
+  const oldRec = (p) => ({ id: p.id, name: p.name, flag: '', level: 1, at: Date.now() });
+  a.gold = 100;
+  st.registered[a.id] = oldRec(a); db.save('arena');
+  arena.unregister(a, 'elite', []);
+  ok(a.gold === 150, `отмена старой записи вернула 50, а не 10 (золото ${a.gold})`);
+  b.gold = 100;
+  st.registered = {}; st.registered[b.id] = oldRec(b); db.save('arena');
+  startNow();
+  ok(b.gold === 150, `несостоявшийся бой вернул старый взнос (золото ${b.gold})`);
+  a.gold = 100;
+  arena.register(a, 'elite', []);
+  ok(a.gold === 90, 'новая запись платит 10');
+  arena.unregister(a, 'elite', []);
+  ok(a.gold === 100, 'и получает назад те же 10');
+  const st2 = db.load('arena', {}).divs.elite;
+  st2.registered = {}; st2.battle = null; st2.slot = Date.now() + 600000;
+  st2.registered[b.id] = oldRec(b); db.save('arena');
+  arena.register(a, 'elite', []);
+  ok(arena.view(a, 'elite').pot === 60, `банк — сумма внесённого: 50 + 10 = ${arena.view(a, 'elite').pot}`);
+  startNow();
+  const bt = db.load('arena', {}).divs.elite.battle;
+  ok(!!bt && bt.pot === 60, `банк боя тоже 60 (${bt && bt.pot})`);
+  a.gold = 0; b.gold = 0;
+  bt.prepareUntil = Date.now() - 1; db.save('arena');
+  arena.tick();
+  ok(bt.state === 'cancelled', 'никто не вышел — бой отменён');
+  ok(b.gold === 50 && a.gold === 10, `каждому вернули его взнос: старому 50 (${b.gold}), новому 10 (${a.gold})`);
 }
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);

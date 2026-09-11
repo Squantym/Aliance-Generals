@@ -39,7 +39,7 @@ function gameTick(): void {
   require('./legion').resolveWars();
   require('./tournaments').tick();          // авто-старт матчей и продвижение сетки
   require('./silos').resolveInFlight();     // долёт летящих ракет
-  require('./seasons').rolloverIfNeeded();  // смена недели: наградить топ-3 ДО любых сбросов
+  require('./seasons').rolloverIfNeeded();  // смена сезона: наградить топ-3 ДО любых сбросов
   require('./mines').tickAll();             // шахты: уведомления о нападении вовремя + финализация спусков
   require('./fame').resetDailyIfNeeded();
   require('./lottery').tick();              // тиражи «Военного займа» в 12:00 и 00:00 МСК
