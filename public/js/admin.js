@@ -3745,7 +3745,7 @@ proxy_set_header Host $host;</pre>
         </div>
         <div class="field-row mt">
           <span class="small muted" style="width:90px">Рубли</span>
-          <input type="number" id="of-price-rub" min="0" value="${d.priceRub || 0}" style="flex:1" placeholder="цена">
+          <input type="number" id="of-price-rub" min="0" max="9990" value="${d.priceRub || 0}" style="flex:1" placeholder="цена">
           <input type="number" id="of-old-rub" min="0" value="${d.oldPriceRub || 0}" style="flex:1" placeholder="было">
         </div>
         <p class="muted small mt">Ноль — значит «за это не продаётся». «Было» показывается перечёркнутым.</p>

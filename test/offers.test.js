@@ -81,6 +81,12 @@ const fails = (n, fn, part) => {
   ] }, nx);
   eq('в наборе осталась только годная позиция', cleaned.offer.items.length, 1);
   offers.adminRemove(O, cleaned.id, nx);
+  // Предел из оферты: одна покупка за деньги — не дороже 9 990 ₽
+  fails('набор дороже 9 990 ₽ не выставить',
+        () => offers.adminSave(O, { title: 'Слишком дорогой', priceRub: 9991, items: [{ type: 'gold', qty: 1 }] }, nx), '9 990');
+  const atMax = offers.adminSave(O, { title: 'Ровно предел', priceRub: 9990, items: [{ type: 'gold', qty: 1 }] }, nx);
+  ok('ровно 9 990 ₽ — можно', !!atMax.id);
+  offers.adminRemove(O, atMax.id, nx);
 
   console.log('\n[2] Витрина показывает то же, что выдаётся');
   const made = offers.adminSave(O, full(), nx);

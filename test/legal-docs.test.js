@@ -223,11 +223,24 @@ ok(!/Платежи пока не запущены/.test(payDoc) && !/приём
 // тем, что продаёт игра: иначе цена в оферте и цена при оплате разойдутся.
 const PK = require(path.join(ROOT, 'dist/src/services/payments')).packages().packages;
 const table = payDoc.slice(payDoc.indexOf('2.6.'), payDoc.indexOf('2.7.'));
-ok(table.split('<tr><td>').length - 1 === PK.length, `в таблице цен ровно ${PK.length} пакета`);
+ok(table.split('<tr><td>').length - 1 === PK.length, `пакетов в таблице цен столько же, сколько в игре: ${PK.length}`);
 for (const p of PK) {
   const row = '<tr><td>' + p.label + (p.bonus ? ' (' + p.bonus + ')' : '') + '</td><td>' + p.gold + '</td><td>' + p.priceRub + ' ₽</td></tr>';
   ok(table.includes(row), `пакет «${p.label}» опубликован по цене игры: ${p.priceRub} ₽`);
 }
+// Заявленная надбавка обязана быть настоящей: «+20%» — ровно на 20% больше
+// базы. База — 100 золота за 99 ₽, у остальных пакетов «цена + 10».
+for (const p of PK) {
+  const base = p.priceRub === 99 ? 100 : p.priceRub + 10;
+  const pct = p.bonus ? Number(String(p.bonus).replace('+', '').replace('%', '')) : 0;
+  ok(p.gold === Math.round(base * (1 + pct / 100)), `«${p.label}»: надбавка ${p.bonus || '0%'} посчитана честно (база ${base})`);
+}
+const PAYS = require(path.join(ROOT, 'dist/src/services/payments'));
+ok(PAYS.MAX_PRICE_RUB === 9990, 'предел одной покупки в коде — 9 990 ₽');
+ok(PK.every((p) => p.priceRub <= PAYS.MAX_PRICE_RUB), 'ни один пакет не дороже предела');
+ok(Math.max(...PK.map((p) => p.priceRub)) === PAYS.MAX_PRICE_RUB, 'старший пакет стоит ровно по пределу');
+ok(payFlat.includes('не превышает 9 990 ₽'), 'предел одной покупки записан в оферте');
+ok(payFlat.includes('могут появляться игровые предложения'), 'игровые предложения (наборы) упомянуты в оферте');
 const VIP = require(path.join(ROOT, 'dist/src/services/vip'));
 ok(payFlat.includes(VIP.PRICE_GOLD + ' Золота за ' + VIP.PRICE_DAYS + ' дней'),
    `цена VIP в документе совпадает с игрой: ${VIP.PRICE_GOLD} за ${VIP.PRICE_DAYS} дней`);

@@ -200,6 +200,13 @@ function adminSave(actor: User, data: any, notices: Notices) {
   const priceGold = Math.max(0, u.toInt(data.priceGold, 0));
   const priceRub = Math.max(0, u.toInt(data.priceRub, 0));
   if (!priceGold && !priceRub) throw new u.ApiError('Укажите цену — в золоте, в рублях или в обоих');
+  // Предел из оферты: одна покупка за деньги — не дороже 9 990 ₽. Без
+  // проверки здесь документ обещал бы одно, а конструктор позволял другое.
+  const maxRub: number = require('./payments').MAX_PRICE_RUB;
+  if (priceRub > maxRub) {
+    const shown = String(maxRub).slice(0, -3) + ' ' + String(maxRub).slice(-3);
+    throw new u.ApiError(`Цена набора в рублях — не больше ${shown} ₽: этот предел записан в Правилах платежей`);
+  }
 
   const startAt = Math.max(0, u.toInt(data.startAt, 0));
   const endAt = Math.max(0, u.toInt(data.endAt, 0));

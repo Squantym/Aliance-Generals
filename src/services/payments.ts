@@ -14,13 +14,29 @@ import db = require('../core/db');
 import u = require('../core/utils');
 import type { User, Notices } from '../types';
 
-// Каталог пакетов золота (цены в рублях — пример, настроить под провайдера)
+// Каталог пакетов золота. База — 100 золота за 99 ₽, дальше «цена + 10»:
+// 500 за 490, 1000 за 990 и так до 10 000 за 9 990. Сверху — надбавка за
+// объём, шаг +5% на ступень. В поле gold золото уже С надбавкой, и
+// процент честный: 525 = 500 + 5%. Округлять до «красивых» чисел нельзя —
+// тогда заявленный процент перестанет совпадать с фактом, а это оферта.
+//
+// Эти цены опубликованы в public/payments.html (п. 2.6). Тест legal-docs
+// сверяет таблицу построчно и пересчитывает каждый процент.
 const PACKAGES = [
-  { id: 'gold_100',  gold: 100,  priceRub: 99,   label: '100 золота' },
-  { id: 'gold_550',  gold: 550,  priceRub: 490,  label: '550 золота', bonus: '+10%' },
-  { id: 'gold_1200', gold: 1200, priceRub: 990,  label: '1200 золота', bonus: '+20%' },
-  { id: 'gold_3300', gold: 3300, priceRub: 2490, label: '3300 золота', bonus: '+30%' },
+  { id: 'gold_100',   gold: 100,   priceRub: 99,   label: '100 золота' },
+  { id: 'gold_525',   gold: 525,   priceRub: 490,  label: '525 золота',   bonus: '+5%' },
+  { id: 'gold_1100',  gold: 1100,  priceRub: 990,  label: '1100 золота',  bonus: '+10%' },
+  { id: 'gold_2875',  gold: 2875,  priceRub: 2490, label: '2875 золота',  bonus: '+15%' },
+  { id: 'gold_6000',  gold: 6000,  priceRub: 4990, label: '6000 золота',  bonus: '+20%' },
+  { id: 'gold_9375',  gold: 9375,  priceRub: 7490, label: '9375 золота',  bonus: '+25%' },
+  { id: 'gold_13000', gold: 13000, priceRub: 9990, label: '13000 золота', bonus: '+30%' },
 ];
+
+// Предел одной покупки за деньги — 9 990 ₽. Записан в оферте (Правила
+// платежей, п. 2.7 и 6.6) и держится здесь: конструктор наборов не даст
+// выставить набор дороже. Уже оформленные заказы старых пакетов не
+// ломаются — золото и цена хранятся в самом заказе.
+const MAX_PRICE_RUB = 9990;
 
 interface PaymentOrder {
   id: string;
@@ -165,4 +181,4 @@ function confirmPayment(orderId: string): { ok: boolean } {
   return { ok: true };
 }
 
-export = { packages, createOrder, createOfferOrder, myOrders, confirmPayment };
+export = { packages, createOrder, createOfferOrder, myOrders, confirmPayment, MAX_PRICE_RUB };
