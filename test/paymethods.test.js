@@ -55,7 +55,12 @@ yk.setTransport(async (url, init) => {
   const m = payments.packages().methods;
   ok(Array.isArray(m) && m.map((x) => x.id).join(',') === 'sbp,sberpay,tpay', `способы: ${m.map((x) => x.id).join(', ')}`);
   ok(/Система быстрых платежей \(СБП\)/.test(m[0].name), 'СБП названа полностью, как в брендбуке');
-  ok(m.every((x) => x.logo === '' || /^\/img\/pay\/(sbp|sberpay|tpay)\.(svg|png|webp)$/.test(x.logo)), 'логотип — только официальный файл из img/pay, иначе пусто');
+  // Официальные файлы: СБП — из брендбука НСПК, SberPay и T-Pay — присланные владельцем
+  ok(m.every((x) => /^\/img\/pay\/(sbp|sberpay|tpay)\.(svg|png|webp)$/.test(x.logo)), `у всех трёх есть логотип: ${m.map((x) => x.logo).join(', ')}`);
+  for (const f of ['sbp.png', 'sberpay.png', 'tpay.svg']) {
+    const size = fs.statSync(path.join(ROOT, 'public/img/pay', f)).size;
+    ok(size > 500 && size < 60000, `${f} на месте и лёгкий: ${size} байт`);
+  }
   delete process.env.YOOKASSA_SECRET_KEY;
   ok(payments.packages().methods.length === 0, 'без ключей способов нет');
   process.env.YOOKASSA_SECRET_KEY = 'test_pm_secret';
