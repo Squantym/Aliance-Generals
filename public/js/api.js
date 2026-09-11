@@ -45,6 +45,26 @@ const API = {
     return this._fp;
   },
 
+  // Метка браузера: случайная строка в памяти браузера. Отпечаток у
+  // одинаковых моделей телефонов совпадает, а метка — нет, поэтому бан
+  // «по устройству» не задевает случайных владельцев такой же модели.
+  // Никаких сведений о человеке в ней нет — это просто номер.
+  did() {
+    if (this._did !== undefined) return this._did;
+    try {
+      let v = localStorage.getItem('gdid') || '';
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(v)) {
+        const a = new Uint8Array(12);
+        if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+        else for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256);
+        v = Array.from(a).map((b) => b.toString(16).padStart(2, '0')).join('');
+        localStorage.setItem('gdid', v);
+      }
+      this._did = v;
+    } catch (e) { this._did = ''; }
+    return this._did;
+  },
+
   async req(method, url, body) {
     const res = await fetch(url, {
       method,
@@ -52,6 +72,7 @@ const API = {
         'Content-Type': 'application/json',
         'x-token': this.token() || '',
         'x-fp': this.fp(),
+        'x-did': this.did(),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });

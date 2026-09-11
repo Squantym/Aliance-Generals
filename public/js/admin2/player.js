@@ -146,9 +146,15 @@
 
     const line = (k, v, mono) => `<div class="a2-kv"><span>${k}</span>`
       + `<b${mono ? ' class="mono"' : ''}>${UI.esc(v == null ? '—' : String(v))}</b></div>`;
+    // Кнопки бана — только тому, у кого «Баны аккаунтов». Проверка
+    // терпит отсутствие A2.can: карточку рисуют и вне оболочки панели.
+    const canBan = typeof A2.can === 'function' && A2.can('moderation');
 
     box.innerHTML = `
       <h3>Адреса и устройства</h3>
+      <div class="a2-row" style="margin-bottom:6px">
+        <a class="btn btn-inline" href="${A2Router.build('network', '', { who: d.name || '' })}">🌐 Сравнить с другими игроками</a>
+      </div>
       ${allLocal ? `<p class="a2-warn">⚠ У всех записей локальный адрес
         (${UI.esc(ips[0].ip)}). Значит nginx не передаёт игре адрес посетителя:
         нужны заголовки X-Real-IP и X-Forwarded-For в конфигурации сайта.
@@ -172,11 +178,12 @@
       <h4>Адреса (${ips.length})</h4>
       ${ips.length ? `
         <table class="a2-table">
-          <thead><tr><th>Адрес</th><th class="num">Входов</th><th class="num">Последний раз</th></tr></thead>
+          <thead><tr><th>Адрес</th><th class="num">Входов</th><th class="num">Последний раз</th><th></th></tr></thead>
           <tbody>${ips.map((x) => `<tr>
             <td class="mono">${UI.esc(x.ip)}</td>
             <td class="num">${x.count}</td>
-            <td class="num a2-muted">${dt(x.lastAt)}</td></tr>`).join('')}</tbody>
+            <td class="num a2-muted">${dt(x.lastAt)}</td>
+            <td>${canBan &&!LOCAL_IP.test(String(x.ip || '')) ? `<button class="btn btn-inline" data-netban-ip="${UI.esc(x.ip)}" title="Закрыть вход с этого адреса">🚫</button>` : ''}</td></tr>`).join('')}</tbody>
         </table>`
       : '<p class="a2-muted">Пока пусто — записи появятся при следующем входе.</p>'}
 
@@ -191,12 +198,22 @@
             <b>${UI.esc(v.label)}</b>
             ${v.isReg ? ' <span class="a2-pill">регистрация</span>' : ''}
             <span class="a2-muted">· входов: ${v.count}</span>
+            ${canBan &&v.canBan ? `<button class="btn btn-inline" data-netban-dev="${UI.esc(v.key)}" title="Закрыть вход с этого устройства">🚫 бан устройства</button>` : ''}
             <div class="a2-item-when">${dt(v.firstAt)} → ${dt(v.lastAt)}</div>
             <div class="a2-muted" style="margin-top:2px">Адреса:
               ${(v.ips || []).map((x) => `<span class="mono">${UI.esc(x.ip)}</span> ×${x.count}`).join(' · ') || '—'}</div>
           </div>
         </div>`).join('')
       : '<p class="a2-muted">Пока пусто.</p>'}`;
+
+    // Бан ведёт общий диалог раздела «Адреса и устройства»: он сначала
+    // показывает, кого ещё заденет бан, и только потом спрашивает причину
+    box.querySelectorAll('[data-netban-ip]').forEach((b) => {
+      b.onclick = () => A2Net.banDialog({ type: 'ip', value: b.getAttribute('data-netban-ip'), targetName: d.name }, () => renderAccess(id));
+    });
+    box.querySelectorAll('[data-netban-dev]').forEach((b) => {
+      b.onclick = () => A2Net.banDialog({ type: 'device', userId: id, key: b.getAttribute('data-netban-dev'), targetName: d.name }, () => renderAccess(id));
+    });
   }
 
   async function render(el, route) {

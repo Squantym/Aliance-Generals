@@ -38,6 +38,10 @@ const A2 = {
     { id: 'analytics',  label: 'Аналитика',     icon: '📈', group: 'Разбор', zone: 'analytics', legacy: 'renderAnalytics' },
     { id: 'logs',       label: 'Журнал',        icon: '📋', group: 'Разбор', zone: 'players',   legacy: 'renderLogs' },
     { id: 'sessions',   label: 'Открытые входы', icon: '🚪', group: 'Разбор', zone: 'security' },
+    // Сравнение игроков и бан по адресу или устройству
+    { id: 'network',    label: 'Адреса и устройства', icon: '🌐', group: 'Разбор', zones: ['security', 'moderation'] },
+    // Всё о каждой оплате — только владелец: данные карт и банков покупателей
+    { id: 'payments',   label: 'Платежи',       icon: '💳', group: 'Разбор', zone: 'roles', ownerOnly: true },
     // ── Настройка: сюда идут менять правила, а не разбираться ─────
     { id: 'roles',      label: 'Роли',          icon: '🛡', group: 'Настройка', zone: 'roles', legacy: 'renderRoles' },
     // Значок валюты — картинкой, как в игре: сотрудник ищет глазом

@@ -135,6 +135,7 @@ function describe(path: string, body?: any, result?: any): string | null {
     if (/^\/api\/admin\/tournaments\/[^/]+\/cancel$/.test(path)) {
       return '🏆 Отменил турнир';
     }
+    if (/^\/api\/admin\/payments\/[^/]+\/refresh$/.test(path)) return '💳 Сверил платёж с ЮKassa';
     if (/^\/api\/rewards\/[^/]+\/claim$/.test(path)) {
       return '🎁 Забрал начисленную награду';
     }
@@ -343,6 +344,12 @@ function describe(path: string, body?: any, result?: any): string | null {
         return '🧾 Сверил оплату заказа';
       case '/api/payments/ack':
         return '🧾 Закрыл окно покупки';
+      case '/api/admin/net-ban':
+        return body.type === 'ip'
+          ? `🚫 Закрыл вход с адреса ${body.value || '—'}${body.reason ? ' — ' + body.reason : ''}`
+          : `🚫 Закрыл вход с устройства игрока${body.targetName ? ' ' + body.targetName : ''}${body.reason ? ' — ' + body.reason : ''}`;
+      case '/api/admin/net-unban':
+        return '✅ Снял бан по адресу или устройству';
       case '/api/payments/yookassa':
         return '💳 Уведомление ЮKassa об оплате';
 
@@ -814,6 +821,9 @@ function describeView(path: string, params?: any): string | null {
     if (/^\/api\/admin\/anticheat\/player/.test(p)) {
       return '👁 Смотрел разбор античита по игроку';
     }
+    if (p === '/api/admin/payments') return '💳 Смотрел платежи';
+    if (/^\/api\/admin\/payments\/[^/]+$/.test(p)) return '💳 Открыл платёж';
+    if (p === '/api/admin/net-compare') return '👁 Сравнивал адреса и устройства игроков';
     if (/^\/api\/admin\/tournaments\/[^/]+$/.test(p)) return '👁 Открыл турнир';
     if (/^\/api\/admin\/groups\/[^/]+\/[^/]+$/.test(p)) return '👁 Открыл объединение';
     if (/^\/api\/admin\/groups\/[^/]+$/.test(p)) return '👁 Смотрел список объединений';

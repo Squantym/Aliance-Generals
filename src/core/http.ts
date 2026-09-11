@@ -47,6 +47,7 @@ interface ReqCtx {
   ua: string;          // строка браузера — для определения устройства
   hints?: any;         // подсказки браузера: модель, система (Client Hints)
   fp?: string;         // отпечаток устройства от клиента (экран, пояс, ядра)
+  did?: string;        // метка браузера (x-did): отличает одинаковые модели телефонов
   rawHeaders?: any;    // сырые заголовки — только для диагностики
 }
 
@@ -608,6 +609,13 @@ function createApp() {
             // пояс, язык, ядра. Строка браузера у половины игроков
             // одинаковая — без отпечатка их устройства неразличимы.
             fp: String(req.headers['x-fp'] || '').slice(0, 200),
+            // Метка браузера (public/js/api.js): случайная строка из памяти
+            // браузера. Отличает владельцев одинаковых телефонов, у которых
+            // совпадает и строка браузера, и отпечаток.
+            did: (() => {
+              const v = String(req.headers['x-did'] || '').trim();
+              return /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : '';
+            })(),
           };
 
           // Авторизация (если маршрут не открытый)
@@ -644,6 +652,23 @@ function createApp() {
             }
             const user = userId && users[userId];
             if (!user) return sendJson(res, 401, { error: 'Требуется вход в игру' }, acceptEncoding);
+            // Сессия без устройства или адреса дозаполняется из первого же
+            // запроса. Такие сессии выдают переключение персонажа, вход по
+            // ссылке из письма и смена пароля — там данных браузера нет, — и
+            // в панели они навсегда оставались «неизвестным устройством».
+            {
+              const srec: any = sessions[token];
+              if (srec && typeof srec === 'object') {
+                let dirty = false;
+                if (!srec.device && reqCtx.ua) {
+                  try { srec.device = require('../services/access').parseDevice(reqCtx.ua, reqCtx.hints).label; dirty = true; } catch (e) {}
+                }
+                if (!srec.ip && reqCtx.ip) { srec.ip = reqCtx.ip; dirty = true; }
+                if (!srec.fp && reqCtx.fp) { srec.fp = String(reqCtx.fp).slice(0, 200); dirty = true; }
+                if (!srec.did && reqCtx.did) { srec.did = reqCtx.did; dirty = true; }
+                if (dirty) db.save('sessions');
+              }
+            }
             // Срочный бан снимается сам по истечении срока
             if (user.banned && (user as any).banUntil && (user as any).banUntil <= Date.now()) {
               user.banned = false;
@@ -675,6 +700,22 @@ function createApp() {
                 banInfo: banPayload,
               }, acceptEncoding);
             }
+            // ── Бан по адресу или устройству ─────────────────────
+            // Сотрудников не запираем: у владельца и нарушителя может быть
+            // общий адрес мобильного оператора, и остаться без панели из-за
+            // чужого бана нельзя. Банить адрес или устройство сотрудника
+            // сервис не даёт и сам (services/netBans.ts).
+            try {
+              const nb = require('../services/netBans');
+              const hit = nb.check(reqCtx);
+              if (hit && !require('../services/roles').roleOf(user)) {
+                const info = nb.banInfo(hit, user.name);
+                if (pathname === '/api/me') {
+                  return sendJson(res, 200, { banInfo: info, banned: true, name: user.name }, acceptEncoding);
+                }
+                return sendJson(res, 403, { error: info.reason, banned: true, banInfo: info }, acceptEncoding);
+              }
+            } catch (e) { /* модуль недоступен — игру из-за этого не запираем */ }
             // ── Режим обслуживания ──────────────────────────────
             // Игру закрываем ВСЕМ, кроме сотрудников: обновление меняет
             // данные на ходу, и запрос, пришедший в этот момент, может
@@ -765,7 +806,7 @@ function createApp() {
             // месяцами, и данных о нём просто не появлялось бы. Внутри
             // стоит защита от лишних записей — см. touch().
             try {
-              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua, reqCtx.hints, reqCtx.fp);
+              require('../services/access').touch(user, reqCtx.ip, reqCtx.ua, reqCtx.hints, reqCtx.fp, reqCtx.did);
             } catch (e) {}
             user.lastSeen = Date.now();
             if (refreshUser) refreshUser(user); // регенерация, доход, чистка эффектов

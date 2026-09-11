@@ -201,6 +201,11 @@ function registerRoutes(app: any) {
     // восстановление пароля потом ушло бы тому, кто этим адресом владеет
     // на самом деле. Закрытая регистрация чинится за минуту и видна
     // сразу; тихо неподтверждённые аккаунты не видны никогда.
+    // Бан по адресу или устройству закрывает и регистрацию: иначе
+    // забаненный просто заводил бы новый аккаунт с той же машины. Стоит
+    // до остальных проверок — причина отказа должна быть настоящей.
+    const netHit = require('./services/netBans').check(req);
+    if (netHit) throw new u.ApiError(require('./services/netBans').banInfo(netHit, '').reason);
     const blocked = require('./services/email').registrationBlocked();
     if (blocked) throw new u.ApiError(blocked);
     consent.checkRequired(req.body.consents);
@@ -1749,6 +1754,18 @@ function registerRoutes(app: any) {
     return { key, players: access.byDevice(key, player.users()) };
   }, { admin: true });
 
+  // ═══ АДРЕСА И УСТРОЙСТВА: сравнение и бан ═══════════════════════
+  // Сравнение — «Безопасность»: это разбор мультоводства. Бан по адресу и
+  // устройству — «Баны аккаунтов»: та же мера, только шире.
+  app.add('GET', '/api/admin/net-compare', (req) =>
+    require('./services/access').compareByQuery(String(req.query.who || ''), player.users()), { admin: true });
+  app.add('GET', '/api/admin/device-groups', (req) =>
+    require('./services/access').deviceGroups(player.users(), u.toInt(req.query.min, 2)), { admin: true });
+  app.add('GET',  '/api/admin/net-bans',        (req) => require('./services/netBans').list(req.user), { admin: true });
+  app.add('GET',  '/api/admin/net-ban-preview', (req) => require('./services/netBans').preview(req.user, req.query), { admin: true });
+  app.add('POST', '/api/admin/net-ban',   act((req, n) => require('./services/netBans').add(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/net-unban', act((req, n) => require('./services/netBans').remove(req.user, req.body.id, n)), { admin: true });
+
   // Все открытые сессии сервера — сводка по игрокам
   app.add('GET', '/api/admin/sessions', (req) => {
     if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
@@ -2214,23 +2231,31 @@ function registerRoutes(app: any) {
   // .env, заказ создаётся без платежа, как до подключения.
   app.add('GET',  '/api/payments/packages', (req) => payments.packages());
   app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
-  app.add('POST', '/api/payments/create',   act((req, n) => payments.pay(req.user, payments.createOrder(req.user, req.body.packageId, n), n)));
+  // Откуда нажали «Купить»: адрес и устройство покупателя уходят в заказ —
+  // без них спор «это не я платил» разбирать нечем
+  const buyerMeta = (req: any) => ({ ip: req.ip, ua: req.ua, hints: req.hints, fp: req.fp, did: req.did });
+  app.add('POST', '/api/payments/create',   act((req, n) => payments.pay(req.user, payments.createOrder(req.user, req.body.packageId, n), n, buyerMeta(req))));
   // Сверка заказа по возвращении со страницы оплаты. Без журнала: клиент
   // зовёт её при каждом входе в банк, пока заказ ждёт оплаты.
   app.add('POST', '/api/payments/check',    act((req) => payments.checkOrder(req.user, req.body.orderId)), { noLog: true });
   // «Забрать» в окне оплаченной покупки. Ничего не выдаёт: покупка
   // зачислена при оплате, здесь окно только уходит из очереди.
   app.add('POST', '/api/payments/ack',      act((req) => payments.ackPurchase(req.user, req.body.orderId)));
+  // Раздел «Платежи»: всё о каждой оплате — способ, банк, карта без полного
+  // номера, суммы, откуда платили. Только владелец (проверка в сервисе).
+  app.add('GET',  '/api/admin/payments',             (req) => payments.adminList(req.user, req.query), { admin: true });
+  app.add('GET',  '/api/admin/payments/:id',         (req) => payments.adminGet(req.user, req.params.id), { admin: true });
+  app.add('POST', '/api/admin/payments/:id/refresh', act((req) => payments.adminRefresh(req.user, req.params.id)), { admin: true });
   // Уведомления ЮKassa. Маршрут открытый: присылает сервер ЮKassa, а не
   // игрок. Телу не верим — статус платежа сервис берёт запросом в ЮKassa.
   // Ошибка связи уходит 500-м ответом, и ЮKassa повторит уведомление.
-  app.add('POST', '/api/payments/yookassa', (req) => payments.handleNotification(req.body), { open: true });
+  app.add('POST', '/api/payments/yookassa', (req) => payments.handleNotification(req.body, { ip: req.ip }), { open: true });
 
   // ---------- Спецпредложения (наборы) ----------
   // Витрина открыта всем, конструктор — по зоне «Ресурсы».
   app.add('GET',  '/api/offers',            (req) => require('./services/offers').catalog(req.user));
   app.add('POST', '/api/offers/buy',        act((req, n) => require('./services/offers').buyForGold(req.user, req.body.offerId, n)));
-  app.add('POST', '/api/offers/order',      act((req, n) => payments.pay(req.user, require('./services/offers').orderForRub(req.user, req.body.offerId, n), n)));
+  app.add('POST', '/api/offers/order',      act((req, n) => payments.pay(req.user, require('./services/offers').orderForRub(req.user, req.body.offerId, n), n, buyerMeta(req))));
   app.add('GET',  '/api/admin/offers',      (req) => require('./services/offers').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/offers/save', act((req, n) => require('./services/offers').adminSave(req.user, req.body, n)), { admin: true });
   // Предпросмотр карточки до сохранения: собирает её тот же код, что и

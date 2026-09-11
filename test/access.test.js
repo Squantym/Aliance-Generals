@@ -291,7 +291,8 @@ const authSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/auth.ts'), 'utf8'
 ok(/recordLogin\(newU, ip, ua, 'регистрация', hints, fp\)/.test(authSrc2),
    'подсказки и отпечаток доходят до регистрации');
 ok(/recordLogin\(found, ip, ua, 'вход', hints, fp\)/.test(authSrc2), 'и до входа');
-ok(/touch\(user, reqCtx\.ip, reqCtx\.ua, reqCtx\.hints, reqCtx\.fp\)/.test(httpSrc3),
+// Шестой аргумент — метка браузера (x-did): она идёт тем же вызовом
+ok(/touch\(user, reqCtx\.ip, reqCtx\.ua, reqCtx\.hints, reqCtx\.fp(, reqCtx\.did)?\)/.test(httpSrc3),
    'и до учёта на каждом запросе');
 ok(/x-fp/.test(httpSrc3), 'сервер читает отпечаток из заголовка x-fp');
 

@@ -16,6 +16,11 @@
 //      квитанция от «Система». Кнопка «Забрать» в окне только закрывает
 //      его: покупка УЖЕ на счету (см. ackPurchase).
 //
+// Для разбора проблем с оплатой заказ хранит всё, что о платеже знает
+// ЮKassa (способ, банк, карта без полного номера, суммы, коды), откуда
+// платил покупатель (адрес, устройство) и историю уведомлений. Смотрит
+// это только владелец — раздел «Платежи» в панели.
+//
 // Пока ключей магазина нет в .env, оплата выключена: заказ создаётся без
 // платежа, как было до интеграции.
 //
@@ -60,12 +65,15 @@ const PENDING_PER_HOUR = 10;
 const CHECK_COOLDOWN_MS = 5000;
 // Сколько окон непросмотренных покупок держим в очереди у игрока
 const UNSEEN_MAX = 10;
+// Сколько уведомлений ЮKassa помним на заказ
+const KEEP_EVENTS = 30;
 
 const GOLD_ICON = '/img/icons/gold.webp';
 const GOLD_IMAGE = '/img/tabs/bank_gold.webp';
 const OFFER_IMAGE = '/img/menu/bank.webp';
 
 type ReceiptLine = { text: string; icon: string | null };
+type Buyer = { ip: string; device: string; ua: string; fp: string; did: string; at: number };
 
 interface PaymentOrder {
   id: string;
@@ -88,6 +96,12 @@ interface PaymentOrder {
   checkedAt?: number;
   refundedRub?: number;
   refundIds?: string[];
+  // ── Для разбора ──
+  buyer?: Buyer;           // откуда нажали «Купить»
+  yk?: any;                // последний ответ ЮKassa о платеже целиком
+  ykSyncedAt?: number;
+  events?: Array<{ at: number; event: string; ip: string; status: string }>;
+  refunds?: any[];         // ответы ЮKassa о возвратах
 }
 
 function store(): Record<string, PaymentOrder> {
@@ -114,6 +128,38 @@ function mskTime(ts: number): string {
 
 function orderTitle(o: PaymentOrder): string {
   return o.offerId ? `Набор «${o.title || 'Спецпредложение'}»` : `${num(o.gold)} золота`;
+}
+
+// Копия ответа ЮKassa для хранения. Полного номера карты в нём нет —
+// ЮKassa отдаёт только первые 6 и последние 4 цифры, — поэтому храним
+// целиком: при разборе спора нужна каждая мелочь, а заранее угадать,
+// какая именно, нельзя. Слишком большой ответ урезаем до главного.
+function snap(obj: any): any {
+  if (!obj) return null;
+  let copy: any;
+  try { copy = JSON.parse(JSON.stringify(obj)); } catch (e) { return null; }
+  if (JSON.stringify(copy).length > 20000) {
+    const keep = ['id', 'status', 'paid', 'test', 'amount', 'income_amount', 'refunded_amount', 'created_at',
+      'captured_at', 'description', 'payment_method', 'authorization_details', 'cancellation_details', 'metadata'];
+    const small: any = {};
+    for (const k of keep) if (copy[k] !== undefined) small[k] = copy[k];
+    return small;
+  }
+  return copy;
+}
+
+function buyerOf(meta: any): Buyer | undefined {
+  if (!meta) return undefined;
+  let device = '';
+  try { device = require('./access').parseDevice(meta.ua || '', meta.hints).label; } catch (e) { device = ''; }
+  return {
+    ip: String(meta.ip || '').slice(0, 60),
+    device: String(device || '').slice(0, 120),
+    ua: String(meta.ua || '').slice(0, 300),
+    fp: String(meta.fp || '').slice(0, 200),
+    did: String(meta.did || '').slice(0, 64),
+    at: Date.now(),
+  };
 }
 
 // Каталог пакетов (для витрины)
@@ -182,11 +228,14 @@ function createOfferOrder(user: User, offer: { id: string; title: string; priceR
 }
 
 // Платёж в ЮKassa по уже созданному заказу. Без ключей — ничего не
-// делает, заказ остаётся как есть.
-async function pay(user: User, created: { orderId: string; status: string; payUrl: string | null }, notices: Notices) {
-  if (!yk().configured()) return created;
+// делает, заказ остаётся как есть. meta — откуда нажали «Купить»: адрес
+// и устройство записываются в заказ в любом случае.
+async function pay(user: User, created: { orderId: string; status: string; payUrl: string | null }, notices: Notices, meta?: any) {
   const order = store()[created.orderId];
   if (!order || order.userId !== user.id) throw new u.ApiError('Заказ не найден');
+  const buyer = buyerOf(meta);
+  if (buyer) { order.buyer = buyer; db.save('payments'); }
+  if (!yk().configured()) return created;
   // Описание уходит в ЮKassa и в чек — там должно быть понятно, за что платили
   const description = order.offerId
     ? `Игровой набор «${order.title || 'Спецпредложение'}» — «${brand.GAME_NAME}»`
@@ -204,6 +253,8 @@ async function pay(user: User, created: { orderId: string; status: string; payUr
     order.provider = 'yookassa';
     order.providerRef = ref;
     order.payUrl = url;
+    order.yk = snap(p);
+    order.ykSyncedAt = Date.now();
     db.save('payments');
     return { orderId: order.id, status: order.status, payUrl: url };
   } catch (e: any) {
@@ -222,6 +273,9 @@ async function syncOrder(order: PaymentOrder): Promise<string> {
   if (!order.providerRef || order.status !== 'pending') return order.status;
   const p = await yk().getPayment(order.providerRef);
   if (!p || p.id !== order.providerRef) return order.status;
+  order.yk = snap(p);
+  order.ykSyncedAt = Date.now();
+  db.save('payments');
   const metaOk = !!(p.metadata && String(p.metadata.orderId) === order.id);
   const amountOk = !!(p.amount && p.amount.currency === 'RUB'
     && Math.round(Number(p.amount.value) * 100) === Math.round(order.priceRub * 100));
@@ -265,12 +319,19 @@ async function checkOrder(user: User, orderId: string) {
   return { orderId: order.id, status: order.status, gold: order.creditedGold || 0 };
 }
 
+function logEvent(order: PaymentOrder, event: string, meta: any, status: string) {
+  const list = order.events || (order.events = []);
+  list.push({ at: Date.now(), event: String(event || '').slice(0, 40), ip: String((meta && meta.ip) || '').slice(0, 60), status: String(status || '').slice(0, 30) });
+  while (list.length > KEEP_EVENTS) list.shift();
+  db.save('payments');
+}
+
 // Уведомление от ЮKassa. Платёж, которого нет среди наших заказов, не
 // проверяем вовсе: иначе любой мог бы заставить сервер слать запросы в
 // ЮKassa, подсовывая выдуманные номера.
 // Ошибка связи с ЮKassa пробрасывается наружу — маршрут ответит 500, и
 // ЮKassa повторит уведомление сама.
-async function handleNotification(body: any) {
+async function handleNotification(body: any, meta?: any) {
   const event = String((body && body.event) || '');
   const obj = body && body.object;
   if (!obj || typeof obj.id !== 'string') return { ok: true };
@@ -279,13 +340,18 @@ async function handleNotification(body: any) {
   if (event.indexOf('refund.') === 0) {
     const order = all.find((o) => !!o.providerRef && o.providerRef === obj.payment_id);
     if (!order) return { ok: true };
+    logEvent(order, event, meta, String(obj.status || ''));
     const r = await yk().getRefund(obj.id);
+    if (r && r.payment_id === order.providerRef) {
+      const list = order.refunds || (order.refunds = []);
+      const i = list.findIndex((x: any) => x && x.id === r.id);
+      if (i >= 0) list[i] = snap(r); else list.push(snap(r));
+    }
     const ids = order.refundIds || (order.refundIds = []);
     if (r && r.status === 'succeeded' && r.payment_id === order.providerRef && ids.indexOf(r.id) === -1) {
       const rub = Number(r.amount && r.amount.value) || 0;
       ids.push(r.id);
       order.refundedRub = Math.round(((order.refundedRub || 0) + rub) * 100) / 100;
-      db.save('payments');
       const who: any = require('./player').users()[order.userId];
       // Золото автоматически не списываем: возврат бывает частичным, а часть
       // покупки игрок мог уже потратить — решение за владельцем
@@ -295,11 +361,13 @@ async function handleNotification(body: any) {
         body: { orderId: order.id, refundRub: rub },
       });
     }
+    db.save('payments');
     return { ok: true };
   }
 
   const order = all.find((o) => !!o.providerRef && o.providerRef === obj.id);
   if (!order) return { ok: true };
+  logEvent(order, event, meta, String(obj.status || ''));
   await syncOrder(order);
   return { ok: true };
 }
@@ -452,7 +520,162 @@ function confirmPayment(orderId: string): { ok: boolean } {
   return { ok: true };
 }
 
+// ═══ РАЗДЕЛ «ПЛАТЕЖИ» ДЛЯ ВЛАДЕЛЬЦА ═════════════════════════════════
+// Данные карт и банков покупателей — финансовые персональные данные.
+// Их видит только владелец: раздать это администратору значит раздать
+// доступ к тому, кто, чем и откуда платит.
+const METHOD_NAMES: Record<string, string> = {
+  bank_card: 'Банковская карта', sbp: 'СБП', yoo_money: 'ЮMoney', tinkoff_bank: 'T-Pay',
+  sberbank: 'SberPay', mobile_balance: 'Баланс телефона', b2b_sberbank: 'СберБизнес',
+  sber_loan: 'Кредит от Сбера', electronic_certificate: 'Электронный сертификат',
+  installments: 'Заплатить по частям', alfabank: 'Альфа-Клик', qiwi: 'QIWI', webmoney: 'WebMoney', cash: 'Наличные',
+};
+
+function assertOwner(actor: User) {
+  let owner = false;
+  try { owner = require('./roles').isOwner(actor); } catch (e) { owner = false; }
+  if (!owner) throw new u.ApiError('Раздел «Платежи» — только для владельца проекта');
+}
+
+function methodOf(o: PaymentOrder) {
+  const pm = (o.yk && o.yk.payment_method) || null;
+  if (!pm) return { type: '', name: o.provider ? 'ещё не выбран' : 'без платёжного сервиса', title: '' };
+  const out: any = { type: pm.type || '', name: METHOD_NAMES[pm.type] || pm.type || '—', title: pm.title || '' };
+  if (pm.card) {
+    out.card = {
+      first6: pm.card.first6 || '', last4: pm.card.last4 || '',
+      type: pm.card.card_type || '', issuerName: pm.card.issuer_name || '',
+      issuerCountry: pm.card.issuer_country || '',
+      expiry: pm.card.expiry_month && pm.card.expiry_year ? `${pm.card.expiry_month}/${pm.card.expiry_year}` : '',
+      product: (pm.card.card_product && (pm.card.card_product.name || pm.card.card_product.code)) || '',
+      source: pm.card.source || '',
+    };
+  }
+  if (pm.payer_bank_details) out.bank = [pm.payer_bank_details.bank_id, pm.payer_bank_details.bic ? 'БИК ' + pm.payer_bank_details.bic : ''].filter(Boolean).join(', ');
+  if (pm.sbp_operation_id) out.sbpOperationId = pm.sbp_operation_id;
+  if (pm.account_number) out.account = pm.account_number;
+  if (pm.phone) out.phone = pm.phone;
+  return out;
+}
+
+function methodShort(o: PaymentOrder): string {
+  const m = methodOf(o);
+  if (m.card && m.card.last4) return `${m.name} •••• ${m.card.last4}${m.card.issuerName ? ', ' + m.card.issuerName : ''}`;
+  if (m.bank) return `${m.name}, ${m.bank}`;
+  return m.name;
+}
+
+function isTest(o: PaymentOrder): boolean { return !!(o.yk && o.yk.test); }
+
+function adminList(actor: User, q: any) {
+  assertOwner(actor);
+  const query = String((q && q.q) || '').trim().toLowerCase();
+  const status = String((q && q.status) || '');
+  const test = String((q && q.test) || '');
+  const limit = u.clamp(u.toInt(q && q.limit, 300), 1, 1000);
+  const people: Record<string, any> = require('./player').users();
+  const all = Object.values(store()).sort((a, b) => b.createdAt - a.createdAt);
+
+  const totals = { paidRub: 0, paidCount: 0, refundedRub: 0, testCount: 0, pendingCount: 0 };
+  for (const o of all) {
+    if (isTest(o)) { if (o.status === 'paid') totals.testCount++; continue; }
+    if (o.status === 'paid') { totals.paidRub += o.priceRub; totals.paidCount++; }
+    if (o.status === 'pending' && o.providerRef) totals.pendingCount++;
+    totals.refundedRub += o.refundedRub || 0;
+  }
+
+  const rows = all.filter((o) => {
+    if (status === 'refunded') { if (!((o.refundedRub || 0) > 0)) return false; }
+    else if (status && o.status !== status) return false;
+    if (test === '1' && !isTest(o)) return false;
+    if (test === '0' && isTest(o)) return false;
+    if (query) {
+      const p = people[o.userId];
+      const card = o.yk && o.yk.payment_method && o.yk.payment_method.card;
+      const hay = [o.id, o.providerRef, p && p.name, o.title, orderTitle(o), card && card.last4,
+        o.buyer && o.buyer.ip].map((x) => String(x || '').toLowerCase()).join(' ');
+      if (hay.indexOf(query) === -1) return false;
+    }
+    return true;
+  }).slice(0, limit).map((o) => ({
+    id: o.id, createdAt: o.createdAt, paidAt: o.paidAt || 0,
+    userId: o.userId, userName: (people[o.userId] && people[o.userId].name) || '',
+    title: orderTitle(o), priceRub: o.priceRub, creditedGold: o.creditedGold || 0,
+    status: o.status, refundedRub: o.refundedRub || 0, test: isTest(o),
+    method: methodShort(o), buyerIp: (o.buyer && o.buyer.ip) || '',
+  }));
+  return { rows, totals };
+}
+
+function adminGet(actor: User, id: string) {
+  assertOwner(actor);
+  const o = store()[String(id || '')];
+  if (!o) throw new u.ApiError('Заказ не найден');
+  const people: Record<string, any> = require('./player').users();
+  const p = o.yk || {};
+  const amount = p.amount ? Number(p.amount.value) : o.priceRub;
+  const income = p.income_amount ? Number(p.income_amount.value) : null;
+  const ad = p.authorization_details || {};
+  return {
+    id: o.id, title: orderTitle(o), status: o.status, priceRub: o.priceRub,
+    creditedGold: o.creditedGold || 0, createdAt: o.createdAt, paidAt: o.paidAt || 0,
+    cancelReason: o.cancelReason || (p.cancellation_details && p.cancellation_details.reason) || '',
+    cancelParty: (p.cancellation_details && p.cancellation_details.party) || '',
+    refundedRub: o.refundedRub || 0,
+    userId: o.userId, userName: (people[o.userId] && people[o.userId].name) || '',
+    provider: o.provider || '', providerRef: o.providerRef || '',
+    buyer: o.buyer || null,
+    receiptLines: (o.receipt && o.receipt.lines) || [],
+    events: o.events || [],
+    method: methodOf(o),
+    auth: {
+      rrn: ad.rrn || '', authCode: ad.auth_code || '',
+      threeDs: ad.three_d_secure ? (ad.three_d_secure.applied ? 'пройдена' : 'не применялась') : '',
+    },
+    money: {
+      amount, currency: (p.amount && p.amount.currency) || 'RUB',
+      income, commission: income !== null ? Math.round((amount - income) * 100) / 100 : null,
+      refunded: p.refunded_amount ? Number(p.refunded_amount.value) : 0,
+      test: !!p.test, createdAt: p.created_at || '', capturedAt: p.captured_at || '',
+      paid: !!p.paid, ykStatus: p.status || '',
+    },
+    ykSyncedAt: o.ykSyncedAt || 0,
+    refunds: (o.refunds || []).map((r: any) => ({
+      id: r.id, status: r.status, amount: r.amount ? Number(r.amount.value) : 0,
+      createdAt: r.created_at || '', description: r.description || '',
+    })),
+    raw: o.yk || null,
+    rawRefunds: o.refunds || [],
+  };
+}
+
+// «Сверить с ЮKassa»: свежий ответ о платеже и его возвратах. Неоплаченный
+// заказ сверяется обычным путём — если он оплачен, покупка зачислится.
+async function adminRefresh(actor: User, id: string) {
+  assertOwner(actor);
+  const o = store()[String(id || '')];
+  if (!o) throw new u.ApiError('Заказ не найден');
+  if (!o.providerRef) throw new u.ApiError('По этому заказу платёж в ЮKassa не создавался — сверять нечего');
+  if (!yk().configured()) throw new u.ApiError('Ключи ЮKassa не заданы на сервере');
+  try {
+    if (o.status === 'pending') await syncOrder(o);
+    else {
+      o.yk = snap(await yk().getPayment(o.providerRef));
+      o.ykSyncedAt = Date.now();
+    }
+    const list = o.refunds || [];
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id) list[i] = snap(await yk().getRefund(list[i].id));
+    }
+    db.save('payments');
+  } catch (e: any) {
+    throw new u.ApiError('ЮKassa не ответила: ' + String((e && e.message) || '').replace(/^ЮKassa ответила /, ''));
+  }
+  return adminGet(actor, id);
+}
+
 export = {
   packages, createOrder, createOfferOrder, pay, checkOrder, handleNotification,
-  myOrders, confirmPayment, pendingPurchases, ackPurchase, MAX_PRICE_RUB,
+  myOrders, confirmPayment, pendingPurchases, ackPurchase,
+  adminList, adminGet, adminRefresh, MAX_PRICE_RUB,
 };
