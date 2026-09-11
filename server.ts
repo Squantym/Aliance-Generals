@@ -19,13 +19,22 @@
 
 // Лёгкий загрузчик .env без сторонних библиотек. Читает файл .env из
 // корня проекта (если он есть) и переносит переменные в process.env.
-// Уже заданные в окружении переменные имеют приоритет и не затираются.
-// Это нужно, чтобы ключи почты и прочие настройки подхватывались
-// автоматически при любом способе запуска (pm2, node).
-// Что из .env НЕ применилось, потому что в окружении уже лежало другое.
-// Нужно для предупреждения при запуске: молчаливое расхождение между
-// файлом и работающим процессом — самая дорогая из мелких поломок.
-const envIgnored: Array<{ key: string; had: string }> = [];
+//
+// .env ГЛАВНЕЕ окружения процесса. Раньше было наоборот, и это дважды
+// ломало боевой мир без единого признака в файле: сначала пустой ключ
+// почты, потом (11.09.2026) pm2 держал ключи ТЕСТОВОГО магазина ЮKassa и
+// адрес тестового мира — покупки отклонялись, а `--update-env` старые
+// значения не убирал. Файл владелец видит и правит; память pm2 — нет.
+//
+// Перебить файл при запуске можно только явно, перечислив имена:
+//   ENV_OVERRIDE=PORT,DB_DRIVER node dist/server.js
+const envOverride = String(process.env.ENV_OVERRIDE || '').split(',').map((s) => s.trim()).filter(Boolean);
+// Что в окружении было другим и заменено строкой из файла — говорим при
+// запуске поимённо, без значений: в них ключи и пароли
+const envReplaced: string[] = [];
+const envKeptByOverride: string[] = [];
+// Строка повторяется в файле с другим значением — берётся последняя
+const envDuplicate: string[] = [];
 const envEmptyInFile: string[] = [];
 
 (function loadDotEnv() {
@@ -35,6 +44,7 @@ const envEmptyInFile: string[] = [];
     const envPath = path.join(process.cwd(), '.env');
     if (!fs.existsSync(envPath)) return;
     const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    const fromFile = new Map<string, string>();
     for (const raw of lines) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;       // пропускаем пустые и комментарии
@@ -55,21 +65,25 @@ const envEmptyInFile: string[] = [];
 
       const cur = process.env[key];
 
-      // ПУСТАЯ переменная окружения НЕ перебивает файл.
-      //
-      // Раньше условие было `=== undefined`, и пустая строка выигрывала у
-      // .env. Ровно на этом теряется ключ почты: pm2 запоминает окружение
-      // с первого запуска и при `pm2 restart` его не обновляет (он сам
-      // пишет «Use --update-env»). Вписываешь ключ в .env, перезапускаешь —
-      // и ничего не меняется, причём без единого сообщения.
-      //
-      // Пустая переменная не несёт сведений: считать её заданной незачем.
-      if (cur === undefined || cur === '') { process.env[key] = val; continue; }
+      // Та же строка выше в файле уже задала значение: повтор с другим
+      // значением — почти всегда недоудалённая старая строка. Берём
+      // последнюю (её дописали позже) и говорим об этом.
+      const prev = fromFile.get(key);
+      if (prev !== undefined) {
+        if (prev !== val && !envDuplicate.includes(key)) envDuplicate.push(key);
+        if (!envOverride.includes(key)) process.env[key] = val;
+        continue;
+      }
+      fromFile.set(key, val);
 
-      // Непустое значение в окружении оставляем — так и задумано: им
-      // переопределяют настройки при запуске. Но если оно РАСХОДИТСЯ с
-      // файлом, об этом надо сказать вслух.
-      if (cur !== val) envIgnored.push({ key, had: cur });
+      if (cur === undefined || cur === '' || cur === val) { process.env[key] = val; continue; }
+
+      // В окружении другое значение. Явно разрешённое при запуске —
+      // оставляем; всё прочее — память pm2 с прошлых запусков, и файл
+      // её заменяет.
+      if (envOverride.includes(key)) { envKeptByOverride.push(key); continue; }
+      process.env[key] = val;
+      envReplaced.push(key);
     }
   } catch (e: any) {
     console.warn('Не удалось прочитать .env:', e.message);
@@ -95,19 +109,24 @@ async function main() {
   try { require('./src/services/mailer').warnStaleTemplates(); } catch (e) {}
 
   // ---- Расхождения между .env и окружением ----
-  // Правка в .env, которая не доехала до работающего процесса, — поломка
-  // без единого признака: файл выглядит правильно, а игра ведёт себя
-  // по-старому. Показываем такие строки поимённо, без значений: в них
-  // ключи и пароли.
-  if (envIgnored.length) {
+  // Поимённо и без значений: в них ключи и пароли. Игру расхождение уже
+  // не ломает — файл главнее, — но память pm2 лучше вычистить, чтобы не
+  // путаться при разборе.
+  if (envReplaced.length) {
+    const app = process.env.name || 'generals-game';   // pm2 кладёт имя процесса в name
     console.log('=========================================');
-    console.log('  ⚠ Строки из .env НЕ применились — в окружении процесса');
-    console.log('    уже лежат другие значения:');
-    for (const x of envIgnored) console.log(`      ${x.key}`);
-    console.log('    Так бывает после `pm2 restart` без --update-env:');
-    console.log('    pm2 помнит окружение с первого запуска. Чтобы принять');
-    console.log('    файл: pm2 restart generals-game --update-env');
+    console.log('  ⚠ В окружении процесса лежали ДРУГИЕ значения — взяты строки из .env:');
+    for (const k of envReplaced) console.log(`      ${k}`);
+    console.log('    Старые значения держит pm2 с прошлых запусков. На игру они больше');
+    console.log('    не влияют. Убрать их из pm2 насовсем:');
+    console.log(`    pm2 delete ${app} && pm2 start dist/server.js --name ${app} && pm2 save`);
     console.log('=========================================');
+  }
+  if (envKeptByOverride.length) {
+    console.log(`ℹ По ENV_OVERRIDE взято из окружения, а не из .env: ${envKeptByOverride.join(', ')}`);
+  }
+  if (envDuplicate.length) {
+    console.log(`⚠ В .env строки повторяются с разными значениями — взята последняя: ${envDuplicate.join(', ')}. Удалите лишние.`);
   }
   if (envEmptyInFile.length) {
     console.log(`⚠ В .env есть строки без значения: ${envEmptyInFile.join(', ')} — они пропущены.`);
