@@ -2210,16 +2210,24 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/support/claim',   act((req, n) => support.claim(req.user, String(req.body.ticketId || ''), n)), { admin: true });
   app.add('POST', '/api/admin/support/release', act((req, n) => support.release(req.user, String(req.body.ticketId || ''), n)), { admin: true });
   app.add('POST', '/api/admin/support/reply', act((req, n) => support.adminReply(req.user, req.body.ticketId, req.body.text, !!req.body.close, n)), { admin: true });
-  // Платёжная система (заготовка)
+  // Покупки за рубли — ЮKassa (payments.ts). Пока ключей магазина нет в
+  // .env, заказ создаётся без платежа, как до подключения.
   app.add('GET',  '/api/payments/packages', (req) => payments.packages());
   app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
-  app.add('POST', '/api/payments/create',   act((req, n) => payments.createOrder(req.user, req.body.packageId, n)));
+  app.add('POST', '/api/payments/create',   act((req, n) => payments.pay(req.user, payments.createOrder(req.user, req.body.packageId, n), n)));
+  // Сверка заказа по возвращении со страницы оплаты. Без журнала: клиент
+  // зовёт её при каждом входе в банк, пока заказ ждёт оплаты.
+  app.add('POST', '/api/payments/check',    act((req) => payments.checkOrder(req.user, req.body.orderId)), { noLog: true });
+  // Уведомления ЮKassa. Маршрут открытый: присылает сервер ЮKassa, а не
+  // игрок. Телу не верим — статус платежа сервис берёт запросом в ЮKassa.
+  // Ошибка связи уходит 500-м ответом, и ЮKassa повторит уведомление.
+  app.add('POST', '/api/payments/yookassa', (req) => payments.handleNotification(req.body), { open: true });
 
   // ---------- Спецпредложения (наборы) ----------
   // Витрина открыта всем, конструктор — по зоне «Ресурсы».
   app.add('GET',  '/api/offers',            (req) => require('./services/offers').catalog(req.user));
   app.add('POST', '/api/offers/buy',        act((req, n) => require('./services/offers').buyForGold(req.user, req.body.offerId, n)));
-  app.add('POST', '/api/offers/order',      act((req, n) => require('./services/offers').orderForRub(req.user, req.body.offerId, n)));
+  app.add('POST', '/api/offers/order',      act((req, n) => payments.pay(req.user, require('./services/offers').orderForRub(req.user, req.body.offerId, n), n)));
   app.add('GET',  '/api/admin/offers',      (req) => require('./services/offers').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/offers/save', act((req, n) => require('./services/offers').adminSave(req.user, req.body, n)), { admin: true });
   // Предпросмотр карточки до сохранения: собирает её тот же код, что и

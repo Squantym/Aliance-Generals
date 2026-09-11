@@ -1500,6 +1500,23 @@ App.screens.skills = async (c) => {
 };
 
 // ---------- БАНК ----------
+// Сверка заказов после возврата со страницы оплаты. Уведомление ЮKassa
+// обычно приходит раньше игрока, но может задержаться — и тогда человек
+// вернулся бы в банк и не увидел покупки. Сверяем свежие неоплаченные
+// заказы сами: сервер спросит статус у ЮKassa и зачислит, если оплачено.
+App._syncPayments = async () => {
+  try {
+    const { orders } = await API.get('/api/payments/orders');
+    const fresh = (orders || []).filter((o) => o.canCheck && Date.now() - o.createdAt < 24 * 3600 * 1000).slice(0, 3);
+    let done = 0;
+    for (const o of fresh) {
+      try { const r = await API.post('/api/payments/check', { orderId: o.id }); if (r && r.status === 'paid') done++; } catch (e) {}
+    }
+    if (done) { UI.toast('💎 Оплата прошла — покупка зачислена'); await App.refreshMe(); }
+  } catch (e) {}
+};
+App._orderStatus = (o) => ({ paid: '✅ оплачено', pending: '⏳ ожидает оплаты', cancelled: '❌ отменён', failed: '❌ не создан' })[o.status] || o.status;
+
 App.screens.bank = async (c, param) => {
   await App.refreshMe();
   const m = App.me;
@@ -1517,6 +1534,7 @@ App.screens.bank = async (c, param) => {
   // Экран ничего не знает о том, что лежит внутри набора: состав и цены
   // приходят с сервера уже разобранными. Здесь только витрина.
   if (tab === 'offers') {
+    await App._syncPayments();
     const { offers } = await API.get('/api/offers');
     // Карточку рисует общий модуль: ровно ту же разметку показывает
     // предпросмотр в панели, поэтому владелец видит набор глазами игрока.
@@ -1541,6 +1559,7 @@ App.screens.bank = async (c, param) => {
   }
 
   if (tab === 'gold') {
+    await App._syncPayments();
     const data = await API.get('/api/payments/packages');
     const { orders } = await API.get('/api/payments/orders');
     c.innerHTML = `
@@ -1560,7 +1579,7 @@ App.screens.bank = async (c, param) => {
           <div class="name">🧾 История заказов</div>
           ${orders.map((o) => `
             <div class="kv"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(o.gold)} · ${o.priceRub} ₽</span>
-              <span class="v">${o.status === 'paid' ? '✅ оплачено' : o.status === 'pending' ? '⏳ ожидает' : '❌ ' + o.status}</span></div>`).join('')}
+              <span class="v">${App._orderStatus(o)}</span></div>`).join('')}
         </div>` : ''}`;
     c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
       btn.onclick = async () => {
