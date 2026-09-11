@@ -256,6 +256,8 @@ function addXp(user: User, amount: number, notices: Notices): number {
   const legionXp = legionBonus(user, 'xp');
   let globalXpMul = 1;
   try { globalXpMul = require('./globalBuffs').multiplier('xp'); } catch (e) {}
+  // Ускорение опыта за покупку — временное, см. services/donateBonus.ts
+  try { globalXpMul *= require('./donateBonus').xpBoostMul(user); } catch (e) {}
   const realXp = Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp) * globalXpMul));
   user.xp += realXp;
   let ups = 0;
@@ -1291,6 +1293,10 @@ function mePayload(user: User): any {
     // Позывной сброшен модерацией: окно смены (или полоса над экраном)
     nameReset: (() => {
       try { return require('./nameReset').info(user); } catch (e) { return null; }
+    })(),
+    // Ускорение опыта за покупку: сколько и до какого времени
+    xpBoost: (() => {
+      try { return require('./donateBonus').xpBoostView(user); } catch (e) { return null; }
     })(),
     // Чего игрок ещё не подтвердил. У всех, кто регистрировался до
     // появления отметок, здесь непустой список: согласий у них нет — их

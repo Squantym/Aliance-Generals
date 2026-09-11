@@ -261,3 +261,8 @@ body.a2-is-test #a2-root { padding-top: 26px; }
 .a2-nav.is-danger { color: #d98b84; }
 .a2-nav.is-danger:hover { background: rgba(200, 70, 60, .12); color: #f0b3ad; }
 .a2-nav.is-danger.is-active { background: rgba(200, 70, 60, .2); color: #f6c9c4; }
+
+/* ═══ Бонусы к покупкам: форма акции ═══ */
+.a2 .db-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.a2 .db-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); }
+.a2 .db-grid .db-check { justify-content: flex-end; color: var(--text); }

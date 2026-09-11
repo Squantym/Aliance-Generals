@@ -203,6 +203,15 @@
           <div class="a2-item-txt">${esc(x.text)}<div class="a2-item-when">${dt(x.at)}</div></div></div>`).join('')}
       </div>
 
+      ${(o.promos || []).length ? `
+        <div class="a2-card">
+          <h3>Бонусы к покупке</h3>
+          ${o.promos.map((p) => `<div class="a2-kv"><span>${esc(p.title)}</span><b>${p.kind === 'gold'
+            ? `+${Number(p.gold || 0).toLocaleString('ru-RU')} золота (+${p.pct}%)`
+            : `+${p.pct}% опыта на ${p.hours} ч, до ${dt(p.until)}`}</b></div>`).join('')}
+          <p class="a2-muted">Бонусное золото уже входит в «зачислено» и при возврате тоже решается вами.</p>
+        </div>` : ''}
+
       ${(o.refunds || []).length ? `
         <div class="a2-card">
           <h3>Возвраты</h3>

@@ -124,7 +124,7 @@ const HUMAN: Record<string, string> = {
   world: 'мир: чат и аукцион', world_event: 'событие мира', discounts: 'скидки',
   dailyFame: 'слава за день', season: 'сезон', weeklySeason: 'рейтинговый сезон',
   sessions: 'открытые входы', analytics: 'аналитика', actionLogs: 'журнал действий',
-  weeklyMetricsBackup: 'копия недельных метрик',
+  weeklyMetricsBackup: 'копия недельных метрик', donateBonuses: 'бонусы к покупкам',
 };
 
 // ── Что будет стёрто: показываем ДО, а не после ───────────────────

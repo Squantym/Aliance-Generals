@@ -356,6 +356,10 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `✏️ Сменил сброшенный позывной на «${body.name || '—'}»`;
       case '/api/name-reset/keep':
         return '✏️ Оставил выданный позывной';
+      case '/api/admin/donate-bonus/save':
+        return `🎁 ${body.id ? 'Изменил' : 'Создал'} бонус к покупкам «${body.title || '—'}»`;
+      case '/api/admin/donate-bonus/delete':
+        return '🗑 Удалил бонус к покупкам';
       case '/api/payments/yookassa':
         return '💳 Уведомление ЮKassa об оплате';
 

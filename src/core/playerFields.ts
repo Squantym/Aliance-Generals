@@ -154,6 +154,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   unseenPurchases:    { owner: 'payments',   note: 'оплаченные заказы, окно о которых игрок ещё не закрыл' },
   nameReset:          { owner: 'nameReset',  note: 'позывной сброшен модерацией: причина, бесплатна ли смена, закрыта ли игра' },
   nameHistory:        { owner: 'nameReset',  note: 'прежние позывные: сбросы и смены' },
+  donateBonus:        { owner: 'donateBonus', note: 'бонусы к покупкам: сколько раз взята каждая акция, ускорение опыта' },
   club:               { owner: 'club',       note: 'клуб (партии, ставки)' },
   offersBought:       { owner: 'offers',     note: 'сколько раз игрок брал каждый набор «Спецпредложений»' },
   tutorial:           { owner: 'tutorial',   note: 'обучение' },

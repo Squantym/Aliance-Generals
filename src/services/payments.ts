@@ -114,6 +114,8 @@ interface PaymentOrder {
   provider?: string;       // 'yookassa'
   providerRef?: string;    // id платежа в ЮKassa
   method?: string;         // способ, выбранный в игре: sbp / sberpay / tpay
+  promos?: any[];          // бонусы к покупке, обещанные на момент заказа
+  promoApplied?: any[];    // что из них начислено при оплате
   payUrl?: string;         // страница оплаты
   creditedGold?: number;   // сколько золота зачислено на самом деле (с акцией и VIP)
   // Что куплено — снимок на момент оплаты: для окна покупки и квитанции
@@ -135,6 +137,12 @@ function store(): Record<string, PaymentOrder> {
 }
 
 function yk() { return require('./yookassa'); }
+
+// Условия бонусов к покупке — в заказ в момент его создания: что игрок
+// видел до оплаты, то и получит (services/donateBonus.ts)
+function promoSnapshot(user: User, order: PaymentOrder): any[] {
+  try { return require('./donateBonus').snapshot(user, order); } catch (e) { return []; }
+}
 
 // Адрес игры для возврата со страницы оплаты — тот же, что в письмах
 function appUrl(): string {
@@ -189,11 +197,17 @@ function buyerOf(meta: any): Buyer | undefined {
 }
 
 // Каталог пакетов (для витрины)
-function packages() {
+function packages(user?: User) {
   const on = yk().configured();
+  let promos: any[] = [], xpBoost: any = null;
+  if (user) {
+    try { promos = require('./donateBonus').forPlayer(user); } catch (e) { promos = []; }
+    try { xpBoost = require('./donateBonus').xpBoostView(user); } catch (e) { xpBoost = null; }
+  }
   return {
     packages: PACKAGES, enabled: on, note: on ? '' : 'Платёжная система скоро будет доступна.',
     methods: on ? methodsView() : [],
+    promos, xpBoost,
     discount: require('./discounts').info('gold'),
   };
 }
@@ -223,6 +237,7 @@ function createOrder(user: User, packageId: string, notices: Notices) {
     status: 'pending',
     createdAt: Date.now(),
   };
+  order.promos = promoSnapshot(user, order);
   const all = store();
   all[order.id] = order;
   db.save('payments');
@@ -247,6 +262,7 @@ function createOfferOrder(user: User, offer: { id: string; title: string; priceR
     status: 'pending',
     createdAt: Date.now(),
   };
+  order.promos = promoSnapshot(user, order);
   const all = store();
   all[order.id] = order;
   db.save('payments');
@@ -512,6 +528,11 @@ function confirmPayment(orderId: string): { ok: boolean } {
     const notices: string[] = [];
     let given: string[] = [];
     try { given = require('./offers').grantPaid(user, order.offerId, notices); } catch (e) {}
+    // Бонус к покупке (для набора это ускорение опыта) — по условиям заказа
+    let promoOffer: any = { lines: [], applied: [] };
+    try { promoOffer = require('./donateBonus').applyOnPaid(user, order); } catch (e) {}
+    order.promoApplied = promoOffer.applied;
+    lines = lines.concat(promoOffer.lines);
     order.status = 'paid';
     order.paidAt = Date.now();
     finishReceipt(order, user, lines, OFFER_IMAGE);
@@ -537,15 +558,27 @@ function confirmPayment(orderId: string): { ok: boolean } {
   // бы при возврате оставлять человеку кусок, который без покупки ему бы
   // не достался.
   require('./player').addGold(user, credited, 'purchase', true);
-  order.creditedGold = credited;
-  // Реферальный процент: 10% от купленного золота — пригласившему
+  // Реферальный процент: 10% от купленного золота — пригласившему. Считается
+  // от пакета с акцией и VIP, но без бонуса к покупке ниже: тот — подарок
+  // покупателю за условие акции, а не купленное золото
   try { require('./features').onReferralPurchase(user, credited); } catch (e) {}
-  order.status = 'paid';
-  order.paidAt = Date.now();
   const goldLine = credited > order.gold
     ? `${num(credited)} золота (${num(order.gold)} + бонус ${num(credited - order.gold)})`
     : `${num(credited)} золота`;
-  finishReceipt(order, user, [{ text: goldLine, icon: GOLD_ICON }], GOLD_IMAGE);
+  // Бонус к покупке (services/donateBonus.ts): золото сверху и ускорение опыта
+  // по условиям, показанным до оплаты. Золото зачисляется как часть покупки —
+  // так же, как акция и VIP выше.
+  let promo: any = { goldExtra: 0, lines: [], applied: [] };
+  try { promo = require('./donateBonus').applyOnPaid(user, order); } catch (e) {}
+  // Источник тот же 'purchase': в «Откуда золото» бонус к покупке стоит в
+  // группе купленного, иначе оплаченное золото числилось бы «прочим»
+  if (promo.goldExtra > 0) require('./player').addGold(user, promo.goldExtra, 'purchase', true);
+  credited += promo.goldExtra;
+  order.creditedGold = credited;
+  order.promoApplied = promo.applied;
+  order.status = 'paid';
+  order.paidAt = Date.now();
+  finishReceipt(order, user, ([{ text: goldLine, icon: GOLD_ICON }] as ReceiptLine[]).concat(promo.lines), GOLD_IMAGE);
   db.save('payments');
   db.save('users');
   try {
@@ -681,6 +714,7 @@ function adminGet(actor: User, id: string) {
       id: r.id, status: r.status, amount: r.amount ? Number(r.amount.value) : 0,
       createdAt: r.created_at || '', description: r.description || '',
     })),
+    promos: o.promoApplied || [],
     raw: o.yk || null,
     rawRefunds: o.refunds || [],
   };

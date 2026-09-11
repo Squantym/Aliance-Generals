@@ -2167,6 +2167,11 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/discount',  act((req, n) => admin.setDiscount(req.user, req.body, n)), { admin: true });
   app.add('GET',  '/api/admin/global-buffs', () => admin.listGlobalBuffs(), { admin: true });
   app.add('POST', '/api/admin/global-buff',  act((req, n) => admin.setGlobalBuff(req.user, req.body, n)), { admin: true });
+  // Бонусы к покупкам за рубли: первое пополнение, разовые, по N раз в день,
+  // ускорение опыта. Зона «Акции».
+  app.add('GET',  '/api/admin/donate-bonuses',      (req) => require('./services/donateBonus').adminList(req.user), { admin: true });
+  app.add('POST', '/api/admin/donate-bonus/save',   act((req, n) => require('./services/donateBonus').adminSave(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/donate-bonus/delete', act((req, n) => require('./services/donateBonus').adminRemove(req.user, req.body.id, n)), { admin: true });
   // Журнал действий игроков. humanizeLogs здесь ОБЯЗАТЕЛЕН, и его тут
   // не было: этот роут отдавал сырое тело каждого запроса в браузер.
   // Секреты вычищаются ещё при записи, поэтому паролей там нет, но
@@ -2244,7 +2249,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/support/reply', act((req, n) => support.adminReply(req.user, req.body.ticketId, req.body.text, !!req.body.close, n)), { admin: true });
   // Покупки за рубли — ЮKassa (payments.ts). Пока ключей магазина нет в
   // .env, заказ создаётся без платежа, как до подключения.
-  app.add('GET',  '/api/payments/packages', (req) => payments.packages());
+  app.add('GET',  '/api/payments/packages', (req) => payments.packages(req.user));
   app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
   // Откуда нажали «Купить»: адрес и устройство покупателя уходят в заказ —
   // без них спор «это не я платил» разбирать нечем

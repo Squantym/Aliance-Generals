@@ -1557,6 +1557,40 @@ App._choosePayMethod = (methods, what) => new Promise((resolve) => {
   ov.querySelectorAll('[data-pm]').forEach((b) => { b.onclick = () => done(b.getAttribute('data-pm')); });
 });
 
+// Бонусы к покупкам — ДО оплаты: условия, остаток на сегодня и срок. Что
+// обещано здесь, то и начислит сервер: условия уходят в заказ при его
+// создании. Уже полученные «первое пополнение» и «один раз» не показываем —
+// они игроку больше не светят, а висящая плашка выглядела бы обманом.
+App._promoBanners = (data, where) => {
+  const list = ((data && data.promos) || []).filter((p) =>
+    (p.kind === 'xp' ? (p.target === 'all' || p.target === where) : where === 'gold')
+    && (p.available || p.limit === 'daily'));
+  const boost = data && data.xpBoost;
+  const boostHtml = boost ? `
+    <div class="sale-banner promo-banner">
+      <div class="sale-banner-title">⚡ Ускорение опыта +${boost.pct}%</div>
+      <div class="sale-banner-left">осталось: <b data-sale-until="${boost.until}">${UI.timeLeft(boost.until - Date.now())}</b></div>
+    </div>` : '';
+  return boostHtml + list.map((p) => {
+    const state = p.limit === 'daily' ? (p.available ? `осталось сегодня: ${p.leftToday}` : 'на сегодня исчерпан') : '';
+    return `
+      <div class="sale-banner promo-banner${p.available ? '' : ' is-used'}">
+        <div class="sale-banner-title">🎁 ${UI.esc(p.title)}</div>
+        <div class="sale-banner-left">${UI.esc(p.text)}${state ? ' · ' + state : ''}${p.endAt
+          ? ` · до конца: <b data-sale-until="${p.endAt}">${UI.timeLeft(p.endAt - Date.now())}</b>` : ''}</div>
+      </div>`;
+  }).join('');
+};
+
+// Сколько золота сверху даст бонус к этому пакету
+App._promoGoldLine = (data, pkg) => {
+  const pct = ((data && data.promos) || []).filter((p) => p.kind === 'gold' && p.available)
+    .reduce((s, p) => s + p.pct, 0);
+  if (!pct) return '';
+  return `<div class="kv promo-line"><span class="k">🎁 Бонус по акции</span>`
+    + `<span class="v gold">+${UI.fmtNum(Math.round(pkg.gold * pct / 100))} <span class="ic-gold"></span></span></div>`;
+};
+
 App.screens.bank = async (c, param) => {
   await App.refreshMe();
   const m = App.me;
@@ -1576,11 +1610,14 @@ App.screens.bank = async (c, param) => {
   if (tab === 'offers') {
     await App._syncPayments();
     const { offers } = await API.get('/api/offers');
+    let promoData = {};
+    try { promoData = await API.get('/api/payments/packages'); } catch (e) {}
     // Карточку рисует общий модуль: ровно ту же разметку показывает
     // предпросмотр в панели, поэтому владелец видит набор глазами игрока.
     c.innerHTML = `
       <div class="title">Банк · Спецпредложения</div>
       ${tabs}
+      ${App._promoBanners(promoData, 'offers')}
       ${!offers.length ? '<div class="card center muted">Сейчас предложений нет. Загляните позже.</div>' : ''}
       ${offers.map((o) => OfferCard.html(o)).join('')}`;
     c.querySelectorAll('[data-offer-gold]').forEach((b) => { b.onclick = async () => {
@@ -1613,12 +1650,14 @@ App.screens.bank = async (c, param) => {
       <div class="title">Банк · Покупка золота</div>
       ${tabs}
       ${UI.saleBanner(data.discount)}
+      ${App._promoBanners(data, 'gold')}
       <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. На крупных пакетах — бонусное золото.</p></div>
       ${!data.enabled ? `<div class="card center"><p class="muted">${UI.esc(data.note || 'Онлайн-оплата скоро будет доступна.')}</p></div>` : ''}
       ${data.packages.map((p) => `
         <div class="card">
           <div class="name">${UI.esc(p.label)} ${p.bonus ? `<span class="badge" style="background:var(--green)">${p.bonus}</span>` : ''}</div>
           <div class="kv mt"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(p.gold)} золота</span><span class="v gold">${p.priceRub} ₽</span></div>
+          ${App._promoGoldLine(data, p)}
           <button class="btn btn-orange mt" data-buy-pkg="${p.id}" style="width:100%">Купить</button>
         </div>`).join('')}
       ${orders.length ? `

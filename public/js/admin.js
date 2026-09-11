@@ -1025,6 +1025,7 @@ const Admin = {
       { id: 'discounts', label: '🏷 Акции',           zone: 'discounts' },
       { id: 'buffs',     label: '🎉 Бонусы',          zone: 'economy' },
       { id: 'offers',    label: '🎁 Наборы',          zone: 'economy' },
+      { id: 'donate',    label: '💳 Бонусы к покупкам', zone: 'discounts' },
     ].filter((x) => Admin.can(x.zone));
     if (!subs.length) { c.innerHTML = '<div class="card"><p class="muted">Раздел недоступен.</p></div>'; return; }
     if (!subs.some((x) => x.id === Admin._econTab)) Admin._econTab = subs[0].id;
@@ -1043,6 +1044,12 @@ const Admin = {
     if (Admin._econTab === 'discounts') return Admin.renderDiscounts(body);
     if (Admin._econTab === 'buffs')     return Admin.renderBuffs(body);
     if (Admin._econTab === 'offers')    return Admin.renderOffers(body);
+    // Экран бонусов к покупкам живёт в admin2/econ.js: на странице без него
+    // честно отправляем в новую панель, а не рисуем пустоту
+    if (Admin._econTab === 'donate') {
+      if (typeof Admin.renderDonateBonus === 'function') return Admin.renderDonateBonus(body);
+      body.innerHTML = '<div class="card"><p class="muted">Бонусы к покупкам настраиваются в новой панели: Экономика → 💳 Бонусы к покупкам.</p></div>';
+    }
   },
 
   // ── История сохранений базы ──────────────────────────────────────

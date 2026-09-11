@@ -2771,6 +2771,10 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 .pay-logo img { height: 28px; width: auto; max-width: 100%; object-fit: contain; }
 .pay-text { display: flex; flex-direction: column; gap: 2px; }
 
+/* ═══ Бонусы к покупкам ═══ */
+.promo-banner.is-used { opacity: .55; }
+.promo-line { margin-top: 2px; }
+
 /* ═══════════════════════════════════════════════════════════════════
    КАСТОМНЫЕ ПОЛЯ ВВОДА (.field) — единый компонент формы
    Используется в смене пароля и техническом разделе админки. Базовый
