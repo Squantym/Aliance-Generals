@@ -2739,6 +2739,9 @@ const App = {
     ].filter((o) => o.m <= maxMin);
     App._accBanMinutes = 1440;
     App._accBanReason = 'Нарушение правил';
+    // По умолчанию скрываем: забаненный чаще всего ушёл со скандалом, и его
+    // последний статус — не то, что стоит показывать остальным
+    App._accBanHide = true;
     const body = `
       <div class="ban-dialog">
         <div class="ban-target">Игрок: <b>${UI.esc(userName)}</b></div>
@@ -2749,6 +2752,7 @@ const App = {
         </div>
         <div class="ban-label">Причина (увидит игрок)</div>
         <input type="text" id="acc-ban-reason" class="field" maxlength="200" value="Нарушение правил">
+        <label class="ban-hide"><input type="checkbox" id="acc-ban-hide" checked> Скрыть профиль от игроков — останутся аватар, позывной и причина бана</label>
         <p class="muted small mt">Игрок увидит окно с причиной и сроком.</p>
       </div>`;
     const dlg = UI.confirm(body, {
@@ -2767,12 +2771,14 @@ const App = {
       });
       const ri = root.querySelector('#acc-ban-reason');
       if (ri) ri.oninput = () => { App._accBanReason = ri.value; };
+      const hi = root.querySelector('#acc-ban-hide');
+      if (hi) hi.onchange = () => { App._accBanHide = hi.checked; };
     });
     if (!await dlg) return;
     const reason = (App._accBanReason || '').trim();
     if (!reason) { UI.toast('⛔ Укажите причину'); return; }
     try {
-      await API.post('/api/admin/account-ban', { userId, minutes: App._accBanMinutes, reason });
+      await API.post('/api/admin/account-ban', { userId, minutes: App._accBanMinutes, reason, hideProfile: App._accBanHide !== false });
       UI.toast('🚫 Аккаунт заблокирован');
     } catch (e) { UI.toast('⛔ ' + e.message); }
   },

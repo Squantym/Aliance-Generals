@@ -950,7 +950,25 @@ App.screens.profile = async (c, param) => {
       <div class="pf-ban-row"><span>Причина</span><b>${UI.esc(p.accountBan.reason)}</b></div>
       ${p.accountBan.byName ? `<div class="pf-ban-row"><span>Выдал</span><b>${UI.esc(p.accountBan.byName)}</b></div>` : ''}
       <div class="pf-ban-row"><span>Осталось</span><b class="pf-ban-left">${banLeftText(p.accountBan.until)}</b></div>
+      ${p.accountBan.hideProfile && !p.hiddenByBan ? '<div class="pf-ban-row"><span>Профиль</span><b>скрыт от игроков</b></div>' : ''}
     </div>` : '';
+
+  // Профиль скрыт на время бана: сервер прислал только позывной, аватар и
+  // причину. Рисуем ровно это — без статуса, флага, статистики и кнопок:
+  // писать, разведывать и звать в альянс заблокированного незачем.
+  if (p.hiddenByBan) {
+    c.innerHTML = `
+      ${banBanner}
+      <div class="title">Личное дело</div>
+      <div class="card pf-hidden">
+        <div class="pf-hidden-name">${UI.esc(p.name)}</div>
+        <div class="pf2-avatar" ${p.avatar ? `style="background-image:url(/img/avatars/${UI.esc(p.avatar)}.webp)"` : ''}>
+          ${p.avatar ? '' : '<span class="pf2-avatar-stub">👤</span>'}
+        </div>
+        <p class="muted small pf-hidden-note">Профиль скрыт администрацией на время блокировки.</p>
+      </div>`;
+    return;
+  }
 
   // Армия врага скрыта — рассекречивается разведкой (трофей «Спутник-шпион»).
   // Свои/открытые данные берём из p, разведданные по чужим — из p.spyIntel.
@@ -1099,7 +1117,8 @@ App.screens.profile = async (c, param) => {
           <div class="muted small" id="pf-mod-status">Проверяю состояние…</div>
           <button class="btn mt" id="pf-chatban" style="width:100%">🔇 Блокировка чата</button>
           ${(App.me.staffZones || []).indexOf('moderation') >= 0
-            ? `<button class="btn mt" id="pf-accban" style="width:100%">🚫 Блокировка аккаунта</button>`
+            ? `<button class="btn mt" id="pf-accban" style="width:100%">🚫 Блокировка аккаунта</button>
+               <button class="btn mt" id="pf-banhide" style="width:100%;display:none">🙈 Скрыть профиль от игроков</button>`
             : ''}
         </div>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
@@ -1301,6 +1320,17 @@ App.screens.profile = async (c, param) => {
               accBtn.classList.remove('btn-orange');
             }
           }
+          // Скрыть или открыть профиль можно только у заблокированного
+          const hb = document.getElementById('pf-banhide');
+          if (hb) {
+            const bannedNow = !!(st.account && st.account.banned);
+            hb.style.display = bannedNow ? '' : 'none';
+            if (bannedNow) {
+              hb.textContent = st.account.hideProfile ? '👁 Показать профиль игрокам' : '🙈 Скрыть профиль от игроков';
+              hb.dataset.hide = st.account.hideProfile ? '0' : '1';
+              if (st.account.hideProfile) parts.push('<span class="muted">🙈 Профиль скрыт от игроков</span>');
+            }
+          }
           if (!st.canBan) {
             statusEl.innerHTML = '<span class="muted">Сотрудник проекта — меры недоступны</span>';
             chatBtn.style.display = 'none';
@@ -1320,6 +1350,13 @@ App.screens.profile = async (c, param) => {
       if (accBtn) accBtn.onclick = async () => {
         await App.showAccountBanDialog(p.id, p.name);
         setTimeout(() => { refreshMod(); App.rerender(); }, 400);
+      };
+      const hideToggle = document.getElementById('pf-banhide');
+      if (hideToggle) hideToggle.onclick = async () => {
+        try {
+          await API.post('/api/admin/account-ban-hide', { userId: p.id, hide: hideToggle.dataset.hide === '1' });
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+        setTimeout(() => { refreshMod(); App.rerender(); }, 300);
       };
     }
 

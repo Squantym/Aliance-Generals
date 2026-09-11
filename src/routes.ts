@@ -507,7 +507,9 @@ function registerRoutes(app: any) {
     const prof: any = player.publicProfile(target, req.user);
     // Раскрытие армии по разведке (трофей «Спутник-шпион»): если игрок ранее
     // провёл разведку этой цели — отдаём рассекреченные данные для профиля.
-    if (!prof.isOwn) {
+    // Скрытому профилю разведданные не прикладываем: иначе техника и
+    // постройки заблокированного утекли бы тем, кто разведал его раньше
+    if (!prof.isOwn && !prof.hiddenByBan) {
       const intel = features.spyReport(req.user, target.id);
       if (intel) prof.spyIntel = intel;
     }
@@ -1181,11 +1183,17 @@ function registerRoutes(app: any) {
   // /api/mod/ и пускал по признаку «сотрудник», из-за чего «Дозор»
   // мог закрыть игроку вход в игру.
   app.add('POST', '/api/admin/account-ban', act((req, n) =>
-    roles.banAccount(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n)),
+    roles.banAccount(req.user, String(req.body.userId || ''), u.toInt(req.body.minutes, 0), String(req.body.reason || ''), n,
+      req.body.hideProfile === true)),
     { admin: true });
 
   app.add('POST', '/api/admin/account-unban', act((req, n) =>
     roles.unbanAccount(req.user, String(req.body.userId || ''), n)),
+    { admin: true });
+
+  // Скрыть или показать профиль уже заблокированного — без повторного бана
+  app.add('POST', '/api/admin/account-ban-hide', act((req, n) =>
+    roles.setBanHideProfile(req.user, String(req.body.userId || ''), req.body.hide === true, n)),
     { admin: true });
 
   // Список каналов для окна блокировки
@@ -1216,7 +1224,7 @@ function registerRoutes(app: any) {
       account: roles.canAccessZone(req.user, 'moderation')
         ? (() => {
             const ab = roles.accountBanInfo(target);
-            return ab ? { banned: true, reason: ab.reason, until: ab.until, byName: ab.byName } : { banned: false };
+            return ab ? { banned: true, reason: ab.reason, until: ab.until, byName: ab.byName, hideProfile: !!ab.hideProfile } : { banned: false };
           })()
         : null,
       canBanAccount: roles.canAccessZone(req.user, 'moderation'),

@@ -171,7 +171,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // владелец: раздать это администратору значит раздать возможность
   // остановить проект.
   [/^\/api\/admin\/(maintenance|release|test-account|world-reset)/, 'roles'],
-  [/^\/api\/admin\/(ban|account-ban|account-unban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
+  [/^\/api\/admin\/(ban|account-ban|account-ban-hide|account-unban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
   // Блокировка чатов — своя зона, отдельная от банов аккаунтов
   [/^\/api\/mod\/(chat-ban|chat-unban|chat-bans|chat-scopes|chat-status|find)/, 'chat'],
   // Модерация форума: закрытие и удаление — своя зона; наказания игрокам
@@ -601,7 +601,10 @@ function unbanChat(actor: User, targetId: string, notices: Notices) {
 // кляпом. Ограничения ниже отличают его от администратора.
 const MOD_MAX_BAN_MINUTES = 7 * 24 * 60;      // модератор банит максимум на 7 суток
 
-function banAccount(actor: User, targetId: string, minutes: number, reason: string, notices: Notices) {
+// hideProfile — скрыть профиль от игроков на время бана: останутся позывной,
+// аватар и плашка с причиной. Решает сотрудник при блокировке.
+function banAccount(actor: User, targetId: string, minutes: number, reason: string, notices: Notices,
+                    hideProfile = false) {
   // Блокировка АККАУНТА — мера администрации. Роль «Дозор» не получает её
   // НИ ПРИ КАКИХ настройках: даже если владелец по ошибке откроет ей зону
   // «Модерация» в настройке возможностей ролей. Инструмент модератора —
@@ -630,14 +633,16 @@ function banAccount(actor: User, targetId: string, minutes: number, reason: stri
   (target as any).bannedAt = Date.now();
   (target as any).banUntil = mins > 0 ? Date.now() + mins * 60 * 1000 : 0;
   (target as any).banByName = actor.name;
+  (target as any).banHideProfile = !!hideProfile;
   db.markUser(target.id);
   db.save('users');
 
   auditLog.record({
     userId: actor.id, userName: actor.name, path: '/api/mod/ban',
-    body: { targetId: target.id, targetName: target.name, minutes: mins, reason: why },
+    body: { targetId: target.id, targetName: target.name, minutes: mins, reason: why, hideProfile: !!hideProfile },
   });
-  notices.push(`🚫 Аккаунт «${target.name}» заблокирован ${mins ? 'на ' + humanMinutes(mins) : 'бессрочно'}. Причина: ${why}`);
+  notices.push(`🚫 Аккаунт «${target.name}» заблокирован ${mins ? 'на ' + humanMinutes(mins) : 'бессрочно'}. Причина: ${why}`
+    + (hideProfile ? ' Профиль скрыт от игроков.' : ''));
   return { id: target.id, name: target.name, until: (target as any).banUntil, minutes: mins, reason: why };
 }
 
@@ -653,6 +658,8 @@ function unbanAccount(actor: User, targetId: string, notices: Notices) {
   (target as any).banUntil = 0;
   (target as any).banReason = '';
   (target as any).banByName = '';
+  // Снятие бана открывает и профиль: скрытие живёт только вместе с баном
+  (target as any).banHideProfile = false;
   db.markUser(target.id);
   db.save('users');
   auditLog.record({
@@ -672,7 +679,29 @@ function accountBanInfo(user: any): any | null {
     until: user.banUntil || 0,
     byName: user.banByName || '',
     at: user.bannedAt || 0,
+    // Скрытие действует, только пока действует сам бан: вышел срок — и
+    // accountBanInfo вернёт null выше, профиль откроется без отдельной уборки
+    hideProfile: !!user.banHideProfile,
   };
+}
+
+// Скрыть или показать профиль УЖЕ заблокированного игрока, не перевыдавая
+// бан: скрытие появилось позже части банов, да и решение пересматривают.
+// Право то же, что на сам бан, — зона «Баны аккаунтов».
+function setBanHideProfile(actor: User, targetId: string, hide: boolean, notices: Notices) {
+  if (!canAccessZone(actor, 'moderation')) {
+    throw new u.ApiError('Нет права «Баны аккаунтов»');
+  }
+  const target: any = player.users()[targetId];
+  if (!target) throw new u.ApiError('Игрок не найден');
+  if (!accountBanInfo(target)) throw new u.ApiError('Скрыть можно только профиль заблокированного аккаунта');
+  target.banHideProfile = !!hide;
+  db.markUser(target.id);
+  db.save('users');
+  notices.push(hide
+    ? `🙈 Профиль «${target.name}» скрыт: игроки видят только позывной, аватар и причину бана`
+    : `👁 Профиль «${target.name}» снова виден игрокам`);
+  return { id: target.id, name: target.name, hideProfile: !!hide };
 }
 
 // Действующие блокировки — для панели модератора
@@ -708,7 +737,7 @@ export = {
   permissionsView, setRoleZone, resetRoleZones, ZONE_INFO, ALL_ZONES, DEFAULT_ZONES, OWNER_ONLY_ZONES,
   setRole, staffList, canManage,
   banChat, unbanChat, chatBanInfo, bannedList, humanMinutes, assertCanWritePublic,
-  banAccount, unbanAccount, accountBanInfo, MOD_MAX_BAN_MINUTES,
+  banAccount, unbanAccount, accountBanInfo, setBanHideProfile, MOD_MAX_BAN_MINUTES,
   assertCanWrite, isChatBlocked, CHAT_SCOPES, ALL_SCOPES,
   MAX_BAN_MINUTES,
 };

@@ -437,6 +437,14 @@ body.theme-aurora  .ic-gold { filter: drop-shadow(0 0 4px #7dffb3); }
    была одной мелкой строкой и терялась среди карточек товара. */
 /* Значок-заменитель там, где своей картинки нет: «XP», «★», «Ур».
    Эмодзи в этих местах на части систем рисовались квадратиками. */
+/* Галочка «скрыть профиль» в окне бана аккаунта */
+.ban-hide { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; font-size: 12.5px; line-height: 1.35; cursor: pointer; }
+.ban-hide input { margin-top: 2px; flex-shrink: 0; }
+/* Скрытый профиль заблокированного: только позывной, аватар и причина */
+.pf-hidden { text-align: center; padding: 18px 14px; }
+.pf-hidden .pf2-avatar { margin: 10px auto; }
+.pf-hidden-name { font-size: 18px; font-weight: 700; }
+.pf-hidden-note { margin-top: 8px; }
 .g-ic-txt {
   display: inline-block; min-width: 20px; padding: 0 4px;
   border: 1px solid var(--border); border-radius: 4px;

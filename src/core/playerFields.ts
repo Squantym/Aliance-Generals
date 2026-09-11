@@ -87,6 +87,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   bannedAt:           { owner: 'admin',      note: 'когда заблокирован' },
   banUntil:           { owner: 'admin',      note: 'до какого времени бан (0 — бессрочно)' },
   banByName:          { owner: 'roles',      note: 'кто выдал блокировку аккаунта — для плашки в профиле' },
+  banHideProfile:     { owner: 'roles',      note: 'скрыт ли профиль заблокированного от игроков' },
   refCode:            { owner: 'referrals',  note: 'личный код-приглашение' },
   referredBy:         { owner: 'referrals',  note: 'кто пригласил' },
   isBot:              { owner: 'battle',     note: 'признак бота' },

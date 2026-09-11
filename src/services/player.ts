@@ -1450,9 +1450,28 @@ function publicProfile(target: User, viewer: User): any {
   const banInfo = (() => {
     try {
       const ab = require('./roles').accountBanInfo(target);
-      return ab ? { reason: ab.reason, until: ab.until, byName: ab.byName, at: ab.at } : null;
+      return ab ? { reason: ab.reason, until: ab.until, byName: ab.byName, at: ab.at, hideProfile: !!ab.hideProfile } : null;
     } catch (e) { return null; }
   })();
+
+  // ── Скрытый профиль заблокированного ─────────────────────────────
+  // Бан закрывает вход, но статус, флаг и статистика нарушителя остаются
+  // на виду: человек ушёл, а надпись «проект шляпа, фармите на ботах»
+  // висит в его профиле для всех. Сотрудник при блокировке решает, скрыть
+  // ли профиль: тогда остаются позывной, аватар и плашка с причиной.
+  //
+  // Режем на СЕРВЕРЕ. Спрятать поля в интерфейсе мало — ответ этого
+  // запроса читается и без интерфейса, и статус ушёл бы в нём целиком.
+  // Сотрудники видят профиль полностью: им по нему разбираться.
+  const staffViewer = (() => {
+    try { return !!viewer && require('./roles').zonesFor(viewer).length > 0; } catch (e) { return false; }
+  })();
+  if (banInfo && banInfo.hideProfile && !isOwn && !isAdminViewer && !staffViewer) {
+    return {
+      id: target.id, name: target.name, avatar: target.avatar || null,
+      accountBan: banInfo, hiddenByBan: true, isOwn: false, isBot: false,
+    };
+  }
 
   return {
     id: target.id, name: target.name, flag: flag(target), status: target.status,

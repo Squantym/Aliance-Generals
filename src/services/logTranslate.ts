@@ -685,6 +685,10 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `⛔ Заблокировал аккаунт ${body.targetName || body.userId || '—'}` +
                `${body.minutes ? ` на ${body.minutes} мин` : ' навсегда'}` +
                `${body.reason ? ` — ${body.reason}` : ''}`;
+      case '/api/admin/account-ban-hide':
+        return body.hide
+          ? `🙈 Скрыл профиль заблокированного ${body.targetName || body.userId || '—'}`
+          : `👁 Открыл профиль заблокированного ${body.targetName || body.userId || '—'}`;
       case '/api/admin/account-unban':
         return `✅ Разблокировал аккаунт ${body.targetName || body.userId || '—'}`;
       case '/api/admin/verify-email':

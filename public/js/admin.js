@@ -219,7 +219,7 @@ const Admin = {
       try { await API.post('/api/admin/account-unban', { userId }); UI.toast('✅ Разблокирован'); return true; }
       catch (e) { UI.toast('⛔ ' + e.message); return false; }
     }
-    Admin._accMin = 1440; Admin._accReason = 'Нарушение правил';
+    Admin._accMin = 1440; Admin._accReason = 'Нарушение правил'; Admin._accHide = true;
     const durs = [[15,'15 мин'],[60,'1 час'],[1440,'1 сутки'],[4320,'3 суток'],[10080,'7 суток'],[43200,'30 суток'],[0,'Бессрочно']];
     const dlg2 = UI.confirm(`
       <div class="ban-dialog">
@@ -229,12 +229,13 @@ const Admin = {
         <div class="ban-grid">${durs.map(([m,t]) => `<button class="ban-opt${m===1440?' active':''}" data-accmin="${m}">${t}</button>`).join('')}</div>
         <div class="ban-label">Причина (увидит игрок)</div>
         <input type="text" id="adm-areason" class="field" maxlength="200" value="Нарушение правил">
+        <label class="ban-hide"><input type="checkbox" id="adm-ahide" checked> Скрыть профиль от игроков — останутся аватар, позывной и причина бана</label>
       </div>`,
       { title: 'Блокировка аккаунта', icon: '🚫', html: true, okText: 'Заблокировать', cancelText: 'Отмена', danger: true });
     requestAnimationFrame(() => Admin._wireBanDialog());
     if (!await dlg2) return false;
     try {
-      await API.post('/api/admin/account-ban', { userId, minutes: Admin._accMin, reason: Admin._accReason });
+      await API.post('/api/admin/account-ban', { userId, minutes: Admin._accMin, reason: Admin._accReason, hideProfile: Admin._accHide !== false });
       UI.toast('🚫 Аккаунт заблокирован');
       return true;
     } catch (e) { UI.toast('⛔ ' + e.message); return false; }
@@ -257,6 +258,8 @@ const Admin = {
         b.classList.add('active'); Admin._accMin = Number(b.dataset.accmin);
       };
     });
+    const ah = root.querySelector('#adm-ahide');
+    if (ah) ah.onchange = () => { Admin._accHide = ah.checked; };
     const sync = () => { Admin._banScopes = [...root.querySelectorAll('.ban-scope.active')].map((x) => x.dataset.scope); };
     root.querySelectorAll('.ban-scope').forEach((b) => { b.onclick = () => { b.classList.toggle('active'); sync(); }; });
     const all = root.querySelector('[data-scope-all]');
