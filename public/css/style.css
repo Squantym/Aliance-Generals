@@ -2746,6 +2746,13 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 .buy-popup .offer-items { max-height: 45vh; overflow-y: auto; }
 .receipt-lines { margin-top: 6px; }
 
+/* ═══ Сброшенный позывной ═══ */
+.nr-form { margin-top: 10px; }
+.nr-lead { font-size: 13px; margin: 0; }
+.nr-reason { font-size: 13px; color: var(--orange-1); margin: 6px 0; }
+.nr-err { color: var(--red); font-size: 12.5px; min-height: 16px; margin: 6px 0 0; }
+.name-reset-bar { border-color: var(--orange-1); }
+
 /* ═══════════════════════════════════════════════════════════════════
    КАСТОМНЫЕ ПОЛЯ ВВОДА (.field) — единый компонент формы
    Используется в смене пароля и техническом разделе админки. Базовый
@@ -4776,7 +4783,7 @@ body.combat-fullscreen { padding-top: 0 !important; }
    нельзя. Прокрутка внутри окна — текста тут больше, чем в окне
    блокировки, а на телефоне кнопка «Принять» обязана оставаться
    достижимой. */
-#consent-gate {
+#consent-gate, #name-gate {
   position: fixed; inset: 0; z-index: 20000;
   display: flex; align-items: flex-start; justify-content: center;
   background: rgba(8, 10, 6, .97); padding: 16px;

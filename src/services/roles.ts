@@ -173,7 +173,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/(maintenance|release|test-account|world-reset)/, 'roles'],
   [/^\/api\/admin\/(ban|account-ban|account-ban-hide|account-unban|delete-account|wipe-groups|mines\/wipe)$/, 'moderation'],
   // Блокировка чатов — своя зона, отдельная от банов аккаунтов
-  [/^\/api\/mod\/(chat-ban|chat-unban|chat-bans|chat-scopes|chat-status|find)/, 'chat'],
+  [/^\/api\/mod\/(chat-ban|chat-unban|chat-bans|chat-scopes|chat-status|find|name-reset)/, 'chat'],
   // Модерация форума: закрытие и удаление — своя зона; наказания игрокам
   // идут по зоне «Модерация чатов», проверка внутри сервиса
   [/^\/api\/forum\/(close|pin|delete|delete-comment)/, 'forum'],

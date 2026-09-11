@@ -1288,6 +1288,10 @@ function mePayload(user: User): any {
     pendingPurchases: (() => {
       try { return require('./payments').pendingPurchases(user); } catch (e) { return []; }
     })(),
+    // Позывной сброшен модерацией: окно смены (или полоса над экраном)
+    nameReset: (() => {
+      try { return require('./nameReset').info(user); } catch (e) { return null; }
+    })(),
     // Чего игрок ещё не подтвердил. У всех, кто регистрировался до
     // появления отметок, здесь непустой список: согласий у них нет — их
     // просто не спрашивали. Клиент по этому списку показывает окно,
@@ -1592,15 +1596,15 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   if (auth.RESERVED_NAMES && auth.RESERVED_NAMES.has(name.toLowerCase().replace(/\s/g, ''))) {
     throw new u.ApiError('Это имя зарезервировано и недоступно');
   }
-  const taken = Object.values(users()).find((p: any) => p.id !== user.id
-    && String(p.name || '').toLowerCase() === name.toLowerCase());
-  if (taken) throw new u.ApiError('Такой позывной уже занят');
+  require('./names').validate(name);
+  require('./names').assertFree(name, user.id);
 
   const old = user.name;
   user.name = name;
   vipSrv.markRenameUsed(user);
   db.markUser(user.id);
   db.save('users');
+  try { require('./nameReset').onRenamed(user, old); } catch (e) {}
   try {
     require('./auditLog').record({
       userId: user.id, userName: name, path: '/api/rename',

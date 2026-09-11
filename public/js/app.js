@@ -425,6 +425,11 @@ const App = {
       App.showConsentGate(App.me.needConsent);
       return;
     }
+    // Позывной сброшен модерацией, и игра закрыта до смены
+    if (App.me && App.me.nameReset && App.me.nameReset.block) {
+      App.showNameGate(App.me.nameReset);
+      return;
+    }
     // Обновление. Сотрудник сюда не попадает: сервер его пропускает, и
     // в ответе /api/me поля maintenance нет — иначе снять режим было бы
     // некому, панель ведь тоже часть игры.
@@ -539,6 +544,13 @@ const App = {
         App.showConsentGate(App.me.needConsent);
         return;
       }
+      // Позывной могли сбросить, пока игрок сидел в игре, — окно сразу.
+      // И наоборот: сменил позывной с другого устройства — окно убираем.
+      if (App.me && App.me.nameReset && App.me.nameReset.block) {
+        App.showNameGate(App.me.nameReset);
+        return;
+      }
+      App._closeNameGate();
       // Обновление могли включить, пока игрок сидел в игре. Ждать, пока
       // он сам наткнётся на ошибку, — значит показать ему поломку
       // вместо объяснения.
@@ -3014,6 +3026,125 @@ const App = {
       { title: 'Кто вас разведал', icon: '🕵', html: true, okText: 'Закрыть', cancelText: '' });
   },
 
+  // ── Сброшенный позывной ─────────────────────────────────────────
+  // Модерация сбросила позывной. Форма одна на окно, закрывающее игру, и
+  // на мягкую полосу над экраном. «Оставить» есть всегда: выданный
+  // позывной правилам не противоречит, а игрок без золота на платную
+  // смену иначе остался бы заперт навсегда.
+  nameResetFormHtml(nr) {
+    const price = nr.free ? 'бесплатно'
+      : (nr.vipFree ? 'бесплатно по VIP' : `за <span class="ic-gold"></span> ${UI.fmtNum(nr.price)}`);
+    return `
+      <div class="nr-form">
+        <p class="nr-lead">Позывной «<b>${UI.esc(nr.from)}</b>» сброшен модерацией.</p>
+        <p class="nr-reason">Причина: ${UI.esc(nr.reason)}</p>
+        <p class="muted small">Сейчас вы — <b>${UI.esc(nr.current)}</b>. Придумайте новый позывной или оставьте этот.</p>
+        <input type="text" id="nr-name" class="field mt" maxlength="16" placeholder="Новый позывной" autocomplete="off">
+        <p class="muted small mt">3–16 символов: буквы, цифры, пробел, дефис, подчёркивание. Русские и латинские буквы в одном позывном не смешиваются.</p>
+        <p class="nr-err" id="nr-err"></p>
+        <button class="btn btn-orange mt" id="nr-go" style="width:100%">✏️ Сменить — ${price}</button>
+        <button class="btn mt" id="nr-keep" style="width:100%">Оставить «${UI.esc(nr.current)}»</button>
+        <p class="muted small mt">Оскорбления, мат и копии чужих позывных запрещены <a href="/rules.html" target="_blank" rel="noopener">Правилами игры</a>. Не согласны со сбросом — напишите в поддержку.</p>
+      </div>`;
+  },
+
+  bindNameResetForm(root, nr, done) {
+    const err = root.querySelector('#nr-err');
+    const say = (t) => { if (err) err.textContent = t; else UI.toast('⛔ ' + t); };
+    const go = root.querySelector('#nr-go');
+    const keep = root.querySelector('#nr-keep');
+    if (go) go.onclick = async () => {
+      const name = ((root.querySelector('#nr-name') || {}).value || '').trim();
+      if (!name) return say('Впишите новый позывной');
+      if (!nr.free && !nr.vipFree && !await UI.confirm(`Сменить позывной на «${name}» за ${nr.price} золота?`,
+        { title: 'Смена позывного', icon: '✏️', okText: 'Сменить' })) return;
+      go.disabled = true;
+      try { await API.post('/api/name-reset/rename', { name }); UI.toast('✏️ Позывной изменён'); await done(); }
+      catch (e) { say(e.message); go.disabled = false; }
+    };
+    if (keep) keep.onclick = async () => {
+      keep.disabled = true;
+      try { await API.post('/api/name-reset/keep', {}); await done(); }
+      catch (e) { say(e.message); keep.disabled = false; }
+    };
+  },
+
+  // Игра закрыта до смены: окно на весь экран. Закрывает сервер — окно
+  // объясняет, почему кнопки не работают, и даёт форму прямо на месте.
+  showNameGate(nr) {
+    let box = document.getElementById('name-gate');
+    if (box && box.dataset.at === String(nr.at)) return;
+    if (!box) { box = document.createElement('div'); box.id = 'name-gate'; document.body.appendChild(box); }
+    box.dataset.at = String(nr.at);
+    const wrap = document.getElementById('wrap');
+    if (wrap) wrap.style.display = 'none';
+    box.innerHTML = `
+      <div class="cg-box">
+        <div class="cg-title">✏️ Смените позывной</div>
+        <p class="cg-lead">Пока позывной не сменён или не оставлен, игра закрыта — так решила модерация.</p>
+        ${App.nameResetFormHtml(nr)}
+        <a class="cg-out" id="nr-out">Выйти из игры</a>
+      </div>`;
+    App.bindNameResetForm(box, nr, async () => { App._closeNameGate(); await App.refreshMe(); App.rerender(); });
+    const out = document.getElementById('nr-out');
+    if (out) out.onclick = () => { API.setToken(''); location.hash = '#auth'; location.reload(); };
+  },
+
+  _closeNameGate() {
+    const box = document.getElementById('name-gate');
+    if (!box) return;
+    box.remove();
+    const wrap = document.getElementById('wrap');
+    if (wrap) wrap.style.display = '';
+  },
+
+  // Игра не закрыта: та же форма окном по кнопке с полосы над экраном
+  showNameResetDialog(nr) {
+    if (!nr || document.getElementById('nr-dialog')) return;
+    const ov = document.createElement('div');
+    ov.id = 'nr-dialog';
+    ov.className = 'game-dialog-overlay';
+    ov.innerHTML = `<div class="ach-popup"><button class="ach-popup-x" id="nr-x" title="Закрыть">✕</button>
+      <div class="ach-popup-head">Позывной сброшен</div>${App.nameResetFormHtml(nr)}</div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#nr-x').onclick = () => ov.remove();
+    App.bindNameResetForm(ov, nr, async () => { ov.remove(); await App.refreshMe(); App.rerender(); });
+  },
+
+  _bindNameResetBar() {
+    const b = document.getElementById('nr-bar-go');
+    if (b) b.onclick = () => App.showNameResetDialog(App.me && App.me.nameReset);
+  },
+
+  // Сброс позывного сотрудником — из профиля игрока
+  async showNameResetStaffDialog(userId, userName) {
+    App._nrReason = ''; App._nrFree = true; App._nrBlock = true;
+    const dlg = UI.confirm(`
+      <div class="nr-staff">
+        <p class="muted small">Позывной «${UI.esc(userName)}» заменится на general_XXXXX, старый освободится.
+        Игрок получит уведомление с причиной и сможет придумать новый — или оставить выданный.</p>
+        <input type="text" id="nrs-reason" class="field mt" maxlength="200" placeholder="Причина: оскорбление, мат, копия чужого позывного…">
+        <label class="ban-hide mt"><input type="checkbox" id="nrs-free" checked> Смена позывного для игрока бесплатна (иначе — по цене паспорта)</label>
+        <label class="ban-hide"><input type="checkbox" id="nrs-block" checked> Закрыть игру до смены позывного</label>
+      </div>`, { title: 'Сброс позывного', icon: '✏️', html: true, okText: 'Сбросить', cancelText: 'Отмена', danger: true });
+    requestAnimationFrame(() => {
+      const r = document.getElementById('nrs-reason');
+      if (r) { r.oninput = () => { App._nrReason = r.value; }; r.focus(); }
+      const f = document.getElementById('nrs-free');
+      if (f) f.onchange = () => { App._nrFree = f.checked; };
+      const bl = document.getElementById('nrs-block');
+      if (bl) bl.onchange = () => { App._nrBlock = bl.checked; };
+    });
+    if (!await dlg) return false;
+    const reason = (App._nrReason || '').trim();
+    if (!reason) { UI.toast('⛔ Укажите причину — её увидит игрок'); return false; }
+    try {
+      const r = await API.post('/api/mod/name-reset', { userId, reason, free: App._nrFree, block: App._nrBlock, targetName: userName });
+      UI.toast(`✏️ Позывной сброшен: «${r.to}»`);
+      return true;
+    } catch (e) { UI.toast('⛔ ' + e.message); return false; }
+  },
+
   // Смена позывного — раз в 30 дней бесплатно по подписке
   async showRename() {
     App._newName = '';
@@ -3822,8 +3953,20 @@ const App = {
     const box = document.getElementById('pin-news');
     if (!box) return;
     const p = App.me && App.me.newsPin;
-    if (!p || !API.token()) { box.innerHTML = ''; return; }
-    box.innerHTML = `
+    const nr = App.me && App.me.nameReset;
+    // Сброшенный позывной без закрытия игры — полоса над экраном. Крестика
+    // нет: она уходит только после смены позывного или «Оставить».
+    const nrHtml = nr && !nr.block && API.token() ? `
+      <div class="pin-news name-reset-bar" id="nr-bar">
+        <span class="pin-news-emoji">✏️</span>
+        <div class="pin-news-text">
+          <span class="pin-news-label">Позывной сброшен модерацией</span>
+          <span class="pin-news-title">${UI.esc(nr.reason)}</span>
+        </div>
+        <button class="btn btn-orange btn-inline" id="nr-bar-go">Сменить</button>
+      </div>` : '';
+    if (!p || !API.token()) { box.innerHTML = nrHtml; App._bindNameResetBar(); return; }
+    box.innerHTML = nrHtml + `
       <div class="pin-news">
         <span class="pin-news-emoji">${UI.esc(p.emoji || '📰')}</span>
         <div class="pin-news-text" id="pin-news-open">
@@ -3837,10 +3980,12 @@ const App = {
       e.stopPropagation();
       // Гасим сразу, не дожидаясь сервера: иначе крестик выглядит
       // сломанным на медленной связи. Запись всё равно уйдёт.
-      box.innerHTML = '';
+      // Полосу сброшенного позывного закрытие новости не трогает
       if (App.me) App.me.newsPin = null;
+      App.renderPinnedNews();
       try { await API.post('/api/news/hide-banner', { id: p.id }); } catch (err) {}
     };
+    App._bindNameResetBar();
   },
 
   // ---------- ВИТРИНА ДЕЙСТВУЮЩИХ АКЦИЙ ----------

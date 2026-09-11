@@ -100,8 +100,9 @@ function createCharacter(user: User, name: string, country: string, notices: Not
   auth.validateName(nick);
 
   const all = player.users();
-  const taken = Object.values(all).find((p: any) => String(p.name || '').toLowerCase() === nick.toLowerCase());
-  if (taken) throw new u.ApiError('Такой позывной уже занят');
+  // Та же проверка, что при регистрации: раскладка и двойники по «скелету»
+  require('./names').validate(nick);
+  require('./names').assertFree(nick);
 
   const cc = String(country || '').trim() || (user as any).country || 'ru';
   const id = u.uid(12);

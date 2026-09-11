@@ -56,12 +56,9 @@ function changeName(user: User, newName: string, notices: Notices) {
   if (newName.toLowerCase() === user.name.toLowerCase()) {
     throw new u.ApiError('Это и так ваш текущий позывной');
   }
-  // Уникальность позывного
-  const users = db.load<Record<string, User>>('users', {});
-  const taken = Object.values(users).some(
-    (p) => p.id !== user.id && p.name.toLowerCase() === newName.toLowerCase()
-  );
-  if (taken) throw new u.ApiError('Этот позывной уже занят');
+  // Уникальность и двойники — общая проверка позывных (services/names.ts)
+  require('./names').validate(newName);
+  require('./names').assertFree(newName, user.id);
 
   const price = namePrice(user);
   if (user.gold < price) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${price})`);
@@ -70,6 +67,9 @@ function changeName(user: User, newName: string, notices: Notices) {
   user.name = newName;
   ensurePassport(user);
   (user as any).passport.nameChanges++;
+  db.markUser(user.id);
+  // Смена после сброса модерацией этим путём тоже исполняет сброс
+  try { require('./nameReset').onRenamed(user, oldName); } catch (e) {}
   notices.push(`📛 Имя сменено: «${oldName}» → «${newName}». Следующая смена обойдётся в 🪙 ${namePrice(user)}.`);
   return { oldName, newName, nextPrice: namePrice(user) };
 }
@@ -122,4 +122,12 @@ function changeGender(user: User, newGender: string, notices: Notices) {
   return { gender: g, title: info.title, nextPrice: genderPrice(user) };
 }
 
-export = { view, changeName, changeCountry, changeGender };
+// Платная смена позывного вне «Паспорта» — после сброса модерацией. Цена у
+// смены одна, и следующая должна подорожать так же, как после паспорта.
+function countNameChange(user: User): void {
+  ensurePassport(user);
+  (user as any).passport.nameChanges++;
+  db.markUser(user.id);
+}
+
+export = { view, changeName, changeCountry, changeGender, namePrice, countNameChange };

@@ -33,6 +33,33 @@
     return 'ещё ' + Math.floor(m / 1440) + ' дн';
   };
 
+  // Сброс позывного. Диалог свой, а не из игры: панель не грузит app.js
+  async function nameResetDialog(p) {
+    const st = { reason: '', free: true, block: true };
+    const dlg = UI.confirm(`
+      <p class="a2-muted">Позывной «${UI.esc(p.name)}» заменится на general_XXXXX, старый освободится.
+      Игрок получит уведомление с причиной и сможет придумать новый — или оставить выданный.</p>
+      <input id="nra-reason" maxlength="200" placeholder="Причина: оскорбление, мат, копия чужого позывного…"
+        style="width:100%;padding:6px 10px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;margin-top:6px">
+      <label style="display:block;margin-top:8px"><input type="checkbox" id="nra-free" checked> Смена для игрока бесплатна (иначе — по цене паспорта)</label>
+      <label style="display:block;margin-top:4px"><input type="checkbox" id="nra-block" checked> Закрыть игру до смены позывного</label>`,
+      { title: 'Сброс позывного', icon: '✏️', html: true, okText: 'Сбросить', danger: true });
+    requestAnimationFrame(() => {
+      const r = document.getElementById('nra-reason');
+      if (r) { r.oninput = () => { st.reason = r.value; }; r.focus(); }
+      const f = document.getElementById('nra-free');
+      if (f) f.onchange = () => { st.free = f.checked; };
+      const b = document.getElementById('nra-block');
+      if (b) b.onchange = () => { st.block = b.checked; };
+    });
+    if (!await dlg) return;
+    if (!st.reason.trim()) return UI.toast('⛔ Укажите причину — её увидит игрок');
+    try {
+      const r = await API.post('/api/mod/name-reset', { userId: p.id, reason: st.reason.trim(), free: st.free, block: st.block, targetName: p.name });
+      UI.toast(`✏️ Позывной сброшен: «${r.to}»`);
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  }
+
   function banHtml(p) {
     const rows = [];
     if (p.accountBan) {
@@ -47,7 +74,18 @@
           <div class="a2-item-when">${UI.esc(until(p.chatBan.until))} · выдал ${UI.esc(p.chatBan.byName || '—')}</div></div>
         ${p.can && p.can.chatBan ? '<button class="btn btn-inline" data-act="chat">Снять</button>' : ''}</div>`);
     }
+    if (p.nameReset) {
+      rows.push(`<div class="a2-item"><div class="a2-item-ico">✏️</div>
+        <div class="a2-item-txt"><b>Позывной сброшен</b> — был «${UI.esc(p.nameReset.from)}»: ${UI.esc(p.nameReset.reason)}
+          <div class="a2-item-when">${p.nameReset.block ? 'игра закрыта до смены' : 'игра открыта'} · ${p.nameReset.free ? 'смена бесплатна' : 'смена за счёт игрока'} · сбросил ${UI.esc(p.nameReset.byName || '—')}</div></div></div>`);
+    }
     if (!rows.length) rows.push('<p class="a2-muted">Мер нет.</p>');
+    const hist = p.nameHistory || [];
+    if (hist.length) {
+      rows.push(`<details style="margin-top:6px"><summary class="a2-muted" style="cursor:pointer">Прежние позывные (${hist.length})</summary>
+        ${hist.map((h) => `<div class="a2-muted" style="margin-top:3px">${new Date(h.at).toLocaleDateString('ru-RU')} · «${UI.esc(h.from)}» → «${UI.esc(h.to)}»
+          ${h.kind === 'reset' ? ` · сброс, ${UI.esc(h.byName || '—')}: ${UI.esc(h.reason || '')}` : ' · смена'}</div>`).join('')}</details>`);
+    }
     return rows.join('');
   }
 
@@ -261,6 +299,7 @@
           <div class="a2-row" style="margin-top:8px">
             ${p.can && p.can.chatBan && !p.chatBan ? '<button class="btn btn-inline" data-act="chat">🔇 Закрыть чат</button>' : ''}
             ${p.can && p.can.accountBan && !p.accountBan ? '<button class="btn btn-inline btn-red" data-act="acc">🚫 Заблокировать</button>' : ''}
+            ${p.can && p.can.nameReset && !p.nameReset && (!p.role || (A2.isOwner && A2.isOwner())) ? '<button class="btn btn-inline" data-act="name">✏️ Сбросить позывной</button>' : ''}
           </div>
         </div>
 
@@ -338,6 +377,7 @@
         const act = b.dataset.act;
         if (act === 'chat') await Admin.banChatDialog(p.id, p.name, !!p.chatBan);
         if (act === 'acc') await Admin.banAccountDialog(p.id, p.name, !!p.accountBan);
+        if (act === 'name') await nameResetDialog(p);
         // Перерисовываем страницу, а не всю панель: меню и адрес на месте
         A2.refresh();
       };

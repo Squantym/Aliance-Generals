@@ -662,6 +662,10 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/passport/name',    act((req, n) => passport.changeName(req.user, req.body.newName, n)));
   app.add('POST', '/api/passport/country', act((req, n) => passport.changeCountry(req.user, req.body.country, n)));
   app.add('POST', '/api/passport/gender',  act((req, n) => passport.changeGender(req.user, req.body.gender, n)));
+  // После сброса позывного модерацией: сменить (бесплатно, по VIP или по
+  // цене паспорта) или оставить выданный
+  app.add('POST', '/api/name-reset/rename', act((req, n) => require('./services/nameReset').rename(req.user, String(req.body.name || ''), n)));
+  app.add('POST', '/api/name-reset/keep',   act((req, n) => require('./services/nameReset').keep(req.user, n)));
 
   // ---------- Ежедневные задания ----------
   app.add('GET',  '/api/daily',            (req) => dailyQuests.list(req.user));
@@ -1190,6 +1194,10 @@ function registerRoutes(app: any) {
                   String(req.body.reason || ''), n,
                   Array.isArray(req.body.scopes) ? req.body.scopes.map((x: any) => String(x)) : undefined,
                   !!req.body.purge)));
+  // Сброс позывного: «Модерация чатов» или «Баны аккаунтов» (проверка в сервисе).
+  // Модератор работает из профиля игрока в игре, администратор — из штаба.
+  app.add('POST', '/api/mod/name-reset', act((req, n) =>
+    require('./services/nameReset').reset(req.user, String(req.body.userId || ''), req.body || {}, n)));
 
   // Блокировка аккаунта — зона «Модерация», доступна администрации.
   // Адрес намеренно в /api/admin/: так он попадает в админскую зону и
@@ -1242,6 +1250,10 @@ function registerRoutes(app: any) {
           })()
         : null,
       canBanAccount: roles.canAccessZone(req.user, 'moderation'),
+      canNameReset: require('./services/nameReset').canReset(req.user),
+      nameReset: (target as any).nameReset
+        ? { reason: (target as any).nameReset.reason, block: !!(target as any).nameReset.block, free: !!(target as any).nameReset.free, from: (target as any).nameReset.from }
+        : null,
     };
   });
 
@@ -1406,11 +1418,14 @@ function registerRoutes(app: any) {
         ? { until: accBan.until, reason: accBan.reason, byName: accBan.byName }
         : null,
       recent,
+      nameReset: (target as any).nameReset || null,
+      nameHistory: require('./services/nameReset').history(target),
       can: {
         chatBan: roles.isModerator(req.user),
         accountBan: roles.canAccessZone(req.user, 'moderation'),
         password: roles.canAccessZone(req.user, 'security'),
         resources: roles.canAccessZone(req.user, 'economy'),
+        nameReset: require('./services/nameReset').canReset(req.user),
       },
     };
   }, { admin: true });

@@ -382,11 +382,10 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   }
   if (name === user.name) throw new u.ApiError('Это и есть ваш нынешний позывной');
 
-  // Занятость проверяем без учёта регистра — иначе появятся «Генерал»
-  // и «генерал», которых не отличить в чате
-  const low = name.toLowerCase();
-  const taken = Object.values(require('./player').users()).some((p: any) => p.id !== user.id && String(p.name || '').toLowerCase() === low);
-  if (taken) throw new u.ApiError('Такой позывной уже занят');
+  // Занятость — по «скелету» имени: регистр, похожие русские и латинские
+  // буквы, 0/о и 1/l не отличаются. Иначе появлялись двойники чужих имён
+  require('./names').validate(name);
+  require('./names').assertFree(name, user.id);
 
   const free = vipSrv.canRenameFree(user);
   if (!free) {
@@ -402,6 +401,7 @@ function renameSelf(user: User, newName: string, notices: Notices) {
   vipSrv.markRenameUsed(user);
   db.markUser(user.id);
   try { require('./access').securityEvent(user, 'rename', `${old} → ${name}`); } catch (e) {}
+  try { require('./nameReset').onRenamed(user, old); } catch (e) {}
   auditLog.record({ userId: user.id, userName: name, path: '/api/rename', body: { from: old, to: name } });
   notices.push(`✏️ Позывной изменён: «${old}» → «${name}»`);
   return { name };
@@ -422,6 +422,10 @@ async function register(login: string, password: string, emailAddr: string, coun
     throw new u.ApiError('Это имя зарезервировано и недоступно');
   }
 
+  // Раскладка, двойники и запрещённые имена по «скелету» — общая
+  // проверка позывных (services/names.ts)
+  require('./names').validate(login);
+
   // БАГ 4: минимум 8 символов
   password = String(password || '');
   if (password.length < 8) throw new u.ApiError('Пароль: минимум 8 символов');
@@ -436,11 +440,12 @@ async function register(login: string, password: string, emailAddr: string, coun
   if (!config.COUNTRY_BY_ID[country]) throw new u.ApiError('Выберите страну');
 
   const all = users();
-  const byName = Object.values(all).find((p) => p.name.toLowerCase() === login.toLowerCase());
+  // Занятость — по «скелету»: «Генерал» с латинской «a» тоже занят
+  const byName = require('./names').findClash(login);
   const byMail = Object.values(all).find((p) => (p.email || '').toLowerCase() === emailAddr);
 
   // Занято живым аккаунтом — отказ, как и раньше.
-  if (byName && !pendingIsStale(byName)) throw new u.ApiError('Такой позывной уже занят');
+  if (byName && !pendingIsStale(byName)) require('./names').assertFree(login);
   if (byMail && !pendingIsStale(byMail)) throw new u.ApiError('Этот email уже используется');
 
   // А вот выдохшуюся незавершённую регистрацию забираем. В ней нет
@@ -484,9 +489,9 @@ async function register(login: string, password: string, emailAddr: string, coun
   // Проверка стоит ПОСЛЕ ожидания, и дальше до самой записи нет ни
   // одного await: этот кусок выполняется целиком, ничего между строк не
   // проходит. Поэтому второй запрос увидит уже созданного игрока.
-  const takenName = Object.values(all).find((p) => p.name.toLowerCase() === login.toLowerCase());
+  const takenName = require('./names').findClash(login);
   const takenMail = Object.values(all).find((p) => (p.email || '').toLowerCase() === emailAddr);
-  if (takenName) throw new u.ApiError('Такой позывной уже занят');
+  if (takenName) require('./names').assertFree(login);
   if (takenMail) throw new u.ApiError('Этот email уже используется');
 
   const newU = newUser(id, login, emailAddr, passHash, salt, country, false, autoVerified, gender);

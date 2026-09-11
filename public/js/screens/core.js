@@ -1116,6 +1116,7 @@ App.screens.profile = async (c, param) => {
           <div class="pf-mod-title">🛡 Инструменты «Дозора»</div>
           <div class="muted small" id="pf-mod-status">Проверяю состояние…</div>
           <button class="btn mt" id="pf-chatban" style="width:100%">🔇 Блокировка чата</button>
+          <button class="btn mt" id="pf-namereset" style="width:100%;display:none">✏️ Сбросить позывной</button>
           ${(App.me.staffZones || []).indexOf('moderation') >= 0
             ? `<button class="btn mt" id="pf-accban" style="width:100%">🚫 Блокировка аккаунта</button>
                <button class="btn mt" id="pf-banhide" style="width:100%;display:none">🙈 Скрыть профиль от игроков</button>`
@@ -1331,6 +1332,12 @@ App.screens.profile = async (c, param) => {
               if (st.account.hideProfile) parts.push('<span class="muted">🙈 Профиль скрыт от игроков</span>');
             }
           }
+          const nrBtn = document.getElementById('pf-namereset');
+          if (nrBtn) nrBtn.style.display = st.canBan && st.canNameReset && !st.nameReset ? '' : 'none';
+          if (st.nameReset) {
+            parts.push(`<span class="wr-bad">✏️ Позывной сброшен</span> · ${UI.esc(st.nameReset.reason)}`
+              + (st.nameReset.block ? ' · игра закрыта до смены' : ''));
+          }
           if (!st.canBan) {
             statusEl.innerHTML = '<span class="muted">Сотрудник проекта — меры недоступны</span>';
             chatBtn.style.display = 'none';
@@ -1350,6 +1357,10 @@ App.screens.profile = async (c, param) => {
       if (accBtn) accBtn.onclick = async () => {
         await App.showAccountBanDialog(p.id, p.name);
         setTimeout(() => { refreshMod(); App.rerender(); }, 400);
+      };
+      const nameBtn = document.getElementById('pf-namereset');
+      if (nameBtn) nameBtn.onclick = async () => {
+        if (await App.showNameResetStaffDialog(p.id, p.name)) setTimeout(() => App.rerender(), 300);
       };
       const hideToggle = document.getElementById('pf-banhide');
       if (hideToggle) hideToggle.onclick = async () => {

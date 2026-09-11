@@ -152,6 +152,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   achStages:          { owner: 'achievements', note: 'ступени достижений' },
   pendingAchievements: { owner: 'achievements', note: 'очередь окон достижений' },
   unseenPurchases:    { owner: 'payments',   note: 'оплаченные заказы, окно о которых игрок ещё не закрыл' },
+  nameReset:          { owner: 'nameReset',  note: 'позывной сброшен модерацией: причина, бесплатна ли смена, закрыта ли игра' },
+  nameHistory:        { owner: 'nameReset',  note: 'прежние позывные: сбросы и смены' },
   club:               { owner: 'club',       note: 'клуб (партии, ставки)' },
   offersBought:       { owner: 'offers',     note: 'сколько раз игрок брал каждый набор «Спецпредложений»' },
   tutorial:           { owner: 'tutorial',   note: 'обучение' },

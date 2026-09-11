@@ -350,6 +350,12 @@ function describe(path: string, body?: any, result?: any): string | null {
           : `🚫 Закрыл вход с устройства игрока${body.targetName ? ' ' + body.targetName : ''}${body.reason ? ' — ' + body.reason : ''}`;
       case '/api/admin/net-unban':
         return '✅ Снял бан по адресу или устройству';
+      case '/api/mod/name-reset':
+        return `✏️ Сбросил позывной игрока${body.targetName ? ' ' + body.targetName : ''}${body.reason ? ' — ' + body.reason : ''}`;
+      case '/api/name-reset/rename':
+        return `✏️ Сменил сброшенный позывной на «${body.name || '—'}»`;
+      case '/api/name-reset/keep':
+        return '✏️ Оставил выданный позывной';
       case '/api/payments/yookassa':
         return '💳 Уведомление ЮKassa об оплате';
 
