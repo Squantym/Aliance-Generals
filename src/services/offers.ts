@@ -414,8 +414,16 @@ function grantPaid(user: User, offerId: string, notices: Notices): string[] {
   return given;
 }
 
+// Состав набора для квитанции о покупке: те же строки и картинки, что на
+// витрине. Снимок берётся в момент оплаты — набор потом могут изменить
+// или удалить, а квитанция должна остаться такой, какой была покупка.
+function receiptItems(offerId: string): Array<{ text: string; icon: string | null }> {
+  const o = store()[String(offerId || '')];
+  return o ? showcase(o, 0).items : [];
+}
+
 export = {
   palette, describeItem, itemIcon,
   adminList, adminSave, adminRemove, adminPreview, showcase,
-  catalog, buyForGold, orderForRub, grantPaid,
+  catalog, buyForGold, orderForRub, grantPaid, receiptItems,
 };

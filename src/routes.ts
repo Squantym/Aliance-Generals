@@ -2218,6 +2218,9 @@ function registerRoutes(app: any) {
   // Сверка заказа по возвращении со страницы оплаты. Без журнала: клиент
   // зовёт её при каждом входе в банк, пока заказ ждёт оплаты.
   app.add('POST', '/api/payments/check',    act((req) => payments.checkOrder(req.user, req.body.orderId)), { noLog: true });
+  // «Забрать» в окне оплаченной покупки. Ничего не выдаёт: покупка
+  // зачислена при оплате, здесь окно только уходит из очереди.
+  app.add('POST', '/api/payments/ack',      act((req) => payments.ackPurchase(req.user, req.body.orderId)));
   // Уведомления ЮKassa. Маршрут открытый: присылает сервер ЮKassa, а не
   // игрок. Телу не верим — статус платежа сервис берёт запросом в ЮKassa.
   // Ошибка связи уходит 500-м ответом, и ЮKassa повторит уведомление.

@@ -2738,6 +2738,14 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 }
 .ach-popup-show { display: block; text-align: center; color: var(--green); text-decoration: underline; text-underline-offset: 2px; font-size: 14px; }
 
+/* ═══ Окно оплаченной покупки ═══ */
+.buy-popup { border-color: var(--gold); }
+.buy-popup-img { display: flex; justify-content: center; margin: 10px 0 2px; }
+.buy-popup-img img { width: 96px; height: 96px; object-fit: contain; }
+/* Большой набор не должен выталкивать кнопку «Забрать» за край экрана */
+.buy-popup .offer-items { max-height: 45vh; overflow-y: auto; }
+.receipt-lines { margin-top: 6px; }
+
 /* ═══════════════════════════════════════════════════════════════════
    КАСТОМНЫЕ ПОЛЯ ВВОДА (.field) — единый компонент формы
    Используется в смене пароля и техническом разделе админки. Базовый

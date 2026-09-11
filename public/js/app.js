@@ -472,8 +472,10 @@ const App = {
     // Показываем первой — раньше подарков и достижений.
     if (App.me && App.me.pendingWarReport) {
       setTimeout(() => App._showWarReport(App.me.pendingWarReport), 400);
-    } else if (App.me && App.me.pendingAchievements && App.me.pendingAchievements.length) {
-      // Окна новых достижений (в т.ч. заработанных оффлайн) — по одному
+    } else if (App.me && ((App.me.pendingPurchases && App.me.pendingPurchases.length)
+        || (App.me.pendingAchievements && App.me.pendingAchievements.length))) {
+      // Окна оплаченных покупок и новых достижений (в т.ч. оффлайн) — по
+      // одному; очередь сама ставит покупки первыми
       setTimeout(() => App._processAchQueue(), 600);
     }
     // Показываем подарки от администратора при входе
@@ -580,7 +582,8 @@ const App = {
       if (App.me.pendingWarReport) App._showWarReport(App.me.pendingWarReport);
       // Новые достижения: окно появляется сразу после действия игрока;
       // несколько достижений за одно действие показываются по очереди
-      if (App.me.pendingAchievements && App.me.pendingAchievements.length) {
+      if ((App.me.pendingPurchases && App.me.pendingPurchases.length)
+          || (App.me.pendingAchievements && App.me.pendingAchievements.length)) {
         App._processAchQueue();
       }
       // Проверяем подарки от администратора
@@ -3518,6 +3521,56 @@ const App = {
     };
   },
 
+  // ── Окно оплаченной покупки ──────────────────────────────────────
+  // Покупка к этому моменту УЖЕ зачислена сервером. Окно — квитанция:
+  // «Забрать» только закрывает её и ничего не выдаёт. Выдача по кнопке
+  // оставила бы без товара того, кто закрыл вкладку, а саму кнопку
+  // сделала бы местом, где пытаются получить покупку дважды.
+  // Не нажал «Забрать» — окно откроется снова: очередь хранит сервер.
+  // Возвращает true, если окно показано или ждёт своей очереди.
+  _shownPurchaseIds: new Set(),
+
+  _processPurchaseQueue() {
+    const q = (App.me && App.me.pendingPurchases) || [];
+    const next = q.find((p) => !App._shownPurchaseIds.has(p.id));
+    if (!next) return false;
+    // Не перекрываем сводку «пока вас не было» и уже открытые окна
+    if (document.getElementById('war-report-window') || document.getElementById('buy-popup')
+        || document.getElementById('ach-popup')) return true;
+    App._shownPurchaseIds.add(next.id);
+
+    const items = (next.items || []).map((it) => `
+      <div class="offer-item">
+        ${it.icon ? `<img src="${UI.esc(it.icon)}" alt="" loading="eager" decoding="async" onerror="this.remove()">` : ''}
+        <span>${UI.esc(it.text)}</span>
+      </div>`).join('');
+    // Картинки окна видны сразу при открытии — грузим немедленно
+    const popup = document.createElement('div');
+    popup.id = 'buy-popup';
+    popup.className = 'game-dialog-overlay';
+    popup.innerHTML = `
+      <div class="ach-popup buy-popup">
+        <div class="ach-popup-head">✅ Покупка оплачена</div>
+        <div class="ach-popup-name">${UI.esc(next.title)}</div>
+        <div class="buy-popup-img"><img src="${UI.esc(next.image || '/img/tabs/bank_gold.webp')}" alt="" loading="eager" onerror="this.remove()"></div>
+        <div class="offer-items">${items}</div>
+        <div class="ach-popup-desc">Всё уже на вашем счету. Детали покупки — в почте, письмо от «Система».</div>
+        <button class="btn btn-orange mt" id="buy-popup-take" style="width:100%">🎁 Забрать</button>
+      </div>`;
+    document.body.appendChild(popup);
+    const take = popup.querySelector('#buy-popup-take');
+    take.onclick = async () => {
+      take.disabled = true;
+      popup.remove();
+      try { await API.post('/api/payments/ack', { orderId: next.id }); } catch (e) {}
+      if (App.me && App.me.pendingPurchases) {
+        App.me.pendingPurchases = App.me.pendingPurchases.filter((p) => p.id !== next.id);
+      }
+      App._processAchQueue();
+    };
+    return true;
+  },
+
   // ── Окна новых достижений ────────────────────────────────────────
   // Показываются по одному: закрыл окно — открылось следующее, пока
   // игрок не увидит все полученные достижения (включая заработанные
@@ -3525,6 +3578,9 @@ const App = {
   _shownAchIds: new Set(),
 
   _processAchQueue() {
+    // Окна оплаченных покупок идут раньше достижений
+    if (App._processPurchaseQueue()) return;
+    if (document.getElementById('buy-popup')) return;
     const q = (App.me && App.me.pendingAchievements) || [];
     const next = q.find((p) => !App._shownAchIds.has(p.id));
     if (!next) return;

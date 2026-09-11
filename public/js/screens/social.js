@@ -1389,6 +1389,21 @@ App.screens.chat = async (c, param) => {
 };
 
 // ---------- ПОЧТА ----------
+// Квитанция о покупке в почте. Покупка уже зачислена — кнопки «Забрать»
+// нет, только список купленного с картинками и удаление письма.
+App._receiptLetterHtml = (r) => `
+  <div class="card" style="margin-top:8px">
+    <div style="font-weight:600">${UI.esc(r.title)}</div>
+    <div class="muted small" style="margin-top:2px;white-space:pre-line">${UI.esc(r.reason)}</div>
+    <div class="offer-items receipt-lines">${(r.lines || []).map((l) => `
+      <div class="offer-item">
+        ${l.icon ? `<img src="${UI.esc(l.icon)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}
+        <span>${UI.esc(l.text)}</span>
+      </div>`).join('')}</div>
+    <div class="muted small mt">${UI.fmtDate(r.createdAt)} · от «Система»</div>
+    <div class="btn-row mt"><span class="muted small">Зачислено ✓</span><button class="btn btn-inline" data-del-reward="${r.id}" style="color:var(--red)">🗑 Удалить</button></div>
+  </div>`;
+
 App.screens.mail = async (c, param) => {
   // Открытая переписка с конкретным собеседником (param = его id)
   if (param && param !== 'new') {
@@ -1484,7 +1499,7 @@ App.screens.mail = async (c, param) => {
   const systemSection = rewardLetters.length ? `
     <div class="card">
       <div class="name">📨 Система${pendingRewards ? ` <span class="badge" style="background:var(--gold);color:#000">${pendingRewards} к получению</span>` : ''}</div>
-      ${rewardLetters.map((r) => `
+      ${rewardLetters.map((r) => r.kind === 'receipt' ? App._receiptLetterHtml(r) : `
         <div class="card" style="margin-top:8px;border-color:${r.claimed ? 'var(--border)' : 'var(--gold)'}">
           <div style="font-weight:600">${r.claimed ? '✅ ' : '🎁 '}${UI.esc(r.title)}</div>
           <div class="muted small" style="margin-top:2px">${UI.esc(r.reason)}</div>
@@ -1498,7 +1513,7 @@ App.screens.mail = async (c, param) => {
 
   c.innerHTML = `
     <div class="title">Почта</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Личные письма от игроков и награды от «Система». Прочие системные события (приглашения, ачивки) — в 🔔 уведомлениях.</p>
+    <p class="muted small" style="margin:-4px 4px 10px">Личные письма от игроков, награды и квитанции о покупках от «Система». Прочие системные события (приглашения, ачивки) — в 🔔 уведомлениях.</p>
     ${systemSection}
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn btn-orange" onclick="App.go('mail/new')" style="flex:1">✍ Написать письмо</button>

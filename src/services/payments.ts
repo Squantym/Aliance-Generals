@@ -12,6 +12,9 @@
 //      (/api/payments/check) — на случай, если уведомление задержалось.
 //   4. Зачисление — confirmPayment, и только из статуса pending: повторное
 //      уведомление и сверка второй раз ничего не дадут.
+//   5. После зачисления игрок видит окно покупки, а в почту приходит
+//      квитанция от «Система». Кнопка «Забрать» в окне только закрывает
+//      его: покупка УЖЕ на счету (см. ackPurchase).
 //
 // Пока ключей магазина нет в .env, оплата выключена: заказ создаётся без
 // платежа, как было до интеграции.
@@ -55,6 +58,14 @@ const MAX_PRICE_RUB = 9990;
 const PENDING_PER_HOUR = 10;
 // Сверку игрок может дёргать часто — в ЮKassa ходим не чаще раза в 5 с
 const CHECK_COOLDOWN_MS = 5000;
+// Сколько окон непросмотренных покупок держим в очереди у игрока
+const UNSEEN_MAX = 10;
+
+const GOLD_ICON = '/img/icons/gold.webp';
+const GOLD_IMAGE = '/img/tabs/bank_gold.webp';
+const OFFER_IMAGE = '/img/menu/bank.webp';
+
+type ReceiptLine = { text: string; icon: string | null };
 
 interface PaymentOrder {
   id: string;
@@ -71,6 +82,8 @@ interface PaymentOrder {
   providerRef?: string;    // id платежа в ЮKassa
   payUrl?: string;         // страница оплаты
   creditedGold?: number;   // сколько золота зачислено на самом деле (с акцией и VIP)
+  // Что куплено — снимок на момент оплаты: для окна покупки и квитанции
+  receipt?: { lines: ReceiptLine[]; image: string };
   cancelReason?: string;
   checkedAt?: number;
   refundedRub?: number;
@@ -88,6 +101,19 @@ function appUrl(): string {
   let base = '';
   try { base = require('./email').APP_URL || ''; } catch (e) { base = ''; }
   return String(base).replace(/\/+$/, '');
+}
+
+const num = (v: number) => Number(v || 0).toLocaleString('ru-RU');
+
+// Время по Москве словами: «11.09.2026 15:47»
+function mskTime(ts: number): string {
+  const d = new Date((ts || Date.now()) + u.MSK_OFFSET_MS);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+function orderTitle(o: PaymentOrder): string {
+  return o.offerId ? `Набор «${o.title || 'Спецпредложение'}»` : `${num(o.gold)} золота`;
 }
 
 // Каталог пакетов (для витрины)
@@ -295,6 +321,72 @@ function myOrders(user: User) {
   return { orders: list };
 }
 
+// ── Окно покупки и квитанция ──────────────────────────────────────
+// Покупка зачисляется СРАЗУ при оплате, а окно с кнопкой «Забрать» —
+// квитанция, которая только закрывается. Если бы выдача ждала кнопку,
+// игрок, закрывший вкладку после оплаты, остался бы без оплаченного
+// товара, а сама кнопка стала бы местом, где пытаются получить покупку
+// дважды. Очередь окон лежит у игрока на сервере: не закрыл — окно
+// дождётся следующего входа, на любом устройстве.
+function unseenBox(user: User): string[] {
+  const box = (user as any).unseenPurchases;
+  if (Array.isArray(box)) return box;
+  return ((user as any).unseenPurchases = []);
+}
+
+function finishReceipt(order: PaymentOrder, user: User, lines: ReceiptLine[], image: string) {
+  order.receipt = { lines, image };
+  const box = unseenBox(user);
+  if (box.indexOf(order.id) === -1) box.push(order.id);
+  while (box.length > UNSEEN_MAX) box.shift();
+  db.markUser(user.id);
+  try {
+    require('./rewards').grantReceipt(user.id, {
+      title: `🧾 Покупка: ${orderTitle(order)}`,
+      reason: [
+        `Время покупки: ${mskTime(order.paidAt || Date.now())} (МСК)`,
+        `Оплачено: ${num(order.priceRub)} ₽`,
+        `Заказ № ${order.id}`,
+        'Всё уже зачислено на ваш счёт.',
+      ].join('\n'),
+      lines,
+    });
+  } catch (e: any) {
+    // Письмо — сопровождение, а не сама покупка: его сбой не должен
+    // откатывать уже зачисленное
+    console.error(`⚠️  Квитанция по заказу ${order.id} не отправлена — ${e && e.message}`);
+  }
+}
+
+// Непросмотренные покупки — едут в /api/me, окно показывается над любым экраном
+function pendingPurchases(user: User) {
+  const box = (user as any).unseenPurchases;
+  if (!Array.isArray(box) || !box.length) return [];
+  const all = store();
+  return box
+    .map((id: string) => all[id])
+    .filter((o: PaymentOrder | undefined) => !!o && o.userId === user.id && o.status === 'paid')
+    .map((o: PaymentOrder) => ({
+      id: o.id,
+      title: orderTitle(o),
+      priceRub: o.priceRub,
+      paidAt: o.paidAt || 0,
+      image: (o.receipt && o.receipt.image) || (o.offerId ? OFFER_IMAGE : GOLD_IMAGE),
+      items: (o.receipt && o.receipt.lines) || [],
+    }));
+}
+
+// «Забрать» в окне покупки. Ничего не начисляет — только убирает окно из
+// очереди. Чужой номер, повтор, выдуманный номер — просто ничего не меняют.
+function ackPurchase(user: User, orderId: string) {
+  const box = (user as any).unseenPurchases;
+  if (Array.isArray(box)) {
+    const i = box.indexOf(String(orderId || ''));
+    if (i >= 0) { box.splice(i, 1); db.markUser(user.id); }
+  }
+  return { ok: true, left: Array.isArray(box) ? box.length : 0 };
+}
+
 // Подтверждение оплаты: зачисляет золото или выдаёт набор.
 // Вызывается ТОЛЬКО после сверки с ЮKassa (syncOrder).
 function confirmPayment(orderId: string): { ok: boolean } {
@@ -308,13 +400,18 @@ function confirmPayment(orderId: string): { ok: boolean } {
   // Заказ на набор: содержимое выдаёт сам набор, золота в нём может не
   // быть вовсе. Дальше по коду — только пакеты золота.
   if (order.offerId) {
+    // Состав снимаем ДО выдачи: он нужен для окна и квитанции, а набор
+    // потом могут отредактировать или удалить
+    let lines: ReceiptLine[] = [];
+    try { lines = require('./offers').receiptItems(order.offerId); } catch (e) {}
     const notices: string[] = [];
     let given: string[] = [];
     try { given = require('./offers').grantPaid(user, order.offerId, notices); } catch (e) {}
     order.status = 'paid';
     order.paidAt = Date.now();
+    finishReceipt(order, user, lines, OFFER_IMAGE);
     db.save('payments');
-    db.markUser(user.id);
+    db.save('users');
     try {
       require('./notifications').push(order.userId, 'payment_done',
         `🎁 Набор «${order.title || 'Спецпредложение'}» получен: ${given.join(', ')}`, { orderId });
@@ -340,6 +437,10 @@ function confirmPayment(orderId: string): { ok: boolean } {
   try { require('./features').onReferralPurchase(user, credited); } catch (e) {}
   order.status = 'paid';
   order.paidAt = Date.now();
+  const goldLine = credited > order.gold
+    ? `${num(credited)} золота (${num(order.gold)} + бонус ${num(credited - order.gold)})`
+    : `${num(credited)} золота`;
+  finishReceipt(order, user, [{ text: goldLine, icon: GOLD_ICON }], GOLD_IMAGE);
   db.save('payments');
   db.save('users');
   try {
@@ -353,5 +454,5 @@ function confirmPayment(orderId: string): { ok: boolean } {
 
 export = {
   packages, createOrder, createOfferOrder, pay, checkOrder, handleNotification,
-  myOrders, confirmPayment, MAX_PRICE_RUB,
+  myOrders, confirmPayment, pendingPurchases, ackPurchase, MAX_PRICE_RUB,
 };

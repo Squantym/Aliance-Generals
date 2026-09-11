@@ -151,6 +151,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   missions:           { owner: 'missions',   note: 'спецоперации' },
   achStages:          { owner: 'achievements', note: 'ступени достижений' },
   pendingAchievements: { owner: 'achievements', note: 'очередь окон достижений' },
+  unseenPurchases:    { owner: 'payments',   note: 'оплаченные заказы, окно о которых игрок ещё не закрыл' },
   club:               { owner: 'club',       note: 'клуб (партии, ставки)' },
   offersBought:       { owner: 'offers',     note: 'сколько раз игрок брал каждый набор «Спецпредложений»' },
   tutorial:           { owner: 'tutorial',   note: 'обучение' },

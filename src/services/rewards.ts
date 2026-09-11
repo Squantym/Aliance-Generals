@@ -1,9 +1,14 @@
 // ===================================================================
-// src/services/rewards.ts — награды-письма от «Система»
-// Награда не начисляется сразу: она приходит письмом от «Система» с
-// описанием (что и за что) и кнопкой «Забрать». Начисление происходит
-// только при получении. Забрать можно как в почте, так и на главном
-// экране. Источники: сезоны (награды за рейтинг), администрация.
+// src/services/rewards.ts — письма от «Система»
+//
+// Два вида писем:
+//   • награда — не начисляется сразу: приходит письмом с описанием (что и
+//     за что) и кнопкой «Забрать», начисление только при получении.
+//     Забрать можно в почте и на главном экране. Источники: сезоны,
+//     администрация;
+//   • квитанция о покупке — покупка к её приходу УЖЕ зачислена. Кнопки
+//     «Забрать» у неё нет, и получить что-то через неё невозможно.
+//
 // Хранение: коллекция 'rewards' = { [rewardId]: RewardLetter }
 // ===================================================================
 
@@ -22,13 +27,17 @@ interface RewardPayload {
   xp?: number;           // опыт
 }
 
+type ReceiptLine = { text: string; icon: string | null };
+
 interface RewardLetter {
   id: string;
   userId: string;
   from: string;          // всегда «Система»
+  kind?: 'reward' | 'receipt';   // нет поля — награда (письма до появления квитанций)
   title: string;         // заголовок письма
-  reason: string;        // за что награда
+  reason: string;        // за что награда / детали покупки
   reward: RewardPayload;
+  lines?: ReceiptLine[]; // квитанция: что куплено, построчно, с картинками
   createdAt: number;
   claimed: boolean;
   claimedAt?: number;
@@ -45,11 +54,40 @@ function grant(userId: string, opts: { title: string; reason: string; reward: Re
     id: u.uid(12),
     userId,
     from: 'Система',
+    kind: 'reward',
     title: String(opts.title || 'Награда').slice(0, 120),
     reason: String(opts.reason || '').slice(0, 400),
     reward: cleanPayload(opts.reward),
     createdAt: Date.now(),
     claimed: false,
+  };
+  all[r.id] = r;
+  db.save('rewards');
+  return r;
+}
+
+// ── Квитанция о покупке ────────────────────────────────────────────
+// Письмо рождается уже «забранным», а награда внутри пустая: даже если
+// кто-то доберётся до claim по id квитанции, начислять там нечего, и сам
+// claim откажет раньше.
+function grantReceipt(userId: string, opts: { title: string; reason: string; lines: ReceiptLine[] }): RewardLetter {
+  const all = store();
+  const now = Date.now();
+  const r: RewardLetter = {
+    id: u.uid(12),
+    userId,
+    from: 'Система',
+    kind: 'receipt',
+    title: String(opts.title || 'Покупка').slice(0, 120),
+    reason: String(opts.reason || '').slice(0, 600),
+    reward: {},
+    lines: (opts.lines || []).slice(0, 30).map((l) => ({
+      text: String((l && l.text) || '').slice(0, 120),
+      icon: l && l.icon ? String(l.icon).slice(0, 200) : null,
+    })),
+    createdAt: now,
+    claimed: true,
+    claimedAt: now,
   };
   all[r.id] = r;
   db.save('rewards');
@@ -79,7 +117,7 @@ function describe(p: RewardPayload): string[] {
   return parts;
 }
 
-// ── Список наград игрока (для почты и главного экрана) ─────────────
+// ── Список писем игрока (для почты и главного экрана) ──────────────
 function listFor(user: User) {
   const all = store();
   return Object.values(all)
@@ -88,10 +126,12 @@ function listFor(user: User) {
     .map((r) => ({
       id: r.id,
       from: r.from,
+      kind: r.kind || 'reward',
       title: r.title,
       reason: r.reason,
       reward: r.reward,
       rewardText: describe(r.reward),
+      lines: r.lines || [],
       createdAt: r.createdAt,
       claimed: r.claimed,
       claimedAt: r.claimedAt || null,
@@ -109,6 +149,7 @@ function claim(user: User, rewardId: string, notices: Notices) {
   const all = store();
   const r = all[rewardId];
   if (!r || r.userId !== user.id) throw new u.ApiError('Награда не найдена');
+  if (r.kind === 'receipt') throw new u.ApiError('Это квитанция о покупке — всё уже зачислено');
   if (r.claimed) throw new u.ApiError('Эта награда уже получена');
 
   creditReward(user, r.reward, sourceOf(r));
@@ -146,7 +187,7 @@ function creditReward(user: User, p: RewardPayload, source?: string): void {
   if (p.xp)          player.addXp(user, p.xp, []);
 }
 
-// ── Удалить письмо-награду (только уже полученное) ─────────────────
+// ── Удалить письмо (только уже полученное) ─────────────────────────
 function remove(user: User, rewardId: string) {
   const all = store();
   const r = all[rewardId];
@@ -185,4 +226,4 @@ function adminGrant(adminUser: User, body: any, notices: Notices) {
   return { ok: true };
 }
 
-export = { grant, listFor, pendingCount, claim, remove, adminGrant, describe };
+export = { grant, grantReceipt, listFor, pendingCount, claim, remove, adminGrant, describe };

@@ -341,6 +341,8 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `🪙 Заказ на покупку золота (пакет «${body.packageId}»)`;
       case '/api/payments/check':
         return '🧾 Сверил оплату заказа';
+      case '/api/payments/ack':
+        return '🧾 Закрыл окно покупки';
       case '/api/payments/yookassa':
         return '💳 Уведомление ЮKassa об оплате';
 
