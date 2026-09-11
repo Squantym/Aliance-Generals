@@ -1528,6 +1528,35 @@ App._syncPayments = async () => {
 };
 App._orderStatus = (o) => ({ paid: '✅ оплачено', pending: '⏳ ожидает оплаты', cancelled: '❌ отменён', failed: '❌ не создан' })[o.status] || o.status;
 
+// Выбор способа оплаты. По брендбуку НСПК на экране оплаты логотипы одной
+// высоты, знак СБП не меньше остальных, вокруг — охранное поле. Основная
+// цветная версия допустима только на белом фоне, поэтому логотипы стоят на
+// белых плашках, а не на тёмном фоне игры. Возвращает id способа или null.
+App._choosePayMethod = (methods, what) => new Promise((resolve) => {
+  if (!methods || !methods.length) return resolve('');
+  const ov = document.createElement('div');
+  ov.id = 'pay-methods';
+  ov.className = 'game-dialog-overlay';
+  ov.innerHTML = `
+    <div class="ach-popup pay-methods">
+      <button class="ach-popup-x" id="pm-x" title="Закрыть">✕</button>
+      <div class="ach-popup-head">Способ оплаты</div>
+      ${what ? `<div class="ach-popup-desc">${UI.esc(what)}</div>` : ''}
+      ${methods.map((m) => `
+        <button class="pay-method" data-pm="${UI.esc(m.id)}">
+          <span class="pay-logo">${m.logo
+            ? `<img src="${UI.esc(m.logo)}" alt="${UI.esc(m.name)}" loading="eager" onerror="this.replaceWith(document.createTextNode(this.alt))">`
+            : UI.esc(m.name)}</span>
+          <span class="pay-text"><b>${UI.esc(m.name)}</b><span class="muted small">${UI.esc(m.hint)}</span></span>
+        </button>`).join('')}
+      <p class="muted small mt">Оплата проходит на защищённой странице ЮKassa. Данные карты и банка игра не получает.</p>
+    </div>`;
+  document.body.appendChild(ov);
+  const done = (v) => { ov.remove(); resolve(v); };
+  ov.querySelector('#pm-x').onclick = () => done(null);
+  ov.querySelectorAll('[data-pm]').forEach((b) => { b.onclick = () => done(b.getAttribute('data-pm')); });
+});
+
 App.screens.bank = async (c, param) => {
   await App.refreshMe();
   const m = App.me;
@@ -1561,7 +1590,14 @@ App.screens.bank = async (c, param) => {
     }; });
     c.querySelectorAll('[data-offer-rub]').forEach((b) => { b.onclick = async () => {
       try {
-        const r = await API.post('/api/offers/order', { offerId: b.dataset.offerRub });
+        let method = '';
+        const pm = await API.get('/api/payments/packages');
+        if (pm.enabled) {
+          const offer = offers.find((o) => o.id === b.dataset.offerRub);
+          method = await App._choosePayMethod(pm.methods, offer ? `${offer.title} — ${offer.priceRub} ₽` : '');
+          if (method === null) return;
+        }
+        const r = await API.post('/api/offers/order', { offerId: b.dataset.offerRub, method });
         if (r && r.payUrl) window.location.href = r.payUrl;
         else UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.');
       } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -1595,7 +1631,13 @@ App.screens.bank = async (c, param) => {
     c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
+          let method = '';
+          if (data.enabled) {
+            const pkg = data.packages.find((p) => p.id === btn.dataset.buyPkg);
+            method = await App._choosePayMethod(data.methods, pkg ? `${pkg.label} — ${pkg.priceRub} ₽` : '');
+            if (method === null) return;
+          }
+          const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg, method });
           if (r.payUrl) { window.location.href = r.payUrl; }
           else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
         } catch (e) { UI.toast('⛔ ' + e.message); }

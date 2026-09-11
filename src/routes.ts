@@ -2248,7 +2248,8 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
   // Откуда нажали «Купить»: адрес и устройство покупателя уходят в заказ —
   // без них спор «это не я платил» разбирать нечем
-  const buyerMeta = (req: any) => ({ ip: req.ip, ua: req.ua, hints: req.hints, fp: req.fp, did: req.did });
+  const buyerMeta = (req: any) => ({ ip: req.ip, ua: req.ua, hints: req.hints, fp: req.fp, did: req.did,
+    method: String((req.body && req.body.method) || '') });
   app.add('POST', '/api/payments/create',   act((req, n) => payments.pay(req.user, payments.createOrder(req.user, req.body.packageId, n), n, buyerMeta(req))));
   // Сверка заказа по возвращении со страницы оплаты. Без журнала: клиент
   // зовёт её при каждом входе в банк, пока заказ ждёт оплаты.

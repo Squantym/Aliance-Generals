@@ -67,14 +67,18 @@ async function call(method: string, path: string, body?: any, idempotenceKey?: s
 // держать деньги в холде незачем.
 // Idempotence-Key — номер заказа: повтор запроса после обрыва связи не
 // создаст второй платёж по тому же заказу.
-function createPayment(o: { orderId: string; amountRub: number; description: string; returnUrl: string }) {
-  return call('POST', '/payments', {
+function createPayment(o: { orderId: string; amountRub: number; description: string; returnUrl: string; methodType?: string }) {
+  const body: any = {
     amount: { value: Number(o.amountRub).toFixed(2), currency: 'RUB' },
     capture: true,
     confirmation: { type: 'redirect', return_url: o.returnUrl },
     description: String(o.description || '').slice(0, 128),
     metadata: { orderId: o.orderId },
-  }, 'order-' + o.orderId);
+  };
+  // Способ, выбранный в игре: страница ЮKassa сразу открывает его, без
+  // своего списка. Для СБП это QR-код на компьютере и выбор банка на телефоне.
+  if (o.methodType) body.payment_method_data = { type: o.methodType };
+  return call('POST', '/payments', body, 'order-' + o.orderId);
 }
 
 function getPayment(id: string) { return call('GET', '/payments/' + encodeURIComponent(id)); }

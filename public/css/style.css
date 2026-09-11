@@ -2753,6 +2753,24 @@ textarea.news-input { resize:vertical; line-height:1.4; }
 .nr-err { color: var(--red); font-size: 12.5px; min-height: 16px; margin: 6px 0 0; }
 .name-reset-bar { border-color: var(--orange-1); }
 
+/* ═══ Выбор способа оплаты ═══
+   По брендбуку НСПК: логотипы одной высоты, знак СБП не меньше других,
+   охранное поле вокруг; цветная версия — только на белом фоне. Высота 28px —
+   выше минимума для знака без дескриптора (18px), поля плашки — охранное поле. */
+.pay-methods .pay-method {
+  display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 8px; padding: 8px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); text-align: left; cursor: pointer; font: inherit;
+}
+.pay-methods .pay-method:hover { border-color: var(--gold); }
+.pay-logo {
+  flex: 0 0 116px; height: 46px; display: flex; align-items: center; justify-content: center;
+  background: #fff; border-radius: 8px; padding: 9px 12px; box-sizing: border-box;
+  color: #1e1e2d; font-weight: 700; font-size: 12px; text-align: center; line-height: 1.1;
+}
+.pay-logo img { height: 28px; width: auto; max-width: 100%; object-fit: contain; }
+.pay-text { display: flex; flex-direction: column; gap: 2px; }
+
 /* ═══════════════════════════════════════════════════════════════════
    КАСТОМНЫЕ ПОЛЯ ВВОДА (.field) — единый компонент формы
    Используется в смене пароля и техническом разделе админки. Базовый

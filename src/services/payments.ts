@@ -72,6 +72,31 @@ const GOLD_ICON = '/img/icons/gold.webp';
 const GOLD_IMAGE = '/img/tabs/bank_gold.webp';
 const OFFER_IMAGE = '/img/menu/bank.webp';
 
+// Способы оплаты на выбор в игре. type — как способ называет API ЮKassa.
+// Логотипы — только официальные файлы брендов (брендбук НСПК прямо требует
+// оригиналы, перерисовывать чужие знаки нельзя). Они лежат в
+// public/img/pay/<id>.svg|png|webp; пока файла нет, на плашке пишется
+// название — лучше честная надпись, чем самодельный логотип.
+const METHODS = [
+  { id: 'sbp',     type: 'sbp',          name: 'Система быстрых платежей (СБП)', hint: 'Оплатите через приложение своего банка' },
+  { id: 'sberpay', type: 'sberbank',     name: 'SberPay', hint: 'Оплата в приложении СберБанк Онлайн' },
+  { id: 'tpay',    type: 'tinkoff_bank', name: 'T-Pay',   hint: 'Оплата в приложении Т-Банка' },
+];
+
+function logoFor(id: string): string {
+  const path = require('path');
+  const fsm = require('fs');
+  for (const ext of ['svg', 'png', 'webp']) {
+    const rel = `/img/pay/${id}.${ext}`;
+    try { if (fsm.existsSync(path.join(__dirname, '../../../public', rel))) return rel; } catch (e) {}
+  }
+  return '';
+}
+
+function methodsView() {
+  return METHODS.map((m) => ({ id: m.id, name: m.name, hint: m.hint, logo: logoFor(m.id) }));
+}
+
 type ReceiptLine = { text: string; icon: string | null };
 type Buyer = { ip: string; device: string; ua: string; fp: string; did: string; at: number };
 
@@ -88,6 +113,7 @@ interface PaymentOrder {
   paidAt?: number;
   provider?: string;       // 'yookassa'
   providerRef?: string;    // id платежа в ЮKassa
+  method?: string;         // способ, выбранный в игре: sbp / sberpay / tpay
   payUrl?: string;         // страница оплаты
   creditedGold?: number;   // сколько золота зачислено на самом деле (с акцией и VIP)
   // Что куплено — снимок на момент оплаты: для окна покупки и квитанции
@@ -167,6 +193,7 @@ function packages() {
   const on = yk().configured();
   return {
     packages: PACKAGES, enabled: on, note: on ? '' : 'Платёжная система скоро будет доступна.',
+    methods: on ? methodsView() : [],
     discount: require('./discounts').info('gold'),
   };
 }
@@ -236,6 +263,9 @@ async function pay(user: User, created: { orderId: string; status: string; payUr
   const buyer = buyerOf(meta);
   if (buyer) { order.buyer = buyer; db.save('payments'); }
   if (!yk().configured()) return created;
+  const wanted = String((meta && meta.method) || '');
+  const method = METHODS.find((m) => m.id === wanted) || null;
+  if (wanted && !method) throw new u.ApiError('Выберите способ оплаты из предложенных');
   // Описание уходит в ЮKassa и в чек — там должно быть понятно, за что платили
   const description = order.offerId
     ? `Игровой набор «${order.title || 'Спецпредложение'}» — «${brand.GAME_NAME}»`
@@ -246,11 +276,13 @@ async function pay(user: User, created: { orderId: string; status: string; payUr
       amountRub: order.priceRub,
       description,
       returnUrl: `${appUrl()}/#bank/${order.offerId ? 'offers' : 'gold'}`,
+      methodType: method ? method.type : undefined,
     });
     const ref = String((p && p.id) || '');
     const url = String((p && p.confirmation && p.confirmation.confirmation_url) || '');
     if (!ref || !url) throw new Error('в ответе нет id платежа или ссылки на оплату');
     order.provider = 'yookassa';
+    order.method = method ? method.id : '';
     order.providerRef = ref;
     order.payUrl = url;
     order.yk = snap(p);
@@ -261,6 +293,11 @@ async function pay(user: User, created: { orderId: string; status: string; payUr
     order.status = 'failed';
     db.save('payments');
     console.error(`⚠️  ЮKassa: платёж по заказу ${order.id} не создан — ${e && e.message}`);
+    // Способ не включён в магазине или временно недоступен — так и говорим,
+    // иначе игрок решил бы, что сломана вся оплата
+    if (method && /payment_method|payment method|method/i.test(String(e && e.message))) {
+      throw new u.ApiError(`${method.name} сейчас недоступен — выберите другой способ оплаты. Деньги не списаны.`);
+    }
     throw new u.ApiError('Платёжный сервис не ответил. Деньги не списаны — попробуйте через минуту.');
   }
 }
