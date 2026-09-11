@@ -1889,14 +1889,8 @@ App.screens.settings = async (c) => {
         </div>
       </div>`).join('')}
     <div class="card">
-      <div class="name">📄 Копия моих данных</div>
-      <p class="muted small mt">Выгрузка того, что хранится о вашем аккаунте. Пароль и служебные
-      токены не выгружаются — в читаемом виде их нет даже у нас.</p>
-      <button class="btn mt" id="my-data" style="width:100%">Скачать копию данных</button>
-    </div>
-    <div class="card">
-      <p class="muted small" style="margin:0">Вопросы по обработке данных и удалению аккаунта —
-      через <a href="/privacy.html" target="_blank" rel="noopener">Политику</a>, раздел «Права субъекта».</p>
+      <p class="muted small" style="margin:0">Копия своих данных, вопросы по их обработке и удаление аккаунта —
+      по запросу, как описано в <a href="/privacy.html" target="_blank" rel="noopener">Политике</a>, раздел «Права субъекта».</p>
     </div>`);
 
   c.innerHTML = `
@@ -2104,24 +2098,6 @@ App.screens.settings = async (c) => {
       } catch (e) { btn.disabled = false; UI.toast('⛔ ' + e.message); }
     };
   });
-
-  const myData = document.getElementById('my-data');
-  if (myData) myData.onclick = async () => {
-    myData.disabled = true;
-    try {
-      const r = await API.get('/api/my-data');
-      // Отдаём файлом, а не показываем на экране: копию данных человек
-      // сохраняет себе, а не читает в браузере.
-      const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'мои-данные-альянс-генералов.json';
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-      UI.toast('📄 Копия данных сохранена');
-    } catch (e) { UI.toast('⛔ ' + e.message); }
-    myData.disabled = false;
-  };
 
   c.querySelectorAll('[data-stab]').forEach((btn) => {
     btn.onclick = () => { App._settingsTab = btn.dataset.stab; App.rerender(); };

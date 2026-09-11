@@ -96,6 +96,7 @@ ok(unmapped.length === 0, `все роуты отнесены к зонам${unm
 for (const [p, what] of [
   ['/api/admin/player-view/x', 'просмотр карточки игрока'],
   ['/api/admin/player-snapshot/x', 'состояние аккаунта'],
+  ['/api/admin/player-data/x', 'копия данных игрока по запросу'],
   ['/api/admin/groups/legion', 'список групп'],
   ['/api/admin/groups/legion/x', 'работа с группой'],
 ]) {

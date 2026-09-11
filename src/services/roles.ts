@@ -197,7 +197,8 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // Просмотр карточки игрока и его состояния — часть раздела «Игроки».
   // Раньше эти адреса не попадали ни в одну зону и по умолчанию считались
   // владельческими: администратор не мог открыть даже профиль.
-  [/^\/api\/admin\/player-(view|snapshot)\//,       'players'],
+  // player-data без хвоста — так выгрузка подписана в журнале
+  [/^\/api\/admin\/player-(view|snapshot|data)(\/|$)/,   'players'],
   // Кланы и легионы через общий раздел групп
   [/^\/api\/admin\/groups\//,                       'legions'],
   [/^\/api\/admin\/(support|email)/,                'support'],

@@ -338,31 +338,40 @@ function registerRoutes(app: any) {
     return { ok: true, done: true, name: target.name };
   }, { open: true });
 
-  // ═══ ВЫГРУЗКА СВОИХ ДАННЫХ ═══════════════════════════════════════
-  // Право на копию своих данных закон даёт, а срок ответа — 10 рабочих
-  // дней. Собирать её руками из базы по каждому обращению значит либо
-  // не уложиться, либо выгружать лишнее. Кнопка отдаёт ровно то же, что
-  // хранится, за вычетом секретов.
-  app.add('GET', '/api/my-data', (req) => {
-    const src: any = req.user;
+  // ═══ КОПИЯ ДАННЫХ ИГРОКА — ПО ЗАПРОСУ ════════════════════════════
+  // Раньше у игрока в настройках была кнопка «Скачать копию данных».
+  // Закон даёт право на копию своих данных, но кнопки не требует:
+  // достаточно ответить на запрос в 10 рабочих дней (Политика, п. 11.1).
+  // Кнопку убрали по решению владельца, выгрузку по запросу делает
+  // сотрудник из карточки игрока — одним нажатием, чтобы уложиться в срок
+  // и не собирать файл руками из базы.
+  // Отдаётся ровно то, что хранится, за вычетом секретов: копия уходит
+  // человеку в файл, и класть туда хеш пароля и токены нельзя.
+  app.add('GET', '/api/admin/player-data/:id', (req) => {
+    const target: any = player.users()[String(req.params.id || '')];
+    if (!target) throw new u.ApiError('Игрок не найден');
     const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(src)) {
+    for (const [k, v] of Object.entries(target)) {
       if (playerFields.SECRET_FIELDS.includes(k)) continue;   // хеш пароля, соль, токены, второй фактор
       out[k] = v;
     }
+    // Выгрузка чужих персональных данных — всегда в журнал, с именем
+    // сотрудника: это та же работа с данными, что и правка, только тише
     auditLog.record({
-      userId: req.user.id, userName: req.user.name, path: '/api/my-data', body: {},
+      userId: req.user.id, userName: req.user.name, path: '/api/admin/player-data',
+      desc: `📄 Выгрузил копию данных игрока ${target.name}`,
+      body: { targetId: target.id, targetName: target.name },
     });
     return {
       выгружено: new Date().toISOString(),
       игра: brand.GAME_NAME,
-      пояснение: 'Копия данных вашего аккаунта. Пароль, его соль и служебные токены не '
-        + 'выгружаются: их нет в читаемом виде даже у нас. Что и зачем хранится — в Политике '
-        + 'обработки персональных данных.',
+      пояснение: 'Копия данных аккаунта, подготовленная по запросу. Пароль, его соль и служебные '
+        + 'токены не выгружаются: в читаемом виде их нет даже у оператора. Что и зачем хранится — '
+        + 'в Политике обработки персональных данных.',
       аккаунт: out,
-      входы: (() => { try { return require('./services/access').view(req.user); } catch (e) { return null; } })(),
+      входы: (() => { try { return require('./services/access').view(target); } catch (e) { return null; } })(),
     };
-  });
+  }, { admin: true });
   app.add('POST', '/api/reset-password', (req) => auth.resetPassword(req.body.token, req.body.password, req.ip), { open: true });
 
   // ---------- Игрок ----------

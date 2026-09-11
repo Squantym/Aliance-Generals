@@ -253,6 +253,7 @@
           <div class="a2-row">
             <a class="btn btn-inline" href="${A2Router.build('logs', '', { user: p.id })}">📋 Журнал действий</a>
             <a class="btn btn-inline" href="${A2Router.build('players', '', { history: p.name })}">🕘 История состояния</a>
+            <button class="btn btn-inline" id="pl-data-copy" title="Для ответа на запрос игрока о его персональных данных">📄 Копия данных</button>
           </div>
         </div>
       </div>
@@ -324,6 +325,25 @@
         A2.refresh();
       };
     });
+
+    // Копия данных игрока — для ответа на его запрос (Политика, п. 11.1).
+    // У самого игрока кнопки нет: файл готовит сотрудник и отправляет на
+    // почту, с которой пришёл запрос. Секреты в выгрузку не попадают.
+    const copyBtn = document.getElementById('pl-data-copy');
+    if (copyBtn) copyBtn.onclick = async () => {
+      copyBtn.disabled = true;
+      try {
+        const r = await API.get('/api/admin/player-data/' + encodeURIComponent(p.id));
+        const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'данные-игрока-' + String(p.name).replace(/[^0-9A-Za-zА-Яа-яЁё_-]+/g, '_') + '.json';
+        document.body.appendChild(link); link.click();
+        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 0);
+        UI.toast('📄 Копия сохранена — отправьте её на почту, с которой пришёл запрос');
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+      copyBtn.disabled = false;
+    };
 
     // Выдача — прямо на странице, без окна поверх. Форма старая:
     // в ней быстрые суммы, выдача письмом и списание.
