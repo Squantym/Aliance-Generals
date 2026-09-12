@@ -63,3 +63,33 @@ TWA использует движок Chrome, установленный на т
 Android-устройств он есть. Если у игрока телефон вообще без Chrome (редкие сборки,
 некоторые Huawei) — приложение откроется в запасном режиме, а пуши там не работают.
 Для таких случаев остаётся обычный браузер + «Установить игру» на главном экране.
+
+## Грабли сборки на Windows (проверено 12.09.2026)
+
+Каждый пункт — реальная остановка сборки, а не теория.
+
+- **Кириллица в пути проекта.** Gradle отказывается собирать из
+  `C:\...\Проект Генералы\...`: «Your project path contains non-ASCII characters».
+  Лечится копированием папки `android/` в путь без кириллицы (например,
+  `C:\Users\<имя>\android-build\twa`) и сборкой уже там.
+- **Bubblewrap не видит Android SDK нового вида.** Он ищет `<sdk>/tools/bin/sdkmanager`
+  или `<sdk>/bin/sdkmanager`, а свежий архив кладёт всё в `cmdline-tools/latest`.
+  Скопируйте `cmdline-tools/latest` в `<sdk>/tools` — именно скопируйте: ссылка не
+  подходит, .bat ищет свои библиотеки рядом с собой.
+- **`bubblewrap build` не находит `gradlew.bat`** при запуске из Git Bash. Обходится
+  прямым вызовом обёртки:
+  `java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain assembleRelease`
+- **Пароль ключа в одном файле для `--ks-pass` и `--key-pass`.** apksigner читает файл
+  последовательно и на втором чтении упирается в конец файла. Нужны два файла с
+  одинаковым паролем.
+- **Подпись вручную**, если собирали Gradle напрямую:
+  `zipalign -p -f 4 app-release-unsigned.apk aligned.apk`, затем
+  `apksigner sign --ks android.keystore --ks-key-alias generals --ks-pass file:… --key-pass file:… --out app-release-signed.apk aligned.apk`
+
+## Где лежит готовое (выкат 238)
+
+- Установщик: `public/app/aliance-generals.apk` — уезжает на сервер вместе с сайтом.
+- Привязка к домену: `public/.well-known/assetlinks.json` (отпечаток ключа подписи).
+- Страница установки для игроков: `public/app.html`, короткий адрес `/app`.
+- Проверки: `test/androidapp.test.js` — сверяет отпечаток в assetlinks с ключом,
+  которым реально подписан лежащий рядом файл.

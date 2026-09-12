@@ -70,6 +70,9 @@ const MIME: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  // Установщик игры для Android. Без своего типа браузер отдаёт его как
+  // «неизвестный файл», и часть телефонов отказывается открывать скачанное.
+  '.apk': 'application/vnd.android.package-archive',
 };
 
 // Срок кеширования в браузере игрока по типу файла.
@@ -422,7 +425,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, urlPat
   const SHORT_DOCS: Record<string, string> = {
     terms: 'terms.html', rules: 'rules.html', payments: 'payments.html',
     privacy: 'privacy.html', cookies: 'cookies.html',
-    consent: 'consent-pdn.html', unsubscribe: 'unsubscribe.html',
+    consent: 'consent-pdn.html', unsubscribe: 'unsubscribe.html', app: 'app.html',
   };
   const shortName = rel.replace(/^\/|\/$/g, '');
   if (SHORT_DOCS[shortName]) rel = '/' + SHORT_DOCS[shortName];

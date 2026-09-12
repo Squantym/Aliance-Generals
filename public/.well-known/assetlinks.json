@@ -1,11 +1,13 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "game.generals.alliance",
       "sha256_cert_fingerprints": [
-        "ЗАМЕНИ_НА_ОТПЕЧАТОК_КЛЮЧА"
+        "1F:AF:68:56:8C:45:6E:24:20:BC:47:DE:A4:2F:0E:E5:8C:F7:E5:19:E2:2F:30:34:2F:D7:13:17:C0:4A:E9:AA"
       ]
     }
   }

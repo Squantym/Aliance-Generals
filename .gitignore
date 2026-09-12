@@ -41,3 +41,10 @@ android/app/src/main/res/
 # Рабочие каталоги локальных инструментов, в игру не входят
 .claude/
 .preview-tmp/
+# Сгенерированный Android-проект: собирается заново из twa-manifest.json
+android/app/
+android/build.gradle
+android/settings.gradle
+android/gradle.properties
+android/manifest-checksum.txt
+android/store_icon.png

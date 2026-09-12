@@ -1858,6 +1858,13 @@ App.screens.settings = async (c) => {
     appTabHtml += `<div class="card"><div class="name">📲 Иконка на главном экране</div>
       <p class="muted small mt">Установка недоступна в этом браузере. Откройте игру в Chrome (Android) или Safari (iPhone), либо воспользуйтесь меню браузера «Установить приложение / На экран Домой».</p></div>`;
   }
+  // Отдельное приложение для Android: та же игра, но иконкой и на весь
+  // экран. На iPhone своего приложения нет — там установка на «Домой» выше.
+  if (!App.isStandalone()) {
+    appTabHtml += `<div class="card"><div class="name">🤖 Приложение для Android</div>
+      <p class="muted small mt">Установщик с нашего сайта: иконка, полный экран и уведомления. Обновления игры прилетают сами.</p>
+      <a class="btn btn-orange mt" style="width:100%;display:block;text-align:center" href="/app.html">📥 Скачать приложение</a></div>`;
+  }
   // Уведомления
   if (!App.pushSupported()) {
     appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
