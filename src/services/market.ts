@@ -441,6 +441,8 @@ function makeLotFor(commander: any, now: number): any {
   return {
     id: u.uid(10),
     commanderId: commander.id,
+    // Начальная ставка записывается В ЛОТ: поменяли её в конфиге —
+    // висящие лоты подтягиваются в tick(), пока по ним нет ставок
     minBid: config.AUCTION.MIN_BID,
     best: null, // { userId, name, amount }
     endsAt: auctionEndMsk(now),
@@ -516,6 +518,12 @@ function tick(): void {
     }
     w.auctions.splice(i, 1);
   }
+  // Начальную ставку поменяли в конфиге — подтягиваем висящие лоты, по
+  // которым ещё никто не торговался. Иначе новая цена начала бы работать
+  // только со следующих суток, а игроки видели бы старую.
+  for (const lot of w.auctions) {
+    if (!lot.best && lot.minBid !== config.AUCTION.MIN_BID) lot.minBid = config.AUCTION.MIN_BID;
+  }
   while (w.auctions.length < config.AUCTION.LOTS) {
     // Берём наёмников, которых ещё нет на аукционе, чтобы все 5 были
     // уникальными (а не случайные повторы).
@@ -578,7 +586,7 @@ function bid(user: User, lotId: string, amount: number, notices: Notices) {
   const lot = w.auctions.find((l) => l.id === lotId);
   if (!lot) throw new u.ApiError('Лот уже закрыт. Обновите аукцион.');
   amount = u.toInt(amount);
-  // Минимум: первая ставка — MIN_BID (500), далее +BID_STEP (50) к текущей
+  // Минимум: первая ставка — MIN_BID, далее +BID_STEP к текущей
   const min = lot.best ? lot.best.amount + config.AUCTION.BID_STEP : lot.minBid;
   if (amount < min) throw new u.ApiError(`Минимальная ставка: 🪙 ${min}`);
   // Ставка должна быть кратна шагу относительно минимума
