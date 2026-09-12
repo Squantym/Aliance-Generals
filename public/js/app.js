@@ -505,6 +505,11 @@ const App = {
       // одному; очередь сама ставит покупки первыми
       setTimeout(() => App._processAchQueue(), 600);
     }
+    // Окно обновления: большой пост с картинками, который иначе
+    // пролистывают в ленте. Показывается один раз — см. news.closePopup.
+    if (App.me && App.me.newsPopup) {
+      setTimeout(() => App._showNewsPopup(App.me.newsPopup), 1000);
+    }
     // Показываем подарки от администратора при входе
     if (App.me && App.me.pendingGifts && App.me.pendingGifts.length) {
       setTimeout(() => App._showGiftPopup(App.me.pendingGifts[0]), 800);
@@ -4080,6 +4085,54 @@ const App = {
       document.body.removeChild(overlay);
       App.rerender();
     };
+  },
+
+  // ---------- ОКНО ОБНОВЛЕНИЯ ----------
+  // Пост с пометкой «показать окном» открывается поверх игры один раз.
+  // Внутри — те же блоки, что и в новости: картинки, иконки с текстом,
+  // кнопки в разделы игры. Рисует их экран новостей, чтобы вид окна и
+  // вид поста в ленте не разъезжались.
+  async _showNewsPopup(post) {
+    if (!post || document.getElementById('news-popup')) return;
+    // Блоки рисует экран новостей, а экраны грузятся по требованию:
+    // без этой строки окно открывалось пустым у того, кто в новости
+    // ещё не заходил.
+    try { await App._loadScreen('news'); } catch (e) {}
+    if (typeof App.renderNewsBlocks !== 'function') return;
+    // Не перекрываем боевые окна и окна покупок
+    if (document.getElementById('war-report-window') || document.getElementById('buy-popup')) {
+      setTimeout(() => App._showNewsPopup(post), 1500);
+      return;
+    }
+    const body = (App.renderNewsBlocks ? App.renderNewsBlocks(post.blocks) : '');
+    const m = document.createElement('div');
+    m.id = 'news-popup';
+    m.className = 'game-dialog-overlay';
+    m.innerHTML = `
+      <div class="game-dialog news-popup-box">
+        <div class="news-popup-head">
+          <span style="font-size:26px">${UI.esc(post.emoji || '📰')}</span>
+          <div>
+            <div class="news-popup-title">${UI.esc(post.title)}</div>
+            ${post.tag ? `<span class="badge" style="margin-top:3px">${UI.esc(post.tag)}</span>` : ''}
+          </div>
+        </div>
+        <div class="news-popup-body">${body}</div>
+        <div class="game-dialog-actions">
+          <button class="btn btn-orange" id="news-popup-ok">Понятно</button>
+          <button class="btn btn-inline" id="news-popup-all">Все новости</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    const close = async (go) => {
+      m.remove();
+      if (App.me) App.me.newsPopup = null;
+      try { await API.post('/api/news/close-popup', { id: post.id }); } catch (e) {}
+      if (go) App.go('newsview/' + post.id);
+    };
+    document.getElementById('news-popup-ok').onclick = () => close(false);
+    document.getElementById('news-popup-all').onclick = () => close(true);
+    m.onclick = (e) => { if (e.target === m) close(false); };
   },
 
   // Объявление прочитано: гасим полосу и здесь же говорим об этом серверу,

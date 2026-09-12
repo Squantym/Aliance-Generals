@@ -1285,6 +1285,10 @@ function mePayload(user: User): any {
     newsPin: (() => {
       try { return require('./news').banner(user); } catch (e) { return null; }
     })(),
+    // Обновление, которое показывается окном при входе (services/news.ts)
+    newsPopup: (() => {
+      try { return require('./news').popup(user); } catch (e) { return null; }
+    })(),
     // Окна оплаченных покупок, которые игрок ещё не закрыл. Здесь, а не
     // на экране банка: игрок вернётся со страницы оплаты куда угодно
     pendingPurchases: (() => {

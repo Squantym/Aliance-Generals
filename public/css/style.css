@@ -5411,3 +5411,12 @@ body.has-club-bar #header { top: 32px; }
 .loot-sabs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; justify-content: center; }
 .loot-sab { text-align: center; }
 .loot-sab .ic-sab { display: block; margin: 0 auto 2px; }
+
+/* ═══ Окно обновления (пост «показать окном») ═══ */
+.news-popup-box { max-width: 560px; width: 94vw; max-height: 86vh; display: flex; flex-direction: column; }
+.news-popup-head { display: flex; gap: 10px; align-items: center; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border); }
+.news-popup-title { font-weight: 700; font-size: 16px; color: var(--gold); }
+.news-popup-body { overflow-y: auto; text-align: left; padding: 6px 2px 2px; flex: 1; }
+/* Баннер внутри окна не должен занимать весь экран: окно — анонс, а не галерея */
+.news-popup-body img { max-height: 42vh; object-fit: contain; }

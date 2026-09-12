@@ -28,6 +28,15 @@
     return t;
   }
   function safeUrl(url) { url = String(url || '').trim(); return /^https?:\/\//i.test(url) ? url.replace(/"/g, '%22') : ''; }
+  // Куда ведёт картинка: раздел игры (App.go) или внешний адрес. Пишем
+  // ровно теми же правилами, что и кнопка, — иначе в новости оказались
+  // бы два разных способа записать одно и то же.
+  function actionAttr(action) {
+    const a = String(action || '').trim();
+    if (/^https?:\/\//i.test(a)) return `onclick="window.open('${a.replace(/'/g, '')}','_blank')"`;
+    if (/^[a-z0-9/_-]+$/i.test(a)) return `onclick="App.go('${a}')"`;
+    return '';
+  }
   function nl2br(html) { return html.replace(/\n/g, '<br>'); }
 
   // ---------- Рендер блоков поста ----------
@@ -36,10 +45,13 @@
       switch (b.type) {
         case 'heading': {
           const sz = b.level === 1 ? '20px' : b.level === 3 ? '14px' : '16px';
-          return `<div style="font-weight:bold;font-size:${sz};margin:12px 0 4px;color:var(--gold)">${parseInline(b.text)}</div>`;
+          const al = b.align === 'center' ? ';text-align:center' : '';
+          return `<div style="font-weight:bold;font-size:${sz};margin:12px 0 4px;color:var(--gold)${al}">${parseInline(b.text)}</div>`;
         }
-        case 'text':
-          return `<p style="margin:7px 0;line-height:1.55">${nl2br(parseInline(b.text))}</p>`;
+        case 'text': {
+          const al = b.align === 'center' ? ';text-align:center' : '';
+          return `<p style="margin:7px 0;line-height:1.55${al}">${nl2br(parseInline(b.text))}</p>`;
+        }
         case 'callout': {
           const col = b.color === 'gray' ? 'dim' : b.color;
           return `<div style="border-left:3px solid var(--${col});background:rgba(255,255,255,.04);padding:9px 12px;border-radius:0 8px 8px 0;margin:9px 0;line-height:1.5">${nl2br(parseInline(b.text))}</div>`;
@@ -49,7 +61,26 @@
         case 'image': {
           const url = safeUrl(b.url);
           if (!url) return '';
-          return `<figure style="margin:10px 0"><img src="${url}" style="max-width:100%;border-radius:8px;display:block;margin:0 auto" loading="lazy" onerror="this.parentElement.style.display='none'">${b.caption ? `<figcaption class="muted small" style="text-align:center;margin-top:5px">${UI.esc(b.caption)}</figcaption>` : ''}</figure>`;
+          // Картинка может вести в раздел игры или на внешний адрес —
+          // баннер обновления обычно ведёт туда, про что он рассказывает
+          const act = actionAttr(b.action);
+          const img = `<img src="${url}" style="max-width:100%;border-radius:8px;display:block;margin:0 auto${act ? ';cursor:pointer' : ''}" loading="lazy" ${act} onerror="this.parentElement.style.display='none'">`;
+          return `<figure style="margin:10px 0">${img}${b.caption ? `<figcaption class="muted small" style="text-align:center;margin-top:5px">${UI.esc(b.caption)}</figcaption>` : ''}</figure>`;
+        }
+        case 'iconrow': {
+          // Иконка сбоку и текст рядом. Так свёрстаны блоки «получи
+          // предмет» в письмах об обновлениях у больших игр.
+          const url = safeUrl(b.url);
+          const size = [48, 64, 96, 128].indexOf(b.size) >= 0 ? b.size : 64;
+          const act = actionAttr(b.action);
+          const pic = url
+            ? `<img src="${url}" width="${size}" height="${size}" loading="lazy" ${act}
+                 style="width:${size}px;height:${size}px;object-fit:contain;border-radius:8px;flex:0 0 auto${act ? ';cursor:pointer' : ''}"
+                 onerror="this.style.display='none'">`
+            : '';
+          const dir = b.side === 'right' ? 'row-reverse' : 'row';
+          return `<div style="display:flex;flex-direction:${dir};gap:10px;align-items:center;margin:10px 0">
+            ${pic}<div style="flex:1;line-height:1.55">${nl2br(parseInline(b.text))}</div></div>`;
         }
         case 'list': {
           const tag = b.ordered ? 'ol' : 'ul';
@@ -74,6 +105,10 @@
       return '';
     }).join('');
   }
+
+  // Рисовальщик блоков нужен и окну обновления (app.js): вид поста в
+  // ленте и в окне должен быть один и тот же.
+  App.renderNewsBlocks = renderBlocks;
 
   // Карточка поста в ленте — одна на все места, где лента показывается
   function newsCard(p, canManage) {
@@ -182,6 +217,7 @@
   const BLOCK_TOOLS = [
     ['heading', '🔠 Заголовок'], ['text', '📝 Текст'], ['callout', '💡 Выноска'],
     ['quote', '❝ Цитата'], ['image', '🖼 Картинка'], ['list', '📋 Список'],
+    ['iconrow', '🎁 Иконка и текст'],
     ['button', '🔘 Кнопка'], ['badge', '🏷 Значок'], ['divider', '➖ Разделитель'], ['spacer', '␣ Отступ'],
   ];
   const COLOR_OPTS = [['gold', 'Золотой'], ['green', 'Зелёный'], ['red', 'Красный'], ['blue', 'Синий'], ['gray', 'Серый']];
@@ -192,7 +228,8 @@
       case 'text': return { type, text: '' };
       case 'callout': return { type, text: '', color: 'gold' };
       case 'quote': return { type, text: '' };
-      case 'image': return { type, url: '', caption: '' };
+      case 'image': return { type, url: '', caption: '', action: '' };
+      case 'iconrow': return { type, url: '', text: '', side: 'left', size: 64, action: '' };
       case 'list': return { type, ordered: false, items: [''] };
       case 'button': return { type, text: 'Открыть', action: '' };
       case 'badge': return { type, text: 'НОВОЕ', color: 'gold' };
@@ -216,7 +253,7 @@
         let d; try { d = await API.get('/api/news'); } catch (e) { d = { posts: [] }; }
         const p = (d.posts || []).find((x) => x.id === param);
         App._newsDraft = p
-          ? { _loadedFor: param, id: p.id, title: p.title, emoji: p.emoji || '📰', tag: p.tag || '', pinned: !!p.pinned, blocks: JSON.parse(JSON.stringify(p.blocks || [])) }
+          ? { _loadedFor: param, id: p.id, title: p.title, emoji: p.emoji || '📰', tag: p.tag || '', pinned: !!p.pinned, popup: !!p.popup, blocks: JSON.parse(JSON.stringify(p.blocks || [])) }
           : { _loadedFor: 'new', title: '', emoji: '📰', tag: '', pinned: false, blocks: [] };
       } else {
         App._newsDraft = { _loadedFor: 'new', title: '', emoji: '📰', tag: '', pinned: false, blocks: [] };
@@ -255,9 +292,12 @@
             <label class="news-lbl">Метка (тег)</label>
             <input id="news-tag" class="news-input" maxlength="40" placeholder="Патч / Событие / Анонс" value="${UI.esc(dr.tag)}">
           </div>
-          <div style="display:flex;align-items:flex-end;padding-bottom:8px">
+          <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end;padding-bottom:8px">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
               <input type="checkbox" id="news-pinned" ${dr.pinned ? 'checked' : ''}> 📌 Закрепить
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="news-popup-flag" ${dr.popup ? 'checked' : ''}> 🪟 Показать окном при входе
             </label>
           </div>
         </div>
@@ -303,10 +343,10 @@
       case 'heading':
         body = `<div class="news-block-label">🔠 Заголовок</div>
           <input class="news-input" data-f="text" data-i="${i}" value="${UI.esc(b.text)}" placeholder="Текст заголовка">
-          <div style="display:flex;gap:6px;margin-top:6px">${[1, 2, 3].map((lv) => `<button class="btn btn-inline news-lvl ${b.level === lv ? 'sel' : ''}" data-level="${lv}" data-i="${i}" style="flex:1;padding:5px">H${lv}</button>`).join('')}</div>`;
+          <div style="display:flex;gap:6px;margin-top:6px">${[1, 2, 3].map((lv) => `<button class="btn btn-inline news-lvl ${b.level === lv ? 'sel' : ''}" data-level="${lv}" data-i="${i}" style="flex:1;padding:5px">H${lv}</button>`).join('')}</div>${alignPicker(b.align, i)}`;
         break;
       case 'text':
-        body = `<div class="news-block-label">📝 Текст</div><textarea class="news-input" data-f="text" data-i="${i}" rows="3" placeholder="Текст абзаца. Поддерживает **разметку**.">${UI.esc(b.text)}</textarea>`;
+        body = `<div class="news-block-label">📝 Текст</div><textarea class="news-input" data-f="text" data-i="${i}" rows="3" placeholder="Текст абзаца. Поддерживает **разметку**.">${UI.esc(b.text)}</textarea>${alignPicker(b.align, i)}`;
         break;
       case 'callout':
         body = `<div class="news-block-label">💡 Выноска</div><textarea class="news-input" data-f="text" data-i="${i}" rows="2" placeholder="Важное примечание">${UI.esc(b.text)}</textarea>${colorPicker(b.color, i)}`;
@@ -323,7 +363,26 @@
           <input type="file" accept="image/*" data-img-file="${i}" style="display:none">
           <input class="news-input" data-f="url" data-i="${i}" value="${UI.esc(b.url)}" placeholder="https://… (ссылка на изображение)">
           <input class="news-input" data-f="caption" data-i="${i}" value="${UI.esc(b.caption)}" placeholder="Подпись (необязательно)" style="margin-top:6px">
+          <input class="news-input" data-f="action" data-i="${i}" value="${UI.esc(b.action || '')}" placeholder="Куда ведёт картинка: экран (war) или https://… (необязательно)" style="margin-top:6px">
           ${safeUrl(b.url) ? `<img src="${safeUrl(b.url)}" style="max-width:100%;border-radius:6px;margin-top:8px" onerror="this.style.display='none'" loading="lazy" decoding="async">` : ''}`;
+        break;
+      case 'iconrow':
+        body = `<div class="news-block-label">🎁 Иконка и текст</div>
+          <div class="news-img-pick">
+            <button class="btn btn-inline" data-img-pick="${i}">📁 Загрузить иконку</button>
+            <span class="muted small">или вставьте ссылку ниже</span>
+          </div>
+          <input type="file" accept="image/*" data-img-file="${i}" style="display:none">
+          <input class="news-input" data-f="url" data-i="${i}" value="${UI.esc(b.url)}" placeholder="https://… (картинка)">
+          <textarea class="news-input" data-f="text" data-i="${i}" rows="3" placeholder="Текст рядом с иконкой. Поддерживает **разметку** и [ссылки](war)." style="margin-top:6px">${UI.esc(b.text)}</textarea>
+          <input class="news-input" data-f="action" data-i="${i}" value="${UI.esc(b.action || '')}" placeholder="Куда ведёт иконка: экран (war) или https://… (необязательно)" style="margin-top:6px">
+          <div style="display:flex;gap:6px;margin-top:6px">
+            ${[['left', '⬅ иконка слева'], ['right', '➡ иконка справа']].map(([v, t]) => `<button class="btn btn-inline news-lvl ${(b.side || 'left') === v ? 'sel' : ''}" data-side="${v}" data-i="${i}" style="flex:1;padding:5px">${t}</button>`).join('')}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            ${[48, 64, 96, 128].map((sz) => `<button class="btn btn-inline news-lvl ${(b.size || 64) === sz ? 'sel' : ''}" data-size="${sz}" data-i="${i}" style="flex:1;padding:5px">${sz}px</button>`).join('')}
+          </div>
+          ${safeUrl(b.url) ? `<img src="${safeUrl(b.url)}" style="max-width:120px;border-radius:6px;margin-top:8px" onerror="this.style.display='none'" loading="lazy">` : ''}`;
         break;
       case 'list':
         body = `<div class="news-block-label">📋 Список</div>
@@ -349,6 +408,12 @@
     return `<div class="news-block">${move}${body}</div>`;
   }
 
+  // Выравнивание: в письмах об обновлениях половина текста стоит по центру
+  function alignPicker(cur, i) {
+    return `<div style="display:flex;gap:6px;margin-top:6px">${[['left', '⬅ по левому краю'], ['center', '↔ по центру']].map(([v, t]) =>
+      `<button class="btn btn-inline news-lvl ${(cur || 'left') === v ? 'sel' : ''}" data-align="${v}" data-i="${i}" style="flex:1;padding:5px">${t}</button>`).join('')}</div>`;
+  }
+
   function colorPicker(cur, i) {
     return `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">${COLOR_OPTS.map(([col, name]) =>
       `<button class="news-color ${cur === col ? 'sel' : ''}" data-color="${col}" data-i="${i}" style="background:var(--${col === 'gray' ? 'dim' : col})" title="${name}"></button>`).join('')}</div>`;
@@ -365,6 +430,7 @@
       const t = c.querySelector('#news-title'); if (t) dr.title = t.value;
       const tag = c.querySelector('#news-tag'); if (tag) dr.tag = tag.value;
       const pin = c.querySelector('#news-pinned'); if (pin) dr.pinned = pin.checked;
+      const pop = c.querySelector('#news-popup-flag'); if (pop) dr.popup = pop.checked;
       const ec = c.querySelector('#news-emoji-custom'); if (ec && ec.value.trim()) dr.emoji = ec.value.trim();
       c.querySelectorAll('[data-f]').forEach((el) => {
         const i = +el.dataset.i; const f = el.dataset.f;
@@ -390,6 +456,10 @@
 
     // Заголовок: уровень
     c.querySelectorAll('[data-level]').forEach((btn) => btn.onclick = () => { syncFromDom(); dr.blocks[+btn.dataset.i].level = +btn.dataset.level; reRender(); });
+    // Выравнивание (заголовок/текст), сторона и размер иконки
+    c.querySelectorAll('[data-align]').forEach((btn) => btn.onclick = () => { syncFromDom(); dr.blocks[+btn.dataset.i].align = btn.dataset.align; reRender(); });
+    c.querySelectorAll('[data-side]').forEach((btn) => btn.onclick = () => { syncFromDom(); dr.blocks[+btn.dataset.i].side = btn.dataset.side; reRender(); });
+    c.querySelectorAll('[data-size]').forEach((btn) => btn.onclick = () => { syncFromDom(); dr.blocks[+btn.dataset.i].size = +btn.dataset.size; reRender(); });
     // Цвет (выноска/значок)
     c.querySelectorAll('[data-color]').forEach((btn) => btn.onclick = () => { syncFromDom(); dr.blocks[+btn.dataset.i].color = btn.dataset.color; reRender(); });
     // Список: нумерация / пункты
@@ -436,7 +506,7 @@
       syncFromDom();
       if (!dr.title.trim()) { UI.toast('⛔ Введите заголовок'); return; }
       if (!dr.blocks.length) { UI.toast('⛔ Добавьте хотя бы один блок'); return; }
-      const payload = { title: dr.title, emoji: dr.emoji, tag: dr.tag, pinned: dr.pinned, blocks: dr.blocks };
+      const payload = { title: dr.title, emoji: dr.emoji, tag: dr.tag, pinned: dr.pinned, popup: dr.popup, blocks: dr.blocks };
       try {
         if (dr.id) await API.post('/api/news/update', Object.assign({ id: dr.id }, payload));
         else await API.post('/api/news/create', payload);

@@ -21,12 +21,18 @@ interface NewsPost {
   createdAt: number;
   updatedAt: number;
   pinned: boolean;
+  // Показать пост ОКНОМ при входе в игру. Полоса-объявление (pinned)
+  // подходит для короткой строки, а большое обновление с картинками
+  // игрок пролистывает мимо, если оно лежит только в ленте.
+  popup: boolean;
+  popupAt?: number;        // когда окно включили — по нему выбирается самое свежее
 }
 
 function store(): Record<string, NewsPost> { return db.load('news', {}); }
 
 // Разрешённые типы блоков и их «очистка» (обрезка строк, дефолты).
-const BLOCK_TYPES = ['heading', 'text', 'image', 'callout', 'quote', 'list', 'divider', 'button', 'badge', 'spacer'];
+const BLOCK_TYPES = ['heading', 'text', 'image', 'callout', 'quote', 'list', 'divider', 'button', 'badge', 'spacer', 'iconrow'];
+const ALIGNS = ['left', 'center'];
 const CALLOUT_COLORS = ['gold', 'green', 'red', 'blue', 'gray'];
 const BADGE_COLORS = ['gold', 'green', 'red', 'blue', 'gray'];
 
@@ -37,15 +43,24 @@ function cleanBlock(b: any): NewsBlock | null {
   if (!b || typeof b !== 'object' || BLOCK_TYPES.indexOf(b.type) === -1) return null;
   switch (b.type) {
     case 'heading':
-      return { type: 'heading', text: s(b.text, 200), level: [1, 2, 3].indexOf(b.level) >= 0 ? b.level : 2 };
+      return { type: 'heading', text: s(b.text, 200), level: [1, 2, 3].indexOf(b.level) >= 0 ? b.level : 2,
+        align: ALIGNS.indexOf(b.align) >= 0 ? b.align : 'left' };
     case 'text':
-      return { type: 'text', text: s(b.text, 4000) };
+      return { type: 'text', text: s(b.text, 4000), align: ALIGNS.indexOf(b.align) >= 0 ? b.align : 'left' };
     case 'callout':
       return { type: 'callout', text: s(b.text, 2000), color: CALLOUT_COLORS.indexOf(b.color) >= 0 ? b.color : 'gold' };
     case 'quote':
       return { type: 'quote', text: s(b.text, 2000) };
     case 'image':
-      return { type: 'image', url: s(b.url, 1000), caption: s(b.caption, 300) };
+      // action — та же запись, что у кнопки: экран игры или внешний адрес.
+      // Баннер обновления обычно ведёт туда, про что он рассказывает.
+      return { type: 'image', url: s(b.url, 1000), caption: s(b.caption, 300), action: s(b.action, 500) };
+    case 'iconrow':
+      // Картинка сбоку и текст рядом — так свёрстаны блоки «получи предмет»
+      // в письмах об обновлениях: иконка предмета слева, описание справа.
+      return { type: 'iconrow', url: s(b.url, 1000), text: s(b.text, 2000),
+        side: b.side === 'right' ? 'right' : 'left', size: [48, 64, 96, 128].indexOf(u.toInt(b.size, 0)) >= 0 ? u.toInt(b.size, 64) : 64,
+        action: s(b.action, 500) };
     case 'list':
       return { type: 'list', ordered: !!b.ordered, items: (Array.isArray(b.items) ? b.items : []).slice(0, 40).map((x: any) => s(x, 500)).filter((x: string) => x) };
     case 'button':
@@ -80,7 +95,7 @@ function list(user: User): any {
     .map((p) => ({
       id: p.id, title: p.title, emoji: p.emoji, tag: p.tag,
       blocks: p.blocks, authorName: p.authorName,
-      createdAt: p.createdAt, updatedAt: p.updatedAt, pinned: !!p.pinned,
+      createdAt: p.createdAt, updatedAt: p.updatedAt, pinned: !!p.pinned, popup: !!p.popup,
     }));
   // Кнопки редактирования показываем по той же зоне, по которой
   // пропускаем действие: иначе кнопка есть, а нажатие даёт отказ.
@@ -102,6 +117,34 @@ function banner(user: User): any {
     .sort((a, b) => b.createdAt - a.createdAt)[0];
   if (!pinned) return null;
   return { id: pinned.id, title: pinned.title, emoji: pinned.emoji || '📰', tag: pinned.tag || '' };
+}
+
+// ── Окно обновления при входе ─────────────────────────────────────
+// Большое обновление с картинками в ленте пролистывают мимо. Пост с
+// пометкой popup показывается окном ОДИН раз: закрыл — больше не
+// всплывает, но остаётся в ленте новостей.
+function popup(user: User): any {
+  const seen: string[] = Array.isArray((user as any).newsPopupSeen) ? (user as any).newsPopupSeen : [];
+  const post = Object.values(store())
+    .filter((p) => p.popup && seen.indexOf(p.id) === -1)
+    .sort((a, b) => (b.popupAt || b.createdAt) - (a.popupAt || a.createdAt))[0];
+  if (!post) return null;
+  return {
+    id: post.id, title: post.title, emoji: post.emoji || '📰', tag: post.tag || '',
+    blocks: post.blocks, createdAt: post.createdAt,
+  };
+}
+
+// Игрок закрыл окно обновления: второй раз оно не всплывёт. Список
+// подрезаем — он растёт по строке на каждое обновление.
+function closePopup(user: User, id: string): any {
+  const pid = String(id || '').trim();
+  if (!pid || !store()[pid]) throw new u.ApiError('Новость не найдена');
+  const seen: string[] = Array.isArray((user as any).newsPopupSeen) ? (user as any).newsPopupSeen : [];
+  if (seen.indexOf(pid) === -1) seen.push(pid);
+  (user as any).newsPopupSeen = seen.slice(-30);
+  db.markUser(user.id);
+  return { ok: true };
 }
 
 // Игрок закрыл полосу: помним ровно id, а не «выключено вообще».
@@ -137,7 +180,7 @@ function create(user: User, data: any, notices: Notices): any {
   all[id] = {
     id, title, emoji: s(data.emoji, 8) || '📰', tag: s(data.tag, 40),
     blocks, authorId: user.id, authorName: user.name,
-    createdAt: nowMs, updatedAt: nowMs, pinned: !!(data && data.pinned),
+    createdAt: nowMs, updatedAt: nowMs, pinned: !!(data && data.pinned), popup: !!(data && data.popup),
   };
   db.save('news');
   notices.push('📰 Новость опубликована!');
@@ -148,17 +191,24 @@ function create(user: User, data: any, notices: Notices): any {
 function update(user: User, id: string, data: any, notices: Notices): any {
   requireAdmin(user);
   const all = store();
-  const p = all[id];
-  if (!p) throw new u.ApiError('Новость не найдена');
-  if (data.title !== undefined) { const t = s(data.title, 200).trim(); if (!t) throw new u.ApiError('Заголовок не может быть пустым'); p.title = t; }
-  if (data.emoji !== undefined) p.emoji = s(data.emoji, 8) || '📰';
-  if (data.tag !== undefined) p.tag = s(data.tag, 40);
-  if (data.blocks !== undefined) { const bl = cleanBlocks(data.blocks); if (bl.length === 0) throw new u.ApiError('Добавьте хотя бы один блок'); p.blocks = bl; }
-  if (data.pinned !== undefined) p.pinned = !!data.pinned;
-  p.updatedAt = Date.now();
+  const post = all[id];
+  if (!post) throw new u.ApiError('Новость не найдена');
+  if (data.title !== undefined) { const t = s(data.title, 200).trim(); if (!t) throw new u.ApiError('Заголовок не может быть пустым'); post.title = t; }
+  if (data.emoji !== undefined) post.emoji = s(data.emoji, 8) || '📰';
+  if (data.tag !== undefined) post.tag = s(data.tag, 40);
+  if (data.blocks !== undefined) { const bl = cleanBlocks(data.blocks); if (bl.length === 0) throw new u.ApiError('Добавьте хотя бы один блок'); post.blocks = bl; }
+  if (data.pinned !== undefined) post.pinned = !!data.pinned;
+  // Сняли и снова поставили «показывать окном» — окно увидят заново:
+  // это и есть способ показать правленое обновление ещё раз.
+  if (data.popup !== undefined) {
+    const was = !!post.popup;
+    post.popup = !!data.popup;
+    if (post.popup && !was) post.popupAt = Date.now();
+  }
+  post.updatedAt = Date.now();
   db.save('news');
   notices.push('✏️ Новость обновлена.');
-  return { id, post: p };
+  return { id, post };
 }
 
 // ── АДМИН: удалить пост ──
@@ -184,4 +234,4 @@ function togglePin(user: User, id: string, notices: Notices): any {
   return { id, pinned: p.pinned };
 }
 
-export = { list, get, create, update, remove, togglePin, banner, hideBanner };
+export = { list, get, create, update, remove, togglePin, banner, hideBanner, popup, closePopup };

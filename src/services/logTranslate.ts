@@ -707,6 +707,8 @@ function describe(path: string, body?: any, result?: any): string | null {
         return '👁 Посмотрел, как набор выглядит у игрока';
       case '/api/news/image':
         return '🖼 Загрузил картинку для новости';
+      case '/api/news/close-popup':
+        return '📰 Закрыл окно обновления';
       case '/api/news/hide-banner':
         return '✖️ Скрыл полосу закреплённой новости';
       case '/api/admin/take':

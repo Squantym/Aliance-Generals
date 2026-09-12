@@ -1085,6 +1085,8 @@ function registerRoutes(app: any) {
   }), { admin: true });
   // Игрок закрыл полосу закреплённой новости — это его действие, не админское
   app.add('POST', '/api/news/hide-banner', act((req) => require('./services/news').hideBanner(req.user, req.body.id)));
+  // Окно обновления закрыто — больше не всплывает
+  app.add('POST', '/api/news/close-popup', act((req) => require('./services/news').closePopup(req.user, req.body.id)));
   // Раздачи наград к праздникам и событиям (services/giveaways.ts)
   app.add('GET',  '/api/giveaway',       (req) => ({ giveaway: require('./services/giveaways').forPlayer(req.user) }));
   app.add('POST', '/api/giveaway/claim', act((req, n) => require('./services/giveaways').claim(req.user, req.body.id, n)));
