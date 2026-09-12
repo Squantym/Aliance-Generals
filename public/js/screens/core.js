@@ -598,6 +598,8 @@ App.screens.home = async (c) => {
     <div class="card">
       <div class="kv"><span class="k">⚔ Мощь атаки</span><span class="v">${UI.fmtNum(m.power.atk)}</span></div>
       <div class="kv"><span class="k">🛡 Мощь обороны</span><span class="v">${UI.fmtNum(m.power.def)}</span></div>
+      ${m.reinforce && m.reinforce.active ? `<div class="kv"><span class="k">🎖 Подкрепления союзников (${m.reinforce.active})</span>
+        <span class="v gold">+${m.reinforce.bonusPct}% · уже в мощи</span></div>` : ''}
       <div class="kv"><span class="k">🚚 Техники в бою</span><span class="v">${UI.fmtNum(m.power.unitTaken || 0)} / ${UI.fmtNum(m.capacity)}</span></div>
       ${m.power.secretTaken > 0 ? `<div class="kv"><span class="k">🛸 Секретные разработки в бою</span><span class="v gold">${UI.fmtNum(m.power.secretTaken)} (вне лимита)</span></div>` : ''}
       <div class="kv"><span class="k">Доход в час</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtMoney(m.incomePerHour)}</span></div>

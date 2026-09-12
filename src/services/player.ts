@@ -1319,6 +1319,13 @@ function mePayload(user: User): any {
       try { return require('./maintenance').view().soon; } catch (e) { return null; }
     })(),
     power: { atk: atk.power, def: def.power, taken: atk.taken, unitTaken: atk.unitTaken, secretTaken: atk.secretTaken },
+    // Подкрепления союзников уже учтены в мощи выше, но незаметно: игрок
+    // видел те же числа и решал, что подкрепления не работают. Показываем
+    // их отдельной строкой (services/reinforcements.ts).
+    reinforce: (() => {
+      try { const r = require('./reinforcements'); return { active: r.prune(user).length, bonusPct: r.bonusPct(user) }; }
+      catch (e) { return { active: 0, bonusPct: 0 }; }
+    })(),
     incomePerHour: totalIncome(user), upkeepPerHour: totalUpkeep(user),
     nextPayoutSec: Math.max(0, Math.ceil((user.lastIncomeAt + HOUR - now) / 1000)),
     alliance: allianceInfo(user),

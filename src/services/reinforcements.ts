@@ -163,7 +163,10 @@ function send(user: User, toId: string, notices: Notices) {
 
   notices.push(`🎖 Подкрепление отправлено союзнику «${target.name}» на ${R.LIFETIME_H} ч. ` +
     `Осталось отправок сегодня: ${Math.max(0, perDayFor(user) - sentToday(user).length)}.`);
-  return view(user);
+  // sentTo — для журнала действий: игра присылает только toId, и в
+  // записи стояло «Отправил подкрепление «—»», то есть кому именно —
+  // владелец в журнале не видел.
+  return Object.assign(view(user), { sentTo: { id: target.id, name: target.name } });
 }
 
 // Отозвать подкрепления между игроком и его бывшими союзниками.

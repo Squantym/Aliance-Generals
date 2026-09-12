@@ -563,7 +563,7 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/sanctions/declare':
         return `⚖️ Объявил санкции против «${body.targetName || body.targetId || '—'}»`;
       case '/api/reinforcements/send':
-        return `🤝 Отправил подкрепление «${body.targetName || body.targetId || '—'}»`;
+        return `🤝 Отправил подкрепление «${(result.sentTo && result.sentTo.name) || body.targetName || body.toId || '—'}»`;
       case '/api/missions/buy-required':
         return '🛒 Докупил технику, которой не хватало для спецоперации';
 
