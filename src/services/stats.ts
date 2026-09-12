@@ -68,6 +68,7 @@ const GOLD_SOURCES: Record<string, string> = {
   season: 'Сезоны',
   event: 'События',
   purchase: 'Покупки',
+  purchase_bonus: 'Бонусы к покупкам',
   admin: 'Выдано администрацией',
   referral: 'Приглашения',
   achievement: 'Достижения',

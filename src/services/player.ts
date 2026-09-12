@@ -1298,6 +1298,11 @@ function mePayload(user: User): any {
     xpBoost: (() => {
       try { return require('./donateBonus').xpBoostView(user); } catch (e) { return null; }
     })(),
+    // Награда к празднику или событию: плашка над экраном с кнопкой
+    // «Забрать» (services/giveaways.ts)
+    giveaway: (() => {
+      try { return require('./giveaways').forPlayer(user); } catch (e) { return null; }
+    })(),
     // Чего игрок ещё не подтвердил. У всех, кто регистрировался до
     // появления отметок, здесь непустой список: согласий у них нет — их
     // просто не спрашивали. Клиент по этому списку показывает окно,

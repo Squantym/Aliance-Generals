@@ -5392,3 +5392,17 @@ body.has-club-bar #header { top: 32px; }
 .of-preview { max-width: 460px; }
 .of-preview .offer-card { pointer-events: none; }
 .of-preview .offer-buy .btn { opacity: .9; }
+
+/* ═══ Добыча из контейнера: разработки картинками ═══ */
+.loot-devs { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.loot-dev { text-align: center; }
+.loot-dev .img-frame { margin: 0 auto 4px; width: 64px; height: 64px; }
+.loot-dev-name { line-height: 1.15; }
+
+/* ═══ Плашка с наградой (раздачи к праздникам) ═══ */
+.gw-bar { border-color: var(--money); }
+.gw-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.gw-item { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text); }
+.gw-item img { width: 18px; height: 18px; object-fit: contain; }
+.gw-when { display: block; margin-top: 2px; }
+.gw-kv-icon { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; }

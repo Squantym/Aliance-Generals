@@ -615,7 +615,10 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/market/mines', (req) => market.mineInfo(req.user));
   app.add('POST', '/api/market/mines/buy', act((req, n) => market.buyMines(req.user, req.body.qty, n)));
   app.add('GET', '/api/market/containers', (req) => market.containersView(req.user));
-  app.add('POST', '/api/market/open', act((req, n) => market.openContainer(req.user, req.body.tier, n, req.body.qty)));
+  // Покупка кладёт контейнеры на склад, открытие — отдельное действие:
+  // игрок сам решает, когда и сколько вскрыть (services/market.ts)
+  app.add('POST', '/api/market/buy-container', act((req, n) => market.buyContainers(req.user, req.body.tier, req.body.qty, n)));
+  app.add('POST', '/api/market/open', act((req, n) => market.openOwned(req.user, req.body.tier, req.body.qty, n)));
   app.add('GET', '/api/market/container-history', (req) => market.containerHistory(req.user));
   app.add('GET', '/api/market/auction', () => market.auctionView());
   app.add('POST', '/api/market/bid', act((req, n) => market.bid(req.user, req.body.lotId, req.body.amount, n)));
@@ -1082,6 +1085,9 @@ function registerRoutes(app: any) {
   }), { admin: true });
   // Игрок закрыл полосу закреплённой новости — это его действие, не админское
   app.add('POST', '/api/news/hide-banner', act((req) => require('./services/news').hideBanner(req.user, req.body.id)));
+  // Раздачи наград к праздникам и событиям (services/giveaways.ts)
+  app.add('GET',  '/api/giveaway',       (req) => ({ giveaway: require('./services/giveaways').forPlayer(req.user) }));
+  app.add('POST', '/api/giveaway/claim', act((req, n) => require('./services/giveaways').claim(req.user, req.body.id, n)));
   app.add('POST', '/api/legion/battle/join',       act((req, n) => legion.joinBattle(req.user, req.body.role, n)));
   app.add('POST', '/api/legion/battle/ready',      act((req, n) => legion.setReady(req.user, req.body.ready, n)));
   app.add('POST', '/api/legion/battle/direction',  act((req, n) => legion.chooseDirection(req.user, req.body.direction, n)));
@@ -1943,17 +1949,21 @@ function registerRoutes(app: any) {
         const pick = (ids: string[]) => src.filter((x: any) => ids.includes(x.id));
         const sum = (arr: any[]) => arr.reduce((n, x) => n + x.value, 0);
         // Три понятные группы поступлений вместо плоского списка
-        const bought = pick(['purchase']);
+        // Купленное и полученное бонусом — разные строки внутри одной группы:
+        // владельцу нужно видеть, сколько игрок оплатил, а сколько ему добавили
+        // акции, VIP и бонусы к покупкам (источник 'purchase_bonus')
+        const bought = pick(['purchase', 'purchase_bonus']);
         const won = pick(['event', 'season', 'contract', 'quest', 'achievement', 'login', 'referral']);
         const granted = pick(['admin']);
-        const rest = src.filter((x: any) => !['purchase', 'event', 'season', 'contract',
+        const rest = src.filter((x: any) => !['purchase', 'purchase_bonus', 'event', 'season', 'contract',
           'quest', 'achievement', 'login', 'referral', 'admin'].includes(x.id));
         return {
           id: target.id, name: target.name, level: target.level,
           now: target.gold || 0,
           got: report.gold.total, spent: report.gold.spent,
           groups: [
-            { id: 'bought',  label: 'Куплено за деньги',        total: sum(bought),  items: bought },
+            { id: 'bought',  label: 'Куплено за деньги',        total: sum(bought),  items: bought,
+              boughtGold: sum(pick(['purchase'])), bonusGold: sum(pick(['purchase_bonus'])) },
             { id: 'won',     label: 'Выиграно в игре',          total: sum(won),     items: won },
             { id: 'granted', label: 'Начислено администрацией', total: sum(granted), items: granted },
             ...(rest.length ? [{ id: 'other', label: 'Прочее', total: sum(rest), items: rest }] : []),
@@ -2169,6 +2179,10 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/global-buff',  act((req, n) => admin.setGlobalBuff(req.user, req.body, n)), { admin: true });
   // Бонусы к покупкам за рубли: первое пополнение, разовые, по N раз в день,
   // ускорение опыта. Зона «Акции».
+  // Раздачи наград: состав, срок и список по дням. Зона «Ресурсы».
+  app.add('GET',  '/api/admin/giveaways',      (req) => require('./services/giveaways').adminList(req.user), { admin: true });
+  app.add('POST', '/api/admin/giveaway/save',  act((req, n) => require('./services/giveaways').adminSave(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/giveaway/delete',act((req, n) => require('./services/giveaways').adminRemove(req.user, req.body.id, n)), { admin: true });
   app.add('GET',  '/api/admin/donate-bonuses',      (req) => require('./services/donateBonus').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/donate-bonus/save',   act((req, n) => require('./services/donateBonus').adminSave(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/donate-bonus/delete', act((req, n) => require('./services/donateBonus').adminRemove(req.user, req.body.id, n)), { admin: true });

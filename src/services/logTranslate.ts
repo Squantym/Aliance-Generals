@@ -273,8 +273,10 @@ function describe(path: string, body?: any, result?: any): string | null {
       // ── Чёрный рынок ───────────────────────────────────────────
       case '/api/market/buy':
         return `🛒 Купил на рынке «${itemName(body.itemId)}»${body.targetName ? ` (жертва: «${body.targetName}»)` : ''}`;
+      case '/api/market/buy-container':
+        return `📦 Купил контейнеров (тир ${body.tier}, ${body.qty || 1} шт.)`;
       case '/api/market/open':
-        return `📦 Открыл контейнер (тир ${body.tier}${(body.qty || 1) > 1 ? `, ${body.qty} шт.` : ''})${result.devName ? ` → «${result.devName}»` : ''}`;
+        return `📦 Открыл контейнеры со склада (тир ${body.tier}, ${body.qty === 'all' ? 'все' : (body.qty || 1) + ' шт.'})${result.devName ? ` → «${result.devName}»` : ''}`;
       case '/api/market/bid':
         return `🔨 Ставка на аукционе: 🪙 ${money(body.amount)}`;
 
@@ -356,6 +358,12 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `✏️ Сменил сброшенный позывной на «${body.name || '—'}»`;
       case '/api/name-reset/keep':
         return '✏️ Оставил выданный позывной';
+      case '/api/admin/giveaway/save':
+        return `🎁 ${body.id ? 'Изменил' : 'Создал'} раздачу наград «${body.title || '—'}»`;
+      case '/api/admin/giveaway/delete':
+        return '🗑 Удалил раздачу наград';
+      case '/api/giveaway/claim':
+        return '🎁 Забрал награду';
       case '/api/admin/donate-bonus/save':
         return `🎁 ${body.id ? 'Изменил' : 'Создал'} бонус к покупкам «${body.title || '—'}»`;
       case '/api/admin/donate-bonus/delete':

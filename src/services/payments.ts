@@ -552,12 +552,19 @@ function confirmPayment(orderId: string): { ok: boolean } {
     const mul = require('./discounts').bonusMul('gold', user);
     credited = Math.round(order.gold * mul);
   } catch (e) {}
-  // Купленным помечается ВЕСЬ зачисленный объём, включая бонус акции и
-  // VIP: игрок заплатил за пакет, а бонус — часть того, что ему обещали
-  // при оплате. Делить его на «оплаченную» и «подарочную» части значило
-  // бы при возврате оставлять человеку кусок, который без покупки ему бы
-  // не достался.
-  require('./player').addGold(user, credited, 'purchase', true);
+  // Купленным (goldPaid) помечается ВЕСЬ зачисленный объём, включая бонус
+  // акции и VIP: игрок заплатил за пакет, а бонус — часть того, что ему
+  // обещали при оплате. Делить его на «оплаченную» и «подарочную» части
+  // значило бы при возврате оставлять человеку кусок, который без покупки
+  // ему бы не достался.
+  //
+  // А вот ИСТОЧНИК разный: сам пакет — 'purchase', надбавка акции и VIP —
+  // 'purchase_bonus'. В «Откуда золото» владельцу нужно видеть отдельно,
+  // сколько игрок купил и сколько получил сверху бонусом: по одной общей
+  // строке нельзя понять, во что обходятся акции.
+  const extraFromSale = Math.max(0, credited - order.gold);
+  require('./player').addGold(user, order.gold, 'purchase', true);
+  if (extraFromSale > 0) require('./player').addGold(user, extraFromSale, 'purchase_bonus', true);
   // Реферальный процент: 10% от купленного золота — пригласившему. Считается
   // от пакета с акцией и VIP, но без бонуса к покупке ниже: тот — подарок
   // покупателю за условие акции, а не купленное золото
@@ -570,9 +577,9 @@ function confirmPayment(orderId: string): { ok: boolean } {
   // так же, как акция и VIP выше.
   let promo: any = { goldExtra: 0, lines: [], applied: [] };
   try { promo = require('./donateBonus').applyOnPaid(user, order); } catch (e) {}
-  // Источник тот же 'purchase': в «Откуда золото» бонус к покупке стоит в
-  // группе купленного, иначе оплаченное золото числилось бы «прочим»
-  if (promo.goldExtra > 0) require('./player').addGold(user, promo.goldExtra, 'purchase', true);
+  // Бонус к покупке — тот же источник 'purchase_bonus', что и надбавка акции:
+  // для владельца это одна и та же строка «получено бонусом»
+  if (promo.goldExtra > 0) require('./player').addGold(user, promo.goldExtra, 'purchase_bonus', true);
   credited += promo.goldExtra;
   order.creditedGold = credited;
   order.promoApplied = promo.applied;

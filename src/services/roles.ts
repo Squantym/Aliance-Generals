@@ -148,6 +148,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/db\//,                          'database'],
   [/^\/api\/admin\/(discount|discounts)$/,          'discounts'],
   [/^\/api\/admin\/donate-bonus(es|\/save|\/delete)$/, 'discounts'],
+  [/^\/api\/admin\/giveaways?(\/save|\/delete)?$/,       'economy'],
   // Тихая выдача и очистка журнала — владельческие ручки. Зона «Роли»
   // самая узкая из существующих, а сами сервисы дополнительно требуют
   // владельца. Правила стоят ВЫШЕ общего «grant…», иначе тихая выдача

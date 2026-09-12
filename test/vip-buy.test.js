@@ -29,8 +29,8 @@ await auth.register('Игрок', 'пароль123', 'a@t.ru', 'ru', '1.1.1.1');
 const u = Object.values(player.users())[0];
 
 console.log('\n── 1. Покупка подписки ──');
-ok(vip.PRICE_GOLD === 500, `цена: ${vip.PRICE_GOLD} золота`);
-ok(vip.PRICE_DAYS === 7, `срок: ${vip.PRICE_DAYS} дней`);
+ok(vip.PRICE_GOLD === 300, `цена: ${vip.PRICE_GOLD} золота`);
+ok(vip.PRICE_DAYS === 14, `срок: ${vip.PRICE_DAYS} дней`);
 u.gold = 200;
 fails(() => vip.buy(u, []), 'Не хватает', 'без денег купить нельзя');
 ok(!vip.isVip(u), 'подписка не выдана');
@@ -38,12 +38,12 @@ u.gold = 1200;
 const n1 = [];
 vip.buy(u, n1);
 ok(vip.isVip(u), 'после покупки подписка активна');
-ok(u.gold === 700, `золото списано: осталось ${u.gold}`);
-ok(vip.vipInfo(u).daysLeft === 7, `дней: ${vip.vipInfo(u).daysLeft}`);
-ok(/VIP оформлен на 7 дн/.test(n1[0]), `сообщение: «${n1[0].slice(0, 40)}…»`);
+ok(u.gold === 900, `золото списано: осталось ${u.gold}`);
+ok(vip.vipInfo(u).daysLeft === 14, `дней: ${vip.vipInfo(u).daysLeft}`);
+ok(/VIP оформлен на 14 дн/.test(n1[0]), `сообщение: «${n1[0].slice(0, 40)}…»`);
 vip.buy(u, []);
-ok(vip.vipInfo(u).daysLeft === 14, 'продление прибавляет дни, а не сбрасывает');
-ok(u.gold === 200, 'за продление списано ещё раз');
+ok(vip.vipInfo(u).daysLeft === 28, 'продление прибавляет дни, а не сбрасывает');
+ok(u.gold === 600, 'за продление списано ещё раз');
 ok(/app\.add\('POST', '\/api\/vip\/buy'/.test(routes), 'роут покупки зарегистрирован');
 ok(/priceGold: vip\.PRICE_GOLD/.test(routes), 'цена приходит в игру с сервера');
 

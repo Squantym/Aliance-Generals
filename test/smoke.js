@@ -334,9 +334,13 @@ async function main() {
   console.log('8. Чёрный рынок: контейнер');
   const goldForBox = (await get('/api/me', A)).data.gold;
   if (goldForBox >= 50) {
-    const open = await post('/api/market/open', A, { tier: 1 });
+    // Сначала покупка на склад, открытие — отдельным действием
+    const buy = await post('/api/market/buy-container', A, { tier: 1, qty: 1 });
+    check('контейнер за 50 золота куплен на склад', buy.status === 200 && buy.data.owned >= 1);
+    const open = await post('/api/market/open', A, { tier: 1, qty: 1 });
     check('контейнер за 50 золота открыт', open.status === 200 && Array.isArray(open.data.drops));
   } else {
+    skip('контейнер за 50 золота куплен на склад', `золота ${goldForBox} — покупать нечем`);
     skip('контейнер за 50 золота открыт', `золота ${goldForBox} — покупать нечем`);
   }
   const cont = (await get('/api/market/containers', A)).data;
@@ -978,11 +982,14 @@ async function main() {
   await post('/api/admin/grant', A, { userId: idA, gold: 100000 });
   const containers = (await get('/api/market/containers', A)).data;
   const tier1 = containers.containers[0].tier;
+  await post('/api/market/buy-container', A, { tier: tier1, qty: 5 });
   const openX5 = await post('/api/market/open', A, { tier: tier1, qty: 5 });
   check('открытие пачки из 5 работает', openX5.status === 200,
         openX5.data.error || '');
-  const openBad = await post('/api/market/open', A, { tier: tier1, qty: 3 });
+  const openBad = await post('/api/market/open', A, { tier: tier1, qty: 4 });
   check('пачка неразрешённого размера отклонена', openBad.status === 400);
+  const openEmpty = await post('/api/market/open', A, { tier: tier1, qty: 1 });
+  check('с пустого склада не открыть', openEmpty.status === 400);
   const history = (await get('/api/market/container-history', A)).data;
   check('история открытий не пуста', (history.history || []).length > 0);
 

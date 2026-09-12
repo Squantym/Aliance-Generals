@@ -157,8 +157,8 @@ function markRenameUsed(user: any): void {
 
 // ---------- Покупка подписки за золото ----------
 // Цена и срок вынесены в конфиг: менять их придётся чаще, чем код.
-const PRICE_GOLD = 500;
-const PRICE_DAYS = 7;
+const PRICE_GOLD = 300;
+const PRICE_DAYS = 14;
 
 function buy(user: any, notices: Notices) {
   const price = PRICE_GOLD;

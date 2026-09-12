@@ -993,13 +993,32 @@ const MARKET_ITEMS = [
 ];
 const MARKET_ITEM_BY_ID = Object.fromEntries(MARKET_ITEMS.map(i => [i.id, i]));
 
+// Содержимое контейнера. Четыре вида добычи в одном ящике:
+//   chance  — секретная разработка, как и было (150% = одна гарантированно
+//             + 50% на вторую);
+//   doping  — предмет допинга с чёрного рынка, шанс по тому же правилу;
+//   money   — деньги, считаются в ЕДИНИЦАХ цены самой свежей наземной
+//             техники игрока (minUnitPriceAtLevel): награда растёт вместе
+//             с уровнем, как и остальные денежные выплаты в игре;
+//   sab     — диверсанты, случайное число между наземными, морскими,
+//             воздушными и построечными. Секретные и смертники ценнее и
+//             идут только в старших ящиках, с потолком на ящик; они часть
+//             общего числа, а не сверх него.
 const CONTAINERS = [
-  { tier: 1, id: 'keis',   name: 'Технологичный кейс',            gold: 50,  chance: 50  },
-  { tier: 2, id: 'yashik', name: 'Ящик забытых технологий',       gold: 75,  chance: 75  },
-  { tier: 3, id: 'kont',   name: 'Исследовательский контейнер',   gold: 100, chance: 100 },
-  { tier: 4, id: 'angar',  name: 'Биомеханический ангар',         gold: 150, chance: 150 },
-  { tier: 5, id: 'centr',  name: 'Центр развития технологий',     gold: 200, chance: 200 },
+  { tier: 1, id: 'keis',   name: 'Технологичный кейс',            gold: 50,  chance: 50,
+    doping: 20,  moneyUnits: [20, 50],   sab: [0, 20],   sabSecretMax: 0,  sabSuicideMax: 0  },
+  { tier: 2, id: 'yashik', name: 'Ящик забытых технологий',       gold: 75,  chance: 75,
+    doping: 50,  moneyUnits: [40, 70],   sab: [20, 35],  sabSecretMax: 0,  sabSuicideMax: 0  },
+  { tier: 3, id: 'kont',   name: 'Исследовательский контейнер',   gold: 100, chance: 100,
+    doping: 100, moneyUnits: [100, 200], sab: [30, 70],  sabSecretMax: 5,  sabSuicideMax: 3  },
+  { tier: 4, id: 'angar',  name: 'Биомеханический ангар',         gold: 150, chance: 150,
+    doping: 150, moneyUnits: [170, 250], sab: [50, 90],  sabSecretMax: 20, sabSuicideMax: 5  },
+  { tier: 5, id: 'centr',  name: 'Центр развития технологий',     gold: 200, chance: 200,
+    doping: 250, moneyUnits: [200, 350], sab: [70, 150], sabSecretMax: 30, sabSuicideMax: 10 },
 ];
+// Сколько можно купить и открыть за раз — одинаково в игре и на сервере
+const CONTAINER_BUY_QTY = [1, 3, 5];
+const CONTAINER_OPEN_QTY = [1, 3, 5];
 // ---------- Секретные разработки (9 видов + сверхсекретная) ----------
 // Базовые характеристики статичны до 50 уровня. С 51 уровня — каждый уровень
 // +1% к атаке и защите. Каждая сверхсекретная в коллекции даёт +0.5% к атаке
@@ -2738,7 +2757,7 @@ export = {
   INCOME_BUILDINGS, DEFENSE_BUILDINGS, BUILDING_BY_ID, BUILDING_PRICE_GROWTH, BUILDING_DEF_POWER, INCOME_PERIOD_MS,
   CONFLICTS, CONFLICT_BY_ID, MISSION_STEP,
   STORY_PROLOGUE, TUTORIAL, TUTORIAL_FINAL_GOLD, STORY_EPILOGUE,
-  MARKET_ITEMS, MARKET_ITEM_BY_ID, CONTAINERS,
+  MARKET_ITEMS, MARKET_ITEM_BY_ID, CONTAINERS, CONTAINER_BUY_QTY, CONTAINER_OPEN_QTY,
   SECRET_DEVS, SECRET_DEV_BY_ID, SUPER_DEV, secretAtk, secretDef, secretLevelMul,
   COMMANDERS, AUCTION, AVATARS, AVATAR_IDS,
   RIDDLES, CLUB, LOTTERY, TROPHIES_REMOVED,

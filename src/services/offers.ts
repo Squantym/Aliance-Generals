@@ -317,10 +317,13 @@ function adminPreview(actor: User, data: any) {
 // ── Выдача содержимого ────────────────────────────────────────────
 // Каждая позиция выдаётся тем же кодом, что и обычная выдача в игре:
 // у набора нет своей кассы и своих правил.
-function grant(user: User, offer: Offer, notices: Notices): string[] {
+// Выдача произвольного списка позиций. Отдельно от набора: теми же
+// позициями раздаются награды на праздники (services/giveaways.ts), и
+// разводить два способа выдать «золото, VIP и наёмника» незачем.
+function grantItems(user: User, items: OfferItem[], notices: Notices): string[] {
   const player = require('./player');
   const given: string[] = [];
-  for (const it of offer.items) {
+  for (const it of items) {
     switch (it.type) {
       case 'gold':
         player.addGold(user, it.qty, 'offer');
@@ -344,8 +347,10 @@ function grant(user: User, offer: Offer, notices: Notices): string[] {
         require('./market').grantCommanderDays(user, it.id, it.days, notices);
         break;
       case 'container': {
+        // Контейнер из набора кладётся на склад, а не вскрывается сам:
+        // на рынке правило такое же, и игрок открывает, когда захочет
         const c = (config.CONTAINERS as any[]).find((x) => x.tier === it.tier);
-        if (c) require('./market').openContainersFree(user, c, it.qty || 1, notices);
+        if (c) require('./market').addContainers(user, c.tier, it.qty || 1);
         break;
       }
       case 'unit': {
@@ -359,6 +364,10 @@ function grant(user: User, offer: Offer, notices: Notices): string[] {
   }
   db.markUser(user.id);
   return given;
+}
+
+function grant(user: User, offer: Offer, notices: Notices): string[] {
+  return grantItems(user, offer.items, notices);
 }
 
 // Отметка «куплено» — по ней считается лимит на игрока
@@ -423,7 +432,7 @@ function receiptItems(offerId: string): Array<{ text: string; icon: string | nul
 }
 
 export = {
-  palette, describeItem, itemIcon,
+  palette, describeItem, itemIcon, cleanItem, grantItems,
   adminList, adminSave, adminRemove, adminPreview, showcase,
   catalog, buyForGold, orderForRub, grantPaid, receiptItems,
 };

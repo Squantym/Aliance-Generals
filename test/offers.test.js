@@ -116,8 +116,11 @@ const fails = (n, fn, part) => {
   ok('VIP выдан на неделю', Math.round((P.vipUntil - Date.now()) / 86400000) === 7);
   ok('наёмник нанят', (P.effects || []).some((e) => e.commanderId === 'ghost' && e.expiresAt > Date.now()));
   eq('техника доехала до ангара', player.unitTotalCount(P, 'ground_10') - before.units, 50);
-  ok('контейнеры открыты — разработки прибавились',
-     Object.values(P.secretDevs || {}).reduce((a, b) => a + b, 0) > before.devs);
+  // Контейнеры из набора ложатся на СКЛАД, а не вскрываются сами: на
+  // чёрном рынке правило такое же (services/market.ts)
+  ok('контейнеры легли на склад игрока', require('../dist/src/services/market').ownedCount(P, 1) > 0);
+  ok('и сами не вскрылись',
+     Object.values(P.secretDevs || {}).reduce((a, b) => a + b, 0) === before.devs);
   ok('игроку перечислили, что он получил', buyNx.some((t) => /Набор «Набор новичка» ваш/.test(t)));
 
   console.log('\n[4] Лимит на игрока и срок действия');

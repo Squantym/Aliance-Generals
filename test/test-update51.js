@@ -60,12 +60,12 @@ ok(true, 'цель контрабандного поручения не раст
 console.log('\n── 3. Счётчик считает ИМЕННО указанный товар ──');
 daily.ensureDaily(user);
 // Покупаем другой контейнер — в зачёт не идёт
-market.openContainer(user, 1, [], 1);            // tier 1 = keis, а не kont
+market.buyContainers(user, 1, 1, []);            // tier 1 = keis, а не kont
 let d = user.daily.counters;
 ok((d['buy:kont'] || 0) === 0, 'покупка другого контейнера не засчитана в поручение на «Исследовательский»');
 ok((d['buy:keis'] || 0) === 1, 'зато засчитана в свой счётчик (buy:keis) — для недельной контрабанды');
 // Покупаем нужный
-market.openContainer(user, 3, [], 1);            // tier 3 = kont
+market.buyContainers(user, 3, 1, []);            // tier 3 = kont
 ok((user.daily.counters['buy:kont'] || 0) === 1, 'покупка указанного контейнера засчитана');
 // Допинг
 market.buyItem(user, 'stim', '', []);
@@ -78,7 +78,7 @@ const ids = c.pickDailyQuests(user.daily.day);
 if (ids.includes('k_container')) {
   const goldBefore = user.gold;
   daily.accept(user, 'k_container', []);
-  market.openContainer(user, 3, [], 1);
+  market.buyContainers(user, 3, 1, []);
   const q = daily.list(user).quests.find((x) => x.id === 'k_container');
   ok(q.done === true, `поручение выполнено (${q.progress}/${q.target})`);
   ok(q.reward.gold === 50, `в награде показано ${q.reward.gold} золота`);

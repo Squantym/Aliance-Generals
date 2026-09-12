@@ -230,6 +230,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   spyCount:           { owner: 'features',   note: 'счётчик разведок за день' },
   skillResets:        { owner: 'player',     note: 'сколько раз сбрасывал навыки' },
   containerHistory:   { owner: 'market',     note: 'история открытых контейнеров' },
+  containersOwned:    { owner: 'market',     note: 'купленные, но не открытые контейнеры по тирам' },
+  giveawaysTaken:     { owner: 'giveaways',  note: 'какие раздачи наград игрок уже забрал' },
   contractsDay:       { owner: 'contracts',  note: 'день активных контрактов' },
   missionProgress:    { owner: 'missions',   note: 'прогресс по спецоперациям' },
   missionQueue:       { owner: 'missions',   note: 'очередь шагов спецоперации' },

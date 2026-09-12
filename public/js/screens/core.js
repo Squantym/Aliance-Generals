@@ -1864,10 +1864,19 @@ App.screens.settings = async (c) => {
       <p class="muted small mt">Этот браузер не поддерживает push-уведомления.${App.isIOS() && !App.isStandalone() ? ' На iPhone уведомления работают только после установки игры на главный экран.' : ''}</p></div>`;
   } else {
     const perm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
-    if (perm === 'granted') {
+    // Разрешение браузера и наличие подписки — разные вещи: выключив
+    // уведомления кнопкой ниже, игрок оставляет разрешение. Поэтому
+    // «включено» решается по подписке (App._pushOn), иначе обратно их
+    // было не включить.
+    App.refreshPushState(true);
+    if (perm === 'granted' && App._pushOn) {
       appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
         <p class="muted small mt">Уведомления включены — вы получите сигнал об атаках, санкциях и событиях.</p>
         <button class="btn btn-red mt" id="set-push-off" style="width:100%">🔕 Выключить уведомления</button></div>`;
+    } else if (perm === 'granted') {
+      appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
+        <p class="muted small mt">Уведомления выключены. Браузер их разрешает — включить можно прямо здесь.</p>
+        <button class="btn btn-orange mt" id="set-push-on" style="width:100%">🔔 Включить уведомления</button></div>`;
     } else if (perm === 'denied') {
       appTabHtml += `<div class="card"><div class="name">🔔 Уведомления</div>
         <p class="muted small mt">Уведомления запрещены в настройках браузера. Разрешите их в настройках сайта, чтобы получать сигналы об атаках и событиях.</p></div>`;

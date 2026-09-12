@@ -181,7 +181,15 @@ function containersView(user: User) {
     defNow: config.secretDef(user, d),
   }));
   return {
-    containers: config.CONTAINERS.map((c) => ({ ...c, gold: containerGold(c, user), baseGold: c.gold })),
+    containers: config.CONTAINERS.map((c) => ({
+      ...c, gold: containerGold(c, user), baseGold: c.gold,
+      owned: ownedCount(user, c.tier),
+      // Деньги считаются от цены техники игрока: «20-50 единиц» игроку
+      // ни о чём не говорит, поэтому показываем готовые суммы
+      money: [c.moneyUnits[0] * unitPrice(user), c.moneyUnits[1] * unitPrice(user)],
+    })),
+    buyQty: config.CONTAINER_BUY_QTY,
+    openQty: config.CONTAINER_OPEN_QTY,
     collection,
     superSecret: {
       id: config.SUPER_DEV.id,
@@ -198,38 +206,143 @@ function containersView(user: User) {
   };
 }
 
-// Выдача содержимого контейнеров БЕЗ оплаты. Отдельно от покупки, потому
-// что открывать контейнеры умеет не только чёрный рынок: то же самое
-// кладут в наборы «Спецпредложений». Деньги, счётчики поручений и
-// история покупки остаются на стороне вызывающего — здесь только сам
-// розыгрыш содержимого.
-function openContainersFree(user: User, c: any, qty: number, notices: Notices): { droppedAll: string[]; droppedCount: Record<string, number> } {
-  // Количество приводим здесь же: функцию зовёт и покупка, и набор
-  // «Спецпредложений», и надеяться, что каждый вызывающий проверил
-  // число за нас, — ровно тот случай, когда однажды не проверит.
+// ---------- Склад контейнеров ----------
+// Купленный контейнер больше не вскрывается сам: он ложится на склад, и
+// игрок решает, когда и сколько открыть. Покупка пачкой раньше означала
+// пачку окон с добычей подряд, в которых ничего нельзя было рассмотреть.
+function ownedBox(user: any): Record<string, number> {
+  if (!user.containersOwned || typeof user.containersOwned !== 'object') user.containersOwned = {};
+  return user.containersOwned;
+}
+function ownedCount(user: any, tier: number): number {
+  return Math.max(0, u.toInt(ownedBox(user)[String(tier)], 0));
+}
+// Положить на склад: зовут покупка на рынке и наборы «Спецпредложений».
+function addContainers(user: any, tier: number, qty: number): number {
+  const box = ownedBox(user);
+  box[String(tier)] = ownedCount(user, tier) + Math.max(0, u.toInt(qty, 0));
+  db.markUser(user.id);
+  return box[String(tier)];
+}
+
+// Цена самой свежей наземной техники игрока. В ней меряются денежные
+// награды по всей игре — контейнеры не исключение, иначе на 40 уровне
+// выпадала бы сумма, интересная только на третьем.
+function unitPrice(user: User): number {
+  return config.minUnitPriceAtLevel(user.level || 1);
+}
+
+// Шанс больше 100%: целая часть — гарантированные штуки, остаток —
+// вероятность ещё одной. 150% = одна гарантированно + 50% на вторую.
+function rollCount(chance: number): number {
+  const ch = Number(chance) || 0;
+  let n = Math.floor(ch / 100);
+  if (Math.random() * 100 < ch % 100) n++;
+  return n;
+}
+
+// Обычные виды диверсантов. Секретные и смертники сюда не входят: они
+// бьют по более ценным целям и лежат только в старших ящиках.
+const SAB_REGULAR: Array<'ground' | 'sea' | 'air' | 'building'> = ['ground', 'sea', 'air', 'building'];
+
+type Loot = {
+  // Разработки — по идентификатору: окно добычи показывает картинку
+  // /img/secret/<id>.webp, а по названию её не найти
+  devs: Record<string, number>;      // секретные разработки: id → сколько
+  doping: Record<string, number>;    // допинг: название → сколько
+  money: number;                     // деньги
+  sab: Record<string, number>;       // диверсанты: вид → сколько
+};
+function emptyLoot(): Loot { return { devs: {}, doping: {}, money: 0, sab: {} }; }
+
+// Допинг из контейнера действует сразу: склада предметов в игре нет,
+// купленный на рынке допинг тоже применяется в момент покупки.
+const DOPING_POOL = (config.MARKET_ITEMS as any[]).filter(
+  (i) => i.kind === 'buff' || String(i.kind).startsWith('refill'));
+function applyDoping(user: User, item: any, notices: Notices): void {
+  const mx = player.maxima(user);
+  switch (item.kind) {
+    case 'refill_energy': user.res.en.cur = mx.en; break;
+    case 'refill_health': user.res.hp.cur = mx.hp; break;
+    case 'refill_ammo':   user.res.am.cur = mx.am; break;
+    default: pushEffect(user, item);
+  }
+  notices.push(`💉 Из контейнера: «${item.name}».`);
+}
+
+// Добыча ОДНОГО контейнера. Всё выпавшее копится в loot: окно с
+// результатом показывает итог по пачке, а не по каждому ящику отдельно.
+function rollOne(user: User, c: any, loot: Loot, notices: Notices): void {
+  // Секретные разработки — как и раньше, по chance контейнера
+  for (let i = 0; i < rollCount(c.chance); i++) {
+    const dev = u.pick(config.SECRET_DEVS);
+    user.secretDevs[dev.id] = (user.secretDevs[dev.id] || 0) + 1;
+    loot.devs[dev.id] = (loot.devs[dev.id] || 0) + 1;
+  }
+  // Допинг
+  for (let i = 0; i < rollCount(c.doping || 0); i++) {
+    const item = u.pick(DOPING_POOL);
+    applyDoping(user, item, notices);
+    loot.doping[item.name] = (loot.doping[item.name] || 0) + 1;
+  }
+  // Деньги — в единицах цены техники игрока
+  const units = c.moneyUnits ? u.rnd(c.moneyUnits[0], c.moneyUnits[1]) : 0;
+  if (units > 0) {
+    const money = units * unitPrice(user);
+    player.addMoney(user, money, false);
+    loot.money += money;
+  }
+  // Диверсанты. Секретные и смертники — ЧАСТЬ общего числа, а не сверх
+  // него: иначе старший ящик давал бы вдвое больше обещанного.
+  const total = c.sab ? u.rnd(c.sab[0], c.sab[1]) : 0;
+  if (total > 0) {
+    require('./saboteurs').ensure(user);
+    const secret = c.sabSecretMax ? u.rnd(0, Math.min(c.sabSecretMax, total)) : 0;
+    const suicide = c.sabSuicideMax ? u.rnd(0, Math.min(c.sabSuicideMax, total - secret)) : 0;
+    const add = (kind: string, n: number) => {
+      if (n <= 0) return;
+      (user.saboteurs as any)[kind] = ((user.saboteurs as any)[kind] || 0) + n;
+      loot.sab[kind] = (loot.sab[kind] || 0) + n;
+    };
+    add('secret', secret);
+    add('suicide', suicide);
+    for (let left = total - secret - suicide; left > 0; left--) add(u.pick(SAB_REGULAR), 1);
+  }
+}
+
+// Выдача содержимого контейнеров БЕЗ оплаты и БЕЗ склада. Отдельно от
+// покупки, потому что открывать умеет не только чёрный рынок.
+function openContainersFree(user: User, c: any, qty: number, notices: Notices): { droppedAll: string[]; droppedCount: Record<string, number>; loot: Loot & { devList: Array<{ id: string; name: string; count: number }> } } {
+  // Количество приводим здесь же: функцию зовёт и рынок, и наборы
+  // «Спецпредложений», и надеяться, что каждый вызывающий проверил число
+  // за нас, — ровно тот случай, когда однажды не проверит.
   const count = u.clamp(u.toInt(qty, 1), 1, 100);
-  const droppedAll: string[] = [];
+  const loot = emptyLoot();
+  for (let n = 0; n < count; n++) rollOne(user, c, loot, notices);
+
+  // Наружу и в историю — по названиям: их читает человек. Внутри — по id.
+  const devName = (id: string) => (config.SECRET_DEV_BY_ID[id] || { name: id }).name;
   const droppedCount: Record<string, number> = {};
-  for (let n = 0; n < count; n++) {
-    // Шанс 150% = 1 гарантированная разработка + 50% на вторую
-    let drops = Math.floor(c.chance / 100);
-    if (Math.random() * 100 < c.chance % 100) drops++;
-    for (let i = 0; i < drops; i++) {
-      const dev = u.pick(config.SECRET_DEVS);
-      user.secretDevs[dev.id] = (user.secretDevs[dev.id] || 0) + 1;
-      droppedAll.push(dev.name);
-      droppedCount[dev.name] = (droppedCount[dev.name] || 0) + 1;
-    }
+  const droppedAll: string[] = [];
+  for (const [id, n] of Object.entries(loot.devs)) {
+    droppedCount[devName(id)] = n;
+    for (let i = 0; i < n; i++) droppedAll.push(devName(id));
   }
-  if (droppedAll.length === 0) {
-    notices.push(`📦 Открыто ${count} контейнер(ов) — пусто. На войне бывает и так.`);
-  } else {
-    notices.push(`📦 Открыто ${count} контейнер(ов). Выпало: ${droppedAll.join(', ')}!`);
-  }
+  const parts: string[] = [];
+  if (droppedAll.length) parts.push(Object.entries(droppedCount).map(([n, k]) => `${n} ×${k}`).join(', '));
+  if (loot.money > 0) parts.push(`$ ${loot.money.toLocaleString('ru-RU')}`);
+  const sabTotal = Object.values(loot.sab).reduce((a, b) => a + b, 0);
+  if (sabTotal > 0) parts.push(`диверсантов ×${sabTotal}`);
+  notices.push(parts.length
+    ? `📦 Открыто ${count} контейнер(ов). Выпало: ${parts.join('; ')}!`
+    : `📦 Открыто ${count} контейнер(ов) — пусто. На войне бывает и так.`);
+
   // Проверяем, не собрался ли полный комплект из 9 разработок
   player.syncSuper(user, notices);
   db.markUser(user.id);
-  return { droppedAll, droppedCount };
+  // devList — то, что рисует окно добычи: картинка, название, сколько
+  const devList = Object.entries(loot.devs).map(([id, n]) => ({ id, name: devName(id), count: n }));
+  return { droppedAll, droppedCount, loot: { ...loot, devList } };
 }
 
 // Наёмник на СРОК: аукцион даёт сутки, админ — сколько скажет, набор
@@ -253,37 +366,60 @@ function grantCommanderDays(user: User, commanderId: string, days: number, notic
   return { commanderId: commander.id, name: commander.name, days: d, expiresAt };
 }
 
-function openContainer(user: User, tier: number | string, notices: Notices, qty?: number) {
+// ---------- Покупка контейнеров на склад ----------
+function buyContainers(user: User, tier: number | string, qty: number, notices: Notices) {
   const c = config.CONTAINERS.find((x) => x.tier === u.toInt(tier));
   if (!c) throw new u.ApiError('Такого контейнера не существует');
-  qty = u.clamp(u.toInt(qty, 1), 1, 10);
-  if (![1, 5, 10].includes(qty)) throw new u.ApiError('Можно открыть только 1, 5 или 10 контейнеров за раз');
+  const n = u.toInt(qty, 1);
+  if (!config.CONTAINER_BUY_QTY.includes(n)) {
+    throw new u.ApiError(`Купить можно ${config.CONTAINER_BUY_QTY.join(', ')} контейнеров за раз`);
+  }
+  const unit = containerGold(c, user);
+  const total = unit * n;
+  if (user.gold < total) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${total} за ${n} шт.)`);
 
-  const unitPrice = containerGold(c, user);
-  const totalPrice = unitPrice * qty;
-  if (user.gold < totalPrice) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${totalPrice} за ${qty} шт.)`);
   require('./dailyQuests').bump(user, 'marketBought', 1);
   // Счётчик по конкретному контейнеру (для поручений на контрабанду)
-  require('./dailyQuests').bump(user, 'buy:' + c.id, qty);
+  require('./dailyQuests').bump(user, 'buy:' + c.id, n);
   // Потраченное золото — по факту, со скидкой: половину от него вернёт
   // поручение на контрабанду.
-  require('./dailyQuests').bump(user, 'goldOn:' + c.id, totalPrice);
-  // Категория именно 'container': раньше она жила во второй записи
-  // расхода, а та удваивала сумму и потому убрана.
-  player.spendGold(user, totalPrice, 'container');
+  require('./dailyQuests').bump(user, 'goldOn:' + c.id, total);
+  player.spendGold(user, total, 'container');
+  const owned = addContainers(user, c.tier, n);
+  notices.push(`📦 Куплено: «${c.name}» ×${n}. На складе: ${owned} — откройте, когда будете готовы.`);
+  return { tier: c.tier, bought: n, owned, spent: total };
+}
 
-  const { droppedAll, droppedCount } = openContainersFree(user, c, qty, notices);
+// ---------- Открытие со склада ----------
+// qty: 1, 3, 5 или 'all'. Золото здесь не списывается — за контейнер уже
+// заплачено при покупке.
+function openOwned(user: User, tier: number | string, qty: number | string, notices: Notices) {
+  const c = config.CONTAINERS.find((x) => x.tier === u.toInt(tier));
+  if (!c) throw new u.ApiError('Такого контейнера не существует');
+  const have = ownedCount(user, c.tier);
+  if (have <= 0) throw new u.ApiError('На складе нет таких контейнеров — сначала купите');
+  const all = String(qty) === 'all';
+  const want = all ? have : u.toInt(qty, 1);
+  if (!all && !config.CONTAINER_OPEN_QTY.includes(want)) {
+    throw new u.ApiError(`Открыть можно ${config.CONTAINER_OPEN_QTY.join(', ')} контейнеров за раз или все сразу`);
+  }
+  if (want > have) throw new u.ApiError(`На складе только ${have} шт.`);
 
-  // Сохраняем в историю открытий (последние 10)
+  ownedBox(user)[String(c.tier)] = have - want;
+  const { droppedAll, droppedCount, loot } = openContainersFree(user, c, want, notices);
+
+  // История последних 10 открытий
   const historyEntry = {
-    id: u.uid(8), tier: c.tier, tierName: c.name, qty,
-    spent: totalPrice, dropped: droppedCount, at: Date.now(),
+    id: u.uid(8), tier: c.tier, tierName: c.name, qty: want,
+    spent: 0, dropped: droppedCount, at: Date.now(),
+    money: loot.money, doping: loot.doping, sab: loot.sab,
   };
   if (!user.containerHistory) user.containerHistory = [];
   user.containerHistory.unshift(historyEntry);
   if (user.containerHistory.length > 10) user.containerHistory.length = 10;
+  db.markUser(user.id);
 
-  return { drops: droppedAll, droppedCount, qty, spent: totalPrice, history: historyEntry };
+  return { drops: droppedAll, droppedCount, loot, qty: want, owned: ownedCount(user, c.tier), spent: 0, history: historyEntry };
 }
 
 // ---------- Аукцион командиров ----------
@@ -579,5 +715,5 @@ function adminCommanderHolders(): any {
   return { holders: out.sort((a, b) => b.expiresAt - a.expiresAt) };
 }
 
-export = { itemsList, buyItem, containersView, openContainer, openContainersFree, grantCommanderDays, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
+export = { itemsList, buyItem, containersView, buyContainers, openOwned, addContainers, ownedCount, openContainersFree, grantCommanderDays, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
   adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,};

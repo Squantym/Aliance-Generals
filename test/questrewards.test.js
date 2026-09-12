@@ -106,10 +106,9 @@ const throws = (n, fn) => { let t = false; try { fn(); } catch (e) { t = true; }
   const w = daily.ensureWeekly(U);
   w.accepted[quest.id] = { at: Date.now(), base: 0, baseGold: 0 };
   const goldBefore = U.gold;
-  // Контейнеры открываются пачками по 1/5/10 — двадцать кейсов это две
-  // покупки по десять, ровно как их берёт живой игрок.
-  market.openContainer(U, keis.tier, nx, 10);
-  market.openContainer(U, keis.tier, nx, 10);
+  // Контейнеры покупаются пачками по 1/3/5 и ложатся на склад — двадцать
+  // кейсов это четыре покупки по пять, ровно как их берёт живой игрок.
+  for (let i = 0; i < 4; i++) market.buyContainers(U, keis.tier, 5, nx);
   const spent = goldBefore - U.gold;
   ok(`золото списано со скидкой (${spent} за ${quest.fixedTarget} шт.)`,
      spent > 0 && spent < keis.gold * quest.fixedTarget);

@@ -222,6 +222,9 @@ App.screens.market = async (c, param) => {
         До 50 уровня значения статичны, дальше +1% к атаке/защите за каждый ваш уровень${data.levelBonusPct > 0 ? ` (сейчас +<b class="gold">${data.levelBonusPct}%</b>)` : ''}.
         Каждая собранная «${UI.esc(data.superSecret.name)}» даёт ещё +0.5% ко ВСЕМ секретным разработкам${data.superBonusPct > 0 ? ` (сейчас +<b class="gold">${data.superBonusPct}%</b>)` : ''}.
         Шанс 150% = одна гарантированная + 50% на вторую. Полный комплект из 9 разных = бесплатный «Абсолют».</p>
+        <p class="muted small mt">Кроме разработок внутри лежат допинг с этого же рынка, деньги и диверсанты —
+        чем дороже ящик, тем больше. Купленные контейнеры ждут на складе: открывайте их по одному или пачкой,
+        когда захотите.</p>
       </div>
       ${data.containers.map((x) => `
         <div class="card container-card">
@@ -230,13 +233,18 @@ App.screens.market = async (c, param) => {
           </div>
           <div class="container-card-body">
             <div class="name">📦 ${UI.esc(x.name)}</div>
-            <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b></div>
+            <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b> · допинг: <b class="gold">${x.doping}%</b></div>
+            <div class="muted small">Деньги: <b>$ ${UI.fmtNum(x.money[0])}–${UI.fmtNum(x.money[1])}</b> · диверсанты: <b>${x.sab[0]}–${x.sab[1]}</b>${x.sabSecretMax ? ` <span class="muted">(секретных до ${x.sabSecretMax}, смертников до ${x.sabSuicideMax})</span>` : ''}</div>
             <div class="muted small">Цена за 1 шт: ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</div>
-            <div class="btn-row mt">
-              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="1">×1</button>
-              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="5">×5</button>
-              <button class="btn btn-orange btn-inline" data-open="${x.tier}" data-qty="10">×10</button>
+            <div class="muted small mt">Купить на склад:</div>
+            <div class="btn-row">
+              ${data.buyQty.map((q) => `<button class="btn btn-orange btn-inline" data-buy="${x.tier}" data-qty="${q}">×${q}</button>`).join('')}
             </div>
+            <div class="muted small mt">На складе: <b class="gold">${x.owned}</b> шт.</div>
+            ${x.owned ? `<div class="btn-row">
+              ${data.openQty.filter((q) => q <= x.owned).map((q) => `<button class="btn btn-inline" data-open="${x.tier}" data-qty="${q}">Открыть ×${q}</button>`).join('')}
+              ${x.owned > 1 ? `<button class="btn btn-inline" data-open="${x.tier}" data-qty="all">Открыть все (${x.owned})</button>` : ''}
+            </div>` : '<div class="muted small">Купите контейнер — он подождёт на складе, пока вы не решите его вскрыть.</div>'}
           </div>
         </div>`).join('')}
       <div class="card">
@@ -271,15 +279,24 @@ App.screens.market = async (c, param) => {
               <span class="name small">${UI.esc(h.tierName)} ×${h.qty}</span>
               <span class="muted small">${UI.fmtDate(h.at)}</span>
             </div>
-            <div class="muted small">Потрачено: <span class="ic-gold"></span> ${UI.fmtNum(h.spent)}</div>
-            <div class="small mt">${Object.keys(h.dropped).length ? Object.entries(h.dropped).map(([n, c]) => `${UI.esc(n)} ×${c}`).join(', ') : 'Пусто — ничего не выпало'}</div>
+            <div class="small mt">${App._lootText(h) || 'Пусто — ничего не выпало'}</div>
           </div>`).join('')}
       </div>`;
 
+    c.querySelectorAll('[data-buy]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await API.post('/api/market/buy-container', { tier: btn.dataset.buy, qty: Number(btn.dataset.qty) });
+          await App.refreshMe();
+          App.rerender();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
     c.querySelectorAll('[data-open]').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          const r = await API.post('/api/market/open', { tier: btn.dataset.open, qty: btn.dataset.qty });
+          const qty = btn.dataset.qty === 'all' ? 'all' : Number(btn.dataset.qty);
+          const r = await API.post('/api/market/open', { tier: btn.dataset.open, qty });
           await App.refreshMe();
           App._showContainerResult(r);
         } catch (e) { UI.toast('⛔ ' + e.message); }

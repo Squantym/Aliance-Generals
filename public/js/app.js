@@ -310,6 +310,25 @@ const App = {
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   },
 
+  // Есть ли живая подписка на уведомления. Разрешение браузера («granted»)
+  // об этом НЕ говорит: игрок мог выключить уведомления кнопкой в настройках
+  // — разрешение осталось, а подписки нет. Раньше настройки смотрели только
+  // на разрешение, и после выключения показывали одну кнопку «Выключить»:
+  // включить обратно из игры было нечем.
+  async refreshPushState(rerender) {
+    let on = false;
+    try {
+      if (App.pushSupported() && Notification.permission === 'granted') {
+        const reg = await navigator.serviceWorker.ready;
+        on = !!(await reg.pushManager.getSubscription());
+      }
+    } catch (e) { on = false; }
+    const changed = App._pushOn !== on;
+    App._pushOn = on;
+    if (rerender && changed) App.rerender();
+    return on;
+  },
+
   // Стоит ли предлагать включить уведомления
   canEnablePush() {
     if (!App.pushSupported()) return false;
@@ -351,6 +370,7 @@ const App = {
         });
       }
       await API.post('/api/push/subscribe', { subscription: sub.toJSON() });
+      App._pushOn = true;
       UI.toast('🔔 Уведомления включены');
       App.rerender();
     } catch (e) {
@@ -366,6 +386,7 @@ const App = {
         await API.post('/api/push/unsubscribe', { endpoint: sub.endpoint });
         await sub.unsubscribe();
       }
+      App._pushOn = false;
       UI.toast('🔕 Уведомления выключены');
       App.rerender();
     } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -380,6 +401,7 @@ const App = {
     App.setTheme(App.theme()); // применить сохранённую тему сразу
     window.addEventListener('hashchange', () => App.route());
     App._initPwa();            // service worker + предложение установить игру
+    App.refreshPushState();    // включены ли уведомления на самом деле
     // Кнопка «показать пароль» во всех полях сразу — и в тех, что
     // появятся позже: экран входа, регистрация, смена пароля,
     // восстановление. Перечислять их поимённо значит однажды забыть.
@@ -3965,8 +3987,11 @@ const App = {
         </div>
         <button class="btn btn-orange btn-inline" id="nr-bar-go">Сменить</button>
       </div>` : '';
-    if (!p || !API.token()) { box.innerHTML = nrHtml; App._bindNameResetBar(); return; }
-    box.innerHTML = nrHtml + `
+    // Награда к празднику или событию (services/giveaways.ts). Стоит выше
+    // объявления: у неё есть срок, и пропустить её дороже, чем новость.
+    const gwHtml = App._giveawayBarHtml();
+    if (!p || !API.token()) { box.innerHTML = gwHtml + nrHtml; App._bindNameResetBar(); App._bindGiveawayBar(); return; }
+    box.innerHTML = gwHtml + nrHtml + `
       <div class="pin-news">
         <span class="pin-news-emoji">${UI.esc(p.emoji || '📰')}</span>
         <div class="pin-news-text" id="pin-news-open">
@@ -3975,6 +4000,7 @@ const App = {
         </div>
         <button class="pin-news-x" id="pin-news-close" title="Больше не показывать это объявление">✕</button>
       </div>`;
+    App._bindGiveawayBar();
     document.getElementById('pin-news-open').onclick = () => App.go('newsview/' + p.id);
     document.getElementById('pin-news-close').onclick = async (e) => {
       e.stopPropagation();
@@ -3986,6 +4012,86 @@ const App = {
       try { await API.post('/api/news/hide-banner', { id: p.id }); } catch (err) {}
     };
     App._bindNameResetBar();
+  },
+
+  // ---------- ПЛАШКА С НАГРАДОЙ ----------
+  // Что выложено к празднику или событию, приходит в mePayload вместе с
+  // остальным: плашка висит над любым экраном, пока награду не заберут
+  // или не кончится срок.
+  _giveawayBarHtml() {
+    const g = App.me && App.me.giveaway;
+    if (!g || !API.token()) return '';
+    const icons = (g.items || []).map((it) => `
+      <span class="gw-item" title="${UI.esc(it.text)}">
+        ${it.icon ? `<img src="${it.icon}" alt="${UI.esc(it.text)}" loading="eager" decoding="async">` : ''}
+        <span class="gw-item-text">${UI.esc(it.text)}</span>
+      </span>`).join('');
+    const when = g.canTake
+      ? (g.endAt ? `забрать до <b data-sale-until="${g.endAt}">${UI.timeLeft(g.endAt - Date.now())}</b>` : 'награда ждёт')
+      : (g.nextAt ? `следующая через <b data-sale-until="${g.nextAt}">${UI.timeLeft(g.nextAt - Date.now())}</b>` : 'на сегодня всё');
+    return `
+      <div class="pin-news gw-bar">
+        <span class="pin-news-emoji">${UI.esc(g.emoji || '🎁')}</span>
+        <div class="pin-news-text">
+          <span class="pin-news-label">${g.kind === 'daily' ? `Награда дня ${g.day} из ${g.daysTotal}` : 'Награда'}</span>
+          <span class="pin-news-title">${UI.esc(g.title)}</span>
+          <span class="gw-items">${icons}</span>
+          <span class="gw-when muted small">${when}</span>
+        </div>
+        <button class="btn btn-orange btn-inline" id="gw-take" ${g.canTake ? '' : 'disabled'}>Забрать</button>
+      </div>`;
+  },
+
+  _bindGiveawayBar() {
+    const btn = document.getElementById('gw-take');
+    if (!btn) return;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const g = App.me && App.me.giveaway;
+      try {
+        const r = await API.post('/api/giveaway/claim', { id: g && g.id });
+        await App.refreshMe();
+        App.renderPinnedNews();
+        App.renderHeader();
+        App._showGiveawayResult(r);
+      } catch (e) {
+        btn.disabled = false;
+        UI.toast('⛔ ' + e.message);
+      }
+    };
+  },
+
+  // Что именно выдали — окном, как после покупки: строкой в углу
+  // экрана награда из пяти позиций не читается.
+  _showGiveawayResult(r) {
+    const items = r.items || [];
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'max-width:380px;width:100%;max-height:80vh;overflow-y:auto;';
+    box.innerHTML = `
+      <div class="title" style="margin-top:0">🎁 Награда получена</div>
+      ${items.map((it) => `<div class="kv"><span class="k">${it.icon ? `<img class="gw-kv-icon" src="${it.icon}" alt="" loading="eager">` : ''} ${UI.esc(it.text)}</span></div>`).join('')}
+      <button class="btn btn-orange mt" id="gw-result-close" style="width:100%">Отлично</button>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    document.getElementById('gw-result-close').onclick = () => {
+      document.body.removeChild(overlay);
+      App.rerender();
+    };
+  },
+
+  // Объявление прочитано: гасим полосу и здесь же говорим об этом серверу,
+  // чтобы она не вернулась после обновления страницы. Молча, без крестика:
+  // прочитанное объявление показывать снова незачем.
+  async _markNewsSeen(id) {
+    if (!id || !API.token()) return;
+    const p = App.me && App.me.newsPin;
+    if (!p || p.id !== id) return;
+    App.me.newsPin = null;
+    App.renderPinnedNews();
+    try { await API.post('/api/news/hide-banner', { id }); } catch (e) {}
   },
 
   // ---------- ВИТРИНА ДЕЙСТВУЮЩИХ АКЦИЙ ----------
@@ -4112,18 +4218,50 @@ const App = {
 
   // Модальное окно результата открытия контейнеров. Не закрывается само —
   // только по нажатию игроком кнопки «Закрыть».
+  // Названия видов диверсантов — одни и те же в окне добычи и в истории
+  _sabNames: { ground: 'наземные', sea: 'морские', air: 'воздушные', building: 'построечные', secret: 'секретные', suicide: 'смертники' },
+
+  // Строка добычи для истории открытий: разработки, деньги, диверсанты
+  _lootText(h) {
+    const parts = [];
+    for (const [n, c] of Object.entries(h.dropped || {})) parts.push(`${UI.esc(n)} ×${c}`);
+    for (const [n, c] of Object.entries(h.doping || {})) parts.push(`${UI.esc(n)} ×${c}`);
+    if (h.money) parts.push(`$ ${UI.fmtNum(h.money)}`);
+    for (const [k, c] of Object.entries(h.sab || {})) parts.push(`${App._sabNames[k] || k} ×${c}`);
+    return parts.join(', ');
+  },
+
   _showContainerResult(r) {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-    const dropsList = Object.keys(r.droppedCount || {}).length
-      ? Object.entries(r.droppedCount).map(([n, c]) => `<div class="kv"><span class="k">${UI.esc(n)}</span><span class="v gold">×${c}</span></div>`).join('')
+    const loot = r.loot || { devs: r.droppedCount || {}, doping: {}, money: 0, sab: {} };
+    // Разработки показываем КАРТИНКАМИ: по названию «Стазис-генератор
+    // «Монолит»» игрок не понимает, что ему выпало, а картинку он уже
+    // видел в своей коллекции.
+    const devList = loot.devList || [];
+    const devsHtml = devList.length
+      ? `<div class="loot-devs">${devList.map((d) => `
+          <div class="loot-dev">
+            <div class="img-frame img-frame-row">
+              <img src="/img/secret/${d.id}.webp" alt="${UI.esc(d.name)}" loading="eager" decoding="async">
+            </div>
+            <div class="loot-dev-name small">${UI.esc(d.name)}</div>
+            <div class="gold small">×${d.count}</div>
+          </div>`).join('')}</div>`
+      : '';
+    const rows = [];
+    for (const [n, c] of Object.entries(loot.doping || {})) rows.push([`💉 ${UI.esc(n)}`, `×${c}`]);
+    if (loot.money > 0) rows.push(['💵 Деньги', `$ ${UI.fmtNum(loot.money)}`]);
+    for (const [k, c] of Object.entries(loot.sab || {})) rows.push([`🥷 Диверсанты: ${App._sabNames[k] || k}`, `×${c}`]);
+    const dropsList = (devsHtml || rows.length)
+      ? devsHtml + rows.map(([k, v]) => `<div class="kv"><span class="k">${k}</span><span class="v gold">${v}</span></div>`).join('')
       : '<p class="muted center">Ничего не выпало.</p>';
     const box = document.createElement('div');
     box.className = 'card';
     box.style.cssText = 'max-width:380px;width:100%;max-height:80vh;overflow-y:auto;';
     box.innerHTML = `
       <div class="title" style="margin-top:0">📦 Открыто контейнеров: ${r.qty}</div>
-      <p class="muted small center">Потрачено: <span class="gold"><span class="ic-gold"></span> ${UI.fmtNum(r.spent)}</span></p>
+      ${r.owned ? `<p class="muted small center">На складе осталось: ${r.owned}</p>` : ''}
       <hr class="hr">
       <p class="small mt"><b>Итоговая добыча:</b></p>
       ${dropsList}
