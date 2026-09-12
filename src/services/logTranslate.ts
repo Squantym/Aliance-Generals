@@ -136,6 +136,8 @@ function describe(path: string, body?: any, result?: any): string | null {
       return '🏆 Отменил турнир';
     }
     if (/^\/api\/admin\/payments\/[^/]+\/refresh$/.test(path)) return '💳 Сверил платёж с ЮKassa';
+    // Ссылка на чек «Мой налог», отправленная покупателю письмом
+    if (/^\/api\/admin\/payments\/[^/]+\/tax-receipt$/.test(path)) return '🧾 Отправил игроку ссылку на чек «Мой налог»';
     if (/^\/api\/rewards\/[^/]+\/claim$/.test(path)) {
       return '🎁 Забрал начисленную награду';
     }

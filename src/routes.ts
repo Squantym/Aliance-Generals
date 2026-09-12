@@ -2281,6 +2281,8 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/admin/payments',             (req) => payments.adminList(req.user, req.query), { admin: true });
   app.add('GET',  '/api/admin/payments/:id',         (req) => payments.adminGet(req.user, req.params.id), { admin: true });
   app.add('POST', '/api/admin/payments/:id/refresh', act((req) => payments.adminRefresh(req.user, req.params.id)), { admin: true });
+  // Ссылка на чек «Мой налог»: сохраняется в заказе и уходит игроку письмом
+  app.add('POST', '/api/admin/payments/:id/tax-receipt', act((req, n) => payments.setTaxReceipt(req.user, req.params.id, req.body.url, n)), { admin: true });
   // Уведомления ЮKassa. Маршрут открытый: присылает сервер ЮKassa, а не
   // игрок. Телу не верим — статус платежа сервис берёт запросом в ЮKassa.
   // Ошибка связи уходит 500-м ответом, и ЮKassa повторит уведомление.

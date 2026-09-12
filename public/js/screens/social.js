@@ -1400,6 +1400,8 @@ App._receiptLetterHtml = (r) => `
         ${l.icon ? `<img src="${UI.esc(l.icon)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}
         <span>${UI.esc(l.text)}</span>
       </div>`).join('')}</div>
+    ${r.link ? `<a class="btn btn-orange mt" style="display:block;text-align:center"
+      href="${UI.esc(r.link.url)}" target="_blank" rel="noopener noreferrer">${UI.esc(r.link.label)}</a>` : ''}
     <div class="muted small mt">${UI.fmtDate(r.createdAt)} · от «Система»</div>
     <div class="btn-row mt"><span class="muted small">Зачислено ✓</span><button class="btn btn-inline" data-del-reward="${r.id}" style="color:var(--red)">🗑 Удалить</button></div>
   </div>`;

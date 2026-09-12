@@ -115,6 +115,10 @@ interface PaymentOrder {
   providerRef?: string;    // id платежа в ЮKassa
   method?: string;         // способ, выбранный в игре: sbp / sberpay / tpay
   promos?: any[];          // бонусы к покупке, обещанные на момент заказа
+  // Чек «Мой налог». Самозанятый пробивает его руками (ЮKassa перестала
+  // передавать чеки за самозанятых 29.12.2025), а ссылку на чек обязан
+  // передать покупателю — вот она и живёт в заказе.
+  taxReceipt?: { url: string; at: number; byName: string; letterId: string };
   promoApplied?: any[];    // что из них начислено при оплате
   payUrl?: string;         // страница оплаты
   creditedGold?: number;   // сколько золота зачислено на самом деле (с акцией и VIP)
@@ -649,14 +653,19 @@ function adminList(actor: User, q: any) {
   const query = String((q && q.q) || '').trim().toLowerCase();
   const status = String((q && q.status) || '');
   const test = String((q && q.test) || '');
+  // «Только без чека» — рабочий список владельца: по каким настоящим
+  // оплатам ещё не передан чек покупателю
+  const noReceipt = String((q && q.noreceipt) || '') === '1';
   const limit = u.clamp(u.toInt(q && q.limit, 300), 1, 1000);
   const people: Record<string, any> = require('./player').users();
   const all = Object.values(store()).sort((a, b) => b.createdAt - a.createdAt);
 
-  const totals = { paidRub: 0, paidCount: 0, refundedRub: 0, testCount: 0, pendingCount: 0 };
+  // needReceipt — сколько настоящих оплат ещё без чека «Мой налог».
+  // Это и есть список дел: чек по закону передают покупателю.
+  const totals = { paidRub: 0, paidCount: 0, refundedRub: 0, testCount: 0, pendingCount: 0, needReceipt: 0 };
   for (const o of all) {
     if (isTest(o)) { if (o.status === 'paid') totals.testCount++; continue; }
-    if (o.status === 'paid') { totals.paidRub += o.priceRub; totals.paidCount++; }
+    if (o.status === 'paid') { totals.paidRub += o.priceRub; totals.paidCount++; if (!o.taxReceipt) totals.needReceipt++; }
     if (o.status === 'pending' && o.providerRef) totals.pendingCount++;
     totals.refundedRub += o.refundedRub || 0;
   }
@@ -666,6 +675,7 @@ function adminList(actor: User, q: any) {
     else if (status && o.status !== status) return false;
     if (test === '1' && !isTest(o)) return false;
     if (test === '0' && isTest(o)) return false;
+    if (noReceipt && (o.status !== 'paid' || isTest(o) || o.taxReceipt)) return false;
     if (query) {
       const p = people[o.userId];
       const card = o.yk && o.yk.payment_method && o.yk.payment_method.card;
@@ -680,8 +690,52 @@ function adminList(actor: User, q: any) {
     title: orderTitle(o), priceRub: o.priceRub, creditedGold: o.creditedGold || 0,
     status: o.status, refundedRub: o.refundedRub || 0, test: isTest(o),
     method: methodShort(o), buyerIp: (o.buyer && o.buyer.ip) || '',
+    taxReceipt: !!o.taxReceipt,
   }));
   return { rows, totals };
+}
+
+// Ссылка на чек «Мой налог» + письмо покупателю. Руками рассылать ссылки
+// по игрокам — это забыть половину: здесь одно поле и одна кнопка.
+function setTaxReceipt(actor: User, id: string, url: string, notices: Notices) {
+  assertOwner(actor);
+  const o = store()[String(id || '')];
+  if (!o) throw new u.ApiError('Заказ не найден');
+  if (o.status !== 'paid') throw new u.ApiError('Чек нужен только по оплаченному заказу');
+  const link = String(url || '').trim();
+  // Чек выдаёт ФНС, и ссылка у него всегда на nalog.ru. Проверка не
+  // придирка: игроку уходит кликабельная ссылка, и опечатка в домене
+  // превратит её в чужой сайт.
+  if (!/^https:\/\/[a-z0-9.-]*nalog\.ru\/[^\s"<>]{3,280}$/i.test(link)) {
+    throw new u.ApiError('Нужна ссылка на чек из «Мой налог» (https://…nalog.ru/…)');
+  }
+  const people: Record<string, any> = require('./player').users();
+  const buyer = people[o.userId];
+  if (!buyer) throw new u.ApiError('Покупатель не найден — аккаунт удалён');
+
+  const when = new Date(o.paidAt || o.createdAt).toLocaleString('ru-RU',
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  let letterId = '';
+  try {
+    const letter = require('./rewards').grantReceipt(o.userId, {
+      title: '🧾 Чек по вашей покупке',
+      reason: `Покупка «${orderTitle(o)}» на ${o.priceRub} ₽ от ${when} (МСК).\n`
+        + 'Чек сформирован в сервисе «Мой налог» ФНС России. Сохраните ссылку — по ней чек открывается в любой момент.',
+      lines: [
+        { text: `${orderTitle(o)} — ${o.priceRub} ₽`, icon: GOLD_ICON },
+      ],
+      link: { url: link, label: '🧾 Открыть чек' },
+    });
+    letterId = letter.id;
+  } catch (e) {}
+  o.taxReceipt = { url: link, at: Date.now(), byName: actor.name, letterId };
+  db.save('payments');
+  try {
+    require('./notifications').push(o.userId, 'tax_receipt', '🧾 Чек по покупке',
+      { text: `Чек по покупке «${orderTitle(o)}» на ${o.priceRub} ₽ пришёл в игровую почту.` });
+  } catch (e) {}
+  notices.push(`🧾 Чек отправлен игроку «${buyer.name}» по заказу на ${o.priceRub} ₽.`);
+  return adminGet(actor, id);
 }
 
 function adminGet(actor: User, id: string) {
@@ -722,6 +776,7 @@ function adminGet(actor: User, id: string) {
       createdAt: r.created_at || '', description: r.description || '',
     })),
     promos: o.promoApplied || [],
+    taxReceipt: o.taxReceipt || null,
     raw: o.yk || null,
     rawRefunds: o.refunds || [],
   };
@@ -755,5 +810,5 @@ async function adminRefresh(actor: User, id: string) {
 export = {
   packages, createOrder, createOfferOrder, pay, checkOrder, handleNotification,
   myOrders, confirmPayment, pendingPurchases, ackPurchase,
-  adminList, adminGet, adminRefresh, MAX_PRICE_RUB,
+  adminList, adminGet, adminRefresh, setTaxReceipt, MAX_PRICE_RUB,
 };

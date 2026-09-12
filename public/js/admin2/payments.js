@@ -43,7 +43,7 @@
     el.innerHTML = '<div class="a2-title">Платежи</div><div class="loading">Загружаю…</div>';
     let d = null;
     try {
-      d = await API.get('/api/admin/payments?' + new URLSearchParams({ q: q.q || '', status: q.status || '', test: q.test || '' }).toString());
+      d = await API.get('/api/admin/payments?' + new URLSearchParams({ q: q.q || '', status: q.status || '', test: q.test || '', noreceipt: q.noreceipt || '' }).toString());
     } catch (e) {
       el.innerHTML = `<div class="a2-title">Платежи</div><div class="a2-card"><p class="a2-muted">${esc(e.message)}</p></div>`;
       return;
@@ -58,6 +58,7 @@
           <div><b>${rub(t.paidRub)}</b> <span class="a2-muted">оплачено по-настоящему · заказов: ${t.paidCount || 0}</span></div>
           <div><b>${rub(t.refundedRub)}</b> <span class="a2-muted">возвращено</span></div>
           <div class="a2-muted">ждут оплаты: ${t.pendingCount || 0} · тестовых оплат: ${t.testCount || 0}</div>
+          ${t.needReceipt ? `<div class="a2-pill is-warn" style="margin-top:6px">🧾 без чека «Мой налог»: ${t.needReceipt}</div>` : ''}
         </div>
         <p class="a2-muted" style="margin-top:6px">Карта — только то, что отдаёт ЮKassa: первые 6 и последние 4 цифры,
           банк и страна. Полного номера нет ни в ответе ЮKassa, ни в игре. Налоговые чеки — в «Мой налог».</p>
@@ -73,6 +74,8 @@
           <select id="pay-test" style="${inputStyle}">
             ${opt('', 'все', q.test || '')}${opt('0', 'настоящие', q.test)}${opt('1', 'тестовые', q.test)}
           </select>
+          <label class="a2-muted" style="display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="pay-noreceipt" ${q.noreceipt === '1' ? 'checked' : ''}> только без чека</label>
           <button class="btn btn-inline" id="pay-find">Найти</button>
         </div>
       </div>
@@ -80,13 +83,15 @@
         ${rows.length ? `
           <div style="overflow-x:auto">
           <table class="a2-table">
-            <thead><tr><th>Когда</th><th>Игрок</th><th>Покупка</th><th class="num">Сумма</th><th>Статус</th><th>Способ оплаты</th><th>IP</th></tr></thead>
+            <thead><tr><th>Когда</th><th>Игрок</th><th>Покупка</th><th class="num">Сумма</th><th>Статус</th><th>Чек</th><th>Способ оплаты</th><th>IP</th></tr></thead>
             <tbody>${rows.map((o) => `<tr data-open="${esc(o.id)}" style="cursor:pointer">
               <td class="nowrap">${dt(o.createdAt)}</td>
               <td>${esc(o.userName || o.userId)}</td>
               <td>${esc(o.title)}</td>
               <td class="num">${rub(o.priceRub)}</td>
               <td>${pill(o)}</td>
+              <td>${o.status !== 'paid' || o.test ? '<span class="a2-muted">—</span>'
+                : (o.taxReceipt ? '<span class="a2-pill is-ok">есть</span>' : '<span class="a2-pill is-warn">нужен</span>')}</td>
               <td>${esc(o.method)}</td>
               <td class="mono">${esc(o.buyerIp || '—')}</td></tr>`).join('')}</tbody>
           </table></div>`
@@ -97,7 +102,9 @@
       q: (document.getElementById('pay-q').value || '').trim(),
       status: document.getElementById('pay-status').value,
       test: document.getElementById('pay-test').value,
+      noreceipt: document.getElementById('pay-noreceipt').checked ? '1' : '',
     }, false);
+    document.getElementById('pay-noreceipt').onchange = find;
     document.getElementById('pay-find').onclick = find;
     document.getElementById('pay-q').onkeydown = (e) => { if (e.key === 'Enter') find(); };
     el.querySelectorAll('[data-open]').forEach((tr) => {
@@ -203,6 +210,24 @@
           <div class="a2-item-txt">${esc(x.text)}<div class="a2-item-when">${dt(x.at)}</div></div></div>`).join('')}
       </div>
 
+      ${o.status === 'paid' ? `
+        <div class="a2-card">
+          <h3>🧾 Чек «Мой налог»</h3>
+          ${o.taxReceipt ? `
+            <div class="a2-kv"><span>Отправлен игроку</span><b>${dt(o.taxReceipt.at)}</b></div>
+            <div class="a2-kv"><span>Кто отправил</span><b>${esc(o.taxReceipt.byName)}</b></div>
+            <div class="a2-kv"><span>Ссылка</span><b><a href="${esc(o.taxReceipt.url)}" target="_blank" rel="noopener noreferrer">открыть чек</a></b></div>
+            <p class="a2-muted">Игрок получил ссылку письмом от «Системы» в игровую почту. Вставьте другую ссылку, если чек перевыпущен.</p>` : `
+            <p class="a2-muted">Чек по этой покупке ещё не отправлен. Пробейте продажу в «Мой налог» на сумму
+              <b>${rub(o.priceRub)}</b> датой оплаты <b>${o.paidAt ? dt(o.paidAt) : dt(o.createdAt)}</b>,
+              затем скопируйте ссылку на чек и вставьте сюда — игрок получит её письмом.</p>`}
+          <div class="a2-row" style="margin-top:6px">
+            <input id="pay-receipt-url" placeholder="https://lknpd.nalog.ru/api/v1/receipt/..." 
+              style="${inputStyle};flex:1;min-width:260px" value="">
+            <button class="btn btn-orange btn-inline" id="pay-receipt-send">Отправить игроку</button>
+          </div>
+        </div>` : ''}
+
       ${(o.promos || []).length ? `
         <div class="a2-card">
           <h3>Бонусы к покупке</h3>
@@ -230,6 +255,20 @@
             <pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;margin-top:8px">${esc(JSON.stringify(o.raw, null, 2))}</pre>
           </details>
         </div>` : ''}`;
+
+    // Ссылка на чек «Мой налог» → письмо игроку
+    const sendReceipt = document.getElementById('pay-receipt-send');
+    if (sendReceipt) sendReceipt.onclick = async () => {
+      const input = document.getElementById('pay-receipt-url');
+      const url = (input.value || '').trim();
+      if (!url) { UI.toast('⛔ Вставьте ссылку на чек из «Мой налог»'); return; }
+      sendReceipt.disabled = true;
+      try {
+        await API.post('/api/admin/payments/' + encodeURIComponent(id) + '/tax-receipt', { url });
+        UI.toast('🧾 Чек отправлен игроку');
+        renderOne(el, id);
+      } catch (e) { UI.toast('⛔ ' + e.message); sendReceipt.disabled = false; }
+    };
 
     const refresh = document.getElementById('pay-refresh');
     if (refresh) refresh.onclick = async () => {

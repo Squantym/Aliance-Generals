@@ -70,7 +70,10 @@ function grant(userId: string, opts: { title: string; reason: string; reward: Re
 // Письмо рождается уже «забранным», а награда внутри пустая: даже если
 // кто-то доберётся до claim по id квитанции, начислять там нечего, и сам
 // claim откажет раньше.
-function grantReceipt(userId: string, opts: { title: string; reason: string; lines: ReceiptLine[] }): RewardLetter {
+// link — кнопка-ссылка под строками. Нужна чеку «Мой налог»: адрес чека
+// строкой текста игрок вручную не перенабирает.
+function grantReceipt(userId: string, opts: { title: string; reason: string; lines: ReceiptLine[];
+                                              link?: { url: string; label: string } }): RewardLetter {
   const all = store();
   const now = Date.now();
   const r: RewardLetter = {
@@ -89,6 +92,14 @@ function grantReceipt(userId: string, opts: { title: string; reason: string; lin
     claimed: true,
     claimedAt: now,
   };
+  // Только https и только целиком: письмо читает игрок, и подсунуть туда
+  // произвольную схему (javascript:, data:) нельзя даже владельцу
+  if (opts.link && /^https:\/\/[^\s"<>]{5,300}$/i.test(String(opts.link.url || ""))) {
+    (r as any).link = {
+      url: String(opts.link.url),
+      label: String(opts.link.label || 'Открыть').slice(0, 40),
+    };
+  }
   all[r.id] = r;
   db.save('rewards');
   return r;
@@ -130,6 +141,7 @@ function listFor(user: User) {
       title: r.title,
       reason: r.reason,
       reward: r.reward,
+      link: (r as any).link || null,
       rewardText: describe(r.reward),
       lines: r.lines || [],
       createdAt: r.createdAt,
