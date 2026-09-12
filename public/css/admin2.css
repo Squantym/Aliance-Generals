@@ -266,3 +266,9 @@ body.a2-is-test #a2-root { padding-top: 26px; }
 .a2 .db-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
 .a2 .db-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); }
 .a2 .db-grid .db-check { justify-content: flex-end; color: var(--text); }
+
+/* ═══ Выбор точных дат у скидок и бонусов ═══ */
+.a2 .date-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.a2 .date-row label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); }
+.a2 .date-row input { padding: 5px 7px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; font: inherit; }

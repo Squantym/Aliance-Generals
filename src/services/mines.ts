@@ -239,7 +239,14 @@ function finalizeDescent(user: User, mine: any): void {
       foundGold = Math.min(mine.goldLeft, u.rnd(row.goldMin, row.goldMax));
       // Бросок 2 — «удалось ли добыть найденное»
       extracted = Math.random() < row.extract;
-      if (extracted) { goldGained = foundGold; user.gold += goldGained; mine.goldLeft -= goldGained; }
+      // Через addGold, а не в баланс напрямую: иначе добытое не попадает
+      // в «Откуда золото», и в штабе «получено − потрачено» не сходится
+      // с остатком на счету.
+      if (extracted) {
+        goldGained = foundGold;
+        player.addGold(user, goldGained, 'mine');
+        mine.goldLeft -= goldGained;
+      }
     }
     // Деньги дают всегда; если золото не получено — в 2-5 раз больше
     money = moneyBase(user);

@@ -47,9 +47,10 @@ function bankHackCardHtml(enc) {
            onerror="this.style.display='none'">
       <div class="result-title" style="color:var(--gold)">🔓 Обнаружен сейф!</div>
       <p class="center">У игрока <b>${UI.esc(enc.targetName)}</b> в банке лежит <b class="gold"><span class="ic-dollar"></span> ${UI.fmtNum(enc.bankAmount)}</b>.
-      Взломать сейф можно только <b>1 раз в день</b> — используйте попытку с умом!</p>
+      Взломать сейф можно только <b>1 раз в день</b> — используйте попытку с умом!
+      <br><span class="muted small">В коде 4 цифры, одинаковых не больше двух.</span></p>
       <div class="field-row mt">
-        <input type="text" id="bh-code" placeholder="4 разные цифры" maxlength="4" inputmode="numeric" style="flex:1;text-align:center;font-size:20px;letter-spacing:6px">
+        <input type="text" id="bh-code" placeholder="4 цифры" maxlength="4" inputmode="numeric" style="flex:1;text-align:center;font-size:20px;letter-spacing:6px">
         <button class="btn btn-orange btn-inline" id="bh-guess">Ввести</button>
       </div>
       <p class="muted small center mt">Осталось попыток разгадать код: <b>${enc.triesLeft}</b> / ${enc.maxTries}. 🎯 — цифра на своём месте, 🔵 — цифра есть, но не там.</p>
@@ -342,7 +343,13 @@ App.screens.war = async (c) => {
       const submit = () => {
         const code = input.value.trim();
         if (!/^\d{4}$/.test(code)) { UI.toast('⛔ Введите 4 цифры'); return; }
-        if (new Set(code.split('')).size !== 4) { UI.toast('⛔ Цифры не должны повторяться'); return; }
+        // В коде одинаковых цифр не больше двух — и в попытке тоже.
+        // Правило то же самое на сервере (services/bankHack.ts).
+        const seen = {};
+        for (const ch of code) seen[ch] = (seen[ch] || 0) + 1;
+        if (Math.max(...Object.values(seen)) > 2) {
+          UI.toast('⛔ Одинаковых цифр не больше двух'); return;
+        }
         bankHackGuess(code);
       };
       guessBtn.onclick = submit;

@@ -45,7 +45,9 @@ function mkUser(id, name, opts) {
 console.log('\n[1] Юнит: генерация кода сейфа и «быки/коровы»');
 const code1 = bankHack.generateCode(4);
 eq('код длины 4', code1.length, 4);
-ok('цифры не повторяются', new Set(code1.split('')).size === 4);
+// Одинаковых цифр в коде не больше двух: правило поменяли, когда игроки
+// начали вскрывать сейф попытками вида 1111 и 2222 (services/bankHack.ts)
+ok('одинаковых цифр не больше двух', bankHack.maxRepeat(code1) <= 2);
 eq('точное совпадение = 4 быка, 0 коров', JSON.stringify(bankHack.evaluateGuess('1234', '1234')), JSON.stringify({ bulls: 4, cows: 0 }));
 eq('все цифры не на своих местах = 0 быков, 4 коровы', JSON.stringify(bankHack.evaluateGuess('1234', '4321')), JSON.stringify({ bulls: 0, cows: 4 }));
 eq('частичное совпадение', JSON.stringify(bankHack.evaluateGuess('1234', '1243')), JSON.stringify({ bulls: 2, cows: 2 }));

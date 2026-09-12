@@ -4252,9 +4252,17 @@ const App = {
     const rows = [];
     for (const [n, c] of Object.entries(loot.doping || {})) rows.push([`💉 ${UI.esc(n)}`, `×${c}`]);
     if (loot.money > 0) rows.push(['💵 Деньги', `$ ${UI.fmtNum(loot.money)}`]);
-    for (const [k, c] of Object.entries(loot.sab || {})) rows.push([`🥷 Диверсанты: ${App._sabNames[k] || k}`, `×${c}`]);
-    const dropsList = (devsHtml || rows.length)
-      ? devsHtml + rows.map(([k, v]) => `<div class="kv"><span class="k">${k}</span><span class="v gold">${v}</span></div>`).join('')
+    // Диверсанты — своими картинками: по строке «секретные / построечные»
+    // игрок не понимает, кто ему достался, а иконки он уже видел в отряде.
+    const sabHtml = Object.keys(loot.sab || {}).length
+      ? `<div class="loot-sabs">${Object.entries(loot.sab).map(([k, c]) => `
+          <div class="loot-sab" title="${UI.esc(App._sabNames[k] || k)}">
+            ${App.sabImg(k, 40)}
+            <div class="gold small">×${c}</div>
+          </div>`).join('')}</div>`
+      : '';
+    const dropsList = (devsHtml || sabHtml || rows.length)
+      ? devsHtml + rows.map(([k, v]) => `<div class="kv"><span class="k">${k}</span><span class="v gold">${v}</span></div>`).join('') + sabHtml
       : '<p class="muted center">Ничего не выпало.</p>';
     const box = document.createElement('div');
     box.className = 'card';

@@ -3928,9 +3928,35 @@ proxy_set_header Host $host;</pre>
               <button class="btn btn-orange btn-inline" data-cat="${cat.id}">Применить</button>
               ${active ? `<button class="btn btn-red btn-inline" data-clear="${cat.id}">Снять</button>` : ''}
             </div>
+            <!-- Точные даты: под праздник удобнее выбрать день и час, чем считать часы -->
+            <div class="date-row mt">
+              <label>Начало<input type="datetime-local" id="dc-from-${cat.id}"></label>
+              <label>Окончание<input type="datetime-local" id="dc-to-${cat.id}"></label>
+              <button class="btn btn-orange btn-inline" data-cat-dates="${cat.id}">Применить по датам</button>
+            </div>
+            <p class="muted small">Часы и даты — два способа задать один и тот же срок. Заполните что-то одно:
+            пустое «Начало» означает «прямо сейчас».</p>
           </div>`;
         }).join('')}`;
 
+      // Кнопка «Применить по датам» — тот же роут, но со сроком в датах
+      box.querySelectorAll('[data-cat-dates]').forEach(btn => {
+        btn.onclick = async () => {
+          const cat = btn.dataset.catDates;
+          const to = document.getElementById('dc-to-' + cat).value;
+          if (!to) { UI.toast('⛔ Укажите, до какого времени действует скидка'); return; }
+          const from = document.getElementById('dc-from-' + cat).value;
+          try {
+            await API.post('/api/admin/discount', {
+              category: cat,
+              pct: document.getElementById('dc-pct-' + cat).value,
+              startAt: from ? new Date(from).getTime() : 0,
+              endAt: new Date(to).getTime(),
+            });
+            Admin.loadDiscounts();
+          } catch (e) { UI.toast('⛔ ' + e.message); }
+        };
+      });
       box.querySelectorAll('[data-cat]').forEach(btn => {
         btn.onclick = async () => {
           const cat = btn.dataset.cat;
@@ -3985,6 +4011,12 @@ proxy_set_header Host $host;</pre>
               <input type="number" placeholder="часов" id="gb-hours-${k.key}" style="width:80px">
               <button class="btn btn-orange btn-inline" data-set-buff="${k.key}">Активировать</button>
             </div>
+            <div class="date-row mt">
+              <label>Начало<input type="datetime-local" id="gb-from-${k.key}"></label>
+              <label>Окончание<input type="datetime-local" id="gb-to-${k.key}"></label>
+              <button class="btn btn-orange btn-inline" data-buff-dates="${k.key}">Активировать по датам</button>
+            </div>
+            <p class="muted small">Пустое «Начало» — бонус включится сразу.</p>
           </div>`).join('')}`;
 
       box.querySelectorAll('[data-set-buff]').forEach(btn => {
@@ -3997,6 +4029,23 @@ proxy_set_header Host $host;</pre>
             });
             Admin.loadBuffs();
           } catch(e) { UI.toast('⛔ ' + e.message); }
+        };
+      });
+      // Активация бонуса по точным датам
+      box.querySelectorAll('[data-buff-dates]').forEach(btn => {
+        btn.onclick = async () => {
+          const key = btn.dataset.buffDates;
+          const to = document.getElementById('gb-to-' + key).value;
+          if (!to) { UI.toast('⛔ Укажите, до какого времени действует бонус'); return; }
+          const from = document.getElementById('gb-from-' + key).value;
+          try {
+            await API.post('/api/admin/global-buff', {
+              key, pct: document.getElementById('gb-pct-' + key).value,
+              startAt: from ? new Date(from).getTime() : 0,
+              endAt: new Date(to).getTime(),
+            });
+            Admin.loadBuffs();
+          } catch (e) { UI.toast('⛔ ' + e.message); }
         };
       });
       box.querySelectorAll('[data-clear-buff]').forEach(btn => {

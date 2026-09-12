@@ -592,7 +592,7 @@ function bid(user: User, lotId: string, amount: number, notices: Notices) {
   if (lot.best) {
     const prev = player.users()[lot.best.userId];
     if (prev) {
-      prev.gold += lot.best.amount;
+      player.addGold(prev, lot.best.amount, 'auction_refund');
       // Возврат золота — правка ЧУЖОГО игрока, а http сохраняет только
       // того, кто перебил ставку. Прежний лидер терял возврат при
       // перезапуске: его ставка уже списана, а вернувшееся золото жило

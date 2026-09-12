@@ -122,16 +122,33 @@ function consumeAttempt(user: User, victimId: string): void {
   if (!user.bankHackVictimsToday.includes(victimId)) user.bankHackVictimsToday.push(victimId);
 }
 
-// Случайный код из N РАЗНЫХ цифр (0-9), первая цифра может быть 0 —
-// это код сейфа, а не число.
+// Сколько РАЗ одна цифра может встретиться в коде. Раньше все цифры
+// были разными, и это работало против сейфа: зная правило, игрок сразу
+// отбрасывал 4630 вариантов из 10 000 и вскрывал код расчётом. Теперь
+// цифра может повториться дважды — вариантов 9630, и «все разные»
+// больше не гарантировано.
+const MAX_SAME = 2;
+
+// Случайный код из N цифр (0-9), где ни одна цифра не встречается больше
+// MAX_SAME раз. Первая цифра может быть 0 — это код сейфа, а не число.
 function generateCode(digits: number): string {
-  const pool = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const used: Record<string, number> = {};
   let code = '';
   for (let i = 0; i < digits; i++) {
-    const idx = Math.floor(Math.random() * pool.length);
-    code += pool.splice(idx, 1)[0];
+    // Берём только те цифры, которые ещё не выбрали свой лимит
+    const pool = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => (used[d] || 0) < MAX_SAME);
+    const d = pool[Math.floor(Math.random() * pool.length)];
+    used[d] = (used[d] || 0) + 1;
+    code += d;
   }
   return code;
+}
+
+// Сколько раз повторяется самая частая цифра строки
+function maxRepeat(s: string): number {
+  const c: Record<string, number> = {};
+  for (const ch of s) c[ch] = (c[ch] || 0) + 1;
+  return Math.max(0, ...Object.values(c));
 }
 
 // «Быки и коровы»: bulls — верная цифра на верном месте, cows — верная
@@ -213,8 +230,11 @@ function guess(user: User, guessRaw: string, notices: Notices): { targetId: stri
   if (!new RegExp(`^\\d{${p.digits}}$`).test(g)) {
     throw new u.ApiError(`Введите ${p.digits}-значный код`);
   }
-  if (new Set(g.split('')).size !== g.length) {
-    throw new u.ApiError('Цифры в коде не должны повторяться');
+  // Ровно то же правило, что у самого кода: одинаковых цифр не больше двух.
+  // Попытки вида 1111 и 2222 перебирали присутствие цифры в коде и решали
+  // сейф за считанные ходы — их больше нет.
+  if (maxRepeat(g) > MAX_SAME) {
+    throw new u.ApiError(`Одинаковых цифр в коде не больше ${MAX_SAME} — так же и в вашей попытке`);
   }
 
   const { bulls, cows } = evaluateGuess(p.code, g);
@@ -265,4 +285,4 @@ function guess(user: User, guessRaw: string, notices: Notices): { targetId: stri
   return { targetId, finished: false, result: { bulls, cows, triesLeft: p.triesLeft, cracked: false, history: p.history } };
 }
 
-export = { tryOffer, skip, cancel, guess, generateCode, evaluateGuess, ensureDay, history, recordHack, BANK_LOG_PER_SIDE };
+export = { MAX_SAME, maxRepeat, tryOffer, skip, cancel, guess, generateCode, evaluateGuess, ensureDay, history, recordHack, BANK_LOG_PER_SIDE };

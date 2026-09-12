@@ -5406,3 +5406,8 @@ body.has-club-bar #header { top: 32px; }
 .gw-item img { width: 18px; height: 18px; object-fit: contain; }
 .gw-when { display: block; margin-top: 2px; }
 .gw-kv-icon { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; }
+
+/* ═══ Диверсанты в добыче из контейнера ═══ */
+.loot-sabs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; justify-content: center; }
+.loot-sab { text-align: center; }
+.loot-sab .ic-sab { display: block; margin: 0 auto 2px; }

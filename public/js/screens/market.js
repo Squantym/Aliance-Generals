@@ -223,8 +223,8 @@ App.screens.market = async (c, param) => {
         Каждая собранная «${UI.esc(data.superSecret.name)}» даёт ещё +0.5% ко ВСЕМ секретным разработкам${data.superBonusPct > 0 ? ` (сейчас +<b class="gold">${data.superBonusPct}%</b>)` : ''}.
         Шанс 150% = одна гарантированная + 50% на вторую. Полный комплект из 9 разных = бесплатный «Абсолют».</p>
         <p class="muted small mt">Кроме разработок внутри лежат допинг с этого же рынка, деньги и диверсанты —
-        чем дороже ящик, тем больше. Купленные контейнеры ждут на складе: открывайте их по одному или пачкой,
-        когда захотите.</p>
+        чем дороже ящик, тем щедрее содержимое. Что именно достанется, известно только после вскрытия.
+        Купленные контейнеры ждут на складе: открывайте их по одному или пачкой, когда захотите.</p>
       </div>
       ${data.containers.map((x) => `
         <div class="card container-card">
@@ -233,8 +233,8 @@ App.screens.market = async (c, param) => {
           </div>
           <div class="container-card-body">
             <div class="name">📦 ${UI.esc(x.name)}</div>
-            <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b> · допинг: <b class="gold">${x.doping}%</b></div>
-            <div class="muted small">Деньги: <b>$ ${UI.fmtNum(x.money[0])}–${UI.fmtNum(x.money[1])}</b> · диверсанты: <b>${x.sab[0]}–${x.sab[1]}</b>${x.sabSecretMax ? ` <span class="muted">(секретных до ${x.sabSecretMax}, смертников до ${x.sabSuicideMax})</span>` : ''}</div>
+            <div class="muted small">Шанс разработки: <b class="gold">${x.chance}%</b></div>
+            <div class="muted small">Внутри также: допинг, деньги и диверсанты${x.sabSecretMax ? ', включая секретных и смертников' : ''}</div>
             <div class="muted small">Цена за 1 шт: ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</div>
             <div class="muted small mt">Купить на склад:</div>
             <div class="btn-row">

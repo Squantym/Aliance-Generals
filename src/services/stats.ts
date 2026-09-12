@@ -59,6 +59,7 @@ const GOLD_SPENDING: Record<string, string> = {
   boost: 'Ускорения',
   heal: 'Лечение',
   rename: 'Смена позывного',
+  admin_take: 'Списано администрацией',
   other: 'Прочее',
 };
 
@@ -74,6 +75,9 @@ const GOLD_SOURCES: Record<string, string> = {
   achievement: 'Достижения',
   login: 'Награда за вход',
   tutorial: 'Обучение у Майора',
+  mine: 'Золотые шахты',
+  mission: 'Конфликты (спецоперации)',
+  auction_refund: 'Аукцион: возврат перебитой ставки',
   trophy_refund: 'Возврат за снятые трофеи',
   // Арена и лоты возвращают золото — без имён эти строки выглядели в
   // панели как «arena_refund» посреди русского списка.

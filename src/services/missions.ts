@@ -222,7 +222,7 @@ function checkCompleted(user: User, notices: Notices): void {
         if (!p.firstReward) {
           p.firstReward = true;
           user.skillPoints += conf.spReward;
-          user.gold += conf.goldReward;
+          require('./player').addGold(user, conf.goldReward, 'mission');   // мимо addGold награда не попадала в учёт
           if (notices) {
             notices.push(`🏆 Конфликт «${conf.name}» полностью пройден! Награда: +${conf.spReward} очков навыков и 🪙 ${conf.goldReward}.`);
           }

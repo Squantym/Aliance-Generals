@@ -324,7 +324,9 @@ function applyTake(target: User, body: any): string[] {
   const wantGold = amt('gold');
   if (wantGold) {
     const real = Math.min(wantGold, Math.floor(target.gold || 0));
-    target.gold = Math.max(0, Math.floor((target.gold || 0) - real));
+    // Через spendGold: списание из штаба тоже должно быть видно в «Куда
+    // ушло золото», иначе остаток на счету расходится с учётом
+    player.spendGold(target, Math.min(real, target.gold || 0), 'admin_take');
     taken.push(`🪙 ${u.fmt(real)}`);
   }
   // Очки навыков
@@ -560,8 +562,15 @@ function setDiscount(adminUser: User, body: any, notices: Notices) {
   const pct = u.toInt(body.pct, 0);
   const hours = Math.max(0, Number(body.hours) || 0);
   const delayHours = Math.max(0, Number(body.delayHours) || 0);
-  discounts.set(cat, pct, hours, delayHours);
-  if (pct > 0 && hours > 0) {
+  // Точные даты, если панель прислала их вместо часов
+  const startAt = Math.max(0, u.toInt(body.startAt, 0));
+  const endAt = Math.max(0, u.toInt(body.endAt, 0));
+  discounts.set(cat, pct, hours, delayHours, { startAt, endAt });
+  const dt = (ms: number) => new Date(ms).toLocaleString('ru-RU',
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  if (pct > 0 && endAt > 0) {
+    notices.push(`🏷 Скидка «${discounts.CATEGORIES[cat] || cat}»: ${pct}% с ${dt(startAt || Date.now())} до ${dt(endAt)}`);
+  } else if (pct > 0 && hours > 0) {
     const label = delayHours > 0
       ? `«${discounts.CATEGORIES[cat] || cat}»: ${pct}% запланирована — старт через ${delayHours} ч., действует ${hours} ч.`
       : `«${discounts.CATEGORIES[cat] || cat}»: ${pct}% на ${hours} ч.`;
@@ -582,8 +591,15 @@ function setGlobalBuff(adminUser: User, body: any, notices: Notices) {
   const key = String(body.key || '');
   const pct = u.toInt(body.pct, 0);
   const hours = Math.max(0, Number(body.hours) || 0);
-  globalBuffs.set(key, pct, hours);
-  if (pct > 0 && hours > 0) {
+  // Точные даты — тем же способом, что и у скидок
+  const startAt = Math.max(0, u.toInt(body.startAt, 0));
+  const endAt = Math.max(0, u.toInt(body.endAt, 0));
+  globalBuffs.set(key, pct, hours, { startAt, endAt });
+  const dtb = (ms: number) => new Date(ms).toLocaleString('ru-RU',
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  if (pct > 0 && endAt > 0) {
+    notices.push(`🎉 Глобальный бонус «${(globalBuffs.KEYS[key] || {}).label || key}»: +${pct}% с ${dtb(startAt || Date.now())} до ${dtb(endAt)}`);
+  } else if (pct > 0 && hours > 0) {
     notices.push(`🎉 Активирован глобальный бонус «${(globalBuffs.KEYS[key] || {}).label || key}»: +${pct}% на ${hours} ч.`);
   } else {
     notices.push(`Глобальный бонус «${key}» снят.`);

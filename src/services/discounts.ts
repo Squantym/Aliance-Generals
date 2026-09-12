@@ -78,17 +78,30 @@ function bonusMul(category: string, user?: any): number {
 // Установить скидку: pct% на durationHours часов, с возможностью отложенного
 // старта через delayHours (по умолчанию 0 — начинается сразу).
 // pct=0 или duration<=0 — снять скидку немедленно.
-function set(category: string, pct: number, durationHours: number, delayHours?: number) {
+// Срок задаётся ЛИБО длительностью в часах (старый способ, им пользуются
+// быстрые правки и тесты), ЛИБО точными датами начала и конца — их удобнее
+// задавать под праздник, который начинается в конкретный день и час.
+function set(category: string, pct: number, durationHours: number, delayHours?: number,
+             when?: { startAt?: number; endAt?: number }) {
   if (!CATEGORIES[category]) throw new u.ApiError('Неизвестная категория скидки');
   pct = Math.max(0, Math.min(99, u.toInt(pct, 0)));
   const hours = Math.max(0, Number(durationHours) || 0);
   const delay = Math.max(0, Number(delayHours) || 0);
+  const endAt = Math.max(0, Number(when && when.endAt) || 0);
+  const startAt = Math.max(0, Number(when && when.startAt) || 0);
+  const byDates = endAt > 0;
+  if (byDates) {
+    const from = startAt || Date.now();
+    if (endAt <= from) throw new u.ApiError('Окончание скидки раньше её начала');
+  }
   const all = store();
-  if (pct === 0 || hours === 0) {
+  if (pct === 0 || (!byDates && hours === 0)) {
     delete all[category];
+  } else if (byDates) {
+    all[category] = { pct, startAt: startAt || Date.now(), expires: endAt };
   } else {
-    const startAt = Date.now() + Math.round(delay * 3600 * 1000);
-    all[category] = { pct, startAt, expires: startAt + Math.round(hours * 3600 * 1000) };
+    const from = Date.now() + Math.round(delay * 3600 * 1000);
+    all[category] = { pct, startAt: from, expires: from + Math.round(hours * 3600 * 1000) };
   }
   db.save('discounts');
   return all[category] || null;

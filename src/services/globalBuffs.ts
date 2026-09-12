@@ -7,7 +7,8 @@
 import db = require('../core/db');
 
 interface BuffMeta { label: string; }
-interface BuffState { pct: number; expiresAt: number; }
+// startAt — отложенный старт: бонус записан, но включится позже
+interface BuffState { pct: number; expiresAt: number; startAt?: number; }
 
 const KEYS: Record<string, BuffMeta> = {
   xp: { label: 'Бонус опыта (для всех)' },
@@ -22,19 +23,29 @@ function state(): Record<string, BuffState> {
 function multiplier(key: string): number {
   const s = state()[key];
   if (!s || !s.expiresAt || s.expiresAt < Date.now()) return 1;
+  // Запланированный на будущее бонус ещё не действует
+  if (s.startAt && s.startAt > Date.now()) return 1;
   return 1 + (s.pct / 100);
 }
 
-// Установить бонус: pct% на hours часов. pct=0 или hours=0 — снять.
-function set(key: string, pct: number, hours: number): void {
+// Установить бонус: pct% на hours часов ЛИБО до точной даты (when.endAt),
+// с необязательным началом when.startAt. pct=0 и пустой срок — снять.
+function set(key: string, pct: number, hours: number,
+             when?: { startAt?: number; endAt?: number }): void {
   if (!KEYS[key]) throw new Error('Неизвестный глобальный бонус: ' + key);
   const s = state();
-  if (!pct || !hours) {
+  const endAt = Math.max(0, Number(when && when.endAt) || 0);
+  const startAt = Math.max(0, Number(when && when.startAt) || 0);
+  if (endAt > 0 && endAt <= (startAt || Date.now())) {
+    throw new Error('Окончание бонуса раньше его начала');
+  }
+  if (!pct || (!hours && !endAt)) {
     delete s[key];
   } else {
     s[key] = {
       pct: Number(pct) || 0,
-      expiresAt: Date.now() + hours * 3600 * 1000,
+      startAt: startAt || Date.now(),
+      expiresAt: endAt || (Date.now() + hours * 3600 * 1000),
     };
   }
   db.save('globalBuffs');
@@ -52,6 +63,8 @@ function listActive() {
       pct: v.pct,
       hoursLeft: Math.max(0, Math.round((v.expiresAt - now) / 3600000)),
       expiresAt: v.expiresAt,
+      startAt: v.startAt || 0,
+      pending: !!(v.startAt && v.startAt > now),
     }));
 }
 
