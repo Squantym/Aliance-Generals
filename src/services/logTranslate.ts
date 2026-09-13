@@ -395,6 +395,8 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/cosmetics/unequip': return `🎨 Снял косметику (${body.type})`;
       case '/api/titles/set':        return `🏅 Установил титул «${body.titleId}»`;
       case '/api/referral/apply':    return `🎁 Активировал реферальный код «${body.code}»`;
+      case '/api/referral/quests/claim':
+        return `🎁 Забрал награду за ${body.step || '?'}-й балл (${body.board === 'newbie' ? 'новобранец' : 'вербовщик'})`;
       case '/api/admin/referral-quests':
         return body.on ? '🎯 Включил раздел заданий в приглашениях' : '🚫 Убрал раздел заданий в приглашениях';
 

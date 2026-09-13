@@ -250,6 +250,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   refRewarded:        { owner: 'referrals',  note: 'награда за приглашение выдана' },
   refLevel50Paid:     { owner: 'referrals',  note: 'выплата за 50-й уровень приглашённого' },
   refGoldGiven:       { owner: 'referrals',  note: 'сколько золота этот игрок принёс пригласившему' },
+  refQuests:          { owner: 'referralQuests', note: 'шкалы заданий приглашений: забранные баллы и счётчики' },
+  xpWeek:             { owner: 'player',     note: 'опыт за текущую неделю — условия приглашений' },
   adminCrests:          { owner: 'admin',      note: 'уши, выданные администрацией' },
   adminTokens:        { owner: 'admin',      note: 'жетоны, выданные администрацией' },
 

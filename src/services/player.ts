@@ -260,6 +260,15 @@ function addXp(user: User, amount: number, notices: Notices): number {
   try { globalXpMul *= require('./donateBonus').xpBoostMul(user); } catch (e) {}
   const realXp = Math.max(0, Math.round(amount * xpMul(user) * (1 + legionXp) * globalXpMul));
   user.xp += realXp;
+  // Опыт за текущую НЕДЕЛЮ. Нужен условию приглашений «друзья набрали
+  // 15 000 опыта за неделю»: по общему счётчику опыта такое не
+  // посчитать — он не обнуляется, и условие закрылось бы само собой.
+  if (realXp > 0) {
+    const week = config.weekUtcKey();
+    const box: any = (user as any).xpWeek;
+    if (!box || box.week !== week) (user as any).xpWeek = { week, xp: realXp };
+    else box.xp = (box.xp || 0) + realXp;
+  }
   let ups = 0;
   while (user.level < config.PLAYER.MAX_LEVEL && user.xp >= config.xpToNext(user.level)) {
     user.xp -= config.xpToNext(user.level);

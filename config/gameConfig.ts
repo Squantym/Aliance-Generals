@@ -2525,6 +2525,80 @@ const REFERRAL = {
   purchaseSharePct: 10,     // % от КУПЛЕННОГО другом золота — пригласившему
 };
 
+// ---------- ЗАДАНИЯ ПРИГЛАШЕНИЙ ----------
+// Две шкалы по 10 баллов: одна у приглашающего, вторая у новичка.
+// Каждое выполненное условие даёт 1 балл, под каждым баллом — награда,
+// которую забирают кнопкой.
+//
+// Условия намеренно требуют РАЗВИТИЯ приглашённых, а не их количества:
+// счётчик «сколько зарегистрировал» закрывался бы пачкой пустых
+// аккаунтов за вечер. Поэтому «пригласить N человек» везде означает
+// «N приглашённых дошли до 50 уровня».
+//
+// metric — по какому показателю считается прогресс (см. services/
+// referralQuests.ts). Название и нужное число живут здесь, чтобы
+// владелец правил их в одном месте.
+const REFERRAL_QUESTS = {
+  // Доля с покупок приглашённых растёт вместе с их числом
+  SHARE_STEPS: [
+    { friends: 5,  pct: 12 },
+    { friends: 10, pct: 15 },
+    { friends: 20, pct: 20 },
+    { friends: 30, pct: 25 },
+  ],
+
+  inviter: [
+    { id: 'inv1',  metric: 'friends50',          need: 1,     name: 'Пригласить 1 человека',  note: 'приглашённый должен дойти до 50 уровня' },
+    { id: 'inv3',  metric: 'friends50',          need: 3,     name: 'Пригласить 3 человек',   note: 'каждый — до 50 уровня' },
+    { id: 'inv5',  metric: 'friends50',          need: 5,     name: 'Пригласить 5 человек',   note: 'каждый — до 50 уровня' },
+    { id: 'inv10', metric: 'friends50',          need: 10,    name: 'Пригласить 10 человек',  note: 'каждый — до 50 уровня' },
+    { id: 'ally3', metric: 'friendsAllies',      need: 3,     name: 'Позвать 3 друзей в альянс', note: 'друг должен вступить — альянс взаимный' },
+    { id: 'xp15k', metric: 'friendsXpWeek',      need: 15000, name: 'Друзья набрали 15 000 опыта', note: 'суммарно за текущую неделю' },
+    { id: 'rein5', metric: 'reinforceFriends',   need: 5,     name: 'Отправить 5 подкреплений друзьям', note: 'подкрепление живёт сутки; повторно тому же — после окончания' },
+    { id: 'mis50', metric: 'friendsMissionSteps',need: 50,    name: 'Друзья сделали 50 шагов спецопераций', note: 'суммарно' },
+    { id: 'loot10',metric: 'friendsBattleLoot',  need: 10000000000, name: 'Друзья награбили $10 млрд', note: 'считаются только деньги, взятые в войне' },
+    { id: 'chat100', metric: 'friendsChat',      need: 100,   name: 'Друзья написали 100 сообщений', note: 'суммарно в чат' },
+  ],
+  // Награда под каждым баллом шкалы, по порядку
+  inviterRewards: [
+    { gold: 50 },
+    { dollars: 10000000000 },
+    { containers: { tier: 1, qty: 5 } },
+    { items: { stim: 3, armor: 3 } },
+    { gold: 150 },
+    { containers: { tier: 2, qty: 3 } },
+    { vipDays: 7 },
+    { commanders: { ids: ['berserk', 'fortress'], days: 3 } },
+    { containers: { tier: 4, qty: 3 } },
+    { gold: 700 },
+  ],
+
+  newbie: [
+    { id: 'lvl30',  metric: 'level',         need: 30, name: 'Достигнуть 30 уровня' },
+    { id: 'lvl50',  metric: 'level',         need: 50, name: 'Достигнуть 50 уровня' },
+    { id: 'lvl70',  metric: 'level',         need: 70, name: 'Достигнуть 70 уровня' },
+    { id: 'lvl100', metric: 'level',         need: 100, name: 'Достигнуть 100 уровня' },
+    { id: 'ally10', metric: 'allies',        need: 10, name: 'Позвать 10 человек в альянс', note: 'считаются взаимные союзники' },
+    { id: 'rein10', metric: 'reinforcesSent',need: 10, name: 'Отправить 10 подкреплений' },
+    { id: 'quest10',metric: 'questsDone',    need: 10, name: 'Выполнить 10 поручений' },
+    { id: 'tutor',  metric: 'tutorialDone',  need: 1,  name: 'Пройти обучение' },
+    { id: 'chat10', metric: 'chatMessages',  need: 10, name: 'Написать 10 сообщений в чат' },
+    { id: 'sanc5',  metric: 'sanctionsMade', need: 5,  name: 'Объявить 5 санкций' },
+  ],
+  newbieRewards: [
+    { gold: 50 },
+    { containers: { tier: 1, qty: 3 } },
+    { dollars: 5000000000 },
+    { gold: 250 },
+    { containers: { tier: 2, qty: 3 } },
+    { items: { stim: 3, armor: 3, crit_boost: 3, dodge_boost: 3, ammo: 3 } },
+    { dollars: 30000000000 },
+    { vipDays: 21 },
+    { gold: 500 },
+    { containers: { tier: 4, qty: 5 } },
+  ],
+};
+
 // Шпионаж/разведка
 const SPY = {
   freePerDay: 3,      // бесплатных разведданных в день
@@ -2797,5 +2871,5 @@ export = {
   VIP, LOGIN_STREAK, TITLES, TITLE_BY_ID, CONTRACTS_POOL, CONTRACTS_PER_DAY, contractTarget,
   CONTRACT_UNITS, contractUnitPicks, contractUnitsTotal,
   HARD_COUNTERS, hardTarget,
-  COSMETICS, COSMETIC_BY_ID, REFERRAL, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS, REINFORCE,
+  COSMETICS, COSMETIC_BY_ID, REFERRAL, REFERRAL_QUESTS, SPY, WORLD_EVENT, SEASON, BANK_HACK, MINES, SABOTEURS, REINFORCE,
 };

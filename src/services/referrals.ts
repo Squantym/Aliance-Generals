@@ -20,6 +20,7 @@
 // Хранение: коллекция 'referralSettings' = { questsOn, questsTitle, ... }
 // ═══════════════════════════════════════════════════════════════════
 
+import config = require('../../config/gameConfig');
 import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
@@ -80,17 +81,6 @@ function invitedList(user: User) {
     .sort((a, b) => b.joinedAt - a.joinedAt);
 }
 
-// ── Раздел «Задания» ───────────────────────────────────────────────
-// Сейчас отдаётся только выключатель и пустой список: задания
-// придумываются отдельно. Список уже здесь, чтобы фронт не переписывать
-// второй раз, когда наполнение появится.
-function questsView(user: User) {
-  return {
-    enabled: questsEnabled(),
-    quests: [] as any[],
-  };
-}
-
 // Переключатель из панели. Зона «Акции»: раздел про привлечение игроков,
 // там же живут скидки и бонусы к покупкам.
 function setQuests(actor: User, on: boolean, notices: Notices) {
@@ -115,9 +105,10 @@ function adminView(actor: User) {
     questsOn: s.questsOn,
     changedAt: s.changedAt || 0,
     changedBy: s.changedBy || '',
-    questCount: 0,
+    // Сколько условий настроено всего: обе шкалы вместе
+    questCount: (config.REFERRAL_QUESTS.inviter || []).length + (config.REFERRAL_QUESTS.newbie || []).length,
     invited,
   };
 }
 
-export = { settings, questsEnabled, linkFor, appUrl, invitedList, questsView, setQuests, adminView };
+export = { settings, questsEnabled, linkFor, appUrl, invitedList, setQuests, adminView };

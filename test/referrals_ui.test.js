@@ -47,10 +47,49 @@ const REF = {
   ok('без поддержки холста вместо QR — понятная надпись',
      /QR-код недоступен/.test(document.getElementById('ref-qr').innerHTML));
 
-  console.log('\n[2] Раздел заданий появляется по выключателю');
-  API.get = async () => Object.assign(JSON.parse(JSON.stringify(REF)), { questsOn: true });
+  console.log('\n[2] Шкалы заданий появляются по выключателю');
+  const QUESTS = {
+    inviter: {
+      board: 'inviter', points: 2, total: 10,
+      tasks: [
+        { id: 'inv1', name: 'Пригласить 1 человека', note: 'до 50 уровня', need: 1, have: 1, done: true },
+        { id: 'inv3', name: 'Пригласить 3 человек', note: '', need: 3, have: 1, done: false },
+      ],
+      steps: [
+        { step: 1, icon: '🪙', text: '50 золота', reached: true, claimed: true },
+        { step: 2, icon: '💵', text: '$10 000 000 000', reached: true, claimed: false },
+        { step: 3, icon: '📦', text: '5 × Технологичный кейс', reached: false, claimed: false },
+      ],
+    },
+    newbie: {
+      board: 'newbie', points: 1, total: 10,
+      tasks: [{ id: 'lvl30', name: 'Достигнуть 30 уровня', note: '', need: 30, have: 30, done: true }],
+      steps: [{ step: 1, icon: '🪙', text: '50 золота', reached: true, claimed: false }],
+    },
+    share: {
+      pct: 12, basePct: 10, friends50: 5,
+      steps: [{ friends: 5, pct: 12, reached: true }, { friends: 10, pct: 15, reached: false }],
+      next: { friends: 10, pct: 15, left: 5 },
+    },
+  };
+  API.get = async (url) => (url === '/api/referral/quests'
+    ? JSON.parse(JSON.stringify(QUESTS))
+    : Object.assign(JSON.parse(JSON.stringify(REF)), { questsOn: true }));
+  const claims = [];
+  API.post = async (url, body) => { claims.push([url, body]); return { ok: true }; };
   await App.screens.referral(c);
-  ok('включённый раздел виден игроку', /Задания по приглашениям/.test(c.innerHTML));
+  ok('шкала вербовщика нарисована', /Шкала вербовщика/.test(c.innerHTML) && !!c.querySelector('.rq-bar'));
+  // В образце шкала укорочена до трёх баллов: 2 из 3 — это 67%
+  ok('полоса заполнена по баллам', /width:67%/.test(c.querySelector('.rq-fill').getAttribute('style')));
+  ok('под каждым баллом иконка награды', c.querySelectorAll('.rq-card')[0].querySelectorAll('.rq-step').length === 3);
+  ok('забранный балл помечен', !!c.querySelector('.rq-step.is-claimed'));
+  ok('кнопка «Забрать» только у достигнутого и незабранного',
+     c.querySelectorAll('[data-claim-step]').length === 2);
+  ok('шкала новобранца тоже видна', /Шкала новобранца/.test(c.innerHTML));
+  ok('прогрессивная доля показана', /Доля с покупок друзей/.test(c.innerHTML) && /12%/.test(c.innerHTML));
+  await c.querySelector('[data-claim-step]').onclick();
+  ok('получение награды уходит на сервер',
+     claims.some(([u2, b]) => u2 === '/api/referral/quests/claim' && b.step === 2 && b.board === 'inviter'));
 
   console.log('\n[3] Почта: удаление сообщения, переписки и очистка');
   const posts = [];

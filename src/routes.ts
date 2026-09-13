@@ -893,8 +893,10 @@ function registerRoutes(app: any) {
   // Рефералы
   app.add('GET',  '/api/referral',       (req) => features.referralView(req.user));
   app.add('POST', '/api/referral/apply', act((req, n) => features.applyReferral(req.user, req.body.code, n)));
-  // Раздел «Задания» в приглашениях: пока пустой, включается из панели
-  app.add('GET',  '/api/referral/quests', (req) => require('./services/referrals').questsView(req.user));
+  // Задания приглашений: две шкалы по 10 баллов (вербовщик и новобранец)
+  app.add('GET',  '/api/referral/quests', (req) => require('./services/referralQuests').view(req.user));
+  app.add('POST', '/api/referral/quests/claim',
+    act((req, n) => require('./services/referralQuests').claim(req.user, req.body.board, req.body.step, n)));
   app.add('GET',  '/api/admin/referral-quests', (req) => require('./services/referrals').adminView(req.user), { admin: true });
   app.add('POST', '/api/admin/referral-quests', act((req, n) => require('./services/referrals').setQuests(req.user, !!req.body.on, n)), { admin: true });
   // Шпионаж

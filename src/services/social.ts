@@ -148,6 +148,10 @@ function chatPost(user: User, text: string, room?: string) {
     }
   }
   w.chat.push({ id: w.seq++, uid: user.id, name: user.name, flag: player.flag(user), level: user.level, text, at: now, room: roomId });
+  // Счётчик сообщений: по нему считаются условия приглашений («друзья
+  // написали 100 сообщений»). Сама лента хранит только последние N
+  // сообщений, поэтому посчитать задним числом по ней нельзя.
+  try { require('./dailyQuests').bump(user, 'chatMessages', 1); } catch (e) {}
   // Храним только последние N сообщений
   if (w.chat.length > config.CHAT.KEEP) w.chat.splice(0, w.chat.length - config.CHAT.KEEP);
 }

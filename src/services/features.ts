@@ -416,7 +416,11 @@ function onReferralPurchase(user: User, goldBought: number): void {
   if (!user.referredBy || goldBought <= 0) return;
   const inviter = users()[user.referredBy];
   if (!inviter) return;
-  const share = Math.floor(goldBought * config.REFERRAL.purchaseSharePct / 100);
+  // Доля растёт от числа приглашённых, дошедших до 50 уровня
+  // (services/referralQuests.ts): 10% базовых, дальше 12/15/20/25%.
+  let pct = config.REFERRAL.purchaseSharePct;
+  try { pct = require('./referralQuests').sharePctFor(inviter); } catch (e) {}
+  const share = Math.floor(goldBought * pct / 100);
   if (share <= 0) return;
   // «Заработано» считаем в момент начисления, а не получения: это уже
   // заработанные игроком деньги, письмо лишь ждёт, когда он их заберёт.
@@ -425,16 +429,16 @@ function onReferralPurchase(user: User, goldBought: number): void {
   db.markUser(user.id); db.markUser(inviter.id);
   try {
     require('./rewards').grant(inviter.id, {
-      title: `🪙 ${config.REFERRAL.purchaseSharePct}% с покупки приглашённого`,
+      title: `🪙 ${pct}% с покупки приглашённого`,
       reason: 'Один из приглашённых вами игроков пополнил счёт. Ваша доля — '
-        + `${config.REFERRAL.purchaseSharePct}% от купленного им золота. Кто именно это был — не раскрываем.`,
+        + `${pct}% от купленного им золота. Кто именно это был — не раскрываем.`,
       reward: { gold: share },
       source: 'referral',
     });
   } catch (e) {}
   try {
     require('./notifications').push(inviter.id, 'referral_purchase',
-      `💰 Приглашённый вами игрок купил золото — вам начислено 🪙 ${share} (${config.REFERRAL.purchaseSharePct}%). Заберите в почте.`, {});
+      `💰 Приглашённый вами игрок купил золото — вам начислено 🪙 ${share} (${pct}%). Заберите в почте.`, {});
   } catch (e) {}
 }
 

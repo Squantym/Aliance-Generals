@@ -153,7 +153,8 @@ const fails = (fn, part, n) => {
   ok(referrals.adminView(owner).changedBy === 'Владелец', 'в панели видно, кто менял');
   referrals.setQuests(owner, false, nx);
   ok(referrals.questsEnabled() === false, 'и так же выключается');
-  ok(referrals.questsView(boss).quests.length === 0, 'заданий пока нет — раздел пустой');
+  const rq = require('../dist/src/services/referralQuests');
+  ok(rq.view(boss).inviter.steps.length === 10, 'в шкале вербовщика десять баллов с наградами');
 
   console.log('\n[7] Генератор QR');
   const App = { screens: {} };
@@ -189,7 +190,8 @@ const fails = (fn, part, n) => {
   ok(/id="ref-link"/.test(refJs) && /id="ref-qr"/.test(refJs), 'на экране есть и ссылка, и QR-код');
   ok(/ref-qr-save/.test(refJs) && /navigator\.share/.test(refJs), 'QR можно сохранить, ссылкой — поделиться');
   ok(/Кто пришёл по вашей ссылке/.test(refJs), 'список приглашённых выводится');
-  ok(/d\.questsOn \?/.test(refJs), 'раздел заданий показывается только при включённом выключателе');
+  ok(/if \(d\.questsOn\)/.test(refJs), 'шкалы запрашиваются только при включённом выключателе');
+  ok(/App\._questScale/.test(refJs) && /rq-bar/.test(refJs), 'шкала баллов рисуется полосой');
   const appJs = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
   ok(/localStorage\.setItem\('refcode'/.test(appJs) && /referral: 'referrals'/.test(appJs),
      'код из ссылки запоминается, экран вынесен в свой файл');

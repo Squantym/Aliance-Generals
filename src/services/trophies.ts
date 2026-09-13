@@ -79,6 +79,11 @@ function checkCompleted(user: User): void {
       // Применяем уровень
       if (!user.trophies) user.trophies = {};
       user.trophies[proc.id] = (user.trophies[proc.id] || 0) + 1;
+      // Сколько уровней трофеев прокачано всего — условие приглашений
+      // «прокачать в сумме 10 уровней». Считаем здесь, в точке, где
+      // уровень действительно выдан, а не при запуске прокачки.
+      if (!(user as any).counters) (user as any).counters = {};
+      (user as any).counters.trophyLevels = (((user as any).counters.trophyLevels) || 0) + 1;
     } else {
       remaining.push(proc);
     }

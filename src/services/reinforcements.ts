@@ -153,6 +153,13 @@ function send(user: User, toId: string, notices: Notices) {
     fromId: user.id, fromName: user.name, at: Date.now(), expiresAt,
   });
   (user as any).reinforceSent.push({ toId, toName: target.name, at: Date.now() });
+  // Счётчик за всё время: reinforceSent живёт сутки (лимит на день), а
+  // условия приглашений спрашивают «отправить 50 подкреплений» — по
+  // суточному списку такое не посчитать
+  try { require('./dailyQuests').bump(user, 'reinforcesSent', 1); } catch (e) {}
+  // Задание «отправить 5 подкреплений друзьям» считает только своих
+  // приглашённых, поэтому у него отдельный счётчик
+  try { require('./referralQuests').onReinforce(user, target); } catch (e) {}
   db.markUser(target.id);
   db.markUser(user.id);
 

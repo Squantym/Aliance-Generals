@@ -5420,3 +5420,34 @@ body.has-club-bar #header { top: 32px; }
 .news-popup-body { overflow-y: auto; text-align: left; padding: 6px 2px 2px; flex: 1; }
 /* Баннер внутри окна не должен занимать весь экран: окно — анонс, а не галерея */
 .news-popup-body img { max-height: 42vh; object-fit: contain; }
+
+/* ═══ Шкала заданий приглашений ═══ */
+/* Десять баллов во всю ширину: полоса заполнения, под ней иконки наград.
+   На узком экране ряд прокручивается вбок — ужимать иконки до нечитаемых
+   точек хуже, чем дать провести пальцем. */
+.rq-card { padding-bottom: 10px; }
+.rq-head { font-size: 13px; margin: 2px 0 6px; }
+.rq-bar { height: 10px; border-radius: 6px; background: rgba(255,255,255,.08);
+  border: 1px solid var(--border); overflow: hidden; }
+.rq-fill { height: 100%; background: linear-gradient(90deg, var(--orange), var(--gold));
+  transition: width .4s ease; }
+.rq-steps { display: flex; gap: 4px; margin-top: 6px; overflow-x: auto; padding-bottom: 4px; }
+.rq-step { flex: 1 0 auto; min-width: 44px; text-align: center; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px 2px;
+  background: rgba(255,255,255,.03); position: relative; }
+.rq-step.is-ready { border-color: var(--gold); box-shadow: 0 0 6px rgba(255,200,80,.35); }
+.rq-step.is-claimed { opacity: .55; }
+.rq-ic { font-size: 18px; line-height: 1.1; }
+.rq-num { font-size: 10px; color: var(--dim); }
+.rq-tick { position: absolute; top: -6px; right: -4px; font-size: 12px; color: var(--green); }
+.rq-hint { margin-top: 4px; min-height: 16px; }
+.rq-tasks { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.rq-task { display: flex; align-items: center; gap: 8px; padding: 4px 0;
+  border-bottom: 1px dashed rgba(255,255,255,.06); font-size: 13px; }
+.rq-task:last-child { border-bottom: none; }
+.rq-task.is-done { opacity: .8; }
+.rq-prog { white-space: nowrap; }
+.rq-share { display: flex; gap: 6px; margin-top: 8px; }
+.rq-share-step { flex: 1; text-align: center; border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 2px; background: rgba(255,255,255,.03); }
+.rq-share-step.is-ready { border-color: var(--gold); color: var(--gold); }

@@ -80,6 +80,8 @@ function declare(user: User, targetId: string, amount: number | string, notices:
 
   db.save('sanctions');
   db.markUser(user.id); db.markUser(target.id);
+  // Сколько санкций объявил — условие приглашений «объявить 10 санкций»
+  try { require('./dailyQuests').bump(user, 'sanctionsMade', 1); } catch (e) {}
 
   // Если цель оффлайн — добавляем санкцию в сводку «пока вас не было»
   // (окно «События» при первом заходе цели в игру)

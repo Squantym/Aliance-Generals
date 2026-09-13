@@ -306,6 +306,11 @@ function claim(user: User, questId: string, notices: Notices) {
   const progress = questProgress(d, quest);
   if (progress < target) throw new u.ApiError('Поручение ещё не выполнено');
   d.claimed[questId] = true;
+  // Сколько поручений сдано за всё время — условие приглашений
+  // «выполнить 30 поручений». Считаем сдачу, а не принятие: принять
+  // можно и не сделать.
+  if (!(user as any).counters) (user as any).counters = {};
+  (user as any).counters.questsDone = (((user as any).counters.questsDone) || 0) + 1;
   const reward = config.dailyQuestReward(quest.diff, user.level, quest);
   // Контрабанда возвращает половину ПОТРАЧЕННОГО, а не половину прайса:
   // товар мог быть куплен со скидкой, и по прайсу вышло бы, что игрок

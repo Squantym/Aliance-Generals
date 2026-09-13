@@ -271,10 +271,50 @@ App.QR = (() => {
   return { matrix, canvas };
 })();
 
+// ── Шкала заданий ──────────────────────────────────────────────────
+// Во всю ширину: полоса на 10 баллов, под каждым баллом — иконка
+// награды. Забрать можно только награду за уже набранный балл.
+App._questScale = (b, title, note) => {
+  const pct = Math.round((b.points / Math.max(1, b.steps.length)) * 100);
+  const steps = b.steps.map((s) => `
+    <div class="rq-step ${s.claimed ? 'is-claimed' : (s.reached ? 'is-ready' : '')}"
+         data-step-info="${s.step}" title="${UI.esc(s.text)}">
+      <div class="rq-ic">${s.icon}</div>
+      <div class="rq-num">${s.step}</div>
+      ${s.claimed ? '<div class="rq-tick">✓</div>' : ''}
+    </div>`).join('');
+  const ready = b.steps.filter((s) => s.reached && !s.claimed);
+  return `
+    <div class="card rq-card">
+      <div class="name">${title}</div>
+      ${note ? `<p class="muted small" style="margin:2px 0 8px">${note}</p>` : ''}
+      <div class="rq-head"><b class="gold">${b.points}</b> из ${b.steps.length} баллов</div>
+      <div class="rq-bar"><div class="rq-fill" style="width:${pct}%"></div></div>
+      <div class="rq-steps">${steps}</div>
+      <div id="rq-hint-${b.board}" class="muted small rq-hint">Нажмите на иконку, чтобы увидеть награду.</div>
+      ${ready.map((s) => `
+        <button class="btn btn-orange mt" data-claim-step="${s.step}" data-board="${b.board}" style="width:100%">
+          🎁 Забрать за ${s.step}-й балл: ${UI.esc(s.text)}
+        </button>`).join('')}
+      <div class="rq-tasks">
+        ${b.tasks.map((t) => `
+          <div class="rq-task ${t.done ? 'is-done' : ''}">
+            <div class="grow">
+              <span class="${t.done ? 'gold' : ''}">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
+              ${t.note ? `<br><span class="muted small">${UI.esc(t.note)}</span>` : ''}
+            </div>
+            <span class="muted small rq-prog">${UI.fmtNum(t.have)} / ${UI.fmtNum(t.need)}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+};
+
 // ── Экран «Пригласить друга» ───────────────────────────────────────
 App.screens.referral = async (c) => {
   await App.refreshMe();
   const d = await API.get('/api/referral');
+  let q = null;
+  if (d.questsOn) { try { q = await API.get('/api/referral/quests'); } catch (e) {} }
 
   const invitedRows = (d.invited || []).map((x) => `
     <div class="list-row">
@@ -324,10 +364,21 @@ App.screens.referral = async (c) => {
       ${invitedRows || '<p class="muted center" style="margin:8px 0 0">Пока никто. Отправьте ссылку или QR-код — здесь появятся все, кто зашёл.</p>'}
     </div>
 
-    ${d.questsOn ? `
+    ${q ? App._questScale(q.inviter, '🎯 Шкала вербовщика',
+      'Каждое выполненное условие — 1 балл. Под каждым баллом своя награда.') : ''}
+    ${q && q.newbie ? App._questScale(q.newbie, '🎖 Шкала новобранца',
+      'Ваш собственный путь: за него награды получаете вы.') : ''}
+    ${q && q.share ? `
       <div class="card">
-        <div class="name">🎯 Задания по приглашениям</div>
-        <p class="muted small">Раздел открыт, задания появятся здесь в ближайшем обновлении.</p>
+        <div class="name">💰 Доля с покупок друзей</div>
+        <p class="muted small">Сейчас вам идёт <b class="gold">${q.share.pct}%</b> с покупок золота приглашёнными. Доля растёт от числа друзей, дошедших до 50 уровня — сейчас таких ${q.share.friends50}.</p>
+        <div class="rq-share">
+          ${q.share.steps.map((s) => `
+            <div class="rq-share-step ${s.reached ? 'is-ready' : ''}">
+              <b>${s.pct}%</b><br><span class="muted small">${s.friends} друзей</span>
+            </div>`).join('')}
+        </div>
+        ${q.share.next ? `<p class="muted small" style="margin:8px 0 0">До ${q.share.next.pct}% осталось пригласить ещё ${q.share.next.left}.</p>` : ''}
       </div>` : ''}
 
     ${d.canApply ? `
@@ -380,6 +431,27 @@ App.screens.referral = async (c) => {
     }
     copy(d.link, '🔗 Ссылка скопирована');
   };
+
+  // Шкалы: подсказка по иконке и получение награды
+  c.querySelectorAll('[data-step-info]').forEach((el) => {
+    el.onclick = () => {
+      const board = el.closest('.rq-card').querySelector('.rq-hint');
+      const n = Number(el.dataset.stepInfo);
+      const all = [].concat(q ? q.inviter.steps : [], (q && q.newbie) ? q.newbie.steps : []);
+      const info = all.find((s) => s.step === n && el.querySelector('.rq-ic').textContent.trim() === s.icon);
+      if (board && info) board.textContent = `${n}-й балл: ${info.text}${info.claimed ? ' — забрано' : ''}`;
+    };
+  });
+  c.querySelectorAll('[data-claim-step]').forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await API.post('/api/referral/quests/claim', { board: btn.dataset.board, step: Number(btn.dataset.claimStep) });
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { btn.disabled = false; UI.toast('⛔ ' + e.message); }
+    };
+  });
 
   const apply = document.getElementById('ref-apply');
   if (apply) apply.onclick = async () => {
