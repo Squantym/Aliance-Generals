@@ -36,6 +36,16 @@ function itemsList(user?: any) {
   };
 }
 
+// Запомнить цену первой покупки за московский день (допинг и
+// контейнеры). Нужна парному заданию «купить любой товар на рынке».
+function rememberFirstBuy(user: any, gold: number): void {
+  if (!(gold > 0)) return;
+  try {
+    const box = require('./dailyQuests').mskBox(user);
+    if (!box.firstBuyGold) { box.firstBuyGold = Math.round(gold); db.markUser(user.id); }
+  } catch (e) {}
+}
+
 // ---------- Склад допинга ----------
 // Купленный допинг больше не срабатывает в момент покупки: он ложится
 // на склад, как контейнеры, и применяется кнопкой «Использовать».
@@ -169,6 +179,10 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
   // одной и той же неудачной покупкой подряд.
   const countBuy = () => {
     require('./dailyQuests').bump(user, 'marketBought', 1);
+    // Цена ПЕРВОЙ за сегодня покупки допинга или контейнера: парное
+    // задание возвращает половину её стоимости, и брать для этого сумму
+    // всех покупок дня было бы уже другим обещанием
+    rememberFirstBuy(user, price);
     // Отдельный счётчик по КОНКРЕТНОМУ товару: поручения на контрабанду
     // называют товар явно, поэтому общего счётчика покупок им мало
     require('./dailyQuests').bump(user, 'buy:' + item.id, 1);
@@ -416,6 +430,7 @@ function buyContainers(user: User, tier: number | string, qty: number, notices: 
   // Потраченное золото — по факту, со скидкой: половину от него вернёт
   // поручение на контрабанду.
   require('./dailyQuests').bump(user, 'goldOn:' + c.id, total);
+  rememberFirstBuy(user, unit);   // парное задание вернёт половину цены
   player.spendGold(user, total, 'container');
   const owned = addContainers(user, c.tier, n);
   notices.push(`📦 Куплено: «${c.name}» ×${n}. На складе: ${owned} — откройте, когда будете готовы.`);

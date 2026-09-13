@@ -5451,3 +5451,7 @@ body.has-club-bar #header { top: 32px; }
 .rq-share-step { flex: 1; text-align: center; border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 2px; background: rgba(255,255,255,.03); }
 .rq-share-step.is-ready { border-color: var(--gold); color: var(--gold); }
+/* Парные задания: два прогресса в строке — свой и напарника */
+.rq-pair { margin-top: 6px; }
+.rq-pair > summary { cursor: pointer; font-size: 13px; color: var(--gold); padding: 4px 0; }
+.rq-pair .rq-prog { text-align: right; line-height: 1.3; }

@@ -2597,6 +2597,63 @@ const REFERRAL_QUESTS = {
     { gold: 500 },
     { containers: { tier: 4, qty: 5 } },
   ],
+
+  // ── ПАРНЫЕ ЗАДАНИЯ ─────────────────────────────────────────────
+  // Выполняют вдвоём — приглашающий и приглашённый. Награда приходит
+  // ОБОИМ и сразу, без шкалы: пара либо сделала, либо нет.
+  //
+  // Ежедневные сбрасываются в 00:00 по Москве, разовые выполняются
+  // один раз за всё время. «По N» значит, что показатель нужен каждому
+  // из двоих: половина пары не закрывает задание.
+  pairDaily: [
+    { id: 'pd_rein',   metric: 'pairReinforce',    need: 1,   name: 'Отправить друг другу подкрепления',
+      reward: { dollars: 10000000000 } },
+    { id: 'pd_group',  metric: 'pairGroupBattles', need: 3,   name: 'Сыграть 3 групповых боя вместе',
+      reward: { gold: 30 } },
+    { id: 'pd_battle', metric: 'attacks',          need: 50,  name: 'Сделать по 50 боёв',
+      reward: { items: { ammo: 2 } } },
+    { id: 'pd_fatal',  metric: 'breachIn',         need: 1,   name: 'Проникнуть в штаб по разу',
+      reward: { items: { crit_boost: 1 } } },
+    { id: 'pd_mis',    metric: 'missionStages',    need: 10,  name: 'Сделать по 10 шагов спецоперации',
+      reward: { items: { energy: 3 } } },
+    { id: 'pd_chat',   metric: 'chatMessages',     need: 10,  name: 'Написать по 10 сообщений в чат',
+      reward: { gold: 10 } },
+    { id: 'pd_units',  metric: 'topUnitsBought',   need: 100, name: 'Купить по 100 единиц новейшей техники',
+      note: 'та, что открылась последней на вашем уровне', reward: { topUnits: 100 } },
+    { id: 'pd_build',  metric: 'buildingsBuilt',   need: 50,  name: 'Построить по 50 зданий',
+      reward: { saboteurs: { kinds: ['ground', 'sea', 'air', 'building'], each: 20 } } },
+    { id: 'pd_market', metric: 'marketBuy',        need: 1,   name: 'Купить любой товар на чёрном рынке',
+      note: 'допинг или контейнер', reward: { halfOfPurchase: true } },
+    { id: 'pd_club',   metric: 'clubWon',          need: 1,   name: 'Выиграть по 1 игре в клубе офицеров',
+      reward: { gold: 10 } },
+  ],
+
+  pairOnce: [
+    { id: 'po_lvl70',  metric: 'level',          need: 70,   name: 'Достигнуть 70 уровня обоим',
+      reward: { gold: 150 } },
+    { id: 'po_legion', metric: 'inLegion',       need: 1,    name: 'Создать легион или вступить в него',
+      reward: { containers: { tier: 3, qty: 3 } } },
+    { id: 'po_ally10', metric: 'allies',         need: 10,   name: 'Собрать по 10 человек в альянсе',
+      reward: { gold: 100 } },
+    { id: 'po_rein50', metric: 'reinforcesSent', need: 50,   name: 'Отправить по 50 подкреплений',
+      reward: { vipDays: 7 } },
+    { id: 'po_club10', metric: 'clubWon',        need: 10,   name: 'Выиграть по 10 игр в клубе офицеров',
+      reward: { gold: 100 } },
+    { id: 'po_atk1000',metric: 'attacks',        need: 1000, name: 'Сделать по 1000 нападений в войне',
+      reward: { dollars: 50000000000 } },
+    { id: 'po_fatal30',metric: 'breachIn',       need: 30,   name: 'Проникнуть в штаб по 30 раз',
+      reward: { containers: { tier: 4, qty: 3 } } },
+    { id: 'po_sanc10', metric: 'sanctionsMade',  need: 10,   name: 'Объявить по 10 санкций',
+      reward: { gold: 150, dollars: 15000000000 } },
+    { id: 'po_chat100',metric: 'chatMessages',   need: 100,  name: 'Написать по 100 сообщений в чат',
+      reward: { gold: 100 } },
+    { id: 'po_troph10',metric: 'trophyLevels',   need: 10,   name: 'Прокачать по 10 уровней трофеев',
+      reward: { items: { stim: 5, armor: 5 } } },
+    { id: 'po_gold1k', metric: 'goldSpent',      need: 1000, name: 'Потратить по 1000 золота',
+      reward: { containers: { tier: 5, qty: 3 } } },
+    { id: 'po_quest30',metric: 'questsDone',     need: 30,   name: 'Выполнить по 30 поручений',
+      reward: { saboteurs: { kinds: ['secret'], each: 50 } } },
+  ],
 };
 
 // Шпионаж/разведка

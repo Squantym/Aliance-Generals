@@ -74,6 +74,27 @@ function list(user: User) {
   };
 }
 
+// Самая свежая техника, доступная игроку по уровню: из неё состоит
+// его текущая армия, и именно её требуют парные задания приглашений.
+function topUnitFor(user: User): any {
+  let best: any = null;
+  for (const cu of config.UNITS) {
+    if (cu.unlock > (user.level || 1)) continue;
+    if (!best || cu.unlock > best.unlock) best = cu;
+  }
+  return best;
+}
+
+// Выдать технику без оплаты — награда парных заданий
+function grantUnits(user: User, unitId: string, qty: number): number {
+  const cu = config.UNIT_BY_ID[unitId];
+  const n = Math.max(0, u.toInt(qty, 0));
+  if (!cu || !n) return 0;
+  const m = player.ensureUnit(user, unitId);
+  m[0] += n;
+  return n;
+}
+
 // Покупка qty единиц техники — всегда попадают в Mk0
 function buy(user: User, unitId: string, qty: number, notices: Notices) {
   const cu = config.UNIT_BY_ID[unitId];
@@ -87,6 +108,12 @@ function buy(user: User, unitId: string, qty: number, notices: Notices) {
   m[0] += qty;
   ach.bump(user, 'unitsBought', qty, notices);
   require('./dailyQuests').bump(user, 'unitsBought', qty);
+  // Отдельно считаем покупку САМОЙ СВЕЖЕЙ доступной техники: парное
+  // задание требует именно её, а не сотню дешёвых машин начального
+  // уровня
+  if (topUnitFor(user) && topUnitFor(user).id === unitId) {
+    require('./dailyQuests').bump(user, 'topUnitsBought', qty);
+  }
   // Расширенная статистика: покупки по родам войск
   try {
     const def = config.UNIT_BY_ID[unitId];
@@ -116,4 +143,4 @@ function sell(user: User, unitId: string, qty: number) {
   return { unitId, owned: user.units[unitId] || 0, refund };
 }
 
-export = { list, buy, sell, priceFor, basePriceFor };
+export = { list, buy, sell, priceFor, basePriceFor, topUnitFor, grantUnits };

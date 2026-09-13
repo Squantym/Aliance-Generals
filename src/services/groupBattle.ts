@@ -713,6 +713,12 @@ function finish(s: Store, b: Battle, winnerTeam: -1 | 0 | 1, reason: string): vo
           : (winnerTeam === -1 ? '⚔ Групповой бой окончен вничью' : '⚔ Ваша команда проиграла групповой бой'), {});
     } catch (e) {}
   }
+  // Кто с кем воевал сегодня — парное задание «3 групповых боя вместе».
+  // Считаем участие, а не победу: задание про совместную игру.
+  try {
+    const real = Object.values(b.fighters).filter((f: any) => !f.isBot).map((f: any) => f.id);
+    require('./referralQuests').onGroupBattle(real);
+  } catch (e) {}
   s.history.unshift({ id: b.id, at: b.finishedAt, winnerTeam, players: Object.keys(b.fighters).length });
   if (s.history.length > 20) s.history.length = 20;
 

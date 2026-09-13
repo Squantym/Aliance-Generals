@@ -49,9 +49,29 @@ const COUNTED_ELSEWHERE = new Set([
   'buildingsBuilt', 'unitsBought', 'missionStages',
 ]);
 
+// ── Дневные счётчики по МОСКОВСКОМУ дню ───────────────────────────
+// Поручения исторически считают день по UTC, а парные задания
+// приглашений сбрасываются в 00:00 МСК. Разница в три часа заметна:
+// задание «сделать по 50 боёв за день» обнулялось бы у игроков посреди
+// вечера. Поэтому у них свой ящик с московским днём.
+function mskBox(user: any): any {
+  const day = u.dayKey();
+  if (!user.dayMsk || user.dayMsk.day !== day) {
+    user.dayMsk = { day, counters: {}, groupWith: {}, firstBuyGold: 0 };
+  }
+  if (!user.dayMsk.counters) user.dayMsk.counters = {};
+  if (!user.dayMsk.groupWith) user.dayMsk.groupWith = {};
+  return user.dayMsk;
+}
+function mskCount(user: any, key: string): number {
+  return Math.max(0, Number(mskBox(user).counters[key]) || 0);
+}
+
 function bump(user: User, key: string, amount?: number): void {
   const d = ensureDaily(user);
   d.counters[key] = (d.counters[key] || 0) + (amount || 1);
+  const m = mskBox(user);
+  m.counters[key] = (m.counters[key] || 0) + (amount || 1);
   // Накопительные счётчики игрока: по ним считаются КОНТРАКТЫ и достижения.
   // Раньше bump писал только в дневные счётчики, поэтому контракты на
   // события без отдельного кода (покупки на чёрном рынке, клуб, диверсанты)
@@ -424,4 +444,5 @@ function claimBonus(user: User, notices: Notices) {
 }
 
 export = { bump, list, accept, claim, claimBonus, ensureDaily, questProgress,
-  ensureWeekly, weeklyList, weeklyAccept, weeklyClaim, weeklyClaimBonus, acceptAll, claimAll, reroll,};
+  ensureWeekly, weeklyList, weeklyAccept, weeklyClaim, weeklyClaimBonus, acceptAll, claimAll, reroll,
+  mskBox, mskCount,};

@@ -309,6 +309,37 @@ App._questScale = (b, title, note) => {
     </div>`;
 };
 
+// ── Парные задания ─────────────────────────────────────────────────
+// Без шкалы и кнопок: как только показатель набрали оба, награда
+// приходит обоим сама. Поэтому здесь показываем два прогресса рядом —
+// свой и напарника.
+App._pairCard = (p) => {
+  const row = (t) => `
+    <div class="rq-task ${t.done ? 'is-done' : ''}">
+      <div class="grow">
+        <span class="${t.done ? 'gold' : ''}">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
+        ${t.note ? `<br><span class="muted small">${UI.esc(t.note)}</span>` : ''}
+        <br><span class="muted small">${t.icon} ${UI.esc(t.reward)}</span>
+      </div>
+      <span class="muted small rq-prog">вы ${UI.fmtNum(t.mine)}/${UI.fmtNum(t.need)}<br>друг ${UI.fmtNum(t.theirs)}/${UI.fmtNum(t.need)}</span>
+    </div>`;
+  const dailyDone = p.daily.filter((t) => t.done).length;
+  const onceDone = p.once.filter((t) => t.done).length;
+  return `
+    <div class="card rq-card">
+      <div class="name">🤝 ${UI.esc(p.otherName)} <span class="muted small">· ${p.otherLevel} ур.</span></div>
+      <p class="muted small" style="margin:2px 0 6px">Награду получают оба, как только условие выполнят обе стороны. Ежедневные обнуляются в 00:00 по Москве.</p>
+      <details class="rq-pair" open>
+        <summary>📅 Ежедневные — ${dailyDone} из ${p.daily.length}</summary>
+        <div class="rq-tasks">${p.daily.map(row).join('')}</div>
+      </details>
+      <details class="rq-pair">
+        <summary>🏅 Разовые — ${onceDone} из ${p.once.length}</summary>
+        <div class="rq-tasks">${p.once.map(row).join('')}</div>
+      </details>
+    </div>`;
+};
+
 // ── Экран «Пригласить друга» ───────────────────────────────────────
 App.screens.referral = async (c) => {
   await App.refreshMe();
@@ -368,6 +399,12 @@ App.screens.referral = async (c) => {
       'Каждое выполненное условие — 1 балл. Под каждым баллом своя награда.') : ''}
     ${q && q.newbie ? App._questScale(q.newbie, '🎖 Шкала новобранца',
       'Ваш собственный путь: за него награды получаете вы.') : ''}
+    ${(q && q.pairs && q.pairs.length) ? `
+      <div class="card">
+        <div class="name">🤝 Парные задания</div>
+        <p class="muted small" style="margin:2px 0 0">Выполняются вдвоём с тем, кто вас пригласил, или с тем, кого пригласили вы. Награда приходит обоим сразу.</p>
+      </div>
+      ${q.pairs.map((p) => App._pairCard(p)).join('')}` : ''}
     ${q && q.share ? `
       <div class="card">
         <div class="name">💰 Доля с покупок друзей</div>
