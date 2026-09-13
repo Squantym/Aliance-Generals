@@ -1901,6 +1901,16 @@ function registerRoutes(app: any) {
     return an.overview();
   }, { admin: true });
 
+  // Кого проверить: сервер сам ищет пары с общим устройством, отпечатком
+  // или адресом и ранжирует их по силе улик (services/multiWatch.ts)
+  app.add('GET', '/api/admin/multi-watch', (req) => {
+    if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
+    return require('./services/multiWatch').view({
+      limit: u.toInt(req.query.limit, 50),
+      minScore: u.toInt(req.query.min, 30),
+    });
+  }, { admin: true });
+
   app.add('GET', '/api/admin/multi-check', (req) => {
     if (!roles.canAccessZone(req.user, 'security')) throw new u.ApiError('Недостаточно прав');
     const access = require('./services/access');

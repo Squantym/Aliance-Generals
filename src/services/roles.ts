@@ -189,7 +189,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // player-note — служебные заметки о игроке. Зона та же, что у досье:
   // кто может открыть карточку, тот может и записать в неё пометку.
   [/^\/api\/admin\/(dashboard|player-card|access|player-note)/, 'players'],
-  [/^\/api\/admin\/(multi-check|net-check|email-status|verify-email|email-check|lobby-check|lobby-reset)/, 'security'],
+  [/^\/api\/admin\/(multi-check|multi-watch|net-check|email-status|verify-email|email-check|lobby-check|lobby-reset)/, 'security'],
   // Открытые входы и выброс из кабинета — «Безопасность»: это работа с
   // доступом, а не с самим игроком. «Кто ещё заходил с устройства» —
   // «Игроки»: вопрос того же рода, что история входов рядом с профилем.
