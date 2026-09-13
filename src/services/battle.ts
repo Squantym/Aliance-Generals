@@ -397,10 +397,34 @@ function attack(user: User, targetId: string, notices: Notices) {
 // жертвы — и только если всё чисто, резолвим сам бой. Вызывается либо
 // сразу из attack() (нет предложения взлома банка), либо из роутов
 // bank-hack/guess и bank-hack/skip (после решения по сейфу).
+// Запомнить нападавшего у защитника. Храним последних MAX_ATTACKERS:
+// список нужен только для проверки «нападал ли этот на меня», и расти
+// бесконечно ему незачем.
+const MAX_ATTACKERS = 100;
+function rememberAttacker(target: any, attacker: User): void {
+  if (!target.attackedBy || typeof target.attackedBy !== 'object') target.attackedBy = {};
+  const box = target.attackedBy;
+  const prev = box[attacker.id];
+  box[attacker.id] = {
+    id: attacker.id, name: attacker.name,
+    at: Date.now(), count: ((prev && prev.count) || 0) + 1,
+  };
+  const ids = Object.keys(box);
+  if (ids.length > MAX_ATTACKERS) {
+    ids.sort((a, b) => (box[a].at || 0) - (box[b].at || 0));
+    for (const id of ids.slice(0, ids.length - MAX_ATTACKERS)) delete box[id];
+  }
+  db.markUser(target.id);
+}
+
 function proceedToCombat(user: User, target: any, isBot: boolean, targetId: string, notices: Notices) {
   if (user.res.am.cur < 1) throw new u.ApiError('Нет боеприпасов. Они восстанавливаются со временем.');
   user.res.am.cur -= 1;
   user.battle.attacks++;
+  // Кто на меня нападал — нужно санкциям: объявить награду за голову
+  // можно на любого, кто хоть раз напал, а не только на того, кто
+  // отрезал ухо. Список живёт у ЗАЩИТНИКА и не чистится сводкой.
+  if (!isBot && target && target.id) rememberAttacker(target, user);
   require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
   try { require('./seasons').onAttack(user); } catch (e) {}

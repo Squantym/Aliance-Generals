@@ -45,22 +45,25 @@ const user = mkUser();
 usersMap['u1'] = user;
 const notices = { push: () => {} };
 const mx = player.maxima(user);
+// Допинг с рынка кладётся на склад, а применяется отдельно —
+// покупка сама по себе эффекта не даёт (services/market.ts)
+const buyUse = (who, id, n) => { market.buyItem(who, id, null, n || []); market.useItem(who, id, n || []); };
 
 // Боеприпасы: 0 -> max, золото -25
 let goldBefore = user.gold;
-market.buyItem(user, 'ammo', null, notices);
+buyUse(user, 'ammo', notices);
 eq('боеприпасы восстановлены до максимума', user.res.am.cur, mx.am);
 eq('золото списано на 25', goldBefore - user.gold, 25);
 
 // Энергия: 0 -> max, золото -20
 goldBefore = user.gold;
-market.buyItem(user, 'energy', null, notices);
+buyUse(user, 'energy', notices);
 eq('энергия восстановлена до максимума', user.res.en.cur, mx.en);
 eq('золото списано на 20', goldBefore - user.gold, 20);
 
 // Здоровье: 1 -> max, золото -22
 goldBefore = user.gold;
-market.buyItem(user, 'medkit', null, notices);
+buyUse(user, 'medkit', notices);
 eq('здоровье восстановлено до максимума', user.res.hp.cur, mx.hp);
 eq('золото списано на 22', goldBefore - user.gold, 22);
 

@@ -281,6 +281,8 @@ function describe(path: string, body?: any, result?: any): string | null {
       // ── Чёрный рынок ───────────────────────────────────────────
       case '/api/market/buy':
         return `🛒 Купил на рынке «${itemName(body.itemId)}»${body.targetName ? ` (жертва: «${body.targetName}»)` : ''}`;
+      case '/api/market/use':
+        return `💉 Применил со склада «${itemName(body.itemId)}»`;
       case '/api/market/buy-container':
         return `📦 Купил контейнеров (тир ${body.tier}, ${body.qty || 1} шт.)`;
       case '/api/market/open':

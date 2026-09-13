@@ -15,13 +15,32 @@ async function _offerRestore(kind) {
   };
   const cfg = map[kind];
   if (!cfg) return false;
-  // Актуальная цена (с учётом скидок) из чёрного рынка
-  let price = null;
+  // Актуальная цена (с учётом скидок) из чёрного рынка и остаток на складе
+  let price = null, owned = 0;
   try {
     const data = await API.get('/api/market/items');
     const it = (data.buffs || []).find((x) => x.id === cfg.item);
-    if (it) price = it.gold;
+    if (it) { price = it.gold; owned = it.owned || 0; }
   } catch (e) {}
+
+  // Сначала предлагаем своё: покупать второй раз то, что уже лежит на
+  // складе, — самая обидная трата золота
+  if (owned > 0) {
+    const useIt = await UI.confirm(
+      `У вас закончились ресурсы: ${cfg.label}!\n\nНа складе есть подходящий допинг — ${owned} шт. Использовать?`,
+      { title: `Пополнить ресурсы: ${cfg.label}`, icon: cfg.icon, okText: 'Использовать со склада', cancelText: 'Отмена' }
+    );
+    if (useIt) {
+      try {
+        await API.post('/api/market/use', { itemId: cfg.item });
+        await App.refreshMe();
+        UI.toast(`Ресурс восстановлен: ${cfg.label}!`);
+        return true;
+      } catch (e) { UI.toast('⛔ ' + e.message); return false; }
+    }
+    return false;
+  }
+
   const priceTxt = price != null ? `${price} золота` : 'золото';
   const ok = await UI.confirm(
     `У вас закончились ресурсы: ${cfg.label}!\n\nВосстановить полностью с чёрного рынка за ${priceTxt}?`,
@@ -29,7 +48,10 @@ async function _offerRestore(kind) {
   );
   if (!ok) return false;
   try {
+    // Покупка кладёт товар на склад, поэтому сразу же применяем его:
+    // игрок просил не «купить», а «продолжить бой»
     await API.post('/api/market/buy', { itemId: cfg.item });
+    await API.post('/api/market/use', { itemId: cfg.item });
     await App.refreshMe();
     UI.toast(`Ресурс восстановлен: ${cfg.label}!`);
     return true;

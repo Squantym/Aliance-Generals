@@ -27,12 +27,63 @@ function world(): any {
 
 // ---------- Допинг и падлянки ----------
 function itemsList(user?: any) {
-  const withDiscount = (i) => ({ ...i, gold: marketGold(i, user), baseGold: i.gold });
+  const withDiscount = (i) => ({ ...i, gold: marketGold(i, user), baseGold: i.gold,
+                                 owned: user ? itemCount(user, i.id) : 0 });
   return {
     buffs: config.MARKET_ITEMS.filter((i) => i.kind === 'buff' || i.kind.startsWith('refill')).map(withDiscount),
     debuffs: config.MARKET_ITEMS.filter((i) => i.kind === 'debuff').map(withDiscount),
     discount: discounts.info('market'),
   };
+}
+
+// ---------- Склад допинга ----------
+// Купленный допинг больше не срабатывает в момент покупки: он ложится
+// на склад, как контейнеры, и применяется кнопкой «Использовать».
+// Причина — покупка впрок была невозможна: аптечку приходилось брать
+// ровно в ту минуту, когда она нужна, а бафф, купленный «на вечер»,
+// истекал до боя. Падлянки складом не пользуются: они бьют по чужому
+// игроку и по смыслу применяются сразу.
+function itemsBox(user: any): Record<string, number> {
+  if (!user.itemsOwned || typeof user.itemsOwned !== 'object') user.itemsOwned = {};
+  return user.itemsOwned;
+}
+function itemCount(user: any, itemId: string): number {
+  return Math.max(0, u.toInt(itemsBox(user)[itemId], 0));
+}
+// Положить на склад. Зовут покупка, награды за приглашения и контейнеры.
+function addItems(user: any, itemId: string, qty: number): number {
+  const item = config.MARKET_ITEM_BY_ID[itemId];
+  if (!item || item.kind === 'debuff' || item.kind === 'mine') return 0;
+  const box = itemsBox(user);
+  box[itemId] = itemCount(user, itemId) + Math.max(0, u.toInt(qty, 0));
+  db.markUser(user.id);
+  return box[itemId];
+}
+
+// Применить один предмет со склада.
+function useItem(user: User, itemId: string, notices: Notices) {
+  const item = config.MARKET_ITEM_BY_ID[itemId];
+  if (!item) throw new u.ApiError('Такого товара нет на рынке');
+  if (item.kind === 'debuff') throw new u.ApiError('Падлянки применяются к врагу при покупке');
+  if (itemCount(user, itemId) < 1) throw new u.ApiError(`«${item.name}» нет на складе`);
+  const mx = player.maxima(user);
+  // Восстановители на полном ресурсе не тратим: иначе игрок сжёг бы
+  // аптечку впустую одним лишним нажатием
+  if (item.kind === 'refill_energy' && user.res.en.cur >= mx.en) throw new u.ApiError('Энергия и так полная');
+  if (item.kind === 'refill_health' && user.res.hp.cur >= mx.hp) throw new u.ApiError('Здоровье и так полное');
+  if (item.kind === 'refill_ammo' && user.res.am.cur >= mx.am) throw new u.ApiError('Боеприпасы и так полные');
+
+  itemsBox(user)[itemId] = itemCount(user, itemId) - 1;
+  switch (item.kind) {
+    case 'refill_energy': user.res.en.cur = mx.en; notices.push('⚡ Энергия полностью восстановлена.'); break;
+    case 'refill_health': user.res.hp.cur = mx.hp; notices.push('❤ Здоровье полностью восстановлено.'); break;
+    case 'refill_ammo':   user.res.am.cur = mx.am; notices.push('🎯 Боеприпасы полностью восстановлены.'); break;
+    default:
+      pushEffect(user, item);
+      notices.push(`💉 «${item.name}» действует ${(item.durMin || 0) / 60} ч.`);
+  }
+  db.markUser(user.id);
+  return { ok: true, owned: itemCount(user, itemId) };
 }
 
 // ---------- Мины («Растяжка») ----------
@@ -148,25 +199,11 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
 
   player.spendGold(user, price, 'market');
   countBuy();
-  const mx = player.maxima(user);
-  switch (item.kind) {
-    case 'refill_energy':
-      user.res.en.cur = mx.en;
-      notices.push('⚡ Энергия полностью восстановлена.');
-      break;
-    case 'refill_health':
-      user.res.hp.cur = mx.hp;
-      notices.push('❤ Здоровье полностью восстановлено.');
-      break;
-    case 'refill_ammo':
-      user.res.am.cur = mx.am;
-      notices.push('🎯 Боеприпасы полностью восстановлены.');
-      break;
-    default: // обычный бафф на время
-      pushEffect(user, item);
-      notices.push(`💉 «${item.name}» действует ${(item.durMin || 0) / 60} ч.`);
-  }
-  return { ok: true };
+  // Покупка кладёт товар на склад, а не применяет его (см. useItem).
+  // Применить сразу можно тут же — кнопка «Использовать» рядом.
+  const owned = addItems(user, item.id, 1);
+  notices.push(`📦 «${item.name}» на складе: ${owned} шт. Примените, когда понадобится.`);
+  return { ok: true, owned };
 }
 
 // ---------- Контейнеры с секретными разработками ----------
@@ -255,19 +292,14 @@ type Loot = {
 };
 function emptyLoot(): Loot { return { devs: {}, doping: {}, money: 0, sab: {} }; }
 
-// Допинг из контейнера действует сразу: склада предметов в игре нет,
-// купленный на рынке допинг тоже применяется в момент покупки.
+// Допинг из контейнера ложится на склад — туда же, куда купленный на
+// рынке. Раньше он срабатывал в момент вскрытия: открыл пачку из пяти
+// ящиков с аптечками при полном здоровье — и все пять пропали впустую.
 const DOPING_POOL = (config.MARKET_ITEMS as any[]).filter(
   (i) => i.kind === 'buff' || String(i.kind).startsWith('refill'));
 function applyDoping(user: User, item: any, notices: Notices): void {
-  const mx = player.maxima(user);
-  switch (item.kind) {
-    case 'refill_energy': user.res.en.cur = mx.en; break;
-    case 'refill_health': user.res.hp.cur = mx.hp; break;
-    case 'refill_ammo':   user.res.am.cur = mx.am; break;
-    default: pushEffect(user, item);
-  }
-  notices.push(`💉 Из контейнера: «${item.name}».`);
+  addItems(user, item.id, 1);
+  notices.push(`📦 Из контейнера на склад: «${item.name}».`);
 }
 
 // Добыча ОДНОГО контейнера. Всё выпавшее копится в loot: окно с
@@ -724,4 +756,5 @@ function adminCommanderHolders(): any {
 }
 
 export = { itemsList, buyItem, containersView, buyContainers, openOwned, addContainers, ownedCount, openContainersFree, grantCommanderDays, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
-  adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,};
+  adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,
+  useItem, addItems, itemCount,};

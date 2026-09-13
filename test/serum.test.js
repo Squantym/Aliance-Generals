@@ -35,10 +35,13 @@ ok(fs.existsSync(path.join(ROOT, 'public/img/market/serum.webp')), 'картин
 const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
 ok(/'landmine','serum'/.test(app), 'картинка подключена к витрине рынка');
 
+// Допинг с рынка кладётся на склад, а применяется отдельно —
+// покупка сама по себе эффекта не даёт (services/market.ts)
+const buyUse = (who, id, n) => { market.buyItem(who, id, null, n || []); market.useItem(who, id, n || []); };
 console.log('\n── 2. Покупка ──');
 const goldBefore = user.gold;
 const xpBefore = user.xp, lvlBefore = user.level;
-market.buyItem(user, 'serum', '', []);
+buyUse(user, 'serum');
 ok(user.gold === goldBefore - 100, `списано ${goldBefore - user.gold} золота`);
 ok(player.isXpBlocked(user) === true, 'блокировка опыта активна');
 const left = player.xpBlockLeftMin(user);
@@ -83,7 +86,7 @@ ok(got2 > 0 && user.xp > xpBefore, `опыт снова начисляется (
 ok(user.xp < xpBefore + 6300, 'опыт, сгоревший под сывороткой, не возвращается задним числом');
 
 console.log('\n── 6. Отображение эффекта ──');
-market.buyItem(user, 'serum', '', []);
+buyUse(user, 'serum');
 const view = player.effectsView(user);
 const eff = view.find((e) => e.id === 'serum');
 ok(!!eff, 'эффект виден в списке активных');
@@ -92,7 +95,7 @@ ok(!/\+100%/.test(eff.desc), 'не показывается как «+100%» —
 
 console.log('\n── 7. Продление покупкой ──');
 const leftBefore = player.xpBlockLeftMin(user);
-market.buyItem(user, 'serum', '', []);
+buyUse(user, 'serum');
 const leftAfter = player.xpBlockLeftMin(user);
 ok(leftAfter > leftBefore, `повторная покупка продлевает действие (${leftBefore} → ${leftAfter} мин)`);
 

@@ -104,6 +104,7 @@ function view(user: User, kind: string): any {
     rules: {
       createCost: createCost(kind),
       baseCreateCost: params.CREATE_COST,
+      createGold: Math.max(0, Number((params as any).CREATE_GOLD) || 0),
       minLevel: params.MIN_LEVEL,
       perMember: params.PER_MEMBER || 0,
     },
@@ -123,9 +124,16 @@ function create(user: User, kind: string, name: string, notices: Notices) {
   if (exists) throw new u.ApiError(`${def.label} с таким названием уже существует`);
 
   const cost = createCost(kind);
+  // Легион стоит ещё и золота: деньги в игре зарабатываются быстро, а
+  // золото — нет, и именно оно отсекает легионы, созданные на пробу
+  const goldCost = Math.max(0, Number((params as any).CREATE_GOLD) || 0);
   if (user.dollars < cost) throw new u.ApiError(`Создание стоит $${u.fmt(cost)}`);
+  if (goldCost && (user.gold || 0) < goldCost) {
+    throw new u.ApiError(`Создание стоит ещё 🪙 ${u.fmt(goldCost)} — не хватает золота`);
+  }
 
   user.dollars -= cost;
+  if (goldCost) player.spendGold(user, goldCost, 'group');
   const id = u.uid(10);
   const isLegion = kind === 'legion';
   coll(kind)[id] = {

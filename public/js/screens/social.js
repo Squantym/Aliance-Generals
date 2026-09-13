@@ -906,7 +906,7 @@ async function renderGroupScreen(c, kind) {
       <div class="title" style="margin-top:0">Основать свой ${label.toLowerCase()}</div>
       <label>Название (3–20 символов)</label>
       <input type="text" id="g-name" maxlength="20">
-      <button class="btn btn-orange mt" id="g-create">Основать за <span class="ic-dollar"></span> ${UI.fmtMoney(data.rules.createCost)} (с ${data.rules.minLevel} ур.)</button>
+      <button class="btn btn-orange mt" id="g-create">Основать за <span class="ic-dollar"></span> ${UI.fmtMoney(data.rules.createCost)}${data.rules.createGold ? ` + <span class="ic-gold"></span> ${UI.fmtNum(data.rules.createGold)}` : ''} (с ${data.rules.minLevel} ур.)</button>
     </div>
     <div class="card">
       <div class="title" style="margin-top:0">Крупнейшие ${kind === 'legion' ? 'легионы' : 'альянсы'}</div>

@@ -154,11 +154,17 @@ App.screens.market = async (c, param) => {
           <label>😈 Имя жертвы (точный позывной)</label>
           <input type="text" id="victim-name" placeholder="Кому подложить свинью">
         </div>` : ''}
+      ${tab === 'buffs' ? `
+        <p class="muted small" style="margin:-4px 4px 10px">Купленный допинг ложится на склад и ждёт своего часа — применяйте кнопкой «Использовать», когда понадобится.</p>` : ''}
       ${items.map((x) => `
         <div class="card">
           ${App._marketImg(x.id) ? `<img src="${App._marketImg(x.id)}" alt="${UI.esc(x.name)}" class="market-img" loading="lazy" decoding="async">` : `<div class="name">${UI.esc(x.name)}</div>`}
           <p class="muted small">${UI.esc(x.desc)}${x.durMin ? ` · действует ${x.durMin >= 60 ? (x.durMin / 60) + ' ч' : x.durMin + ' мин'}` : ''}</p>
-          <button class="btn btn-orange mt" data-item="${x.id}">${tab === 'debuffs' ? 'Применить' : 'Купить'} за ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
+          ${tab === 'buffs' && x.owned ? `<p class="gold small" style="margin:4px 0 0">📦 На складе: ${UI.fmtNum(x.owned)} шт.</p>` : ''}
+          <div class="btn-row mt">
+            <button class="btn btn-orange" data-item="${x.id}" style="flex:1">${tab === 'debuffs' ? 'Применить' : 'Купить'} за ${UI.priceWithSale(x.baseGold, x.gold, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
+            ${tab === 'buffs' && x.owned ? `<button class="btn" data-use="${x.id}" style="flex:1">✅ Использовать</button>` : ''}
+          </div>
         </div>`).join('')}`;
 
     c.querySelectorAll('[data-item]').forEach((btn) => {
@@ -168,7 +174,16 @@ App.screens.market = async (c, param) => {
           if (tab === 'debuffs') body.targetName = document.getElementById('victim-name').value;
           await API.post('/api/market/buy', body);
           await App.refreshMe();
-          App.renderHeader();
+          App.rerender();
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+    c.querySelectorAll('[data-use]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await API.post('/api/market/use', { itemId: btn.dataset.use });
+          await App.refreshMe();
+          App.rerender();
         } catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });

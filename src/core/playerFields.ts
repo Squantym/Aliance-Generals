@@ -140,6 +140,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // его удаляет. Строка нужна, чтобы реестр не спотыкался о наследие.
   earPenaltyUntil:    { owner: 'battle',     note: 'НАСЛЕДИЕ: прежний срок штрафа, удаляется миграцией' },
   vsRecord:           { owner: 'battle',     note: 'личные счёты с игроками' },
+  attackedBy:         { owner: 'battle',     note: 'кто на вас нападал — по этому списку объявляют санкции' },
 
   // ── Группы ─────────────────────────────────────────────────────
   allianceId:         { owner: 'groups',     note: 'клан/альянс' },
@@ -234,6 +235,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   skillResets:        { owner: 'player',     note: 'сколько раз сбрасывал навыки' },
   containerHistory:   { owner: 'market',     note: 'история открытых контейнеров' },
   containersOwned:    { owner: 'market',     note: 'купленные, но не открытые контейнеры по тирам' },
+  itemsOwned:         { owner: 'market',     note: 'склад допинга: id товара → сколько штук' },
   giveawaysTaken:     { owner: 'giveaways',  note: 'какие раздачи наград игрок уже забрал' },
   contractsDay:       { owner: 'contracts',  note: 'день активных контрактов' },
   missionProgress:    { owner: 'missions',   note: 'прогресс по спецоперациям' },

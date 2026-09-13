@@ -49,12 +49,15 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   // «охоту» третьим персонажем и накрутить достижение охотника
   require('./account').assertNotSelfAccount(user, target, 'Объявление санкции');
 
-  // Объявить санкцию можно ТОЛЬКО на того, кто напал и отрезал тебе ухо.
-  // Проверяем по crestTakers — там записаны те, кто отрезал уши заказчику.
-  const cutters = user.crestTakers || [];
-  const cutByTarget = cutters.some((c) => c && c.id === targetId);
-  if (!cutByTarget) {
-    throw new u.ApiError('Объявить санкцию можно только на того, кто напал на вас и отрезал ухо.');
+  // Объявить санкцию можно на того, кто на вас НАПАДАЛ — хотя бы раз.
+  // Прежнее правило требовало отрезанного уха, а ухо срывается редко:
+  // человека били десять раз подряд, а ответить он не мог. Списки:
+  //   attackedBy  — все нападавшие (пишется в battle.ts при атаке),
+  //   crestTakers — те, кто отрезал ухо (старые записи тоже годятся).
+  const attackedMe = !!((user as any).attackedBy || {})[targetId];
+  const cutMe = (user.crestTakers || []).some((c) => c && c.id === targetId);
+  if (!attackedMe && !cutMe) {
+    throw new u.ApiError('Объявить санкцию можно только на того, кто на вас нападал.');
   }
 
   if (user.dollars < amount) {

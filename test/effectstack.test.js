@@ -12,11 +12,14 @@ const now = Date.now();
 const mk = (id) => ({ id, name: id, gold: 1e9, level: 20, effects: [], skills: {}, units: {}, buildings: {}, trophies: {}, counters: {}, battle: {}, res: { hp: { cur: 100, t: now }, en: { cur: 1e6, t: now }, am: { cur: 1e6, t: now } }, secretDevs: {} });
 const U = mk('u'), V = mk('v'); um['u'] = U; um['v'] = V;
 
+// Допинг с рынка кладётся на склад, а применяется отдельно —
+// покупка сама по себе эффекта не даёт (services/market.ts)
+const buyUse = (who, id, n) => { market.buyItem(who, id, null, n || []); market.useItem(who, id, n || []); };
 const stim = c.MARKET_ITEM_BY_ID['stim'];
 console.log('\n[1] Допинг суммирует время');
-market.buyItem(U, 'stim', '', []);
+buyUse(U, 'stim');
 const t1 = U.effects.find(e => e.type === stim.effect.type).expiresAt - Date.now();
-market.buyItem(U, 'stim', '', []);
+buyUse(U, 'stim');
 const t2 = U.effects.find(e => e.type === stim.effect.type).expiresAt - Date.now();
 ok('после 2-й покупки время ~удвоилось', t2 > t1 * 1.8);
 ok('эффект по-прежнему один', U.effects.filter(e => e.type === stim.effect.type).length === 1);

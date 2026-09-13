@@ -612,6 +612,8 @@ function registerRoutes(app: any) {
   // ---------- Чёрный рынок ----------
   app.add('GET', '/api/market/items', (req) => market.itemsList(req.user));
   app.add('POST', '/api/market/buy', act((req, n) => market.buyItem(req.user, req.body.itemId, req.body.targetName, n)));
+  // Применить допинг со склада (покупка теперь только складывает)
+  app.add('POST', '/api/market/use', act((req, n) => market.useItem(req.user, req.body.itemId, n)));
   app.add('GET', '/api/market/mines', (req) => market.mineInfo(req.user));
   app.add('POST', '/api/market/mines/buy', act((req, n) => market.buyMines(req.user, req.body.qty, n)));
   app.add('GET', '/api/market/containers', (req) => market.containersView(req.user));
