@@ -891,6 +891,10 @@ function registerRoutes(app: any) {
   // Рефералы
   app.add('GET',  '/api/referral',       (req) => features.referralView(req.user));
   app.add('POST', '/api/referral/apply', act((req, n) => features.applyReferral(req.user, req.body.code, n)));
+  // Раздел «Задания» в приглашениях: пока пустой, включается из панели
+  app.add('GET',  '/api/referral/quests', (req) => require('./services/referrals').questsView(req.user));
+  app.add('GET',  '/api/admin/referral-quests', (req) => require('./services/referrals').adminView(req.user), { admin: true });
+  app.add('POST', '/api/admin/referral-quests', act((req, n) => require('./services/referrals').setQuests(req.user, !!req.body.on, n)), { admin: true });
   // Шпионаж
   app.add('POST', '/api/spy', act((req, n) => features.spyOn(req.user, req.body.targetId, n)));
   // Рейтинговые сезоны
@@ -1121,6 +1125,16 @@ function registerRoutes(app: any) {
   app.add('GET', '/api/mail/:id', (req) => social.readThread(req.user, req.params.id));
   app.add('POST', '/api/mail/read-all', act((req) => social.markAllRead(req.user)));
   app.add('POST', '/api/mail/:id/delete', act((req) => social.deleteMail(req.user, req.params.id)));
+  // Удалить переписку целиком и очистить ящик. Незабранные награды при
+  // очистке остаются: в них лежит золото (services/rewards.ts).
+  app.add('POST', '/api/mail/thread/:id/delete', act((req) => social.deleteThread(req.user, req.params.id)));
+  app.add('POST', '/api/mail/clear-all', act((req, n) => {
+    const mail = social.clearMail(req.user);
+    const letters = require('./services/rewards').removeClaimed(req.user);
+    n.push(`🗑 Удалено сообщений: ${mail.deleted + letters.deleted}`
+      + (letters.kept ? `. Незабранных наград осталось: ${letters.kept}` : ''));
+    return { ok: true, mail: mail.deleted, letters: letters.deleted, kept: letters.kept };
+  }));
   app.add('POST', '/api/mail', act((req, n) => {
     social.sendMail(req.user, req.body.toName, req.body.subject, req.body.text);
     n.push('✉ Письмо отправлено.');

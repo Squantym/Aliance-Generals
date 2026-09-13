@@ -148,6 +148,9 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/db\//,                          'database'],
   [/^\/api\/admin\/(discount|discounts)$/,          'discounts'],
   [/^\/api\/admin\/donate-bonus(es|\/save|\/delete)$/, 'discounts'],
+  // Раздел «Задания» в приглашениях — привлечение игроков, та же зона,
+  // что скидки и бонусы к покупкам
+  [/^\/api\/admin\/referral-quests$/,               'discounts'],
   [/^\/api\/admin\/giveaways?(\/save|\/delete)?$/,       'economy'],
   // Тихая выдача и очистка журнала — владельческие ручки. Зона «Роли»
   // самая узкая из существующих, а сами сервисы дополнительно требуют

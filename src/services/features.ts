@@ -303,19 +303,45 @@ function unequipCosmetic(user: User, type: string) {
 // ===================================================================
 // 5. РЕФЕРАЛЬНАЯ СИСТЕМА
 // ===================================================================
+// Русские буквы в коде латиницей: код уходит в ссылку и в QR, а там
+// кириллица превращается в «%D0%92%D0%95...» — такую ссылку не
+// прочитать глазами и не набрать руками.
+const TRANSLIT: Record<string, string> = {
+  А: 'A', Б: 'B', В: 'V', Г: 'G', Д: 'D', Е: 'E', Ё: 'E', Ж: 'J', З: 'Z', И: 'I',
+  Й: 'Y', К: 'K', Л: 'L', М: 'M', Н: 'N', О: 'O', П: 'P', Р: 'R', С: 'S', Т: 'T',
+  У: 'U', Ф: 'F', Х: 'H', Ц: 'C', Ч: 'C', Ш: 'S', Щ: 'S', Ъ: '', Ы: 'Y', Ь: '',
+  Э: 'E', Ю: 'U', Я: 'A',
+};
+
 function ensureRefCode(user: User): string {
-  if (!user.refCode) {
-    user.refCode = (user.name.slice(0, 4).toUpperCase().replace(/[^A-ZА-Я0-9]/gi, '') || 'GEN') + u.uid(4).toUpperCase();
-    db.markUser(user.id);
-  }
+  // Годится только латиница с цифрами. Старые коды делались из позывного
+  // как есть, поэтому у большинства игроков они кириллические: такой код
+  // меняем на латинский, а прежний запоминаем и продолжаем принимать —
+  // он мог быть кому-то отправлен.
+  const LATIN = /^[A-Z0-9]{4,20}$/;
+  if (user.refCode && LATIN.test(user.refCode)) return user.refCode;
+  if (user.refCode) (user as any).refCodeOld = user.refCode;
+  const base = String(user.name || '').toUpperCase().split('')
+    .map((ch) => (TRANSLIT[ch] !== undefined ? TRANSLIT[ch] : ch))
+    .join('').replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  user.refCode = (base || 'GEN') + u.uid(4).toUpperCase();
+  db.markUser(user.id);
   return user.refCode;
 }
 
 function referralView(user: User) {
   const code = ensureRefCode(user);
+  const referrals = require('./referrals');
+  // Счётчик refCount копился годами и мог разойтись с реальностью
+  // (удалённые аккаунты, обнуления). Список строится по живым игрокам,
+  // поэтому «приглашено» считаем по нему, а не по счётчику.
+  const invited = referrals.invitedList(user);
   return {
     code,
-    refCount: user.refCount || 0,
+    link: referrals.linkFor(code),
+    invited,
+    questsOn: referrals.questsEnabled(),
+    refCount: Math.max(invited.length, user.refCount || 0),
     refEarnings: user.refEarnings || 0,
     referredBy: user.referredBy || null,
     canApply: !user.referredBy && user.level < 50,
@@ -332,7 +358,10 @@ function applyReferral(user: User, code: string, notices: Notices) {
   if (user.refRewarded) throw new u.ApiError('Реферальный код уже применён');
   const c = String(code || '').trim().toUpperCase();
   if (!c) throw new u.ApiError('Введите код');
-  const inviter = Object.values(users()).find((p) => (p.refCode || '').toUpperCase() === c);
+  // Принимаем и прежний, кириллический код игрока: он мог быть отправлен
+  // друзьям до перехода на латиницу (см. ensureRefCode)
+  const inviter = Object.values(users()).find((p) => (p.refCode || '').toUpperCase() === c
+    || ((p as any).refCodeOld || '').toUpperCase() === c);
   if (!inviter) throw new u.ApiError('Код не найден');
   if (inviter.id === user.id) throw new u.ApiError('Нельзя пригласить самого себя');
   // Награда за приглашение самого себя вторым персонажем — прямой обман
@@ -375,18 +404,37 @@ function onReferralLevelUp(user: User): void {
 
 // Вызывается, когда реферал ПОКУПАЕТ золото (реальная покупка). Пригласивший
 // получает 10% от суммы купленного золота.
+//
+// Золото не падает на счёт молча: приходит письмо от «Система» с кнопкой
+// «Забрать». Причина — молчаливое начисление никто не замечал: в истории
+// золота появлялась строка, а сам игрок не понимал, откуда деньги, и не
+// связывал их с приглашениями.
+//
+// Имя покупателя в письме НЕ называется. Сколько человек потратил в игре —
+// его дело, и пригласивший не должен видеть, кто именно и когда платит.
 function onReferralPurchase(user: User, goldBought: number): void {
   if (!user.referredBy || goldBought <= 0) return;
   const inviter = users()[user.referredBy];
   if (!inviter) return;
   const share = Math.floor(goldBought * config.REFERRAL.purchaseSharePct / 100);
   if (share <= 0) return;
-  player.addGold(inviter, share, 'referral');
+  // «Заработано» считаем в момент начисления, а не получения: это уже
+  // заработанные игроком деньги, письмо лишь ждёт, когда он их заберёт.
   inviter.refEarnings = (inviter.refEarnings || 0) + share;
+  (user as any).refGoldGiven = ((user as any).refGoldGiven || 0) + share;
   db.markUser(user.id); db.markUser(inviter.id);
   try {
+    require('./rewards').grant(inviter.id, {
+      title: `🪙 ${config.REFERRAL.purchaseSharePct}% с покупки приглашённого`,
+      reason: 'Один из приглашённых вами игроков пополнил счёт. Ваша доля — '
+        + `${config.REFERRAL.purchaseSharePct}% от купленного им золота. Кто именно это был — не раскрываем.`,
+      reward: { gold: share },
+      source: 'referral',
+    });
+  } catch (e) {}
+  try {
     require('./notifications').push(inviter.id, 'referral_purchase',
-      `💰 Ваш реферал ${user.name} купил золото — вам начислено 🪙 ${share} (10%).`, {});
+      `💰 Приглашённый вами игрок купил золото — вам начислено 🪙 ${share} (${config.REFERRAL.purchaseSharePct}%). Заберите в почте.`, {});
   } catch (e) {}
 }
 

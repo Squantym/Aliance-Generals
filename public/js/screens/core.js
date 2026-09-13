@@ -76,6 +76,7 @@ App.screens.auth = async (c) => {
 
     <div class="card" id="form-reg" style="display:none">
       <p class="muted small">2034 год. Мир охвачен войной, и каждой армии нужны решительные командиры. Заполни личное дело, боец.</p>
+      ${(App._pendingRefCode && App._pendingRefCode()) ? `<p class="gold small" style="margin:0 0 8px">🎁 Вы пришли по приглашению (код ${UI.esc(App._pendingRefCode())}). Бонус начислится сразу после регистрации.</p>` : ''}
       <label for="rg-name">Позывной (3–16 символов, только буквы/цифры/_ -)</label>
       <input type="text" id="rg-name" maxlength="16" autocomplete="username" required placeholder="Например: ShadowGeneral">
       <label for="rg-email">Email (для подтверждения регистрации)</label>
@@ -230,6 +231,9 @@ App.screens.auth = async (c) => {
   const finish = async (token) => {
     API.setToken(token);
     App.me = await API.get('/api/me');
+    // Пришёл по ссылке друга: код запомнен при открытии страницы и
+    // применяется здесь — сразу после регистрации или входа
+    await App._applyPendingRef();
     App.go('home');
   };
 
@@ -2874,44 +2878,8 @@ App.screens.event = async (c) => {
 };
 
 // ---------- Реферальная система ----------
-App.screens.referral = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/referral');
-  c.innerHTML = `
-    <div class="title">🎁 Пригласить друга</div>
-    <div class="card center">
-      <p class="muted small">Поделитесь кодом. Когда друг введёт его — он сразу получит <span class="ic-gold"></span> ${d.inviteeGold}, а вы получите награду, когда он достигнет 50 уровня, и 10% золотом от всех его покупок золота!</p>
-      <p style="font-size:26px;letter-spacing:3px;font-weight:bold;margin:10px 0" class="gold">${d.code}</p>
-      <button class="btn btn-orange" id="ref-copy" style="width:100%">📋 Скопировать код</button>
-    </div>
-    <div class="card">
-      <div class="kv"><span class="k">Приглашено друзей</span><span class="v gold">${d.refCount}</span></div>
-      <div class="kv"><span class="k">Заработано с покупок друзей</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.refEarnings)}</span></div>
-      <hr class="hr">
-      <div class="kv"><span class="k">🎁 Другу за ввод кода</span><span class="v"><span class="ic-gold"></span> ${d.inviteeGold}</span></div>
-      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v"><span class="ic-gold"></span> ${d.level50Reward} + <span class="ic-token"></span> ${d.level50Tokens}</span></div>
-      <div class="kv"><span class="k">💰 Вам с покупок друга</span><span class="v">${d.purchaseSharePct}% золотом</span></div>
-    </div>
-    ${d.canApply ? `
-      <div class="card">
-        <div class="name">Ввести чужой код</div>
-        <p class="muted small">Если вас пригласили — введите код приглашающего (один раз, до 50 уровня).</p>
-        <div class="field-row mt">
-          <input type="text" id="ref-input" placeholder="Код друга" style="text-transform:uppercase">
-          <button class="btn btn-orange btn-inline" id="ref-apply">Применить</button>
-        </div>
-      </div>` : (d.referredBy ? '<div class="card center muted">Вы уже использовали реферальный код.</div>' : '<div class="card center muted">Ввод кода доступен только до 50 уровня.</div>')}`;
-  document.getElementById('ref-copy').onclick = () => {
-    navigator.clipboard?.writeText(d.code).then(() => UI.toast('📋 Код скопирован')).catch(() => UI.toast('Код: ' + d.code));
-  };
-  const apply = document.getElementById('ref-apply');
-  if (apply) apply.onclick = async () => {
-    const code = document.getElementById('ref-input').value.trim();
-    if (!code) { UI.toast('Введите код'); return; }
-    try { await API.post('/api/referral/apply', { code }); await App.refreshMe(); App.rerender(); }
-    catch (e) { UI.toast('⛔ ' + e.message); }
-  };
-};
+// Экран «Пригласить друга» переехал в screens/referrals.js: там же
+// живёт генератор QR-кода, и грузить его всем подряд незачем.
 
 // ---------- Косметика профиля ----------
 App.screens.cosmetics = async (c) => {

@@ -1575,16 +1575,48 @@ App.screens.mail = async (c, param) => {
         const last = t.messages[t.messages.length - 1];
         const preview = (last.text || '').slice(0, 60) + (last.text && last.text.length > 60 ? '…' : '');
         return `
-        <div class="list-row" style="cursor:pointer" onclick="App.go('mail/${t.otherId}')">
-          <div class="grow">
+        <div class="list-row">
+          <div class="grow" style="cursor:pointer" onclick="App.go('mail/${t.otherId}')">
             <span class="${t.unread > 0 ? 'name' : 'muted'}">${t.unread > 0 ? '📬' : '📭'} ${UI.esc(t.otherName)}</span>
             ${t.unread > 0 ? `<span class="badge">${t.unread}</span>` : ''}
             <br><span class="muted small">${last.dir === 'out' ? 'Вы: ' : ''}${UI.esc(preview)}</span>
             <br><span class="muted small">${UI.fmtDate(t.lastAt)}</span>
           </div>
+          <button class="btn btn-inline" data-del-thread="${t.otherId}" title="Удалить переписку" style="color:var(--red)">🗑</button>
         </div>`;
       }).join('') : '<p class="muted center">Писем от игроков пока нет. Нажмите «Написать письмо», чтобы начать переписку.</p>'}
-    </div>`;
+    </div>
+    ${(threads.length || rewardLetters.length) ? `
+      <div class="card center">
+        <button class="btn btn-inline" id="mail-clear-all" style="color:var(--red)">🗑 Очистить все сообщения</button>
+        <p class="muted small" style="margin:6px 0 0">Удалит переписки и уже забранные письма. Незабранные награды останутся на месте.</p>
+      </div>` : ''}`;
+  // Удалить переписку целиком
+  c.querySelectorAll('[data-del-thread]').forEach((btn) => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!await UI.confirm('Удалить всю переписку? У собеседника его копия останется.',
+        { title: 'Удаление переписки', icon: '🗑', okText: 'Удалить', danger: true })) return;
+      try {
+        await API.post('/api/mail/thread/' + encodeURIComponent(btn.dataset.delThread) + '/delete');
+        UI.toast('🗑 Переписка удалена');
+        await App.refreshMe();
+        App.rerender();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  });
+  // Очистить почту целиком
+  const clearBtn = document.getElementById('mail-clear-all');
+  if (clearBtn) clearBtn.onclick = async () => {
+    if (!await UI.confirm('Удалить ВСЕ сообщения и забранные письма? Отменить нельзя. Незабранные награды останутся.',
+      { title: 'Очистить почту', icon: '🗑', okText: 'Очистить', danger: true })) return;
+    try {
+      const r = await API.post('/api/mail/clear-all');
+      UI.toast('🗑 Удалено сообщений: ' + ((r.mail || 0) + (r.letters || 0)));
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
   // Забрать награду прямо из почты
   c.querySelectorAll('[data-claim-reward]').forEach((btn) => {
     btn.onclick = async () => {

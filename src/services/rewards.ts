@@ -38,6 +38,7 @@ interface RewardLetter {
   reason: string;        // за что награда / детали покупки
   reward: RewardPayload;
   lines?: ReceiptLine[]; // квитанция: что куплено, построчно, с картинками
+  source?: string;       // куда отнести золото в истории (см. sourceOf)
   createdAt: number;
   claimed: boolean;
   claimedAt?: number;
@@ -48,7 +49,10 @@ function store(): Record<string, RewardLetter> {
 }
 
 // ── Создать награду-письмо для игрока ──────────────────────────────
-function grant(userId: string, opts: { title: string; reason: string; reward: RewardPayload }): RewardLetter {
+// source — откуда золото, для учёта в истории. Без него источник
+// угадывается по заголовку (sourceOf), и, например, доля с покупки
+// приглашённого попадала бы в «выдачу администрации».
+function grant(userId: string, opts: { title: string; reason: string; reward: RewardPayload; source?: string }): RewardLetter {
   const all = store();
   const r: RewardLetter = {
     id: u.uid(12),
@@ -58,6 +62,7 @@ function grant(userId: string, opts: { title: string; reason: string; reward: Re
     title: String(opts.title || 'Награда').slice(0, 120),
     reason: String(opts.reason || '').slice(0, 400),
     reward: cleanPayload(opts.reward),
+    source: opts.source ? String(opts.source).slice(0, 60) : undefined,
     createdAt: Date.now(),
     claimed: false,
   };
@@ -178,6 +183,7 @@ function claim(user: User, rewardId: string, notices: Notices) {
 // Куда отнести награду: по заголовку письма понятно, за что она.
 // «Итоги недели» → сезон, событие → событие, остальное — администрация.
 function sourceOf(r: any): string {
+  if (r && r.source) return String(r.source);   // источник указан явно
   const t = String((r && r.title) || '');
   const reason = String((r && r.reason) || '');
   if (/недел|сезон/i.test(t)) return 'season:' + t.replace(/^[^\wА-Яа-я]+/, '').slice(0, 60);
@@ -210,6 +216,21 @@ function remove(user: User, rewardId: string) {
   return { ok: true, deleted: rewardId };
 }
 
+// ── Удалить все ЗАБРАННЫЕ письма разом ─────────────────────────────
+// Незабранные не трогаем ни при каких условиях: в них лежит золото, и
+// «очистить всё» не должно его сжигать. Сколько таких осталось —
+// возвращаем, чтобы интерфейс честно сказал об этом игроку.
+function removeClaimed(user: User) {
+  const all = store();
+  let deleted = 0, kept = 0;
+  for (const r of Object.values(all)) {
+    if (r.userId !== user.id) continue;
+    if (r.claimed) { delete all[r.id]; deleted++; } else kept++;
+  }
+  if (deleted) db.save('rewards');
+  return { ok: true, deleted, kept };
+}
+
 // ── Админ: выдать награду-письмо одному или всем ───────────────────
 function adminGrant(adminUser: User, body: any, notices: Notices) {
   const reward = cleanPayload({
@@ -238,4 +259,4 @@ function adminGrant(adminUser: User, body: any, notices: Notices) {
   return { ok: true };
 }
 
-export = { grant, grantReceipt, listFor, pendingCount, claim, remove, adminGrant, describe };
+export = { grant, grantReceipt, listFor, pendingCount, claim, remove, removeClaimed, adminGrant, describe };

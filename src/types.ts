@@ -191,11 +191,13 @@ export interface User {
   ownedCosmetics?: string[];   // купленные косметические id
   // Реферальная система
   refCode?: string;            // личный код-приглашение
+  refCodeOld?: string;         // прежний кириллический код (принимается по-старому)
   referredBy?: string | null;  // кто пригласил
   refCount?: number;           // сколько привёл
   refRewarded?: boolean;       // получил ли реферал-бонус за вход по коду
   refLevel50Paid?: boolean;    // выплачена ли награда пригласившему за 50 ур.
   refEarnings?: number;        // сколько золота заработал на покупках рефералов
+  refGoldGiven?: number;       // сколько золота ЭТОТ игрок принёс пригласившему
   // Рейтинговые сезоны
   seasonRating?: number;
   rating?: number;       // накопительный рейтинг: победы/поражения/уши/жетоны/мины

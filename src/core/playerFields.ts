@@ -92,6 +92,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   banHideProfile:     { owner: 'roles',      note: 'скрыт ли профиль заблокированного от игроков' },
   refCode:            { owner: 'referrals',  note: 'личный код-приглашение' },
   referredBy:         { owner: 'referrals',  note: 'кто пригласил' },
+  refCodeOld:         { owner: 'referrals',  note: 'прежний кириллический код — принимается по-старому' },
   isBot:              { owner: 'battle',     note: 'признак бота' },
   behavior:           { owner: 'battle',     note: 'поведение бота' },
 
@@ -246,6 +247,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   blocks:             { owner: 'social',     note: 'чёрный список игрока' },
   refRewarded:        { owner: 'referrals',  note: 'награда за приглашение выдана' },
   refLevel50Paid:     { owner: 'referrals',  note: 'выплата за 50-й уровень приглашённого' },
+  refGoldGiven:       { owner: 'referrals',  note: 'сколько золота этот игрок принёс пригласившему' },
   adminCrests:          { owner: 'admin',      note: 'уши, выданные администрацией' },
   adminTokens:        { owner: 'admin',      note: 'жетоны, выданные администрацией' },
 

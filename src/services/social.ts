@@ -257,4 +257,29 @@ function deleteMail(user: User, messageId: string) {
   return { ok: true, deleted: messageId };
 }
 
-export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, deleteMail, sendMail, fame, purgeChatMessages,};
+// Удалить ВСЮ переписку с одним собеседником — из ящика этого игрока.
+// У собеседника его копия остаётся: письмо получено, и стереть его у
+// другого человека нельзя.
+function deleteThread(user: User, otherId: string) {
+  const box = mailboxOf(user.id);
+  const before = box.length;
+  for (let i = box.length - 1; i >= 0; i--) if (box[i].otherId === otherId) box.splice(i, 1);
+  const removed = before - box.length;
+  if (!removed) throw new u.ApiError('Переписка не найдена');
+  db.save('mail');
+  return { ok: true, deleted: removed };
+}
+
+// Очистить ящик целиком. Письма-награды от «Система» здесь НЕ трогаются:
+// они лежат в другом хранилище (rewards.ts), и в незабранном письме
+// лежит золото — очистка почты не должна его сжигать.
+function clearMail(user: User) {
+  const box = mailboxOf(user.id);
+  const removed = box.length;
+  if (!removed) return { ok: true, deleted: 0 };
+  box.length = 0;
+  db.save('mail');
+  return { ok: true, deleted: removed };
+}
+
+export = { chatGet, chatPost, unread, inbox, readThread, markAllRead, deleteMail, deleteThread, clearMail, sendMail, fame, purgeChatMessages,};

@@ -576,8 +576,9 @@ ok(location.hash === '#/gold', `«Назад» вернул к списку зо
 console.log('\n── 20. Экономика: подвкладка в ссылке и права по подвкладкам ──');
 location.hash = '#/econ';
 await wait(80);
-// Массовая выдача, наёмники, наборы, акции, бонусы, бонусы к покупкам, раздачи
-ok(document.querySelectorAll('#a2-main [data-t]').length === 7, 'семь подвкладок у владельца');
+// Массовая выдача, наёмники, наборы, акции, бонусы, бонусы к покупкам,
+// раздачи, приглашения
+ok(document.querySelectorAll('#a2-main [data-t]').length === 8, 'восемь подвкладок у владельца');
 ok([...document.querySelectorAll('#a2-main [data-t]')].some((b) => b.dataset.t === 'offers'),
    'среди них конструктор наборов — его тут не было, и собрать предложение было негде');
 document.querySelector('[data-t="discounts"]').click();
@@ -590,8 +591,9 @@ Admin.zones = ['discounts'];
 location.hash = '#/econ?t=tools';
 await wait(80);
 const tabs = Array.from(document.querySelectorAll('#a2-main [data-t]')).map((b) => b.dataset.t);
-// Право «Акции» открывает и скидки, и бонусы к покупкам — обе про акции
-ok(tabs.join(',') === 'discounts,donate', `видны только доступные подвкладки: ${tabs.join(',')}`);
+// Право «Акции» открывает скидки, бонусы к покупкам и приглашения —
+// всё это про привлечение игроков
+ok(tabs.join(',') === 'discounts,donate,refquests', `видны только доступные подвкладки: ${tabs.join(',')}`);
 ok(document.querySelector('[data-t="discounts"]').className.indexOf('btn-orange') >= 0,
    'она же и открыта, хотя в адресе была закрытая');
 Admin.zones = savedZ2;

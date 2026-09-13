@@ -1027,6 +1027,7 @@ const Admin = {
       { id: 'offers',    label: '🎁 Наборы',          zone: 'economy' },
       { id: 'donate',    label: '💳 Бонусы к покупкам', zone: 'discounts' },
       { id: 'giveaways', label: '🎁 Раздачи наград',   zone: 'economy' },
+      { id: 'refquests', label: '🎯 Приглашения',       zone: 'discounts' },
     ].filter((x) => Admin.can(x.zone));
     if (!subs.length) { c.innerHTML = '<div class="card"><p class="muted">Раздел недоступен.</p></div>'; return; }
     if (!subs.some((x) => x.id === Admin._econTab)) Admin._econTab = subs[0].id;
@@ -1043,6 +1044,7 @@ const Admin = {
     if (Admin._econTab === 'tools')     return Admin.renderTools(body);
     if (Admin._econTab === 'mercs')     return Admin.renderMercs(body);
     if (Admin._econTab === 'discounts') return Admin.renderDiscounts(body);
+    if (Admin._econTab === 'refquests') return Admin.renderRefQuests(body);
     if (Admin._econTab === 'buffs')     return Admin.renderBuffs(body);
     if (Admin._econTab === 'offers')    return Admin.renderOffers(body);
     // Экран бонусов к покупкам живёт в admin2/econ.js: на странице без него
@@ -3894,6 +3896,34 @@ proxy_set_header Host $host;</pre>
         await API.post('/api/admin/offers/save', payloadOf());
         Admin._offerDraft = null;
         Admin.loadOffers();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+  },
+
+  // ── Приглашения: показывать ли игрокам раздел «Задания» ──────────
+  // Выключатель, а не настройка: заданий пока нет, и раздел висит
+  // пустым. Включается, когда наполнение готово.
+  async renderRefQuests(c) {
+    c.innerHTML = '<div class="loading">Загрузка…</div>';
+    let d;
+    try { d = await API.get('/api/admin/referral-quests'); }
+    catch (e) { c.innerHTML = `<div class="card"><p class="muted">${UI.esc(e.message)}</p></div>`; return; }
+    c.innerHTML = `
+      <div class="card">
+        <div class="name">🎯 Раздел «Задания» в приглашениях</div>
+        <p class="muted small">Показывается игрокам в разделе «Пригласить друга». Пока заданий нет — держите выключенным, чтобы игроки не видели пустой раздел.</p>
+        <div class="kv mt"><span class="k">Состояние</span><span class="v ${d.questsOn ? 'gold' : 'muted'}">${d.questsOn ? '✅ показан игрокам' : '🚫 скрыт'}</span></div>
+        <div class="kv"><span class="k">Заданий настроено</span><span class="v">${d.questCount}</span></div>
+        <div class="kv"><span class="k">Пришло по приглашениям</span><span class="v">${d.invited}</span></div>
+        ${d.changedAt ? `<p class="muted small mt">Последнее изменение: ${UI.fmtDate(d.changedAt)}${d.changedBy ? ' · ' + UI.esc(d.changedBy) : ''}</p>` : ''}
+        <button class="btn ${d.questsOn ? 'btn-red' : 'btn-orange'} mt" id="rq-toggle" style="width:100%">
+          ${d.questsOn ? '🚫 Убрать раздел у игроков' : '✅ Показать раздел игрокам'}</button>
+      </div>`;
+    document.getElementById('rq-toggle').onclick = async () => {
+      try {
+        const r = await API.post('/api/admin/referral-quests', { on: !d.questsOn });
+        UI.toast((r.notices && r.notices[0]) || 'Готово');
+        Admin.renderRefQuests(c);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     };
   },

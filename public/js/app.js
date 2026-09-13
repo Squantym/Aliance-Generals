@@ -397,8 +397,46 @@ const App = {
     App.rerender();
   },
 
+  // ── Приглашение по ссылке ────────────────────────────────────────
+  // Ссылка друга выглядит как https://адрес/?ref=КОД. Код запоминаем и
+  // из адреса убираем: иначе он висит в строке браузера, попадает в
+  // закладки и при следующем заходе выглядит как чужое приглашение.
+  // Применяем ПОСЛЕ входа — до него применять некому.
+  _grabRefCode() {
+    try {
+      const code = new URLSearchParams(location.search).get('ref');
+      if (code) {
+        localStorage.setItem('refcode', String(code).slice(0, 32));
+        history.replaceState(null, '', location.pathname + location.hash);
+      }
+    } catch (e) { /* приватный режим — приглашение просто не запомнится */ }
+  },
+
+  // Запомненный код приглашения — для подсказки на экране регистрации
+  _pendingRefCode() {
+    try { return localStorage.getItem('refcode') || ''; } catch (e) { return ''; }
+  },
+
+  // Тихо применяем запомненный код. Ошибки не показываем: игрок мог уже
+  // ввести чужой код, перешагнуть 50 уровень или открыть свою же ссылку —
+  // ни одна из этих причин не должна встречать его окном с ошибкой.
+  async _applyPendingRef() {
+    let code = '';
+    try { code = localStorage.getItem('refcode') || ''; } catch (e) { return; }
+    if (!code || !App.me) return;
+    try { localStorage.removeItem('refcode'); } catch (e) {}
+    if (App.me.referredBy) return;
+    try {
+      const r = await API.post('/api/referral/apply', { code });
+      const note = (r && r.notices && r.notices[0]) || '🎁 Код приглашения принят';
+      UI.toast(note);
+      await App.refreshMe();
+    } catch (e) { /* код не подошёл — молчим */ }
+  },
+
   async init() {
     App.setTheme(App.theme()); // применить сохранённую тему сразу
+    App._grabRefCode();        // ?ref=КОД из ссылки друга — запомнить и убрать
     window.addEventListener('hashchange', () => App.route());
     App._initPwa();            // service worker + предложение установить игру
     App.refreshPushState();    // включены ли уведомления на самом деле
@@ -478,6 +516,8 @@ const App = {
     // всё работало — поэтому поломка выглядела плавающей.
     if (!App.me && !App._isMailLink()) location.hash = '#auth';
     App.route();
+    // Пришёл по ссылке друга и уже вошёл — код применяем сразу
+    if (App.me) App._applyPendingRef();
 
     // Полоса «скоро обновление» — после маршрутизации: до неё экран
     // перерисовывается целиком, и полоса встала бы под ним. Сотрудник
@@ -3264,6 +3304,7 @@ const App = {
     market: 'market', club: 'market', trophies: 'market', hospital: 'market',
     news: 'news', newsview: 'news', newsedit: 'news',
     saboteurs: 'saboteurs',
+    referral: 'referrals',
     alliance: 'social', legion: 'social', chat: 'social', mail: 'social',
     fame: 'social', ach: 'social', notifications: 'social', reinforcements: 'social',
   },

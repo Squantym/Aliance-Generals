@@ -144,6 +144,12 @@ function describe(path: string, body?: any, result?: any): string | null {
     if (/^\/api\/rewards\/[^/]+\/delete$/.test(path)) {
       return '🗑 Удалил награду из списка';
     }
+    // Переписка целиком — отдельной строкой и ВЫШЕ одиночного письма:
+    // адрес /api/mail/thread/<id>/delete под общий образец не подходит,
+    // но перепутать их в журнале легко
+    if (/^\/api\/mail\/thread\/[^/]+\/delete$/.test(path)) {
+      return '🗑 Удалил переписку целиком';
+    }
     if (/^\/api\/mail\/[^/]+\/delete$/.test(path)) {
       return '🗑 Удалил письмо';
     }
@@ -387,6 +393,8 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/cosmetics/unequip': return `🎨 Снял косметику (${body.type})`;
       case '/api/titles/set':        return `🏅 Установил титул «${body.titleId}»`;
       case '/api/referral/apply':    return `🎁 Активировал реферальный код «${body.code}»`;
+      case '/api/admin/referral-quests':
+        return body.on ? '🎯 Включил раздел заданий в приглашениях' : '🚫 Убрал раздел заданий в приглашениях';
 
       // ── Альянс / Легион ────────────────────────────────────────
       // ── Альянс / Легион: см. groupMatch выше (regex перехватывает раньше) ──
@@ -500,6 +508,7 @@ function describe(path: string, body?: any, result?: any): string | null {
       // ── Уведомления, почта, награды ────────────────────────────
       case '/api/notifications/read-all': return '🔔 Отметил все уведомления прочитанными';
       case '/api/mail/read-all':          return '📬 Прочитал всю почту';
+      case '/api/mail/clear-all':         return '🗑 Очистил почту: удалил все сообщения';
       case '/api/push/subscribe':         return '📲 Включил push-уведомления';
       case '/api/push/unsubscribe':       return '📴 Отключил push-уведомления';
       // Согласия. В журнале это должно читаться как действие человека, а

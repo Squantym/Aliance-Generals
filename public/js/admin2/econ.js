@@ -28,6 +28,7 @@
     { id: 'buffs', label: '🎉 Бонусы', zone: 'economy', fn: 'renderBuffs' },
     { id: 'donate', label: '💳 Бонусы к покупкам', zone: 'discounts', fn: 'renderDonateBonus' },
     { id: 'giveaways', label: '🎁 Раздачи наград', zone: 'economy', fn: 'renderGiveaways' },
+    { id: 'refquests', label: '🎯 Приглашения', zone: 'discounts', fn: 'renderRefQuests' },
   ];
 
   // ── Бонусы к покупкам за рубли ─────────────────────────────────
