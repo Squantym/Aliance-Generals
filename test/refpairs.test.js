@@ -112,14 +112,17 @@ const task = (list, id) => list.find((t) => t.id === id);
      && mate.saboteurs.air === 20 && mate.saboteurs.building === 20,
      'выдано по 20 диверсантов четырёх видов');
   ok(!mate.saboteurs.secret && !mate.saboteurs.suicide, 'секретные и смертники не выдаются');
-  // Половина стоимости покупки — у каждого своя
+  // Половина стоимости покупки — у каждого своя, и считается по САМОЙ
+  // ДОРОГОЙ покупке дня: дешёвый стимулятор, взятый первым, не должен
+  // обесценивать контейнер, купленный следом
   boss.gold = 1000; mate.gold = 1000;
-  market.buyContainers(boss, 5, 1, nx);      // 200 золота
+  market.buyItem(boss, 'stim', null, nx);    // 15 золота — первая покупка
+  market.buyContainers(boss, 1, 1, nx);      // 50 золота — дороже
   market.buyItem(mate, 'stim', null, nx);    // 15 золота
   const bossGold = boss.gold, mateGold = mate.gold;
   rq.pairsView(boss);
-  ok(boss.gold - bossGold === 100, `покупавшему за 200 вернулось ${boss.gold - bossGold}`);
-  ok(mate.gold - mateGold === 7, `покупавшему за 15 вернулось ${mate.gold - mateGold}`);
+  ok(boss.gold - bossGold === 25, `за контейнер в 50 золота вернулось ${boss.gold - bossGold}`);
+  ok(mate.gold - mateGold === 7, `за покупку в 15 золота вернулось ${mate.gold - mateGold}`);
 
   console.log('\n[7] Совместные действия: подкрепления и групповые бои');
   pa.invitePlayer(boss, mate.name, nx); pa.acceptInvite(mate, boss.id, nx);

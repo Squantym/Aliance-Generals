@@ -220,12 +220,21 @@ function claim(user: User, board: string, step: number | string, notices: Notice
 
 // ── Доля с покупок приглашённых ───────────────────────────────────
 // Растёт вместе с числом приглашённых: 5 друзей — 12%, 10 — 15%,
-// 20 — 20%, 30 — 25%. Считаются приглашённые, дошедшие до 50 уровня:
-// в этой выплате настоящие деньги, и пачка брошенных аккаунтов не
-// должна её поднимать.
+// 20 — 20%, 30 — 25%. Считаются приглашённые, дошедшие до уровня
+// SHARE_MIN_LEVEL (70): в этой выплате настоящие деньги, и пачка
+// брошенных аккаунтов не должна её поднимать. Порог намеренно выше,
+// чем у шкалы заданий, — там 50.
+function shareMinLevel(): number {
+  return Math.max(1, Number(config.REFERRAL_QUESTS.SHARE_MIN_LEVEL) || 70);
+}
+function goodFriends(user: User): number {
+  const need = shareMinLevel();
+  return friendsOf(user).filter((p) => (p.level || 1) >= need).length;
+}
+
 function sharePctFor(user: User): number {
   const base = config.REFERRAL.purchaseSharePct;
-  const good = friendsOf(user).filter((p) => (p.level || 1) >= 50).length;
+  const good = goodFriends(user);
   let pct = base;
   for (const s of config.REFERRAL_QUESTS.SHARE_STEPS) {
     if (good >= s.friends && s.pct > pct) pct = s.pct;
@@ -234,7 +243,7 @@ function sharePctFor(user: User): number {
 }
 
 function shareView(user: User) {
-  const good = friendsOf(user).filter((p) => (p.level || 1) >= 50).length;
+  const good = goodFriends(user);
   const steps = config.REFERRAL_QUESTS.SHARE_STEPS.map((s: any) => ({
     friends: s.friends, pct: s.pct, reached: good >= s.friends,
   }));
@@ -242,7 +251,8 @@ function shareView(user: User) {
   return {
     pct: sharePctFor(user),
     basePct: config.REFERRAL.purchaseSharePct,
-    friends50: good,
+    minLevel: shareMinLevel(),
+    friendsReady: good,
     steps,
     next: next ? { friends: next.friends, pct: next.pct, left: next.friends - good } : null,
   };
@@ -299,7 +309,7 @@ function pairDailyValue(p: any, other: any, metric: string): number {
   switch (metric) {
     case 'pairReinforce':    return sentReinforceToday(p, other.id) ? 1 : 0;
     case 'pairGroupBattles': return Math.max(0, Number((dayBox(p).groupWith || {})[other.id]) || 0);
-    case 'marketBuy':        return dayBox(p).firstBuyGold > 0 ? 1 : 0;
+    case 'marketBuy':        return dayBox(p).bestBuyGold > 0 ? 1 : 0;
     case 'breachIn':         return daily(p, 'breaches');
     default:                 return daily(p, metric);
   }
@@ -321,7 +331,7 @@ function pairOnceValue(p: any, metric: string): number {
 // Награда, которая зависит от самого игрока (половина его покупки)
 function resolveReward(reward: any, p: any): any {
   if (!reward || !reward.halfOfPurchase) return reward;
-  const spent = Math.max(0, Number(dayBox(p).firstBuyGold) || 0);
+  const spent = Math.max(0, Number(dayBox(p).bestBuyGold) || 0);
   return { gold: Math.max(1, Math.floor(spent / 2)) };
 }
 

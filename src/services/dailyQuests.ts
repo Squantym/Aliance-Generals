@@ -57,7 +57,7 @@ const COUNTED_ELSEWHERE = new Set([
 function mskBox(user: any): any {
   const day = u.dayKey();
   if (!user.dayMsk || user.dayMsk.day !== day) {
-    user.dayMsk = { day, counters: {}, groupWith: {}, firstBuyGold: 0 };
+    user.dayMsk = { day, counters: {}, groupWith: {}, bestBuyGold: 0 };
   }
   if (!user.dayMsk.counters) user.dayMsk.counters = {};
   if (!user.dayMsk.groupWith) user.dayMsk.groupWith = {};

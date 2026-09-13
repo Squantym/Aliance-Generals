@@ -408,7 +408,7 @@ App.screens.referral = async (c) => {
     ${q && q.share ? `
       <div class="card">
         <div class="name">💰 Доля с покупок друзей</div>
-        <p class="muted small">Сейчас вам идёт <b class="gold">${q.share.pct}%</b> с покупок золота приглашёнными. Доля растёт от числа друзей, дошедших до 50 уровня — сейчас таких ${q.share.friends50}.</p>
+        <p class="muted small">Сейчас вам идёт <b class="gold">${q.share.pct}%</b> с покупок золота приглашёнными. Доля растёт от числа друзей, дошедших до ${q.share.minLevel} уровня — сейчас таких ${q.share.friendsReady}.</p>
         <div class="rq-share">
           ${q.share.steps.map((s) => `
             <div class="rq-share-step ${s.reached ? 'is-ready' : ''}">

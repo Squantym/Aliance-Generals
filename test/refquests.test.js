@@ -151,11 +151,11 @@ const taskOf = (view, id) => view.tasks.find((t) => t.id === id);
   const crowd = [];
   for (let i = 0; i < 10; i++) {
     const p = await invite(seller, 'Рекрут' + i);
-    p.level = 50; crowd.push(p);
+    p.level = 70; crowd.push(p);
   }
-  ok(rq.sharePctFor(seller) === 15, `десять друзей по 50 уровню — ${rq.sharePctFor(seller)}%`);
-  crowd[0].level = 49; crowd[1].level = 49; crowd[2].level = 49; crowd[3].level = 49; crowd[4].level = 49;
-  ok(rq.sharePctFor(seller) === 12, `пятеро откатились — ${rq.sharePctFor(seller)}%`);
+  ok(rq.sharePctFor(seller) === 15, `десять друзей по 70 уровню — ${rq.sharePctFor(seller)}%`);
+  crowd[0].level = 69; crowd[1].level = 69; crowd[2].level = 69; crowd[3].level = 69; crowd[4].level = 69;
+  ok(rq.sharePctFor(seller) === 12, `пятеро не добрали до 70 — ${rq.sharePctFor(seller)}%`);
   // Выплата идёт по ВЫРОСШЕЙ доле, а не по базовой
   const rewards = require('../dist/src/services/rewards');
   features.onReferralPurchase(crowd[9], 1000);
@@ -164,6 +164,13 @@ const taskOf = (view, id) => view.tasks.find((t) => t.id === id);
   ok(!/Рекрут/.test(letter.title + letter.reason), 'имя покупателя по-прежнему не раскрывается');
   const sv = rq.shareView(seller);
   ok(sv.pct === 12 && sv.next && sv.next.pct === 15, `следующая ступень: ${sv.next.pct}% за ${sv.next.left} друзей`);
+  // Порог именно 70: на 50 уровне друг ещё не считается в долю, хотя
+  // шкалу заданий он уже закрывает
+  ok(sv.minLevel === 70 && sv.friendsReady === 5, `в долю идут друзья с ${sv.minLevel} уровня, их ${sv.friendsReady}`);
+  crowd[0].level = 50;
+  ok(rq.shareView(seller).friendsReady === 5, '50 уровня для доли мало');
+  crowd[0].level = 70;
+  ok(rq.shareView(seller).friendsReady === 6, 'а 70 — засчитано');
 
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   setTimeout(() => process.exit(0), 100);
