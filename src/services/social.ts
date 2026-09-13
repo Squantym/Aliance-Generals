@@ -51,11 +51,30 @@ function purgeChatMessages(userId: string, byName: string): number {
 // теряет связность — иначе ответы на удалённую реплику повисают в воздухе.
 const DELETED_TEXT = 'Сообщение удалено';
 
+// Какая комната запрошена. Общий эфир и «Позывные» читают все, чат
+// альянса — только взаимные союзники автора.
+function roomOf(room?: string): string {
+  return room === 'recruit' ? 'recruit' : room === 'alliance' ? 'alliance' : 'global';
+}
+
 function chatGet(viewer: User | null, afterId?: number | string, room?: string) {
   const after = u.toInt(afterId, 0);
   // Старые сообщения без комнаты считаются общим чатом
-  const wantRoom = room === 'recruit' ? 'recruit' : 'global';
-  const all = world().chat.filter((m) => m.id > after && ((m as any).room || 'global') === wantRoom);
+  const wantRoom = roomOf(room);
+  let all = world().chat.filter((m) => m.id > after && ((m as any).room || 'global') === wantRoom);
+  // Чат альянса у каждого свой: альянсы в игре личные, общего «клана»
+  // нет. Игрок видит написанное теми, с кем он в ВЗАИМНОМ альянсе, и
+  // своё. Поэтому лента собирается под конкретного читателя.
+  if (wantRoom === 'alliance') {
+    if (!viewer) return { messages: [] };
+    const paSrv = require('./personalAlliance');
+    const people: Record<string, User> = require('./player').users();
+    all = all.filter((m: any) => {
+      if (m.uid === viewer.id) return true;
+      const author = m.uid ? people[m.uid] : null;
+      return !!author && paSrv.areAllies(viewer, author);
+    });
+  }
   // Гостю показываем заглушки без имени автора
   if (!viewer) {
     return {
@@ -104,7 +123,8 @@ function chatGet(viewer: User | null, afterId?: number | string, room?: string) 
 function chatPost(user: User, text: string, room?: string) {
   text = String(text || '').trim().slice(0, config.CHAT.MAX_LEN);
   if (!text) throw new u.ApiError('Пустое сообщение');
-  require('./roles').assertCanWrite(user, 'global');
+  // Кляп на «Чат легиона» закрывает и альянс: в правах это один канал
+  require('./roles').assertCanWrite(user, room === 'alliance' ? 'legion' : 'global');
   const now = Date.now();
   // Простейшая защита от спама: не чаще одного сообщения в 3 секунды
   if (user.lastChatAt && now - user.lastChatAt < config.CHAT.RATE_MS) {
@@ -115,7 +135,18 @@ function chatPost(user: User, text: string, room?: string) {
   // Комната: 'global' — общий эфир, 'recruit' — «Позывные», доска для
   // поиска соратников. Разделение нужно, чтобы объявления о наборе не
   // тонули в живом чате, а чат не превращался в ленту объявлений.
-  const roomId = room === 'recruit' ? 'recruit' : 'global';
+  const roomId = roomOf(room);
+  // В альянс пишут только тем, у кого есть хоть один взаимный союзник:
+  // иначе сообщение уходит в пустоту, и игрок думает, что чат сломан.
+  if (roomId === 'alliance') {
+    const roster = ((user as any).allianceRoster || []).filter((m: any) => m && !m.isBot);
+    const people: Record<string, User> = require('./player').users();
+    const paSrv = require('./personalAlliance');
+    const allies = roster.filter((m: any) => people[m.id] && paSrv.areAllies(user, people[m.id]));
+    if (!allies.length) {
+      throw new u.ApiError('В вашем альянсе пока нет взаимных союзников — писать некому');
+    }
+  }
   w.chat.push({ id: w.seq++, uid: user.id, name: user.name, flag: player.flag(user), level: user.level, text, at: now, room: roomId });
   // Храним только последние N сообщений
   if (w.chat.length > config.CHAT.KEEP) w.chat.splice(0, w.chat.length - config.CHAT.KEEP);

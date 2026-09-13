@@ -1298,6 +1298,10 @@ function mePayload(user: User): any {
     nameReset: (() => {
       try { return require('./nameReset').info(user); } catch (e) { return null; }
     })(),
+    // Скрытый боевой профиль (VIP): состояние переключателя для кнопки
+    hideProfile: (() => {
+      try { return require('./vip').profileHidden(user); } catch (e) { return false; }
+    })(),
     // Ускорение опыта за покупку: сколько и до какого времени
     xpBoost: (() => {
       try { return require('./donateBonus').xpBoostView(user); } catch (e) { return null; }
@@ -1475,6 +1479,12 @@ function publicProfile(target: User, viewer: User): any {
   // Администратор видит чужой профиль ПОЛНОСТЬЮ (армия/постройки/секретки),
   // без разведки — как свой. reveal = свой профиль ИЛИ смотрит админ.
   const isAdminViewer = !!(viewer && viewer.isAdmin);
+  // Скрытый профиль VIP: чужому не показываем армию, постройки,
+  // разработки и боевые показатели — даже после разведки. Себе и
+  // администрации видно всё (services/vip.ts).
+  const hiddenByVip = (() => {
+    try { return require('./vip').profileHidden(target) && !isOwn && !isAdminViewer; } catch (e) { return false; }
+  })();
   const reveal = isOwn || isAdminViewer;
   // Блокировка аккаунта видна в профиле всем: наказание публично, чтобы
   // другие понимали, почему игрок пропал, и видели, что правила работают
@@ -1573,6 +1583,9 @@ function publicProfile(target: User, viewer: User): any {
       count: target.superSecret, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
     } : null,
     hideArmy: !reveal,   // флаг для фронта: армия скрыта, нужна разведка
+    // Профиль закрыт самим игроком по VIP: разведка не поможет, и
+    // кнопку разведки в игре показывать незачем
+    hiddenByOwner: hiddenByVip,
     adminView: isAdminViewer && !isOwn,   // админ смотрит чужой профиль (для бейджа)
     // Титул и косметика профиля — видны всем
     activeTitle: (() => { try { return require('./features').activeTitleName(target); } catch (e) { return null; } })(),

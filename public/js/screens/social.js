@@ -960,6 +960,16 @@ async function renderPersonalAlliance(c) {
     </div>
 
     <div class="card">
+      <div class="name">💬 Чат альянса</div>
+      <p class="muted small">Видят только те, с кем вы во взаимном альянсе. У каждого свой круг: ваше сообщение прочитают ваши союзники, но не их союзники.</p>
+      <div id="ally-chat-box" class="chat-box mt"><div class="loading">Загружаю…</div></div>
+      <div class="field-row mt">
+        <input type="text" id="ally-chat-text" placeholder="Сообщение союзникам…" maxlength="300" style="flex:1">
+        <button class="btn btn-orange btn-inline" id="ally-chat-send">Отправить</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="name">🎩 Дипломаты</div>
       <p class="muted small">Каждый дипломат добавляет +1 к лимиту заявок в час. Сейчас дипломатов: <b>${data.diplomats}</b>.</p>
       <button class="btn btn-orange mt" id="al-diplomat" style="width:100%">
@@ -1000,6 +1010,45 @@ async function renderPersonalAlliance(c) {
       </div>` : '<div class="card center muted">В альянсе пока никого. Пригласите игрока по позывному или из его профиля.</div>'}`;
 
   const R = (id) => document.getElementById(id);
+
+  // ── Чат альянса ───────────────────────────────────────────────
+  // Лента собирается сервером под читателя: альянсы личные, общей
+  // «комнаты» нет, поэтому каждый видит только своих союзников.
+  const chatBox = R('ally-chat-box');
+  const loadAllyChat = async () => {
+    if (!chatBox) return;
+    try {
+      const { messages } = await API.get('/api/chat?room=alliance');
+      const atBottom = chatBox.scrollTop + chatBox.clientHeight >= chatBox.scrollHeight - 30;
+      chatBox.innerHTML = messages.length ? messages.map((msg) => `
+        <div class="chat-msg${msg.self ? '' : ' chat-msg-ally'}${msg.vip ? ' chat-msg-vip' : ''}">
+          <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
+          ${App.vipMark(msg.vip)}
+          <span class="muted small">[${msg.level}]</span>
+          <span class="at">${UI.fmtDate(msg.at)}</span><br>
+          <span class="chat-text">${UI.esc(msg.text)}</span>
+        </div>`).join('')
+        : '<p class="muted center">Пока тихо. Напишите союзникам первым.</p>';
+      if (atBottom) chatBox.scrollTop = chatBox.scrollHeight;
+    } catch (e) {
+      chatBox.innerHTML = `<p class="muted center">${UI.esc(e.message)}</p>`;
+    }
+  };
+  const sendAllyChat = async () => {
+    const input = R('ally-chat-text');
+    const text = (input.value || '').trim();
+    if (!text) return;
+    try {
+      await API.post('/api/chat', { text, room: 'alliance' });
+      input.value = '';
+      await loadAllyChat();
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  if (R('ally-chat-send')) R('ally-chat-send').onclick = sendAllyChat;
+  if (R('ally-chat-text')) R('ally-chat-text').onkeydown = (e) => { if (e.key === 'Enter') sendAllyChat(); };
+  loadAllyChat().then(() => { if (chatBox) chatBox.scrollTop = chatBox.scrollHeight; });
+
   if (R('al-diplomat')) R('al-diplomat').onclick = async () => {
     try { await API.post('/api/alliance/diplomat'); await App.refreshMe(); App.rerender(); }
     catch (e) { UI.toast('⛔ ' + e.message); }

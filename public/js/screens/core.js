@@ -1097,7 +1097,9 @@ App.screens.profile = async (c, param) => {
             <button class="btn btn-inline" id="pf-stats">📊 Полная статистика</button>
             <button class="btn btn-inline" id="pf-spied">🕵 Кто меня разведал</button>
             <button class="btn btn-inline" id="pf-rename">✏️ Сменить позывной</button>
-          </div>` : ''}
+            <button class="btn btn-inline" id="pf-hide">${App.me.hideProfile ? '👁 Открыть профиль' : '🕶 Скрыть профиль'}</button>
+          </div>
+          ${App.me.hideProfile ? `<p class="muted small" style="margin-top:4px">Профиль закрыт: чужие видят звание и статистику, но не армию, постройки и разработки. Разведка по вам не проходит.</p>` : ''}` : ''}
         <a href="javascript:void 0" class="pf2-vip-more" id="pf-vip-more">Что даёт подписка</a>
       </div>
       ${p.power ? `
@@ -1109,7 +1111,9 @@ App.screens.profile = async (c, param) => {
         </div>
       </div>` : ''}` : ''}
       ${!own && p.canAttack ? `<button class="btn btn-orange mt" id="pf-attack">⚔ Атаковать</button>` : ''}
-      ${!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : ''}
+      ${!own && p.hiddenByOwner
+        ? `<div class="card" style="margin-top:8px"><p class="muted small" style="margin:0">🕶 Игрок закрыл сводку сил: армия, постройки и разработки не видны, разведка не проходит.</p></div>`
+        : (!own ? `<button class="btn mt" id="pf-spy">🔭 Разведка (шпионаж)</button>` : '')}
       ${!own ? `<button class="btn mt" id="pf-msg"><span class="ic-mail"></span> Написать сообщение</button>` : ''}
       ${!own ? `<button class="btn mt" id="pf-sanction" style="border-color:var(--red);color:var(--red)">🎯 Объявить санкции</button>` : ''}
       ${(!own && !isBot) ? `<button class="btn btn-inline mt" id="pf-report" style="width:100%">📨 Пожаловаться на игрока</button>` : ''}
@@ -1373,7 +1377,17 @@ App.screens.profile = async (c, param) => {
       };
     }
 
-    const btnSpy = document.getElementById('pf-spy');
+    // Скрытый боевой профиль — переключатель для VIP
+  const hideBtn = document.getElementById('pf-hide');
+  if (hideBtn) hideBtn.onclick = async () => {
+    try {
+      await API.post('/api/vip/hide-profile', { on: !(App.me && App.me.hideProfile) });
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+
+  const btnSpy = document.getElementById('pf-spy');
     if (btnSpy) btnSpy.onclick = async () => {
       try {
         const r = await API.post('/api/spy', { targetId: p.id });

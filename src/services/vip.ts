@@ -155,6 +155,28 @@ function markRenameUsed(user: any): void {
   db.markUser(user.id);
 }
 
+// ── Скрытый боевой профиль (преимущество VIP) ─────────────────────
+// Прячет от чужих глаз армию, постройки, секретные разработки и
+// показатели боя. Позывной, звание, статистика побед и поражений,
+// страна и легион остаются на виду: это не «невидимка», а закрытая
+// сводка сил. Разведка по такому игроку не работает — иначе скрытие
+// обходилось бы одной кнопкой.
+function profileHidden(user: any): boolean {
+  return !!(user && user.hideProfile) && isVip(user);
+}
+
+// Переключение самим игроком. Подписка кончилась — скрытие перестаёт
+// действовать само, но выбор игрока помним: продлит — снова закроется.
+function setProfileHidden(user: any, on: boolean, notices: Notices) {
+  if (!isVip(user)) throw new u.ApiError('Скрытый профиль доступен по VIP-подписке');
+  user.hideProfile = !!on;
+  db.markUser(user.id);
+  notices.push(user.hideProfile
+    ? '🕶 Боевой профиль скрыт: армию, постройки и разработки чужие больше не видят, разведка по вам не работает.'
+    : '👁 Боевой профиль снова открыт.');
+  return { hidden: !!user.hideProfile };
+}
+
 // ---------- Покупка подписки за золото ----------
 // Цена и срок вынесены в конфиг: менять их придётся чаще, чем код.
 const PRICE_GOLD = 300;
@@ -244,6 +266,6 @@ export = {
   spyFreePerDay, reinforcePerDay, contractsPerDay,
   marketDiscountPct, goldPurchaseBonusPct,
   upkeepMul, incomeMul, xpMul, unitLossMul,
-  tryBreachImmunity, mineTriggerBonusPct,
+  tryBreachImmunity, mineTriggerBonusPct, profileHidden, setProfileHidden,
   canRenameFree, markRenameUsed, mskDayKey,
 };

@@ -1934,7 +1934,12 @@ proxy_set_header Host $host;</pre>
   async renderEvents(c) {
     let season = null; try { season = await API.get('/api/season'); } catch (e) {}
     let ev = null; try { ev = await API.get('/api/event'); } catch (e) {}
-    const rw = (season && season.rewards) || [{ gold: 500, tokens: 3 }, { gold: 300, tokens: 2 }, { gold: 100, tokens: 1 }];
+    // Только то, что вернул сервер. Зашитые сюда 500/300/100 жили своей
+    // жизнью: владелец менял награды, а панель показывала старые числа.
+    const rw = (season && season.rewards) || [];
+        // Сезон мог ещё не быть настроен или запрос не дойти — поля тогда
+        // пустые, но экран событий обязан открыться
+        const rwv = (i, k) => (rw[i] && rw[i][k] != null ? rw[i][k] : '');
     const fmtLeft = (ms) => {
       if (!ms || ms <= 0) return '—';
       const dd = Math.floor(ms / 86400000), hh = Math.floor((ms % 86400000) / 3600000);
@@ -2027,9 +2032,9 @@ proxy_set_header Host $host;</pre>
         <div class="name">🏆 Рейтинговый сезон (${(season && season.seasonDays) || 15} дней)</div>
         <p class="muted small mt">Автосброс раз в ${(season && season.seasonDays) || 15} дней по МСК. Топ-3 КАЖДОЙ из 7 категорий получают награду, затем метрики обнуляются. Администрация (кроме «Дозора») и игроки с блокировкой от месяца в зачёт не входят.${season ? ` Текущий сезон: <b>${season.weekId}</b>, до конца: <b>${fmtLeft(season.endsAt - Date.now())}</b>.` : ''}</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-          <div><label style="font-size:11px;color:var(--dim)">🥇 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g1" value="${rw[0].gold}"><input type="number" id="se-t1" value="${rw[0].tokens}"></div></div>
-          <div><label style="font-size:11px;color:var(--dim)">🥈 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g2" value="${rw[1].gold}"><input type="number" id="se-t2" value="${rw[1].tokens}"></div></div>
-          <div><label style="font-size:11px;color:var(--dim)">🥉 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g3" value="${rw[2].gold}"><input type="number" id="se-t3" value="${rw[2].tokens}"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥇 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g1" value="${rwv(0, 'gold')}"><input type="number" id="se-t1" value="${rwv(0, 'tokens')}"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥈 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g2" value="${rwv(1, 'gold')}"><input type="number" id="se-t2" value="${rwv(1, 'tokens')}"></div></div>
+          <div><label style="font-size:11px;color:var(--dim)">🥉 Золото / жетоны</label><div style="display:flex;gap:4px"><input type="number" id="se-g3" value="${rwv(2, 'gold')}"><input type="number" id="se-t3" value="${rwv(2, 'tokens')}"></div></div>
         </div>
         <button class="btn btn-orange mt" id="se-save" style="width:100%">💾 Сохранить награды</button>
         <hr class="hr">

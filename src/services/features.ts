@@ -489,6 +489,13 @@ function spyOn(user: User, targetId: string, notices: Notices) {
   if (!target) throw new u.ApiError('Цель не найдена');
   if (target.id === user.id) throw new u.ApiError('Незачем шпионить за собой');
   require('./account').assertNotSelfAccount(user, target, 'Разведка');
+  // Скрытый профиль VIP закрывает и разведку: иначе скрытие снималось бы
+  // одной кнопкой за 3 золота
+  let targetHidden = false;
+  try { targetHidden = require('./vip').profileHidden(target); } catch (e) { targetHidden = false; }
+  if (targetHidden) {
+    throw new u.ApiError(`«${target.name}» закрыл сводку сил — разведка по нему не проходит`);
+  }
 
   if (used >= free) {
     if (user.gold < config.SPY.extraCostGold) {

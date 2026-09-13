@@ -51,7 +51,8 @@ function bonusPct(user: any): number {
   // Трофей «Знамя победы» усиливает каждое подкрепление
   try {
     const trophies = require('./trophies');
-    const lvl = trophies.levelOf ? trophies.levelOf(user, 'banner') : 0;
+    // activeLevel, а не levelOf: трофей, отданный в прокачку, не работает
+    const lvl = trophies.activeLevel(user, 'banner');
     const def = (config.TROPHIES || []).find((t: any) => t.id === 'banner');
     if (lvl && def) per += lvl * def.perLvl;
   } catch (e) { /* трофеев нет — базовый бонус */ }

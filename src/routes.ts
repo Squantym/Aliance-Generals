@@ -1053,6 +1053,8 @@ function registerRoutes(app: any) {
     myGold: req.user.gold || 0,
   }));
 
+  // Скрытый боевой профиль — переключатель самого игрока (нужен VIP)
+  app.add('POST', '/api/vip/hide-profile', act((req, n) => require('./services/vip').setProfileHidden(req.user, !!req.body.on, n)));
   app.add('POST', '/api/vip/buy', act((req, n) => vip.buy(req.user, n)));
 
   // Выдача и снятие — зона «Ресурсы»: подписка это благо, как и золото

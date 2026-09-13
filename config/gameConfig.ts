@@ -747,7 +747,11 @@ const BUILDING_BY_ID = Object.fromEntries(
   DEFENSE_BUILDINGS.forEach((b, i) => { BUILDING_BY_ID[b.id].hp = 30 + i * 2; });
 })();
 // Рост цены при покупке КАЖДОЙ копии того же типа постройки
-const BUILDING_PRICE_GROWTH = { income: 1.012, defense: 1.008 };
+// Рост цены за каждую следующую копию. Это СЛОЖНЫЙ процент: при 1.2%
+// каждые +100 копий дорожали в 3.3 раза, и после тысячи построек цена
+// улетала в неподъёмную. Смягчено вдвое (13.09.2026): +0.6% и +0.4%,
+// то есть каждые +100 копий — в 1.8 и 1.5 раза.
+const BUILDING_PRICE_GROWTH = { income: 1.006, defense: 1.004 };
 const BUILDING_DEF_POWER = 1;
 const INCOME_PERIOD_MS = 3600 * 1000;
 

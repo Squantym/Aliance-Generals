@@ -73,8 +73,10 @@ ok(/const critTrophyBonus = trophies\.critPower\(user\)/.test(battleSrc), 'бо�
 ok(/dealtBase \* B\.CRIT_MULT \* \(1 \+ critTrophyBonus\)/.test(battleSrc),
    'множитель применяется к базовому урону');
 const trophiesSrc = fs.readFileSync(path.join(ROOT, 'src/services/trophies.ts'), 'utf8');
-ok(/levelOf\(user, 'license'\) \* \(def \? def\.perLvl : 0\)\) \/ 100/.test(trophiesSrc),
-   'сила крита считается по уровню трофея');
+// activeLevel, а не levelOf: трофей, отданный в прокачку, снят со стойки
+// и бонуса не даёт, пока улучшение не закончилось (services/trophies.ts)
+ok(/activeLevel\(user, 'license'\) \* \(def \? def\.perLvl : 0\)\) \/ 100/.test(trophiesSrc),
+   'сила крита считается по рабочему уровню трофея');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);
 process.exit(failed ? 1 : 0);

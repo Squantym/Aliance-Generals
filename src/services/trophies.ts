@@ -13,6 +13,14 @@ import type { User, Notices } from '../types';
 
 function levelOf(user: User, id: string): number { return (user.trophies && user.trophies[id]) || 0; }
 
+// Уровень, который РАБОТАЕТ прямо сейчас. Трофей, отданный в прокачку,
+// снят со стойки: пока идёт улучшение, он не даёт ничего. Иначе
+// улучшение было бы бесплатным по времени — поставил и воюешь дальше
+// с тем же бонусом.
+function activeLevel(user: User, id: string): number {
+  return activeFor(user, id) ? 0 : levelOf(user, id);
+}
+
 // Базовая стоимость прокачки и со скидкой (учитываем флаг expensive)
 function baseNextCost(level: number, def: any): number {
   return config.trophyUpgradeCost(level, !!(def && def.expensive), def && def.costMul);
@@ -31,14 +39,14 @@ function activeFor(user: User, id: string): any {
 function bonusOf(user: User, id: string): number {
   const def = config.TROPHIES.find((t) => t.id === id);
   if (!def) return 0;
-  return levelOf(user, id) * def.perLvl;
+  return activeLevel(user, id) * def.perLvl;
 }
 
 // Снижение цены по категории (для лечения, банка и т.п.)
 function discountPct(user: User, applyKey: string): number {
   let pct = 0;
   for (const def of config.TROPHIES) {
-    if (def.apply === applyKey) pct += levelOf(user, def.id) * def.perLvl;
+    if (def.apply === applyKey) pct += activeLevel(user, def.id) * def.perLvl;
   }
   return pct;
 }
@@ -79,10 +87,10 @@ function checkCompleted(user: User): void {
 }
 
 // Уровень разведывательного трофея (для features.spyOn)
-function spyLevel(user: User): number { return levelOf(user, 'satellite'); }
+function spyLevel(user: User): number { return activeLevel(user, 'satellite'); }
 // Уровень трофея взлома банков («Медвежатник») и мин («Растяжка»)
-function bankHackLevel(user: User): number { return levelOf(user, 'safecracker'); }
-function mineLevel(user: User): number { return levelOf(user, 'tripwire'); }
+function bankHackLevel(user: User): number { return activeLevel(user, 'safecracker'); }
+function mineLevel(user: User): number { return activeLevel(user, 'tripwire'); }
 
 // Человекочитаемое описание, что рассекречивает спутник-шпион на данном уровне
 function spyUnlockText(lvl: number): string {
@@ -135,7 +143,9 @@ function list(user: User) {
         spy: isSpy, bankHack: isBankHack, mine: isMine,
         // Для «текстовых» трофеев (спутник/медвежатник/растяжка) процентного
         // бонуса нет — вместо него человекочитаемое описание разблокировки.
-        bonusNow:  isTextTrophy ? textFor(level) : level * t.perLvl,
+        // Пока трофей в прокачке, он снят: показываем это числом, а не
+        // только словом «прокачивается»
+        bonusNow:  isTextTrophy ? textFor(active ? 0 : level) : (active ? 0 : level) * t.perLvl,
         bonusNext: isTextTrophy
           ? (level < config.TROPHY_MAX_LEVEL ? textFor(targetLevel) : null)
           : (level < config.TROPHY_MAX_LEVEL ? targetLevel * t.perLvl : null),
@@ -144,6 +154,8 @@ function list(user: User) {
         trainMinutes: level < config.TROPHY_MAX_LEVEL ? trainMin : null,
         boostGold: level < config.TROPHY_MAX_LEVEL ? config.trophyBoostGold(targetLevel, (t as any).timeMul) : null,
         training: !!active,
+        // Занята ли «мастерская»: прокачка другого трофея закрывает кнопку
+        busyWith: (() => { const q = ((user as any).trophyQueue || [])[0]; return q && q.id !== t.id ? q.id : ''; })(),
         secondsLeft: secLeft,
         totalSec: active ? Math.round((active.finishesAt - active.startedAt) / 1000) : 0,
       };
@@ -158,6 +170,14 @@ function startUpgrade(user: User, id: string, notices: Notices) {
   const level = levelOf(user, id);
   if (level >= config.TROPHY_MAX_LEVEL) throw new u.ApiError('Трофей уже максимального уровня');
   if (activeFor(user, id)) throw new u.ApiError('Этот трофей уже прокачивается');
+  // Только один трофей в работе: иначе богатый игрок ставил все сразу и
+  // получал полный комплект за время одной прокачки.
+  const busy = ((user as any).trophyQueue || [])[0];
+  if (busy) {
+    const bn = config.TROPHIES.find((t) => t.id === busy.id);
+    const leftMin = Math.max(1, Math.round((busy.finishesAt - Date.now()) / 60000));
+    throw new u.ApiError(`Сейчас прокачивается «${(bn && bn.name) || busy.id}» — осталось ${formatMinutes(leftMin)}. Одновременно улучшают только один трофей.`);
+  }
   const cost = nextCost(level, def);
   if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
   require('./player').spendGold(user, cost, 'trophy');
@@ -200,35 +220,39 @@ function boostUpgrade(user: User, id: string, notices: Notices) {
 // Совокупный множитель: +N% к атаке от трофея medal (доли единицы)
 function atkBonus(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'medal');
-  return (levelOf(user, 'medal') * (def ? def.perLvl : 0)) / 100;
+  return (activeLevel(user, 'medal') * (def ? def.perLvl : 0)) / 100;
 }
 // +N% к защите от shield
 function defBonus(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'shield');
-  return (levelOf(user, 'shield') * (def ? def.perLvl : 0)) / 100;
+  return (activeLevel(user, 'shield') * (def ? def.perLvl : 0)) / 100;
 }
 // Дополнительная сила крита от license: пример +50% к множителю крита на ур.10
 function critPower(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'license');
-  return (levelOf(user, 'license') * (def ? def.perLvl : 0)) / 100;
+  return (activeLevel(user, 'license') * (def ? def.perLvl : 0)) / 100;
 }
 // Шанс КРИТИЧЕСКОГО ЛЕЧЕНИЯ медика в бою легиона. Собственный трофей
 // «Орден «Красный крест»»: база 5% + 4.5% за уровень → 50% на максимуме.
 // (Раньше шанс брался от ловкости — стата уворота, что не имело смысла.)
 function critHealChance(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'red_cross');
-  const pct = levelOf(user, 'red_cross') * (def ? def.perLvl : 0);
+  const pct = activeLevel(user, 'red_cross') * (def ? def.perLvl : 0);
   return Math.min(config.BATTLE.CRIT_HEAL_MAX, config.BATTLE.CRIT_HEAL_BASE + pct / 100);
 }
 
 // Множитель энергии на миссиях от radar (меньше = выгоднее)
 function missionEnergyMul(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'radar');
-  const pct = levelOf(user, 'radar') * (def ? def.perLvl : 0);
+  const pct = activeLevel(user, 'radar') * (def ? def.perLvl : 0);
   return Math.max(0.5, 1 - pct / 100); // максимум −50%
 }
 
 export = {
+  // levelOf наружу нужен подкреплениям: там он вызывался через
+  // «есть ли такая функция», и молча возвращал 0 — трофей «Знамя
+  // победы» не усиливал подкрепления вовсе.
+  levelOf, activeLevel,
   list, startUpgrade, boostUpgrade, bonusOf, discountPct, checkCompleted,
   atkBonus, defBonus, critPower, critHealChance, missionEnergyMul, spyLevel, bankHackLevel, mineLevel,
 };
