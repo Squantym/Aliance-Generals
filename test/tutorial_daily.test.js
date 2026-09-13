@@ -28,14 +28,36 @@ const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); p
   ok(`заданий в курсе много (${c.TUTORIAL.length} ≥ 12)`, c.TUTORIAL.length >= 12);
   eq('золото курса ровно 500', goldSum, 500);
   ok(`доллары курса ≤ 100 Bn (факт ${(dollarSum/1e9).toFixed(1)} Bn)`, dollarSum <= 100_000_000_000);
-  ok('все события курса из числа доставляемых', c.TUTORIAL.every(q => ['attack','buy_unit','win','build_income','mission_step'].includes(q.event)));
+  // Событие задания обязано кем-то ДОСТАВЛЯТЬСЯ: иначе задание нельзя
+  // выполнить в принципе. Список доставляемых собираем из самого кода —
+  // перечисленный руками он однажды отстанет от игры.
+  const walkTs = (dir, out) => {
+    for (const n of fs.readdirSync(dir)) {
+      const p = path.join(dir, n);
+      if (fs.statSync(p).isDirectory()) walkTs(p, out);
+      else if (n.endsWith('.ts')) out.push(p);
+    }
+    return out;
+  };
+  const delivered = new Set();
+  for (const f of walkTs(path.join(__dirname, '..', 'src'), [])) {
+    const src = fs.readFileSync(f, 'utf8');
+    const re = /notify\([^,]+,\s*'([a-z_]+)'/g;
+    let m;
+    while ((m = re.exec(src))) delivered.add(m[1]);
+  }
+  const missing = c.TUTORIAL.filter((q) => !delivered.has(q.event)).map((q) => q.event);
+  ok(missing.length ? `не доставляются: ${missing.join(', ')}` : 'все события курса кто-то доставляет',
+     missing.length === 0);
 
   console.log('\n[2] Все шаги курса реально проходятся событиями');
   await auth.register('Новобранец', 'password1', 'n@a.com', 'ru', '1.1.1.1');
   const u = Object.values(player.users()).find(x => x.name === 'Новобранец');
   u.tutorial = { step: 0, done: false };
+  // Заданиям курса теперь нужно КОЛИЧЕСТВО (30 машин, 20 атак, 10 побед),
+  // поэтому событий уходит в разы больше, чем шагов
   let guard = 0;
-  while (!u.tutorial.done && guard++ < 50) {
+  while (!u.tutorial.done && guard++ < 500) {
     const ev = c.TUTORIAL[u.tutorial.step].event;
     tutorial.notify(u, ev, []);
   }

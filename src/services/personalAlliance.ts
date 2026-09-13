@@ -228,6 +228,9 @@ function acceptInvite(user: User, fromId: string, notices: Notices) {
   const inviter = users()[fromId];
   if (!inviter) throw new u.ApiError('Пригласивший игрок не найден');
   ensure(inviter);
+  // Обучение: задание «Плечо товарища» закрывается у ПРИГЛАСИВШЕГО и
+  // только когда человек действительно вступил, а не когда позвали
+  try { require('./tutorial').notify(inviter, 'ally_join', []); } catch (e) {}
 
   // Каждому +1 (друг друга добавляют в ростер), лимиты независимы
   if (user.allianceMembers! < maxMembers(user)) {

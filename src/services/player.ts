@@ -1216,7 +1216,8 @@ function tutorialView(user: User) {
   // Нет поля обучения — считаем курс пройденным (см. tutorial.notify):
   // иначе главный экран старого аккаунта падал бы на ровном месте.
   if (!user.tutorial || user.tutorial.done) return { done: true, total: config.TUTORIAL.length };
-  const q = config.TUTORIAL[user.tutorial.step];
+  const q: any = config.TUTORIAL[user.tutorial.step];
+  const need = Math.max(1, Number(q && q.need) || 1);
   return {
     done: false,
     step: user.tutorial.step,
@@ -1224,6 +1225,10 @@ function tutorialView(user: User) {
     prologue: config.STORY_PROLOGUE,
     quest: q ? {
       title: q.title, story: q.story, goal: q.goal, screen: q.screen,
+      // Прогресс показываем только там, где нужно больше одного действия:
+      // «1 из 1» выглядит как ошибка
+      need,
+      have: Math.min(need, Number((user.tutorial as any).progress) || 0),
       reward: `$${u.fmt(q.dollars)} и ${q.xp} опыта` +
         (user.tutorial.step === config.TUTORIAL.length - 1 ? `, затем 🪙 ${config.TUTORIAL_FINAL_GOLD} золота за весь курс` : ''),
     } : null,

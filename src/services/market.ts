@@ -215,6 +215,8 @@ function buyItem(user: User, itemId: string, targetName: string, notices: Notice
   countBuy();
   // Покупка кладёт товар на склад, а не применяет его (см. useItem).
   // Применить сразу можно тут же — кнопка «Использовать» рядом.
+  // Обучение: задание «Снабжение с чёрного хода»
+  try { require('./tutorial').notify(user, 'market_buff', notices); } catch (e) {}
   const owned = addItems(user, item.id, 1);
   notices.push(`📦 «${item.name}» на складе: ${owned} шт. Примените, когда понадобится.`);
   return { ok: true, owned };
@@ -432,6 +434,7 @@ function buyContainers(user: User, tier: number | string, qty: number, notices: 
   require('./dailyQuests').bump(user, 'goldOn:' + c.id, total);
   rememberFirstBuy(user, unit);   // парное задание вернёт половину цены
   player.spendGold(user, total, 'container');
+  try { require('./tutorial').notify(user, 'market_container', notices); } catch (e) {}
   const owned = addContainers(user, c.tier, n);
   notices.push(`📦 Куплено: «${c.name}» ×${n}. На складе: ${owned} — откройте, когда будете готовы.`);
   return { tier: c.tier, bought: n, owned, spent: total };

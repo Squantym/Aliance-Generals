@@ -119,7 +119,7 @@ function buy(user: User, unitId: string, qty: number, notices: Notices) {
     const def = config.UNIT_BY_ID[unitId];
     if (def) require('./stats').track(user, 'unitsBought', def.type, qty);
   } catch (e) {}
-  tutorial.notify(user, 'buy_unit', notices);
+  tutorial.notify(user, 'buy_unit', notices, qty);
   return { unitId, owned: player.unitTotalCount(user, unitId), spent: cost };
 }
 

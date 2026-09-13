@@ -331,6 +331,8 @@ function claim(user: User, questId: string, notices: Notices) {
   // можно и не сделать.
   if (!(user as any).counters) (user as any).counters = {};
   (user as any).counters.questsDone = (((user as any).counters.questsDone) || 0) + 1;
+  // Обучение: задание «Поручение Генштаба»
+  try { require('./tutorial').notify(user, 'quest_done', notices); } catch (e) {}
   const reward = config.dailyQuestReward(quest.diff, user.level, quest);
   // Контрабанда возвращает половину ПОТРАЧЕННОГО, а не половину прайса:
   // товар мог быть куплен со скидкой, и по прайсу вышло бы, что игрок

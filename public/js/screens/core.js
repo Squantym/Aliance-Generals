@@ -447,6 +447,7 @@ App.screens.home = async (c) => {
         <p><b>${ch.name}:</b> ${UI.esc(t.quest.story)}</p>
         <p class="mt small">📜 Задание ${t.step + 1}/${t.total}: <b>${UI.esc(t.quest.title)}</b><br>
         <span class="muted">Цель: ${UI.esc(t.quest.goal)}</span><br>
+        ${t.quest.need > 1 ? `<span class="muted">Сделано: ${UI.fmtNum(t.quest.have)} из ${UI.fmtNum(t.quest.need)}</span><br>` : ''}
         <span class="gold">Награда: ${UI.esc(t.quest.reward)}</span></p>
         <button class="btn btn-orange mt" onclick="App.go('${t.quest.screen}')">Выполнить →</button>
       </div>`;

@@ -6,22 +6,39 @@
 // ===================================================================
 
 import config = require('../../config/gameConfig');
+import db = require('../core/db');
 import u = require('../core/utils');
 import player = require('./player');
 import notifications = require('./notifications');
 import type { User, Notices } from '../types';
 
 // event — кодовое имя события: attack, buy_unit, mission_step,
-// build_income, skill_spent (см. config.TUTORIAL)
-function notify(user: User, event: string, notices: Notices): void {
+// build_income, chat, quest_done, ally_join, market_buff,
+// market_container, skill_spent (см. config.TUTORIAL)
+//
+// amount — сколько засчитать за один вызов. Покупка сразу тридцати
+// машин — это тридцать, а не одна: иначе задание «купи 30 единиц»
+// требовало бы тридцати отдельных нажатий.
+function notify(user: User, event: string, notices: Notices, amount?: number): void {
   // Проверка «поле вообще есть» обязательна: обучение появилось позже
   // самой игры, и у аккаунтов, заведённых до него или служебными
   // скриптами, его нет. Обращение к user.tutorial.done роняло ВЕСЬ бой
   // уже ПОСЛЕ того, как обе стороны изменены — техника списана, добыча
   // начислена, — а игрок получал «внутреннюю ошибку сервера».
   if (!user.tutorial || user.tutorial.done) return;
-  const quest = config.TUTORIAL[user.tutorial.step];
+  const quest: any = config.TUTORIAL[user.tutorial.step];
   if (!quest || quest.event !== event) return; // событие не из текущего задания
+
+  // Копим прогресс, пока не наберётся нужное количество
+  const need = Math.max(1, Number(quest.need) || 1);
+  const add = quest.amount ? Math.max(1, Math.floor(Number(amount) || 1)) : 1;
+  const done = Math.min(need, (Number((user.tutorial as any).progress) || 0) + add);
+  if (done < need) {
+    (user.tutorial as any).progress = done;
+    db.markUser(user.id);
+    return;
+  }
+  (user.tutorial as any).progress = 0;
 
   // Награда за выполненное задание
   player.addMoney(user, quest.dollars, true);

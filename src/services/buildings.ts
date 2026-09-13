@@ -82,7 +82,7 @@ function build(user: User, buildingId: string, qty: number, notices: Notices) {
   user.buildings[buildingId] = owned + qty;
   ach.bump(user, 'buildingsBuilt', qty, notices);
   require('./dailyQuests').bump(user, 'buildingsBuilt', qty);
-  if (b.kind === 'income') tutorial.notify(user, 'build_income', notices); // задание «Тыл решает»
+  if (b.kind === 'income') tutorial.notify(user, 'build_income', notices, qty); // задание «Тыл решает»
   return { buildingId, owned: user.buildings[buildingId], spent: cost };
 }
 

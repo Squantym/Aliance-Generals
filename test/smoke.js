@@ -255,8 +255,10 @@ async function main() {
   // наземных машины. Раньше здесь покупались две, шаг не запускался
   // (сервер отвечал needUnits вместо processId), и весь дальнейший
   // туториальный сценарий рассыпался — тест «падал», хотя игра цела.
-  const buy = await post('/api/units/buy', A, { unitId: firstUnit.id, qty: 3 });
-  check('покупка техники прошла', buy.status === 200 && buy.data.owned === 3);
+  // Берём 30: столько требует второй шаг курса молодого бойца («Первое
+  // железо»), а трёх машин хватает только первому шагу миссии.
+  const buy = await post('/api/units/buy', A, { unitId: firstUnit.id, qty: 30 });
+  check('покупка техники прошла', buy.status === 200 && buy.data.owned === 30);
   meA = (await get('/api/me', A)).data;
   check('туториал на шаге 2', meA.tutorial.step === 2);
   check('мощь атаки выросла', meA.power.atk > 0);

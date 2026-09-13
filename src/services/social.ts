@@ -152,6 +152,8 @@ function chatPost(user: User, text: string, room?: string) {
   // написали 100 сообщений»). Сама лента хранит только последние N
   // сообщений, поэтому посчитать задним числом по ней нельзя.
   try { require('./dailyQuests').bump(user, 'chatMessages', 1); } catch (e) {}
+  // Обучение: задание «Выйти на связь»
+  try { require('./tutorial').notify(user, 'chat', []); } catch (e) {}
   // Храним только последние N сообщений
   if (w.chat.length > config.CHAT.KEEP) w.chat.splice(0, w.chat.length - config.CHAT.KEEP);
 }
