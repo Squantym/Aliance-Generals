@@ -479,12 +479,19 @@
       if (!f) return;
       const i = +inp.dataset.imgFile;
       syncFromDom();
-      UI.toast('📤 Загружаю картинку…');
+      UI.toast('📤 Готовлю картинку…');
       try {
-        const data = await App._resizeImage(f, 1200, 1600);
-        const r = await API.post('/api/news/image', { image: data });
+        // Баннеру нужна ширина, иконке — чёткость в мелком размере.
+        // 256 px — это двойной запас к самому большому показу (128 px),
+        // чтобы на телефоне с плотным экраном не было мыла.
+        const icon = dr.blocks[i].type === 'iconrow';
+        const img = await App._prepareImage(f, icon
+          ? { maxW: 256, maxH: 256, maxBytes: 90 * 1024 }
+          : { maxW: 1600, maxH: 1600, maxBytes: 500 * 1024 });
+        const r = await API.post('/api/news/image', { image: img.data });
         dr.blocks[i].url = r.url;
         reRender();
+        UI.toast(`✅ Готово: ${img.width}×${img.height}, ${Math.round(img.bytes / 1024)} КБ`);
       } catch (e) { UI.toast('⛔ ' + e.message); }
     });
 

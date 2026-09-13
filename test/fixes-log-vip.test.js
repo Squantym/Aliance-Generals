@@ -48,17 +48,17 @@ const soc = fs.readFileSync(ROOT + '/public/js/screens/social.js', 'utf8');
 // Сам ужиматель лежит в ядре (public/js/app.js): он нужен и форуму, и
 // редактору новостей, а «Общение» подгружается отдельным файлом.
 const appCore = fs.readFileSync(ROOT + '/public/js/app.js', 'utf8');
-ok(/_resizeImage = \(file, maxW, maxH\)/.test(appCore), 'ограничивается и ширина, и высота');
-ok(/Math\.min\(1, maxW \/ img\.width, \(maxH \|\| 1400\) \/ img\.height\)/.test(appCore),
+ok(/App\._prepareImage = async \(file, opts\)/.test(appCore), 'ограничивается и ширина, и высота');
+ok(/const scale = Math\.min\(1, maxW \/ sw, maxH \/ sh\);/.test(appCore),
    'масштаб единый для обеих сторон — пропорции сохраняются');
-ok(/_resizeImage\(f, 900, 1400\)/.test(soc), 'заданы оба предела');
+ok(/_prepareImage\(f, \{ maxW: 1400, maxH: 1400, maxBytes: 400 \* 1024 \}\)/.test(soc), 'заданы оба предела');
 // Проверяем расчёт на вертикальном скриншоте телефона
-const calc = (w, h) => { const s = Math.min(1, 900 / w, 1400 / h); return [Math.round(w * s), Math.round(h * s)]; };
+const calc = (w, h) => { const s = Math.min(1, 1400 / w, 1400 / h); return [Math.round(w * s), Math.round(h * s)]; };
 const [w1, h1] = calc(1080, 2400);
 ok(h1 <= 1400 && Math.abs((w1 / h1) - (1080 / 2400)) < 0.01,
    `вертикальный скриншот 1080×2400 → ${w1}×${h1}, пропорция сохранена`);
 const [w2, h2] = calc(4000, 3000);
-ok(w2 <= 900 && Math.abs((w2 / h2) - (4000 / 3000)) < 0.01,
+ok(w2 <= 1400 && Math.abs((w2 / h2) - (4000 / 3000)) < 0.01,
    `широкое фото 4000×3000 → ${w2}×${h2}, пропорция сохранена`);
 const css = fs.readFileSync(ROOT + '/public/css/style.css', 'utf8');
 ok(/\.forum-img-preview \{[\s\S]{0,160}max-height: 150px/.test(css),

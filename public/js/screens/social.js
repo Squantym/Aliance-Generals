@@ -1204,7 +1204,7 @@ App.showNewTopic = (box) => {
         if (!f) return;
         document.getElementById('nt-imgname').textContent = 'обрабатываю…';
         try {
-          App._newImg = await App._resizeImage(f, 900, 1400);
+          App._newImg = (await App._prepareImage(f, { maxW: 1400, maxH: 1400, maxBytes: 400 * 1024 })).data;
           document.getElementById('nt-imgname').textContent = f.name;
           document.getElementById('nt-preview').innerHTML =
             `<img class="forum-img forum-img-preview" src="${App._newImg}" alt="Предпросмотр" loading="lazy" decoding="async">`;

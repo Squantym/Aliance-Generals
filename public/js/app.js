@@ -4410,28 +4410,116 @@ const App = {
 // Сервер принимает ограниченный размер, а игрок выбирает любое фото с
 // телефона: пересжатие снимает с него эту заботу. Живёт в ядре, потому
 // что нужно и «Общению», и редактору новостей — а они в разных файлах.
-App._resizeImage = (file, maxW, maxH) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
-  reader.onload = () => {
-    const img = new Image();
-    img.onerror = () => reject(new Error('Это не изображение'));
-    img.onload = () => {
-      // Ограничиваем И ширину, И высоту, сохраняя пропорции. Раньше
-      // считалась только ширина: вертикальный скриншот с телефона
-      // (1080×2400) превращался в полотно 900×2000 — тяжёлое и
-      // растягивающее всю тему.
-      const scale = Math.min(1, maxW / img.width, (maxH || 1400) / img.height);
-      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
-      const cv = document.createElement('canvas');
-      cv.width = w; cv.height = h;
-      cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      // Подбираем качество, пока не уложимся в разумный вес
-      let q = 0.85, out = cv.toDataURL('image/jpeg', q);
-      while (out.length > 600 * 1024 && q > 0.4) { q -= 0.12; out = cv.toDataURL('image/jpeg', q); }
-      resolve(out);
+// ── ПОДГОТОВКА КАРТИНКИ К ЗАГРУЗКЕ ────────────────────────────────
+// Фото с телефона весит мегабайты, а иконка предмета показывается в
+// 64 пикселя. Готовим файл на стороне браузера: уменьшаем, сохраняем
+// прозрачность и подбираем вес. Три вещи, на которых обжигались:
+//
+//  • JPEG не умеет прозрачность. Иконка с прозрачным фоном получала
+//    чёрную подложку — а именно иконки чаще всего и вставляют.
+//  • Уменьшение в один шаг мылит: браузер берёт редкие пиксели и
+//    теряет детали. Уменьшаем вдвое за раз, пока не дойдём до цели.
+//  • Один предел на всё: баннер и иконка ужимались одинаково, и
+//    иконка 64 px весила как баннер.
+//
+// opts: { maxW, maxH, maxBytes } — предел размера и веса.
+App._prepareImage = async (file, opts) => {
+  const o = opts || {};
+  const maxW = o.maxW || 1600, maxH = o.maxH || 1600;
+  const maxBytes = o.maxBytes || 500 * 1024;
+
+  const src = await App._decodeImage(file);
+  const sw = src.width, sh = src.height;
+  if (!sw || !sh) throw new Error('Это не изображение');
+  // Увеличивать не пытаемся: из маленькой иконки большая не получится,
+  // получится размытая большая
+  const scale = Math.min(1, maxW / sw, maxH / sh);
+  const w = Math.max(1, Math.round(sw * scale)), h = Math.max(1, Math.round(sh * scale));
+
+  let cv = App._drawScaled(src, sw, sh, w, h);
+  const alpha = App._hasAlpha(cv);
+  // WebP держит и прозрачность, и вес; где его нет — PNG для картинок
+  // с прозрачностью (там нельзя терять фон) и JPEG для остальных
+  const webp = App._canWebp();
+  const type = webp ? 'image/webp' : (alpha ? 'image/png' : 'image/jpeg');
+
+  let out = cv.toDataURL(type, 0.92);
+  if (type !== 'image/png') {
+    // Подбираем качество, пока не уложимся в вес. Ниже 0.55 не спускаемся:
+    // дальше начинается та самая «мыльность», из-за которой переделывали
+    // иконки диверсантов.
+    let q = 0.92;
+    while (out.length > maxBytes * 1.37 && q > 0.55) { q -= 0.08; out = cv.toDataURL(type, q); }
+  }
+  // PNG качеством не регулируется — если не влезли, уменьшаем сам размер
+  let tw = w, th = h, guard = 0;
+  while (out.length > maxBytes * 1.37 && guard++ < 6 && tw > 64) {
+    tw = Math.round(tw * 0.82); th = Math.round(th * 0.82);
+    cv = App._drawScaled(src, sw, sh, tw, th);
+    out = cv.toDataURL(type, type === 'image/png' ? undefined : 0.85);
+  }
+  return { data: out, width: cv.width, height: cv.height, bytes: Math.round(out.length * 0.75), type };
+};
+
+// Читаем файл в картинку. createImageBitmap быстрее и не держит DOM,
+// но есть не везде — тогда обычный Image.
+App._decodeImage = async (file) => {
+  if (typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(file); } catch (e) { /* пробуем по-старому */ }
+  }
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Это не изображение'));
+      img.onload = () => resolve(img);
+      img.src = reader.result;
     };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-});
+    reader.readAsDataURL(file);
+  });
+};
+
+// Уменьшение вдвое за шаг: так браузер усредняет соседние пиксели, а не
+// выбрасывает их. Разница видна как раз на иконках и мелких деталях.
+App._drawScaled = (src, sw, sh, w, h) => {
+  let cw = sw, ch = sh;
+  let cur = null;
+  while (cw > w * 2 && ch > h * 2) {
+    cw = Math.max(w, Math.round(cw / 2)); ch = Math.max(h, Math.round(ch / 2));
+    const step = App._blankCanvas(cw, ch);
+    step.ctx.drawImage(cur ? cur.canvas : src, 0, 0, cw, ch);
+    cur = step;
+  }
+  const fin = App._blankCanvas(w, h);
+  fin.ctx.drawImage(cur ? cur.canvas : src, 0, 0, w, h);
+  return fin.canvas;
+};
+
+App._blankCanvas = (w, h) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  return { canvas, ctx };
+};
+
+// Есть ли в картинке прозрачные точки. Если есть — формат обязан её
+// сохранить, иначе иконка поедет с чёрным или белым фоном.
+App._hasAlpha = (canvas) => {
+  try {
+    const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+  } catch (e) { return true; }   // не смогли посмотреть — считаем, что прозрачность есть
+  return false;
+};
+
+App._canWebp = () => {
+  if (App.__webp === undefined) {
+    try {
+      App.__webp = document.createElement('canvas').toDataURL('image/webp').indexOf('data:image/webp') === 0;
+    } catch (e) { App.__webp = false; }
+  }
+  return App.__webp;
+};
