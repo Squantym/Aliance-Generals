@@ -889,6 +889,35 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     .filter((e) => e.taken > 0 && !e.secret)
     .map((e) => ({ name: e.name, count: e.taken, id: e.unitId, unitType: (config.UNIT_BY_ID[e.unitId] || {}).type }));
 
+  // Секретные разработки. СВОИ игрок видит всегда: они участвуют в бою
+  // полностью, а в окне атаки их не было вовсе — и складывалось
+  // впечатление, что они не работают.
+  //
+  // ЧУЖИЕ не показываются, пока по цели не проведена разведка трофеем
+  // «Спутник-шпион» 8 уровня и выше: именно с него разведданные включают
+  // секретный арсенал (config.spyReveal). Без разведки состав чужих
+  // разработок — закрытая информация для обеих сторон.
+  const secretBrief = (entries: any[]) => entries
+    .filter((e) => e.taken > 0 && e.secret)
+    .map((e) => ({ id: e.devId, name: e.name, count: e.taken, attack: e.atk || 0, defense: e.def || 0 }));
+
+  // Чужие разработки — по данным разведки, а не по реальному составу:
+  // в отчёте числа зашумлены по точности трофея, и показывать в бою
+  // точные значения значило бы обесценить разведку.
+  const enemySecretSpied = (() => {
+    if (isBot || !target || !target.id) return null;
+    try {
+      const rep = require('./features').spyReport(user, target.id);
+      if (!rep || rep.accSecret == null) return null;
+      const list = (rep.secretDevs || []).map((d: any) => ({ id: d.id, name: d.name, count: d.count, attack: d.attack, defense: d.defense }));
+      if (rep.superDevInfo) {
+        list.push({ id: rep.superDevInfo.id, name: rep.superDevInfo.name, count: rep.superDevInfo.count,
+                    attack: rep.superDevInfo.attack, defense: rep.superDevInfo.defense });
+      }
+      return { acc: rep.accSecret, list };
+    } catch (e) { return null; }
+  })();
+
   // Оборонительные постройки цели, участвующие в защите (для окна боя)
   const defenseBuildings = (!isBot && target && target.buildings)
     ? Object.entries(target.buildings)
@@ -920,6 +949,11 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
     targetHpPct: Math.round((targetHpAfter / targetMaxHp) * 100),
     myArmy: armyBrief(aArmy.entries),
     enemyArmy: dArmy ? armyBrief(dArmy.entries) : [],
+    mySecret: secretBrief(aArmy.entries),
+    // Чужие — только если есть разведка 8+ уровня; иначе фронт покажет
+    // подсказку, что состав закрыт
+    enemySecret: enemySecretSpied ? enemySecretSpied.list : [],
+    enemySecretAcc: enemySecretSpied ? enemySecretSpied.acc : null,
     mySaboteurs: sabBrief(user),
     enemySaboteurs: isBot ? [] : sabBrief(target),
     enemyDefenseBuildings: defenseBuildings,

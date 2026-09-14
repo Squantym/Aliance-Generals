@@ -210,12 +210,20 @@ App.screens.war = async (c) => {
           <hr class="hr">
           <p class="small mt"><b>Ваша техника в бою:</b></p>
           ${UI.battleImgRow(b.myArmy, 'units')}` : ''}
+        ${(b.mySecret && b.mySecret.length) ? `
+          <p class="small mt"><b>Ваши секретные разработки:</b></p>
+          ${UI.battleImgRow(b.mySecret, 'secret')}` : ''}
         ${(b.mySaboteurs && b.mySaboteurs.length) ? `
           <p class="small mt"><b>Ваши диверсанты:</b></p>
           ${UI.sabRow(b.mySaboteurs)}` : ''}
         ${(b.enemyArmy && b.enemyArmy.length) ? `
           <p class="small mt"><b>Техника врага:</b></p>
           ${UI.battleImgRow(b.enemyArmy, 'units')}` : ''}
+        ${!b.isBot ? ((b.enemySecret && b.enemySecret.length) ? `
+          <p class="small mt"><b>Секретные разработки врага</b>
+            <span class="muted">· по разведке, точность ${b.enemySecretAcc}%</span></p>
+          ${UI.battleImgRow(b.enemySecret, 'secret')}`
+          : `<p class="small mt muted">🔒 Секретные разработки врага скрыты. Их показывает разведка трофеем «Спутник-шпион» с 8 уровня.</p>`) : ''}
         ${(b.enemySaboteurs && b.enemySaboteurs.length) ? `
           <p class="small mt"><b>Диверсанты врага:</b></p>
           ${UI.sabRow(b.enemySaboteurs)}` : ''}

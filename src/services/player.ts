@@ -501,7 +501,8 @@ function buildArmy(user: User, mode: string): any {
     const n = (user.secretDevs || {})[dev.id] || 0;
     if (n > 0) {
       secretEntries.push({
-        name: dev.name, count: n, secret: true,
+        // devId нужен окну боя: по нему подбирается картинка разработки
+        devId: dev.id, name: dev.name, count: n, secret: true,
         atk: config.secretAtk(user, dev),
         def: config.secretDef(user, dev),
       });
@@ -509,7 +510,7 @@ function buildArmy(user: User, mode: string): any {
   }
   if (user.superSecret > 0) {
     secretEntries.push({
-      name: config.SUPER_DEV.name, count: user.superSecret, secret: true,
+      devId: config.SUPER_DEV.id, name: config.SUPER_DEV.name, count: user.superSecret, secret: true,
       atk: config.secretAtk(user, config.SUPER_DEV),
       def: config.secretDef(user, config.SUPER_DEV),
     });
