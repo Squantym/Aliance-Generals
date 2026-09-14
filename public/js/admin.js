@@ -2999,6 +2999,11 @@ proxy_set_header Host $host;</pre>
           </div>
         </details>
 
+        <details class="grant-more" id="g-dope-wrap">
+          <summary>💉 Допинг и эффекты</summary>
+          <div id="g-dope" class="mt"></div>
+        </details>
+
         <input type="text" id="g-note" maxlength="300" class="mt" placeholder="Сообщение игроку (необязательно)" style="width:100%;box-sizing:border-box">
 
         <div class="grant-btns">
@@ -3031,6 +3036,12 @@ proxy_set_header Host $host;</pre>
         const el = document.getElementById('g-' + field);
         if (el) el.value = String((Number(el.value) || 0) + Number(amount));
       };
+    });
+    // Допинг подгружаем только когда раздел раскрыли: список эффектов
+    // и склад нужны редко, а запрос к серверу не бесплатный
+    const dopeWrap = document.getElementById('g-dope-wrap');
+    if (dopeWrap) dopeWrap.addEventListener('toggle', () => {
+      if (dopeWrap.open) Admin.renderDoping(p.id);
     });
     const rwToggle = document.getElementById('g-rw-toggle');
     if (rwToggle) rwToggle.onclick = () => {
@@ -3106,6 +3117,86 @@ proxy_set_header Host $host;</pre>
         Admin.loadPlayers();
       } catch(e) { UI.toast('⛔ ' + e.message); }
     };
+  },
+
+  // ── Допинг и эффекты одного игрока ──────────────────────────────
+  // Живёт внутри формы выдачи: обе панели зовут renderGrantForm, и
+  // раздел появляется сразу в обеих. Два дела: снять действующий
+  // эффект (ошибочная выдача, компенсация) и положить допинг на склад.
+  async renderDoping(userId, box) {
+    box = box || document.getElementById('g-dope');
+    if (!box) return;
+    box.innerHTML = '<p class="muted small">Загрузка…</p>';
+    let d;
+    try { d = await API.get('/api/admin/doping/' + encodeURIComponent(userId)); }
+    catch (e) { box.innerHTML = `<p class="muted small" style="color:var(--red)">${UI.esc(e.message)}</p>`; return; }
+
+    const KIND = { doping: '💉 допинг', hostile: '☠️ падлянка', merc: '⭐ наёмник' };
+    const effRows = d.effects.length
+      ? d.effects.map((e) => `
+          <div class="kv">
+            <span class="k">${UI.esc(e.name)}
+              <span class="muted small">${KIND[e.kind] || ''}${e.byName ? ' от ' + UI.esc(e.byName) : ''}</span></span>
+            <span class="v">${UI.esc(e.desc)}
+              <span class="muted small">· ${UI.esc(e.timeLeft)}</span>
+              <button class="btn btn-inline" data-dope-off="${UI.esc(e.key)}" style="border-color:var(--red);color:var(--red)">✖</button></span>
+          </div>`).join('')
+      : '<p class="muted small">Сейчас на игроке ничего не действует.</p>';
+
+    const opts = d.items.map((i) => `
+      <option value="${UI.esc(i.id)}">${UI.esc(i.name)}${i.durMin ? ` · ${i.durMin / 60} ч` : ''}${i.owned ? ` · на складе ${i.owned}` : ''}</option>`).join('');
+
+    box.innerHTML = `
+      <div class="muted small" style="margin-bottom:4px">Действует сейчас:</div>
+      ${effRows}
+      ${d.effects.some((e) => e.kind !== 'merc')
+        ? `<button class="btn btn-inline mt" id="dope-clear" style="border-color:var(--red);color:var(--red)">🧹 Снять весь допинг и падлянки</button>
+           <p class="muted small" style="margin:4px 0 0">Наёмники остаются: они оплачены золотом, их снимают по одному крестиком.</p>`
+        : ''}
+      <hr class="hr">
+      <div class="muted small" style="margin-bottom:4px">Выдать допинг на склад:</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="dope-item" style="flex:1;min-width:160px">${opts}</select>
+        <input type="number" id="dope-qty" value="1" min="1" max="100" style="width:70px">
+        <button class="btn btn-inline btn-orange" id="dope-give">На склад</button>
+        <button class="btn btn-inline" id="dope-now">Применить сразу</button>
+      </div>
+      <p class="muted small" style="margin:4px 0 0">Со склада игрок применит сам — кнопкой на чёрном рынке.</p>`;
+
+    const reload = () => Admin.renderDoping(userId, box);
+    const val = (id) => (document.getElementById(id) || {}).value || '';
+
+    box.querySelectorAll('[data-dope-off]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const r = await API.post('/api/admin/doping/clear', { userId, key: b.dataset.dopeOff });
+          UI.toast((r.notices && r.notices[0]) || '🧹 Снято');
+          reload();
+        } catch (e) { b.disabled = false; UI.toast('⛔ ' + e.message); }
+      };
+    });
+    const clearAll = document.getElementById('dope-clear');
+    if (clearAll) clearAll.onclick = async () => {
+      if (!await UI.confirm('Снять с игрока весь допинг и все падлянки?',
+        { title: 'Снятие эффектов', icon: '🧹', okText: 'Снять', danger: true })) return;
+      try {
+        const r = await API.post('/api/admin/doping/clear', { userId });
+        UI.toast((r.notices && r.notices[0]) || '🧹 Снято');
+        reload();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    const give = async (apply) => {
+      try {
+        const r = await API.post('/api/admin/doping/give', {
+          userId, itemId: val('dope-item'), qty: val('dope-qty'), apply,
+        });
+        UI.toast((r.notices && r.notices[0]) || '💉 Выдано');
+        reload();
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    document.getElementById('dope-give').onclick = () => give(false);
+    document.getElementById('dope-now').onclick = () => give(true);
   },
 
   async submitGrantAll() {

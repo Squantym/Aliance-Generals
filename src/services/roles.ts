@@ -159,6 +159,9 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   [/^\/api\/admin\/grant-quiet$/,                  'roles'],
   [/^\/api\/admin\/logs\/clear$/,                  'roles'],
   [/^\/api\/admin\/(grant|grant-all|take|rewards|merc|vip)/, 'economy'],
+  // Допинг игрока — та же зона, что выдача ресурсов и наёмников: это
+  // выдача имущества и снятие оплаченных эффектов
+  [/^\/api\/admin\/doping\//,                      'economy'],
   // Конструктор «Спецпредложений» — та же зона, что и выдача ресурсов:
   // набор раздаёт ровно то же самое, только через витрину и за деньги.
   [/^\/api\/admin\/offers/,                        'economy'],

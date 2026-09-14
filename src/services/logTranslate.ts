@@ -775,6 +775,14 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `⭐ Выдал наёмника «${body.mercName || body.mercId || '—'}» игроку ${body.targetName || '—'}`;
       case '/api/admin/merc/revoke':
         return `⭐ Забрал наёмника у ${body.targetName || body.userId || '—'}`;
+      case '/api/admin/doping/give':
+        return `💉 Выдал допинг «${body.itemId ? itemName(body.itemId) : "—"}»${body.qty ? ` ×${body.qty}` : ''}` +
+               ` игроку ${body.targetName || body.name || body.userId || '—'}` +
+               `${body.apply ? ' (применил сразу)' : ''}`;
+      case '/api/admin/doping/clear':
+        return body.key
+          ? `🧹 Снял эффект с игрока ${body.targetName || body.name || body.userId || '—'}`
+          : `🧹 Снял весь допинг с игрока ${body.targetName || body.name || body.userId || '—'}`;
       case '/api/admin/event/look':   return '🐉 Изменил внешний вид события-босса';
       case '/api/admin/event/image':  return '🖼 Заменил картинку события-босса';
       case '/api/admin/legion/set':   return `🛡 Изменил настройки легиона ${body.legionId || '—'}`;

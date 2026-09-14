@@ -935,6 +935,10 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/admin/merc/holders', () => market.adminCommanderHolders(), { admin: true });
   app.add('POST', '/api/admin/merc/grant',   act((req, n) => market.adminGrantCommander(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/merc/revoke',  act((req, n) => market.adminRevokeCommander(req.user, req.body, n)), { admin: true });
+  // Допинг: что на игроке действует, выдача со склада и снятие эффектов
+  app.add('GET',  '/api/admin/doping/:id',   (req) => market.adminDopingView(req.user, String(req.params.id)), { admin: true });
+  app.add('POST', '/api/admin/doping/give',  act((req, n) => market.adminGiveDoping(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/doping/clear', act((req, n) => market.adminClearEffects(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/group/:kind/leave',   act((req, n) => groups.leave(req.user, req.params.kind, n)));
 
   // ---------- Легион: казна, постройки, кланвойны ----------

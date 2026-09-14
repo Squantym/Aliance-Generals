@@ -776,6 +776,127 @@ function adminCommanderHolders(): any {
   return { holders: out.sort((a, b) => b.expiresAt - a.expiresAt) };
 }
 
+// ═══ ПАНЕЛЬ: ДОПИНГ И ЭФФЕКТЫ ИГРОКА ══════════════════════════════
+// Двух вещей в панели не хватало: снять с игрока эффект и выдать ему
+// допинг. Руками это не сделать — эффекты лежат списком внутри игрока,
+// а склад допинга отдельным полем; правка базы напрямую слишком
+// опасна, чтобы быть рабочим способом.
+//
+// Ключ эффекта собирается из предмета, типа и природы: своего id у
+// записи нет, а пара «тип + природа» уникальна по построению —
+// pushEffect именно по ней и ищет, что продлить.
+function effectKey(e: any): string {
+  return [e.id || '', e.type, e.hostile ? 1 : 0, (e as any).merc ? 1 : 0].join('|');
+}
+
+// Допинг — это баффы и восстановители. Падлянки в выдаче не участвуют:
+// они бьют по чужому игроку и складом не пользуются (см. addItems).
+function dopingItems(): any[] {
+  return (config.MARKET_ITEMS as any[]).filter(
+    (i) => i.kind === 'buff' || String(i.kind).startsWith('refill')
+  );
+}
+
+function adminFindTarget(body: any): any {
+  const pl = require('./player');
+  let target: any = body.userId ? pl.users()[body.userId] : null;
+  if (!target && body.name) target = pl.findByName(String(body.name));
+  if (!target) throw new u.ApiError('Игрок не найден');
+  return target;
+}
+
+// Что сейчас действует на игрока и что можно ему выдать
+function adminDopingView(adminUser: User, userId: string): any {
+  require('./roles').assertZone(adminUser, 'economy', 'допинг игрока');
+  const target = adminFindTarget({ userId });
+  player.refresh(target);
+  const now = Date.now();
+  const effects = (target.effects || [])
+    .filter((e: any) => e.expiresAt > now)
+    .map((e: any) => {
+      const min = Math.max(1, Math.round((e.expiresAt - now) / 60000));
+      // Флаговые эффекты (безлимит приглашений, охрана штаба, сыворотка)
+      // держат value=1 и процентом не являются — «+1% охрана штаба»
+      // читалось бы как насмешка
+      const isFlag = e.type === 'invite_unlimited' || e.type === 'breach_immunity' || e.type === 'xp_block';
+      return {
+        key: effectKey(e),
+        name: e.name,
+        desc: isFlag
+          ? player.effLabel(e.type)
+          : `${e.value > 0 ? '+' : ''}${e.value}% (${player.effLabel(e.type)})`,
+        // Наёмник оплачен золотом — снимать его случайно нельзя,
+        // поэтому панель показывает природу эффекта отдельно
+        kind: (e as any).merc ? 'merc' : (e.hostile ? 'hostile' : 'doping'),
+        byName: e.byName || null,
+        minLeft: min,
+        timeLeft: min >= 60 ? `${Math.floor(min / 60)} ч ${min % 60} мин` : `${min} мин`,
+      };
+    });
+  const items = dopingItems().map((i: any) => ({
+    id: i.id, name: i.name, kind: i.kind,
+    durMin: i.durMin || 0,
+    desc: i.effect ? `${i.effect.value > 0 ? '+' : ''}${i.effect.value}% (${player.effLabel(i.effect.type)})` : '',
+    owned: itemCount(target, i.id),
+  }));
+  return { userId: target.id, targetName: target.name, effects, items };
+}
+
+// Выдать допинг: кладём на склад, как покупку. apply — сразу применить,
+// чтобы не заставлять игрока нажимать кнопку (например, при
+// компенсации за сбой в бою).
+function adminGiveDoping(adminUser: User, body: any, notices: Notices): any {
+  require('./roles').assertZone(adminUser, 'economy', 'выдача допинга');
+  const target = adminFindTarget(body);
+  const item = config.MARKET_ITEM_BY_ID[String(body.itemId || '')];
+  if (!item || !dopingItems().some((i: any) => i.id === item.id)) {
+    throw new u.ApiError('Это не допинг — выдать можно только товары со склада рынка');
+  }
+  const qty = Math.max(1, Math.min(100, u.toInt(body.qty, 1)));
+  addItems(target, item.id, qty);
+  let applied = 0;
+  const why: string[] = [];
+  if (body.apply) {
+    for (let i = 0; i < qty; i++) {
+      // Применяем через обычный путь игрока: там же проверки «энергия и
+      // так полная». Не вышло — предмет остаётся на складе, и панель
+      // честно говорит почему, а не молчит.
+      try { useItem(target, item.id, []); applied++; }
+      catch (e: any) { why.push(String(e.message)); break; }
+    }
+  }
+  db.markUser(target.id);
+  const left = itemCount(target, item.id);
+  notices.push(applied
+    ? `💉 «${item.name}» выдан игроку ${target.name}: ${qty} шт., применено сразу ${applied}. На складе: ${left}.`
+    : `💉 «${item.name}» выдан игроку ${target.name}: ${qty} шт. На складе: ${left}.`);
+  if (why.length) notices.push(`⚠️ Применить не удалось: ${why[0]} — допинг остался на складе.`);
+  return { targetId: target.id, targetName: target.name, owned: left, applied };
+}
+
+// Снять эффекты. key — один конкретный; без него снимаем весь допинг и
+// падлянки, но НЕ наёмников: наёмник оплачен золотом, и убирать его
+// заодно с допингом нельзя. Отдельной кнопкой — можно.
+function adminClearEffects(adminUser: User, body: any, notices: Notices): any {
+  require('./roles').assertZone(adminUser, 'economy', 'снятие эффектов');
+  const target = adminFindTarget(body);
+  const key = String(body.key || '');
+  const before = (target.effects || []).length;
+  if (key) {
+    target.effects = (target.effects || []).filter((e: any) => effectKey(e) !== key);
+  } else {
+    target.effects = (target.effects || []).filter((e: any) => !!(e as any).merc);
+  }
+  const removed = before - target.effects.length;
+  if (!removed) throw new u.ApiError(`У игрока ${target.name} нечего снимать`);
+  db.markUser(target.id);
+  notices.push(key
+    ? `🧹 Эффект снят с игрока ${target.name}.`
+    : `🧹 С игрока ${target.name} снято эффектов: ${removed} (наёмники не тронуты).`);
+  return { targetId: target.id, targetName: target.name, removed };
+}
+
 export = { itemsList, buyItem, containersView, buyContainers, openOwned, addContainers, ownedCount, openContainersFree, grantCommanderDays, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
   adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,
-  useItem, addItems, itemCount,};
+  useItem, addItems, itemCount,
+  adminDopingView, adminGiveDoping, adminClearEffects,};

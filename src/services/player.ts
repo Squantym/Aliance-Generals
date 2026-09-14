@@ -1714,7 +1714,7 @@ function restoreEar(user: User, notices: Notices) {
 
 export = { isXpBlocked, xpBlockLeftMin,
   users, maxima, refresh, addMoney, addBattleLoot, addGold, spendGold, paidGold, addXp, xpMul, spendSkill, resetSkills,
-  allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView,
+  allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView, effLabel,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,
   rating, addRating, rank, flag, findByName,
