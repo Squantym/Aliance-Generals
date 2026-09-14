@@ -190,6 +190,29 @@ const fails = (fn, part, n) => {
   ok(/id="ref-link"/.test(refJs) && /id="ref-qr"/.test(refJs), 'на экране есть и ссылка, и QR-код');
   ok(/ref-qr-save/.test(refJs) && /navigator\.share/.test(refJs), 'QR можно сохранить, ссылкой — поделиться');
   ok(/Кто пришёл по вашей ссылке/.test(refJs), 'список приглашённых выводится');
+  // Баннер раздела: лежит в игре, подключён к экрану и не тяжёлый.
+  // Картинка декоративная — за её вес никто не заступится, если он
+  // однажды вырастет до мегабайта.
+  const bannerPath = path.join(ROOT, 'public/img/referral/banner.webp');
+  ok(fs.existsSync(bannerPath), 'баннер приглашений лежит в игре');
+  const banner = fs.readFileSync(bannerPath);
+  ok(banner.length < 150 * 1024, `вес баннера ${Math.round(banner.length / 1024)} КБ — меньше 150 КБ`);
+  ok(banner.toString('ascii', 8, 12) === 'WEBP', 'формат webp, а не тяжёлый png');
+  // Ширина из заголовка. Формат у webp бывает трёх видов, и ширина в
+  // каждом лежит по-своему: VP8X — расширенный, VP8L — без потерь,
+  // VP8 — обычный. Шире 1200 на экране игры всё равно не видно.
+  const fourcc = banner.toString('ascii', 12, 16);
+  const bw = fourcc === 'VP8X' ? 1 + banner.readUIntLE(24, 3)
+    : fourcc === 'VP8L' ? (banner.readUInt32LE(21) & 0x3fff) + 1
+    : (banner.readUInt16LE(26) & 0x3fff);
+  ok(bw > 0 && bw <= 1200, `ширина ${bw} px — под размер экрана`);
+  ok(/img\/referral\/banner\.webp/.test(refJs) && /<div class="ref-hero">/.test(refJs),
+     'баннер выводится в шапке раздела');
+  ok(/\.ref-hero\b/.test(fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8')),
+     'и у него есть оформление, а не голая картинка');
+  ok(/<img src="\/img\/referral\/banner\.webp"[^>]*loading="lazy"/.test(refJs),
+     'и грузится лениво, как остальные картинки игры');
+
   // Страницы разделены: ссылка и QR — одна, задания — другая
   ok(/App\.screens\.refquests = /.test(refJs), 'задания живут отдельной страницей');
   ok(/d\.questsOn \? `/.test(refJs) && /App\.go\('refquests'\)/.test(refJs),

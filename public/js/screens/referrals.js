@@ -376,6 +376,11 @@ App.screens.referral = async (c) => {
     <div class="title">${App.menuImg('referral', 26)} Пригласить друга</div>
 
     <div class="card ref-share">
+      <div class="ref-hero">
+        <img src="/img/referral/banner.webp" alt="Двое бойцов пожимают руки в порту" loading="lazy" decoding="async"
+             onerror="this.closest('.ref-hero').remove()">
+        <div class="ref-hero-cap">Вдвоём воевать легче</div>
+      </div>
       <p class="muted small center" style="margin:0 0 10px">Отправьте ссылку или покажите QR-код. Код подставится сам — другу не нужно ничего вводить.</p>
       <div class="ref-qr" id="ref-qr"></div>
       <input type="text" id="ref-link" readonly value="${UI.esc(d.link)}">
