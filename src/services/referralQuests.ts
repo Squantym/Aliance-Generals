@@ -98,20 +98,20 @@ const ICON = {
   units: '/img/tabs/tech_ground.webp',
 };
 
-function describe(reward: any): { icon: string; img: string; text: string } {
-  const none = { icon: '🎁', img: '', text: 'Награда' };
+function describe(reward: any): { icon: string; img: string; badge: string; text: string } {
+  const none = { icon: '🎁', img: '', badge: '', text: 'Награда' };
   if (!reward) return none;
   // Награда бывает составной («150 золота и $15 млрд») — тогда
   // перечисляем всё, а картинку берём от первой части
   if (reward.gold && reward.dollars) {
-    return { icon: '🪙', img: ICON.gold, text: `${u.fmt(reward.gold)} золота и $${u.fmt(reward.dollars)}` };
+    return { icon: '🪙', img: ICON.gold, badge: '', text: `${u.fmt(reward.gold)} золота и $${u.fmt(reward.dollars)}` };
   }
-  if (reward.gold)    return { icon: '🪙', img: ICON.gold, text: `${u.fmt(reward.gold)} золота` };
-  if (reward.dollars) return { icon: '💵', img: ICON.dollar, text: `$${u.fmt(reward.dollars)}` };
+  if (reward.gold)    return { icon: '🪙', img: ICON.gold, badge: '', text: `${u.fmt(reward.gold)} золота` };
+  if (reward.dollars) return { icon: '💵', img: ICON.dollar, badge: '', text: `$${u.fmt(reward.dollars)}` };
   if (reward.containers) {
     const c = config.CONTAINERS.find((x: any) => x.tier === reward.containers.tier);
     return {
-      icon: '📦', img: c ? `/img/containers/${c.id}.webp` : '',
+      icon: '📦', badge: '', img: c ? `/img/containers/${c.id}.webp` : '',
       text: `${reward.containers.qty} × ${(c && c.name) || 'контейнер'} (${(c && c.gold) || 0} золота)`,
     };
   }
@@ -121,20 +121,21 @@ function describe(reward: any): { icon: string; img: string; text: string } {
       const it = config.MARKET_ITEM_BY_ID[id];
       return `${(it && it.name) || id} ×${reward.items[id]}`;
     });
-    return { icon: '💉', img: ids.length ? `/img/market/${ids[0]}.webp` : '', text: parts.join(', ') };
+    return { icon: '💉', img: ids.length ? `/img/market/${ids[0]}.webp` : '', badge: '', text: parts.join(', ') };
   }
-  if (reward.vipDays)  return { icon: '👑', img: '', text: `VIP-подписка на ${reward.vipDays} дн.` };
-  if (reward.topUnits) return { icon: '🚙', img: ICON.units, text: `${reward.topUnits} единиц новейшей техники` };
+  // У VIP картинки в игре нет — вместо неё золотая надпись «VIP»
+  if (reward.vipDays)  return { icon: '👑', img: '', badge: 'VIP', text: `Подписка VIP на ${reward.vipDays} дн.` };
+  if (reward.topUnits) return { icon: '🚙', img: ICON.units, badge: '', text: `${reward.topUnits} единиц новейшей техники` };
   if (reward.saboteurs) {
     const RU: Record<string, string> = { ground: 'наземных', sea: 'морских', air: 'воздушных',
       building: 'построечных', secret: 'секретных', suicide: 'смертников' };
     const kinds = (reward.saboteurs.kinds || []);
     return {
-      icon: '🥷', img: kinds.length ? `/img/saboteurs/${kinds[0]}.webp` : '',
+      icon: '🥷', badge: '', img: kinds.length ? `/img/saboteurs/${kinds[0]}.webp` : '',
       text: `по ${reward.saboteurs.each} диверсантов: ${kinds.map((k: string) => RU[k] || k).join(', ')}`,
     };
   }
-  if (reward.halfOfPurchase) return { icon: '🪙', img: ICON.gold, text: 'половина стоимости покупки' };
+  if (reward.halfOfPurchase) return { icon: '🪙', img: ICON.gold, badge: '', text: 'возврат 50% от стоимости товара' };
   if (reward.commanders) {
     const ids = reward.commanders.ids || [];
     const names = ids.map((id: string) => {
@@ -142,7 +143,7 @@ function describe(reward: any): { icon: string; img: string; text: string } {
       return (m && m.name) || id;
     });
     return {
-      icon: '🎖', img: ids.length ? `/img/mercenaries/${ids[0]}.webp` : '',
+      icon: '🎖', badge: '', img: ids.length ? `/img/mercenaries/${ids[0]}.webp` : '',
       text: `Наёмники ${names.join(' и ')} на ${reward.commanders.days} дн.`,
     };
   }
@@ -407,7 +408,9 @@ function pairBoard(user: User) {
       done = true;
       db.markUser(user.id);
     }
-    const d = describe(resolveReward(t.reward, user));
+    // Показываем само обещание («возврат 50% от стоимости товара»), а не
+    // пересчитанную сумму: сумма зависит от того, что игрок купит
+    const d = describe(t.reward);
     return {
       id: t.id, name: t.name, note: t.note || '', need: t.need,
       mine: Math.min(bestMine, t.need), theirs: Math.min(theirs, t.need),

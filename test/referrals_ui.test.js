@@ -44,7 +44,7 @@ const QUESTS = {
   newbie: {
     board: 'newbie', points: 1, total: 10,
     tasks: [{ id: 'lvl30', name: 'Достигнуть 30 уровня', note: '', need: 30, have: 30, done: true }],
-    steps: [{ step: 1, icon: '🪙', img: '/img/icons/gold.webp', text: '50 золота', reached: true, claimed: false }],
+    steps: [{ step: 1, icon: '👑', img: '', badge: 'VIP', text: 'Подписка VIP на 7 дн.', reached: true, claimed: false }],
   },
   share: {
     pct: 12, basePct: 10, minLevel: 70, friendsReady: 5,
@@ -55,11 +55,14 @@ const QUESTS = {
     mates: [{ id: 'm1', name: 'Новобранец', level: 52 }, { id: 'm2', name: 'Тихоня', level: 4 }],
     daily: [
       { id: 'pd_chat', name: 'Написать по 10 сообщений', note: '', need: 10, mine: 10, theirs: 4,
-        mateName: 'Новобранец', done: false, icon: '🪙', img: '/img/icons/gold.webp', reward: '10 золота' },
+        mateName: 'Новобранец', done: false, icon: '🪙', img: '/img/icons/gold.webp', badge: '', reward: '10 золота' },
+      { id: 'pd_market', name: 'Купить любой товар на чёрном рынке', note: 'допинг или контейнер',
+        need: 1, mine: 0, theirs: 1, mateName: 'Тихоня', done: false, icon: '🪙',
+        img: '/img/icons/gold.webp', badge: '', reward: 'возврат 50% от стоимости товара' },
     ],
     once: [
       { id: 'po_lvl70', name: 'Достигнуть 70 уровня обоим', note: '', need: 70, mine: 70, theirs: 52,
-        mateName: 'Новобранец', done: false, icon: '🪙', img: '/img/icons/gold.webp', reward: '150 золота' },
+        mateName: 'Новобранец', done: false, icon: '🪙', img: '/img/icons/gold.webp', badge: '', reward: '150 золота' },
     ],
   },
 };
@@ -98,8 +101,15 @@ const QUESTS = {
   ok('шкала вербовщика нарисована', /Шкала вербовщика/.test(c.innerHTML) && !!c.querySelector('.rq-bar'));
   ok('полоса заполнена по баллам', /width:67%/.test(c.querySelector('.rq-fill').getAttribute('style')));
   ok('под каждым баллом иконка награды', c.querySelectorAll('.rq-card')[0].querySelectorAll('.rq-step').length === 3);
+  ok('у каждого условия своя рамка', c.querySelectorAll('.rq-card')[0].querySelectorAll('.rq-item').length === 2);
+  ok('и своя полоса прогресса', c.querySelectorAll('.rq-card')[0].querySelectorAll('.rq-item .rq-line').length === 2);
+  ok('у VIP вместо картинки золотая надпись', /class="rq-badge">VIP</.test(c.innerHTML));
   ok(`иконки наград — картинки (${c.querySelectorAll('.rq-step .rq-img').length} шт.)`,
-     c.querySelectorAll('.rq-step .rq-img').length === 4);
+     c.querySelectorAll('.rq-step .rq-img').length === 3);
+  // Монета и купюра остаются обычного размера, остальное — крупнее
+  const px = (sel) => Number(c.querySelector(sel).getAttribute('width'));
+  ok('предметы показаны крупнее монеты',
+     px('.rq-step img[src*="containers"]') > px('.rq-step img[src*="icons/gold"]'));
   ok('и это настоящие файлы игры', /img\/containers\/keis\.webp/.test(c.innerHTML)
      && /img\/icons\/gold\.webp/.test(c.innerHTML));
   ok('забранный балл помечен', !!c.querySelector('.rq-step.is-claimed'));
@@ -114,10 +124,21 @@ const QUESTS = {
   console.log('\n[3] Страница заданий: вкладка «Парные»');
   await App.screens.refquests(c, 'pairs');
   ok('напарники перечислены', /Новобранец/.test(c.innerHTML) && /Тихоня/.test(c.innerHTML));
-  ok('видно оба прогресса', /вы 10\/10/.test(c.innerHTML) && /Новобранец 4\/10/.test(c.innerHTML));
-  ok('ежедневные и разовые разделены', /Ежедневные/.test(c.innerHTML) && /Разовые/.test(c.innerHTML));
-  ok('у парного задания своя иконка награды', !!c.querySelector('.rq-task-ic .rq-img'));
+  ok('подразделы на месте', /Ежедневные/.test(c.innerHTML) && /Разовые/.test(c.innerHTML));
+  ok('по умолчанию открыты ежедневные',
+     /Написать по 10 сообщений/.test(c.innerHTML) && !/Достигнуть 70 уровня/.test(c.innerHTML));
+  ok('каждое задание в своей рамке', c.querySelectorAll('.rq-item').length === 2);
+  ok('под условием две полосы: своя и напарника',
+     c.querySelectorAll('.rq-item')[0].querySelectorAll('.rq-line').length === 2);
+  ok('подписаны «вы» и позывной напарника',
+     /rq-line-who">вы</.test(c.innerHTML) && /rq-line-who">Новобранец</.test(c.innerHTML));
+  ok('награда стоит под полосами, картинкой и текстом',
+     !!c.querySelector('.rq-item-reward .rq-img'));
+  ok('возврат за покупку назван словами', /возврат 50% от стоимости товара/.test(c.innerHTML));
   ok('шкал на этой вкладке нет', !c.querySelector('.rq-bar'));
+  await App.screens.refquests(c, 'pairs/once');
+  ok('подраздел «Разовые» открывается отдельно',
+     /Достигнуть 70 уровня/.test(c.innerHTML) && !/Написать по 10 сообщений/.test(c.innerHTML));
 
   console.log('\n[4] Почта: удаление сообщения, переписки и очистка');
   const posts = [];

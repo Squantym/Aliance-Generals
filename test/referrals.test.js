@@ -196,7 +196,17 @@ const fails = (fn, part, n) => {
      'кнопка на задания появляется только при включённом разделе');
   ok(/App\._questScale/.test(refJs) && /rq-bar/.test(refJs), 'шкала баллов рисуется полосой');
   ok(/refquests\/pairs/.test(refJs) && /refquests\/scales/.test(refJs),
-     'на странице заданий две вкладки: шкалы и парные');
+     'на странице заданий две вкладки: вербовка и парные');
+  ok(/refquests\/pairs\/daily/.test(refJs) && /refquests\/pairs\/once/.test(refJs),
+     'у парных заданий два подраздела: ежедневные и разовые');
+  ok(/App\._questBar/.test(refJs) && /rq-line-fill/.test(refJs),
+     'у каждого задания своя полоса прогресса');
+  ok(/rq-item/.test(refJs), 'каждое задание в своей рамке');
+  ok(/rq-badge/.test(refJs) && /badge: 'VIP'/.test(fs.readFileSync(path.join(ROOT, 'src/services/referralQuests.ts'), 'utf8')),
+     'VIP показывается надписью, а не картинкой');
+  // Именно ТЕКСТ награды, а не упоминание в комментарии рядом
+  ok(/text: 'возврат 50% от стоимости товара'/.test(fs.readFileSync(path.join(ROOT, 'src/services/referralQuests.ts'), 'utf8')),
+     'награда за покупку на рынке названа возвратом половины стоимости');
   ok(!/ref-input/.test(refJs) && !/referral\/apply/.test(refJs),
      'ручного ввода чужого кода в игре больше нет');
   ok(/App\._rewardIcon/.test(refJs) && /img\/containers\//.test(fs.readFileSync(path.join(ROOT, 'src/services/referralQuests.ts'), 'utf8')),

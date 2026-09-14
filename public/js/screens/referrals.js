@@ -271,14 +271,31 @@ App.QR = (() => {
   return { matrix, canvas };
 })();
 
-// ── Мелкая иконка награды ──────────────────────────────────────────
-// Берём настоящую картинку из игры: монету, контейнер, ампулу допинга,
-// портрет наёмника. Эмодзи остаётся там, где картинки нет (VIP).
+// ── Иконка награды ─────────────────────────────────────────────────
+// Берём настоящую картинку из игры: контейнер, ампулу допинга, портрет
+// наёмника. Монета и купюра — простые значки, их крупнее не делаем:
+// всё остальное показывается заметно больше, чтобы предмет узнавался.
+// У VIP картинки в игре нет — вместо неё золотая надпись.
 App._rewardIcon = (r, size) => {
-  const px = size || 26;
+  if (r.badge) return `<span class="rq-badge">${UI.esc(r.badge)}</span>`;
+  const base = size || 30;
+  const plain = /\/icons\/(gold|dollar)\.webp$/.test(r.img || '');
+  const px = plain ? base : Math.round(base * 1.5);
   return r.img
     ? `<img class="rq-img" src="${r.img}" width="${px}" height="${px}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<span class=&quot;rq-emoji&quot;>${r.icon}</span>'">`
     : `<span class="rq-emoji">${r.icon}</span>`;
+};
+
+// Полоса прогресса под условием задания
+App._questBar = (have, need, label) => {
+  const pct = Math.max(0, Math.min(100, Math.round((have / Math.max(1, need)) * 100)));
+  const done = have >= need;
+  return `
+    <div class="rq-line">
+      ${label ? `<span class="rq-line-who">${UI.esc(label)}</span>` : ''}
+      <div class="rq-line-bar"><div class="rq-line-fill ${done ? 'is-done' : ''}" style="width:${pct}%"></div></div>
+      <span class="rq-line-num ${done ? 'gold' : ''}">${UI.fmtNum(have)} / ${UI.fmtNum(need)}</span>
+    </div>`;
 };
 
 // ── Шкала заданий ──────────────────────────────────────────────────
@@ -289,7 +306,7 @@ App._questScale = (b, title, note) => {
   const steps = b.steps.map((s) => `
     <div class="rq-step ${s.claimed ? 'is-claimed' : (s.reached ? 'is-ready' : '')}"
          data-step-info="${b.board}:${s.step}" title="${UI.esc(s.text)}">
-      <div class="rq-ic">${App._rewardIcon(s)}</div>
+      <div class="rq-ic">${App._rewardIcon(s, 26)}</div>
       <div class="rq-num">${s.step}</div>
       ${s.claimed ? '<div class="rq-tick">✓</div>' : ''}
     </div>`).join('');
@@ -304,33 +321,37 @@ App._questScale = (b, title, note) => {
       <div class="muted small rq-hint" data-hint="${b.board}">Нажмите на иконку, чтобы увидеть награду.</div>
       ${ready.map((s) => `
         <button class="btn btn-orange mt" data-claim-step="${s.step}" data-board="${b.board}" style="width:100%">
-          ${App._rewardIcon(s, 20)} Забрать за ${s.step}-й балл: ${UI.esc(s.text)}
+          🎁 Забрать за ${s.step}-й балл: ${UI.esc(s.text)}
         </button>`).join('')}
       <div class="rq-tasks">
         ${b.tasks.map((t) => `
-          <div class="rq-task ${t.done ? 'is-done' : ''}">
-            <div class="grow">
-              <span class="${t.done ? 'gold' : ''}">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
-              ${t.note ? `<br><span class="muted small">${UI.esc(t.note)}</span>` : ''}
+          <div class="rq-item ${t.done ? 'is-done' : ''}">
+            <div class="rq-item-head">
+              <span class="rq-item-name">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
             </div>
-            <span class="muted small rq-prog">${UI.fmtNum(t.have)} / ${UI.fmtNum(t.need)}</span>
+            ${t.note ? `<div class="rq-item-note">${UI.esc(t.note)}</div>` : ''}
+            ${App._questBar(t.have, t.need, '')}
           </div>`).join('')}
       </div>
     </div>`;
 };
 
 // ── Парные задания ─────────────────────────────────────────────────
-// Доска одна, напарников может быть много: показываем свой прогресс и
-// прогресс того напарника, кто ближе всех к выполнению.
+// У каждого задания две полосы прогресса — своя и напарника, — а под
+// ними награда картинкой и текстом. Напарников может быть несколько:
+// в строке стоит тот, кто ближе всех к выполнению.
 App._pairList = (list, empty) => (list.length ? list.map((t) => `
-  <div class="rq-task ${t.done ? 'is-done' : ''}">
-    <div class="rq-task-ic">${App._rewardIcon(t, 24)}</div>
-    <div class="grow">
-      <span class="${t.done ? 'gold' : ''}">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
-      ${t.note ? `<br><span class="muted small">${UI.esc(t.note)}</span>` : ''}
-      <br><span class="muted small">${UI.esc(t.reward)}</span>
+  <div class="rq-item ${t.done ? 'is-done' : ''}">
+    <div class="rq-item-head">
+      <span class="rq-item-name">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
     </div>
-    <span class="muted small rq-prog">вы ${UI.fmtNum(t.mine)}/${UI.fmtNum(t.need)}<br>${t.mateName ? UI.esc(t.mateName) : 'напарник'} ${UI.fmtNum(t.theirs)}/${UI.fmtNum(t.need)}</span>
+    ${t.note ? `<div class="rq-item-note">${UI.esc(t.note)}</div>` : ''}
+    ${App._questBar(t.mine, t.need, 'вы')}
+    ${App._questBar(t.theirs, t.need, t.mateName ? t.mateName : 'напарник')}
+    <div class="rq-item-reward">
+      ${App._rewardIcon(t, 28)}
+      <span>${UI.esc(t.reward)}</span>
+    </div>
   </div>`).join('') : `<p class="muted center">${empty}</p>`);
 
 // ═══ СТРАНИЦА 1: ПРИГЛАСИТЬ ДРУГА ═════════════════════════════════
@@ -425,9 +446,8 @@ App.screens.referral = async (c) => {
 };
 
 // ═══ СТРАНИЦА 2: ЗАДАНИЯ ПРИГЛАШЕНИЙ ══════════════════════════════
-// Две вкладки: личные шкалы и парные задания. Разделены намеренно —
-// это разные занятия: своя шкала растёт от успехов друзей, парные
-// задания делаются вдвоём здесь и сейчас.
+// Две вкладки: «Вербовка» — личные шкалы, «Парные» — задания вдвоём.
+// Внутри парных ещё два подраздела: ежедневные и разовые.
 App.screens.refquests = async (c, param) => {
   await App.refreshMe();
   let q = null;
@@ -436,10 +456,12 @@ App.screens.refquests = async (c, param) => {
     c.innerHTML = `<div class="title">🎯 Задания приглашений</div><div class="card"><p class="muted">${UI.esc(e.message)}</p></div>`;
     return;
   }
-  const tab = param === 'pairs' ? 'pairs' : 'scales';
+  const parts = String(param || '').split('/');
+  const tab = parts[0] === 'pairs' ? 'pairs' : 'scales';
+  const sub = parts[1] === 'once' ? 'once' : 'daily';
   const pair = q.pair || { mates: [], daily: [], once: [] };
   const tabs = `<div class="tabs">
-    <div class="tab ${tab === 'scales' ? 'active' : ''}" onclick="location.hash='#refquests/scales'">🎯 Шкалы</div>
+    <div class="tab ${tab === 'scales' ? 'active' : ''}" onclick="location.hash='#refquests/scales'">🎖 Вербовка</div>
     <div class="tab ${tab === 'pairs' ? 'active' : ''}" onclick="location.hash='#refquests/pairs'">🤝 Парные</div>
   </div>`;
 
@@ -461,6 +483,7 @@ App.screens.refquests = async (c, param) => {
         ${q.share.next ? `<p class="muted small" style="margin:8px 0 0">До ${q.share.next.pct}% осталось пригласить ещё ${q.share.next.left}.</p>` : ''}
       </div>` : ''}`;
 
+  const doneOf = (list) => list.filter((t) => t.done).length;
   const pairs = () => `
     <div class="card">
       <div class="name">🤝 Напарники</div>
@@ -469,13 +492,14 @@ App.screens.refquests = async (c, param) => {
         : 'Напарников пока нет. Пригласите друга по ссылке — и задания оживут.'}</p>
       <p class="muted small" style="margin:6px 0 0">Награду получают оба: вы и тот напарник, чьим прогрессом задание закрыто.</p>
     </div>
-    <div class="card rq-card">
-      <div class="name">📅 Ежедневные <span class="muted small">· сброс в 00:00 МСК</span></div>
-      <div class="rq-tasks">${App._pairList(pair.daily, 'Заданий нет')}</div>
+    <div class="tabs comm-subtabs">
+      <div class="tab ${sub === 'daily' ? 'active' : ''}" onclick="location.hash='#refquests/pairs/daily'">📅 Ежедневные ${doneOf(pair.daily)}/${pair.daily.length}</div>
+      <div class="tab ${sub === 'once' ? 'active' : ''}" onclick="location.hash='#refquests/pairs/once'">🏅 Разовые ${doneOf(pair.once)}/${pair.once.length}</div>
     </div>
     <div class="card rq-card">
-      <div class="name">🏅 Разовые</div>
-      <div class="rq-tasks">${App._pairList(pair.once, 'Заданий нет')}</div>
+      ${sub === 'daily'
+        ? `<p class="muted small" style="margin:0 0 8px">Сбрасываются в 00:00 по Москве.</p>${App._pairList(pair.daily, 'Заданий нет')}`
+        : `<p class="muted small" style="margin:0 0 8px">Выполняются один раз за всё время.</p>${App._pairList(pair.once, 'Заданий нет')}`}
     </div>`;
 
   c.innerHTML = `
