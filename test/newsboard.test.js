@@ -151,7 +151,13 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
   const html = read('public/index.html');
   ok('место под полосу новости есть в разметке', /id="pin-news"/.test(html));
   ok('и под список акций', /id="sales-strip"/.test(html));
-  ok('обе рисуются на каждом переходе', /renderPinnedNews\(\);[\s\S]{0,80}renderSalesStrip\(\)/.test(appJs));
+  // Полоса новости рисуется сразу: она из уже полученного /api/me и сети
+  // не трогает. Витрина акций — ПОСЛЕ экрана и в простое: её запрос
+  // обгонял запрос самого раздела, и на слабой связи игрок видел список
+  // скидок поверх «Загрузка…» (см. test/loadorder.test.js).
+  ok('полоса новости рисуется на каждом переходе', /App\.renderPinnedNews\(\);/.test(appJs));
+  ok('витрина акций — после экрана и в простое',
+     /_whenIdle\(\(\) => App\.renderSalesStrip\(\)\)/.test(appJs));
   ok('список показывается, когда акций больше одной', /live\.length < 2/.test(appJs));
   ok('отсчёт обновляется одним тикером', /_tickSales/.test(appJs) && /data-sale-until/.test(appJs));
   const uiJs = read('public/js/ui.js');

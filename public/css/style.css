@@ -481,6 +481,18 @@ body.theme-aurora  .ic-gold { filter: drop-shadow(0 0 4px #7dffb3); }
 }
 .pin-news-x:hover { color: var(--text); border-color: var(--gold); }
 
+/* ── Плавное проявление экрана сверху вниз ─────────────────────── */
+/* На медленной связи раздел собирается кусками: сначала разметка,
+   потом картинки. Без проявления это выглядит как рывок. Анимация
+   короткая и только на первых блоках — на слабом телефоне длинные
+   анимации сами по себе тормозят. */
+@media (prefers-reduced-motion: no-preference) {
+  .rv-in { animation: rv-in .26s ease-out both; }
+  @keyframes rv-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
 /* ── Витрина действующих акций внизу страницы ──────────────────── */
 .sales-strip {
   margin: 14px 0 4px; padding: 10px 12px;
