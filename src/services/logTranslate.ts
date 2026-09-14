@@ -372,6 +372,13 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `🎁 ${body.id ? 'Изменил' : 'Создал'} раздачу наград «${body.title || '—'}»`;
       case '/api/admin/giveaway/delete':
         return '🗑 Удалил раздачу наград';
+      case '/api/admin/holiday/save':
+        return `📅 ${body.id ? 'Изменил' : 'Создал'} праздник «${body.name || '—'}»` +
+               `${Array.isArray(body.promos) ? `, акций: ${body.promos.length}` : ''}`;
+      case '/api/admin/holiday/delete':
+        return '🗑 Удалил праздник из расписания';
+      case '/api/admin/holiday/toggle':
+        return `📅 ${body.on ? 'Включил' : 'Выключил'} праздник в расписании`;
       case '/api/giveaway/claim':
         return '🎁 Забрал награду';
       case '/api/admin/donate-bonus/save':

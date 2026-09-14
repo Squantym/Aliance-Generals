@@ -2232,6 +2232,11 @@ function registerRoutes(app: any) {
   app.add('GET',  '/api/admin/giveaways',      (req) => require('./services/giveaways').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/giveaway/save',  act((req, n) => require('./services/giveaways').adminSave(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/giveaway/delete',act((req, n) => require('./services/giveaways').adminRemove(req.user, req.body.id, n)), { admin: true });
+  // Праздники: расписание акций с началом, концом и типом
+  app.add('GET',  '/api/admin/holidays',       (req) => require('./services/holidays').adminList(req.user), { admin: true });
+  app.add('POST', '/api/admin/holiday/save',   act((req, n) => require('./services/holidays').adminSave(req.user, req.body, n)), { admin: true });
+  app.add('POST', '/api/admin/holiday/delete', act((req, n) => require('./services/holidays').adminRemove(req.user, req.body.id, n)), { admin: true });
+  app.add('POST', '/api/admin/holiday/toggle', act((req, n) => require('./services/holidays').adminToggle(req.user, req.body.id, !!req.body.on, n)), { admin: true });
   app.add('GET',  '/api/admin/donate-bonuses',      (req) => require('./services/donateBonus').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/donate-bonus/save',   act((req, n) => require('./services/donateBonus').adminSave(req.user, req.body, n)), { admin: true });
   app.add('POST', '/api/admin/donate-bonus/delete', act((req, n) => require('./services/donateBonus').adminRemove(req.user, req.body.id, n)), { admin: true });

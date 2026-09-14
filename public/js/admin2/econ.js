@@ -29,6 +29,7 @@
     { id: 'donate', label: '💳 Бонусы к покупкам', zone: 'discounts', fn: 'renderDonateBonus' },
     { id: 'giveaways', label: '🎁 Раздачи наград', zone: 'economy', fn: 'renderGiveaways' },
     { id: 'refquests', label: '🎯 Приглашения', zone: 'discounts', fn: 'renderRefQuests' },
+    { id: 'holidays', label: '📅 Праздники', zone: 'discounts', fn: 'renderHolidays' },
   ];
 
   // ── Бонусы к покупкам за рубли ─────────────────────────────────
@@ -328,6 +329,205 @@
         if (!await UI.confirm('Удалить раздачу? Плашка исчезнет у всех, кто ещё не забрал награду.',
           { title: 'Удаление раздачи', icon: '🗑', okText: 'Удалить', danger: true })) return;
         try { await API.post('/api/admin/giveaway/delete', { id: b.dataset.gwDel }); Admin.renderGiveaways(box); }
+        catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+  };
+
+  // ═══ ПРАЗДНИКИ: РАСПИСАНИЕ АКЦИЙ ════════════════════════════════
+  // Праздник — это период и список акций внутри него. У каждой акции свой
+  // тип, свои параметры и свои даты: «акция на каждый день каникул» — это
+  // просто несколько акций подряд. Пустые даты акции означают «весь
+  // праздник» — так заполняется самый частый случай.
+  const HD_STATE = {
+    wait: ['<span class="a2-pill">ждёт</span>', 'ещё не начиналась'],
+    live: ['<span class="a2-pill is-ok">идёт</span>', 'включена'],
+    done: ['<span class="a2-pill">прошла</span>', 'отработала свой срок'],
+    missed: ['<span class="a2-pill is-bad">не состоялась</span>', 'срок прошёл, пока мир стоял'],
+    error: ['<span class="a2-pill is-bad">ошибка</span>', 'включить не удалось'],
+  };
+
+  function hdPromoRow(d, p) {
+    const v = p || { type: 'discount', pct: 20, category: (d.categories[0] || {}).id, startAt: 0, endAt: 0 };
+    const st = HD_STATE[v.shown || v.state || 'wait'] || HD_STATE.wait;
+    return `
+      <div class="a2-card hd-promo" data-id="${UI.esc(v.id || '')}" style="margin-top:6px">
+        <div class="a2-row">
+          <select class="hd-type" style="${GW_IN}">
+            ${d.types.map((t) => `<option value="${t.id}"${v.type === t.id ? ' selected' : ''}>${UI.esc(t.name)}</option>`).join('')}
+          </select>
+          ${st[0]}
+          <button class="btn btn-inline hd-del" style="margin-left:auto">✕</button>
+        </div>
+        ${v.error ? `<p class="a2-muted" style="color:var(--red)">${UI.esc(v.error)}</p>` : ''}
+        <div class="db-grid" style="margin-top:6px">
+          <label class="hd-f-cat">Категория<select class="hd-cat" style="${GW_IN}">
+            ${d.categories.map((c) => `<option value="${c.id}"${v.category === c.id ? ' selected' : ''}>${UI.esc(c.name)}</option>`).join('')}
+          </select></label>
+          <label class="hd-f-pct">Процент<input class="hd-pct" type="number" min="1" max="999" style="${GW_IN}" value="${v.pct || ''}"></label>
+          <label class="hd-f-give">Какая раздача<select class="hd-give" style="${GW_IN}">
+            ${d.giveaways.length
+              ? d.giveaways.map((g) => `<option value="${g.id}"${v.giveawayId === g.id ? ' selected' : ''}>${UI.esc(g.title)}</option>`).join('')
+              : '<option value="">— раздач пока нет —</option>'}
+          </select></label>
+          <label>Начало акции — пусто, если с начала праздника
+            <input class="hd-start" type="datetime-local" style="${GW_IN}" value="${gwLocal(v.startAt)}"></label>
+          <label>Конец акции — пусто, если до конца праздника
+            <input class="hd-end" type="datetime-local" style="${GW_IN}" value="${gwLocal(v.endAt)}"></label>
+        </div>
+        <div class="hd-f-news" style="margin-top:6px">
+          <label class="a2-muted" style="display:block">Заголовок новости
+            <input class="hd-title" maxlength="200" style="${GW_IN};width:100%" value="${UI.esc(v.title || '')}"></label>
+          <label class="a2-muted" style="display:block;margin-top:6px">Текст
+            <textarea class="hd-text" maxlength="4000" rows="3" style="${GW_IN};width:100%">${UI.esc(v.text || '')}</textarea></label>
+          <div class="a2-row" style="margin-top:6px">
+            <label><input type="checkbox" class="hd-pin" ${v.pinned ? 'checked' : ''}> закрепить полосой</label>
+            <label><input type="checkbox" class="hd-popup" ${v.popup ? 'checked' : ''}> показать окном</label>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Поля зависят от типа: у скидки категория и процент, у бонуса опыта
+  // только процент, у раздачи — какую включить, у новости — текст.
+  function hdSyncRow(row) {
+    const t = row.querySelector('.hd-type').value;
+    const show = (sel, on) => { const el = row.querySelector(sel); if (el) el.style.display = on ? '' : 'none'; };
+    show('.hd-f-cat', t === 'discount');
+    show('.hd-f-pct', t === 'discount' || t === 'xp');
+    show('.hd-f-give', t === 'giveaway');
+    show('.hd-f-news', t === 'news');
+  }
+
+  function hdBind(box) {
+    box.querySelectorAll('.hd-promo').forEach((row) => {
+      hdSyncRow(row);
+      row.querySelector('.hd-type').onchange = () => hdSyncRow(row);
+      row.querySelector('.hd-del').onclick = () => row.remove();
+    });
+  }
+
+  function hdReadRows(box) {
+    return Array.from(box.querySelectorAll('.hd-promo')).map((row) => {
+      const get = (sel) => { const el = row.querySelector(sel); return el ? el.value : ''; };
+      const chk = (sel) => { const el = row.querySelector(sel); return !!(el && el.checked); };
+      return {
+        id: row.dataset.id || '',
+        type: get('.hd-type'),
+        category: get('.hd-cat'),
+        pct: get('.hd-pct'),
+        giveawayId: get('.hd-give'),
+        title: get('.hd-title'),
+        text: get('.hd-text'),
+        pinned: chk('.hd-pin'),
+        popup: chk('.hd-popup'),
+        startAt: gwFromLocal(get('.hd-start')),
+        endAt: gwFromLocal(get('.hd-end')),
+      };
+    });
+  }
+
+  Admin.renderHolidays = async function (box, editId) {
+    box.innerHTML = '<div class="loading">Загружаю…</div>';
+    let d = null;
+    try { d = await API.get('/api/admin/holidays'); }
+    catch (e) { box.innerHTML = `<div class="a2-card"><p class="a2-muted">${UI.esc(e.message)}</p></div>`; return; }
+    const list = d.holidays || [];
+    const cur = list.find((h) => h.id === editId) || null;
+    const v = cur || { name: '', note: '', startAt: 0, endAt: 0, enabled: true, promos: [] };
+    const dt = (ms) => (ms ? new Date(ms).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+    const HST = { off: '<span class="a2-pill is-bad">выключен</span>', wait: '<span class="a2-pill">запланирован</span>',
+      live: '<span class="a2-pill is-ok">идёт</span>', done: '<span class="a2-pill">прошёл</span>' };
+
+    box.innerHTML = `
+      <div class="a2-card">
+        <h3>Праздники и акции по расписанию</h3>
+        <p class="a2-muted">Праздник — это период и список акций внутри него. Мир включает акции сам, когда им приходит
+          время: сидеть у панели в день праздника не нужно. У каждой акции свои даты, поэтому «своя акция на каждый день
+          каникул» — это просто несколько акций подряд. Пустые даты акции означают весь праздник.</p>
+        <p class="a2-muted">Скидка и бонус опыта гаснут сами в конце своего срока. Состав награды для раздачи собирается
+          в разделе «🎁 Раздачи наград» — здесь выбирается готовая и назначается её окно. Босс запускается вручную:
+          у него слишком много настроек, чтобы включать его вслепую по календарю.</p>
+      </div>
+
+      <div class="a2-card">
+        <h3>${cur ? 'Изменить праздник' : 'Новый праздник'}</h3>
+        <div class="db-grid">
+          <label>Название<input id="hd-name" maxlength="80" style="${GW_IN}" value="${UI.esc(v.name)}"></label>
+          <label>Начало<input id="hd-start" type="datetime-local" style="${GW_IN}" value="${gwLocal(v.startAt)}"></label>
+          <label>Конец<input id="hd-end" type="datetime-local" style="${GW_IN}" value="${gwLocal(v.endAt)}"></label>
+          <label class="db-check"><span><input id="hd-enabled" type="checkbox" ${v.enabled ? 'checked' : ''}> Праздник включён</span></label>
+        </div>
+        <label class="a2-muted" style="display:block;margin-top:8px">Пометка для себя (игроки не видят)
+          <input id="hd-note" maxlength="300" style="${GW_IN};width:100%" value="${UI.esc(v.note || '')}"></label>
+
+        <div class="a2-muted" style="margin-top:10px">Акции праздника</div>
+        <div id="hd-promos">${(v.promos || []).map((p) => hdPromoRow(d, p)).join('')}</div>
+        <button class="btn btn-inline" id="hd-add" style="margin-top:6px">+ акция</button>
+        ${d.canNews ? '' : '<p class="a2-muted">Акции-новости недоступны: для них нужен раздел «Новости».</p>'}
+
+        <div class="a2-row" style="margin-top:10px">
+          <button class="btn btn-orange btn-inline" id="hd-save">💾 Сохранить</button>
+          ${cur ? '<button class="btn btn-inline" id="hd-cancel">Отмена</button>' : ''}
+        </div>
+      </div>
+
+      <div class="a2-card">
+        <h3>Расписание (${list.length})</h3>
+        ${list.length ? `<div style="overflow-x:auto"><table class="a2-table">
+          <thead><tr><th>Праздник</th><th>Период</th><th>Акции</th><th>Статус</th><th></th></tr></thead>
+          <tbody>${list.map((h) => `<tr>
+            <td><b>${UI.esc(h.name)}</b>${h.note ? `<div class="a2-muted">${UI.esc(h.note)}</div>` : ''}</td>
+            <td class="a2-muted nowrap">${dt(h.startAt)} — ${dt(h.endAt)}</td>
+            <td class="a2-muted">${(h.promos || []).length
+              ? (h.promos || []).map((p) => `${UI.esc(p.typeName)}${p.pct ? ` ${p.pct}%` : ''} <span class="a2-muted">(${(HD_STATE[p.shown] || HD_STATE.wait)[1]})</span>`).join('<br>')
+              : 'акций нет'}</td>
+            <td>${HST[h.status] || ''}</td>
+            <td class="nowrap">
+              <button class="btn btn-inline" data-hd-edit="${UI.esc(h.id)}">✏️</button>
+              <button class="btn btn-inline" data-hd-off="${UI.esc(h.id)}" data-on="${h.enabled ? '0' : '1'}">${h.enabled ? '🚫' : '✅'}</button>
+              <button class="btn btn-inline" data-hd-del="${UI.esc(h.id)}">🗑</button></td></tr>`).join('')}</tbody>
+        </table></div>` : '<p class="a2-muted">Праздников пока нет. Заведите первый — например, новогодние каникулы.</p>'}
+      </div>`;
+
+    const $ = (id) => document.getElementById(id);
+    hdBind(box);
+    $('hd-add').onclick = () => {
+      $('hd-promos').insertAdjacentHTML('beforeend', hdPromoRow(d, null));
+      hdBind(box);
+    };
+    $('hd-save').onclick = async () => {
+      try {
+        await API.post('/api/admin/holiday/save', {
+          id: cur ? cur.id : '',
+          name: $('hd-name').value.trim(),
+          note: $('hd-note').value.trim(),
+          startAt: gwFromLocal($('hd-start').value),
+          endAt: gwFromLocal($('hd-end').value),
+          enabled: $('hd-enabled').checked,
+          promos: hdReadRows(box),
+        });
+        UI.toast('📅 Праздник сохранён');
+        Admin.renderHolidays(box);
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    };
+    const cancel = $('hd-cancel');
+    if (cancel) cancel.onclick = () => Admin.renderHolidays(box);
+    box.querySelectorAll('[data-hd-edit]').forEach((b) => { b.onclick = () => Admin.renderHolidays(box, b.dataset.hdEdit); });
+    box.querySelectorAll('[data-hd-off]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const r = await API.post('/api/admin/holiday/toggle', { id: b.dataset.hdOff, on: b.dataset.on === '1' });
+          UI.toast((r.notices && r.notices[0]) || 'Готово');
+          Admin.renderHolidays(box);
+        } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+    });
+    box.querySelectorAll('[data-hd-del]').forEach((b) => {
+      b.onclick = async () => {
+        if (!await UI.confirm('Удалить праздник из расписания? Уже начатые акции доработают свой срок.',
+          { title: 'Удаление праздника', icon: '🗑', okText: 'Удалить', danger: true })) return;
+        try { await API.post('/api/admin/holiday/delete', { id: b.dataset.hdDel }); Admin.renderHolidays(box); }
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
     });

@@ -1028,6 +1028,7 @@ const Admin = {
       { id: 'donate',    label: '💳 Бонусы к покупкам', zone: 'discounts' },
       { id: 'giveaways', label: '🎁 Раздачи наград',   zone: 'economy' },
       { id: 'refquests', label: '🎯 Приглашения',       zone: 'discounts' },
+      { id: 'holidays',  label: '📅 Праздники',          zone: 'discounts' },
     ].filter((x) => Admin.can(x.zone));
     if (!subs.length) { c.innerHTML = '<div class="card"><p class="muted">Раздел недоступен.</p></div>'; return; }
     if (!subs.some((x) => x.id === Admin._econTab)) Admin._econTab = subs[0].id;
@@ -1057,6 +1058,11 @@ const Admin = {
     if (Admin._econTab === 'donate') {
       if (typeof Admin.renderDonateBonus === 'function') return Admin.renderDonateBonus(body);
       body.innerHTML = '<div class="card"><p class="muted">Бонусы к покупкам настраиваются в новой панели: Экономика → 💳 Бонусы к покупкам.</p></div>';
+      return;
+    }
+    if (Admin._econTab === 'holidays') {
+      if (typeof Admin.renderHolidays === 'function') return Admin.renderHolidays(body);
+      body.innerHTML = '<div class="card"><p class="muted">Праздники настраиваются в новой панели: Экономика → 📅 Праздники.</p></div>';
     }
   },
 

@@ -216,4 +216,26 @@ function adminRemove(actor: User, id: string, notices: Notices) {
   return { ok: true };
 }
 
-export = { forPlayer, claim, adminList, adminSave, adminRemove, MAX_DAYS, MAX_ITEMS };
+// Короткий список раздач — для выбора в расписании праздников. Без
+// проверки зоны: право «Акции» не даёт заходить в раздел раздач, но
+// выбрать готовую раздачу по названию оно позволять обязано, иначе
+// акцию «включить раздачу» таким сотрудником не собрать.
+function listBrief() {
+  return Object.values(store()).map((g) => ({ id: g.id, title: g.title, kind: g.kind }));
+}
+
+// Назначить раздаче окно и включить её. Зовётся расписанием праздников
+// (holidays.ts): состав награды собирают здесь, а когда она появится у
+// игроков, решает праздник. Прав не проверяет — зовущий уже проверил
+// свои; отдельной кнопки на это в панели нет.
+function schedule(id: string, startAt: number, endAt: number): boolean {
+  const g = store()[String(id || '')];
+  if (!g) return false;
+  g.startAt = Math.max(0, u.toInt(startAt, 0));
+  g.endAt = Math.max(0, u.toInt(endAt, 0));
+  g.enabled = true;
+  db.save('giveaways');
+  return true;
+}
+
+export = { forPlayer, claim, adminList, adminSave, adminRemove, schedule, listBrief, MAX_DAYS, MAX_ITEMS };
