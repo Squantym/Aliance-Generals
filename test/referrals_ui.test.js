@@ -1,7 +1,10 @@
-// jsdom: экран «Пригласить друга» и почта с удалением сообщений.
+// jsdom: две страницы приглашений и почта с удалением сообщений.
+//
 // Проверки строкой по исходнику ловят пропажу кнопки, но не ловят
 // ошибку при отрисовке — а именно из-за неё экран у игрока остаётся
-// пустым. Поэтому оба экрана здесь рисуются по-настоящему.
+// пустым. Поэтому страницы здесь рисуются по-настоящему:
+//   • «Пригласить друга» — только ссылка, QR и список пришедших;
+//   • «Задания приглашений» — две вкладки: шкалы и парные задания.
 const assert = require('assert'); const fs = require('fs'); const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<!DOCTYPE html><body><div id="content"></div></body>', { url: 'http://localhost/' });
 Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, location: dom.window.location });
@@ -17,7 +20,7 @@ let passed = 0; const ok = (n, c) => { assert.ok(c, '❌ ' + n); passed++; conso
 
 const REF = {
   code: 'VERB1A2B', link: 'https://aliance-general.ru/?ref=VERB1A2B',
-  refCount: 2, refEarnings: 350, referredBy: null, canApply: false,
+  refCount: 2, refEarnings: 350, referredBy: null, invitedByName: null,
   level50Reward: 100, level50Tokens: 3, inviteeGold: 50, purchaseSharePct: 10,
   questsOn: false,
   invited: [
@@ -25,73 +28,98 @@ const REF = {
     { name: 'Тихоня', level: 4, joinedAt: Date.now() - 7 * 86400000, lastSeen: 0, active: false, reached50: false, goldFromHim: 0 },
   ],
 };
+const QUESTS = {
+  inviter: {
+    board: 'inviter', points: 2, total: 10,
+    tasks: [
+      { id: 'inv1', name: 'Пригласить 1 человека', note: 'до 50 уровня', need: 1, have: 1, done: true },
+      { id: 'inv3', name: 'Пригласить 3 человек', note: '', need: 3, have: 1, done: false },
+    ],
+    steps: [
+      { step: 1, icon: '🪙', img: '/img/icons/gold.webp', text: '50 золота', reached: true, claimed: true },
+      { step: 2, icon: '💵', img: '/img/icons/dollar.webp', text: '$10 000 000 000', reached: true, claimed: false },
+      { step: 3, icon: '📦', img: '/img/containers/keis.webp', text: '5 × Технологичный кейс', reached: false, claimed: false },
+    ],
+  },
+  newbie: {
+    board: 'newbie', points: 1, total: 10,
+    tasks: [{ id: 'lvl30', name: 'Достигнуть 30 уровня', note: '', need: 30, have: 30, done: true }],
+    steps: [{ step: 1, icon: '🪙', img: '/img/icons/gold.webp', text: '50 золота', reached: true, claimed: false }],
+  },
+  share: {
+    pct: 12, basePct: 10, minLevel: 70, friendsReady: 5,
+    steps: [{ friends: 5, pct: 12, reached: true }, { friends: 10, pct: 15, reached: false }],
+    next: { friends: 10, pct: 15, left: 5 },
+  },
+  pair: {
+    mates: [{ id: 'm1', name: 'Новобранец', level: 52 }, { id: 'm2', name: 'Тихоня', level: 4 }],
+    daily: [
+      { id: 'pd_chat', name: 'Написать по 10 сообщений', note: '', need: 10, mine: 10, theirs: 4,
+        mateName: 'Новобранец', done: false, icon: '🪙', img: '/img/icons/gold.webp', reward: '10 золота' },
+    ],
+    once: [
+      { id: 'po_lvl70', name: 'Достигнуть 70 уровня обоим', note: '', need: 70, mine: 70, theirs: 52,
+        mateName: 'Новобранец', done: false, icon: '🪙', img: '/img/icons/gold.webp', reward: '150 золота' },
+    ],
+  },
+};
 
 (async () => {
   const c = document.getElementById('content');
 
-  console.log('\n[1] Экран приглашений рисуется целиком');
+  console.log('\n[1] Страница «Пригласить друга» — только ссылка, QR и свои');
   API.get = async () => JSON.parse(JSON.stringify(REF));
   let err = null;
   try { await App.screens.referral(c); } catch (e) { err = e; }
   ok('отрисовка без ошибок', !err); if (err) console.log('   ' + (err.stack || err).split('\n').slice(0, 3).join(' | '));
   ok('ссылка показана в поле', document.getElementById('ref-link').value === REF.link);
-  ok('код показан отдельно', c.innerHTML.includes('VERB1A2B'));
+  ok('код показан', c.innerHTML.includes('VERB1A2B'));
   ok('оба приглашённых в списке', /Новобранец/.test(c.innerHTML) && /Тихоня/.test(c.innerHTML));
-  ok('видно, кто принёс золото', /350/.test(c.innerHTML));
-  ok('отметка «50 ур.» только у дошедшего', (c.innerHTML.match(/50 ур\./g) || []).length === 1);
   ok('награда за 50 уровень — 100', /<span class="ic-gold"><\/span> 100/.test(c.innerHTML));
-  ok('раздел заданий скрыт, пока выключен', !/Задания по приглашениям/.test(c.innerHTML));
   ok('кнопки «поделиться» и «сохранить QR» на месте',
      !!document.getElementById('ref-share') && !!document.getElementById('ref-qr-save'));
-  // В jsdom холста нет: экран обязан пережить это и предложить ссылку
   ok('без поддержки холста вместо QR — понятная надпись',
      /QR-код недоступен/.test(document.getElementById('ref-qr').innerHTML));
+  ok('ввода чужого кода на странице нет', !/Ввести чужой код/.test(c.innerHTML) && !document.getElementById('ref-input'));
+  ok('шкал и парных заданий здесь нет', !/Шкала вербовщика/.test(c.innerHTML) && !/Парные/.test(c.innerHTML));
+  ok('кнопки на задания нет, пока раздел выключен', !/refquests/.test(c.innerHTML));
+  API.get = async () => Object.assign(JSON.parse(JSON.stringify(REF)), { questsOn: true });
+  await App.screens.referral(c);
+  ok('с включённым разделом появляется кнопка на задания', /refquests/.test(c.innerHTML));
 
-  console.log('\n[2] Шкалы заданий появляются по выключателю');
-  const QUESTS = {
-    inviter: {
-      board: 'inviter', points: 2, total: 10,
-      tasks: [
-        { id: 'inv1', name: 'Пригласить 1 человека', note: 'до 50 уровня', need: 1, have: 1, done: true },
-        { id: 'inv3', name: 'Пригласить 3 человек', note: '', need: 3, have: 1, done: false },
-      ],
-      steps: [
-        { step: 1, icon: '🪙', text: '50 золота', reached: true, claimed: true },
-        { step: 2, icon: '💵', text: '$10 000 000 000', reached: true, claimed: false },
-        { step: 3, icon: '📦', text: '5 × Технологичный кейс', reached: false, claimed: false },
-      ],
-    },
-    newbie: {
-      board: 'newbie', points: 1, total: 10,
-      tasks: [{ id: 'lvl30', name: 'Достигнуть 30 уровня', note: '', need: 30, have: 30, done: true }],
-      steps: [{ step: 1, icon: '🪙', text: '50 золота', reached: true, claimed: false }],
-    },
-    share: {
-      pct: 12, basePct: 10, friends50: 5,
-      steps: [{ friends: 5, pct: 12, reached: true }, { friends: 10, pct: 15, reached: false }],
-      next: { friends: 10, pct: 15, left: 5 },
-    },
-  };
+  console.log('\n[2] Страница заданий: вкладка «Шкалы»');
   API.get = async (url) => (url === '/api/referral/quests'
     ? JSON.parse(JSON.stringify(QUESTS))
     : Object.assign(JSON.parse(JSON.stringify(REF)), { questsOn: true }));
   const claims = [];
   API.post = async (url, body) => { claims.push([url, body]); return { ok: true }; };
-  await App.screens.referral(c);
+  await App.screens.refquests(c, 'scales');
+  ok('обе вкладки на месте', /refquests\/scales/.test(c.innerHTML) && /refquests\/pairs/.test(c.innerHTML));
   ok('шкала вербовщика нарисована', /Шкала вербовщика/.test(c.innerHTML) && !!c.querySelector('.rq-bar'));
-  // В образце шкала укорочена до трёх баллов: 2 из 3 — это 67%
   ok('полоса заполнена по баллам', /width:67%/.test(c.querySelector('.rq-fill').getAttribute('style')));
   ok('под каждым баллом иконка награды', c.querySelectorAll('.rq-card')[0].querySelectorAll('.rq-step').length === 3);
+  ok(`иконки наград — картинки (${c.querySelectorAll('.rq-step .rq-img').length} шт.)`,
+     c.querySelectorAll('.rq-step .rq-img').length === 4);
+  ok('и это настоящие файлы игры', /img\/containers\/keis\.webp/.test(c.innerHTML)
+     && /img\/icons\/gold\.webp/.test(c.innerHTML));
   ok('забранный балл помечен', !!c.querySelector('.rq-step.is-claimed'));
   ok('кнопка «Забрать» только у достигнутого и незабранного',
      c.querySelectorAll('[data-claim-step]').length === 2);
   ok('шкала новобранца тоже видна', /Шкала новобранца/.test(c.innerHTML));
-  ok('прогрессивная доля показана', /Доля с покупок друзей/.test(c.innerHTML) && /12%/.test(c.innerHTML));
+  ok('доля с покупок показана с порогом 70', /Доля с покупок друзей/.test(c.innerHTML) && /70 уровня/.test(c.innerHTML));
   await c.querySelector('[data-claim-step]').onclick();
   ok('получение награды уходит на сервер',
      claims.some(([u2, b]) => u2 === '/api/referral/quests/claim' && b.step === 2 && b.board === 'inviter'));
 
-  console.log('\n[3] Почта: удаление сообщения, переписки и очистка');
+  console.log('\n[3] Страница заданий: вкладка «Парные»');
+  await App.screens.refquests(c, 'pairs');
+  ok('напарники перечислены', /Новобранец/.test(c.innerHTML) && /Тихоня/.test(c.innerHTML));
+  ok('видно оба прогресса', /вы 10\/10/.test(c.innerHTML) && /Новобранец 4\/10/.test(c.innerHTML));
+  ok('ежедневные и разовые разделены', /Ежедневные/.test(c.innerHTML) && /Разовые/.test(c.innerHTML));
+  ok('у парного задания своя иконка награды', !!c.querySelector('.rq-task-ic .rq-img'));
+  ok('шкал на этой вкладке нет', !c.querySelector('.rq-bar'));
+
+  console.log('\n[4] Почта: удаление сообщения, переписки и очистка');
   const posts = [];
   API.post = async (url) => { posts.push(url); return { ok: true, mail: 2, letters: 1 }; };
   API.get = async (url) => {

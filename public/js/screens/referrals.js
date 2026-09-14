@@ -271,6 +271,16 @@ App.QR = (() => {
   return { matrix, canvas };
 })();
 
+// ── Мелкая иконка награды ──────────────────────────────────────────
+// Берём настоящую картинку из игры: монету, контейнер, ампулу допинга,
+// портрет наёмника. Эмодзи остаётся там, где картинки нет (VIP).
+App._rewardIcon = (r, size) => {
+  const px = size || 26;
+  return r.img
+    ? `<img class="rq-img" src="${r.img}" width="${px}" height="${px}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<span class=&quot;rq-emoji&quot;>${r.icon}</span>'">`
+    : `<span class="rq-emoji">${r.icon}</span>`;
+};
+
 // ── Шкала заданий ──────────────────────────────────────────────────
 // Во всю ширину: полоса на 10 баллов, под каждым баллом — иконка
 // награды. Забрать можно только награду за уже набранный балл.
@@ -278,8 +288,8 @@ App._questScale = (b, title, note) => {
   const pct = Math.round((b.points / Math.max(1, b.steps.length)) * 100);
   const steps = b.steps.map((s) => `
     <div class="rq-step ${s.claimed ? 'is-claimed' : (s.reached ? 'is-ready' : '')}"
-         data-step-info="${s.step}" title="${UI.esc(s.text)}">
-      <div class="rq-ic">${s.icon}</div>
+         data-step-info="${b.board}:${s.step}" title="${UI.esc(s.text)}">
+      <div class="rq-ic">${App._rewardIcon(s)}</div>
       <div class="rq-num">${s.step}</div>
       ${s.claimed ? '<div class="rq-tick">✓</div>' : ''}
     </div>`).join('');
@@ -291,10 +301,10 @@ App._questScale = (b, title, note) => {
       <div class="rq-head"><b class="gold">${b.points}</b> из ${b.steps.length} баллов</div>
       <div class="rq-bar"><div class="rq-fill" style="width:${pct}%"></div></div>
       <div class="rq-steps">${steps}</div>
-      <div id="rq-hint-${b.board}" class="muted small rq-hint">Нажмите на иконку, чтобы увидеть награду.</div>
+      <div class="muted small rq-hint" data-hint="${b.board}">Нажмите на иконку, чтобы увидеть награду.</div>
       ${ready.map((s) => `
         <button class="btn btn-orange mt" data-claim-step="${s.step}" data-board="${b.board}" style="width:100%">
-          🎁 Забрать за ${s.step}-й балл: ${UI.esc(s.text)}
+          ${App._rewardIcon(s, 20)} Забрать за ${s.step}-й балл: ${UI.esc(s.text)}
         </button>`).join('')}
       <div class="rq-tasks">
         ${b.tasks.map((t) => `
@@ -310,42 +320,25 @@ App._questScale = (b, title, note) => {
 };
 
 // ── Парные задания ─────────────────────────────────────────────────
-// Без шкалы и кнопок: как только показатель набрали оба, награда
-// приходит обоим сама. Поэтому здесь показываем два прогресса рядом —
-// свой и напарника.
-App._pairCard = (p) => {
-  const row = (t) => `
-    <div class="rq-task ${t.done ? 'is-done' : ''}">
-      <div class="grow">
-        <span class="${t.done ? 'gold' : ''}">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
-        ${t.note ? `<br><span class="muted small">${UI.esc(t.note)}</span>` : ''}
-        <br><span class="muted small">${t.icon} ${UI.esc(t.reward)}</span>
-      </div>
-      <span class="muted small rq-prog">вы ${UI.fmtNum(t.mine)}/${UI.fmtNum(t.need)}<br>друг ${UI.fmtNum(t.theirs)}/${UI.fmtNum(t.need)}</span>
-    </div>`;
-  const dailyDone = p.daily.filter((t) => t.done).length;
-  const onceDone = p.once.filter((t) => t.done).length;
-  return `
-    <div class="card rq-card">
-      <div class="name">🤝 ${UI.esc(p.otherName)} <span class="muted small">· ${p.otherLevel} ур.</span></div>
-      <p class="muted small" style="margin:2px 0 6px">Награду получают оба, как только условие выполнят обе стороны. Ежедневные обнуляются в 00:00 по Москве.</p>
-      <details class="rq-pair" open>
-        <summary>📅 Ежедневные — ${dailyDone} из ${p.daily.length}</summary>
-        <div class="rq-tasks">${p.daily.map(row).join('')}</div>
-      </details>
-      <details class="rq-pair">
-        <summary>🏅 Разовые — ${onceDone} из ${p.once.length}</summary>
-        <div class="rq-tasks">${p.once.map(row).join('')}</div>
-      </details>
-    </div>`;
-};
+// Доска одна, напарников может быть много: показываем свой прогресс и
+// прогресс того напарника, кто ближе всех к выполнению.
+App._pairList = (list, empty) => (list.length ? list.map((t) => `
+  <div class="rq-task ${t.done ? 'is-done' : ''}">
+    <div class="rq-task-ic">${App._rewardIcon(t, 24)}</div>
+    <div class="grow">
+      <span class="${t.done ? 'gold' : ''}">${t.done ? '✅' : '▫️'} ${UI.esc(t.name)}</span>
+      ${t.note ? `<br><span class="muted small">${UI.esc(t.note)}</span>` : ''}
+      <br><span class="muted small">${UI.esc(t.reward)}</span>
+    </div>
+    <span class="muted small rq-prog">вы ${UI.fmtNum(t.mine)}/${UI.fmtNum(t.need)}<br>${t.mateName ? UI.esc(t.mateName) : 'напарник'} ${UI.fmtNum(t.theirs)}/${UI.fmtNum(t.need)}</span>
+  </div>`).join('') : `<p class="muted center">${empty}</p>`);
 
-// ── Экран «Пригласить друга» ───────────────────────────────────────
+// ═══ СТРАНИЦА 1: ПРИГЛАСИТЬ ДРУГА ═════════════════════════════════
+// Только то, чем делятся: ссылка, QR и кто по ним пришёл. Задания —
+// отдельной страницей, иначе экран превращается в простыню.
 App.screens.referral = async (c) => {
   await App.refreshMe();
   const d = await API.get('/api/referral');
-  let q = null;
-  if (d.questsOn) { try { q = await API.get('/api/referral/quests'); } catch (e) {} }
 
   const invitedRows = (d.invited || []).map((x) => `
     <div class="list-row">
@@ -354,88 +347,50 @@ App.screens.referral = async (c) => {
         ${x.reached50 ? '<span class="badge">50 ур. ✓</span>' : ''}
         ${x.active ? '' : '<span class="badge" style="opacity:.6">не заходит</span>'}
         <br><span class="muted small">${x.level} уровень · пришёл ${UI.fmtDate(x.joinedAt)}</span>
-        ${x.goldFromHim ? `<br><span class="gold small">принёс вам <span class="ic-gold"></span> ${UI.fmtNum(x.goldFromHim)}</span>` : ''}
       </div>
+      ${x.goldFromHim ? `<span class="gold small"><span class="ic-gold"></span> ${UI.fmtNum(x.goldFromHim)}</span>` : ''}
     </div>`).join('');
 
   c.innerHTML = `
-    <div class="title">🎁 Пригласить друга</div>
-    <div class="card center">
-      <p class="muted small">Отправьте другу ссылку или покажите QR-код. Код подставится сам — вводить ничего не нужно. Друг сразу получит <span class="ic-gold"></span> ${d.inviteeGold}, вы — награду за его 50 уровень и ${d.purchaseSharePct}% золотом со всех его покупок.</p>
-      <div class="ref-link-box" style="margin:10px 0">
-        <input type="text" id="ref-link" readonly value="${UI.esc(d.link)}" style="text-align:center">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-orange" id="ref-copy-link" style="flex:1">🔗 Скопировать ссылку</button>
-        <button class="btn" id="ref-share" style="flex:1">📤 Поделиться</button>
-      </div>
-      <p style="font-size:22px;letter-spacing:3px;font-weight:bold;margin:12px 0 4px" class="gold">${UI.esc(d.code)}</p>
-      <button class="btn btn-inline" id="ref-copy">📋 Скопировать код</button>
-    </div>
+    <div class="title">${App.menuImg('referral', 26)} Пригласить друга</div>
 
-    <div class="card center">
-      <div class="name">📱 QR-код приглашения</div>
-      <p class="muted small">Друг наводит камеру — и попадает сразу в игру с вашим кодом.</p>
-      <div id="ref-qr" style="display:flex;justify-content:center;margin:10px 0"></div>
-      <button class="btn btn-inline" id="ref-qr-save">⬇️ Сохранить картинкой</button>
+    <div class="card ref-share">
+      <p class="muted small center" style="margin:0 0 10px">Отправьте ссылку или покажите QR-код. Код подставится сам — другу не нужно ничего вводить.</p>
+      <div class="ref-qr" id="ref-qr"></div>
+      <input type="text" id="ref-link" readonly value="${UI.esc(d.link)}">
+      <div class="btn-row mt">
+        <button class="btn btn-orange" id="ref-copy-link" style="flex:1">🔗 Скопировать</button>
+        <button class="btn" id="ref-share" style="flex:1">📤 Поделиться</button>
+        <button class="btn" id="ref-qr-save" style="flex:1">⬇️ Сохранить QR</button>
+      </div>
+      <p class="muted small center" style="margin:10px 0 0">Ваш код: <b class="gold">${UI.esc(d.code)}</b></p>
     </div>
 
     <div class="card">
       <div class="kv"><span class="k">Приглашено друзей</span><span class="v gold">${d.refCount}</span></div>
-      <div class="kv"><span class="k">Заработано с покупок друзей</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.refEarnings)}</span></div>
+      <div class="kv"><span class="k">Заработано с их покупок</span><span class="v gold"><span class="ic-gold"></span> ${UI.fmtNum(d.refEarnings)}</span></div>
       <hr class="hr">
-      <div class="kv"><span class="k">🎁 Другу за переход по ссылке</span><span class="v"><span class="ic-gold"></span> ${d.inviteeGold}</span></div>
-      <div class="kv"><span class="k">🏅 Вам за 50 уровень друга</span><span class="v"><span class="ic-gold"></span> ${d.level50Reward} + <span class="ic-token"></span> ${d.level50Tokens}</span></div>
-      <div class="kv"><span class="k">💰 Вам с покупок друга</span><span class="v">${d.purchaseSharePct}% золотом</span></div>
-      <p class="muted small" style="margin:8px 0 0">Доля с покупок приходит письмом в почту с кнопкой «Забрать». Кто именно из друзей пополнил счёт — не показывается.</p>
+      <div class="kv"><span class="k">Другу за переход по ссылке</span><span class="v"><span class="ic-gold"></span> ${d.inviteeGold}</span></div>
+      <div class="kv"><span class="k">Вам за 50 уровень друга</span><span class="v"><span class="ic-gold"></span> ${d.level50Reward} + <span class="ic-token"></span> ${d.level50Tokens}</span></div>
+      <div class="kv"><span class="k">Вам с покупок друга</span><span class="v">${d.purchaseSharePct}% золотом</span></div>
+      <p class="muted small" style="margin:8px 0 0">Доля приходит письмом в почту с кнопкой «Забрать». Кто именно из друзей пополнил счёт — не показывается.</p>
     </div>
+
+    ${d.questsOn ? `
+      <button class="btn btn-orange" onclick="App.go('refquests')" style="width:100%">🎯 Задания приглашений →</button>` : ''}
 
     <div class="card">
       <div class="name">👥 Кто пришёл по вашей ссылке</div>
       ${invitedRows || '<p class="muted center" style="margin:8px 0 0">Пока никто. Отправьте ссылку или QR-код — здесь появятся все, кто зашёл.</p>'}
     </div>
 
-    ${q ? App._questScale(q.inviter, '🎯 Шкала вербовщика',
-      'Каждое выполненное условие — 1 балл. Под каждым баллом своя награда.') : ''}
-    ${q && q.newbie ? App._questScale(q.newbie, '🎖 Шкала новобранца',
-      'Ваш собственный путь: за него награды получаете вы.') : ''}
-    ${(q && q.pairs && q.pairs.length) ? `
-      <div class="card">
-        <div class="name">🤝 Парные задания</div>
-        <p class="muted small" style="margin:2px 0 0">Выполняются вдвоём с тем, кто вас пригласил, или с тем, кого пригласили вы. Награда приходит обоим сразу.</p>
-      </div>
-      ${q.pairs.map((p) => App._pairCard(p)).join('')}` : ''}
-    ${q && q.share ? `
-      <div class="card">
-        <div class="name">💰 Доля с покупок друзей</div>
-        <p class="muted small">Сейчас вам идёт <b class="gold">${q.share.pct}%</b> с покупок золота приглашёнными. Доля растёт от числа друзей, дошедших до ${q.share.minLevel} уровня — сейчас таких ${q.share.friendsReady}.</p>
-        <div class="rq-share">
-          ${q.share.steps.map((s) => `
-            <div class="rq-share-step ${s.reached ? 'is-ready' : ''}">
-              <b>${s.pct}%</b><br><span class="muted small">${s.friends} друзей</span>
-            </div>`).join('')}
-        </div>
-        ${q.share.next ? `<p class="muted small" style="margin:8px 0 0">До ${q.share.next.pct}% осталось пригласить ещё ${q.share.next.left}.</p>` : ''}
-      </div>` : ''}
-
-    ${d.canApply ? `
-      <div class="card">
-        <div class="name">Ввести чужой код</div>
-        <p class="muted small">Если вас пригласили, а ссылку вы не открывали — введите код приглашающего (один раз, до 50 уровня).</p>
-        <div class="field-row mt">
-          <input type="text" id="ref-input" placeholder="Код друга" style="text-transform:uppercase">
-          <button class="btn btn-orange btn-inline" id="ref-apply">Применить</button>
-        </div>
-      </div>` : (d.referredBy ? '<div class="card center muted">Вы уже использовали реферальный код.</div>' : '<div class="card center muted">Ввод кода доступен только до 50 уровня.</div>')}`;
+    ${d.invitedByName ? `<p class="muted small center">Вас пригласил ${UI.esc(d.invitedByName)}.</p>` : ''}`;
 
   // QR рисуем после вставки разметки: холсту нужен готовый контейнер
   const qrBox = document.getElementById('ref-qr');
   const cv = App.QR.canvas(d.link, 6);
   if (cv) {
-    cv.style.width = '200px';
-    cv.style.height = '200px';
-    cv.style.imageRendering = 'pixelated';   // иначе размытие ломает чтение
-    cv.style.borderRadius = '8px';
+    cv.className = 'ref-qr-img';
     qrBox.appendChild(cv);
   } else {
     qrBox.innerHTML = '<p class="muted small">QR-код недоступен — пользуйтесь ссылкой.</p>';
@@ -456,7 +411,6 @@ App.screens.referral = async (c) => {
     } else UI.toast(text);
   };
   document.getElementById('ref-copy-link').onclick = () => copy(d.link, '🔗 Ссылка скопирована');
-  document.getElementById('ref-copy').onclick = () => copy(d.code, '📋 Код скопирован');
   document.getElementById('ref-share').onclick = async () => {
     // На телефоне открывается родное окно «поделиться», на компьютере
     // его нет — там просто копируем ссылку
@@ -468,15 +422,76 @@ App.screens.referral = async (c) => {
     }
     copy(d.link, '🔗 Ссылка скопирована');
   };
+};
 
-  // Шкалы: подсказка по иконке и получение награды
+// ═══ СТРАНИЦА 2: ЗАДАНИЯ ПРИГЛАШЕНИЙ ══════════════════════════════
+// Две вкладки: личные шкалы и парные задания. Разделены намеренно —
+// это разные занятия: своя шкала растёт от успехов друзей, парные
+// задания делаются вдвоём здесь и сейчас.
+App.screens.refquests = async (c, param) => {
+  await App.refreshMe();
+  let q = null;
+  try { q = await API.get('/api/referral/quests'); }
+  catch (e) {
+    c.innerHTML = `<div class="title">🎯 Задания приглашений</div><div class="card"><p class="muted">${UI.esc(e.message)}</p></div>`;
+    return;
+  }
+  const tab = param === 'pairs' ? 'pairs' : 'scales';
+  const pair = q.pair || { mates: [], daily: [], once: [] };
+  const tabs = `<div class="tabs">
+    <div class="tab ${tab === 'scales' ? 'active' : ''}" onclick="location.hash='#refquests/scales'">🎯 Шкалы</div>
+    <div class="tab ${tab === 'pairs' ? 'active' : ''}" onclick="location.hash='#refquests/pairs'">🤝 Парные</div>
+  </div>`;
+
+  const scales = () => `
+    ${App._questScale(q.inviter, 'Шкала вербовщика',
+      'Каждое выполненное условие — 1 балл. Под каждым баллом своя награда.')}
+    ${q.newbie ? App._questScale(q.newbie, 'Шкала новобранца',
+      'Ваш собственный путь: за него награды получаете вы.') : ''}
+    ${q.share ? `
+      <div class="card">
+        <div class="name">💰 Доля с покупок друзей</div>
+        <p class="muted small">Сейчас вам идёт <b class="gold">${q.share.pct}%</b> с покупок золота приглашёнными. Доля растёт от числа друзей, дошедших до ${q.share.minLevel} уровня — сейчас таких ${q.share.friendsReady}.</p>
+        <div class="rq-share">
+          ${q.share.steps.map((s) => `
+            <div class="rq-share-step ${s.reached ? 'is-ready' : ''}">
+              <b>${s.pct}%</b><br><span class="muted small">${s.friends} друзей</span>
+            </div>`).join('')}
+        </div>
+        ${q.share.next ? `<p class="muted small" style="margin:8px 0 0">До ${q.share.next.pct}% осталось пригласить ещё ${q.share.next.left}.</p>` : ''}
+      </div>` : ''}`;
+
+  const pairs = () => `
+    <div class="card">
+      <div class="name">🤝 Напарники</div>
+      <p class="muted small" style="margin:2px 0 0">${pair.mates.length
+        ? 'Засчитывается прогресс любого из них: ' + pair.mates.map((m) => UI.esc(m.name)).join(', ') + '.'
+        : 'Напарников пока нет. Пригласите друга по ссылке — и задания оживут.'}</p>
+      <p class="muted small" style="margin:6px 0 0">Награду получают оба: вы и тот напарник, чьим прогрессом задание закрыто.</p>
+    </div>
+    <div class="card rq-card">
+      <div class="name">📅 Ежедневные <span class="muted small">· сброс в 00:00 МСК</span></div>
+      <div class="rq-tasks">${App._pairList(pair.daily, 'Заданий нет')}</div>
+    </div>
+    <div class="card rq-card">
+      <div class="name">🏅 Разовые</div>
+      <div class="rq-tasks">${App._pairList(pair.once, 'Заданий нет')}</div>
+    </div>`;
+
+  c.innerHTML = `
+    <div class="title">🎯 Задания приглашений</div>
+    ${tabs}
+    ${tab === 'scales' ? scales() : pairs()}
+    <button class="btn mt" onclick="App.go('referral')" style="width:100%">← К ссылке и QR-коду</button>`;
+
+  // Подсказка по иконке награды
   c.querySelectorAll('[data-step-info]').forEach((el) => {
     el.onclick = () => {
-      const board = el.closest('.rq-card').querySelector('.rq-hint');
-      const n = Number(el.dataset.stepInfo);
-      const all = [].concat(q ? q.inviter.steps : [], (q && q.newbie) ? q.newbie.steps : []);
-      const info = all.find((s) => s.step === n && el.querySelector('.rq-ic').textContent.trim() === s.icon);
-      if (board && info) board.textContent = `${n}-й балл: ${info.text}${info.claimed ? ' — забрано' : ''}`;
+      const [board, num] = el.dataset.stepInfo.split(':');
+      const src = board === 'newbie' ? q.newbie : q.inviter;
+      const info = (src.steps || []).find((s) => String(s.step) === num);
+      const hint = c.querySelector(`[data-hint="${board}"]`);
+      if (hint && info) hint.textContent = `${num}-й балл: ${info.text}${info.claimed ? ' — забрано' : ''}`;
     };
   });
   c.querySelectorAll('[data-claim-step]').forEach((btn) => {
@@ -489,12 +504,4 @@ App.screens.referral = async (c) => {
       } catch (e) { btn.disabled = false; UI.toast('⛔ ' + e.message); }
     };
   });
-
-  const apply = document.getElementById('ref-apply');
-  if (apply) apply.onclick = async () => {
-    const code = document.getElementById('ref-input').value.trim();
-    if (!code) { UI.toast('Введите код'); return; }
-    try { await API.post('/api/referral/apply', { code }); await App.refreshMe(); App.rerender(); }
-    catch (e) { UI.toast('⛔ ' + e.message); }
-  };
 };

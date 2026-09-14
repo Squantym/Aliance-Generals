@@ -231,9 +231,6 @@ App.screens.auth = async (c) => {
   const finish = async (token) => {
     API.setToken(token);
     App.me = await API.get('/api/me');
-    // Пришёл по ссылке друга: код запомнен при открытии страницы и
-    // применяется здесь — сразу после регистрации или входа
-    await App._applyPendingRef();
     App.go('home');
   };
 
@@ -364,7 +361,11 @@ App.screens.auth = async (c) => {
         gender: (document.querySelector('#rg-gender .rg-g.on') || {}).dataset
           ? document.querySelector('#rg-gender .rg-g.on').dataset.g : 'm',
         consents,
+        // Код приглашения из ссылки друга: сервер применит его сразу
+        // после создания аккаунта
+        ref: App._pendingRefCode ? App._pendingRefCode() : '',
       });
+      App._forgetRefCode();
       if (r.isAdmin) UI.toast('👑 Вы первый игрок — вам выданы права администратора');
       if (r.token) {
         // Отправка писем не настроена — почта считается подтверждённой,

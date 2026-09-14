@@ -190,15 +190,30 @@ const fails = (fn, part, n) => {
   ok(/id="ref-link"/.test(refJs) && /id="ref-qr"/.test(refJs), 'на экране есть и ссылка, и QR-код');
   ok(/ref-qr-save/.test(refJs) && /navigator\.share/.test(refJs), 'QR можно сохранить, ссылкой — поделиться');
   ok(/Кто пришёл по вашей ссылке/.test(refJs), 'список приглашённых выводится');
-  ok(/if \(d\.questsOn\)/.test(refJs), 'шкалы запрашиваются только при включённом выключателе');
+  // Страницы разделены: ссылка и QR — одна, задания — другая
+  ok(/App\.screens\.refquests = /.test(refJs), 'задания живут отдельной страницей');
+  ok(/d\.questsOn \? `/.test(refJs) && /App\.go\('refquests'\)/.test(refJs),
+     'кнопка на задания появляется только при включённом разделе');
   ok(/App\._questScale/.test(refJs) && /rq-bar/.test(refJs), 'шкала баллов рисуется полосой');
+  ok(/refquests\/pairs/.test(refJs) && /refquests\/scales/.test(refJs),
+     'на странице заданий две вкладки: шкалы и парные');
+  ok(!/ref-input/.test(refJs) && !/referral\/apply/.test(refJs),
+     'ручного ввода чужого кода в игре больше нет');
+  ok(/App\._rewardIcon/.test(refJs) && /img\/containers\//.test(fs.readFileSync(path.join(ROOT, 'src/services/referralQuests.ts'), 'utf8')),
+     'у наград настоящие картинки игры, а не эмодзи');
   const appJs = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
   ok(/localStorage\.setItem\('refcode'/.test(appJs) && /referral: 'referrals'/.test(appJs),
      'код из ссылки запоминается, экран вынесен в свой файл');
   ok(/history\.replaceState/.test(appJs), 'код убирается из адресной строки');
   const coreJs = fs.readFileSync(path.join(ROOT, 'public/js/screens/core.js'), 'utf8');
   ok(!/App\.screens\.referral = /.test(coreJs), 'старого экрана в core.js больше нет');
-  ok(/_applyPendingRef/.test(coreJs), 'после входа код применяется сам');
+  // Код уходит ВМЕСТЕ с анкетой регистрации: применить чужой код позже,
+  // уже играющим аккаунтом, нельзя
+  ok(/ref: App\._pendingRefCode/.test(coreJs), 'код из ссылки уходит с регистрацией');
+  ok(/App\._forgetRefCode\(\)/.test(coreJs), 'и после регистрации забывается');
+  const routesTs = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
+  ok(!/\/api\/referral\/apply/.test(routesTs), 'отдельной ручки «применить код» на сервере нет');
+  ok(/features\.applyReferral\(fresh, code/.test(routesTs), 'зато код из анкеты регистрации применяется');
   const socialJs = fs.readFileSync(path.join(ROOT, 'public/js/screens/social.js'), 'utf8');
   ok(/api\/mail\/clear-all/.test(socialJs) && /api\/mail\/thread\//.test(socialJs),
      'в почте есть очистка всего и удаление переписки');

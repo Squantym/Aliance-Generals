@@ -417,21 +417,12 @@ const App = {
     try { return localStorage.getItem('refcode') || ''; } catch (e) { return ''; }
   },
 
-  // Тихо применяем запомненный код. Ошибки не показываем: игрок мог уже
-  // ввести чужой код, перешагнуть 50 уровень или открыть свою же ссылку —
-  // ни одна из этих причин не должна встречать его окном с ошибкой.
-  async _applyPendingRef() {
-    let code = '';
-    try { code = localStorage.getItem('refcode') || ''; } catch (e) { return; }
-    if (!code || !App.me) return;
+  // Код использован при регистрации — больше он не нужен. Отдельного
+  // «применить код» в игре нет: привязаться к чужому коду можно только
+  // в момент создания аккаунта, иначе это превращается в договорную
+  // накрутку приглашений между давно играющими.
+  _forgetRefCode() {
     try { localStorage.removeItem('refcode'); } catch (e) {}
-    if (App.me.referredBy) return;
-    try {
-      const r = await API.post('/api/referral/apply', { code });
-      const note = (r && r.notices && r.notices[0]) || '🎁 Код приглашения принят';
-      UI.toast(note);
-      await App.refreshMe();
-    } catch (e) { /* код не подошёл — молчим */ }
   },
 
   async init() {
@@ -516,8 +507,6 @@ const App = {
     // всё работало — поэтому поломка выглядела плавающей.
     if (!App.me && !App._isMailLink()) location.hash = '#auth';
     App.route();
-    // Пришёл по ссылке друга и уже вошёл — код применяем сразу
-    if (App.me) App._applyPendingRef();
 
     // Полоса «скоро обновление» — после маршрутизации: до неё экран
     // перерисовывается целиком, и полоса встала бы под ним. Сотрудник
@@ -3305,6 +3294,7 @@ const App = {
     news: 'news', newsview: 'news', newsedit: 'news',
     saboteurs: 'saboteurs',
     referral: 'referrals',
+    refquests: 'referrals',
     alliance: 'social', legion: 'social', chat: 'social', mail: 'social',
     fame: 'social', ach: 'social', notifications: 'social', reinforcements: 'social',
   },

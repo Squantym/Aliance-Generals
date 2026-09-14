@@ -210,7 +210,21 @@ function registerRoutes(app: any) {
     if (blocked) throw new u.ApiError(blocked);
     consent.checkRequired(req.body.consents);
     return auth.register(req.body.login, req.body.password, req.body.email, req.body.country, req.ip, req.ua,
-      (req as any).hints, (req as any).fp, req.body.consents, req.body.gender);
+      (req as any).hints, (req as any).fp, req.body.consents, req.body.gender)
+      .then((res: any) => {
+        // Код приглашения приходит ВМЕСТЕ с регистрацией — из ссылки или
+        // QR друга. Отдельной кнопки «ввести чужой код» в игре больше
+        // нет: возможность привязать себя к чужому коду в любой момент
+        // до 50 уровня была прямой дорогой к накрутке приглашений.
+        const code = String(req.body.ref || '').trim();
+        if (code) {
+          try {
+            const fresh = player.findByName(req.body.login);
+            if (fresh) features.applyReferral(fresh, code, []);
+          } catch (e) { /* код не подошёл — регистрацию это не отменяет */ }
+        }
+        return res;
+      });
   }, { open: true });
   app.add('POST', '/api/login', (req) =>
     auth.login(req.body.login, req.body.password, req.ip, req.ua, (req as any).hints, (req as any).fp), { open: true });
@@ -892,7 +906,6 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/cosmetics/unequip', act((req, n) => features.unequipCosmetic(req.user, req.body.type)));
   // Рефералы
   app.add('GET',  '/api/referral',       (req) => features.referralView(req.user));
-  app.add('POST', '/api/referral/apply', act((req, n) => features.applyReferral(req.user, req.body.code, n)));
   // Задания приглашений: две шкалы по 10 баллов (вербовщик и новобранец)
   app.add('GET',  '/api/referral/quests', (req) => require('./services/referralQuests').view(req.user));
   app.add('POST', '/api/referral/quests/claim',

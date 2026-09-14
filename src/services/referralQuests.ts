@@ -88,45 +88,65 @@ function rewardsOf(board: Board): any[] {
 }
 
 // ── Описание награды для интерфейса ───────────────────────────────
-// Возвращаем и текст, и иконку: под каждым баллом шкалы рисуется
-// маленькая картинка, а подпись читается при нажатии.
-function describe(reward: any): { icon: string; text: string } {
-  if (!reward) return { icon: '🎁', text: 'Награда' };
+// Отдаём и текст, и картинку: под каждым баллом шкалы рисуется та же
+// иконка, которую игрок видит в игре — золото, контейнер, ампула
+// допинга, портрет наёмника. Эмодзи остаётся запасным вариантом для
+// того, чему картинки в игре нет (VIP).
+const ICON = {
+  gold: '/img/icons/gold.webp',
+  dollar: '/img/icons/dollar.webp',
+  units: '/img/tabs/tech_ground.webp',
+};
+
+function describe(reward: any): { icon: string; img: string; text: string } {
+  const none = { icon: '🎁', img: '', text: 'Награда' };
+  if (!reward) return none;
   // Награда бывает составной («150 золота и $15 млрд») — тогда
-  // перечисляем всё, а иконку берём от первой части
+  // перечисляем всё, а картинку берём от первой части
   if (reward.gold && reward.dollars) {
-    return { icon: '🪙', text: `${u.fmt(reward.gold)} золота и $${u.fmt(reward.dollars)}` };
+    return { icon: '🪙', img: ICON.gold, text: `${u.fmt(reward.gold)} золота и $${u.fmt(reward.dollars)}` };
   }
-  if (reward.gold)     return { icon: '🪙', text: `${u.fmt(reward.gold)} золота` };
-  if (reward.dollars)  return { icon: '💵', text: `$${u.fmt(reward.dollars)}` };
+  if (reward.gold)    return { icon: '🪙', img: ICON.gold, text: `${u.fmt(reward.gold)} золота` };
+  if (reward.dollars) return { icon: '💵', img: ICON.dollar, text: `$${u.fmt(reward.dollars)}` };
   if (reward.containers) {
     const c = config.CONTAINERS.find((x: any) => x.tier === reward.containers.tier);
-    return { icon: '📦', text: `${reward.containers.qty} × ${(c && c.name) || 'контейнер'} (${(c && c.gold) || 0} золота)` };
+    return {
+      icon: '📦', img: c ? `/img/containers/${c.id}.webp` : '',
+      text: `${reward.containers.qty} × ${(c && c.name) || 'контейнер'} (${(c && c.gold) || 0} золота)`,
+    };
   }
   if (reward.items) {
-    const parts = Object.entries(reward.items).map(([id, n]) => {
+    const ids = Object.keys(reward.items);
+    const parts = ids.map((id) => {
       const it = config.MARKET_ITEM_BY_ID[id];
-      return `${(it && it.name) || id} ×${n}`;
+      return `${(it && it.name) || id} ×${reward.items[id]}`;
     });
-    return { icon: '💉', text: parts.join(', ') };
+    return { icon: '💉', img: ids.length ? `/img/market/${ids[0]}.webp` : '', text: parts.join(', ') };
   }
-  if (reward.vipDays)  return { icon: '👑', text: `VIP-подписка на ${reward.vipDays} дн.` };
-  if (reward.topUnits) return { icon: '🚙', text: `${reward.topUnits} единиц новейшей техники` };
+  if (reward.vipDays)  return { icon: '👑', img: '', text: `VIP-подписка на ${reward.vipDays} дн.` };
+  if (reward.topUnits) return { icon: '🚙', img: ICON.units, text: `${reward.topUnits} единиц новейшей техники` };
   if (reward.saboteurs) {
     const RU: Record<string, string> = { ground: 'наземных', sea: 'морских', air: 'воздушных',
       building: 'построечных', secret: 'секретных', suicide: 'смертников' };
-    const kinds = (reward.saboteurs.kinds || []).map((k: string) => RU[k] || k).join(', ');
-    return { icon: '🥷', text: `по ${reward.saboteurs.each} диверсантов: ${kinds}` };
+    const kinds = (reward.saboteurs.kinds || []);
+    return {
+      icon: '🥷', img: kinds.length ? `/img/saboteurs/${kinds[0]}.webp` : '',
+      text: `по ${reward.saboteurs.each} диверсантов: ${kinds.map((k: string) => RU[k] || k).join(', ')}`,
+    };
   }
-  if (reward.halfOfPurchase) return { icon: '🪙', text: 'половина стоимости покупки' };
+  if (reward.halfOfPurchase) return { icon: '🪙', img: ICON.gold, text: 'половина стоимости покупки' };
   if (reward.commanders) {
-    const names = (reward.commanders.ids || []).map((id: string) => {
+    const ids = reward.commanders.ids || [];
+    const names = ids.map((id: string) => {
       const m = config.COMMANDERS.find((x: any) => x.id === id);
       return (m && m.name) || id;
     });
-    return { icon: '🎖', text: `Наёмники ${names.join(' и ')} на ${reward.commanders.days} дн.` };
+    return {
+      icon: '🎖', img: ids.length ? `/img/mercenaries/${ids[0]}.webp` : '',
+      text: `Наёмники ${names.join(' и ')} на ${reward.commanders.days} дн.`,
+    };
   }
-  return { icon: '🎁', text: 'Награда' };
+  return none;
 }
 
 // ── Выдача награды ────────────────────────────────────────────────
@@ -178,7 +198,7 @@ function boardView(user: User, board: Board) {
     const step = i + 1;
     const d = describe(r);
     return {
-      step, icon: d.icon, text: d.text,
+      step, icon: d.icon, img: d.img, text: d.text,
       reached: points >= step,
       claimed: claimed.indexOf(String(step)) >= 0,
     };
@@ -190,7 +210,7 @@ function view(user: User) {
   const out: any = { inviter: boardView(user, 'inviter'), share: shareView(user) };
   // Шкала новобранца — тем, кто сам пришёл по приглашению
   if ((user as any).referredBy) out.newbie = boardView(user, 'newbie');
-  out.pairs = pairsView(user);
+  out.pair = pairBoard(user);
   return out;
 }
 
@@ -268,28 +288,28 @@ function onReinforce(sender: User, target: User): void {
 }
 
 // ═══ ПАРНЫЕ ЗАДАНИЯ ═══════════════════════════════════════════════
-// Пара — это приглашающий и его приглашённый. Задание закрыто, когда
-// показатель набрали ОБА; награда приходит обоим сразу, без кнопок:
-// «сделали вдвоём — получили вдвоём».
+// Доска у игрока ОДНА, а напарников может быть много: пригласил пятерых —
+// в напарники идёт любой из них. По каждому заданию берётся тот, кто
+// продвинулся дальше всех; у приглашённого напарник один — тот, кто его
+// привёл.
 //
-// Проверка идёт в момент, когда кто-то из пары открывает раздел. Это
-// намеренно: гонять все пары в игровом тике — работа на ровном месте,
-// а награда всё равно ждёт игрока в игре, а не в почте.
+// Награда приходит обоим — игроку и тому напарнику, чьим прогрессом
+// задание закрыто. Каждому задание засчитывается ОДИН раз (ежедневным —
+// раз в московские сутки), поэтому пятеро друзей не превращают одно
+// задание в пять наград.
 //
-// Хранение: коллекция 'refPairs' = { 'idA|idB': { day, daily:{}, once:{} } }
-function pairsStore(): Record<string, any> {
-  return db.load<Record<string, any>>('refPairs', {});
-}
-function pairKey(a: string, b: string): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-function pairState(a: string, b: string): any {
-  const all = pairsStore();
-  const key = pairKey(a, b);
-  if (!all[key]) all[key] = { day: '', daily: {}, once: {} };
-  const st = all[key];
+// Проверка идёт в момент, когда игрок открывает раздел: гонять всех
+// в игровом тике — работа на ровном месте, а награда всё равно ждёт
+// человека в игре.
+//
+// Хранение: user.refQuests.pair = { day, daily: {id:at}, once: {id:at} }
+function pairBox(user: any): any {
+  const b = boxOf(user);
+  if (!b.pair || typeof b.pair !== 'object') b.pair = { day: '', daily: {}, once: {} };
+  const st = b.pair;
   const today = u.dayKey();
   if (st.day !== today) { st.day = today; st.daily = {}; }
+  if (!st.daily) st.daily = {};
   if (!st.once) st.once = {};
   return st;
 }
@@ -307,8 +327,10 @@ function sentReinforceToday(from: any, toId: string): boolean {
 // Значение ежедневного показателя для ОДНОГО игрока пары
 function pairDailyValue(p: any, other: any, metric: string): number {
   switch (metric) {
-    case 'pairReinforce':    return sentReinforceToday(p, other.id) ? 1 : 0;
-    case 'pairGroupBattles': return Math.max(0, Number((dayBox(p).groupWith || {})[other.id]) || 0);
+    // Совместные показатели без напарника не считаются: «отправить друг
+    // другу подкрепления» в одиночку не выполняется
+    case 'pairReinforce':    return other && sentReinforceToday(p, other.id) ? 1 : 0;
+    case 'pairGroupBattles': return other ? Math.max(0, Number((dayBox(p).groupWith || {})[other.id]) || 0) : 0;
     case 'marketBuy':        return dayBox(p).bestBuyGold > 0 ? 1 : 0;
     case 'breachIn':         return daily(p, 'breaches');
     default:                 return daily(p, metric);
@@ -335,10 +357,19 @@ function resolveReward(reward: any, p: any): any {
   return { gold: Math.max(1, Math.floor(spent / 2)) };
 }
 
-function grantPairReward(a: any, b: any, reward: any, taskName: string): void {
+// Награду получают оба: игрок и тот напарник, чьим прогрессом задание
+// закрыто. Напарнику задание тоже отмечается — иначе он получил бы за
+// него награду второй раз, открыв свой раздел.
+function grantPairReward(a: any, b: any, reward: any, taskName: string,
+                         kind: 'daily' | 'once', taskId: string): void {
   for (const p of [a, b]) {
+    const box = pairBox(p);
+    const slot = kind === 'daily' ? box.daily : box.once;
+    if (slot[taskId]) continue;          // уже получал
+    slot[taskId] = Date.now();
     const notes: any[] = [];
     grantReward(p, resolveReward(reward, p), notes, 'referral');
+    db.markUser(p.id);
     try {
       const d = describe(resolveReward(reward, p));
       require('./notifications').push(p.id, 'ref_pair',
@@ -347,31 +378,45 @@ function grantPairReward(a: any, b: any, reward: any, taskName: string): void {
   }
 }
 
-// Одна пара целиком. Здесь же выдаются награды за только что закрытые
-// задания — отдельной кнопки у парных заданий нет.
-function pairBoard(user: User, other: User) {
-  const st = pairState(user.id, other.id);
+// Доска парных заданий игрока целиком. Здесь же выдаются награды за
+// только что закрытые задания — отдельной кнопки у парных заданий нет.
+function pairBoard(user: User) {
+  const st = pairBox(user);
+  const mates = partnersOf(user);
   const build = (list: any[], kind: 'daily' | 'once') => list.map((t: any) => {
-    const mine  = kind === 'daily' ? pairDailyValue(user, other, t.metric)  : pairOnceValue(user, t.metric);
-    const yours = kind === 'daily' ? pairDailyValue(other, user, t.metric) : pairOnceValue(other, t.metric);
-    const both = mine >= t.need && yours >= t.need;
+    const mine = kind === 'daily' ? pairDailyValue(user, null, t.metric) : pairOnceValue(user, t.metric);
+    // Совместные задания (обмен подкреплениями, бои вместе) считаются
+    // по конкретному напарнику, поэтому лучшего ищем по ПАРЕ, а не по
+    // одному лишь его собственному счётчику
+    let best: any = null, bestVal = -1, bestMine = mine;
+    for (const m of mates) {
+      const theirs = kind === 'daily' ? pairDailyValue(m, user, t.metric) : pairOnceValue(m, t.metric);
+      const mineWith = kind === 'daily' ? pairDailyValue(user, m, t.metric) : mine;
+      const pairMin = Math.min(mineWith, theirs);
+      const score = pairMin >= t.need ? Infinity : theirs;
+      if (score > bestVal) { bestVal = score; best = m; bestMine = mineWith; }
+    }
+    const theirs = best
+      ? (kind === 'daily' ? pairDailyValue(best, user, t.metric) : pairOnceValue(best, t.metric))
+      : 0;
     const box = kind === 'daily' ? st.daily : st.once;
     let done = !!box[t.id];
-    if (both && !done) {
-      grantPairReward(user, other, t.reward, t.name);
+    if (!done && best && bestMine >= t.need && theirs >= t.need) {
+      grantPairReward(user, best, t.reward, t.name, kind, t.id);
       box[t.id] = Date.now();
       done = true;
-      db.save('refPairs');
+      db.markUser(user.id);
     }
     const d = describe(resolveReward(t.reward, user));
     return {
       id: t.id, name: t.name, note: t.note || '', need: t.need,
-      mine: Math.min(mine, t.need), theirs: Math.min(yours, t.need),
-      done, icon: d.icon, reward: d.text,
+      mine: Math.min(bestMine, t.need), theirs: Math.min(theirs, t.need),
+      mateName: best ? best.name : '',
+      done, icon: d.icon, img: d.img || '', reward: d.text,
     };
   });
   return {
-    otherId: other.id, otherName: other.name, otherLevel: other.level || 1,
+    mates: mates.map((m: any) => ({ id: m.id, name: m.name, level: m.level || 1 })),
     daily: build(config.REFERRAL_QUESTS.pairDaily || [], 'daily'),
     once:  build(config.REFERRAL_QUESTS.pairOnce  || [], 'once'),
   };
@@ -386,11 +431,6 @@ function partnersOf(user: User): User[] {
   if (boss) out.unshift(boss);
   return out;
 }
-
-function pairsView(user: User) {
-  return partnersOf(user).map((p) => pairBoard(user, p));
-}
-
 // ── Хук: групповой бой закончился ─────────────────────────────────
 // Отмечаем у каждого участника, с кем он сегодня сражался. Считаем
 // только пары «пригласивший — приглашённый»: остальным это поле ни к
@@ -410,4 +450,4 @@ function onGroupBattle(ids: string[]): void {
 }
 
 export = { view, boardView, claim, sharePctFor, shareView, onReinforce, describe, metricValue,
-  pairsView, pairBoard, partnersOf, onGroupBattle };
+  pairBoard, partnersOf, onGroupBattle };

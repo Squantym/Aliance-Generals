@@ -344,7 +344,10 @@ function referralView(user: User) {
     refCount: Math.max(invited.length, user.refCount || 0),
     refEarnings: user.refEarnings || 0,
     referredBy: user.referredBy || null,
-    canApply: !user.referredBy && user.level < 50,
+    // Кто пригласил — показываем позывным: «вы пришли от такого-то»
+    // читается, а идентификатор нет
+    invitedByName: user.referredBy
+      ? ((users()[user.referredBy] || ({} as any)).name || null) : null,
     level50Reward: config.REFERRAL.level50Reward,
     level50Tokens: config.REFERRAL.level50Tokens,
     inviteeGold: config.REFERRAL.inviteeGold,
@@ -353,6 +356,10 @@ function referralView(user: User) {
 }
 
 // Применить код при регистрации/первом входе
+// Зовётся ТОЛЬКО из регистрации: код приходит из ссылки или QR друга
+// вместе с анкетой. Кнопки «ввести чужой код» в игре нет — возможность
+// привязаться к чужому коду в любой момент до 50 уровня означала, что
+// договориться об этом можно уже после того, как игрок вырос сам.
 function applyReferral(user: User, code: string, notices: Notices) {
   if (user.referredBy) throw new u.ApiError('Вы уже использовали реферальный код');
   if (user.refRewarded) throw new u.ApiError('Реферальный код уже применён');
