@@ -46,6 +46,39 @@ function sweepInvites(): number {
   return dropped;
 }
 
+// ── Бот в ростере ─────────────────────────────────────────────────
+// Живому игроку id выдаёт регистрация, ботам его собирали как 'bot_…'
+// (групповые боты — 'gbot_…'). Старые записи несли ещё и пометку
+// isBot. Проверяем оба признака: одной пометки мало — в самых старых
+// записях её нет, а одного id мало, если формат когда-то менялся.
+function isBotEntry(m: any): boolean {
+  return !!m && (m.isBot === true || /^g?bot_/.test(String(m.id || '')));
+}
+
+// ── Разовая чистка: боты вон из личных альянсов ───────────────────
+// Ботов набирали кнопкой «позвать бойца»; кнопку убрали в 217-м, а уже
+// набранные остались и продолжали давать вместимость армии — по 10
+// единиц техники за каждого. Живых союзников не трогаем.
+// Зовётся ОДИН раз при старте по флагу в meta (см. server.ts), а не
+// каждый раз: это правка данных, её место — миграция.
+function purgeBots(): { players: number; removed: number } {
+  const all = users();
+  let players = 0, removed = 0;
+  for (const id of Object.keys(all)) {
+    const p: any = all[id];
+    if (!Array.isArray(p.allianceRoster) || !p.allianceRoster.length) continue;
+    const kept = p.allianceRoster.filter((m: any) => !isBotEntry(m));
+    if (kept.length === p.allianceRoster.length) continue;
+    removed += p.allianceRoster.length - kept.length;
+    players++;
+    p.allianceRoster = kept;
+    // Счётчик обязан повторять ростер: от него считается вместимость
+    p.allianceMembers = kept.length;
+    ensure(p);          // заодно уберёт дубли, если они там были
+  }
+  return { players, removed };
+}
+
 // Гарантируем поля личного альянса
 function ensure(user: User): void {
   if (typeof user.allianceMembers !== 'number') user.allianceMembers = 0;
@@ -317,5 +350,5 @@ function removeMember(user: User, memberId: string, notices: Notices) {
 export = {
   areAllies, sweepInvites, INVITE_TTL_MS,
   ensure, maxMembers, view, buyDiplomat, invitePlayer,
-  myInvites, acceptInvite, declineInvite, removeMember,
+  myInvites, acceptInvite, declineInvite, removeMember, purgeBots,
 };

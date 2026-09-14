@@ -165,6 +165,50 @@ const inbox = () => db.load('alliance_invites', {});
   eq('счётчик сошёлся с ростером', D.allianceMembers, D.allianceRoster.length);
   eq('и стал прежним', D.allianceMembers, dBefore + 1);
 
+  console.log('\n[10] Разовая чистка: боты вон, живые союзники на месте');
+  // Ботов набирали старой кнопкой «позвать бойца». Кнопку убрали, а
+  // набранные остались и продолжали давать вместимость армии.
+  const capBefore = player.capacity(A);
+  A.allianceRoster.push({ id: 'bot_aaa11111', name: 'Снайпер #101', isBot: true });
+  A.allianceRoster.push({ id: 'bot_bbb22222', name: 'Радист #202', isBot: true });
+  // Самая старая запись — без пометки isBot, только по id
+  A.allianceRoster.push({ id: 'bot_ccc33333', name: 'Сапёр #303' });
+  A.allianceMembers = A.allianceRoster.length;
+  const liveAllies = A.allianceRoster.filter((m) => !String(m.id).startsWith('bot_')).length;
+  const capWithBots = player.capacity(A);
+  ok('с ботами вместимость армии выше', capWithBots > capBefore);
+  // Игрок без ботов — контрольный: его трогать нельзя
+  const cleanBefore = C.allianceMembers;
+
+  const res = pa.purgeBots();
+  eq('ботов убрано ровно три', res.removed, 3);
+  eq('и затронут один игрок', res.players, 1);
+  eq('в ростере остались только живые', A.allianceRoster.length, liveAllies);
+  ok('ни одной записи с bot_ не осталось',
+     !A.allianceRoster.some((m) => String(m.id).startsWith('bot_')));
+  ok('живой союзник на месте', A.allianceRoster.some((m) => m.id === B.id));
+  eq('счётчик сошёлся с ростером', A.allianceMembers, liveAllies);
+  eq('вместимость армии вернулась к честной', player.capacity(A), capBefore);
+  eq('игрока без ботов не тронули', C.allianceMembers, cleanBefore);
+
+  // Миграция разовая: второй прогон не должен находить работу
+  const again = pa.purgeBots();
+  eq('повторный прогон ничего не находит', again.removed, 0);
+  eq('и никого не трогает', again.players, 0);
+
+  console.log('\n[11] Чистка запускается один раз и только по флагу');
+  const srv = fs.readFileSync(path.join(ROOT, 'server.ts'), 'utf8');
+  ok('в старте есть вызов чистки', /purgeBots\(\)/.test(srv));
+  const at = srv.indexOf('purgeBots()');
+  const around = srv.slice(Math.max(0, at - 700), at);
+  ok('вызов закрыт флагом в meta', /if \(!meta\.allianceBotsPurged\)/.test(around));
+  ok('флаг проставляется после чистки', /meta\.allianceBotsPurged = Date\.now\(\)/.test(srv));
+  // Дверь, через которую боты попадали в клановый альянс, закрыта
+  const grp = fs.readFileSync(path.join(ROOT, 'src/services/groups.ts'), 'utf8');
+  ok('в клановый альянс бота больше не позвать',
+     /startsWith\('bot_'\)[\s\S]{0,200}только живых игроков/.test(grp));
+  ok('автоприёма заявки ботом не осталось', grp.indexOf('Боец автоматически принял') === -1);
+
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });

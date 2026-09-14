@@ -271,28 +271,13 @@ function invite(user: User, kind: string, targetId: string, notices: Notices) {
     throw new u.ApiError(`Лимит ${limit} приглашений/час исчерпан. Слот освободится через ~${wait} мин. Наймите дипломата чтобы увеличить лимит.`);
   }
 
-  // Автоприём для ботов: добавляем фейкового члена в альянс.
-  // ВАЖНО: боты эфемерны (живут 15 минут в кэше battle.js), поэтому
-  // сохраняем СНИМОК их данных (имя/уровень/флаг) на момент вступления —
-  // иначе отображение списка участников будет терять их после истечения TTL.
-  if (String(targetId).startsWith('bot_')) {
-    if (kind !== 'alliance') throw new u.ApiError('В легион можно приглашать только живых игроков');
-    const botMembers = g.botMembers || (g.botMembers = []);
-    if (botMembers.includes(targetId)) throw new u.ApiError('Этот боец уже у вас в альянсе');
-    botMembers.push(targetId);
-    g.members = g.members || [g.leaderId];
-    g.members.push(targetId);
-    // Снимок данных бота — берём из battle.js (если ещё жив в кэше)
-    if (!g.botSnapshots) g.botSnapshots = {};
-    const battle = require('./battle');
-    const botData = battle.peekBot(targetId);
-    g.botSnapshots[targetId] = botData
-      ? { id: targetId, name: botData.name, flag: botData.flag, level: botData.level, rating: botData.rating || botData.power }
-      : { id: targetId, name: 'Боец альянса', flag: '🏳', level: 1, rating: 0 };
-    g.inviteLog.push(Date.now());
-    db.save(def.coll);
-    notices.push(`✅ Боец автоматически принял приглашение в альянс. Осталось приглашений: ${limit - used - 1}/час`);
-    return;
+  // Ботов в группы больше не набирают. Кнопку убрали из личного альянса
+  // ещё в 217-м, а здесь путь оставался открытым: заявка боту принималась
+  // сама собой, и размер альянса — то есть мощь — рос из ниоткуда.
+  // Чтение старых записей (memberBrief, botSnapshots) сохраняем: данные
+  // в чужих мирах могут быть какими угодно, ломать их показ незачем.
+  if (String(targetId).startsWith('bot_') || String(targetId).startsWith('gbot_')) {
+    throw new u.ApiError('В альянс приглашают только живых игроков');
   }
 
   const target = player.users()[targetId];
