@@ -52,6 +52,23 @@ function ensure(user: User): void {
   if (!Array.isArray(user.allianceRoster)) user.allianceRoster = [];
   if (typeof user.allianceDiplomats !== 'number') user.allianceDiplomats = 0;
   if (!Array.isArray(user.allianceInviteLog)) user.allianceInviteLog = [];
+  // Один и тот же союзник мог попасть в ростер дважды: если двое
+  // позвали друг друга и оба приняли заявку, каждая сторона
+  // добавлялась по второму разу, и альянс рос на двоих вместо одного.
+  // Чистим повторы здесь, чтобы починились и уже испорченные списки.
+  // Счётчик правим ТОЛЬКО вместе с чисткой: он и ростер всегда росли
+  // в одном месте, и трогать его без доказанного повтора нельзя —
+  // ошибись мы, и у игрока молча упадёт вместимость армии.
+  const seen: Record<string, boolean> = {};
+  const clean = user.allianceRoster!.filter((m: any) => {
+    if (!m || !m.id || m.id === user.id || seen[m.id]) return false;
+    seen[m.id] = true;
+    return true;
+  });
+  if (clean.length !== user.allianceRoster!.length) {
+    user.allianceRoster = clean;
+    user.allianceMembers = clean.length;
+  }
 }
 
 // Лимит размера альянса = уровень × MEMBERS_PER_LEVEL
@@ -232,17 +249,26 @@ function acceptInvite(user: User, fromId: string, notices: Notices) {
   // только когда человек действительно вступил, а не когда позвали
   try { require('./tutorial').notify(inviter, 'ally_join', []); } catch (e) {}
 
-  // Каждому +1 (друг друга добавляют в ростер), лимиты независимы
-  if (user.allianceMembers! < maxMembers(user)) {
+  // Каждому +1 (друг друга добавляют в ростер), лимиты независимы.
+  // ВАЖНО: только если его там ещё нет. Двое могли позвать друг друга
+  // одновременно — тогда вторая принятая заявка добавляла того же
+  // человека повторно, и альянс рос на двоих вместо одного.
+  const alreadyMine = user.allianceRoster!.some((m: any) => m.id === inviter.id);
+  const alreadyTheirs = inviter.allianceRoster!.some((m: any) => m.id === user.id);
+  if (!alreadyMine && user.allianceMembers! < maxMembers(user)) {
     user.allianceMembers!++;
     user.allianceRoster!.push({ id: inviter.id, name: inviter.name });
     try { require('./seasons').onAllianceRecruit(user); } catch (e) {}
   }
-  if (inviter.allianceMembers! < maxMembers(inviter)) {
+  if (!alreadyTheirs && inviter.allianceMembers! < maxMembers(inviter)) {
     inviter.allianceMembers!++;
     inviter.allianceRoster!.push({ id: user.id, name: user.name });
     try { require('./seasons').onAllianceRecruit(inviter); } catch (e) {}
   }
+  // Встречную заявку гасим: иначе тот, кого только что приняли, мог бы
+  // «принять» ответную и снова попасть в тот же альянс
+  const mirror = fresh(inv[inviter.id] || []).filter((x: any) => x.fromId !== user.id);
+  inv[inviter.id] = mirror;
 
   list.splice(idx, 1);
   inv[user.id] = list;
@@ -252,7 +278,9 @@ function acceptInvite(user: User, fromId: string, notices: Notices) {
     require('./notifications').push(inviter.id, 'alliance_joined',
       `🤝 ${user.name} принял ваше приглашение в альянс!`, { id: user.id, name: user.name });
   } catch (e) {}
-  notices.push(`🤝 Вы и «${inviter.name}» теперь союзники! В вашем альянсе: ${user.allianceMembers}.`);
+  notices.push(alreadyMine
+    ? `🤝 Вы и «${inviter.name}» и так союзники. В вашем альянсе: ${user.allianceMembers}.`
+    : `🤝 Вы и «${inviter.name}» теперь союзники! В вашем альянсе: ${user.allianceMembers}.`);
   return view(user);
 }
 

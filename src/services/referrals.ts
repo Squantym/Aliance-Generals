@@ -9,9 +9,9 @@
 //   • список приглашённых: кто пришёл, докуда дорос, сколько золота
 //     принёс. Раньше игрок видел только счётчик «приглашено: 3» и не мог
 //     понять, кто из друзей вообще зашёл;
-//   • раздел «Задания» — включается и выключается владельцем из панели.
-//     Пока пустой: наполнение обсуждается отдельно, а выключатель нужен
-//     сразу, чтобы недоделанный раздел не висел у игроков.
+//   • раздел «Задания» («Операция „Пополнение“») — показан по умолчанию,
+//     выключатель в панели остался на случай, если его понадобится
+//     временно спрятать.
 //
 // QR-код НЕ рисуется на сервере: картинка нужна только в интерфейсе, и
 // рисовать её в браузере дешевле, чем гонять по сети (public/js/screens/
@@ -33,8 +33,16 @@ interface RefSettings {
 }
 
 function settings(): RefSettings {
-  const s = db.load<RefSettings>('referralSettings', { questsOn: false, changedAt: 0, changedBy: '' });
-  if (typeof s.questsOn !== 'boolean') s.questsOn = false;
+  // Умолчание — «показан». Раздел заданий давно наполнен, но у игроков он
+  // так и не появился: выключатель стоял в положении «скрыт» с тех пор,
+  // когда заданий ещё не было, и включить его никто не догадался.
+  const s = db.load<RefSettings>('referralSettings', { questsOn: true, changedAt: 0, changedBy: '' });
+  if (typeof s.questsOn !== 'boolean') s.questsOn = true;
+  // changedAt = 0 значит, что кнопку в панели никто не нажимал, а запись
+  // в базе — след старого умолчания: db.saveAll() пишет все загруженные
+  // коллекции, в том числе созданные из значения по умолчанию. Решением
+  // владельца такую запись считать нельзя.
+  if (!s.changedAt) s.questsOn = true;
   return s;
 }
 
@@ -105,8 +113,11 @@ function adminView(actor: User) {
     questsOn: s.questsOn,
     changedAt: s.changedAt || 0,
     changedBy: s.changedBy || '',
-    // Сколько условий настроено всего: обе шкалы вместе
-    questCount: (config.REFERRAL_QUESTS.inviter || []).length + (config.REFERRAL_QUESTS.newbie || []).length,
+    // Сколько условий настроено всего: обе шкалы и парные задания
+    questCount: (config.REFERRAL_QUESTS.inviter || []).length
+      + (config.REFERRAL_QUESTS.newbie || []).length
+      + (config.REFERRAL_QUESTS.pairDaily || []).length
+      + (config.REFERRAL_QUESTS.pairOnce || []).length,
     invited,
   };
 }

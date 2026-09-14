@@ -125,6 +125,46 @@ const inbox = () => db.load('alliance_invites', {});
   const social = fs.readFileSync(path.join(ROOT, 'public/js/screens/social.js'), 'utf8');
   ok('на экране альянса срок заявки виден', /сгорит через/.test(social));
 
+  console.log('\n[8] Встречные заявки — союзник один, а не двое');
+  // Жалоба владельца: двое позвали друг друга, оба нажали «принять» —
+  // и альянс вырос на двоих вместо одного.
+  await auth.register('Взаимный', 'password1', 'e@t.ru', 'ru', '5.5.5.5');
+  await auth.register('Ответный', 'password1', 'f@t.ru', 'ru', '6.6.6.6');
+  const D = Object.values(U).find((x) => x.name === 'Взаимный');
+  const E = Object.values(U).find((x) => x.name === 'Ответный');
+  for (const p of [D, E]) { p.level = 50; pa.ensure(p); }
+  const dBefore = D.allianceMembers, eBefore = E.allianceMembers;
+  pa.invitePlayer(D, 'Ответный', nx);
+  pa.invitePlayer(E, 'Взаимный', nx);
+  eq('заявки лежат у обоих', (inbox()[D.id] || []).length + (inbox()[E.id] || []).length, 2);
+  pa.acceptInvite(E, D.id, nx);
+  eq('принявшему +1', E.allianceMembers, eBefore + 1);
+  eq('звавшему +1', D.allianceMembers, dBefore + 1);
+  eq('встречная заявка погашена', (inbox()[D.id] || []).length, 0);
+  fails('и принять её уже нельзя', () => pa.acceptInvite(D, E.id, nx), 'не найдено');
+  // Даже если встречная заявка всё-таки дойдёт до приёма, второй раз
+  // того же человека в ростер класть нельзя
+  inbox()[D.id] = [{ fromId: E.id, fromName: E.name, at: Date.now() }];
+  pa.acceptInvite(D, E.id, nx);
+  // Сначала смотрим на того, кто уже принимал: у принимающего дубль
+  // подчистит ensure() при сборке экрана, а у второй стороны — некому.
+  eq('повторный приём альянс не растит', E.allianceMembers, eBefore + 1);
+  eq('и у принимающей стороны тоже', D.allianceMembers, dBefore + 1);
+  eq('в ростере союзник ровно один раз', D.allianceRoster.filter((m) => m.id === E.id).length, 1);
+  ok('союз при этом обоюдный', pa.areAllies(D, E));
+
+  console.log('\n[9] Уже задвоенные ростеры чинятся сами');
+  // У тех, кто поймал баг до починки, в ростере лежит дубль. Ждать
+  // ручной правки базы нельзя — счётчик чинится при первом обращении.
+  D.allianceRoster.push({ id: E.id, name: E.name });
+  D.allianceRoster.push({ id: D.id, name: D.name });   // и сам себе союзник
+  D.allianceMembers = D.allianceRoster.length;
+  pa.ensure(D);
+  eq('дубль вычищен', D.allianceRoster.filter((m) => m.id === E.id).length, 1);
+  eq('сам себя в союзниках не держит', D.allianceRoster.filter((m) => m.id === D.id).length, 0);
+  eq('счётчик сошёлся с ростером', D.allianceMembers, D.allianceRoster.length);
+  eq('и стал прежним', D.allianceMembers, dBefore + 1);
+
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);
 })().catch((e) => { console.error('⛔ ' + (e && e.stack || e)); process.exit(1); });

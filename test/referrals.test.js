@@ -12,7 +12,7 @@
 //     ложится в историю как «Приглашения», а не как выдача админа.
 //  5. Почта: удаление переписки и очистка всего ящика, при которой
 //     незабранная награда не сгорает.
-//  6. Раздел «Задания»: по умолчанию выключен, включается только из
+//  6. Раздел «Задания»: показан по умолчанию, прячется только из
 //     панели и только с правом «Акции».
 //  7. Генератор QR: собранная матрица совпадает с эталонным снимком.
 //     Сам снимок снят с картинки, прочитанной СТОРОННИМ декодером
@@ -141,18 +141,29 @@ const fails = (fn, part, n) => {
   ok(social.inbox(other).threads.length === 1, 'у собеседника его копия переписки на месте');
 
   console.log('\n[6] Раздел «Задания» — выключатель в панели');
-  ok(referrals.questsEnabled() === false, 'по умолчанию раздел выключен');
-  ok(features.referralView(boss).questsOn === false, 'игрок его не видит');
-  fails(() => referrals.setQuests(boss, true, nx), 'прав', 'обычный игрок включить не может');
-  ok(referrals.questsEnabled() === false, 'и после его попытки раздел остался выключенным');
+  ok(referrals.questsEnabled() === true, 'по умолчанию раздел показан игрокам');
+  ok(features.referralView(boss).questsOn === true, 'игрок видит кнопку заданий');
+  // Запись, оставшаяся от прежнего умолчания «скрыт»: её писал не
+  // владелец, а db.saveAll(), поэтому решением её считать нельзя —
+  // именно из-за неё раздел так и не появился в игре.
+  const st = db.load('referralSettings');
+  st.questsOn = false; st.changedAt = 0; st.changedBy = '';
+  ok(referrals.questsEnabled() === true,
+     'старая запись «скрыт» без отметки о нажатии кнопки не прячет раздел');
+  fails(() => referrals.setQuests(boss, false, nx), 'прав', 'обычный игрок выключить не может');
+  ok(referrals.questsEnabled() === true, 'и после его попытки раздел остался на месте');
   const owner = await reg('Владелец');
   owner.role = 'owner';
-  referrals.setQuests(owner, true, nx);
-  ok(referrals.questsEnabled() === true && features.referralView(boss).questsOn === true,
-     'владелец включил — раздел появился у игроков');
-  ok(referrals.adminView(owner).changedBy === 'Владелец', 'в панели видно, кто менял');
   referrals.setQuests(owner, false, nx);
-  ok(referrals.questsEnabled() === false, 'и так же выключается');
+  ok(referrals.questsEnabled() === false && features.referralView(boss).questsOn === false,
+     'владелец выключил — раздел спрятан');
+  ok(referrals.adminView(owner).changedBy === 'Владелец', 'в панели видно, кто менял');
+  referrals.setQuests(owner, true, nx);
+  ok(referrals.questsEnabled() === true, 'и так же возвращается');
+  ok(referrals.adminView(owner).questCount
+     === config.REFERRAL_QUESTS.inviter.length + config.REFERRAL_QUESTS.newbie.length
+       + config.REFERRAL_QUESTS.pairDaily.length + config.REFERRAL_QUESTS.pairOnce.length,
+     `в панели посчитаны все задания, включая парные (${referrals.adminView(owner).questCount})`);
   const rq = require('../dist/src/services/referralQuests');
   ok(rq.view(boss).inviter.steps.length === 10, 'в шкале вербовщика десять баллов с наградами');
 

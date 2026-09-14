@@ -221,16 +221,35 @@ function matchRoute(pattern: string, pathname: string): Record<string, string> |
   return params;
 }
 
+// Пути, по которым картинка законно приходит В ТЕЛЕ запроса: браузер
+// её уже уменьшил, но в base64 она весит на треть больше файла.
+// Таких путей три — тема форума, картинка новости и картинка события
+// в панели. Раньше в списке был только форум: новость и событие
+// упирались в общий предел 200 КБ и обрывались молча, а владелец видел
+// «какую-то ошибку сервера» на нормальной картинке.
+// Список сверяется с пределами браузера в test/bodysize.test.js.
+const IMAGE_ROUTES = /^\/api\/(forum\/topic|news\/image|admin\/event\/image)(\?|$)/;
+const BODY_CAP_IMAGE = 2 * 1024 * 1024;   // вдвое к самой тяжёлой картинке
+const BODY_CAP_PLAIN = 200 * 1024;
+
 // Чтение JSON-тела запроса (с ограничением размера)
 function readBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve) => {
     let data = '';
+    let over = false, dumped = 0;
+    const cap = IMAGE_ROUTES.test(String(req.url || '')) ? BODY_CAP_IMAGE : BODY_CAP_PLAIN;
     req.on('data', (chunk) => {
+      // Превышение больше не обрываем молча: помечаем тело, и слой выше
+      // отвечает понятным «слишком тяжёлое». Рвать соединение здесь
+      // нельзя — вместе с ним умрёт и ответ, а игрок увидит «сервер
+      // недоступен» вместо объяснения. Остаток дочитываем в никуда,
+      // но не бесконечно: вчетверо больше лимита — и связь всё-таки рвём.
+      if (over) { dumped += chunk.length; if (dumped > cap * 4) req.destroy(); return; }
       data += chunk;
-      // Картинки форума приходят в теле запроса (браузер их предварительно
-      // уменьшает), поэтому для них лимит выше обычного
-      const cap = /\/api\/forum\/(topic|upload)/.test(String(req.url || '')) ? 900 * 1024 : 200 * 1024;
-      if (data.length > cap) { req.destroy(); resolve({}); }
+      if (data.length > cap) {
+        over = true; data = '';
+        resolve({ __tooLarge: true, __cap: cap });
+      }
     });
     req.on('end', () => {
       try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); }
@@ -620,6 +639,16 @@ function createApp() {
               return /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : '';
             })(),
           };
+
+          // Тело не влезло в лимит. Отвечаем прямо, а не обрывом связи:
+          // обрыв игрок видит как «сервер недоступен» и идёт жаловаться,
+          // хотя достаточно взять картинку полегче.
+          if ((reqCtx.body as any).__tooLarge) {
+            const mb = Math.round(((reqCtx.body as any).__cap / (1024 * 1024)) * 10) / 10;
+            return sendJson(res, 413, {
+              error: `Слишком тяжёлый запрос: предел ${mb} МБ. Если это картинка — возьмите поменьше.`,
+            }, acceptEncoding);
+          }
 
           // Авторизация (если маршрут не открытый)
           if (!found.opts.open) {
