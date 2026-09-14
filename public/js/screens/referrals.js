@@ -1,8 +1,9 @@
 // ===================================================================
-// public/js/screens/referrals.js — «Пригласить друга»
+// public/js/screens/referrals.js — «Пригласить друга» и «Операция «Пополнение»»
 //
-// Личная ссылка, QR-код к ней, список приглашённых и раздел «Задания»
-// (включается владельцем из панели).
+// Личная ссылка, QR-код к ней, список приглашённых и мини-событие
+// «Операция «Пополнение»» — задания за приглашённых (включается
+// владельцем из панели).
 //
 // QR рисуется ЗДЕСЬ, а не на сервере: картинка нужна только в этом
 // экране, а гонять её по сети при каждом заходе незачем. Генератор свой,
@@ -403,7 +404,9 @@ App.screens.referral = async (c) => {
     </div>
 
     ${d.questsOn ? `
-      <button class="btn btn-orange" onclick="App.go('refquests')" style="width:100%">🎯 Задания приглашений →</button>` : ''}
+      <button class="btn btn-orange" onclick="App.go('refquests')" style="width:100%">
+        ⚡ Операция «Пополнение» →</button>
+      <p class="muted small center" style="margin:-4px 0 10px">Задания за приглашённых: шкала наград и общие дела с напарником.</p>` : ''}
 
     <div class="card">
       <div class="name">👥 Кто пришёл по вашей ссылке</div>
@@ -458,7 +461,7 @@ App.screens.refquests = async (c, param) => {
   let q = null;
   try { q = await API.get('/api/referral/quests'); }
   catch (e) {
-    c.innerHTML = `<div class="title">🎯 Задания приглашений</div><div class="card"><p class="muted">${UI.esc(e.message)}</p></div>`;
+    c.innerHTML = `<div class="title">⚡ Операция «Пополнение»</div><div class="card"><p class="muted">${UI.esc(e.message)}</p></div>`;
     return;
   }
   const parts = String(param || '').split('/');
@@ -508,7 +511,7 @@ App.screens.refquests = async (c, param) => {
     </div>`;
 
   c.innerHTML = `
-    <div class="title">🎯 Задания приглашений</div>
+    <div class="title">⚡ Операция «Пополнение»</div>
     ${tabs}
     ${tab === 'scales' ? scales() : pairs()}
     <button class="btn mt" onclick="App.go('referral')" style="width:100%">← К ссылке и QR-коду</button>`;

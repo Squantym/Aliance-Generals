@@ -1267,6 +1267,19 @@ App.screens.profile = async (c, param) => {
   if (spiedBtn) spiedBtn.onclick = () => App.showSpiedBy();
   const renameBtn = document.getElementById('pf-rename');
   if (renameBtn) renameBtn.onclick = () => App.showRename();
+  // Скрытый боевой профиль. Кнопка рисуется только в СВОЁМ профиле,
+  // поэтому и обработчик обязан висеть здесь, вне ветки «чужой
+  // профиль»: в ней он не навешивался, и нажатие не делало ничего.
+  const hideBtn = document.getElementById('pf-hide');
+  if (hideBtn) hideBtn.onclick = async () => {
+    hideBtn.disabled = true;
+    try {
+      const r = await API.post('/api/vip/hide-profile', { on: !(App.me && App.me.hideProfile) });
+      UI.toast((r && r.notices && r.notices[0]) || 'Готово');
+      await App.refreshMe();
+      App.rerender();
+    } catch (e) { hideBtn.disabled = false; UI.toast('⛔ ' + e.message); }
+  };
 
   const statsToggle = document.getElementById('pf-stats-toggle');
   if (statsToggle) {
@@ -1382,16 +1395,6 @@ App.screens.profile = async (c, param) => {
         setTimeout(() => { refreshMod(); App.rerender(); }, 300);
       };
     }
-
-    // Скрытый боевой профиль — переключатель для VIP
-  const hideBtn = document.getElementById('pf-hide');
-  if (hideBtn) hideBtn.onclick = async () => {
-    try {
-      await API.post('/api/vip/hide-profile', { on: !(App.me && App.me.hideProfile) });
-      await App.refreshMe();
-      App.rerender();
-    } catch (e) { UI.toast('⛔ ' + e.message); }
-  };
 
   const btnSpy = document.getElementById('pf-spy');
     if (btnSpy) btnSpy.onclick = async () => {

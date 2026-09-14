@@ -173,7 +173,7 @@ function grantReward(user: User, reward: any, notices: Notices, source: string):
   if (reward.items) {
     for (const [id, n] of Object.entries(reward.items)) require('./market').addItems(user, id, Number(n) || 0);
   }
-  if (reward.vipDays) require('./vip').grant(null, user, reward.vipDays, 'Задания приглашений', notices);
+  if (reward.vipDays) require('./vip').grant(null, user, reward.vipDays, 'Операция «Пополнение»', notices);
   if (reward.commanders) {
     for (const id of (reward.commanders.ids || [])) {
       require('./market').grantCommanderDays(user, id, reward.commanders.days, notices);
