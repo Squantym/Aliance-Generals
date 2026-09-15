@@ -4089,6 +4089,25 @@ const App = {
     App.route();
   },
 
+  // Нажатие на боеприпас в шапке = «хочу воевать»: ведёт к списку целей.
+  //
+  // Раньше здесь стоял App.go('war'), и на самом экране войны кнопка не
+  // делала НИЧЕГО: адрес уже #war, смены хэша нет — значит нет и
+  // перерисовки, а поверх списка целей так и висела карточка с итогом
+  // прошлого боя. Игрок жал на боеприпас и оставался на «ПОБЕДА».
+  goAttack() {
+    App._lastBattle = null;        // убираем карточку итога прошлого боя
+    // Уже на войне: _setWarTab сам поправит адрес и перерисует экран.
+    // Он живёт в war.js, а тот подгружается при первом заходе в раздел —
+    // значит на самом экране войны он точно есть.
+    if ((location.hash || '').indexOf('#war') === 0 && App._setWarTab) {
+      App._setWarTab('targets');
+      return;
+    }
+    App._warTab = 'targets';
+    App.go('war/targets');
+  },
+
   // Перерисовать текущий экран и прокрутить к блоку с указанным id
   // (используется после атаки: игрок сразу видит окно с результатом боя,
   // даже если пролистал список противников далеко вниз).
@@ -4368,7 +4387,7 @@ const App = {
       <div class="stat-row">
         <div class="clickable" onclick="App.go('hospital')" title="В госпиталь"><span class="ic-health"></span> <span class="stat-hp" id="st-hp">${m.res.hp.cur}/${m.res.hp.max}</span> <span class="timer" id="st-hp-t"></span></div>
         <div class="clickable" onclick="App.go('missions')" title="В спецоперации"><span class="ic-energy"></span> <span class="stat-en" id="st-en">${m.res.en.cur}/${m.res.en.max}</span> <span class="timer" id="st-en-t"></span></div>
-        <div class="clickable" onclick="App.go('war')" title="В бой"><span class="ic-ammo"></span> <span class="stat-am" id="st-am">${m.res.am.cur}/${m.res.am.max}</span> <span class="timer" id="st-am-t"></span></div>
+        <div class="clickable" onclick="App.goAttack()" title="К целям атаки"><span class="ic-ammo"></span> <span class="stat-am" id="st-am">${m.res.am.cur}/${m.res.am.max}</span> <span class="timer" id="st-am-t"></span></div>
       </div>
       ${m.res.hp.cur < 25 ? `
         <div class="low-hp-banner" onclick="App._quickHeal()">
