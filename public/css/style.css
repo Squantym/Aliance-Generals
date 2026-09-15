@@ -5495,3 +5495,13 @@ body.has-club-bar #header { top: 32px; }
 }
 .chat-page { min-width: 30px; padding: 3px 7px; font-size: 13px; }
 .chat-page-note { margin-left: 6px; white-space: nowrap; }
+
+/* ── Цели: «стаи» — кто с кем во взаимном альянсе ───────────────── */
+/* Буква и цвет вместе: по цвету видно, что цель не одна, по букве —
+   с кем именно она заодно, когда стай в списке несколько. */
+.pack-mark {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  border: 1px solid currentColor; border-radius: 5px;
+  padding: 0 5px; margin-left: 4px; line-height: 16px;
+  vertical-align: middle; white-space: nowrap;
+}

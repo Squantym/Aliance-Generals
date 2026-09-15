@@ -158,10 +158,14 @@ const QUESTS = {
     }
     return {};
   };
-  await App.screens.mail(c);
+  // Почта разделена на подвкладки: переписки — «Личные», награды от
+  // игры — «Системные». Проверяем обе.
+  await App.screens.mail(c, 'personal');
   ok('у переписки есть кнопка удаления', !!c.querySelector('[data-del-thread="u2"]'));
   ok('внизу есть очистка всех сообщений', !!document.getElementById('mail-clear-all'));
+  await App.screens.mail(c, 'system');
   ok('незабранная награда предлагает «Забрать»', !!c.querySelector('[data-claim-reward="r1"]'));
+  await App.screens.mail(c, 'personal');
   await c.querySelector('[data-del-thread="u2"]').onclick({ stopPropagation() {} });
   ok('удаление переписки уходит на сервер', posts.some((u) => u === '/api/mail/thread/u2/delete'));
   await document.getElementById('mail-clear-all').onclick();

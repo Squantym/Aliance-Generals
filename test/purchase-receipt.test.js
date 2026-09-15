@@ -170,7 +170,8 @@ const tick = () => new Promise((r) => setTimeout(r, 15));
     if (url === '/api/mail') return { threads: [] };
     return {};
   };
-  await App.screens.mail(c);
+  // Квитанции — это письма от игры, подвкладка «Системные»
+  await App.screens.mail(c, 'system');
   // Текст, а не разметка: неразрывный пробел в «2 875» разметка отдаёт
   // как &nbsp;, и проверка по innerHTML ложно краснела бы
   const text = c.textContent;

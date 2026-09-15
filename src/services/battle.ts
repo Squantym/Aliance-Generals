@@ -214,8 +214,40 @@ function opponents(user: User): any {
       allianceMembers: a ? a.members.length : 0,
       // ⭐ этот игрок состоит в ВАШЕМ личном альянсе (взаимно)
       inMyAlliance: pa.areAllies(user, t),
+      // Номер «стаи» и её состав — заполняются ниже, когда список собран
+      packNo: 0, packMates: [] as string[],
     };
   });
+  // ── Кто из целей заодно ───────────────────────────────────────────
+  // Если двое в списке состоят во ВЗАИМНОМ личном альянсе, это стоит
+  // видеть до нападения: они шлют друг другу подкрепления, и «слабая»
+  // цель может оказаться частью группы. Раньше об этом узнавали только
+  // по факту — в бою.
+  //
+  // Считаем связные группы: A дружит с B, B с C — все трое в одной
+  // стае, даже если A и C друг друга не знают. Пар здесь не больше
+  // трёх десятков, перебор дешевле любой хитрости.
+  const pack: Record<string, number> = {};
+  let packNo = 0;
+  for (const t of picked) {
+    if (pack[t.id]) continue;
+    const mates = picked.filter((o) => o.id !== t.id && pa.areAllies(t, o));
+    if (!mates.length) continue;
+    // Группа новая либо уже заведена кем-то из союзников этого игрока
+    const known = mates.map((m) => pack[m.id]).find((n) => n);
+    const no = known || ++packNo;
+    pack[t.id] = no;
+    for (const m of mates) if (!pack[m.id]) pack[m.id] = no;
+  }
+  for (const row of list) {
+    const no = pack[row.id] || 0;
+    (row as any).packNo = no;
+    // Имена союзников — чтобы в подсказке было видно, с кем именно
+    (row as any).packMates = no
+      ? picked.filter((o) => o.id !== row.id && pack[o.id] === no).map((o) => o.name)
+      : [];
+  }
+
   while (list.length < 10) {
     const b = makeBot(user);
     list.push({
@@ -224,6 +256,7 @@ function opponents(user: User): any {
       vip: false,
       allianceMembers: b.allianceMembers || 0,
       inMyAlliance: false, // боты не бывают союзниками по личному альянсу
+      packNo: 0, packMates: [],        // и в стаи с живыми не сбиваются
     });
   }
   u.shuffle(list);

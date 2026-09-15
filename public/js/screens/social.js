@@ -1503,9 +1503,14 @@ App._receiptLetterHtml = (r) => `
     <div class="btn-row mt"><span class="muted small">Зачислено ✓</span><button class="btn btn-inline" data-del-reward="${r.id}" style="color:var(--red)">🗑 Удалить</button></div>
   </div>`;
 
+// Служебные значения в адресе почты: это не собеседники, а подвкладки
+// и форма нового письма. Без этого списка «#mail/system» открывался бы
+// как переписка с игроком по имени system.
+const MAIL_VIEWS = ['new', 'personal', 'system'];
+
 App.screens.mail = async (c, param) => {
   // Открытая переписка с конкретным собеседником (param = его id)
-  if (param && param !== 'new') {
+  if (param && MAIL_VIEWS.indexOf(param) === -1) {
     const thread = await API.get('/api/mail/' + encodeURIComponent(param));
     await App.refreshMe();
     c.innerHTML = `
@@ -1586,18 +1591,37 @@ App.screens.mail = async (c, param) => {
     return;
   }
 
-  // Список переписок (тредов) — только письма от игроков, без уведомлений
-  const { threads } = await API.get('/api/mail');
-  const unreadCount = threads.reduce((s, t) => s + (t.unread || 0), 0);
+  // Почта делится на две подвкладки: письма живых игроков и всё, что
+  // шлёт сама игра. Раньше это была одна лента, и награда от «Системы»
+  // терялась между переписками — а искать её приходилось глазами.
+  //
+  // Подвкладка живёт в адресе (#mail/system). Со списком переписок она
+  // не сталкивается: там в адресе стоит идентификатор собеседника, а он
+  // никогда не равен 'personal' или 'system'.
+  const mailTab = param === 'system' ? 'system' : 'personal';
 
-  // Письма от «Система» (награды за рейтинг/сезоны/от администрации)
-  let rewardsData = { rewards: [] };
-  try { rewardsData = await API.get('/api/rewards'); } catch (e) {}
+  // Оба запроса уходят разом: ждать один ответ, потом второй незачем —
+  // счётчики на подвкладках нужны сразу оба.
+  const [mailData, rewardsData] = await Promise.all([
+    API.get('/api/mail'),
+    API.get('/api/rewards').catch(() => ({ rewards: [] })),
+  ]);
+  const threads = mailData.threads || [];
+  const unreadCount = threads.reduce((s, t) => s + (t.unread || 0), 0);
   const rewardLetters = rewardsData.rewards || [];
   const pendingRewards = rewardLetters.filter((r) => !r.claimed).length;
-  const systemSection = rewardLetters.length ? `
+
+  const tabsHtml = `
+    <div class="tabs comm-subtabs">
+      <div class="tab ${mailTab === 'personal' ? 'active' : ''}" onclick="location.hash='#mail/personal'">
+        ✉ Личные${unreadCount ? ` <span class="badge">${unreadCount}</span>` : ''}</div>
+      <div class="tab ${mailTab === 'system' ? 'active' : ''}" onclick="location.hash='#mail/system'">
+        📨 Системные${pendingRewards ? ` <span class="badge" style="background:var(--gold);color:#000">${pendingRewards}</span>` : ''}</div>
+    </div>`;
+
+  const systemSection = mailTab !== 'system' ? '' : (rewardLetters.length ? `
     <div class="card">
-      <div class="name">📨 Система${pendingRewards ? ` <span class="badge" style="background:var(--gold);color:#000">${pendingRewards} к получению</span>` : ''}</div>
+      <div class="name">📨 От игры${pendingRewards ? ` <span class="badge" style="background:var(--gold);color:#000">${pendingRewards} к получению</span>` : ''}</div>
       ${rewardLetters.map((r) => r.kind === 'receipt' ? App._receiptLetterHtml(r) : `
         <div class="card" style="margin-top:8px;border-color:${r.claimed ? 'var(--border)' : 'var(--gold)'}">
           <div style="font-weight:600">${r.claimed ? '✅ ' : '🎁 '}${UI.esc(r.title)}</div>
@@ -1608,12 +1632,9 @@ App.screens.mail = async (c, param) => {
             ? `<div class="btn-row mt"><span class="muted small">Забрано ✓</span><button class="btn btn-inline" data-del-reward="${r.id}" style="color:var(--red)">🗑 Удалить</button></div>`
             : `<button class="btn btn-orange mt" data-claim-reward="${r.id}" style="width:100%">🎁 Забрать награду</button>`}
         </div>`).join('')}
-    </div>` : '';
+    </div>` : '<div class="card"><p class="muted center">Писем от игры пока нет. Сюда приходят награды, начисления и квитанции о покупках.</p></div>');
 
-  c.innerHTML = `
-    <div class="title">Почта</div>
-    <p class="muted small" style="margin:-4px 4px 10px">Личные письма от игроков, награды и квитанции о покупках от «Система». Прочие системные события (приглашения, ачивки) — в 🔔 уведомлениях.</p>
-    ${systemSection}
+  const personalSection = mailTab !== 'personal' ? '' : `
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn btn-orange" onclick="App.go('mail/new')" style="flex:1">✍ Написать письмо</button>
       ${unreadCount > 0 ? `<button class="btn btn-inline" id="mail-read-all">✓ Прочитать все (${unreadCount})</button>` : ''}
@@ -1633,7 +1654,16 @@ App.screens.mail = async (c, param) => {
           <button class="btn btn-inline" data-del-thread="${t.otherId}" title="Удалить переписку" style="color:var(--red)">🗑</button>
         </div>`;
       }).join('') : '<p class="muted center">Писем от игроков пока нет. Нажмите «Написать письмо», чтобы начать переписку.</p>'}
-    </div>
+    </div>`;
+
+  c.innerHTML = `
+    <div class="title">Почта</div>
+    ${tabsHtml}
+    <p class="muted small" style="margin:4px 4px 10px">${mailTab === 'personal'
+      ? 'Переписка с живыми игроками. Письма от игры — на вкладке «Системные».'
+      : 'Всё, что присылает сама игра: награды, начисления, квитанции о покупках. Приглашения и достижения — в 🔔 уведомлениях.'}</p>
+    ${systemSection}
+    ${personalSection}
     ${(threads.length || rewardLetters.length) ? `
       <div class="card center">
         <button class="btn btn-inline" id="mail-clear-all" style="color:var(--red)">🗑 Очистить все сообщения</button>

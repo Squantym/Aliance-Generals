@@ -578,10 +578,25 @@ App.screens.war = async (c) => {
   if (warTab === 'targets') {
     const { opponents } = await API.get('/api/war/opponents');
     const list = document.getElementById('war-list');
+    // Стаи: цели, которые состоят во взаимном альянсе ДРУГ С ДРУГОМ.
+    // Помечаем буквой и цветом — одного цвета мало, когда стай две:
+    // игрок должен видеть не только «этот с кем-то заодно», но и с кем
+    // именно. Буква рядом с цветом читается и на чёрно-белом экране.
+    const PACK = ['А', 'Б', 'В', 'Г', 'Д'];
+    const PACK_COLOR = ['#e06c5a', '#7aa6ff', '#b98cff', '#5fbf8a', '#e9c75c'];
+    const packMark = (o) => {
+      if (!o.packNo) return '';
+      const i = (o.packNo - 1) % PACK.length;
+      const mates = (o.packMates || []).map((n) => UI.esc(n)).join(', ');
+      return ` <span class="pack-mark" style="color:${PACK_COLOR[i]};border-color:${PACK_COLOR[i]}"` +
+        ` title="Заодно с: ${mates}. Такие шлют друг другу подкрепления">🤝 ${PACK[i]}</span>`;
+    };
+    const packName = (o) => (o.packNo
+      ? ` style="color:${PACK_COLOR[(o.packNo - 1) % PACK_COLOR.length]}"` : '');
     list.innerHTML = opponents.map((o) => `
       <div class="list-row">
         <div class="grow">
-          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')">${App._flagImg(o.flag)} ${UI.esc(o.name)}${App.vipMark(o.vip)}${App.staffMark(o.staffRole)}${o.inMyAlliance ? ' <span class="ally-star" title="Состоит в вашем альянсе">⭐</span>' : ''}</span>
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')"><span${packName(o)}>${App._flagImg(o.flag)} ${UI.esc(o.name)}</span>${App.vipMark(o.vip)}${App.staffMark(o.staffRole)}${o.inMyAlliance ? ' <span class="ally-star" title="Состоит в вашем альянсе">⭐</span>' : ''}${packMark(o)}</span>
           <span class="muted small"> Ур. ${o.level}</span>
           ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
           ${o.isBot

@@ -1,4 +1,4 @@
-// jsdom-рендер: баннер наград на главном + раздел «Система» в почте.
+// jsdom-рендер: баннер наград на главном + подвкладка «Системные» в почте.
 const assert=require('assert'); const fs=require('fs'); const {JSDOM}=require('jsdom');
 const dom=new JSDOM('<!DOCTYPE html><body><div id="content"></div></body>',{url:'http://localhost/'});
 global.window=dom.window; global.document=dom.window.document; global.localStorage=dom.window.localStorage; global.location=dom.window.location;
@@ -35,8 +35,9 @@ let passed=0; const ok=(n,c)=>{assert.ok(c,'❌ '+n);passed++;console.log('  ✅
 
  console.log('\n[3] Почта: раздел «Система» с забрать/удалить');
  API.get=async(url)=>{ if(url==='/api/rewards') return {rewards:rewardsMixed,pending:1}; if(url==='/api/mail') return {threads:[]}; return {}; };
- await App.screens.mail(c);
- ok('раздел «Система» есть', /📨 Система/.test(c.innerHTML));
+ // Письма от игры живут на подвкладке «Системные» (#mail/system)
+ await App.screens.mail(c, 'system');
+ ok('раздел писем от игры есть', /📨 От игры/.test(c.innerHTML));
  ok('незабранная → кнопка «Забрать»', c.querySelectorAll('[data-claim-reward]').length===1);
  ok('забранная → кнопка «Удалить»', c.querySelectorAll('[data-del-reward]').length===1);
  ok('бейдж «к получению» показан', /к получению/.test(c.innerHTML));
