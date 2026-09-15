@@ -50,7 +50,7 @@ ok(gb.AMMO === 70, `боеприпасы: ${gb.AMMO}`);
 ok(gb.ROLE_IDS.length === 3, `ролей: ${gb.ROLE_IDS.join(', ')}`);
 ok(!!gb.ROLES.fighter && !!gb.ROLES.guardian && !!gb.ROLES.medic, 'боец, защитник и медик на месте');
 ok(gb.BOT_FILL_BEFORE_MS === 20000, 'добор ботов идёт последние 20 секунд');
-ok(gb.BOT_THINK_MS === 3000, 'боты действуют раз в 3 секунды');
+ok(gb.BOT_THINK_MS === 5000, 'боты действуют раз в 5 секунд');
 
 console.log('\n── 2. Команды делятся поровну ──');
 for (const n of [2, 3, 5, 7, 9, 10]) {
@@ -641,7 +641,7 @@ for (let i = 0; i < 3; i++) {
     ['attack', 'heal', 'guard', 'kill', 'dodge'].includes(l.kind)).length;
 }
 ok(botActs > 0, `боты сделали ${botActs} действий`);
-ok(gb.BOT_THINK_MS === 3000, `откат ботов: ${gb.BOT_THINK_MS / 1000} с`);
+ok(gb.BOT_THINK_MS === 5000, `откат ботов: ${gb.BOT_THINK_MS / 1000} с`);
 const fin2 = db.load('groupBattle', {}).battle;
 const totalDmg = Object.values(fin2.fighters).reduce((n, f) => n + f.damageDealt, 0);
 ok(totalDmg > 0, `боты наносят урон: ${totalDmg}`);

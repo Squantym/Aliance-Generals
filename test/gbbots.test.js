@@ -1,19 +1,19 @@
 // ═══════════════════════════════════════════════════════════════════
 // test/gbbots.test.js — боты в групповых боях слабее и глупее живых
 //
-// Решение владельца: в групповых боях бот бьёт на 30% слабее человека,
-// а правильные решения принимает на 20% реже. ХАРАКТЕРИСТИКИ при этом
-// базовые: сперва срезали и их, но владелец вернул на место — ослабить
-// просил только урон.
+// Настройки ботов — решение владельца: запас HP случайный 1000–1500,
+// боезапас 30 на бой, откат между действиями 5 секунд, урон −44%
+// (сперва −30%, потом ещё −20% сверху), правильные решения на 20% реже.
 //
 // Что стережётся:
-//  1. Оба числа лежат в ОДНОМ месте.
-//  2. Характеристики бота НЕ тронуты: запас HP, крит, уворот, энергия и
-//     боеприпасы — ровно базовые, как у неулучшенного игрока.
-//  3. Живого игрока правка не касается — у него всё как было.
-//  4. Урон бота ровно на 30% ниже урона человека той же роли при тех же
-//     бросках костей.
-//  5. Решения бота проходят через smart(): при броске между старым и
+//  1. Все числа лежат в ОДНОМ месте, а не разбросаны по файлу.
+//  2. Запас HP у каждого бота свой, в заданных границах: команда ботов
+//     не должна быть набором одинаковых мишеней.
+//  3. Боезапас ограничен — бот не может бить весь бой без остановки.
+//  4. Живого игрока правка не касается — у него всё как было.
+//  5. Урон бота ровно на BOT_POWER_MUL ниже урона человека той же роли
+//     при тех же бросках костей.
+//  6. Решения бота проходят через smart(): при броске между старым и
 //     новым порогом бот теперь ошибается, а раньше сыграл бы правильно.
 //
 // Запуск: node test/gbbots.test.js   (после npm run build)
@@ -44,9 +44,10 @@ function makeBattle(fighters) {
   return b;
 }
 function fighter(id, team, role, isBot, hp) {
-  // И бот, и человек выходят в бой с базовыми характеристиками: вся
-  // разница между ними — множитель урона у бота.
-  const base = { hp: gb.HP, energy: gb.ENERGY, ammo: gb.AMMO,
+  // Собираем бойца как это делает сам бой: у бота свой запас и
+  // боезапас, у человека — базовые.
+  const base = { hp: isBot ? gb.BOT_HP_MIN : gb.HP, energy: gb.ENERGY,
+    ammo: isBot ? gb.BOT_AMMO : gb.AMMO,
     critChance: UP.BASE.critChance, dodgeChance: 0,
     healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0 };
   const maxHp = hp || base.hp;
@@ -61,8 +62,12 @@ function fighter(id, team, role, isBot, hp) {
   await db.init();
 
   console.log('\n[1] Оба множителя заданы в одном месте');
-  eq('урон ботов — минус 30%', gb.BOT_POWER_MUL, 0.7);
+  eq('урон ботов — 0.56 от человеческого (−30%, затем ещё −20%)', gb.BOT_POWER_MUL, 0.56);
   eq('сообразительность — минус 20%', gb.BOT_SMART_MUL, 0.8);
+  eq('запас HP снизу', gb.BOT_HP_MIN, 1000);
+  eq('запас HP сверху', gb.BOT_HP_MAX, 1500);
+  eq('боезапас на бой', gb.BOT_AMMO, 30);
+  eq('откат между действиями бота — 5 секунд', gb.BOT_THINK_MS, 5000);
   near('smart() занижает порог правильного хода', gb.smart(0.5), 0.4, 0.0001);
   near('и порог лечения', gb.smart(0.65), 0.52, 0.0001);
 
@@ -84,12 +89,20 @@ function fighter(id, team, role, isBot, hp) {
   const bot = Object.values(battle.fighters).find((f) => f.isBot && f.role === 'fighter');
   const me = battle.fighters[human.id];
   ok('бот в бою есть', !!bot);
-  eq('запас HP бота базовый', bot.st.hp, gb.HP);
+  ok(`запас HP в заданных границах: ${bot.st.hp}`,
+     bot.st.hp >= gb.BOT_HP_MIN && bot.st.hp <= gb.BOT_HP_MAX);
+  eq('боезапас — 30 на бой', bot.st.ammo, gb.BOT_AMMO);
   near('шанс крита базовый', bot.st.critChance, UP.BASE.critChance, 0.0001);
   near('шанс уворота базовый', bot.st.dodgeChance, UP.BASE.dodgeChance, 0.0001);
-  eq('боезапас базовый', bot.st.ammo, gb.AMMO);
   eq('энергия базовая', bot.st.energy, gb.ENERGY);
-  eq('и всё это ровно то же, что у живого игрока', bot.st.hp, battle.fighters[human.id].st.hp);
+  // Ботов в бою девять — запасы у них должны РАЗЛИЧАТЬСЯ
+  const bots = Object.values(battle.fighters).filter((f) => f.isBot);
+  ok(`ботов в бою: ${bots.length}`, bots.length >= 5);
+  ok('запасы у ботов разные, а не под копирку',
+     new Set(bots.map((f) => f.st.hp)).size > 1);
+  ok('и все в границах',
+     bots.every((f) => f.st.hp >= gb.BOT_HP_MIN && f.st.hp <= gb.BOT_HP_MAX));
+  ok('у всех боезапас 30', bots.every((f) => f.st.ammo === gb.BOT_AMMO));
   eq('у живого игрока запас прежний', me.st.hp, gb.HP);
   near('и крит прежний', me.st.critChance, UP.BASE.critChance, 0.0001);
 
@@ -106,7 +119,7 @@ function fighter(id, team, role, isBot, hp) {
   const manDmg = b2.fighters.man1.damageDealt;
   Math.random = realRandom;
   ok(`бот бьёт слабее: ${botDmg} против ${manDmg}`, botDmg < manDmg);
-  near('разница ровно 30%', botDmg / manDmg, gb.BOT_POWER_MUL, 0.02);
+  near('разница ровно по множителю', botDmg / manDmg, gb.BOT_POWER_MUL, 0.02);
 
   console.log('\n[4] Бот стал ошибаться в выборе цели');
   // Бросок 0.45 лежит МЕЖДУ новым порогом (0.4) и прежним (0.5): раньше

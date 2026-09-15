@@ -43,17 +43,19 @@ const HP = UP.BASE.hp;
 const ENERGY = UP.BASE.energy;
 const AMMO = UP.BASE.ammo;
 
-const ACTION_CD_MS = 1500;              // откат между действиями
-const BOT_THINK_MS = 3000;              // как часто ходят боты
+const ACTION_CD_MS = 1500;              // откат между действиями у ЖИВЫХ
 
-// ── НАСКОЛЬКО БОТЫ СЛАБЕЕ ЖИВЫХ ──────────────────────────────────
-// Решение владельца: бот бьёт на 30% слабее, а решения принимает на 20%
-// реже правильные. ХАРАКТЕРИСТИКИ у бота базовые и не трогаются — запас
-// HP, шансы крита и уворота такие же, как у неулучшенного игрока: сперва
-// срезали и их, но владелец вернул на место, ослабить просил только урон.
-// Оба числа — здесь и только здесь: разнеси их по коду, и следующая
-// правка баланса опять станет поиском по файлу.
-const BOT_POWER_MUL = 0.7;              // −30% к УРОНУ бота
+// ── НАСТРОЙКИ БОТОВ ──────────────────────────────────────────────
+// Всё, чем бот отличается от живого, собрано здесь. Разнеси по коду —
+// и следующая правка баланса опять станет поиском по файлу.
+//
+// Числа — решение владельца. Бот намеренно слабее и медлительнее:
+// живому игроку он должен мешать, а не выносить его.
+const BOT_THINK_MS = 5000;              // откат между действиями бота
+const BOT_HP_MIN = 1000;                // запас HP: случайный в этих
+const BOT_HP_MAX = 1500;                // границах, у каждого бота свой
+const BOT_AMMO = 30;                    // боезапас на весь бой
+const BOT_POWER_MUL = 0.56;             // урон: −30%, а потом ещё −20%
 const BOT_SMART_MUL = 0.8;              // −20% к «сообразительности»
 
 // Вероятность (или порог), с которой бот выбирает лучший ход. Чем
@@ -407,10 +409,10 @@ function startBattle(s: Store, list: any[], now: number): void {
         dodgeChance: Math.min(0.75, base.dodgeChance + dodgeB),
       };
     })() : {
-      // Бот: ровно базовые характеристики, без прокачки и без правок.
-      // Ослаблен он только в уроне (см. BOT_POWER_MUL в doAttack) —
-      // решение владельца: запасы и шансы не трогать.
-      hp: HP, energy: ENERGY, ammo: AMMO,
+      // Бот: свой запас HP (случайный в заданных границах — чтобы вся
+      // команда ботов не была одинаковой мишенью), свой боезапас, а
+      // шансы крита и уворота базовые. Урон срезан отдельно, в doAttack.
+      hp: u.rnd(BOT_HP_MIN, BOT_HP_MAX), energy: ENERGY, ammo: BOT_AMMO,
       critChance: UP.BASE.critChance, dodgeChance: UP.BASE.dodgeChance,
       healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0,
     };
@@ -1270,7 +1272,7 @@ export = {
   ratingTable, rankOf, awardRating, tokensFor, RANKS, CONTRIB_CAP,
   RATING_WIN, RATING_LOSS, RATING_KILL, RATING_BEST,
   ROLES, ROLE_IDS, TEAM_SIZE, HP, ENERGY, AMMO, BASE_DMG, HEAL_AMOUNT,
-  BOT_POWER_MUL, BOT_SMART_MUL, smart, doAttack,
+  BOT_POWER_MUL, BOT_SMART_MUL, BOT_HP_MIN, BOT_HP_MAX, BOT_AMMO, smart, doAttack,
   GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, COST, BOT_THINK_MS, BOT_FILL_BEFORE_MS, PREPARE_MS,
   splitTeams, fillWithBots, botTurn,
 };
