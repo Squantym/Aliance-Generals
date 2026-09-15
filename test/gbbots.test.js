@@ -1,14 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════
 // test/gbbots.test.js — боты в групповых боях слабее и глупее живых
 //
-// Решение владельца: в групповых боях бот бьёт и держит удар на 30%
-// хуже человека, а правильные решения принимает на 20% реже.
+// Решение владельца: в групповых боях бот бьёт на 30% слабее человека,
+// а правильные решения принимает на 20% реже. ХАРАКТЕРИСТИКИ при этом
+// базовые: сперва срезали и их, но владелец вернул на место — ослабить
+// просил только урон.
 //
 // Что стережётся:
-//  1. Оба числа лежат в ОДНОМ месте и применяются ко всему, что зовётся
-//     силой: урон, запас HP, шансы крита и уворота.
-//  2. Бюджет ходов (энергия и боеприпасы) не тронут: срезав его, мы бы
-//     не ослабили бота, а укоротили бой.
+//  1. Оба числа лежат в ОДНОМ месте.
+//  2. Характеристики бота НЕ тронуты: запас HP, крит, уворот, энергия и
+//     боеприпасы — ровно базовые, как у неулучшенного игрока.
 //  3. Живого игрока правка не касается — у него всё как было.
 //  4. Урон бота ровно на 30% ниже урона человека той же роли при тех же
 //     бросках костей.
@@ -43,13 +44,11 @@ function makeBattle(fighters) {
   return b;
 }
 function fighter(id, team, role, isBot, hp) {
-  const base = isBot
-    ? { hp: Math.round(gb.HP * gb.BOT_POWER_MUL), energy: gb.ENERGY, ammo: gb.AMMO,
-        critChance: UP.BASE.critChance * gb.BOT_POWER_MUL, dodgeChance: 0,
-        healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0 }
-    : { hp: gb.HP, energy: gb.ENERGY, ammo: gb.AMMO,
-        critChance: UP.BASE.critChance, dodgeChance: 0,
-        healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0 };
+  // И бот, и человек выходят в бой с базовыми характеристиками: вся
+  // разница между ними — множитель урона у бота.
+  const base = { hp: gb.HP, energy: gb.ENERGY, ammo: gb.AMMO,
+    critChance: UP.BASE.critChance, dodgeChance: 0,
+    healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0 };
   const maxHp = hp || base.hp;
   return { id, name: id, flag: '', team, role, st: base,
     hp: maxHp, maxHp, energy: base.energy, maxEnergy: base.energy,
@@ -62,7 +61,7 @@ function fighter(id, team, role, isBot, hp) {
   await db.init();
 
   console.log('\n[1] Оба множителя заданы в одном месте');
-  eq('сила ботов — минус 30%', gb.BOT_POWER_MUL, 0.7);
+  eq('урон ботов — минус 30%', gb.BOT_POWER_MUL, 0.7);
   eq('сообразительность — минус 20%', gb.BOT_SMART_MUL, 0.8);
   near('smart() занижает порог правильного хода', gb.smart(0.5), 0.4, 0.0001);
   near('и порог лечения', gb.smart(0.65), 0.52, 0.0001);
@@ -85,11 +84,12 @@ function fighter(id, team, role, isBot, hp) {
   const bot = Object.values(battle.fighters).find((f) => f.isBot && f.role === 'fighter');
   const me = battle.fighters[human.id];
   ok('бот в бою есть', !!bot);
-  eq('запас HP бота — 70% от базового', bot.st.hp, Math.round(gb.HP * gb.BOT_POWER_MUL));
-  near('шанс крита бота тоже срезан', bot.st.critChance, UP.BASE.critChance * 0.7, 0.0001);
-  near('и шанс уворота', bot.st.dodgeChance, UP.BASE.dodgeChance * 0.7, 0.0001);
-  eq('боезапас бота не тронут — это бюджет ходов', bot.st.ammo, gb.AMMO);
-  eq('и энергия тоже', bot.st.energy, gb.ENERGY);
+  eq('запас HP бота базовый', bot.st.hp, gb.HP);
+  near('шанс крита базовый', bot.st.critChance, UP.BASE.critChance, 0.0001);
+  near('шанс уворота базовый', bot.st.dodgeChance, UP.BASE.dodgeChance, 0.0001);
+  eq('боезапас базовый', bot.st.ammo, gb.AMMO);
+  eq('энергия базовая', bot.st.energy, gb.ENERGY);
+  eq('и всё это ровно то же, что у живого игрока', bot.st.hp, battle.fighters[human.id].st.hp);
   eq('у живого игрока запас прежний', me.st.hp, gb.HP);
   near('и крит прежний', me.st.critChance, UP.BASE.critChance, 0.0001);
 
@@ -133,7 +133,13 @@ function fighter(id, team, role, isBot, hp) {
   ok('порог прикрытия', /maxHp < smart\(0\.7\)/.test(src));
   ok('порог лечения', /maxHp < smart\(0\.5\)/.test(src));
   ok('вероятность лечения', /Math\.random\(\) < smart\(0\.65\)/.test(src));
-  ok('урон бота срезан тем же множителем', /me\.isBot \? BOT_POWER_MUL : 1/.test(src));
+  ok('урон бота срезан множителем', /me\.isBot \? BOT_POWER_MUL : 1/.test(src));
+  // Единственное место, где множитель силы РАБОТАЕТ, — расчёт урона.
+  // Стоит ему появиться в блоке характеристик, и характеристики бота
+  // снова разойдутся с живым игроком.
+  ok('множитель силы применяется только к урону',
+     !/hp: Math\.round\(HP \* BOT_POWER_MUL\)/.test(src)
+     && !/critChance: UP\.BASE\.critChance \* BOT_POWER_MUL/.test(src));
   ok('множители объявлены один раз',
      (src.match(/const BOT_POWER_MUL/g) || []).length === 1
      && (src.match(/const BOT_SMART_MUL/g) || []).length === 1);
