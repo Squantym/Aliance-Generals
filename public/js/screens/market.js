@@ -1127,14 +1127,25 @@ App.screens.trophies = async (c) => {
   });
   c.querySelectorAll('[data-tboost]').forEach((btn) => {
     btn.onclick = async () => {
-      try { await API.post('/api/trophies/boost', { id: btn.dataset.tboost }); App.rerender(); }
+      // Цена зависит от остатка и падает на глазах — показываем ту, что
+      // спишется, прежде чем списать
+      const t = data.trophies.find((x) => x.id === btn.dataset.tboost);
+      const cost = t ? t.boostGold : 0;
+      if (!await UI.confirm(`Ускорить за ${UI.fmtNum(cost)} золота?`,
+        { title: 'Ускорение прокачки', icon: '⚡', okText: 'Ускорить' })) return;
+      try { await API.post('/api/trophies/boost', { id: btn.dataset.tboost }); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     };
   });
 
-  // Автообновление, если есть активные прокачки
-  if (data.trophies.some((t) => t.training)) {
-}
+  // Автообновление, пока идёт прокачка. Блок был пустым: таймер на экране
+  // стоял, и цена ускорения — тоже, хотя на сервере она уже уменьшилась.
+  if (data.trophies.some((t) => t.training) && (location.hash || '').indexOf('trophies') >= 0) {
+    clearTimeout(App._trophyTimer);
+    App._trophyTimer = setTimeout(() => {
+      if ((location.hash || '').indexOf('trophies') >= 0) App.rerender();
+    }, 5000);
+  }
 };
 
 // ---------- ГОСПИТАЛЬ ----------

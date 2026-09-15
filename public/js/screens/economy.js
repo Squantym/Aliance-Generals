@@ -331,9 +331,15 @@ App.screens.production = async (c, param) => {
     };
   });
 
-  // Автообновление экрана каждые 10 секунд, пока есть активные процессы
-  if (p.queue.length > 0) {
-}
+  // Автообновление, пока есть активные процессы. Блок был пустым — ровно
+  // та же поломка, что и у трофеев: таймер и цена ускорения замирали на
+  // экране, хотя на сервере остаток уже уменьшался.
+  if (p.queue.length > 0 && (location.hash || '').indexOf('production') >= 0) {
+    clearTimeout(App._prodTimer);
+    App._prodTimer = setTimeout(() => {
+      if ((location.hash || '').indexOf('production') >= 0) App.rerender();
+    }, 5000);
+  }
 };
 
 // ---------- ШАХТЫ (вкладка внутри Производства) ----------

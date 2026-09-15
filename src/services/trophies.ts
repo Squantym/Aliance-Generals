@@ -29,6 +29,13 @@ function nextCost(level: number, def: any): number {
   return discounts.applyTo('trophy', baseNextCost(level, def));
 }
 
+// Цена ускорения запущенной прокачки. Одно место на кнопку и на списание:
+// пока их было два, экран показывал одно число, а сервер брал другое.
+function boostCostOf(proc: any, def: any): number {
+  return config.trophyBoostGoldLeft(
+    proc.level, def ? (def as any).timeMul : undefined, proc.startedAt, proc.finishesAt);
+}
+
 // Активный процесс прокачки конкретного трофея (или null)
 function activeFor(user: User, id: string): any {
   if (!(user as any).trophyQueue) (user as any).trophyQueue = [];
@@ -157,7 +164,12 @@ function list(user: User) {
         baseNextCost: level < config.TROPHY_MAX_LEVEL ? baseNextCost(level, t) : null,
         nextCost:     level < config.TROPHY_MAX_LEVEL ? nextCost(level, t) : null,
         trainMinutes: level < config.TROPHY_MAX_LEVEL ? trainMin : null,
-        boostGold: level < config.TROPHY_MAX_LEVEL ? config.trophyBoostGold(targetLevel, (t as any).timeMul) : null,
+        // Пока прокачка идёт — цена за остаток (она уменьшается), до
+        // запуска — полная: игрок должен видеть, во что обойдётся
+        // ускорение, ещё до того как нажмёт «прокачать»
+        boostGold: active
+          ? boostCostOf(active, t)
+          : (level < config.TROPHY_MAX_LEVEL ? config.trophyBoostGold(targetLevel, (t as any).timeMul) : null),
         training: !!active,
         // Занята ли «мастерская»: прокачка другого трофея закрывает кнопку
         busyWith: (() => { const q = ((user as any).trophyQueue || [])[0]; return q && q.id !== t.id ? q.id : ''; })(),
@@ -209,12 +221,13 @@ function formatMinutes(min: number): string {
   return `${days} сут ${hours} ч`;
 }
 
-// Ускорить прокачку: 10 золота за каждый час полной длительности, завершаем мгновенно
+// Ускорить прокачку: платим за ОСТАТОК времени, завершаем мгновенно.
+// Цена падает по ходу прокачки — см. config.trophyBoostGoldLeft.
 function boostUpgrade(user: User, id: string, notices: Notices) {
   const proc = activeFor(user, id);
   if (!proc) throw new u.ApiError('Этот трофей сейчас не прокачивается');
   const def = config.TROPHIES.find((t) => t.id === id);
-  const cost = config.trophyBoostGold(proc.level, def ? (def as any).timeMul : undefined);
+  const cost = boostCostOf(proc, def);
   if (user.gold < cost) throw new u.ApiError(`Нужно ${cost} золота`);
   require('./player').spendGold(user, cost, 'trophy');
   proc.finishesAt = Date.now();

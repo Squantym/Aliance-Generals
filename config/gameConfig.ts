@@ -1803,6 +1803,31 @@ function boostGoldFor(finishesAt: number): number {
 function trophyBoostGold(targetLevel: number, timeMul?: number): number {
   return Math.max(1, Math.round((trophyTrainMinutes(targetLevel, timeMul) / 60) * 10));
 }
+
+// Та же цена, но за ОСТАТОК. Жалоба игроков: ускорение прокачки, которой
+// осталось десять минут, стоило столько же, сколько у только что
+// запущенной, — платить приходилось за время, которое уже прошло.
+// Теперь платим за долю оставшегося: в момент старта цена прежняя, на
+// половине пути — половина, в конце — минимальное золото.
+//
+// Масштаб цены НЕ переведён на общий boostGoldFor (минута — золото),
+// хотя спецоперации и производство считают именно так: у трофея десятого
+// уровня прокачка идёт больше ста часов, и минута-золото сделала бы
+// ускорение вшестеро дороже нынешнего. Это правка жалобы, а не
+// пересмотр цен.
+//
+// Доля считается от длительности ИМЕННО ЭТОЙ прокачки (finishesAt −
+// startedAt), а не от табличной: VIP сокращает срок уже запущенной, и
+// от таблицы у подписчика цена стартовала бы с половины.
+function trophyBoostGoldLeft(targetLevel: number, timeMul: number | undefined,
+                             startedAt: number, finishesAt: number): number {
+  const full = trophyBoostGold(targetLevel, timeMul);
+  const totalMs = Math.max(0, Number(finishesAt) - Number(startedAt))
+    || trophyTrainMinutes(targetLevel, timeMul) * 60000;
+  const leftMs = Math.max(0, Number(finishesAt) - Date.now());
+  const share = Math.max(0, Math.min(1, leftMs / totalMs));
+  return Math.max(1, Math.round(full * share));
+}
 // Стоимость прокачки в золоте. expensive-трофеи на 50% дороже.
 // costMul — индивидуальная надбавка (у «Спутника-шпиона» +30% → 1.3).
 function trophyUpgradeCost(level: number, expensive?: boolean, costMul?: number): number {
@@ -2924,7 +2949,7 @@ export = {
   RIDDLES, CLUB, LOTTERY, TROPHIES_REMOVED,
   GENDERS, GENDER_BY_ID, GENDER_CHANGE_BASE_GOLD, GENDER_CHANGE_STEP_GOLD,
   CARD_RANKS, CARD_SUITS, CARD_DECK, CARD_BACK, cardInfo, handSum,
-  TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, boostGoldFor, trophyBoostGold, trophyTrainMinutes, trophyUpgradeCost,
+  TROPHIES, TROPHY_MAX_LEVEL, TROPHY_BOOST_GOLD, boostGoldFor, trophyBoostGold, trophyBoostGoldLeft, trophyTrainMinutes, trophyUpgradeCost,
   spyReveal, SPY_LIVE_MS,
   DAILY_QUESTS, DAILY_QUEST_BY_ID, DAILY_CHARS, DAILY_PICK_COUNT,
   dailyQuestTarget, dailyQuestReward, dailyAllBonusGold, pickDailyQuests, dailyGrowth,
