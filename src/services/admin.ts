@@ -37,12 +37,23 @@ function brief(p: User) {
 // Список / поиск игроков
 function listPlayers(query: any) {
   const q = String(query || '').trim().toLowerCase();
+  // Особый запрос «pending» — незавершённые регистрации. Отдельного
+  // фильтра в списке нет намеренно: список нарочно тонкий, и ещё одна
+  // кнопка в нём нужна раз в месяц. А ссылка из очереди работ — нужна.
+  const onlyPending = q === 'pending';
   return {
     players: Object.values(player.users() as Record<string, User>)
-      .filter((p) => !q || p.name.toLowerCase().includes(q))
-      .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
+      .filter((p) => (onlyPending
+        ? (p as any).emailVerified === false
+        : (!q || p.name.toLowerCase().includes(q))))
+      // Незавершённые сортируем от самой старой: разбирать их имеет
+      // смысл именно с тех, что висят дольше всех
+      .sort((a, b) => (onlyPending
+        ? (a.createdAt || 0) - (b.createdAt || 0)
+        : (b.lastSeen || 0) - (a.lastSeen || 0)))
       .slice(0, 100)
       .map(brief),
+    pending: onlyPending,
   };
 }
 

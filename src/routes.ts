@@ -1363,6 +1363,19 @@ function registerRoutes(app: any) {
     const online = live.filter((p: any) => now - (p.lastSeen || 0) < 5 * 60 * 1000).length;
     const newToday = live.filter((p: any) => now - (p.createdAt || 0) < DAY).length;
 
+    // Незавершённые регистрации: человек заполнил форму, но код из письма
+    // так и не ввёл. Такие записи не видны нигде — при этом они держат
+    // позывной и адрес, и со стороны выглядят как «аккаунт создался
+    // дважды»: игрок пробует ещё раз под другим именем, и в списке
+    // появляется второй он же.
+    const pending = live
+      .filter((p: any) => p.emailVerified === false)
+      .map((p: any) => ({
+        id: p.id, name: p.name, at: p.createdAt || 0,
+        hours: Math.floor((now - (p.createdAt || 0)) / 3600000),
+      }))
+      .sort((a: any, b: any) => a.at - b.at);
+
     // Мои действия за сутки — прозрачность для самого сотрудника
     let myActions: any[] = [];
     try {
@@ -1387,6 +1400,9 @@ function registerRoutes(app: any) {
       })() : 0,
       tickets,
       players: { total: live.length, online, newToday },
+      // Показываем только тем, кто работает с игроками: остальным эта
+      // строка в очереди работ ни о чём
+      pendingReg: has('players') ? { count: pending.length, list: pending.slice(0, 10) } : null,
       chatBans: chatBans.slice(0, 20),
       chatBansTotal: chatBans.length,
       accountBans: accountBans.slice(0, 20),

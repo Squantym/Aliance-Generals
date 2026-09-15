@@ -324,6 +324,16 @@ App.screens.auth = async (c) => {
   };
 
   document.getElementById('rg-go').onclick = async () => {
+    // Кнопку гасим на время отправки. Сервер от двойной регистрации
+    // защищён (повторная проверка занятости стоит после хеширования
+    // пароля, и второй запрос упирается в «позывной занят»), но игрок
+    // видел при этом ошибку на ровном месте и не понимал, создался
+    // аккаунт или нет. Проще не дать нажать второй раз.
+    const btn = document.getElementById('rg-go');
+    if (btn.disabled) return;
+    const btnText = btn.textContent;
+    const unlock = () => { btn.disabled = false; btn.textContent = btnText; };
+
     // БАГ 2: клиентская валидация перед отправкой
     const name = document.getElementById('rg-name').value.trim();
     const email = document.getElementById('rg-email').value.trim();
@@ -352,6 +362,8 @@ App.screens.auth = async (c) => {
       public: ck('rg-public'), ads: ck('rg-ads'), publicScope,
     };
 
+    btn.disabled = true;
+    btn.textContent = 'Отправляем…';
     try {
       const r = await API.post('/api/register', {
         login: name,
@@ -378,7 +390,10 @@ App.screens.auth = async (c) => {
       // рисовался экран «идите в почту», игрок уходил по ссылке в другой
       // браузер — и возвращался к форме входа, которая его не пускала.
       showCodeBox(name, email);
-    } catch (e) { UI.toast('⛔ ' + e.message); }
+    } catch (e) {
+      UI.toast('⛔ ' + e.message);
+      unlock();                     // отказ — даём попробовать ещё раз
+    }
   };
 
   // ── Ввод кода из письма ──────────────────────────────────────────

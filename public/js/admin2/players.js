@@ -125,6 +125,13 @@
         </div>
         <p class="a2-muted" style="margin:6px 0 0">Строка ведёт на страницу игрока: там счёт, меры,
           выдача, журнал и история состояния — в одном месте.</p>
+        ${q === 'pending' ? `
+          <p class="a2-muted" style="margin:6px 0 0;color:var(--orange-1)">
+            Показаны <b>незавершённые регистрации</b> — форму заполнили, код из письма не ввели.
+            Позывной и адрес они держат, в игру не заходили ни разу. Самые старые сверху.</p>
+          <div class="a2-row" style="margin-top:6px">
+            <button class="btn btn-inline" id="pls-all">← Ко всем игрокам</button>
+          </div>` : ''}
       </div>
       <div id="pls-new"></div>
       ${Admin._historyHtml ? `<div class="a2-legacy">${Admin._historyHtml()}</div>` : ''}
@@ -162,6 +169,8 @@
     const go = () => A2Router.setQuery({ q: input.value.trim() });
     document.getElementById('pls-go').onclick = go;
     input.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    const all = document.getElementById('pls-all');
+    if (all) all.onclick = () => A2Router.setQuery({ q: '' });
 
     load(q);
   }

@@ -143,6 +143,22 @@
       }
     }
 
+    // ── Незавершённые регистрации ──────────────────────────────────
+    // Человек заполнил форму, но код из письма не ввёл. Такая запись не
+    // видна нигде, а позывной и адрес держит. Со стороны это выглядит
+    // как «аккаунт создался дважды»: игрок пробует ещё раз под другим
+    // именем, и в списке появляется второй он же.
+    if (d.pendingReg && d.pendingReg.count) {
+      const oldest = (d.pendingReg.list || [])[0];
+      items.push({
+        icon: '📝',
+        tone: oldest && oldest.hours >= 48 ? 'warn' : 'info',
+        text: `Незавершённых регистраций: <b>${d.pendingReg.count}</b>`,
+        when: oldest ? `самая старая ждёт ${oldest.hours} ч · ${UI.esc(oldest.name)}` : '',
+        go: A2Router.build('players', '', { q: 'pending' }), btn: 'Посмотреть',
+      });
+    }
+
     const queueHtml = items.length
       ? items.map(itemHtml).join('')
       : `<p class="a2-muted">Разбирать нечего — жалоб и обращений нет, копии на месте.
