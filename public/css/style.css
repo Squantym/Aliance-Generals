@@ -4726,58 +4726,6 @@ body.combat-fullscreen { padding-top: 0 !important; }
   .mail-tb-sep { display: none; }
 }
 
-/* ── Почта: цепочка сервисов, расход лимита, группы рассылки ─────── */
-.mail-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
-.mail-chain-item {
-  padding: 4px 10px; font-size: 12px; border-radius: 999px;
-  background: rgba(255, 255, 255, .05); border: 1px solid var(--border);
-}
-.mail-chain-item.is-main { border-color: var(--gold); color: var(--gold); }
-.mail-chain-arrow { opacity: .5; }
-
-.mail-bar-row { margin: 0 0 10px; }
-.mail-bar-head {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-size: 13px; margin-bottom: 4px;
-}
-.mail-bar {
-  height: 8px; border-radius: 999px; overflow: hidden;
-  background: rgba(255, 255, 255, .07);
-}
-.mail-bar > i { display: block; height: 100%; background: var(--gold); transition: width .3s; }
-.mail-bar > i.is-warn { background: #e08b2a; }
-.mail-bar > i.is-danger { background: #d3453f; }
-
-.mail-quota-facts {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px; margin-top: 10px;
-}
-.mail-quota-facts > div {
-  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
-  background: rgba(255, 255, 255, .03);
-}
-.mail-quota-facts span { display: block; font-size: 12px; }
-.mail-quota-facts b { font-size: 18px; }
-
-/* Выбор получателей: карточки, а не выпадающий список — числа должны
-   быть видны все сразу, иначе выбор делается вслепую */
-.mail-groups {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px;
-}
-.mail-group {
-  display: block; padding: 10px 12px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 10px;
-  background: rgba(255, 255, 255, .03);
-}
-.mail-group:hover { border-color: var(--gold); }
-.mail-group input { margin-right: 6px; }
-.mail-group:has(input:checked) { border-color: var(--gold); background: rgba(233, 199, 92, .08); }
-.mail-group.is-off { opacity: .45; cursor: not-allowed; }
-.mail-group-name { font-size: 14px; }
-.mail-group-name b { color: var(--gold); }
-.mail-group-about { display: block; font-size: 12px; opacity: .7; margin-top: 3px; }
-.mail-group-warn { display: block; font-size: 12px; color: var(--red); margin-top: 3px; }
-
 /* ── Отметки согласий в форме регистрации ─────────────────────────
    Крупная область нажатия: галку ставят пальцем на телефоне, а
    промах по чекбоксу 13×13 читается как «форма не работает».

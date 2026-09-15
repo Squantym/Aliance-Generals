@@ -6,8 +6,9 @@
 
 // ---------- УНИВЕРСАЛЬНЫЙ ЭКРАН ГРУППЫ ----------
 async function renderGroupScreen(c, kind) {
-  await App.refreshMe();
-  const data = await API.get('/api/group/' + kind);
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data] = await Promise.all([App.refreshMe(), API.get('/api/group/' + kind)]);
   const label = kind === 'legion' ? 'Легион' : 'Альянс';
   const me = App.me;
 
@@ -944,9 +945,11 @@ App.screens.legion   = (c) => renderGroupScreen(c, 'legion');
 
 // ---------- ЛИЧНЫЙ АЛЬЯНС (у каждого игрока свой) ----------
 async function renderPersonalAlliance(c) {
-  await App.refreshMe();
-  const data = await API.get('/api/alliance');
-  const { invites } = await API.get('/api/alliance/invites');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data, inv] = await Promise.all([
+    App.refreshMe(), API.get('/api/alliance'), API.get('/api/alliance/invites')]);
+  const { invites } = inv;
 
   c.innerHTML = `
     <div class="title">🤝 Мой альянс</div>
@@ -1938,8 +1941,9 @@ App.screens.notifications = async (c) => {
 
 // ---------- ПОДКРЕПЛЕНИЯ СОЮЗНИКАМ ----------
 App.screens.reinforcements = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/reinforcements');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/reinforcements')]);
 
   c.innerHTML = `
     <div class="title">🎖 Подкрепления</div>

@@ -677,8 +677,9 @@ App.screens.hq = async (c) => {
 // ---------- ПРОФИЛЬ (свой или чужой: #profile/ид) ----------
 // ---------- Контракты (боевые задания от штаба) ----------
 App.screens.dailytasks = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/contracts');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/contracts')]);
   c.innerHTML = `
     <div class="title">📑 Контракты</div>
     <p class="muted small" style="margin:-4px 4px 10px">Наряды снабжения от штаба: платят не золотом, а техникой вашего уровня.
@@ -2541,8 +2542,9 @@ App.screens.shop = async (c) => {
 // ---------- Ежедневный вход ----------
 // ---------- Титулы ----------
 App.screens.titles = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/titles');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/titles')]);
   // Группируем титулы по достижению (achName)
   const groups = {};
   for (const t of d.list) {
@@ -2581,8 +2583,9 @@ App.screens.titles = async (c) => {
 
 // ---------- Рейтинговый сезон ----------
 App.screens.season = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/season');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/season')]);
   App._seasonData = d;
   if (!App._seasonCat || !d.categories.some((x) => x.id === App._seasonCat)) {
     App._seasonCat = d.categories[0].id;
@@ -2676,8 +2679,9 @@ App.screens.season = async (c) => {
 App.screens.event = async (c) => {
   // Останавливаем прошлый поллинг события (если был)
   if (App._eventTimer) { clearInterval(App._eventTimer); App._eventTimer = null; }
-  await App.refreshMe();
-  const d = await API.get('/api/event');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/event')]);
   if (d.scheduled) {
     c.innerHTML = `
       <div class="title">🐉 Скоро событие</div>
@@ -2888,8 +2892,9 @@ App.screens.event = async (c) => {
 
 // ---------- Косметика профиля ----------
 App.screens.cosmetics = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/cosmetics');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/cosmetics')]);
   const frames = d.items.filter((x) => x.type === 'frame');
   const bgs = d.items.filter((x) => x.type === 'bg');
   const renderItem = (x) => `

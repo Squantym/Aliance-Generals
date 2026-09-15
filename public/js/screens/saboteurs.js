@@ -6,8 +6,9 @@
 // ===================================================================
 
 App.screens.saboteurs = async (c, param) => {
-  await App.refreshMe();
-  const data = await API.get('/api/saboteurs');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data] = await Promise.all([App.refreshMe(), API.get('/api/saboteurs')]);
   const tab = param || 'ground';
 
   const tabs = [

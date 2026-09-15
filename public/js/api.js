@@ -112,6 +112,11 @@ const API = {
     const key = url + '|' + JSON.stringify(payload);
     const running = this._inFlight.get(key);
     if (running) return running;                 // тот же запрос уже в пути
+    // Любое действие игрока обесценивает кэш /api/me: золото списано,
+    // энергия потрачена — шапка обязана показать это сразу. Сбрасываем
+    // отметку ЗДЕСЬ, в единственной точке отправки действий, а не в
+    // полутора сотнях обработчиков кнопок.
+    try { if (typeof App !== 'undefined') App._meAt = 0; } catch (e) {}
     const p = this.req('POST', url, payload)
       .finally(() => { this._inFlight.delete(key); });
     this._inFlight.set(key, p);

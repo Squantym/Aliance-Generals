@@ -272,3 +272,59 @@ body.a2-is-test #a2-root { padding-top: 26px; }
 .a2 .date-row label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); }
 .a2 .date-row input { padding: 5px 7px; background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+
+
+/* ── Почта: цепочка сервисов, расход лимита, группы рассылки ──────
+   Переехало из общего style.css: эти стили нужны только панели, а
+   скачивал их каждый игрок вместе с игрой. */
+.a2 .mail-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.a2 .mail-chain-item {
+  padding: 4px 10px; font-size: 12px; border-radius: 999px;
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--border);
+}
+.a2 .mail-chain-item.is-main { border-color: var(--gold); color: var(--gold); }
+.a2 .mail-chain-arrow { opacity: .5; }
+
+.a2 .mail-bar-row { margin: 0 0 10px; }
+.a2 .mail-bar-head {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 13px; margin-bottom: 4px;
+}
+.a2 .mail-bar {
+  height: 8px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, .07);
+}
+.a2 .mail-bar > i { display: block; height: 100%; background: var(--gold); transition: width .3s; }
+.a2 .mail-bar > i.is-warn { background: #e08b2a; }
+.a2 .mail-bar > i.is-danger { background: #d3453f; }
+
+.a2 .mail-quota-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px; margin-top: 10px;
+}
+.a2 .mail-quota-facts > div {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(255, 255, 255, .03);
+}
+.a2 .mail-quota-facts span { display: block; font-size: 12px; }
+.a2 .mail-quota-facts b { font-size: 18px; }
+
+/* Выбор получателей: карточки, а не выпадающий список — числа должны
+   быть видны все сразу, иначе выбор делается вслепую */
+.a2 .mail-groups {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px;
+}
+.a2 .mail-group {
+  display: block; padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: rgba(255, 255, 255, .03);
+}
+.a2 .mail-group:hover { border-color: var(--gold); }
+.a2 .mail-group input { margin-right: 6px; }
+.a2 .mail-group:has(input:checked) { border-color: var(--gold); background: rgba(233, 199, 92, .08); }
+.a2 .mail-group.is-off { opacity: .45; cursor: not-allowed; }
+.a2 .mail-group-name { font-size: 14px; }
+.a2 .mail-group-name b { color: var(--gold); }
+.a2 .mail-group-about { display: block; font-size: 12px; opacity: .7; margin-top: 3px; }
+.a2 .mail-group-warn { display: block; font-size: 12px; color: var(--red); margin-top: 3px; }
+

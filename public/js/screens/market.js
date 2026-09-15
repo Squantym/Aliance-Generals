@@ -448,9 +448,12 @@ App.screens.market = async (c, param) => {
 // адресу #club/<игра>. Одна простыня на семь игр не помещалась на экран
 // телефона, и правила платной игры показать в ней было негде.
 App.screens.club = async (c, param) => {
-  await App.refreshMe();
+  // Игрок пришёл в клуб — возвращаем частый опрос очереди и партий:
+  // вне клуба опрос отступает до тридцати секунд (см. App._clubSchedule)
+  if (App.clubWake) App.clubWake();
   const game = String(param || '').split('/')[0];
-  const [data, lot] = await Promise.all([API.get('/api/club'), API.get('/api/lottery')]);
+  const [, data, lot] = await Promise.all([
+    App.refreshMe(), API.get('/api/club'), API.get('/api/lottery')]);
   const R = (id) => document.getElementById(id);
   const post = async (url, body) => {
     try { return await API.post(url, body || {}); }
@@ -1066,8 +1069,9 @@ App.screens.club = async (c, param) => {
 
 // ---------- ТРОФЕИ ----------
 App.screens.trophies = async (c) => {
-  await App.refreshMe();
-  const data = await API.get('/api/trophies');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data] = await Promise.all([App.refreshMe(), API.get('/api/trophies')]);
 
   // Форматирование минут прокачки: "Xм / Xч Yм / Xсут Yч"
   const fmtMin = (min) => {
@@ -1151,8 +1155,9 @@ App.screens.trophies = async (c) => {
 
 // ---------- ГОСПИТАЛЬ ----------
 App.screens.hospital = async (c) => {
-  await App.refreshMe();
-  const data = await API.get('/api/hospital');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data] = await Promise.all([App.refreshMe(), API.get('/api/hospital')]);
   const needsHeal = data.hp < data.maxHp;
   const onCooldown = (data.cooldownLeft || 0) > 0;
   // Подписчик лечится вне очереди, пока есть суточные лечения: сервер

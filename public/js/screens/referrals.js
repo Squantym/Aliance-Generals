@@ -359,8 +359,9 @@ App._pairList = (list, empty) => (list.length ? list.map((t) => `
 // Только то, чем делятся: ссылка, QR и кто по ним пришёл. Задания —
 // отдельной страницей, иначе экран превращается в простыню.
 App.screens.referral = async (c) => {
-  await App.refreshMe();
-  const d = await API.get('/api/referral');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, d] = await Promise.all([App.refreshMe(), API.get('/api/referral')]);
 
   const invitedRows = (d.invited || []).map((x) => `
     <div class="list-row">

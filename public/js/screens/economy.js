@@ -20,8 +20,9 @@ function sortByProgress(items) {
 
 // ---------- ТЕХНИКА ----------
 App.screens.units = async (c, param) => {
-  await App.refreshMe();
-  const data = await API.get('/api/units');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data] = await Promise.all([App.refreshMe(), API.get('/api/units')]);
   const tab = param || 'ground';
 
   const tabs = [
@@ -107,8 +108,9 @@ App.screens.units = async (c, param) => {
 
 // ---------- ПОСТРОЙКИ ----------
 App.screens.buildings = async (c, param) => {
-  await App.refreshMe();
-  const data = await API.get('/api/buildings');
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, data] = await Promise.all([App.refreshMe(), API.get('/api/buildings')]);
   const tab = param || 'income';
   const rawList = tab === 'income' ? data.income : data.defense;
   const list = sortByProgress(rawList);

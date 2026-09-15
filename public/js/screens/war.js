@@ -725,8 +725,9 @@ App.screens.missions = async (c, param) => {
 
 // Подробный экран одного конфликта
 async function renderConflictDetail(c, confId) {
-  await App.refreshMe();
-  const conf = await API.get('/api/missions/' + encodeURIComponent(confId));
+  // Запрос экрана и /api/me уходят разом: раньше экран ждал
+  // сперва один ответ, потом второй — две поездки вместо одной.
+  const [, conf] = await Promise.all([App.refreshMe(), API.get('/api/missions/' + encodeURIComponent(confId))]);
 
   // Точки прогресса в спецоперации: ●●○
   const stepDots = (done) => [0, 1, 2].map((i) => i < done ? '●' : '○').join(' ');
