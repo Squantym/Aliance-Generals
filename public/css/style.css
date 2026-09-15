@@ -499,7 +499,22 @@ body.theme-aurora  .ic-gold { filter: drop-shadow(0 0 4px #7dffb3); }
   border: 1px solid var(--orange-1); border-radius: 8px;
   background: rgba(217,165,70,.06);
 }
-.sales-strip-head { font-size: 13px; font-weight: 700; color: #ffd66e; margin-bottom: 6px; }
+/* Заголовок — он же кнопка: список свёрнут, пока его не раскроют */
+.sales-strip-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; font-size: 13px; font-weight: 700; color: #ffd66e;
+  cursor: pointer; text-align: left;
+}
+.sales-strip-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales-strip-more {
+  flex-shrink: 0; font-size: 12px; font-weight: 400;
+  color: var(--orange-1); border: 1px solid var(--orange-1);
+  border-radius: 6px; padding: 2px 8px; white-space: nowrap;
+}
+.sales-strip-head:hover .sales-strip-more { background: rgba(217,165,70,.14); }
+.sales-strip-head:focus-visible { outline: 2px solid var(--orange-1); outline-offset: 2px; }
+.sales-strip-list { margin-top: 6px; }
 .sales-row {
   display: flex; align-items: center; gap: 8px;
   padding: 5px 0; border-top: 1px solid var(--border-dim); font-size: 12px;

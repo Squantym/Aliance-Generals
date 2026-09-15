@@ -100,6 +100,39 @@ API.get = async (url) => {
   const app = fs.readFileSync(__dirname + '/../public/js/app.js', 'utf8');
   ok('витрина акций вызывается через простой', /_whenIdle\(\(\) => App\.renderSalesStrip\(\)\)/.test(app));
 
+  console.log('\n[6] Витрина акций свёрнута, раскрывается кнопкой');
+  // Жалоба владельца: пять строк со скидками занимали пол-экрана под
+  // каждым разделом. Видно, что акции есть, а список — по кнопке.
+  App._salesOpen = false;
+  await App.renderSalesStrip();
+  const list = () => document.getElementById('sales-list');
+  const btn = () => document.getElementById('sales-toggle');
+  ok('надпись про акции на месте',
+     /Сейчас действуют акции: 2/.test(document.getElementById('sales-strip').innerHTML));
+  ok('кнопка раскрытия рядом с надписью', !!btn() && /Показать/.test(btn().textContent));
+  ok('сам список свёрнут', !!list() && list().hasAttribute('hidden'));
+  // Строки остаются в разметке: по ним общий тикер обновляет остаток
+  ok('строки акций никуда не делись — тикер их обновляет',
+     (document.getElementById('sales-strip').innerHTML.match(/<div class="sales-row"/g) || []).length === 2);
+  btn().onclick();
+  await wait(20);
+  ok('после нажатия список раскрыт', !list().hasAttribute('hidden'));
+  ok('и кнопка предлагает свернуть', /Свернуть/.test(btn().textContent));
+  ok('состояние подписано для читалки экрана', btn().getAttribute('aria-expanded') === 'true');
+  btn().onclick();
+  await wait(20);
+  ok('повторное нажатие сворачивает обратно', list().hasAttribute('hidden'));
+  // Переход между разделами не должен захлопывать раскрытую витрину
+  App._salesOpen = true;
+  await App.renderSalesStrip();
+  await App.route();
+  await wait(40);
+  await App.renderSalesStrip();
+  ok('раскрытая витрина переживает переход между разделами',
+     !document.getElementById('sales-list').hasAttribute('hidden'));
+  const css6 = fs.readFileSync(__dirname + '/../public/css/style.css', 'utf8');
+  ok('кнопка оформлена, а не выглядит как системная', /\.sales-strip-more \{/.test(css6));
+
   console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);
   process.exit(0);
 })().catch((e) => { console.error('FAIL', e.stack || e); process.exit(1); });

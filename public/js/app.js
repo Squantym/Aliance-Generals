@@ -4232,16 +4232,33 @@ const App = {
     }
     const live = (App._sales || []).filter((x) => x.expiresAt > Date.now());
     if (live.length < 2) { box.innerHTML = ''; return; }
+    // Свёрнута по умолчанию: пять строк со скидками занимали пол-экрана
+    // под каждым разделом. Видно, что акции есть, а список — по кнопке.
+    // Состояние живёт в памяти вкладки: раскрыл — остаётся раскрытым при
+    // переходах между разделами, но на новый заход снова свёрнута.
+    const open = !!App._salesOpen;
     box.innerHTML = `
       <div class="sales-strip">
-        <div class="sales-strip-head">🏷 Сейчас действуют акции: ${live.length}</div>
-        ${live.map((x) => `
-          <div class="sales-row" ${x.screen ? `data-sale-go="${UI.esc(x.screen)}"` : ''}>
-            <span class="sales-row-pct">−${x.pct}%</span>
-            <span class="sales-row-name">${UI.esc(x.label)}</span>
-            <span class="sales-row-left" data-sale-until="${x.expiresAt}">${UI.timeLeft(x.expiresAt - Date.now())}</span>
-          </div>`).join('')}
+        <button class="sales-strip-head" id="sales-toggle" aria-expanded="${open}" aria-controls="sales-list">
+          <span class="sales-strip-title">🏷 Сейчас действуют акции: ${live.length}</span>
+          <span class="sales-strip-more">${open ? '▴ Свернуть' : '▾ Показать'}</span>
+        </button>
+        <div class="sales-strip-list" id="sales-list"${open ? '' : ' hidden'}>
+          ${live.map((x) => `
+            <div class="sales-row" ${x.screen ? `data-sale-go="${UI.esc(x.screen)}"` : ''}>
+              <span class="sales-row-pct">−${x.pct}%</span>
+              <span class="sales-row-name">${UI.esc(x.label)}</span>
+              <span class="sales-row-left" data-sale-until="${x.expiresAt}">${UI.timeLeft(x.expiresAt - Date.now())}</span>
+            </div>`).join('')}
+        </div>
       </div>`;
+    // Строки остаются в разметке и свёрнутыми: общий тикер обновляет в них
+    // остаток времени, и раскрытая витрина сразу показывает верные цифры,
+    // а не прошлые до следующей секунды.
+    document.getElementById('sales-toggle').onclick = () => {
+      App._salesOpen = !App._salesOpen;
+      App.renderSalesStrip();
+    };
     box.querySelectorAll('[data-sale-go]').forEach((el) => {
       el.onclick = () => App.go(el.dataset.saleGo);
     });
