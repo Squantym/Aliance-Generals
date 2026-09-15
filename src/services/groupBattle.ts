@@ -46,6 +46,19 @@ const AMMO = UP.BASE.ammo;
 const ACTION_CD_MS = 1500;              // откат между действиями
 const BOT_THINK_MS = 3000;              // как часто ходят боты
 
+// ── НАСКОЛЬКО БОТЫ СЛАБЕЕ ЖИВЫХ ──────────────────────────────────
+// Решение владельца: боты бьют и держат удар на 30% хуже, а решения
+// принимают на 20% реже правильные. Оба числа — здесь и только здесь:
+// разнеси их по коду, и следующая правка баланса опять станет поиском
+// по файлу. Меняются одной строкой, без пересборки логики.
+const BOT_POWER_MUL = 0.7;              // −30% к урону, запасу HP и криту
+const BOT_SMART_MUL = 0.8;              // −20% к «сообразительности»
+
+// Вероятность (или порог), с которой бот выбирает лучший ход. Чем
+// меньше BOT_SMART_MUL, тем реже бот поступает правильно: добивает
+// раненого, вовремя лечит, вовремя прикрывает.
+function smart(p: number): number { return p * BOT_SMART_MUL; }
+
 // Стоимость действий
 const COST = {
   attack: { ammo: 1, energy: 0 },
@@ -392,8 +405,11 @@ function startBattle(s: Store, list: any[], now: number): void {
         dodgeChance: Math.min(0.75, base.dodgeChance + dodgeB),
       };
     })() : {
-      hp: HP, energy: ENERGY, ammo: AMMO,
-      critChance: UP.BASE.critChance, dodgeChance: UP.BASE.dodgeChance,
+      // Бот: базовые характеристики, ослабленные на BOT_POWER_MUL.
+      // Запас энергии и боеприпасов не режем — это бюджет ходов, а не
+      // сила: срезав его, мы бы не ослабили бота, а укоротили бой.
+      hp: Math.round(HP * BOT_POWER_MUL), energy: ENERGY, ammo: AMMO,
+      critChance: UP.BASE.critChance * BOT_POWER_MUL, dodgeChance: UP.BASE.dodgeChance * BOT_POWER_MUL,
       healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0,
     };
     // Запасы с учётом роли: защитник крепче, медик выносливее
@@ -783,7 +799,9 @@ function doAttack(b: Battle, me: Fighter, target: Fighter): string {
   }
 
   let dmg = Math.round(BASE_DMG * role.atkMul * (0.85 + Math.random() * 0.3)
-    * (1 + (mySt.atkBonus || 0)));
+    * (1 + (mySt.atkBonus || 0))
+    // Бот бьёт слабее живого: тот же множитель, что и на его запасах
+    * (me.isBot ? BOT_POWER_MUL : 1));
   // Критический удар: сила случайная в диапазоне, как на арене
   const crit = Math.random() < (mySt.critChance || 0);
   if (crit) dmg = Math.round(dmg * UP.critMult());
@@ -858,29 +876,30 @@ function botTurn(b: Battle, now: number): void {
     // Цель выбираем случайно, а не самого слабого: иначе вся команда
     // ботов фокусировалась на одном игроке и выносила его мгновенно.
     // Изредка добиваем раненого — так бой выглядит осмысленным.
-    // Боты стали агрессивнее: в половине случаев добивают раненого.
-    // Полный фокус на одном не ставим — иначе живого игрока выносят
-    // мгновенно и играть неинтересно.
-    const target = Math.random() < 0.5
+    // Боты добивают раненого не всегда: полный фокус на одном выносил бы
+    // живого игрока мгновенно. Через smart() частота правильного выбора
+    // ещё и снижена — боты намеренно глуповаты.
+    const target = Math.random() < smart(0.5)
       ? enemies.slice().sort((a, c) => a.hp - c.hp)[0]
       : enemies[Math.floor(Math.random() * enemies.length)];
 
     // Защитник прикрывает, только если союзнику действительно плохо —
-    // иначе он тратил ход на прикрытие здоровых вместо ударов
+    // иначе он тратил ход на прикрытие здоровых вместо ударов.
+    // Порог тоже занижен: тупой защитник спохватывается позже.
     if (bot.role === 'guardian' && weakestAlly && bot.energy >= COST.guard.energy
         && weakestAlly.guardedUntil <= now
-        && weakestAlly.hp / weakestAlly.maxHp < 0.7) {
+        && weakestAlly.hp / weakestAlly.maxHp < smart(0.7)) {
       // Защитник прикрывает того, кому хуже всех
       doGuard(b, bot, weakestAlly);
       continue;
     }
     if (bot.role === 'medic' && weakestAlly && bot.energy >= COST.heal.energy) {
-      const low = weakestAlly.hp / weakestAlly.maxHp < 0.5;
-      // Ниже половины — лечим обязательно, иначе решаем по вероятности
-      // Лечение в приоритете: ниже половины лечим обязательно, иначе
-      // с вероятностью около двух третей. Медик должен лечить, а не
-      // подменять штурмовика.
-      if (low || Math.random() < 0.65) { doHeal(b, bot, weakestAlly); continue; }
+      const low = weakestAlly.hp / weakestAlly.maxHp < smart(0.5);
+      // Медик должен лечить, а не подменять штурмовика: совсем плохого
+      // лечит обязательно, остальных — по вероятности. Оба числа тоже
+      // занижены: тупой медик спохватывается позже и чаще бьёт вместо
+      // лечения.
+      if (low || Math.random() < smart(0.65)) { doHeal(b, bot, weakestAlly); continue; }
     }
     if (bot.ammo > 0) doAttack(b, bot, target);
   }
@@ -1249,6 +1268,7 @@ export = {
   ratingTable, rankOf, awardRating, tokensFor, RANKS, CONTRIB_CAP,
   RATING_WIN, RATING_LOSS, RATING_KILL, RATING_BEST,
   ROLES, ROLE_IDS, TEAM_SIZE, HP, ENERGY, AMMO, BASE_DMG, HEAL_AMOUNT,
+  BOT_POWER_MUL, BOT_SMART_MUL, smart, doAttack,
   GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, COST, BOT_THINK_MS, BOT_FILL_BEFORE_MS, PREPARE_MS,
   splitTeams, fillWithBots, botTurn,
 };

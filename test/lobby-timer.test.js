@@ -410,7 +410,8 @@ ok(/const ATK_MIN = 25/.test(arSrc) && /const ATK_MAX = 35/.test(arSrc),
 ok(/ATK_MIN \+ Math\.floor\(Math\.random\(\)/.test(arSrc), 'разброс применяется при ударе');
 ok(/Цель выбираем случайно, а не самого слабого/.test(gbSrc5),
    'боты бьют случайные цели, а не фокусируются на одном');
-ok(/Math\.random\(\) < 0\.5/.test(gbSrc5), 'в половине случаев добивают раненого — боты агрессивные');
+// Частота «умного» хода занижена множителем BOT_SMART_MUL — боты глуповаты
+ok(/Math\.random\(\) < smart\(0\.5\)/.test(gbSrc5), 'раненого добивают не всегда — частота занижена smart()');
 
 console.log('\n── 14. Плашка боя и запрет перемещения ──');
 const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
