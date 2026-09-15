@@ -256,7 +256,7 @@ function describe(path: string, body?: any, result?: any): string | null {
           ? '🛡 Штаб: сорвал часть герба'
           : '🕊 Штаб: заключил перемирие (получил жетон)';
       case '/api/ears/restore':
-        return `👂 Восстановил ухо${result.cost ? ` за 🪙 ${money(result.cost)}` : ''}`;
+        return `🛡 Восстановил часть герба${result.cost ? ` за 🪙 ${money(result.cost)}` : ''}`;
       case '/api/war/mine-defuse':
         return result.exploded ? '💥 Провалил разминирование — взрыв!' : '✂️ Успешно разминировал растяжку';
       case '/api/war/mine-sacrifice':
@@ -412,7 +412,7 @@ function describe(path: string, body?: any, result?: any): string | null {
       // ── Легион: казна, постройки, технологии, магазин ──────────
       case '/api/legion/deposit':          return `💰 Внёс в казну легиона: $${money(body.amount)}`;
       case '/api/legion/exchange':         return `💱 Обменял $${money(body.dollars)} → Резервы`;
-      case '/api/legion/deposit-resources':return `📦 Внёс в казначейство: ${body.ears ? body.ears + ' 👂 ' : ''}${body.tokens ? body.tokens + ' 🎖' : ''}`;
+      case '/api/legion/deposit-resources':return `📦 Внёс в казначейство: ${body.ears ? body.ears + ' 🛡 ' : ''}${body.tokens ? body.tokens + ' 🎖' : ''}`;
       case '/api/legion/build':            return `🏛 Улучшил постройку легиона «${legionBuildName(body.buildingId)}»`;
       case '/api/legion/build-battle':     return `⚔️ Улучшил боевую постройку «${legionBuildName(body.buildingId)}»`;
       case '/api/legion/tech/start':       return `🔬 Начал изучение технологии «${legionTechName(body.techId)}»`;
@@ -580,7 +580,7 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `🔐 Взлом сейфа: назвал ${body.digit != null ? `цифру ${body.digit}` : 'вариант'}`;
       case '/api/war/bank-hack/skip':     return '🔐 Пропустил попытку взлома сейфа';
       case '/api/war/bank-hack/cancel':   return '🔐 Отказался от взлома сейфа';
-      case '/api/war/ear-message':        return '👂 Отправил сообщение вместе с ухом';
+      case '/api/war/ear-message':        return '🛡 Отправил сообщение вместе с гербом';
       case '/api/sanctions/declare':
         return `⚖️ Объявил санкции против «${body.targetName || body.targetId || '—'}»`;
       case '/api/reinforcements/send':

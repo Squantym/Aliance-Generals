@@ -1263,7 +1263,7 @@ const App = {
   },
 
   // Окно предложения оставить послание на профиле жертвы, которой
-  // игрок отрезал ОБА уха. Можно написать текст или отказаться.
+  // игрок сорвал ВЕСЬ герб. Можно написать текст или отказаться.
   _showEarMessagePrompt(victimId) {
     const existing = document.getElementById('ear-msg-prompt');
     if (existing) existing.remove();
@@ -1272,7 +1272,7 @@ const App = {
     popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px';
     popup.innerHTML = `
       <div style="background:var(--card);border:2px solid var(--red);border-radius:12px;max-width:400px;width:100%;padding:20px">
-        <div style="font-size:17px;font-weight:bold;margin-bottom:6px">✂️ Вы отрезали оба уха!</div>
+        <div style="font-size:17px;font-weight:bold;margin-bottom:6px">🛡 Вы сорвали герб целиком!</div>
         <p class="muted small" style="margin-bottom:12px">Можете оставить короткое послание на профиле жертвы — его увидят все. Или откажитесь.</p>
         <textarea id="ear-msg-text" maxlength="200" rows="3" placeholder="Ваше послание (до 200 символов)..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
         <div style="display:flex;gap:8px;margin-top:12px">
@@ -1917,7 +1917,7 @@ const App = {
           <div style="font-weight:bold;margin-bottom:8px;color:var(--gold)">👑 Обзор администратора</div>
           <div class="kv"><span class="k">💰 Казна</span><span class="v gold">$${UI.fmtNum(peek.treasury)}</span></div>
           <div class="kv"><span class="k">🔷 Резервы</span><span class="v">${UI.fmtNum(peek.reserves)} <span class="ic-reserve"></span> РЕЗ</span></div>
-          <div class="kv"><span class="k"><span class="ic-crest"></span> Уши / <span class="ic-token"></span> Жетоны казны</span><span class="v">${peek.treasuryEars} / ${peek.treasuryTokens}</span></div>
+          <div class="kv"><span class="k"><span class="ic-crest"></span> Гербы / <span class="ic-token"></span> Жетоны казны</span><span class="v">${peek.treasuryEars} / ${peek.treasuryTokens}</span></div>
           <div class="kv"><span class="k">Лидер</span><span class="v">${UI.esc(peek.leaderName)}</span></div>
           <div class="kv"><span class="k">В бою сейчас</span><span class="v">${peek.hasActiveBattle ? '⚔️ да' : 'нет'}</span></div>
           ${peek.arsenal.length ? `<div style="margin-top:6px;font-size:12px"><b>Арсенал:</b> ${peek.arsenal.map(a => `${UI.esc(a.name)}×${a.count}`).join(', ')}</div>` : ''}
@@ -1958,7 +1958,7 @@ const App = {
 
   // Диалог админ-вклада ресурсов в легион
   async _adminInvestLegion(legionId, legionName) {
-    const RES = [['treasury', '💰 Казна ($)'], ['reserves', '🔷 Резервы (РЕЗ)'], ['ears', '<span class="ic-crest"></span> Уши'], ['tokens', '<span class="ic-token"></span> Жетоны']];
+    const RES = [['treasury', '💰 Казна ($)'], ['reserves', '🔷 Резервы (РЕЗ)'], ['ears', '<span class="ic-crest"></span> Гербы'], ['tokens', '<span class="ic-token"></span> Жетоны']];
     const pop = document.createElement('div');
     pop.id = 'lgadmin-invest-pop';
     pop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';

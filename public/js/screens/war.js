@@ -565,7 +565,7 @@ App.screens.war = async (c) => {
       // Ветка «жертва ускользнула» отсюда убрана намеренно: ускользание
       // проверяется в момент прорыва, а не на шаге штаба. Здесь она
       // читала несуществующее поле res.escaped и не срабатывала никогда.
-      // Если игрок отрезал ОБА уха одной жертве — предлагаем оставить послание
+      // Если игрок сорвал ВЕСЬ герб одной жертве — предлагаем оставить послание
       if (res && res.canLeaveMessage && res.victimId) {
         App._showEarMessagePrompt(res.victimId);
       }
@@ -1781,7 +1781,7 @@ App.renderUpgradesPage = async () => {
       <span class="ic-crest"></span> гербами и <span class="ic-token"></span> жетонами перемирия.</p>
       <div class="gb-wallet mt">
         <span title="${UI.esc(up.currencyName)}">${up.currencyIcon} ${UI.fmtNum(up.wallet.points)}</span>
-        <span title="Уши"><span class="ic-crest"></span> ${UI.fmtNum(up.wallet.ears)}</span>
+        <span title="Гербы"><span class="ic-crest"></span> ${UI.fmtNum(up.wallet.ears)}</span>
         <span title="Жетоны перемирия"><span class="ic-token"></span> ${UI.fmtNum(up.wallet.tokens)}</span>
       </div>
     </div>

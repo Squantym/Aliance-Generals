@@ -86,7 +86,7 @@ const TIERS = [
 //
 // Валюта улучшений — «боевые очки», отдельный ресурс групповых боёв.
 // Не путать с жетонами перемирия: те давно есть в игре и тратятся
-// здесь как второй ресурс, наравне с ушами.
+// здесь как второй ресурс, наравне с гербами.
 const CURRENCY_NAME = 'Боевые очки';
 const CURRENCY_ICON = '🎗';
 
@@ -277,7 +277,7 @@ function upgrade(user: User, skillId: string, notices: Notices) {
   if (((user as any).battlePoints || 0) < cost.amount) {
     throw new u.ApiError(`Не хватает боевых очков: нужно ${CURRENCY_ICON} ${u.fmt(cost.amount)}`);
   }
-  if (((user as any).ears || 0) < cost.ears) throw new u.ApiError(`Не хватает ушей: нужно ${cost.ears}`);
+  if (((user as any).ears || 0) < cost.ears) throw new u.ApiError(`Не хватает гербов: нужно ${cost.ears}`);
   if (((user as any).tokens || 0) < cost.tokens) {
     throw new u.ApiError(`Не хватает жетонов перемирия: нужно ${cost.tokens}`);
   }

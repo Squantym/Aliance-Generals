@@ -22,7 +22,7 @@ interface RewardPayload {
   dollars?: number;      // доллары (игровая валюта)
   gold?: number;         // золото (премиум)
   tokens?: number;       // жетоны перемирия
-  ears?: number;         // трофейные уши
+  ears?: number;         // трофейные гербы
   skillPoints?: number;  // очки навыков
   xp?: number;           // опыт
 }
@@ -127,7 +127,7 @@ function describe(p: RewardPayload): string[] {
   if (p.dollars)     parts.push(`💵 ${u.fmt(p.dollars)}`);
   if (p.gold)        parts.push(`🪙 ${u.fmt(p.gold)}`);
   if (p.tokens)      parts.push(`🎖 ${u.fmt(p.tokens)}`);
-  if (p.ears)        parts.push(`👂 ${u.fmt(p.ears)}`);
+  if (p.ears)        parts.push(`🛡 ${u.fmt(p.ears)}`);
   if (p.skillPoints) parts.push(`🎯 ${u.fmt(p.skillPoints)} оч. навыков`);
   if (p.xp)          parts.push(`✨ ${u.fmt(p.xp)} XP`);
   return parts;

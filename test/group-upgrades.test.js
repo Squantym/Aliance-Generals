@@ -65,7 +65,7 @@ console.log('\n── 3. Цены ──');
 for (const [lvl, cur, res] of [[1, 500, 5], [10, 5000, 30], [41, 50000, 100], [50, 300000, 300]]) {
   const c = gu.costOf(lvl);
   ok(c.amount === cur && c.ears === res && c.tokens === res,
-     `уровень ${lvl}: ${c.amount} валюты, ${c.ears} ушей, ${c.tokens} жетонов`);
+     `уровень ${lvl}: ${c.amount} валюты, ${c.ears} гербов, ${c.tokens} жетонов`);
 }
 let mono = true;
 for (let l = 2; l <= 50; l++) if (gu.costOf(l).amount < gu.costOf(l - 1).amount) mono = false;
@@ -112,13 +112,13 @@ const goldUntouched = pro.gold, moneyUntouched = pro.dollars;
 const nextCost = gu.costOf(gu.levelsOf(pro).hp + 1);
 gu.upgrade(pro, 'hp', []);
 ok(ptsBefore - pro.battlePoints === nextCost.amount, `списано боевых очков: ${nextCost.amount}`);
-ok(earsBefore - pro.ears === nextCost.ears, `списано ушей: ${nextCost.ears}`);
+ok(earsBefore - pro.ears === nextCost.ears, `списано гербов: ${nextCost.ears}`);
 ok(tokBefore - pro.tokens === nextCost.tokens, `списано жетонов перемирия: ${nextCost.tokens}`);
 // Валюта новая и отдельная: обычные деньги и золото не трогаются
 ok(pro.gold === goldUntouched, 'золото не расходуется');
 ok(pro.dollars === moneyUntouched, 'игровые деньги тоже');
 pro.ears = 0;
-fails(() => gu.upgrade(pro, 'hp', []), 'ушей', 'без ушей улучшить нельзя');
+fails(() => gu.upgrade(pro, 'hp', []), 'гербов', 'без гербов улучшить нельзя');
 pro.ears = 1e6; pro.tokens = 0;
 fails(() => gu.upgrade(pro, 'hp', []), 'жетонов перемирия', 'без жетонов тоже');
 pro.tokens = 1e6; pro.battlePoints = 0;

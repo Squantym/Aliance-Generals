@@ -54,7 +54,7 @@ function nextBuildingPrice(building: any, level: number): number {
 }
 
 // ---------- Цена постройки/улучшения боевой постройки ($) ----------
-// Цена следующего уровня боевой постройки. Все цифры (РЕЗ/уши/жетоны)
+// Цена следующего уровня боевой постройки. Все цифры (РЕЗ/гербы/жетоны)
 // задаются в конфиге двумя точками — за 1-й и за последний уровень.
 function battleBuildingCost(b: any, currentLevel: number): any {
   return config.battleBuildingCostAt(b, currentLevel + 1);
@@ -319,7 +319,7 @@ function build(user: User, buildingId: string, notices: Notices) {
 }
 
 // ===================================================================
-// БОЕВЫЕ ПОСТРОЙКИ (РЕЗ + уши/жетоны из казначейства)
+// БОЕВЫЕ ПОСТРОЙКИ (РЕЗ + гербы/жетоны из казначейства)
 // ===================================================================
 function buildBattle(user: User, buildingId: string, notices: Notices) {
   const l = legionOf(user);
@@ -344,7 +344,7 @@ function buildBattle(user: User, buildingId: string, notices: Notices) {
     throw new u.ApiError(`Не хватает РЕЗ (нужно ${u.fmt(cost.reserves)} РЕЗ, есть ${u.fmt(l.reserves || 0)})`);
   }
   if (cost.ears > 0 && (l.treasuryEars || 0) < cost.ears) {
-    throw new u.ApiError(`В казначействе не хватает ушей (нужно ${cost.ears}, есть ${l.treasuryEars || 0})`);
+    throw new u.ApiError(`В казначействе не хватает гербов (нужно ${cost.ears}, есть ${l.treasuryEars || 0})`);
   }
   if (cost.tokens > 0 && (l.treasuryTokens || 0) < cost.tokens) {
     throw new u.ApiError(`В казначействе не хватает жетонов (нужно ${cost.tokens}, есть ${l.treasuryTokens || 0})`);
@@ -399,9 +399,9 @@ function startTech(user: User, techId: string, notices: Notices) {
   if (l.reserves < levelData.priceReserves) {
     throw new u.ApiError(`Не хватает РЕЗ (нужно ${u.fmt(levelData.priceReserves)}, есть ${u.fmt(l.reserves)})`);
   }
-  // Уши лидера (трофейные)
+  // Гербы лидера (трофейные)
   if ((user.ears || 0) < levelData.earReq) {
-    throw new u.ApiError(`Не хватает трофейных ушей (нужно ${levelData.earReq}, есть ${user.ears || 0})`);
+    throw new u.ApiError(`Не хватает трофейных гербов (нужно ${levelData.earReq}, есть ${user.ears || 0})`);
   }
 
   // Списываем
@@ -455,11 +455,11 @@ function resolveTechQueue(): void {
 // ===================================================================
 // МАГАЗИН: лидер покупает предметы в арсенал
 // ===================================================================
-// КАЗНАЧЕЙСТВО: лидер или любой участник вносит уши/жетоны в казну клана
+// КАЗНАЧЕЙСТВО: лидер или любой участник вносит гербы/жетоны в казну клана
 // ===================================================================
 // ── Учёт вкладов в казначейство ───────────────────────────────────
 // Пишем и накопительный рейтинг по игроку, и ленту истории («кто и сколько
-// внёс»). Валюты не смешиваем: уши, жетоны и РЕЗ считаются отдельно —
+// внёс»). Валюты не смешиваем: гербы, жетоны и РЕЗ считаются отдельно —
 // они не взаимозаменяемы, поэтому единого «очка вклада» намеренно нет.
 const TREASURY_HISTORY_MAX = 100;
 
@@ -519,7 +519,7 @@ function rollWeekIfNeeded(l: any): void {
 }
 
 // Рейтинг вкладов. period: 'all' — за всё время, 'week' — за текущую неделю.
-// Сортировка: уши → жетоны → РЕЗ (валюты не смешиваем, единого «очка» нет).
+// Сортировка: гербы → жетоны → РЕЗ (валюты не смешиваем, единого «очка» нет).
 function contributionsView(l: any, period: 'all' | 'week' = 'all'): any[] {
   ensureLegionFields(l);
   rollWeekIfNeeded(l);
@@ -561,17 +561,17 @@ function depositResources(user: User, ears: number, tokens: number, useAdmin: bo
   ensureLegionFields(l);
   ears   = u.toInt(ears, 0);
   tokens = u.toInt(tokens, 0);
-  if (ears <= 0 && tokens <= 0) throw new u.ApiError('Укажите количество ушей или жетонов');
+  if (ears <= 0 && tokens <= 0) throw new u.ApiError('Укажите количество гербов или жетонов');
 
   if (useAdmin) {
     // Источник — adminCrests/adminTokens (начислено администратором)
-    if (ears   > 0 && (user.adminCrests || 0)   < ears)   throw new u.ApiError(`Не хватает адм. ушей (нужно ${ears}, есть ${user.adminCrests || 0})`);
+    if (ears   > 0 && (user.adminCrests || 0)   < ears)   throw new u.ApiError(`Не хватает адм. гербов (нужно ${ears}, есть ${user.adminCrests || 0})`);
     if (tokens > 0 && (user.adminTokens || 0) < tokens) throw new u.ApiError(`Не хватает адм. жетонов (нужно ${tokens}, есть ${user.adminTokens || 0})`);
     if (ears   > 0) { user.adminCrests   = (user.adminCrests || 0)   - ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.adminTokens = (user.adminTokens || 0) - tokens; l.treasuryTokens += tokens; }
   } else {
-    // Источник — трофейные уши (user.ears) и жетоны (user.tokens)
-    if (ears   > 0 && (user.ears   || 0) < ears)   throw new u.ApiError(`Не хватает трофейных ушей (нужно ${ears}, есть ${user.ears || 0})`);
+    // Источник — трофейные гербы (user.ears) и жетоны (user.tokens)
+    if (ears   > 0 && (user.ears   || 0) < ears)   throw new u.ApiError(`Не хватает трофейных гербов (нужно ${ears}, есть ${user.ears || 0})`);
     if (tokens > 0 && (user.tokens || 0) < tokens) throw new u.ApiError(`Не хватает жетонов (нужно ${tokens}, есть ${user.tokens || 0})`);
     if (ears   > 0) { user.ears   = (user.ears||0)   - ears;   l.treasuryEars   += ears; }
     if (tokens > 0) { user.tokens = (user.tokens||0) - tokens; l.treasuryTokens += tokens; }
@@ -585,7 +585,7 @@ function depositResources(user: User, ears: number, tokens: number, useAdmin: bo
   db.save('legions');
   db.markUser(user.id);
   const parts: any[] = [];
-  if (ears   > 0) parts.push(`${ears} 👂`);
+  if (ears   > 0) parts.push(`${ears} 🛡`);
   if (tokens > 0) parts.push(`${tokens} 🎖`);
   notices.push(`✅ Внесено в казначейство: ${parts.join(' + ')}`);
   return { treasuryEars: l.treasuryEars, treasuryTokens: l.treasuryTokens };
@@ -611,7 +611,7 @@ function shopBuy(user: User, itemId: string, qty: number, notices: Notices) {
 
   // Ресурсы берутся из казначейства клана, не из личного кармана
   if (totalEars > 0 && (l.treasuryEars || 0) < totalEars) {
-    throw new u.ApiError(`В казначействе не хватает ушей (нужно ${totalEars}, есть ${l.treasuryEars || 0})`);
+    throw new u.ApiError(`В казначействе не хватает гербов (нужно ${totalEars}, есть ${l.treasuryEars || 0})`);
   }
   if (totalTokens > 0 && (l.treasuryTokens || 0) < totalTokens) {
     throw new u.ApiError(`В казначействе не хватает жетонов (нужно ${totalTokens}, есть ${l.treasuryTokens || 0})`);
@@ -631,7 +631,7 @@ function shopBuy(user: User, itemId: string, qty: number, notices: Notices) {
   l.arsenal[itemId] = (l.arsenal[itemId] || 0) + gained;
   db.save('legions');
 
-  const costStr = totalEars > 0 ? `${totalEars} 👂 из казны` : `${totalTokens} 🎖 из казны`;
+  const costStr = totalEars > 0 ? `${totalEars} 🛡 из казны` : `${totalTokens} 🎖 из казны`;
   notices.push(`🛒 Куплено: ${item.name} ×${gained} за ${costStr} → арсенал легиона.`);
   if (doubled) notices.push(`🚛 Узел снабжения сработал: партия удвоена (×${qty} → ×${gained})!`);
   return { itemId, count: l.arsenal[itemId], doubled, gained,
@@ -1113,7 +1113,7 @@ function adminStartBattle(adminUser: User, legionAId: string, legionBId: string,
 
 // ── АДМИН: пополнить казну/резервы/казначейство ЛЮБОГО легиона напрямую
 // (без списания у игрока — «создание» ресурсов админом). resource:
-// 'treasury' ($) | 'reserves' (РЕЗ) | 'ears' (уши) | 'tokens' (жетоны). ──
+// 'treasury' ($) | 'reserves' (РЕЗ) | 'ears' (гербы) | 'tokens' (жетоны). ──
 function adminDeposit(adminUser: User, legionId: string, amount: number, notices: Notices, resource?: string) {
   require('./roles').assertZone(adminUser, 'legions', 'управление легионами');
   const l = legions()[legionId];
@@ -1122,12 +1122,12 @@ function adminDeposit(adminUser: User, legionId: string, amount: number, notices
   const amt = u.toInt(amount, 0);
   if (amt <= 0) throw new u.ApiError('Сумма должна быть положительной');
   const res = resource || 'reserves';
-  const LABEL: any = { reserves: 'резервы (РЕЗ)', ears: 'уши', tokens: 'жетоны' };
+  const LABEL: any = { reserves: 'резервы (РЕЗ)', ears: 'гербы', tokens: 'жетоны' };
   switch (res) {
     case 'reserves': l.reserves = (l.reserves || 0) + amt; break;
     case 'ears':     l.treasuryEars = (l.treasuryEars || 0) + amt; break;
     case 'tokens':   l.treasuryTokens = (l.treasuryTokens || 0) + amt; break;
-    default: throw new u.ApiError('Неизвестный ресурс (валюта клана — только РЕЗ, уши, жетоны)');
+    default: throw new u.ApiError('Неизвестный ресурс (валюта клана — только РЕЗ, гербы, жетоны)');
   }
   // В историю пишем, но в рейтинг игроков НЕ засчитываем: это начисление
   // администрации, а не вклад участника (userId = null).
@@ -1213,7 +1213,7 @@ function adminSetLegion(adminUser: User, legionId: string, patch: any, notices: 
   }
   // Ресурсы (абсолютные значения)
   if (has('reserves')) { l.reserves = num(patch.reserves); changes.push(`резервы → ${u.fmt(l.reserves)}`); }
-  if (has('ears'))     { l.treasuryEars = num(patch.ears); changes.push(`уши → ${u.fmt(l.treasuryEars)}`); }
+  if (has('ears'))     { l.treasuryEars = num(patch.ears); changes.push(`гербы → ${u.fmt(l.treasuryEars)}`); }
   if (has('tokens'))   { l.treasuryTokens = num(patch.tokens); changes.push(`жетоны → ${u.fmt(l.treasuryTokens)}`); }
   if (has('ratingPoints')) { l.ratingPoints = num(patch.ratingPoints); changes.push(`рейтинг → ${u.fmt(l.ratingPoints)}`); }
 

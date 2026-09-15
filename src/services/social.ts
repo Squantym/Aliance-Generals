@@ -57,7 +57,30 @@ function roomOf(room?: string): string {
   return room === 'recruit' ? 'recruit' : room === 'alliance' ? 'alliance' : 'global';
 }
 
-function chatGet(viewer: User | null, afterId?: number | string, room?: string) {
+// Обращаются ли в сообщении к этому игроку. Кнопка «Ответить» ставит
+// «Позывной, …» в начало, но обратиться могут и посреди фразы, и через
+// @. Ищем позывной отдельным словом, не внутри другого: «Барс» не
+// должен подсвечиваться у «Барсук».
+function mentionsName(text: string, name: string): boolean {
+  const n = String(name || '').trim();
+  if (n.length < 2) return false;
+  const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Границу слова задаём сами: \b в JS не работает с кириллицей
+  return new RegExp(`(^|[^0-9A-Za-zА-Яа-яЁё_])@?${esc}($|[^0-9A-Za-zА-Яа-яЁё_])`, 'i').test(String(text || ''));
+}
+
+// Лента страницами: страница 1 — самая свежая, дальше вглубь истории.
+// Возвращаем и сами сообщения, и сколько всего страниц, — иначе
+// листалку внизу нечем рисовать.
+function pageOf(all: any[], page?: number | string) {
+  const size = config.CHAT.PAGE_SIZE;
+  const pages = Math.max(1, Math.ceil(all.length / size));
+  const p = Math.min(Math.max(1, u.toInt(page, 1) || 1), pages);
+  const end = all.length - (p - 1) * size;
+  return { slice: all.slice(Math.max(0, end - size), Math.max(0, end)), page: p, pages, size };
+}
+
+function chatGet(viewer: User | null, afterId?: number | string, room?: string, page?: number | string) {
   const after = u.toInt(afterId, 0);
   // Старые сообщения без комнаты считаются общим чатом
   const wantRoom = roomOf(room);
@@ -77,10 +100,12 @@ function chatGet(viewer: User | null, afterId?: number | string, room?: string) 
   }
   // Гостю показываем заглушки без имени автора
   if (!viewer) {
+    const g = pageOf(all, page);
     return {
-      messages: all.map((m: any) => (m.del
+      messages: g.slice.map((m: any) => (m.del
         ? { ...m, text: DELETED_TEXT, tombstone: true }
         : m)),
+      page: g.page, pages: g.pages, pageSize: g.size, total: all.length,
     };
   }
   const pa = require('./personalAlliance');
@@ -91,15 +116,20 @@ function chatGet(viewer: User | null, afterId?: number | string, room?: string) 
   // владелец — им нужно проверять решения модераторов. Остальные, включая
   // самого автора, видят на его месте строку «Сообщение удалено».
   const seesDeleted = rolesSrv.isAdmin(viewer);
-  const msgs = all;
+  const pg = pageOf(all, page);
   return {
-    messages: msgs.map((m: any) => {
+    page: pg.page, pages: pg.pages, pageSize: pg.size, total: all.length,
+    messages: pg.slice.map((m: any) => {
       const author = m.uid ? players[m.uid] : null;
       const roles = require('./roles');
       return {
         ...m,
         ally: !!author && pa.areAllies(viewer, author),
         self: m.uid === viewer.id,
+        // Обращаются ко мне: игрок должен видеть это сразу, а не
+        // вычитывать своё имя в потоке чужих сообщений. Своё же
+        // сообщение обращением к себе не считаем.
+        toMe: m.uid !== viewer.id && !m.del && mentionsName(m.text, viewer.name),
         // Значок сотрудника проекта: «Дозор» у модератора, свои подписи
         // у администратора и владельца — чтобы в чате было видно, кто есть кто
         staff: author ? (roles.roleOf(author) || null) : null,

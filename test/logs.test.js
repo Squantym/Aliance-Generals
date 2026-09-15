@@ -48,7 +48,7 @@ has('количество ×3', d5, '×3');
 
 console.log('\n[6] Исправленные пути (раньше показывали сырьё)');
 has('контейнер /api/market/open', lt.describe('/api/market/open', { tier: 2, qty: 1 }, {}), 'тир 2');
-has('уши /api/ears/restore', lt.describe('/api/ears/restore', {}, { cost: 20 }), 'ухо');
+has('герб /api/ears/restore', lt.describe('/api/ears/restore', {}, { cost: 20 }), 'часть герба');
 has('клуб преферанс /api/club/pref/hit', lt.describe('/api/club/pref/hit', {}, {}), 'преферанс');
 has('клуб напёрстки /api/club/thimble/play', lt.describe('/api/club/thimble/play', { pot: 1 }, {}), 'напёрстк');
 has('клуб сейф /api/club/safe/try', lt.describe('/api/club/safe/try', { guess: '123456' }, {}), 'сейф');

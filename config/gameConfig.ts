@@ -1420,7 +1420,7 @@ const DAILY_QUESTS = [
   // ── Наёмник «Гадюка» — грязная работа ──────────────────────────
   { id: 'g_wet',     char: 'gadyuka',  counter: 'breaches', route: 'war',    base: 8,   diff: 1.6, icon: '💀',
     name: 'Мокрое дело',     flavor: 'Плачу за результат, не за попытки. Доводи дело до штаба — чисто и тихо.' },
-  { id: 'g_collect', char: 'gadyuka',  counter: 'crestsTorn', route: 'war',       base: 6,   diff: 1.6, icon: '👂',
+  { id: 'g_collect', char: 'gadyuka',  counter: 'crestsTorn', route: 'war',       base: 6,   diff: 1.6, icon: '🛡',
     name: 'Коллекция',       flavor: 'У меня хобби, знаешь ли. Неси гербы — за каждый отдельная благодарность.' },
   { id: 'g_quiet',   char: 'gadyuka',  counter: 'saboteursBought', route: 'saboteurs', base: 30, diff: 1.0, icon: '🥷',
     name: 'Тихие люди',      flavor: 'Война выигрывается в тени. Набери диверсантов — пусть враг не спит спокойно.' },
@@ -1605,7 +1605,7 @@ const WEEKLY_QUESTS = [
     name: 'Арсенал',             flavor: 'Ангары должны трещать. Закупай технику всю неделю — война длинная.' },
   { id: 'w_bloodprice', char: 'gadyuka', counter: 'breaches',     route: 'war',            base: 25,      diff: 2.4, icon: '💀',
     name: 'Цена крови',          flavor: 'Недельный подряд. Работа грязная, оплата достойная — считать не буду.' },
-  { id: 'w_collection', char: 'gadyuka', counter: 'crestsTorn',        route: 'war',            base: 30,      diff: 2.4, icon: '👂',
+  { id: 'w_collection', char: 'gadyuka', counter: 'crestsTorn',        route: 'war',            base: 30,      diff: 2.4, icon: '🛡',
     name: 'Коллекция',           flavor: 'Пополни мою коллекцию за неделю. Я не спрашиваю, где ты их взял.' },
   { id: 'w_campaign',  char: 'tesla',    counter: 'missionStages',  route: 'missions',       base: 0,       diff: 2.4, icon: '🛰',
     name: 'Долгая кампания',     flavor: 'Недельный цикл спецоперций. Мне нужен объём данных, а не отдельные вылазки.' },
@@ -1962,7 +1962,7 @@ const LEGION = {
 // ===================================================================
 // БОЕВЫЕ ПОСТРОЙКИ ЛЕГИОНА (Эндгейм)
 // Постройка оплачивается ТОЛЬКО долларами (из казны) — одноразово, сразу 1-й уровень.
-// Улучшения требуют уши (ear) или жетоны (token) из казначейства.
+// Улучшения требуют гербы (ear) или жетоны (token) из казначейства.
 // dollarCost — цена первой постройки; каждый следующий уровень: ×priceGrowth долларов.
 // ===================================================================
 // ===================================================================
@@ -2090,7 +2090,7 @@ const LEGION_BATTLE_BUILDING_BY_ID = Object.fromEntries(LEGION_BATTLE_BUILDINGS.
 // Дерево разделено на две ветки: ECONOMIC и COMBAT.
 // ratingReq — очков рейтинга клана для разблокировки изучения.
 // priceKmarks — кланмарки для изучения.
-// earReq — уши из казначейства для изучения.
+// earReq — гербы из казначейства для изучения.
 // daysBase — базовое время изучения (дни); умножается на TECH_DAYS_GROWTH^level.
 // ===================================================================
 const LEGION_TECHS = [
@@ -2426,7 +2426,11 @@ const GOLD_PACKAGE_BY_ID = Object.fromEntries(GOLD_PACKAGES.map(p => [p.id, p]))
 const BANK = { DEPOSIT_FEE: 0.10 };
 
 // ---------- Прочее ----------
-const CHAT = { MAX_LEN: 300, RATE_MS: 3000, KEEP: 200 };
+// Чат листается страницами: PAGE_SIZE сообщений на странице, PAGES
+// страниц истории. KEEP считается из них — иначе лента и листалка
+// разъехались бы: хранили бы 200, а показывали 15×15=225, и последняя
+// страница была бы наполовину пустой.
+const CHAT = { MAX_LEN: 300, RATE_MS: 3000, PAGE_SIZE: 15, PAGES: 15, KEEP: 15 * 15 };
 const MAIL = { KEEP: 100, MAX_LEN: 2000 };
 
 // ===== Новые системы =====

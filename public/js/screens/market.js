@@ -517,10 +517,11 @@ App.screens.club = async (c, param) => {
     // мелькало бы на долю секунды и пропадало вместе с перерисовкой —
     // а посмотреть, чем всё кончилось, игрок как раз и хочет.
     const outcome = !last ? '' : `
-      <div class="pf-result ${last.result === 'win' ? 'pf-win' : 'pf-lose'}">
+      <div class="pf-result ${last.result === 'win' ? 'pf-win' : (last.result === 'draw' ? '' : 'pf-lose')}">
         ${last.result === 'win' ? '🏆 Партия ваша'
-          : (last.result === 'bust' ? '💥 Перебор' : '🎖 Генерал забрал')}
-        · <b>${last.mySum}</b> против <b>${last.foeSum}</b>${last.reward ? ` · +<span class="ic-gold"></span> ${last.reward}` : ''}
+          : (last.result === 'draw' ? '🤝 Ничья — взнос возвращён'
+          : (last.result === 'bust' ? '💥 Перебор' : '🎖 Генерал забрал'))}
+        · <b>${last.mySum}</b> против <b>${last.foeSum}</b>${last.reward ? ` · +<span class="ic-gold"></span> ${last.reward}` : ''}${last.back ? ` · возврат <span class="ic-gold"></span> ${last.back}` : ''}
       </div>
       ${tableHtml(last.foe, last.foeSum, last.hand, last.mySum)}`;
     if (pf.state === 'cooldown') {
@@ -931,7 +932,7 @@ App.screens.club = async (c, param) => {
     const r = await post('/api/club/pref/stand');
     if (r) {
       App._prefLast = { result: r.result, mySum: r.mySum, foeSum: r.foeSum,
-                        hand: r.hand, foe: r.foe, reward: r.reward || 0 };
+                        hand: r.hand, foe: r.foe, reward: r.reward || 0, back: r.back || 0 };
       if (r.result === 'lose') UI.toast(`🃏 Генерал сильнее: ${r.mySum} против ${r.foeSum}.`);
     }
     await App.refreshMe(); App.rerender();

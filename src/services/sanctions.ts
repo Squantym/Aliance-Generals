@@ -50,10 +50,10 @@ function declare(user: User, targetId: string, amount: number | string, notices:
   require('./account').assertNotSelfAccount(user, target, 'Объявление санкции');
 
   // Объявить санкцию можно на того, кто на вас НАПАДАЛ — хотя бы раз.
-  // Прежнее правило требовало отрезанного уха, а ухо срывается редко:
+  // Прежнее правило требовало сорванной части герба, а герб рвут редко:
   // человека били десять раз подряд, а ответить он не мог. Списки:
   //   attackedBy  — все нападавшие (пишется в battle.ts при атаке),
-  //   crestTakers — те, кто отрезал ухо (старые записи тоже годятся).
+  //   crestTakers — те, кто рвал герб (старые записи тоже годятся).
   const attackedMe = !!((user as any).attackedBy || {})[targetId];
   const cutMe = (user.crestTakers || []).some((c) => c && c.id === targetId);
   if (!attackedMe && !cutMe) {

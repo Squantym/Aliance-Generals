@@ -252,9 +252,9 @@ function applyGrant(target: User, body: any, quiet = false): string[] {
     } catch (e) {}
   }
   if (addInt('ears'))       {
-    // Уши от администратора — в отдельный кошелёк, не смешиваются с игровыми
+    // Гербы от администратора — в отдельный кошелёк, не смешиваются с игровыми
     target.adminCrests   = (target.adminCrests   || 0) + addInt('ears');
-    granted.push(`${addInt('ears')} 👂`);
+    granted.push(`${addInt('ears')} 🛡`);
   }
   if (addInt('tokens'))     {
     // Жетоны от администратора — аналогично
@@ -288,7 +288,7 @@ function pushGiftPopup(target: User, grantedList: string[], customNote?: string 
   target.pendingGifts.push({
     id: u.uid(8),
     at: Date.now(),
-    items: grantedList,         // ['$1 000', '50 👂', ...]
+    items: grantedList,         // ['$1 000', '50 🛡', ...]
     note: customNote || undefined,
   });
 }
@@ -336,7 +336,7 @@ function applyTake(target: User, body: any): string[] {
     target.skillPoints = Math.max(0, (target.skillPoints || 0) - real);
     taken.push(`${real} оч. навыков`);
   }
-  // Уши: сначала админский кошелёк, потом игровой
+  // Гербы: сначала админский кошелёк, потом игровой
   const wantEars = amt('ears');
   if (wantEars) {
     let left = wantEars;
@@ -344,7 +344,7 @@ function applyTake(target: User, body: any): string[] {
     target.adminCrests = (target.adminCrests || 0) - fromAdmin; left -= fromAdmin;
     const fromReal = Math.min(left, target.ears || 0);
     target.ears = (target.ears || 0) - fromReal; left -= fromReal;
-    taken.push(`${wantEars - left} 👂`);
+    taken.push(`${wantEars - left} 🛡`);
   }
   // Жетоны: та же схема
   const wantTok = amt('tokens');
@@ -937,7 +937,7 @@ function wipeGroups(adminUser: User, body: any, notices: Notices) {
 // запись живой, здесь игрок стирается из игры целиком: логин
 // освобождается, войти под старым паролем нельзя — сервер отвечает так,
 // будто такого позывного никогда не было. Подчищаются ВСЕ коллекции и
-// перекрёстные ссылки у других игроков (уши, история боёв, эффекты),
+// перекрёстные ссылки у других игроков (гербы, история боёв, эффекты),
 // чтобы нигде не осталось битых ссылок на удалённый профиль.
 // Требуется подтверждение: body.confirmName должен совпасть с позывным.
 function deleteAccount(adminUser: User, body: any, notices: Notices) {
@@ -1064,7 +1064,7 @@ function deleteAccount(adminUser: User, body: any, notices: Notices) {
     }
   } catch (e) { skipped('чат', e); }
 
-  // 9) Перекрёстные ссылки у ОСТАЛЬНЫХ игроков: отрезанные уши,
+  // 9) Перекрёстные ссылки у ОСТАЛЬНЫХ игроков: сорванные гербы,
   //    послание на ухе, личная история боёв, наложенные эффекты.
   //    Без этой чистки в чужих профилях остались бы ссылки в никуда.
   let refs = 0;

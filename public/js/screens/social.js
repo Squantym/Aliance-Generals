@@ -338,7 +338,7 @@ async function renderGroupScreen(c, kind) {
             <div class="kv"><span class="k">Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(L.treasuryTokens || 0)}</span></div>
             <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.ears || 0)} <span class="ic-crest"></span>, ${UI.fmtNum(App.me.tokens || 0)} <span class="ic-token"></span>):</p>
             <div class="field-row mt">
-              <input type="number" min="1" placeholder="Ушей" id="dep-ears">
+              <input type="number" min="1" placeholder="Гербов" id="dep-ears">
               <input type="number" min="1" placeholder="Жетонов" id="dep-tokens">
               <button class="btn btn-orange btn-inline" id="dep-res-go">Внести</button>
             </div>
@@ -348,7 +348,7 @@ async function renderGroupScreen(c, kind) {
             <div class="kv mt"><span class="k">Адм. гербы <span class="ic-crest"></span></span><span class="v">${UI.fmtNum(App.me.adminCrests || 0)}</span></div>
             <div class="kv"><span class="k">Адм. Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(App.me.adminTokens || 0)}</span></div>
             <div class="field-row mt">
-              <input type="number" min="1" placeholder="Адм. ушей" id="dep-adm-ears">
+              <input type="number" min="1" placeholder="Адм. гербов" id="dep-adm-ears">
               <input type="number" min="1" placeholder="Адм. жетонов" id="dep-adm-tokens">
               <button class="btn btn-orange btn-inline" id="dep-adm-res-go">Внести в казну</button>
             </div>` : ''}
@@ -748,7 +748,7 @@ async function renderGroupScreen(c, kind) {
         catch (e) { UI.toast('⛔ ' + e.message); }
       };
 
-      // Внести уши/жетоны в казначейство (обычные)
+      // Внести гербы/жетоны в казначейство (обычные)
       const depResBtn = document.getElementById('dep-res-go');
       if (depResBtn) depResBtn.onclick = async () => {
         try {
@@ -794,7 +794,7 @@ async function renderGroupScreen(c, kind) {
       // Технологии
       c.querySelectorAll('[data-tech]').forEach(b => {
         b.onclick = async () => {
-          if (!await UI.confirm('Потребуются Резервы и уши.', {title:'Изучить технологию?', icon:'🔬', okText:'Изучить'})) return;
+          if (!await UI.confirm('Потребуются Резервы и гербы.', {title:'Изучить технологию?', icon:'🔬', okText:'Изучить'})) return;
           try { await API.post('/api/legion/tech/start', { techId: b.dataset.tech }); App.rerender(); }
           catch (e) { UI.toast('⛔ ' + e.message); }
         };
@@ -1351,6 +1351,7 @@ App.screens.chat = async (c, param) => {
     </div>
     <div class="card">
       <div class="chat-box" id="chat-box"><div class="loading">Подключение к рации…</div></div>
+      <div class="chat-pager mt" id="chat-pager"></div>
       <div class="field-row mt">
         <input type="text" id="chat-text" maxlength="300" placeholder="${(App._chatRoom === 'recruit') ? 'Ищу альянс / набираю бойцов…' : 'Сообщение в эфир…'}">
         <button class="btn btn-orange btn-inline" id="chat-send">➤</button>
@@ -1365,7 +1366,7 @@ App.screens.chat = async (c, param) => {
   // Подвкладки чата: общий эфир и «Позывные» — доска для поиска
   // соратников в альянс, чтобы такие объявления не тонули в чате
   document.querySelectorAll('[data-croom]').forEach((t) => {
-    t.onclick = () => { App._chatRoom = t.dataset.croom; App.rerender(); };
+    t.onclick = () => { App._chatRoom = t.dataset.croom; App._chatPage = 1; App.rerender(); };
   });
 
   const rulesBtn = document.getElementById('chat-rules');
@@ -1373,12 +1374,26 @@ App.screens.chat = async (c, param) => {
 
   const box = document.getElementById('chat-box');
 
+  // Подсветить собственный позывной в чужом сообщении. Текст уже
+  // экранирован, поэтому и позывной экранируем — иначе не совпадёт.
+  function markMe(escaped) {
+    const name = (App.me && App.me.name) || '';
+    if (!name) return escaped;
+    const esc = UI.esc(name).replace(/[.*+?^${}()|[]\]/g, '\$&');
+    return escaped.replace(
+      new RegExp('(^|[^0-9A-Za-zА-Яа-яЁё_])(@?' + esc + ')($|[^0-9A-Za-zА-Яа-яЁё_])', 'gi'),
+      '$1<span class="chat-me">$2</span>$3');
+  }
+
   async function loadChat() {
     try {
-      const { messages } = await API.get('/api/chat?room=' + (App._chatRoom || 'global'));
+      const d = await API.get('/api/chat?room=' + (App._chatRoom || 'global')
+        + '&page=' + (App._chatPage || 1));
+      const messages = d.messages || [];
+      App._chatPage = d.page || 1;
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
       box.innerHTML = messages.length ? messages.map((msg) => `
-        <div class="chat-msg${msg.vip ? ' chat-msg-vip' : ''}${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}${msg.deleted ? ' chat-msg-deleted' : ''}${msg.tombstone ? ' chat-msg-tomb' : ''}">
+        <div class="chat-msg${msg.toMe ? ' chat-msg-tome' : ''}${msg.vip ? ' chat-msg-vip' : ''}${msg.ally ? ' chat-msg-ally' : ''}${msg.staff ? ' chat-msg-staff chat-msg-' + msg.staff : ''}${msg.banned ? ' chat-msg-banned' : ''}${msg.deleted ? ' chat-msg-deleted' : ''}${msg.tombstone ? ' chat-msg-tomb' : ''}">
           ${msg.ally ? '<span class="chat-ally-star" title="Состоит в вашем личном альянсе (взаимно)">⭐</span>' : ''}
           <span class="who" onclick="App.go('profile/${msg.uid}')">${App._flagImg(msg.flag)} ${UI.esc(msg.name)}</span>
           ${App.vipMark(msg.vip)}
@@ -1391,10 +1406,11 @@ App.screens.chat = async (c, param) => {
             ? `<button class="chat-mute" data-mute="${msg.uid}" data-mutename="${UI.esc(msg.name)}" title="Заблокировать чат">🔇</button>` : ''}
           <span class="at">${UI.fmtDate(msg.at)}</span><br>${msg.tombstone
             ? `<span class="chat-tomb-text">🗑 ${UI.esc(msg.text)}</span>`
-            : `<span class="chat-text">${UI.esc(msg.text)}</span>`}
+            : `<span class="chat-text">${msg.toMe ? markMe(UI.esc(msg.text)) : UI.esc(msg.text)}</span>`}
         </div>`).join('')
         : '<p class="muted center">В эфире тишина. Скажите что-нибудь первым!</p>';
       if (atBottom) box.scrollTop = box.scrollHeight;
+      drawPager(d.pages || 1, d.page || 1);
       // Блокировка чата: доступна модераторам («Дозор») и администрации
       box.querySelectorAll('[data-mute]').forEach((btn) => {
         btn.onclick = async (ev) => {
@@ -1418,6 +1434,34 @@ App.screens.chat = async (c, param) => {
     } catch (e) {}
   }
 
+  // Листалка истории. Страница 1 — самая свежая; чем дальше, тем глубже
+  // в историю. Одной кнопкой «назад» не обойтись: игроки ищут конкретный
+  // разговор, а не листают подряд.
+  function drawPager(pages, page) {
+    const pager = document.getElementById('chat-pager');
+    if (!pager) return;
+    if (pages <= 1) { pager.innerHTML = ''; return; }
+    const btn = (p, label, on, title) =>
+      `<button class="btn btn-inline chat-page${on ? ' btn-orange' : ''}" data-page="${p}"${title ? ` title="${title}"` : ''}>${label}</button>`;
+    // Окно из пяти номеров вокруг текущей страницы: пятнадцать кнопок в
+    // ряд не помещаются на телефоне
+    const from = Math.max(1, Math.min(page - 2, pages - 4));
+    const to = Math.min(pages, from + 4);
+    let html = btn(1, '«', false, 'Самые свежие');
+    if (page > 1) html += btn(page - 1, '‹', false, 'Новее');
+    for (let i = from; i <= to; i++) html += btn(i, String(i), i === page);
+    if (page < pages) html += btn(page + 1, '›', false, 'Старее');
+    html += btn(pages, '»', false, 'Самое начало истории');
+    pager.innerHTML = html + `<span class="muted small chat-page-note">стр. ${page} из ${pages}</span>`;
+    pager.querySelectorAll('[data-page]').forEach((b) => {
+      b.onclick = async () => {
+        App._chatPage = Number(b.dataset.page) || 1;
+        await loadChat();
+        box.scrollTop = App._chatPage === 1 ? box.scrollHeight : 0;
+      };
+    });
+  }
+
   async function send() {
     const input = document.getElementById('chat-text');
     const text = input.value.trim();
@@ -1425,6 +1469,7 @@ App.screens.chat = async (c, param) => {
     try {
       await API.post('/api/chat', { text, room: App._chatRoom || 'global' });
       input.value = '';
+      App._chatPage = 1;          // своё сообщение — в самом низу свежей страницы
       await loadChat();
       box.scrollTop = box.scrollHeight;
     } catch (e) { UI.toast('⛔ ' + e.message); }

@@ -1140,7 +1140,7 @@ function registerRoutes(app: any) {
     return { online, day, total: all.length };
   }, { open: true });   // виден и гостям: цифра нужна на странице входа
 
-  app.add('GET', '/api/chat', (req) => social.chatGet(req.user, req.query.after, req.query.room));
+  app.add('GET', '/api/chat', (req) => social.chatGet(req.user, req.query.after, req.query.room, req.query.page));
   app.add('POST', '/api/chat', act((req) => { social.chatPost(req.user, req.body.text, req.body.room); return { ok: true }; }));
   app.add('GET', '/api/mail', (req) => social.inbox(req.user));
   app.add('GET', '/api/mail/:id', (req) => social.readThread(req.user, req.params.id));

@@ -693,7 +693,7 @@ const chatBlock = socialJs2.slice(socialJs2.indexOf('async function loadChat'),
                                   socialJs2.indexOf('async function loadChat') + 2500);
 const vipMarks = (chatBlock.match(/App\.vipMark\(msg\.vip\)/g) || []).length;
 ok(vipMarks === 1, `значок VIP выводится один раз (было два): ${vipMarks}`);
-ok(/chat-msg\$\{msg\.vip \? ' chat-msg-vip' : ''\}/.test(chatBlock),
+ok(/\$\{msg\.vip \? ' chat-msg-vip' : ''\}/.test(chatBlock),
    'сообщение VIP помечается классом');
 
 console.log('\n── 33. Цвет чата у VIP ──');

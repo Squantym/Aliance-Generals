@@ -369,7 +369,7 @@ function attack(user: User, targetId: string, notices: Notices) {
     if (!target || target.id === user.id) throw new u.ApiError('Цель не найдена');
     // Персонажи одного аккаунта не воюют между собой. Иначе кабинет
     // превращается в схему: один персонаж бьёт другого ради опыта,
-    // ушей и трофеев, а «жертва» ничего не теряет по-настоящему.
+    // гербов и трофеев, а «жертва» ничего не теряет по-настоящему.
     require('./account').assertNotSelfAccount(user, target, 'Нападение');
     player.refresh(target);
     // Обычные атаки по цели РАЗРЕШЕНЫ всем, включая заказчика санкции.
@@ -423,7 +423,7 @@ function proceedToCombat(user: User, target: any, isBot: boolean, targetId: stri
   user.battle.attacks++;
   // Кто на меня нападал — нужно санкциям: объявить награду за голову
   // можно на любого, кто хоть раз напал, а не только на того, кто
-  // отрезал ухо. Список живёт у ЗАЩИТНИКА и не чистится сводкой.
+  // сорвал часть герба. Список живёт у ЗАЩИТНИКА и не чистится сводкой.
   if (!isBot && target && target.id) rememberAttacker(target, user);
   require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
@@ -660,7 +660,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
 
   // Была ли цель под санкцией НА МОМЕНТ БОЯ. Фиксируем ДО checkPayout:
   // добивающий удар закрывает санкцию выплатой награды, и если проверять
-  // позже, охотник успевал бы и забрать награду, и отрезать ухо тем же
+  // позже, охотник успевал бы и забрать награду, и сорвать герб тем же
   // ударом. По цели под санкцией в штаб не пускают вообще.
   const targetUnderSanction = !isBot && (() => {
     try { return require('./sanctions').isUnderSanction(target.id); } catch (e) { return false; }
@@ -1111,7 +1111,7 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
   if (!victim) throw new u.ApiError('Игрок не найден');
   const c = victim.crestTakers;
   const bothByUser = c && c[0] && c[1] && c[0].id === user.id && c[1].id === user.id;
-  if (!bothByUser) throw new u.ApiError('Оставить послание может только тот, кто отрезал оба уха этому игроку');
+  if (!bothByUser) throw new u.ApiError('Оставить послание может только тот, кто сорвал весь герб этого игрока');
   const clean = String(text || '').trim().slice(0, 200);
   if (!clean) {
     // Пустой текст = отказ оставить послание
@@ -1120,7 +1120,7 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
   victim.crestMessage = { byId: user.id, byName: user.name, text: clean };
   // Послание пишется в ЧУЖОЙ профиль, а http сохраняет только автора
   // запроса. Без явной пометки надпись жила до перезапуска процесса и
-  // пропадала — причём повторно оставить её уже нельзя, оба уха срезаны
+  // пропадала — причём повторно оставить её уже нельзя, герб сорван весь
   // один раз.
   db.markUser(victim.id);
   notices.push('✍️ Послание оставлено на профиле жертвы.');

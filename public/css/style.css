@@ -5509,3 +5509,26 @@ body.has-club-bar #header { top: 32px; }
 .rq-line-fill { height: 100%; background: linear-gradient(90deg, var(--orange), var(--gold)); }
 .rq-line-fill.is-done { background: var(--green, #2ecc40); }
 .rq-line-num { flex: 0 0 auto; font-size: 12.5px; white-space: nowrap; color: var(--dim); }
+
+/* ═══ Чат: обращение ко мне и листалка истории ═══ */
+/* Игрок не должен вычитывать своё имя в потоке чужих реплик: сообщение
+   с обращением к нему подсвечено полосой, а сам позывной — цветом. */
+.chat-msg-tome {
+  border-left: 2px solid var(--orange-1);
+  padding-left: 6px;
+  background: rgba(192, 122, 22, .07);
+  border-radius: 6px;
+}
+.chat-me {
+  color: var(--orange-1);
+  font-weight: bold;
+  background: rgba(192, 122, 22, .14);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.chat-pager {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  justify-content: center;
+}
+.chat-page { min-width: 30px; padding: 3px 7px; font-size: 13px; }
+.chat-page-note { margin-left: 6px; white-space: nowrap; }

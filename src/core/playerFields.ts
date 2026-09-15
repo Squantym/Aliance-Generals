@@ -110,7 +110,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // заработанное. Поле есть только у плативших: ноль не хранится.
   goldPaid:           { owner: 'player',     note: 'часть баланса, купленная за деньги' },
   tokens:             { owner: 'player',     note: 'жетоны перемирия' },
-  ears:               { owner: 'battle',     note: 'собранные уши (трофеи)' },
+  ears:               { owner: 'battle',     note: 'собранные гербы (трофеи)' },
   status:             { owner: 'player',     note: 'статус/титул' },
   counters:           { owner: 'player',     note: 'накопительные счётчики' },
   battle:             { owner: 'battle',     note: 'боевая статистика' },
@@ -130,8 +130,8 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   trophies:           { owner: 'trophies',   note: 'трофеи и их ступени' },
   effects:            { owner: 'effects',    note: 'активные эффекты (допинг, наёмник)' },
 
-  // ── Уши: состояние собственных ушей игрока ─────────────────────
-  crestParts:        { owner: 'battle',     note: 'сколько ушей на месте (0..2)' },
+  // ── Герб: состояние собственного герба игрока ──────────────────
+  crestParts:        { owner: 'battle',     note: 'сколько частей герба на месте (0..2)' },
   crestPartsLost:           { owner: 'battle',     note: 'сколько потеряно' },
   crestLostAt:         { owner: 'battle',     note: 'когда потеряны (для отрастания)' },
   crestTakers:         { owner: 'battle',     note: 'кто отрезал — для санкций' },
@@ -200,7 +200,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   // появляются по ходу игры. Из-за этого сезонные seasonId/seasonRating
   // оставались незарегистрированными — то есть дыра, из-за которой
   // пострадал недельный сезон, была закрыта не полностью.
-  rating:             { owner: 'player',     note: 'накопительный рейтинг (победы/уши/жетоны)' },
+  rating:             { owner: 'player',     note: 'накопительный рейтинг (победы/гербы/жетоны)' },
   seasonId:           { owner: 'seasons',    note: 'идентификатор сезона у игрока' },
   seasonRating:       { owner: 'seasons',    note: 'рейтинг в текущем сезоне' },
   updatedAt:          { owner: 'db',         note: 'метка последнего изменения' },
@@ -253,7 +253,7 @@ const PLAYER_FIELDS: Record<string, FieldOwner> = {
   refQuests:          { owner: 'referralQuests', note: 'шкалы заданий приглашений: забранные баллы и счётчики' },
   dayMsk:             { owner: 'dailyQuests', note: 'счётчики за московский день: парные задания приглашений' },
   xpWeek:             { owner: 'player',     note: 'опыт за текущую неделю — условия приглашений' },
-  adminCrests:          { owner: 'admin',      note: 'уши, выданные администрацией' },
+  adminCrests:          { owner: 'admin',      note: 'гербы, выданные администрацией' },
   adminTokens:        { owner: 'admin',      note: 'жетоны, выданные администрацией' },
 
   // Поля, которые встречаются на объектах БОТОВ и во временных структурах

@@ -52,7 +52,11 @@ function clubState(user: User): any {
 function budget(c: any): { cap: number; spent: number; left: number } {
   const day = u.dayKey();
   if (c.day !== day) { c.day = day; c.dayGold = 0; }
-  const spent = Math.max(0, u.toInt(c.dayGold, 0));
+  // Счётчик может уходить в МИНУС: потолок ограничивает нетто, а внесённые
+  // взносы — это отрицательная выплата. Обрезать его нулём было нельзя:
+  // взнос за первую партию дня обрезался, а возврат при ничье прибавлялся
+  // полностью — и ничья съедала у игрока часть суточного потолка.
+  const spent = u.toInt(c.dayGold, 0);
   return { cap: C.DAILY_GOLD_CAP, spent, left: Math.max(0, C.DAILY_GOLD_CAP - spent) };
 }
 
@@ -99,7 +103,9 @@ function payout(user: User, game: string, want: number, notices: Notices): numbe
 // в минус на двадцать золота и ничего у игры не выиграл.
 function refundBudget(c: any, amount: number): void {
   const b = budget(c);
-  c.dayGold = Math.max(0, b.spent - Math.max(0, Math.round(amount)));
+  // Вниз ограничиваем одним потолком: иначе игрок мог бы весь день
+  // проигрывать взносы и копить себе потолок на порядок больше общего.
+  c.dayGold = Math.max(-C.DAILY_GOLD_CAP, b.spent - Math.max(0, Math.round(amount)));
 }
 
 // Статьи расхода и возврата — строками, а не склейкой из имени игры.
@@ -199,7 +205,9 @@ function view(user: User) {
   return {
     // Потолок показываем игроку честно и всегда. Скрытый предел
     // выглядит как поломка: награда молча стала нулём.
-    budget: { cap: b.cap, spent: b.spent, left: b.left },
+    // Внутри счётчик бывает отрицательным (внесённые взносы), но игроку
+    // «получено −10 из 500» читать незачем — показываем от нуля.
+    budget: { cap: b.cap, spent: Math.max(0, b.spent), left: b.left },
     pref: prefView(c),
     safe: safeView(user),
     tactic: tacticView(c),
@@ -359,15 +367,24 @@ function prefStand(user: User, notices: Notices) {
   c.pref = null;
 
   let win = false;
+  // Равный счёт — ничья, а не проигрыш. Раньше генерал забирал взнос при
+  // равенстве «на своём поле», и это была единственная игра клуба, где
+  // ничья стоила денег: у радиоперехвата и снайперской дуэли взнос при
+  // ничьей возвращается с самого начала.
+  const tie = foeSum <= C.PREF_TARGET && mySum === foeSum;
   if (foeSum > C.PREF_TARGET) win = true;       // генерал перебрал
   else if (mySum > foeSum) win = true;          // у игрока больше
-  // равенство и меньше — проигрыш (генерал на своём поле)
 
   setCd(c, 'pref', C.PREF_CD_MIN);
   if (win) {
     const reward = payout(user, 'pref', C.PREF_WIN_GOLD, notices);
     notices.push(`🃏 Партия ваша! ${mySum} против ${foeSum}.` + (reward ? ` +🪙 ${reward}` : ''));
     return { result: 'win', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), reward, entry: C.PREF_ENTRY_GOLD };
+  }
+  if (tie) {
+    const back = giveBack(user, 'pref', C.PREF_ENTRY_GOLD);
+    notices.push(`🤝 Ничья: ${mySum} против ${foeSum}. Взнос возвращён — 🪙 ${back}.`);
+    return { result: 'draw', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), back, entry: C.PREF_ENTRY_GOLD };
   }
   return { result: 'lose', mySum, foeSum, hand, foe, drawn: cardsOut(drawn), entry: C.PREF_ENTRY_GOLD };
 }

@@ -48,7 +48,7 @@ const CATEGORIES = [
   },
   {
     id: 'ears',
-    name: '👂 Коллекционер ушей',
+    name: '🛡 Коллекционер гербов',
     desc: 'Сорвано гербов в чужих штабах',
     getter: 'ears',
     absGetter: null,

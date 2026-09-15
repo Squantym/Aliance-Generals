@@ -1844,7 +1844,7 @@ proxy_set_header Host $host;</pre>
             <option value="tokens">🎖 Жетоны</option>
             <option value="units">🪖 Техника</option>
             <option value="buildings">🏗 Постройки</option>
-            <option value="ears">👂 Уши</option>
+            <option value="ears">🛡 Гербы</option>
             <option value="battle">⚔️ Боевая статистика</option>
             <option value="effects">💊 Активные эффекты</option>
             <option value="alliances">🤝 Альянсы/легионы</option>
@@ -2276,7 +2276,7 @@ proxy_set_header Host $host;</pre>
         <div><label style="font-size:11px;color:var(--dim)"><span class="ic-gold"></span> Золото</label><input type="number" id="${prefix}-gold" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">⭐ Опыт</label><input type="number" id="${prefix}-xp" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">📈 Очки навыков</label><input type="number" id="${prefix}-skill" placeholder="0"></div>
-        <div><label style="font-size:11px;color:var(--dim)">👂 Уши</label><input type="number" id="${prefix}-ears" placeholder="0"></div>
+        <div><label style="font-size:11px;color:var(--dim)">🛡 Гербы</label><input type="number" id="${prefix}-ears" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🎖 Жетоны</label><input type="number" id="${prefix}-tokens" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🏦 В банке (только для списания)</label><input type="number" id="${prefix}-bank" placeholder="0"></div>
         <div><label style="font-size:11px;color:var(--dim)">🎚 Уровни (±)</label><input type="number" id="${prefix}-levels" placeholder="0"></div>
@@ -2321,7 +2321,7 @@ proxy_set_header Host $host;</pre>
             <th style="padding:8px;text-align:left">Игрок</th>
             <th style="padding:8px;text-align:right"><span class="ic-dollar"></span></th>
             <th style="padding:8px;text-align:right"><span class="ic-gold"></span></th>
-            <th style="padding:8px;text-align:right">👂</th>
+            <th style="padding:8px;text-align:right">🛡</th>
             <th style="padding:8px;text-align:right">🎖</th>
             <th style="padding:8px"></th>
           </tr></thead>
@@ -2504,7 +2504,7 @@ proxy_set_header Host $host;</pre>
       kv('🏦 Банк', UI.fmtMoney(r.bank)) +
       kv('🕊 Жетоны перемирия', UI.fmtNum(r.tokens)) +
       kv('📈 Очки навыков', UI.fmtNum(r.skillPoints)) +
-      kv('👂 Уши (трофейные)', UI.fmtNum(r.earsTrophy)) +
+      kv('🛡 Гербы (трофейные)', UI.fmtNum(r.earsTrophy)) +
       kv('🛡 Части герба', `${r.crestParts}/${r.crestPartsMax}`) +
       kv('💣 Мины (растяжки)', UI.fmtNum(r.landmines)) +
       kv('❤️ Здоровье', `${UI.fmtNum(r.hp.cur)}/${UI.fmtNum(r.hp.max)}`) +
@@ -2647,7 +2647,7 @@ proxy_set_header Host $host;</pre>
       <div class="card">
         <div class="name">${Admin.ICD} Ресурсы казны</div>
         ${numField('reserves', 'Резервы (РЕЗ)', s.reserves)}
-        ${numField('ears', 'Уши', s.treasuryEars)}
+        ${numField('ears', 'Гербы', s.treasuryEars)}
         ${numField('tokens', 'Жетоны', s.treasuryTokens)}
       </div>
 
