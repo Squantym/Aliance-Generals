@@ -252,10 +252,39 @@ function readBody(req: http.IncomingMessage): Promise<any> {
       }
     });
     req.on('end', () => {
+      // Формы (application/x-www-form-urlencoded) шлёт Робокасса: так
+      // приходит уведомление об оплате. Без разбора тело превращалось в
+      // пустой объект, и уведомление выглядело как подделка без подписи.
+      const type = String(req.headers['content-type'] || '').toLowerCase();
+      if (data && type.indexOf('application/x-www-form-urlencoded') === 0) {
+        const out: Record<string, string> = {};
+        try { new URLSearchParams(data).forEach((v, k) => { out[k] = v; }); } catch (e) {}
+        return resolve(out);
+      }
       try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); }
     });
     req.on('error', () => resolve({}));
   });
+}
+
+// ── Ответ не в JSON ─────────────────────────────────────────────────
+// Почти все маршруты отвечают JSON, но платёжному сервису нужен голый
+// текст («OK123»), а возврату со страницы оплаты — переадресация.
+// Метка — символ: из JSON-ответа её не подделать, и обычный объект,
+// вернувшийся из сервиса, случайно ею не окажется.
+const RAW = Symbol('raw-reply');
+
+function textReply(text: string, status?: number): any {
+  return { [RAW]: { kind: 'text', text: String(text), status: status || 200 } };
+}
+
+// Переадресация только внутри своего сайта: адрес с другим доменом
+// превратил бы маршрут в открытую переадресацию — ссылку «от нас»,
+// которая ведёт куда угодно.
+function redirectReply(path: string): any {
+  const p = String(path || '/');
+  const safe = p.charAt(0) === '/' && p.charAt(1) !== '/' && p.indexOf('\\') === -1 ? p : '/';
+  return { [RAW]: { kind: 'redirect', location: safe, status: 302 } };
 }
 
 
@@ -906,6 +935,17 @@ function createApp() {
             }
           }
 
+          const raw = result && typeof result === 'object' ? (result as any)[RAW] : null;
+          if (raw && raw.kind === 'text') {
+            res.writeHead(raw.status, { ...securityHeaders(), 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+            res.end(raw.text);
+            return;
+          }
+          if (raw && raw.kind === 'redirect') {
+            res.writeHead(raw.status, { ...securityHeaders(), Location: raw.location, 'Cache-Control': 'no-store' });
+            res.end();
+            return;
+          }
           sendJson(res, 200, result === undefined ? { ok: true } : result, acceptEncoding);
         } catch (e: any) {
           if (e instanceof ApiError) return sendJson(res, e.status, { error: e.message }, acceptEncoding);
@@ -931,4 +971,4 @@ function createApp() {
   return app;
 }
 
-export = { createApp };
+export = { createApp, textReply, redirectReply };

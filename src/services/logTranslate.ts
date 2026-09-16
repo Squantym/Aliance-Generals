@@ -135,7 +135,7 @@ function describe(path: string, body?: any, result?: any): string | null {
     if (/^\/api\/admin\/tournaments\/[^/]+\/cancel$/.test(path)) {
       return '🏆 Отменил турнир';
     }
-    if (/^\/api\/admin\/payments\/[^/]+\/refresh$/.test(path)) return '💳 Сверил платёж с ЮKassa';
+    if (/^\/api\/admin\/payments\/[^/]+\/refresh$/.test(path)) return '💳 Сверил платёж с Робокассой';
     // Ссылка на чек «Мой налог», отправленная покупателю письмом
     if (/^\/api\/admin\/payments\/[^/]+\/tax-receipt$/.test(path)) return '🧾 Отправил игроку ссылку на чек «Мой налог»';
     if (/^\/api\/rewards\/[^/]+\/claim$/.test(path)) {
@@ -385,8 +385,12 @@ function describe(path: string, body?: any, result?: any): string | null {
         return `🎁 ${body.id ? 'Изменил' : 'Создал'} бонус к покупкам «${body.title || '—'}»`;
       case '/api/admin/donate-bonus/delete':
         return '🗑 Удалил бонус к покупкам';
-      case '/api/payments/yookassa':
-        return '💳 Уведомление ЮKassa об оплате';
+      case '/api/payments/robokassa/result':
+        return '💳 Уведомление Робокассы об оплате';
+      case '/api/payments/robokassa/success':
+        return '💳 Возврат со страницы оплаты: успешно';
+      case '/api/payments/robokassa/fail':
+        return '💳 Возврат со страницы оплаты: отказ';
 
       // ── Ежедневки и контракты ──────────────────────────────────
       case '/api/daily/claim':

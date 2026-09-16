@@ -1,30 +1,37 @@
 // ===================================================================
-// src/services/payments.ts — покупки за рубли через ЮKassa.
+// src/services/payments.ts — покупки за рубли через Робокассу.
 //
 // Как устроено:
-//   1. Игрок жмёт «Купить» — создаётся заказ (pending), за ним платёж в
-//      ЮKassa, и игрок уходит на страницу оплаты (СБП, карта, T-Pay,
-//      SberPay — что включено в магазине).
-//   2. ЮKassa присылает уведомление на /api/payments/yookassa. Телу
-//      уведомления НЕ верим: статус, сумму и номер заказа берём запросом
-//      в ЮKassa по id платежа. Подделанное уведомление ничего не начислит.
+//   1. Игрок жмёт «Купить» — создаётся заказ (pending) с числовым номером
+//      счёта, и игрок уходит на страницу Робокассы. Способ оплаты он
+//      выбирает ТАМ: карты, в том числе иностранные, СБП, SberPay, T-Pay —
+//      всё, что включено в магазине.
+//   2. Робокасса присылает уведомление на /api/payments/robokassa/result,
+//      подписанное паролем №2. Подпись, номер заказа и сумма проверяются;
+//      при любом расхождении ничего не начисляется.
 //   3. Вернувшись в игру, клиент сам просит сверить заказ
-//      (/api/payments/check) — на случай, если уведомление задержалось.
+//      (/api/payments/check) — сервер спрашивает статус у Робокассы, на
+//      случай если уведомление задержалось.
 //   4. Зачисление — confirmPayment, и только из статуса pending: повторное
 //      уведомление и сверка второй раз ничего не дадут.
 //   5. После зачисления игрок видит окно покупки, а в почту приходит
 //      квитанция от «Система». Кнопка «Забрать» в окне только закрывает
 //      его: покупка УЖЕ на счету (см. ackPurchase).
 //
-// Для разбора проблем с оплатой заказ хранит всё, что о платеже знает
-// ЮKassa (способ, банк, карта без полного номера, суммы, коды), откуда
-// платил покупатель (адрес, устройство) и историю уведомлений. Смотрит
-// это только владелец — раздел «Платежи» в панели.
+// До перехода на Робокассу оплата шла через ЮKassa. Старые заказы
+// остались в базе как есть и видны в разделе «Платежи»; сверять их больше
+// не с чем — ЮKassa отключена.
+//
+// Для разбора проблем с оплатой заказ хранит всё, что о платеже сообщила
+// Робокасса (способ, сумма, комиссия, состояние), откуда платил
+// покупатель (адрес, устройство) и историю уведомлений. Смотрит это
+// только владелец — раздел «Платежи» в панели.
 //
 // Пока ключей магазина нет в .env, оплата выключена: заказ создаётся без
 // платежа, как было до интеграции.
 //
-// Хранение: коллекция 'payments' = { [orderId]: PaymentOrder }
+// Хранение: коллекция 'payments' = { [orderId]: PaymentOrder };
+// последний выданный номер счёта — meta.robokassaInvSeq.
 // ===================================================================
 
 import db = require('../core/db');
@@ -57,44 +64,43 @@ const PACKAGES = [
 // ломаются — золото и цена хранятся в самом заказе.
 const MAX_PRICE_RUB = 9990;
 
-// Неоплаченных заказов за час — не больше этого. Каждый заказ — запрос в
-// ЮKassa; без предела один человек с кнопкой «Купить» устроил бы
-// платёжному сервису нагрузку от нашего имени.
+// Неоплаченных заказов за час — не больше этого. Без предела один
+// человек с кнопкой «Купить» наплодил бы сотни пустых счетов.
 const PENDING_PER_HOUR = 10;
-// Сверку игрок может дёргать часто — в ЮKassa ходим не чаще раза в 5 с
+// Сверку игрок может дёргать часто — в Робокассу ходим не чаще раза в 5 с
 const CHECK_COOLDOWN_MS = 5000;
 // Сколько окон непросмотренных покупок держим в очереди у игрока
 const UNSEEN_MAX = 10;
-// Сколько уведомлений ЮKassa помним на заказ
+// Сколько уведомлений помним на заказ
 const KEEP_EVENTS = 30;
 
 const GOLD_ICON = '/img/icons/gold.webp';
 const GOLD_IMAGE = '/img/tabs/bank_gold.webp';
 const OFFER_IMAGE = '/img/menu/bank.webp';
 
-// Способы оплаты на выбор в игре. type — как способ называет API ЮKassa.
-// Логотипы — только официальные файлы брендов (брендбук НСПК прямо требует
-// оригиналы, перерисовывать чужие знаки нельзя). Они лежат в
-// public/img/pay/<id>.svg|png|webp; пока файла нет, на плашке пишется
-// название — лучше честная надпись, чем самодельный логотип.
-const METHODS = [
-  { id: 'sbp',     type: 'sbp',          name: 'Система быстрых платежей (СБП)', hint: 'Оплатите через приложение своего банка' },
-  { id: 'sberpay', type: 'sberbank',     name: 'SberPay', hint: 'Оплата в приложении СберБанк Онлайн' },
-  { id: 'tpay',    type: 'tinkoff_bank', name: 'T-Pay',   hint: 'Оплата в приложении Т-Банка' },
-];
+// Что принимаем — показывается игроку до перехода к оплате. Сам выбор
+// способа делается на странице Робокассы: её список всегда совпадает с
+// тем, что включено в магазине, а наш — разошёлся бы при первой же
+// правке настроек. Иностранные карты владелец просил держать на виду:
+// для игроков из-за рубежа это единственный способ заплатить.
+const PAY_NOTE = 'Оплата на защищённой странице Робокассы: банковские карты, '
+  + 'в том числе выпущенные за рубежом, СБП, SberPay, T-Pay и другие способы. '
+  + 'Данные карты игра не получает.';
 
-function logoFor(id: string): string {
-  const path = require('path');
-  const fsm = require('fs');
-  for (const ext of ['svg', 'png', 'webp']) {
-    const rel = `/img/pay/${id}.${ext}`;
-    try { if (fsm.existsSync(path.join(__dirname, '../../../public', rel))) return rel; } catch (e) {}
-  }
-  return '';
-}
-
-function methodsView() {
-  return METHODS.map((m) => ({ id: m.id, name: m.name, hint: m.hint, logo: logoFor(m.id) }));
+// Номер счёта для Робокассы — целое число, уникальное для магазина.
+// Счётчик растёт в meta и не откатывается. ROBOKASSA_INV_BASE разводит
+// миры: тестовый и боевой могут работать на одном магазине, и номера у
+// них не должны совпасть — иначе Робокасса отклонит второй счёт.
+const INV_MAX = 2147483647;
+function nextInvId(): number {
+  const meta = db.load<Record<string, any>>('meta', {});
+  const base = Math.max(1, u.toInt(process.env.ROBOKASSA_INV_BASE, 1000));
+  const cur = Math.max(u.toInt(meta.robokassaInvSeq, 0), base - 1);
+  const next = cur + 1;
+  if (next > INV_MAX) throw new u.ApiError('Номера счетов закончились — сообщите администрации');
+  meta.robokassaInvSeq = next;
+  db.save('meta');
+  return next;
 }
 
 type ReceiptLine = { text: string; icon: string | null };
@@ -111,9 +117,10 @@ interface PaymentOrder {
   status: 'pending' | 'paid' | 'failed' | 'cancelled';
   createdAt: number;
   paidAt?: number;
-  provider?: string;       // 'yookassa'
-  providerRef?: string;    // id платежа в ЮKassa
-  method?: string;         // способ, выбранный в игре: sbp / sberpay / tpay
+  provider?: string;       // 'robokassa' (у старых заказов — 'yookassa')
+  providerRef?: string;    // номер счёта в Робокассе (у старых — id платежа ЮKassa)
+  invId?: number;          // номер счёта в Робокассе числом
+  method?: string;         // у старых заказов — способ, выбранный в игре
   promos?: any[];          // бонусы к покупке, обещанные на момент заказа
   // Чек «Мой налог». Самозанятый пробивает его руками (ЮKassa перестала
   // передавать чеки за самозанятых 29.12.2025), а ссылку на чек обязан
@@ -130,17 +137,22 @@ interface PaymentOrder {
   refundIds?: string[];
   // ── Для разбора ──
   buyer?: Buyer;           // откуда нажали «Купить»
-  yk?: any;                // последний ответ ЮKassa о платеже целиком
+  rk?: any;                // последнее, что Робокасса сообщила о счёте
+  rkSyncedAt?: number;
+  rkTest?: boolean;        // счёт выставлен в тестовом режиме
+  // Поля из уведомления об оплате (без подписи): комиссия, способ, почта
+  rkResult?: Record<string, string>;
+  yk?: any;                // старые заказы: последний ответ ЮKassa
   ykSyncedAt?: number;
   events?: Array<{ at: number; event: string; ip: string; status: string }>;
-  refunds?: any[];         // ответы ЮKassa о возвратах
+  refunds?: any[];         // старые заказы: ответы ЮKassa о возвратах
 }
 
 function store(): Record<string, PaymentOrder> {
   return db.load<Record<string, PaymentOrder>>('payments', {});
 }
 
-function yk() { return require('./yookassa'); }
+function rk() { return require('./robokassa'); }
 
 // Условия бонусов к покупке — в заказ в момент его создания: что игрок
 // видел до оплаты, то и получит (services/donateBonus.ts)
@@ -168,22 +180,22 @@ function orderTitle(o: PaymentOrder): string {
   return o.offerId ? `Набор «${o.title || 'Спецпредложение'}»` : `${num(o.gold)} золота`;
 }
 
-// Копия ответа ЮKassa для хранения. Полного номера карты в нём нет —
-// ЮKassa отдаёт только первые 6 и последние 4 цифры, — поэтому храним
-// целиком: при разборе спора нужна каждая мелочь, а заранее угадать,
-// какая именно, нельзя. Слишком большой ответ урезаем до главного.
+// Копия ответа платёжного сервиса для хранения. Полного номера карты в
+// нём нет, поэтому храним целиком: при разборе спора нужна каждая
+// мелочь, а заранее угадать, какая именно, нельзя.
 function snap(obj: any): any {
   if (!obj) return null;
-  let copy: any;
-  try { copy = JSON.parse(JSON.stringify(obj)); } catch (e) { return null; }
-  if (JSON.stringify(copy).length > 20000) {
-    const keep = ['id', 'status', 'paid', 'test', 'amount', 'income_amount', 'refunded_amount', 'created_at',
-      'captured_at', 'description', 'payment_method', 'authorization_details', 'cancellation_details', 'metadata'];
-    const small: any = {};
-    for (const k of keep) if (copy[k] !== undefined) small[k] = copy[k];
-    return small;
-  }
-  return copy;
+  try { return JSON.parse(JSON.stringify(obj)); } catch (e) { return null; }
+}
+
+// Что из уведомления Робокассы стоит сохранить. Подпись и пароли — нет:
+// подпись одноразовая и для разбора бесполезна, а хранить её значит
+// держать в базе то, из чего подбирается пароль №2.
+const RESULT_KEEP = ['OutSum', 'InvId', 'Fee', 'EMail', 'PaymentMethod', 'IncCurrLabel', 'IsTest', 'Shp_order'];
+function resultSnap(q: Record<string, any>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of RESULT_KEEP) if (q && q[k] !== undefined) out[k] = String(q[k]).slice(0, 120);
+  return out;
 }
 
 function buyerOf(meta: any): Buyer | undefined {
@@ -202,7 +214,7 @@ function buyerOf(meta: any): Buyer | undefined {
 
 // Каталог пакетов (для витрины)
 function packages(user?: User) {
-  const on = yk().configured();
+  const on = rk().configured();
   let promos: any[] = [], xpBoost: any = null;
   if (user) {
     try { promos = require('./donateBonus').forPlayer(user); } catch (e) { promos = []; }
@@ -210,7 +222,9 @@ function packages(user?: User) {
   }
   return {
     packages: PACKAGES, enabled: on, note: on ? '' : 'Платёжная система скоро будет доступна.',
-    methods: on ? methodsView() : [],
+    // Выбора способа в игре нет — он на странице Робокассы (см. PAY_NOTE)
+    methods: [],
+    payNote: on ? PAY_NOTE : '',
     promos, xpBoost,
     discount: require('./discounts').info('gold'),
   };
@@ -225,8 +239,8 @@ function assertNotFlooding(user: User) {
   }
 }
 
-// Создать заказ. Платёж в ЮKassa создаёт pay() — отдельным шагом, потому
-// что это запрос в сеть, а заказ на набор приходит из offers.ts готовым.
+// Создать заказ. Счёт в Робокассе выставляет pay() — отдельным шагом,
+// потому что заказ на набор приходит из offers.ts готовым.
 function createOrder(user: User, packageId: string, notices: Notices) {
   const pkg = PACKAGES.find((p) => p.id === packageId);
   if (!pkg) throw new u.ApiError('Пакет не найден');
@@ -246,7 +260,7 @@ function createOrder(user: User, packageId: string, notices: Notices) {
   all[order.id] = order;
   db.save('payments');
 
-  if (!yk().configured()) notices.push('🛒 Заказ создан. Онлайн-оплата появится после подключения платёжной системы.');
+  if (!rk().configured()) notices.push('🛒 Заказ создан. Онлайн-оплата появится после подключения платёжной системы.');
   return { orderId: order.id, status: order.status, payUrl: null as string | null };
 }
 
@@ -270,87 +284,84 @@ function createOfferOrder(user: User, offer: { id: string; title: string; priceR
   const all = store();
   all[order.id] = order;
   db.save('payments');
-  if (!yk().configured()) notices.push(`🛒 Заказ на «${offer.title}» создан. Онлайн-оплата появится после подключения платёжной системы.`);
+  if (!rk().configured()) notices.push(`🛒 Заказ на «${offer.title}» создан. Онлайн-оплата появится после подключения платёжной системы.`);
   return { orderId: order.id, status: order.status, payUrl: null as string | null };
 }
 
-// Платёж в ЮKassa по уже созданному заказу. Без ключей — ничего не
+// Счёт в Робокассе по уже созданному заказу. Без ключей — ничего не
 // делает, заказ остаётся как есть. meta — откуда нажали «Купить»: адрес
 // и устройство записываются в заказ в любом случае.
+//
+// Запроса в сеть здесь нет: ссылку на оплату мы собираем и подписываем
+// сами. Поэтому и «платёжный сервис не ответил» на этом шаге не бывает —
+// недоступность Робокассы игрок увидит уже на её странице.
 async function pay(user: User, created: { orderId: string; status: string; payUrl: string | null }, notices: Notices, meta?: any) {
   const order = store()[created.orderId];
   if (!order || order.userId !== user.id) throw new u.ApiError('Заказ не найден');
   const buyer = buyerOf(meta);
   if (buyer) { order.buyer = buyer; db.save('payments'); }
-  if (!yk().configured()) return created;
-  const wanted = String((meta && meta.method) || '');
-  const method = METHODS.find((m) => m.id === wanted) || null;
-  if (wanted && !method) throw new u.ApiError('Выберите способ оплаты из предложенных');
-  // Описание уходит в ЮKassa и в чек — там должно быть понятно, за что платили
+  if (!rk().configured()) return created;
+  // Описание видит покупатель на странице оплаты и в выписке —
+  // там должно быть понятно, за что платили
   const description = order.offerId
     ? `Игровой набор «${order.title || 'Спецпредложение'}» — «${brand.GAME_NAME}»`
     : `${order.gold} золота — игровая валюта «${brand.GAME_NAME}»`;
   try {
-    const p = await yk().createPayment({
-      orderId: order.id,
+    const invId = order.invId || nextInvId();
+    const url = rk().payUrl({
+      invId,
       amountRub: order.priceRub,
       description,
-      returnUrl: `${appUrl()}/#bank/${order.offerId ? 'offers' : 'gold'}`,
-      methodType: method ? method.type : undefined,
+      orderId: order.id,
+      email: String((user as any).email || ''),
     });
-    const ref = String((p && p.id) || '');
-    const url = String((p && p.confirmation && p.confirmation.confirmation_url) || '');
-    if (!ref || !url) throw new Error('в ответе нет id платежа или ссылки на оплату');
-    order.provider = 'yookassa';
-    order.method = method ? method.id : '';
-    order.providerRef = ref;
+    order.provider = 'robokassa';
+    order.invId = invId;
+    order.providerRef = String(invId);
     order.payUrl = url;
-    order.yk = snap(p);
-    order.ykSyncedAt = Date.now();
+    order.rkTest = rk().isTest();
     db.save('payments');
     return { orderId: order.id, status: order.status, payUrl: url };
   } catch (e: any) {
     order.status = 'failed';
     db.save('payments');
-    console.error(`⚠️  ЮKassa: платёж по заказу ${order.id} не создан — ${e && e.message}`);
-    // Способ не включён в магазине или временно недоступен — так и говорим,
-    // иначе игрок решил бы, что сломана вся оплата
-    if (method && /payment_method|payment method|method/i.test(String(e && e.message))) {
-      throw new u.ApiError(`${method.name} сейчас недоступен — выберите другой способ оплаты. Деньги не списаны.`);
-    }
-    throw new u.ApiError('Платёжный сервис не ответил. Деньги не списаны — попробуйте через минуту.');
+    console.error(`⚠️  Робокасса: счёт по заказу ${order.id} не выставлен — ${e && e.message}`);
+    throw new u.ApiError('Оплата временно недоступна. Деньги не списаны — попробуйте через минуту.');
   }
 }
 
-// Сверка заказа с ЮKassa. Решение принимается ТОЛЬКО по ответу ЮKassa:
-// платёж тот самый, оплачен, в рублях, на сумму заказа и с номером
-// этого заказа в metadata. Любое расхождение — не зачисляем и поднимаем
-// тревогу в журнале: такое бывает только при ошибке или подлоге.
+// Сверка заказа с Робокассой. Решение принимается ТОЛЬКО по её ответу:
+// счёт оплачен и сумма совпадает с заказом до копейки. Любое расхождение
+// — не зачисляем и поднимаем тревогу в журнале.
 async function syncOrder(order: PaymentOrder): Promise<string> {
-  if (!order.providerRef || order.status !== 'pending') return order.status;
-  const p = await yk().getPayment(order.providerRef);
-  if (!p || p.id !== order.providerRef) return order.status;
-  order.yk = snap(p);
-  order.ykSyncedAt = Date.now();
+  if (order.provider !== 'robokassa' || !order.invId || order.status !== 'pending') return order.status;
+  let st: any;
+  try {
+    st = await rk().opState(order.invId);
+  } catch (e: any) {
+    // Код 3 — «счёт не найден»: игрок ещё не открывал страницу оплаты.
+    // Это не ошибка и не отказ — заказ просто ждёт.
+    if (e && e.rkCode === '3') return order.status;
+    throw e;
+  }
+  order.rk = snap(st);
+  order.rkSyncedAt = Date.now();
   db.save('payments');
-  const metaOk = !!(p.metadata && String(p.metadata.orderId) === order.id);
-  const amountOk = !!(p.amount && p.amount.currency === 'RUB'
-    && Math.round(Number(p.amount.value) * 100) === Math.round(order.priceRub * 100));
-
-  if (p.status === 'succeeded' && p.paid === true) {
-    if (metaOk && amountOk) {
+  if (st.paid) {
+    const amountOk = Math.round(Number(st.outSum) * 100) === Math.round(order.priceRub * 100);
+    if (amountOk) {
       confirmPayment(order.id);
     } else {
-      console.error(`⛔ ЮKassa: платёж ${p.id} не совпал с заказом ${order.id} (номер: ${metaOk}, сумма: ${amountOk}) — не зачислено`);
+      console.error(`⛔ Робокасса: счёт ${order.invId} оплачен на ${st.outSum} ₽ вместо ${order.priceRub} — не зачислено`);
       auditLog.record({
         userId: order.userId, userName: '', path: '/system/payment-mismatch',
-        desc: `⛔ Оплата не совпала с заказом ${order.id}: ${metaOk ? '' : 'чужой номер заказа '}${amountOk ? '' : 'другая сумма'} — не зачислено`,
-        body: { orderId: order.id, paymentId: p.id },
+        desc: `⛔ Оплата не совпала с заказом ${order.id}: другая сумма (${st.outSum} ₽ вместо ${order.priceRub}) — не зачислено`,
+        body: { orderId: order.id, invId: order.invId },
       });
     }
-  } else if (p.status === 'canceled') {
+  } else if (st.cancelled) {
     order.status = 'cancelled';
-    order.cancelReason = String((p.cancellation_details && p.cancellation_details.reason) || '').slice(0, 60);
+    order.cancelReason = 'счёт отменён в Робокассе';
     db.save('payments');
   }
   return order.status;
@@ -360,7 +371,7 @@ async function syncOrder(order: PaymentOrder): Promise<string> {
 async function checkOrder(user: User, orderId: string) {
   const order = store()[String(orderId || '')];
   if (!order || order.userId !== user.id) throw new u.ApiError('Заказ не найден');
-  if (order.status !== 'pending' || !order.providerRef) {
+  if (order.status !== 'pending' || order.provider !== 'robokassa' || !order.invId) {
     return { orderId: order.id, status: order.status, gold: order.creditedGold || 0 };
   }
   if (order.checkedAt && Date.now() - order.checkedAt < CHECK_COOLDOWN_MS) {
@@ -370,7 +381,7 @@ async function checkOrder(user: User, orderId: string) {
   try {
     await syncOrder(order);
   } catch (e: any) {
-    console.error(`⚠️  ЮKassa: сверка заказа ${order.id} не удалась — ${e && e.message}`);
+    console.error(`⚠️  Робокасса: сверка заказа ${order.id} не удалась — ${e && e.message}`);
     throw new u.ApiError('Не удалось сверить оплату. Если деньги списаны, покупка придёт автоматически.');
   }
   return { orderId: order.id, status: order.status, gold: order.creditedGold || 0 };
@@ -383,50 +394,67 @@ function logEvent(order: PaymentOrder, event: string, meta: any, status: string)
   db.save('payments');
 }
 
-// Уведомление от ЮKassa. Платёж, которого нет среди наших заказов, не
-// проверяем вовсе: иначе любой мог бы заставить сервер слать запросы в
-// ЮKassa, подсовывая выдуманные номера.
-// Ошибка связи с ЮKassa пробрасывается наружу — маршрут ответит 500, и
-// ЮKassa повторит уведомление сама.
-async function handleNotification(body: any, meta?: any) {
-  const event = String((body && body.event) || '');
-  const obj = body && body.object;
-  if (!obj || typeof obj.id !== 'string') return { ok: true };
-  const all = Object.values(store());
-
-  if (event.indexOf('refund.') === 0) {
-    const order = all.find((o) => !!o.providerRef && o.providerRef === obj.payment_id);
-    if (!order) return { ok: true };
-    logEvent(order, event, meta, String(obj.status || ''));
-    const r = await yk().getRefund(obj.id);
-    if (r && r.payment_id === order.providerRef) {
-      const list = order.refunds || (order.refunds = []);
-      const i = list.findIndex((x: any) => x && x.id === r.id);
-      if (i >= 0) list[i] = snap(r); else list.push(snap(r));
-    }
-    const ids = order.refundIds || (order.refundIds = []);
-    if (r && r.status === 'succeeded' && r.payment_id === order.providerRef && ids.indexOf(r.id) === -1) {
-      const rub = Number(r.amount && r.amount.value) || 0;
-      ids.push(r.id);
-      order.refundedRub = Math.round(((order.refundedRub || 0) + rub) * 100) / 100;
-      const who: any = require('./player').users()[order.userId];
-      // Золото автоматически не списываем: возврат бывает частичным, а часть
-      // покупки игрок мог уже потратить — решение за владельцем
-      auditLog.record({
-        userId: order.userId, userName: (who && who.name) || '', path: '/system/payment-refund',
-        desc: `💸 Возврат ${rub} ₽ по заказу ${order.id}. Золото и набор автоматически не списаны — решите вручную`,
-        body: { orderId: order.id, refundRub: rub },
-      });
-    }
-    db.save('payments');
-    return { ok: true };
+// ── Уведомление об оплате (Result URL) ────────────────────────────
+// Ответ Робокассе — ТОЛЬКО текст «OK<номер счёта>»: любой другой ответ
+// она считает отказом и повторяет уведомление. Поэтому и на уже
+// зачисленный заказ отвечаем «OK» — иначе повторы шли бы сутками.
+//
+// Что проверяется, прежде чем зачислить:
+//   • подпись паролем №2 — без неё уведомление подделано;
+//   • номер счёта и наш номер заказа из Shp_order указывают на ОДИН
+//     заказ — иначе чужая оплата зачислилась бы не тому;
+//   • сумма совпадает с заказом до копейки.
+function handleResult(q: Record<string, any>, meta?: any): any {
+  const http = require('../core/http');
+  const v = rk().verifyResult(q || {});
+  if (!v.ok) {
+    console.error(`⛔ Робокасса: отклонено уведомление — ${v.why}`);
+    auditLog.record({
+      userId: 'system', userName: 'system', path: '/system/payment-forged',
+      desc: `⛔ Отклонено уведомление об оплате: ${v.why}`,
+      body: { invId: String((q && q.InvId) || ''), ip: String((meta && meta.ip) || '') },
+    });
+    return http.textReply('bad sign', 400);
   }
+  const order = Object.values(store()).find((o) => o.provider === 'robokassa' && o.invId === v.invId);
+  if (!order || order.id !== v.orderId) {
+    console.error(`⛔ Робокасса: счёт ${v.invId} не совпал с заказом ${v.orderId || '—'}`);
+    auditLog.record({
+      userId: order ? order.userId : 'system', userName: '', path: '/system/payment-mismatch',
+      desc: `⛔ Уведомление об оплате счёта ${v.invId} не совпало с заказом — не зачислено`,
+      body: { invId: v.invId, orderId: v.orderId },
+    });
+    return http.textReply('unknown order', 400);
+  }
+  order.rkResult = resultSnap(q);
+  logEvent(order, 'result', meta, order.status);
+  if (order.status !== 'pending') return http.textReply('OK' + v.invId);   // повтор — уже учтено
+  const amountOk = Math.round(Number(v.outSum) * 100) === Math.round(order.priceRub * 100);
+  if (!amountOk) {
+    console.error(`⛔ Робокасса: счёт ${v.invId} оплачен на ${v.outSum} ₽ вместо ${order.priceRub}`);
+    auditLog.record({
+      userId: order.userId, userName: '', path: '/system/payment-mismatch',
+      desc: `⛔ Оплата не совпала с заказом ${order.id}: ${v.outSum} ₽ вместо ${order.priceRub} — не зачислено`,
+      body: { orderId: order.id, invId: v.invId },
+    });
+    return http.textReply('bad sum', 400);
+  }
+  confirmPayment(order.id);
+  return http.textReply('OK' + v.invId);
+}
 
-  const order = all.find((o) => !!o.providerRef && o.providerRef === obj.id);
-  if (!order) return { ok: true };
-  logEvent(order, event, meta, String(obj.status || ''));
-  await syncOrder(order);
-  return { ok: true };
+// Игрок вернулся со страницы оплаты (Success URL или Fail URL). Здесь
+// НИЧЕГО не зачисляется: это браузер игрока, а не сервер Робокассы.
+// Только ведём в нужный раздел банка — там клиент сам сверит заказ.
+function handleReturn(q: Record<string, any>, ok: boolean) {
+  const http = require('../core/http');
+  let tab = 'gold';
+  const inv = u.toInt(q && q.InvId, 0);
+  if (inv && (!ok || rk().verifySuccess(q || {}))) {
+    const order = Object.values(store()).find((o) => o.provider === 'robokassa' && o.invId === inv);
+    if (order && order.offerId) tab = 'offers';
+  }
+  return http.redirectReply(`/#bank/${tab}`);
 }
 
 // История заказов игрока
@@ -439,8 +467,9 @@ function myOrders(user: User) {
       id: o.id, gold: o.creditedGold || o.gold, priceRub: o.priceRub,
       title: o.title || null, offerId: o.offerId || null,
       status: o.status, createdAt: o.createdAt, paidAt: o.paidAt || null,
-      // Сверять есть смысл только заказ с платежом в ЮKassa
-      canCheck: o.status === 'pending' && !!o.providerRef,
+      // Сверять есть смысл только заказ со счётом в Робокассе: старые
+      // заказы ЮKassa сверять больше не с чем
+      canCheck: o.status === 'pending' && o.provider === 'robokassa' && !!o.invId,
       refundedRub: o.refundedRub || 0,
     }));
   return { orders: list };
@@ -513,7 +542,8 @@ function ackPurchase(user: User, orderId: string) {
 }
 
 // Подтверждение оплаты: зачисляет золото или выдаёт набор.
-// Вызывается ТОЛЬКО после сверки с ЮKassa (syncOrder).
+// Вызывается ТОЛЬКО по проверенному уведомлению Робокассы (handleResult)
+// или после сверки с ней (syncOrder).
 function confirmPayment(orderId: string): { ok: boolean } {
   const all = store();
   const order = all[orderId];
@@ -618,7 +648,24 @@ function assertOwner(actor: User) {
   if (!owner) throw new u.ApiError('Раздел «Платежи» — только для владельца проекта');
 }
 
+// Способ оплаты по данным Робокассы: из уведомления (способ и валюта,
+// которой платил покупатель) и из сверки (название способа, счёт
+// плательщика без полного номера).
+function rkMethod(o: PaymentOrder) {
+  const res = o.rkResult || {};
+  const st = o.rk || {};
+  const label = st.incCurr || res.IncCurrLabel || '';
+  const name = st.methodName || res.PaymentMethod || label || (o.status === 'pending' ? 'ещё не выбран' : '—');
+  const out: any = { type: st.method || res.PaymentMethod || '', name, title: label };
+  if (st.incAccount) out.account = st.incAccount;
+  // Иностранную карту Робокасса называет отдельным способом — владелец
+  // просил видеть такие оплаты сразу
+  if (/foreign|интернац|иностран/i.test(String(name) + ' ' + String(label))) out.foreign = true;
+  return out;
+}
+
 function methodOf(o: PaymentOrder) {
+  if (o.provider === 'robokassa') return rkMethod(o);
   const pm = (o.yk && o.yk.payment_method) || null;
   if (!pm) return { type: '', name: o.provider ? 'ещё не выбран' : 'без платёжного сервиса', title: '' };
   const out: any = { type: pm.type || '', name: METHOD_NAMES[pm.type] || pm.type || '—', title: pm.title || '' };
@@ -643,10 +690,13 @@ function methodShort(o: PaymentOrder): string {
   const m = methodOf(o);
   if (m.card && m.card.last4) return `${m.name} •••• ${m.card.last4}${m.card.issuerName ? ', ' + m.card.issuerName : ''}`;
   if (m.bank) return `${m.name}, ${m.bank}`;
-  return m.name;
+  return m.foreign ? `🌍 ${m.name}` : m.name;
 }
 
-function isTest(o: PaymentOrder): boolean { return !!(o.yk && o.yk.test); }
+function isTest(o: PaymentOrder): boolean {
+  if (o.provider === 'robokassa') return !!o.rkTest || String((o.rkResult || {}).IsTest || '') === '1';
+  return !!(o.yk && o.yk.test);
+}
 
 function adminList(actor: User, q: any) {
   assertOwner(actor);
@@ -666,7 +716,7 @@ function adminList(actor: User, q: any) {
   for (const o of all) {
     if (isTest(o)) { if (o.status === 'paid') totals.testCount++; continue; }
     if (o.status === 'paid') { totals.paidRub += o.priceRub; totals.paidCount++; if (!o.taxReceipt) totals.needReceipt++; }
-    if (o.status === 'pending' && o.providerRef) totals.pendingCount++;
+    if (o.status === 'pending' && (o.invId || o.providerRef)) totals.pendingCount++;
     totals.refundedRub += o.refundedRub || 0;
   }
 
@@ -679,7 +729,8 @@ function adminList(actor: User, q: any) {
     if (query) {
       const p = people[o.userId];
       const card = o.yk && o.yk.payment_method && o.yk.payment_method.card;
-      const hay = [o.id, o.providerRef, p && p.name, o.title, orderTitle(o), card && card.last4,
+      const acc = o.rk && o.rk.incAccount;
+      const hay = [o.id, o.providerRef, p && p.name, o.title, orderTitle(o), card && card.last4, acc,
         o.buyer && o.buyer.ip].map((x) => String(x || '').toLowerCase()).join(' ');
       if (hay.indexOf(query) === -1) return false;
     }
@@ -743,9 +794,19 @@ function adminGet(actor: User, id: string) {
   const o = store()[String(id || '')];
   if (!o) throw new u.ApiError('Заказ не найден');
   const people: Record<string, any> = require('./player').users();
+  const isRk = o.provider === 'robokassa';
   const p = o.yk || {};
-  const amount = p.amount ? Number(p.amount.value) : o.priceRub;
-  const income = p.income_amount ? Number(p.income_amount.value) : null;
+  const st = o.rk || {};
+  const res = o.rkResult || {};
+  // Деньги. У Робокассы комиссия приходит в уведомлении (Fee), а сумма,
+  // списанная с покупателя, — в сверке (IncSum, в его валюте).
+  const amount = isRk
+    ? (Number(st.outSum || res.OutSum) || o.priceRub)
+    : (p.amount ? Number(p.amount.value) : o.priceRub);
+  const fee = isRk && res.Fee !== undefined && res.Fee !== '' ? Number(res.Fee) : null;
+  const income = isRk
+    ? (fee !== null ? Math.round((amount - fee) * 100) / 100 : null)
+    : (p.income_amount ? Number(p.income_amount.value) : null);
   const ad = p.authorization_details || {};
   return {
     id: o.id, title: orderTitle(o), status: o.status, priceRub: o.priceRub,
@@ -755,6 +816,8 @@ function adminGet(actor: User, id: string) {
     refundedRub: o.refundedRub || 0,
     userId: o.userId, userName: (people[o.userId] && people[o.userId].name) || '',
     provider: o.provider || '', providerRef: o.providerRef || '',
+    providerName: isRk ? 'Робокасса' : (o.provider === 'yookassa' ? 'ЮKassa (отключена)' : ''),
+    invId: o.invId || 0,
     buyer: o.buyer || null,
     receiptLines: (o.receipt && o.receipt.lines) || [],
     events: o.events || [],
@@ -764,51 +827,90 @@ function adminGet(actor: User, id: string) {
       threeDs: ad.three_d_secure ? (ad.three_d_secure.applied ? 'пройдена' : 'не применялась') : '',
     },
     money: {
-      amount, currency: (p.amount && p.amount.currency) || 'RUB',
+      amount, currency: isRk ? 'RUB' : ((p.amount && p.amount.currency) || 'RUB'),
       income, commission: income !== null ? Math.round((amount - income) * 100) / 100 : null,
-      refunded: p.refunded_amount ? Number(p.refunded_amount.value) : 0,
-      test: !!p.test, createdAt: p.created_at || '', capturedAt: p.captured_at || '',
-      paid: !!p.paid, ykStatus: p.status || '',
+      refunded: isRk ? (o.refundedRub || 0) : (p.refunded_amount ? Number(p.refunded_amount.value) : 0),
+      test: isTest(o),
+      createdAt: isRk ? '' : (p.created_at || ''), capturedAt: isRk ? (st.stateAt || '') : (p.captured_at || ''),
+      paid: isRk ? !!st.paid || o.status === 'paid' : !!p.paid,
+      // Что платил покупатель в своей валюте — важно для иностранных карт
+      incSum: isRk ? (st.incSum || '') : '',
+      incCurr: isRk ? (st.incCurr || res.IncCurrLabel || '') : '',
+      rate: isRk ? (st.rate || '') : '',
+      providerStatus: isRk ? (st.stateName || '') : (p.status || ''),
+      ykStatus: isRk ? (st.stateName || '') : (p.status || ''),
     },
-    ykSyncedAt: o.ykSyncedAt || 0,
+    syncedAt: isRk ? (o.rkSyncedAt || 0) : (o.ykSyncedAt || 0),
+    ykSyncedAt: isRk ? (o.rkSyncedAt || 0) : (o.ykSyncedAt || 0),
     refunds: (o.refunds || []).map((r: any) => ({
       id: r.id, status: r.status, amount: r.amount ? Number(r.amount.value) : 0,
       createdAt: r.created_at || '', description: r.description || '',
     })),
     promos: o.promoApplied || [],
     taxReceipt: o.taxReceipt || null,
-    raw: o.yk || null,
+    raw: isRk ? { state: o.rk || null, result: o.rkResult || null } : (o.yk || null),
     rawRefunds: o.refunds || [],
   };
 }
 
-// «Сверить с ЮKassa»: свежий ответ о платеже и его возвратах. Неоплаченный
-// заказ сверяется обычным путём — если он оплачен, покупка зачислится.
+// «Сверить с Робокассой»: свежее состояние счёта. Неоплаченный заказ
+// сверяется обычным путём — если он оплачен, покупка зачислится.
+// Возврат Робокасса отдельным уведомлением не присылает — его видно
+// только здесь, по состоянию «возвращён».
 async function adminRefresh(actor: User, id: string) {
   assertOwner(actor);
   const o = store()[String(id || '')];
   if (!o) throw new u.ApiError('Заказ не найден');
-  if (!o.providerRef) throw new u.ApiError('По этому заказу платёж в ЮKassa не создавался — сверять нечего');
-  if (!yk().configured()) throw new u.ApiError('Ключи ЮKassa не заданы на сервере');
+  if (o.provider === 'yookassa') {
+    throw new u.ApiError('Заказ оформлен через ЮKassa — она отключена, сверять не с чем. Смотрите кабинет ЮKassa.');
+  }
+  if (o.provider !== 'robokassa' || !o.invId) {
+    throw new u.ApiError('По этому заказу счёт в Робокассе не выставлялся — сверять нечего');
+  }
+  if (!rk().configured()) throw new u.ApiError('Робокасса не настроена на сервере: ' + rk().problem());
   try {
-    if (o.status === 'pending') await syncOrder(o);
-    else {
-      o.yk = snap(await yk().getPayment(o.providerRef));
-      o.ykSyncedAt = Date.now();
+    if (o.status === 'pending') {
+      await syncOrder(o);
+    } else {
+      const st = await rk().opState(o.invId);
+      o.rk = snap(st);
+      o.rkSyncedAt = Date.now();
+      // Возврат: записываем один раз и зовём владельца решать, что делать
+      // с уже выданным — автоматически золото не списываем
+      if (st.refunded && !(o.refundedRub || 0)) {
+        o.refundedRub = o.priceRub;
+        const who: any = require('./player').users()[o.userId];
+        auditLog.record({
+          userId: o.userId, userName: (who && who.name) || '', path: '/system/payment-refund',
+          desc: `💸 Возврат ${o.priceRub} ₽ по заказу ${o.id}. Золото и набор автоматически не списаны — решите вручную`,
+          body: { orderId: o.id, refundRub: o.priceRub },
+        });
+      }
+      db.save('payments');
     }
-    const list = o.refunds || [];
-    for (let i = 0; i < list.length; i++) {
-      if (list[i] && list[i].id) list[i] = snap(await yk().getRefund(list[i].id));
-    }
-    db.save('payments');
   } catch (e: any) {
-    throw new u.ApiError('ЮKassa не ответила: ' + String((e && e.message) || '').replace(/^ЮKassa ответила /, ''));
+    throw new u.ApiError('Робокасса не ответила: ' + String((e && e.message) || '').replace(/^Робокасса(: | ответила )/, ''));
   }
   return adminGet(actor, id);
 }
 
+// Состояние подключения — для раздела «Платежи». Только имена настроек и
+// режим, никаких значений.
+function providerState() {
+  const r = rk();
+  return {
+    provider: 'Робокасса',
+    configured: r.configured(),
+    problem: r.problem(),
+    test: r.isTest(),
+    resultUrl: `${appUrl()}/api/payments/robokassa/result`,
+    successUrl: `${appUrl()}/api/payments/robokassa/success`,
+    failUrl: `${appUrl()}/api/payments/robokassa/fail`,
+  };
+}
+
 export = {
-  packages, createOrder, createOfferOrder, pay, checkOrder, handleNotification,
+  packages, createOrder, createOfferOrder, pay, checkOrder, handleResult, handleReturn,
   myOrders, confirmPayment, pendingPurchases, ackPurchase,
-  adminList, adminGet, adminRefresh, setTaxReceipt, MAX_PRICE_RUB,
+  adminList, adminGet, adminRefresh, setTaxReceipt, providerState, MAX_PRICE_RUB, PAY_NOTE,
 };

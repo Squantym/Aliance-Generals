@@ -1552,10 +1552,10 @@ App.screens.skills = async (c) => {
 };
 
 // ---------- БАНК ----------
-// Сверка заказов после возврата со страницы оплаты. Уведомление ЮKassa
+// Сверка заказов после возврата со страницы оплаты. Уведомление Робокассы
 // обычно приходит раньше игрока, но может задержаться — и тогда человек
 // вернулся бы в банк и не увидел покупки. Сверяем свежие неоплаченные
-// заказы сами: сервер спросит статус у ЮKassa и зачислит, если оплачено.
+// заказы сами: сервер спросит состояние счёта и зачислит, если оплачено.
 App._syncPayments = async () => {
   try {
     const { orders } = await API.get('/api/payments/orders');
@@ -1569,34 +1569,12 @@ App._syncPayments = async () => {
 };
 App._orderStatus = (o) => ({ paid: '✅ оплачено', pending: '⏳ ожидает оплаты', cancelled: '❌ отменён', failed: '❌ не создан' })[o.status] || o.status;
 
-// Выбор способа оплаты. По брендбуку НСПК на экране оплаты логотипы одной
-// высоты, знак СБП не меньше остальных, вокруг — охранное поле. Основная
-// цветная версия допустима только на белом фоне, поэтому логотипы стоят на
-// белых плашках, а не на тёмном фоне игры. Возвращает id способа или null.
-App._choosePayMethod = (methods, what) => new Promise((resolve) => {
-  if (!methods || !methods.length) return resolve('');
-  const ov = document.createElement('div');
-  ov.id = 'pay-methods';
-  ov.className = 'game-dialog-overlay';
-  ov.innerHTML = `
-    <div class="ach-popup pay-methods">
-      <button class="ach-popup-x" id="pm-x" title="Закрыть">✕</button>
-      <div class="ach-popup-head">Способ оплаты</div>
-      ${what ? `<div class="ach-popup-desc">${UI.esc(what)}</div>` : ''}
-      ${methods.map((m) => `
-        <button class="pay-method" data-pm="${UI.esc(m.id)}">
-          <span class="pay-logo">${m.logo
-            ? `<img src="${UI.esc(m.logo)}" alt="${UI.esc(m.name)}" loading="eager" onerror="this.replaceWith(document.createTextNode(this.alt))">`
-            : UI.esc(m.name)}</span>
-          <span class="pay-text"><b>${UI.esc(m.name)}</b><span class="muted small">${UI.esc(m.hint)}</span></span>
-        </button>`).join('')}
-      <p class="muted small mt">Оплата проходит на защищённой странице ЮKassa. Данные карты и банка игра не получает.</p>
-    </div>`;
-  document.body.appendChild(ov);
-  const done = (v) => { ov.remove(); resolve(v); };
-  ov.querySelector('#pm-x').onclick = () => done(null);
-  ov.querySelectorAll('[data-pm]').forEach((b) => { b.onclick = () => done(b.getAttribute('data-pm')); });
-});
+// Способ оплаты игрок выбирает на странице Робокассы: там и карты, в том
+// числе зарубежные, и СБП, и кошельки. Своего окна выбора у игры больше
+// нет — любой заранее выбранный способ прятал бы остальные, а зарубежная
+// карта из списка пропадала бы первой. Здесь — только пояснение.
+App._payNote = (data) => data && data.enabled && data.payNote
+  ? `<div class="card pay-note"><p class="muted small">💳 ${UI.esc(data.payNote)}</p></div>` : '';
 
 // Бонусы к покупкам — ДО оплаты: условия, остаток на сегодня и срок. Что
 // обещано здесь, то и начислит сервер: условия уходят в заказ при его
@@ -1659,6 +1637,7 @@ App.screens.bank = async (c, param) => {
       <div class="title">Банк · Спецпредложения</div>
       ${tabs}
       ${App._promoBanners(promoData, 'offers')}
+      ${offers.length ? App._payNote(promoData) : ''}
       ${!offers.length ? '<div class="card center muted">Сейчас предложений нет. Загляните позже.</div>' : ''}
       ${offers.map((o) => OfferCard.html(o)).join('')}`;
     c.querySelectorAll('[data-offer-gold]').forEach((b) => { b.onclick = async () => {
@@ -1668,14 +1647,7 @@ App.screens.bank = async (c, param) => {
     }; });
     c.querySelectorAll('[data-offer-rub]').forEach((b) => { b.onclick = async () => {
       try {
-        let method = '';
-        const pm = await API.get('/api/payments/packages');
-        if (pm.enabled) {
-          const offer = offers.find((o) => o.id === b.dataset.offerRub);
-          method = await App._choosePayMethod(pm.methods, offer ? `${offer.title} — ${offer.priceRub} ₽` : '');
-          if (method === null) return;
-        }
-        const r = await API.post('/api/offers/order', { offerId: b.dataset.offerRub, method });
+        const r = await API.post('/api/offers/order', { offerId: b.dataset.offerRub });
         if (r && r.payUrl) window.location.href = r.payUrl;
         else UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.');
       } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -1694,6 +1666,7 @@ App.screens.bank = async (c, param) => {
       ${App._promoBanners(data, 'gold')}
       <div class="card"><p class="muted small">Золото — премиум-валюта: ускоряет прокачку, открывает контейнеры на чёрном рынке, оплачивает услуги клуба офицеров. На крупных пакетах — бонусное золото.</p></div>
       ${!data.enabled ? `<div class="card center"><p class="muted">${UI.esc(data.note || 'Онлайн-оплата скоро будет доступна.')}</p></div>` : ''}
+      ${App._payNote(data)}
       ${data.packages.map((p) => `
         <div class="card">
           <div class="name">${UI.esc(p.label)} ${p.bonus ? `<span class="badge" style="background:var(--green)">${p.bonus}</span>` : ''}</div>
@@ -1711,13 +1684,7 @@ App.screens.bank = async (c, param) => {
     c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          let method = '';
-          if (data.enabled) {
-            const pkg = data.packages.find((p) => p.id === btn.dataset.buyPkg);
-            method = await App._choosePayMethod(data.methods, pkg ? `${pkg.label} — ${pkg.priceRub} ₽` : '');
-            if (method === null) return;
-          }
-          const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg, method });
+          const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
           if (r.payUrl) { window.location.href = r.payUrl; }
           else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
         } catch (e) { UI.toast('⛔ ' + e.message); }

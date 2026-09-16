@@ -2331,7 +2331,7 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/support/claim',   act((req, n) => support.claim(req.user, String(req.body.ticketId || ''), n)), { admin: true });
   app.add('POST', '/api/admin/support/release', act((req, n) => support.release(req.user, String(req.body.ticketId || ''), n)), { admin: true });
   app.add('POST', '/api/admin/support/reply', act((req, n) => support.adminReply(req.user, req.body.ticketId, req.body.text, !!req.body.close, n)), { admin: true });
-  // Покупки за рубли — ЮKassa (payments.ts). Пока ключей магазина нет в
+  // Покупки за рубли — Робокасса (payments.ts). Пока ключей магазина нет в
   // .env, заказ создаётся без платежа, как до подключения.
   app.add('GET',  '/api/payments/packages', (req) => payments.packages(req.user));
   app.add('GET',  '/api/payments/orders',   (req) => payments.myOrders(req.user));
@@ -2353,10 +2353,29 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/admin/payments/:id/refresh', act((req) => payments.adminRefresh(req.user, req.params.id)), { admin: true });
   // Ссылка на чек «Мой налог»: сохраняется в заказе и уходит игроку письмом
   app.add('POST', '/api/admin/payments/:id/tax-receipt', act((req, n) => payments.setTaxReceipt(req.user, req.params.id, req.body.url, n)), { admin: true });
-  // Уведомления ЮKassa. Маршрут открытый: присылает сервер ЮKassa, а не
-  // игрок. Телу не верим — статус платежа сервис берёт запросом в ЮKassa.
-  // Ошибка связи уходит 500-м ответом, и ЮKassa повторит уведомление.
-  app.add('POST', '/api/payments/yookassa', (req) => payments.handleNotification(req.body, { ip: req.ip }), { open: true });
+  // Состояние подключения кассы для раздела «Платежи»: режим и адреса,
+  // которые нужно вписать в кабинет Робокассы. Значений ключей здесь нет.
+  app.add('GET',  '/api/admin/payments-provider', (req) => {
+    if (!require('./services/roles').isOwner(req.user)) throw new u.ApiError('Только для владельца проекта');
+    return payments.providerState();
+  }, { admin: true });
+  // ── Робокасса ──────────────────────────────────────────────────
+  // Маршруты открытые: их зовёт сервер Робокассы и браузер игрока,
+  // возвращающийся со страницы оплаты. Метод передачи (GET или POST)
+  // выбирается в кабинете магазина — принимаем оба, чтобы смена
+  // настройки не ломала оплату молча.
+  //
+  // Result URL — уведомление об оплате. Ответ строго текстом «OK<номер>»;
+  // подпись, номер заказа и сумма проверяются в сервисе.
+  const rkParams = (req: any) => Object.assign({}, req.query || {}, req.body || {});
+  app.add('POST', '/api/payments/robokassa/result', (req) => payments.handleResult(rkParams(req), { ip: req.ip }), { open: true });
+  app.add('GET',  '/api/payments/robokassa/result', (req) => payments.handleResult(rkParams(req), { ip: req.ip }), { open: true });
+  // Success / Fail URL — игрок вернулся. Ничего не зачисляется: только
+  // переадресация в банк, где клиент сам сверит заказ.
+  app.add('POST', '/api/payments/robokassa/success', (req) => payments.handleReturn(rkParams(req), true), { open: true });
+  app.add('GET',  '/api/payments/robokassa/success', (req) => payments.handleReturn(rkParams(req), true), { open: true });
+  app.add('POST', '/api/payments/robokassa/fail',    (req) => payments.handleReturn(rkParams(req), false), { open: true });
+  app.add('GET',  '/api/payments/robokassa/fail',    (req) => payments.handleReturn(rkParams(req), false), { open: true });
 
   // ---------- Спецпредложения (наборы) ----------
   // Витрина открыта всем, конструктор — по зоне «Ресурсы».

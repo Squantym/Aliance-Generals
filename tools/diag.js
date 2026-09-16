@@ -108,15 +108,30 @@ function readEnvFile() {
     const dups = Object.keys(envFile.__dup || {});
     if (dups.length) row('дубли строк в .env', WARN + dups.join(', ') + ' — сервер возьмёт ПЕРВУЮ');
     for (const k of ['SMTPBZ_API_KEY', 'EMAIL_FROM', 'APP_URL', 'PORT', 'TEST_WORLD',
-      'DB_DRIVER', 'OWNER_NAME', 'ALLOW_UNVERIFIED_EMAIL', 'STAFF_2FA_REQUIRED']) {
+      'DB_DRIVER', 'OWNER_NAME', 'ALLOW_UNVERIFIED_EMAIL', 'STAFF_2FA_REQUIRED',
+      'ROBOKASSA_LOGIN', 'ROBOKASSA_PASS1', 'ROBOKASSA_PASS2', 'ROBOKASSA_HASH', 'ROBOKASSA_TEST',
+      'ROBOKASSA_TEST_PASS1', 'ROBOKASSA_TEST_PASS2', 'ROBOKASSA_INV_BASE']) {
       if (!(k in envFile)) continue;
       const v = envFile[k];
-      const secret = /KEY|PASS|SECRET|URI|TOKEN/i.test(k);
+      // Логин магазина не пароль, но вместе с утёкшим паролем — полный
+      // доступ к счетам. Прячем и его.
+      const secret = /KEY|PASS|SECRET|URI|TOKEN|ROBOKASSA_LOGIN/i.test(k);
       row('.env ' + k, v === ''
         ? BAD + ' ПУСТО — строка есть, значения нет'
         : (secret ? OK + ' задан, длина ' + v.length : OK + ' ' + v));
     }
     if (!('SMTPBZ_API_KEY' in envFile)) row('.env SMTPBZ_API_KEY', BAD + ' строки нет вовсе');
+    // Касса: тот же вывод, что видит сервер, — только имена настроек
+    try {
+      const saved = {};
+      for (const k of Object.keys(envFile)) if (/^ROBOKASSA_/.test(k)) { saved[k] = process.env[k]; process.env[k] = envFile[k]; }
+      const rk = require(path.join(ROOT, 'dist/src/services/robokassa.js'));
+      row('оплата (Робокасса)', rk.configured()
+        ? (rk.isTest() ? WARN + ' ТЕСТОВЫЙ режим — деньги не настоящие' : OK + ' подключена, боевой режим')
+        : BAD + ' выключена: ' + rk.problem());
+      for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    } catch (e) {}
+    if ('YOOKASSA_SECRET_KEY' in envFile) row('.env YOOKASSA_*', WARN + ' ЮKassa отключена — строки можно удалить');
   }
 
   // ── База и режим обслуживания ────────────────────────────────────

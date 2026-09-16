@@ -5,11 +5,12 @@
 // золота нет», «это не я платил», возврат, спор через банк. На каждый
 // такой вопрос ответ — в данных одного заказа: что покупали, чем и из
 // какого банка платили, откуда нажимали «Купить», какие уведомления
-// приходили от ЮKassa и когда.
+// приходили от Робокассы и когда.
 //
-// Полного номера карты здесь нет и быть не может: ЮKassa отдаёт только
-// первые 6 и последние 4 цифры. Налоговые чеки самозанятого лежат в
-// «Мой налог» — в панели всё о самой оплате, а не чек ФНС.
+// Номера карты здесь нет и быть не может: Робокасса отдаёт только способ
+// оплаты, валюту покупателя и маску счёта. Старые заказы ЮKassa (до 273)
+// показываются как были — с их полями карты. Налоговые чеки самозанятого
+// лежат в «Мой налог» — в панели всё о самой оплате, а не чек ФНС.
 // ===================================================================
 
 (function () {
@@ -34,9 +35,30 @@
     ? ''
     : `<div class="a2-kv"><span>${esc(k)}</span><b${mono ? ' class="mono"' : ''}>${esc(v)}</b></div>`;
   const EVENT = {
+    result: 'Робокасса: уведомление об оплате',
     'payment.succeeded': 'ЮKassa: платёж прошёл', 'payment.canceled': 'ЮKassa: платёж отменён',
     'payment.waiting_for_capture': 'ЮKassa: ждёт подтверждения', 'refund.succeeded': 'ЮKassa: возврат выполнен',
   };
+
+  // Состояние кассы и адреса для кабинета Робокассы. Без значений ключей —
+  // только «настроено / чего не хватает».
+  async function providerCard() {
+    let s = null;
+    try { s = await API.get('/api/admin/payments-provider'); } catch (e) { return ''; }
+    const url = (label, v) => `<div class="a2-kv"><span>${esc(label)}</span><b class="mono">${esc(v)}</b></div>`;
+    return `
+      <div class="a2-card">
+        <div class="a2-row" style="gap:10px">
+          <b>${esc(s.provider)}</b>
+          ${s.configured ? '<span class="a2-pill is-ok">подключена</span>' : '<span class="a2-pill is-bad">не настроена</span>'}
+          ${s.test ? '<span class="a2-pill is-warn">тестовый режим — деньги не настоящие</span>' : ''}
+        </div>
+        ${s.configured ? '' : `<p class="a2-muted" style="margin-top:6px">${esc(s.problem)}</p>`}
+        <details style="margin-top:6px"><summary>Адреса для кабинета Робокассы (метод POST)</summary>
+          ${url('Result URL', s.resultUrl)}${url('Success URL', s.successUrl)}${url('Fail URL', s.failUrl)}
+        </details>
+      </div>`;
+  }
 
   async function renderList(el, route) {
     const q = route.query || {};
@@ -50,9 +72,11 @@
     }
     const t = d.totals || {};
     const rows = d.rows || [];
+    const prov = await providerCard();
     const opt = (v, label, cur) => `<option value="${v}"${cur === v ? ' selected' : ''}>${label}</option>`;
     el.innerHTML = `
       <div class="a2-title">Платежи</div>
+      ${prov}
       <div class="a2-card">
         <div class="a2-row" style="gap:18px">
           <div><b>${rub(t.paidRub)}</b> <span class="a2-muted">оплачено по-настоящему · заказов: ${t.paidCount || 0}</span></div>
@@ -60,12 +84,12 @@
           <div class="a2-muted">ждут оплаты: ${t.pendingCount || 0} · тестовых оплат: ${t.testCount || 0}</div>
           ${t.needReceipt ? `<div class="a2-pill is-warn" style="margin-top:6px">🧾 без чека «Мой налог»: ${t.needReceipt}</div>` : ''}
         </div>
-        <p class="a2-muted" style="margin-top:6px">Карта — только то, что отдаёт ЮKassa: первые 6 и последние 4 цифры,
-          банк и страна. Полного номера нет ни в ответе ЮKassa, ни в игре. Налоговые чеки — в «Мой налог».</p>
+        <p class="a2-muted" style="margin-top:6px">О способе оплаты — только то, что отдаёт Робокасса: способ, валюта
+          покупателя, маска счёта. 🌍 — оплата зарубежной картой. Номера карты в игре нет. Налоговые чеки — в «Мой налог».</p>
       </div>
       <div class="a2-card">
         <div class="a2-row">
-          <input id="pay-q" value="${esc(q.q || '')}" placeholder="заказ, платёж, позывной, 4 цифры карты, IP"
+          <input id="pay-q" value="${esc(q.q || '')}" placeholder="заказ, номер счёта, позывной, счёт плательщика, IP"
             style="${inputStyle};flex:1;min-width:220px">
           <select id="pay-status" style="${inputStyle}">
             ${opt('', 'все статусы', q.status || '')}${opt('paid', 'оплачен', q.status)}${opt('pending', 'ждёт оплаты', q.status)}
@@ -125,6 +149,8 @@
     const c = m.card || null;
     const b = o.buyer || null;
     const money = o.money || {};
+    const isRk = o.provider === 'robokassa';
+    const pn = o.providerName || 'платёжный сервис';
 
     // Хронология одной лентой: создание, уведомления, оплата, возвраты
     const timeline = [
@@ -169,8 +195,9 @@
 
         <div class="a2-card">
           <h3>Оплата</h3>
-          ${kv('Способ', m.name)}
-          ${kv('Как назвала ЮKassa', m.title)}
+          ${kv('Способ', (m.foreign ? '🌍 ' : '') + (m.name || ''))}
+          ${kv(isRk ? 'Валюта оплаты (метка Робокассы)' : 'Как назвала ЮKassa', m.title)}
+          ${m.foreign ? kv('Карта', 'зарубежная') : ''}
           ${c ? `
             ${kv('Карта', `${c.first6 || '••••••'}•••••• ${c.last4 || '••••'}`, true)}
             ${kv('Платёжная система', c.type)}
@@ -181,7 +208,7 @@
             ${kv('Откуда карта', c.source)}` : ''}
           ${kv('Банк плательщика', m.bank)}
           ${kv('Операция СБП', m.sbpOperationId, true)}
-          ${kv('Кошелёк ЮMoney', m.account, true)}
+          ${kv(isRk ? 'Счёт плательщика' : 'Кошелёк ЮMoney', m.account, true)}
           ${kv('Телефон', m.phone, true)}
           ${kv('3-D Secure', o.auth && o.auth.threeDs)}
           ${kv('RRN (номер операции в банке)', o.auth && o.auth.rrn, true)}
@@ -189,18 +216,20 @@
         </div>
 
         <div class="a2-card">
-          <h3>Деньги и ЮKassa</h3>
+          <h3>Деньги · ${esc(pn)}</h3>
           ${kv('Сумма платежа', `${Number(money.amount || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${money.currency || 'RUB'}`)}
+          ${kv('Покупатель заплатил', money.incSum ? `${money.incSum} ${money.incCurr || ''}`.trim() : '')}
+          ${kv('Курс', money.rate)}
           ${kv('Придёт на счёт', money.income !== null && money.income !== undefined ? rub(money.income) : '')}
-          ${kv('Комиссия ЮKassa', money.commission !== null && money.commission !== undefined ? rub(money.commission) : '')}
-          ${kv('Возвращено по данным ЮKassa', money.refunded ? rub(money.refunded) : '')}
+          ${kv('Комиссия кассы', money.commission !== null && money.commission !== undefined ? rub(money.commission) : '')}
+          ${kv('Возвращено по данным кассы', money.refunded ? rub(money.refunded) : '')}
           ${kv('Тестовый платёж', money.test ? 'да — деньги не настоящие' : 'нет')}
-          ${kv('Статус в ЮKassa', money.ykStatus)}
-          ${kv('Платёж в ЮKassa', o.providerRef, true)}
+          ${kv('Статус у кассы', money.providerStatus)}
+          ${kv(isRk ? 'Номер счёта (InvId)' : 'Платёж в ЮKassa', o.providerRef, true)}
           ${kv('Создан в ЮKassa', money.createdAt ? iso(money.createdAt) : '')}
-          ${kv('Списан', money.capturedAt ? iso(money.capturedAt) : '')}
-          ${kv('Сверено с ЮKassa', o.ykSyncedAt ? dt(o.ykSyncedAt) : '')}
-          ${o.providerRef ? '<button class="btn btn-inline" id="pay-refresh" style="margin-top:8px">🔄 Сверить с ЮKassa</button>' : ''}
+          ${kv(isRk ? 'Состояние на' : 'Списан', money.capturedAt ? iso(money.capturedAt) : '')}
+          ${kv('Сверено', o.syncedAt ? dt(o.syncedAt) : '')}
+          ${isRk && o.providerRef ? '<button class="btn btn-inline" id="pay-refresh" style="margin-top:8px">🔄 Сверить с Робокассой</button>' : ''}
         </div>
       </div>
 
@@ -251,7 +280,7 @@
 
       ${o.raw ? `
         <div class="a2-card">
-          <details><summary>Полный ответ ЮKassa — для разбора спора с банком или поддержкой ЮKassa</summary>
+          <details><summary>Полные данные кассы (${esc(pn)}) — для разбора спора с банком или поддержкой</summary>
             <pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;margin-top:8px">${esc(JSON.stringify(o.raw, null, 2))}</pre>
           </details>
         </div>` : ''}`;
@@ -273,7 +302,7 @@
     const refresh = document.getElementById('pay-refresh');
     if (refresh) refresh.onclick = async () => {
       refresh.disabled = true;
-      try { await API.post('/api/admin/payments/' + encodeURIComponent(id) + '/refresh', {}); UI.toast('🔄 Сверено с ЮKassa'); renderOne(el, id); }
+      try { await API.post('/api/admin/payments/' + encodeURIComponent(id) + '/refresh', {}); UI.toast('🔄 Сверено с Робокассой'); renderOne(el, id); }
       catch (e) { UI.toast('⛔ ' + e.message); refresh.disabled = false; }
     };
   }
