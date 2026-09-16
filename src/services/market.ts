@@ -316,14 +316,15 @@ function emptyLoot(): Loot { return { devs: {}, doping: {}, money: 0, sab: {} };
 // ящиков с аптечками при полном здоровье — и все пять пропали впустую.
 const DOPING_POOL = (config.MARKET_ITEMS as any[]).filter(
   (i) => i.kind === 'buff' || String(i.kind).startsWith('refill'));
-function applyDoping(user: User, item: any, notices: Notices): void {
+// Сообщение — одно на всю пачку (см. openContainersFree): при «Открыть
+// все» на сотне ящиков строка на каждую аптечку заваливала экран.
+function applyDoping(user: User, item: any): void {
   addItems(user, item.id, 1);
-  notices.push(`📦 Из контейнера на склад: «${item.name}».`);
 }
 
 // Добыча ОДНОГО контейнера. Всё выпавшее копится в loot: окно с
 // результатом показывает итог по пачке, а не по каждому ящику отдельно.
-function rollOne(user: User, c: any, loot: Loot, notices: Notices): void {
+function rollOne(user: User, c: any, loot: Loot): void {
   // Секретные разработки — как и раньше, по chance контейнера
   for (let i = 0; i < rollCount(c.chance); i++) {
     const dev = u.pick(config.SECRET_DEVS);
@@ -333,7 +334,7 @@ function rollOne(user: User, c: any, loot: Loot, notices: Notices): void {
   // Допинг
   for (let i = 0; i < rollCount(c.doping || 0); i++) {
     const item = u.pick(DOPING_POOL);
-    applyDoping(user, item, notices);
+    applyDoping(user, item);
     loot.doping[item.name] = (loot.doping[item.name] || 0) + 1;
   }
   // Деньги — в единицах цены техники игрока
@@ -361,15 +362,23 @@ function rollOne(user: User, c: any, loot: Loot, notices: Notices): void {
   }
 }
 
+// Сколько ящиков вскрывается за один вызов. Раньше здесь стояло 100, а
+// «Открыть все» (237) списывало со склада всё: из 300 ящиков открывались
+// 100, остальные 200 пропадали. Предел теперь — только защита от
+// бессмысленного числа; склад проверяет вызывающий.
+const OPEN_MAX = 100000;
+
 // Выдача содержимого контейнеров БЕЗ оплаты и БЕЗ склада. Отдельно от
 // покупки, потому что открывать умеет не только чёрный рынок.
 function openContainersFree(user: User, c: any, qty: number, notices: Notices): { droppedAll: string[]; droppedCount: Record<string, number>; loot: Loot & { devList: Array<{ id: string; name: string; count: number }> } } {
   // Количество приводим здесь же: функцию зовёт и рынок, и наборы
   // «Спецпредложений», и надеяться, что каждый вызывающий проверил число
   // за нас, — ровно тот случай, когда однажды не проверит.
-  const count = u.clamp(u.toInt(qty, 1), 1, 100);
+  const count = u.clamp(u.toInt(qty, 1), 1, OPEN_MAX);
   const loot = emptyLoot();
-  for (let n = 0; n < count; n++) rollOne(user, c, loot, notices);
+  for (let n = 0; n < count; n++) rollOne(user, c, loot);
+  const dopingParts = Object.entries(loot.doping).map(([name, k]) => `«${name}» ×${k}`);
+  if (dopingParts.length) notices.push(`📦 Из контейнеров на склад: ${dopingParts.join(', ')}.`);
 
   // Наружу и в историю — по названиям: их читает человек. Внутри — по id.
   const devName = (id: string) => (config.SECRET_DEV_BY_ID[id] || { name: id }).name;
@@ -457,6 +466,7 @@ function openOwned(user: User, tier: number | string, qty: number | string, noti
     throw new u.ApiError(`Открыть можно ${config.CONTAINER_OPEN_QTY.join(', ')} контейнеров за раз или все сразу`);
   }
   if (want > have) throw new u.ApiError(`На складе только ${have} шт.`);
+  if (want > OPEN_MAX) throw new u.ApiError(`За раз можно открыть не больше ${OPEN_MAX} шт.`);
 
   ownedBox(user)[String(c.tier)] = have - want;
   const { droppedAll, droppedCount, loot } = openContainersFree(user, c, want, notices);
@@ -466,6 +476,8 @@ function openOwned(user: User, tier: number | string, qty: number | string, noti
     id: u.uid(8), tier: c.tier, tierName: c.name, qty: want,
     spent: 0, dropped: droppedCount, at: Date.now(),
     money: loot.money, doping: loot.doping, sab: loot.sab,
+    // Открыто ровно qty — без старого потолка в 100 (см. refundLostContainers)
+    full: true,
   };
   if (!user.containerHistory) user.containerHistory = [];
   user.containerHistory.unshift(historyEntry);
@@ -896,7 +908,43 @@ function adminClearEffects(adminUser: User, body: any, notices: Notices): any {
   return { targetId: target.id, targetName: target.name, removed };
 }
 
-export = { itemsList, buyItem, containersView, buyContainers, openOwned, addContainers, ownedCount, openContainersFree, grantCommanderDays, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
+// ---------- Разовый возврат ящиков, пропавших при «Открыть все» ----------
+// До 274 открывалось не больше 100 ящиков за раз, а со склада списывались
+// все. Точное число открытых сохранилось в истории открытий (последние
+// 10 на игрока): всё сверх сотни — пропавшее. Возвращаем на склад, а не
+// перевскрываем: игрок сам решит, когда открыть. Запись истории
+// помечается, поэтому повторный вызов второй раз не выдаст.
+const OLD_OPEN_CAP = 100;
+function refundLostContainers(): { players: number; containers: number } {
+  const users: Record<string, any> = player.users();
+  let players = 0, containers = 0;
+  for (const user of Object.values(users)) {
+    const lines: Array<{ text: string; icon: string | null }> = [];
+    for (const e of (user.containerHistory || []) as any[]) {
+      const lost = u.toInt(e && e.qty, 0) - OLD_OPEN_CAP;
+      if (lost <= 0 || e.lostRefunded || e.full) continue;
+      const c = config.CONTAINERS.find((x) => x.tier === u.toInt(e.tier));
+      if (!c) continue;
+      addContainers(user, c.tier, lost);
+      e.lostRefunded = lost;
+      containers += lost;
+      lines.push({ text: `${c.name} ×${lost}`, icon: `/img/containers/${c.id}.webp` });
+    }
+    if (!lines.length) continue;
+    players++;
+    db.markUser(user.id);
+    require('./rewards').grantReceipt(user.id, {
+      title: 'Возврат контейнеров',
+      reason: 'При открытии больше 100 контейнеров разом открывались только первые 100, '
+        + 'а остальные пропадали со склада. Ошибку исправили, пропавшие контейнеры '
+        + 'уже вернулись на склад чёрного рынка — откройте их, когда будете готовы.',
+      lines,
+    });
+  }
+  return { players, containers };
+}
+
+export = { itemsList, buyItem, containersView, buyContainers, openOwned, addContainers, ownedCount, openContainersFree, grantCommanderDays, refundLostContainers, containerHistory, auctionView, bid, tick, mineInfo, buyMines, applyCommanderEffect,
   adminCommandersList, adminGrantCommander, adminRevokeCommander, adminCommanderHolders, pushEffect,
   useItem, addItems, itemCount,
   adminDopingView, adminGiveDoping, adminClearEffects,};

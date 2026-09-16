@@ -122,4 +122,99 @@ function adminView(actor: User) {
   };
 }
 
-export = { settings, questsEnabled, linkFor, appUrl, invitedList, setQuests, adminView };
+// ── Панель: кто кого пригласил ─────────────────────────────────────
+// Раздел «Приглашения» (#/invites). Всё собирается из живых полей
+// игроков: referredBy у приглашённого, refEarnings у пригласившего.
+// Отдельного журнала приглашений нет и не нужно — связь хранится в
+// самом игроке и не может разойтись с ним.
+//
+// Зона — «Игроки»: это данные о людях, а не настройка акций. Сколько
+// приглашённый ПОТРАТИЛ — не показываем и здесь: видно только, сколько
+// золота с его покупок ушло пригласившему (refGoldGiven).
+function adminInvites(actor: User, q: any) {
+  require('./roles').assertZone(actor, 'players', 'список приглашений');
+  const all = player.users() as Record<string, any>;
+  const now = Date.now();
+  const find = String((q && q.q) || '').trim().toLowerCase();
+  const sort = String((q && q.sort) || 'count');
+  const cfg = config.REFERRAL;
+
+  const person = (p: any) => ({
+    id: p.id, name: String(p.name || ''), level: Number(p.level || 1),
+    lastSeen: Number(p.lastSeen || 0), banned: !!p.banned,
+    active: !!p.lastSeen && now - p.lastSeen < ACTIVE_MS,
+  });
+
+  // Группируем приглашённых по пригласившему за один проход
+  const byInviter: Record<string, any[]> = {};
+  for (const p of Object.values(all)) {
+    if (!p || !p.referredBy || p.isBot) continue;
+    (byInviter[p.referredBy] = byInviter[p.referredBy] || []).push(p);
+  }
+
+  let invitedTotal = 0, reached50Total = 0, activeTotal = 0, shareTotal = 0;
+  const rows = Object.keys(byInviter).map((bossId) => {
+    const boss = all[bossId];
+    const friends = byInviter[bossId]
+      .map((p: any) => ({
+        ...person(p),
+        joinedAt: Number(p.createdAt || 0),
+        reached50: !!p.refLevel50Paid,
+        goldToInviter: Number(p.refGoldGiven || 0),
+      }))
+      .sort((a, b) => b.joinedAt - a.joinedAt);
+    const reached50 = friends.filter((f) => f.reached50).length;
+    const active = friends.filter((f) => f.active).length;
+    const share = friends.reduce((s, f) => s + f.goldToInviter, 0);
+    invitedTotal += friends.length;
+    reached50Total += reached50;
+    activeTotal += active;
+    shareTotal += share;
+    let pct = cfg.purchaseSharePct;
+    if (boss) { try { pct = require('./referralQuests').sharePctFor(boss); } catch (e) {} }
+    return {
+      // Пригласивший мог быть удалён — связь у приглашённых осталась
+      inviter: boss ? { ...person(boss), refCode: String(boss.refCode || '') } : { id: bossId, name: '(удалён)', level: 0, lastSeen: 0, banned: false, active: false, refCode: '' },
+      count: friends.length,
+      // Старый счётчик: считался при вводе кода и не уменьшается, когда
+      // приглашённого удаляют. Показываем, если разошёлся с живым списком.
+      counter: boss ? Number(boss.refCount || 0) : 0,
+      reached50, active,
+      sharePct: pct,
+      goldFromPurchases: share,
+      goldForLevel50: reached50 * cfg.level50Reward,
+      lastJoinedAt: friends.length ? friends[0].joinedAt : 0,
+      friends,
+    };
+  });
+
+  const matches = (r: any) => !find
+    || r.inviter.name.toLowerCase().includes(find)
+    || r.inviter.refCode.toLowerCase() === find
+    || r.friends.some((f: any) => f.name.toLowerCase().includes(find));
+  const SORTS: Record<string, (a: any, b: any) => number> = {
+    count: (a, b) => b.count - a.count || b.reached50 - a.reached50,
+    level50: (a, b) => b.reached50 - a.reached50 || b.count - a.count,
+    gold: (a, b) => (b.goldFromPurchases + b.goldForLevel50) - (a.goldFromPurchases + a.goldForLevel50),
+    recent: (a, b) => b.lastJoinedAt - a.lastJoinedAt,
+  };
+  const list = rows.filter(matches).sort(SORTS[sort] || SORTS.count);
+
+  return {
+    totals: {
+      inviters: rows.length,
+      invited: invitedTotal,
+      reached50: reached50Total,
+      active: activeTotal,
+      goldFromPurchases: shareTotal,
+      goldForLevel50: reached50Total * cfg.level50Reward,
+      goldToNewbies: invitedTotal * cfg.inviteeGold,
+    },
+    rules: { inviteeGold: cfg.inviteeGold, level50Reward: cfg.level50Reward, level50Tokens: cfg.level50Tokens, sharePct: cfg.purchaseSharePct },
+    rows: list.slice(0, 300),
+    shown: Math.min(list.length, 300),
+    found: list.length,
+  };
+}
+
+export = { settings, questsEnabled, linkFor, appUrl, invitedList, setQuests, adminView, adminInvites };

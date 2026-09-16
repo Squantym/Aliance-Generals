@@ -224,6 +224,26 @@ async function main() {
     console.error('Ошибка чистки ботов из альянсов:', e);
   }
 
+  // ---- Разовая миграция: вернуть ящики, пропавшие при «Открыть все» ----
+  // До 274 за раз открывалось не больше 100 контейнеров, а со склада
+  // списывались все. Подробности — market.refundLostContainers.
+  try {
+    const meta = db.load<Record<string, any>>('meta', {});
+    if (!meta.lostContainersRefunded) {
+      const r = market.refundLostContainers();
+      meta.lostContainersRefunded = Date.now();
+      db.save('meta');
+      if (r.players) {
+        db.save('users');
+        console.log(`📦 Возвращено пропавших контейнеров: ${r.containers} у ${r.players} игроков.`);
+      } else {
+        console.log('📦 Пропавших контейнеров не найдено.');
+      }
+    }
+  } catch (e) {
+    console.error('Ошибка возврата контейнеров:', e);
+  }
+
   // Создаём приложение (мини-аналог Express, написанный руками)
   const app = http.createApp();
 

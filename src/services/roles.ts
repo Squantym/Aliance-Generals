@@ -201,6 +201,7 @@ const ZONE_RULES: Array<[RegExp, Zone]> = [
   // «Игроки»: вопрос того же рода, что история входов рядом с профилем.
   [/^\/api\/admin\/sessions/,                       'security'],
   [/^\/api\/admin\/by-device$/,                     'players'],
+  [/^\/api\/admin\/invites$/,                       'players'],
   // Сравнение адресов и устройств — разбор мультоводства; бан по адресу и
   // устройству — та же мера, что бан аккаунта, только шире
   [/^\/api\/admin\/(net-compare|device-groups)$/,     'security'],

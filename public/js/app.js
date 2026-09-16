@@ -4000,6 +4000,11 @@ const App = {
     const savedScroll = window.scrollY;
     const scrollToId = App._scrollToId;      // прокрутить к элементу после отрисовки
     App._scrollToId = null;
+    // Страница остаётся в самом верху, блок только подсвечивается. Так
+    // после атаки: владелец просил, чтобы экран не уезжал к окошку боя, а
+    // стоял наверху — с полоской опыта в закреплённой шапке.
+    const keepTop = App._scrollKeepTop;
+    App._scrollKeepTop = false;
     if (!preserve) {
       window.scrollTo(0, 0);
       // Заглушку показываем только при переходе на другой экран. При
@@ -4022,7 +4027,8 @@ const App = {
           if (el) {
             // block:'start' — блок встаёт под шапкой, заголовок
             // «Победа»/«Поражение» виден сразу, без доскролла
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (keepTop) window.scrollTo(0, 0);
+            else el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             // Короткая подсветка: взгляд сам находит нужное место
             el.classList.remove('scroll-flash');
             void el.offsetWidth;              // перезапуск анимации
@@ -4111,8 +4117,9 @@ const App = {
   // Перерисовать текущий экран и прокрутить к блоку с указанным id
   // (используется после атаки: игрок сразу видит окно с результатом боя,
   // даже если пролистал список противников далеко вниз).
-  rerenderTo(id) {
+  rerenderTo(id, opts) {
     App._scrollToId = id;
+    App._scrollKeepTop = !!(opts && opts.top);
     App._preserveScroll = true;
     App.route();
   },

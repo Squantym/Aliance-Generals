@@ -88,13 +88,14 @@ ok(!war.includes("UI.toast(`🔓 Сейф взломан!"), 'старый то�
 ok(css.includes('.safe-result'), 'стили окна сейфа добавлены');
 
 console.log('\n── 4. Прокрутка ──');
-ok(war.includes("App.rerenderTo(r.encounter ? 'war-encounter' : 'battle-result')"),
-   'после атаки экран прокручивается к результату боя (или к окну сейфа/мины)');
+// С 274 страница после атаки остаётся наверху, блок только подсвечивается
+ok(war.includes("App.rerenderTo(r.encounter ? 'war-encounter' : 'battle-result', { top: true })"),
+   'после атаки подсвечивается результат боя (или окно сейфа/мины)');
 ok(!war.includes('window.scrollTo({ top: 0, behavior: \'smooth\' })'),
    'прокрутка в самый верх после атаки убрана');
 ok(war.includes('id="battle-result"'), 'у панели результата боя есть id для прокрутки');
 ok(war.includes('id="war-encounter"'), 'у окна встречи (сейф/мина) есть id для прокрутки');
-ok(app.includes('rerenderTo(id)'), 'добавлен App.rerenderTo — перерисовка с прокруткой к блоку');
+ok(app.includes('rerenderTo(id, opts)'), 'добавлен App.rerenderTo — перерисовка с наведением на блок');
 ok(app.includes('scrollIntoView'), 'прокрутка выполняется плавно к самому блоку');
 // Надёжность прокрутки: экран дорисовывается асинхронно, и одного кадра
 // не хватало — игрок оставался там же, где листал список противников

@@ -42,6 +42,8 @@ const A2 = {
     { id: 'network',    label: 'Адреса и устройства', icon: '🌐', group: 'Разбор', zones: ['security', 'moderation'] },
     // Кого проверять на твинков — список собирается сам (multiWatch.ts)
     { id: 'multi',      label: 'Мультоводы',    icon: '👤', group: 'Разбор', zone: 'security' },
+    // Кто кого пригласил и сколько за это получил (referrals.adminInvites)
+    { id: 'invites',    label: 'Приглашения',   icon: '🤝', group: 'Разбор', zone: 'players' },
     // Всё о каждой оплате — только владелец: данные карт и банков покупателей
     { id: 'payments',   label: 'Платежи',       icon: '💳', group: 'Разбор', zone: 'roles', ownerOnly: true },
     // ── Настройка: сюда идут менять правила, а не разбираться ─────

@@ -158,7 +158,8 @@ App.screens.market = async (c, param) => {
         <p class="muted small" style="margin:-4px 4px 10px">Купленный допинг ложится на склад и ждёт своего часа — применяйте кнопкой «Использовать», когда понадобится.</p>` : ''}
       ${items.map((x) => `
         <div class="card">
-          ${App._marketImg(x.id) ? `<img src="${App._marketImg(x.id)}" alt="${UI.esc(x.name)}" class="market-img" loading="lazy" decoding="async">` : `<div class="name">${UI.esc(x.name)}</div>`}
+          ${App._marketImg(x.id) ? `<img src="${App._marketImg(x.id)}" alt="" class="market-img" loading="lazy" decoding="async">` : ''}
+          <div class="name">${UI.esc(x.name)}</div>
           <p class="muted small">${UI.esc(x.desc)}${x.durMin ? ` · действует ${x.durMin >= 60 ? (x.durMin / 60) + ' ч' : x.durMin + ' мин'}` : ''}</p>
           ${tab === 'buffs' && x.owned ? `<p class="gold small" style="margin:4px 0 0">📦 На складе: ${UI.fmtNum(x.owned)} шт.</p>` : ''}
           <div class="btn-row mt">

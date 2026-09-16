@@ -28,8 +28,9 @@ ok(/\.result-banner \{[\s\S]{0,160}width: calc\(100% \+ 34px\)/.test(css), 'ба
 
 console.log('\n── 2. Прокрутка к началу боя ──');
 ok(/window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\);\s*\n\s*App\.rerenderTo/.test(war),
-   'после атаки страница сначала уходит наверх, затем наводится на карточку');
-ok(/App\.rerenderTo\(r\.encounter \? 'war-encounter' : 'battle-result'\)/.test(war), 'наведение на нужный блок сохранено');
+   'после атаки страница уходит наверх');
+ok(/App\.rerenderTo\(r\.encounter \? 'war-encounter' : 'battle-result', \{ top: true \}\)/.test(war), 'и остаётся наверху — шапка с полоской опыта на виду');
+ok(/if \(keepTop\) window\.scrollTo\(0, 0\);\s*\n\s*else el\.scrollIntoView/.test(app), 'при top: true к блоку не прокручивается');
 ok(app.includes("block: 'start'"), 'блок встаёт началом к верху экрана');
 ok(css.includes('scroll-margin-top'), 'учтён отступ, чтобы не уехать под шапку');
 

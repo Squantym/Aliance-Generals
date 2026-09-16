@@ -911,6 +911,8 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/referral/quests/claim',
     act((req, n) => require('./services/referralQuests').claim(req.user, req.body.board, req.body.step, n)));
   app.add('GET',  '/api/admin/referral-quests', (req) => require('./services/referrals').adminView(req.user), { admin: true });
+  // Раздел «Приглашения»: кто кого привёл
+  app.add('GET',  '/api/admin/invites', (req) => require('./services/referrals').adminInvites(req.user, req.query || {}), { admin: true });
   app.add('POST', '/api/admin/referral-quests', act((req, n) => require('./services/referrals').setQuests(req.user, !!req.body.on, n)), { admin: true });
   // Шпионаж
   app.add('POST', '/api/spy', act((req, n) => features.spyOn(req.user, req.body.targetId, n)));
