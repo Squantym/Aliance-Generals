@@ -25,9 +25,17 @@ import type { User } from '../types';
 // ── Геттеры для ОБОИХ направлений: снапшот и текущее ─────────────
 // Каждый геттер принимает игрока и возвращает число.
 // Один и тот же геттер = сравниваем одно и то же поле.
+//
+// Только НАКОПИТЕЛЬНЫЕ счётчики, не балансы. До 276 здесь стояли
+// p.ears и p.tokens — то, что у игрока на руках сейчас. Гербы и жетоны
+// тратятся (казна легиона, постройки), и игрок, помиловавший 150
+// человек и вложивший жетоны в казну, выпадал из зала славы, будто не
+// помиловал никого. Счётчики ниже растут при каждом проникновении и не
+// уменьшаются: сорвано + помиловано = всего проникновений.
+const counter = (p: User, key: string) => Math.max(0, Number(((p as any).counters || {})[key]) || 0);
 const GETTERS: Record<string, (u: User) => number> = {
-  ears:          (p) => p.ears          || 0,
-  tokens:        (p) => p.tokens        || 0,
+  crestsTorn:    (p) => counter(p, 'crestsTorn'),
+  trucesMade:    (p) => counter(p, 'trucesMade'),
   battles:       (p) => (p.battle && p.battle.wins  || 0)
                       + (p.battle && p.battle.losses || 0),
   battleLoot:    (p) => (p.counters && p.counters.battleLoot)     || 0,
@@ -50,15 +58,15 @@ const CATEGORIES = [
     id: 'ears',
     name: '🛡 Коллекционер гербов',
     desc: 'Сорвано гербов в чужих штабах',
-    getter: 'ears',
+    getter: 'crestsTorn',
     absGetter: null,
     fmt: 'number',
   },
   {
     id: 'mercy',
     name: '🕊️ Хранитель мира',
-    desc: 'Жетонов перемирия получено',
-    getter: 'tokens',
+    desc: 'Помиловано: заключено перемирий в чужих штабах',
+    getter: 'trucesMade',
     absGetter: null,
     fmt: 'number',
   },
@@ -131,7 +139,20 @@ function ensureSnapshotUpToDate(): any {
   const stored = loadSnap();
 
   if (stored && stored.snapshotDate === today && stored.snapshot) {
-    // Снапшот уже актуален для сегодня
+    // Снапшот уже актуален для сегодня. Показатель, которого в нём ещё
+    // нет (добавлен в обновлении посреди дня), дописываем текущим
+    // значением: иначе «за сегодня» показало бы у всех всю историю.
+    let filled = false;
+    const all: Record<string, User> = player.users();
+    for (const id of Object.keys(stored.snapshot)) {
+      const row = stored.snapshot[id];
+      const p = all[id];
+      if (!row || !p) continue;
+      for (const [key, fn] of Object.entries(GETTERS)) {
+        if (!(key in row)) { row[key] = fn(p); filled = true; }
+      }
+    }
+    if (filled) db.save('dailyFame');
     return stored.snapshot;
   }
 
