@@ -337,7 +337,7 @@ async function renderGroupScreen(c, kind) {
             <p class="muted small">Гербы и жетоны используются для улучшения построек легиона.</p>
             <div class="kv mt"><span class="k">Гербы <span class="ic-crest"></span></span><span class="v">${UI.fmtNum(L.treasuryEars || 0)}</span></div>
             <div class="kv"><span class="k">Жетоны <span class="ic-token"></span></span><span class="v">${UI.fmtNum(L.treasuryTokens || 0)}</span></div>
-            <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.ears || 0)} <span class="ic-crest"></span>, ${UI.fmtNum(App.me.tokens || 0)} <span class="ic-token"></span>):</p>
+            <p class="muted small mt">Внести из инвентаря (у вас: ${UI.fmtNum(App.me.crests != null ? App.me.crests : (App.me.ears || 0))} <span class="ic-crest"></span>, ${UI.fmtNum(App.me.tokens || 0)} <span class="ic-token"></span>):</p>
             <div class="field-row mt">
               <input type="number" min="1" placeholder="Гербов" id="dep-ears">
               <input type="number" min="1" placeholder="Жетонов" id="dep-tokens">
@@ -1925,6 +1925,22 @@ App.screens.notifications = async (c) => {
         <div class="kv"><span class="k">Кто</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)}</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
         <p class="small mt" style="color:var(--money)"><span class="ic-token"></span> Проник в штаб, но герб не тронул — заключил перемирие.</p>`;
+    } else if (n.kind === 'alliance_invite' || n.kind === 'legion_invite') {
+      // Приглашение: от кого и куда идти. До 275 приглашения в ЛЕГИОН
+      // приходили с типом alliance_invite и текстом без отправителя — их
+      // узнаём по тексту без fromId и ведём тоже в легион.
+      const oldGroup = n.kind === 'alliance_invite' && !p.fromId && p.text;
+      const toLegion = n.kind === 'legion_invite' || oldGroup;
+      const from = p.fromName || (oldGroup ? (/\(([^)]+)\)/.exec(p.text) || [])[1] : '');
+      const group = p.groupName || (oldGroup ? (/«([^»]+)»/.exec(p.text) || [])[1] : '');
+      body = `
+        ${from ? `<div class="kv"><span class="k">От кого</span><span class="v name"${p.fromId ? ` style="cursor:pointer" onclick="App.go('profile/${UI.esc(p.fromId)}')"` : ''}>${UI.esc(from)}</span></div>` : ''}
+        ${toLegion && group ? `<div class="kv"><span class="k">Легион</span><span class="v">${UI.esc(group)}</span></div>` : ''}
+        <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
+        <p class="muted small mt">${toLegion
+          ? 'Приглашение ждёт в разделе «Легион».'
+          : 'Приглашение в личный альянс действует час — принять его можно в разделе «Альянс».'}</p>
+        <button class="btn btn-inline mt" onclick="App.go('${toLegion ? 'legion' : 'alliance'}')">${toLegion ? '🎖 Открыть легион' : '🤝 Открыть альянс'}</button>`;
     } else {
       body = `<p class="muted small mt">${when}</p>`;
     }
@@ -1987,11 +2003,19 @@ App.screens.reinforcements = async (c) => {
 
     ${d.active.length ? `
       <div class="card">
-        <div class="name">🛡 Вам помогают</div>
+        <div class="name">🛡 Вам прислали подкрепление</div>
+        <p class="muted small">Ответьте тем же прямо отсюда — искать союзника в общем списке не нужно.</p>
         ${d.active.map((r) => `
           <div class="list-row">
-            <div class="grow"><span class="name" style="cursor:pointer" onclick="App.go('profile/${r.fromId}')">${UI.esc(r.fromName)}</span></div>
-            <span class="muted small">ещё ${r.expiresInMin > 60 ? Math.round(r.expiresInMin / 60) + ' ч' : r.expiresInMin + ' мин'}</span>
+            <div class="grow">
+              <span class="name" style="cursor:pointer" onclick="App.go('profile/${r.fromId}')">${r.flag ? App._flagImg(r.flag) + ' ' : ''}${UI.esc(r.fromName)}</span>
+              <div class="muted small">${r.fromLevel ? 'Ур. ' + r.fromLevel + ' · ' : ''}действует ещё ${r.expiresInMin > 60 ? Math.round(r.expiresInMin / 60) + ' ч' : r.expiresInMin + ' мин'}</div>
+            </div>
+            ${r.canReply
+              ? `<button class="btn btn-orange btn-inline" data-reinf="${UI.esc(r.fromId)}">↩ Ответить</button>`
+              : (r.replied
+                ? '<span class="muted small">✅ вы тоже помогаете</span>'
+                : `<span class="muted small" title="${UI.esc(r.replyReason)}">${UI.esc(r.replyReason)}</span>`)}
           </div>`).join('')}
       </div>` : ''}
 

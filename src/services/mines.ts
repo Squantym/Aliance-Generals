@@ -11,10 +11,12 @@
 //   4. Золото — ДВА независимых броска: «найти» (шанс по времени) и, если
 //      нашли, «добыть» (60-90% по времени). Деньги дают ВСЕГДА; если золото
 //      не получено — денег в 2-5 раз больше.
-//   5. Террорист нападает с шансом 50% (в середине или в конце спуска). Это
+//   5. Террористы: до 3 попыток за спуск, каждая с шансом 50%, в случайные
+//      моменты и не чаще раза в 20 минут (terrorSchedule). Каждое — это
 //      реальный бой (HP террориста = половина HP игрока; тратятся боеприпасы
 //      и энергия из текущих запасов). Отбил — золото цело + жетоны и деньги.
-//      Не отбил за 10 мин или проиграл — золото и деньги за спуск сгорают.
+//      Не отбил за 30 мин или проиграл — золото и деньги за спуск сгорают,
+//      и больше в этот спуск не нападают.
 //   6. Обвал по достижении 30 спусков ИЛИ истощении запаса. Авто-расчистка
 //      24 часа, затем перестройка шахты за деньги (участок остаётся).
 // ===================================================================
@@ -178,6 +180,52 @@ function rebuild(user: User, plotId: string, notices: Notices) {
   return build(user, plotId, notices);
 }
 
+// ---------- Нападения террористов ----------
+// До TERRORIST_MAX_ATTACKS попыток за спуск, у каждой свой бросок шанса.
+// Моменты случайные, но между соседними не меньше TERRORIST_MIN_GAP_MS:
+// сначала раскладываем попытки по свободному отрезку, потом разносим на
+// интервал. Первая минута спуска спокойная — нападение в момент нажатия
+// «Спуститься» выглядело бы как ошибка.
+const TERROR_QUIET_MS = 60 * 1000;
+function terrorSchedule(start: number, end: number): number[] {
+  const span = end - start - TERROR_QUIET_MS;
+  if (span < 0) return [];
+  const gap = M.TERRORIST_MIN_GAP_MS;
+  const slots = Math.min(M.TERRORIST_MAX_ATTACKS, Math.floor(span / gap) + 1);
+  // Сначала все броски шанса, потом моменты — так порядок случайностей
+  // не зависит от того, сколько попыток выпало
+  const hit: boolean[] = [];
+  for (let i = 0; i < slots; i++) hit.push(Math.random() < M.TERRORIST_CHANCE);
+  const free = span - (slots - 1) * gap;
+  const offsets: number[] = [];
+  for (let i = 0; i < slots; i++) offsets.push(Math.random() * free);
+  offsets.sort((a, b) => a - b);
+  const times: number[] = [];
+  for (let i = 0; i < slots; i++) {
+    if (hit[i]) times.push(Math.round(start + TERROR_QUIET_MS + offsets[i] + i * gap));
+  }
+  return times;
+}
+
+function newTerror(at: number) {
+  return { at, deadline: at + M.TERRORIST_REACT_MS, repelled: false, resolved: false, failed: false, notified: false };
+}
+
+// Отбили нападение — выпускаем следующее из очереди. На отражение даётся
+// 30 минут, а интервал — 20, поэтому следующее могло «наступить», пока
+// игрок разбирался с предыдущим. Тогда оно сдвигается: не раньше чем
+// через 20 минут после отражения. Не влезает в спуск — его уже не будет.
+// После провала следующих нападений нет: спуск уже потерян.
+function nextTerror(mine: any, now: number): void {
+  const t = mine.terror;
+  if (!t || !t.resolved || t.failed) return;
+  const queue: number[] = Array.isArray(mine.terrorQueue) ? mine.terrorQueue : [];
+  if (!queue.length) return;
+  const at = Math.max(queue.shift() as number, (t.resolvedAt || now) + M.TERRORIST_MIN_GAP_MS);
+  if (at > mine.descentEndsAt) { queue.length = 0; return; }
+  mine.terror = newTerror(at);
+}
+
 // ---------- Спуск ----------
 function descend(user: User, plotId: string, minutes: number, notices: Notices) {
   resetIfOldSchema(user);
@@ -210,13 +258,13 @@ function descend(user: User, plotId: string, minutes: number, notices: Notices) 
   mine.descentEndsAt = now + minutes * 60 * 1000;
   mine.pendingResult = null;
 
-  // Бросок нападения террориста (50%). Время атаки — середина или конец спуска.
-  mine.terror = null;
-  if (Math.random() < M.TERRORIST_CHANCE) {
-    const atEnd = Math.random() < 0.5;
-    const at = atEnd ? mine.descentEndsAt : now + (minutes * 60 * 1000) / 2;
-    mine.terror = { at, deadline: at + M.TERRORIST_REACT_MS, timing: atEnd ? 'end' : 'mid', repelled: false, resolved: false, failed: false, notified: false };
-  }
+  // Нападения террористов: расписание на весь спуск (см. terrorSchedule).
+  // Первое — сразу в mine.terror, остальные ждут в очереди и выходят по
+  // одному, когда отбито предыдущее.
+  const plan = terrorSchedule(now, mine.descentEndsAt);
+  mine.terror = plan.length ? newTerror(plan[0]) : null;
+  mine.terrorQueue = plan.slice(1);
+  mine.terrorsRepelled = 0;
 
   db.markUser(user.id);
   notices.push(`⬇ Спуск на ${minutes} мин. начался. Осталось спусков: ${mine.descentsLeft}/${M.MAX_DESCENTS}.`);
@@ -257,6 +305,7 @@ function finalizeDescent(user: User, mine: any): void {
 
   mine.pendingResult = {
     ruined: !!ruined,
+    terrorsRepelled: mine.terrorsRepelled || 0,
     found, foundGold,
     extractChancePct: Math.round(row.extract * 100),
     extracted, goldGained, money,
@@ -266,6 +315,8 @@ function finalizeDescent(user: User, mine: any): void {
   // Завершаем спуск
   mine.status = 'idle';
   mine.terror = null;
+  mine.terrorQueue = [];
+  mine.terrorsRepelled = 0;
   mine.descentMinutes = 0;
   mine.descentEndsAt = 0;
 
@@ -286,6 +337,8 @@ function refreshAll(user: User): void {
     if (mine.status === 'building' && mine.buildFinishesAt <= now) { mine.status = 'idle'; changed = true; }
 
     if (mine.status === 'descending') {
+      // Следующее нападение из очереди выпускает сам бой (fightTerrorists):
+      // отбитое без боя не бывает, поэтому здесь очередь не трогаем
       const t = mine.terror;
       // Активация нападения + уведомление сверху (один раз).
       // ВАЖНО: шлём уведомление ТОЛЬКО если дедлайн ещё не прошёл — иначе при
@@ -367,13 +420,18 @@ function fightTerrorists(user: User, plotId: string, notices: Notices) {
 
   const res = terroristFight(user);
   if (res.win) {
-    t.repelled = true; t.resolved = true; t.failed = false;
+    t.repelled = true; t.resolved = true; t.failed = false; t.resolvedAt = Date.now();
+    mine.terrorsRepelled = (mine.terrorsRepelled || 0) + 1;
     const tokens = u.rnd(M.TERRORIST_REWARD_TOKENS_MIN, M.TERRORIST_REWARD_TOKENS_MAX);
     const money = Math.round(config.maxUnitPriceAtLevel(user.level) * u.rnd(M.TERRORIST_REWARD_UNITS_MIN, M.TERRORIST_REWARD_UNITS_MAX));
     user.tokens = (user.tokens || 0) + tokens;
     user.dollars += money;
-    notices.push(`⚔ Атака отбита! Потеряно HP: ${res.hpLost}. Награда: 🎫 ${tokens} жетон(а) и $${u.fmt(money)}. Золото спуска в безопасности.`);
-    // Если время спуска уже вышло — сразу подводим итог
+    nextTerror(mine, Date.now());
+    const more = mine.terror !== t;
+    notices.push(`⚔ Атака отбита! Потеряно HP: ${res.hpLost}. Награда: 🎫 ${tokens} жетон(а) и ${u.fmt(money)}. `
+      + (more ? 'Будьте начеку: террористы могут напасть снова.' : 'Золото спуска в безопасности.'));
+    // Если время спуска уже вышло — сразу подводим итог. Очередь к этому
+    // моменту пуста: нападение позже конца спуска nextTerror отменяет.
     if (Date.now() >= mine.descentEndsAt) finalizeDescent(user, mine);
   } else {
     t.resolved = true; t.failed = true;

@@ -103,6 +103,34 @@ async function api(p, tok) {
   const byGold = (await q('sort=gold')).rows;
   ok(byGold[0].inviter.name === 'Вербовщик', 'сортировка по полученному золоту');
 
+  console.log('\n[2б] Адреса и устройства');
+  const acc = (ips, devs, extra) => Object.assign({
+    ips: Object.fromEntries(ips.map((ip) => [ip, { count: 1, firstAt: now, lastAt: now }])),
+    devices: Object.fromEntries(devs.map((d) => [d.key, { key: d.key, label: d.label, fp: d.fp || '', dids: d.dids || [], lastAt: now }])),
+    regIp: ips[0], lastIp: ips[ips.length - 1], regDevice: devs[0] && devs[0].label, lastDevice: devs[0] && devs[0].label, lastAt: now,
+  }, extra || {});
+  boss.access = acc(['5.5.5.5', '10.0.0.7'], [{ key: 'k-boss', label: 'Samsung SM-A536E, Chrome', fp: 'FP-BOSS', dids: ['did-boss-1'] }]);
+  // Друг1 — тот же телефон (по метке браузера) и тот же адрес
+  by('Друг1').access = acc(['8.8.4.4', '5.5.5.5'], [{ key: 'k-f1', label: 'Samsung SM-A536E, Chrome', fp: 'FP-OTHER', dids: ['did-boss-1'] }]);
+  // Друг2 — общий только ЛОКАЛЬНЫЙ адрес и голая строка браузера без отпечатка: это не улики
+  by('Друг2').access = acc(['10.0.0.7', '9.9.9.9'], [{ key: 'k-boss', label: 'Samsung SM-A536E, Chrome', fp: '' }]);
+  // Друг3 — ничего общего
+  by('Друг3').access = acc(['1.2.3.4'], [{ key: 'k-f3', label: 'iPhone, Safari', fp: 'FP-3' }]);
+  const m = await q('');
+  const mb = m.rows.find((x) => x.inviter.name === 'Вербовщик');
+  const F = (n) => mb.friends.find((f) => f.name === n);
+  ok(mb.inviter.access && mb.inviter.access.regIp === '5.5.5.5' && /SM-A536E/.test(mb.inviter.access.lastDevice), 'у пригласившего — адрес и устройство');
+  ok(F('Друг1').access.lastIp === '5.5.5.5' && F('Друг1').access.regIp === '8.8.4.4' && F('Друг1').access.ipCount === 2, 'у приглашённого — адрес регистрации и последнего входа');
+  ok(F('Друг1').matched && F('Друг1').same.ips.join() === '5.5.5.5' && /SM-A536E/.test(F('Друг1').same.devices[0]), 'общий адрес и общее устройство найдены');
+  ok(!F('Друг2').matched, 'локальный адрес и строка браузера без отпечатка — не совпадение');
+  ok(!F('Друг3').matched && F('Друг3').access.devCount === 1, 'без общего — не отмечен');
+  ok(mb.matched === 1 && m.totals.matched === 1, 'совпадений: 1 у пригласившего и 1 всего');
+  const onlyM = await q('match=1');
+  ok(onlyM.rows.length === 1 && onlyM.rows[0].inviter.name === 'Вербовщик', 'фильтр «только с совпадениями»');
+  ok((await q('sort=matched')).rows[0].inviter.name === 'Вербовщик', 'сортировка по совпадениям');
+  const newbie = m.rows.find((x) => x.inviter.name === 'Второй').friends[0];
+  ok(newbie.access.regIp === '10.2.0.9' && newbie.matched === false, 'адрес с регистрации виден; у пригласившего без входов совпадений нет');
+
   console.log('\n[3] Доступ');
   ok((await api('/api/admin/invites', tMod)).status === 200, 'сотруднику с зоной «Игроки» — можно');
   ok((await api('/api/admin/invites', tSup)).status >= 400, 'без зоны «Игроки» — нельзя');

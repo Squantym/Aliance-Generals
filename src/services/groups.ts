@@ -294,9 +294,17 @@ function invite(user: User, kind: string, targetId: string, notices: Notices) {
   g.inviteLog.push(Date.now());
   db.save(def.coll);
 
-  notifications.push(target.id, 'alliance_invite', 'Приглашение в альянс',
-    { text: `Лидер «${g.name}» (${user.name}) приглашает вас присоединиться к его альянсу. ` +
-      `Откройте раздел «Альянс» и примите или отклоните приглашение.` });
+  // Вид группы — в тексте и в типе уведомления. Раньше здесь всегда
+  // стояло «Приглашение в альянс… откройте раздел „Альянс“», и игрок,
+  // позванный в ЛЕГИОН, искал приглашение в личном альянсе — и не
+  // находил (жалоба 16.09.2026). Тип отдельный: по нему пуш ведёт в
+  // нужный раздел.
+  const where = def.label.toLowerCase();
+  notifications.push(target.id, kind === 'legion' ? 'legion_invite' : 'alliance_invite',
+    `${kind === 'legion' ? '🎖' : '🤝'} ${user.name} приглашает вас в ${kind === 'legion' ? 'легион' : 'альянс'} «${g.name}»`,
+    { fromId: user.id, fromName: user.name, groupId: g.id, groupName: g.name, kind,
+      text: `Лидер «${g.name}» (${user.name}) приглашает вас в ${where === 'легион' ? 'свой легион' : 'свой альянс'}. ` +
+        `Откройте раздел «${def.label}» и примите или отклоните приглашение.` });
   notices.push(`Приглашение игроку ${target.name} отправлено. Осталось приглашений: ${limit - used - 1}/час`);
 }
 

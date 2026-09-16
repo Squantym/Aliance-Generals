@@ -122,6 +122,42 @@ function adminView(actor: User) {
   };
 }
 
+// Адреса и устройства одного игрока — в виде множеств для сравнения.
+// Правила «что считать уликой» те же, что у «Мультоводов»: адрес только
+// публичный, устройство — только с отпечатком или меткой браузера
+// (голая строка браузера совпадает у тысяч людей).
+function fingerprints(p: any) {
+  const a = (p && p.access) || {};
+  const ips = new Set<string>();
+  for (const ip of Object.keys(a.ips || {})) if (u.isPublicIp(ip)) ips.add(ip);
+  const devs = new Map<string, string>();          // ключ улики → название устройства
+  for (const [key, d] of Object.entries<any>(a.devices || {})) {
+    if (!d) continue;
+    if (d.fp) { devs.set('key:' + key, d.label || ''); devs.set('fp:' + d.fp, d.label || ''); }
+    for (const did of (Array.isArray(d.dids) ? d.dids : [])) devs.set('did:' + did, d.label || '');
+  }
+  return {
+    ips, devs,
+    regIp: String(a.regIp || ''), lastIp: String(a.lastIp || ''),
+    regDevice: String(a.regDevice || ''), lastDevice: String(a.lastDevice || ''),
+    lastAt: Number(a.lastAt || 0),
+    ipCount: Object.keys(a.ips || {}).length, devCount: Object.keys(a.devices || {}).length,
+  };
+}
+
+// Что общего у приглашённого с пригласившим
+function overlap(boss: any, friend: any) {
+  const ips = [...friend.ips].filter((ip: string) => boss.ips.has(ip));
+  const devLabels = new Set<string>();
+  for (const [k, label] of friend.devs) if (boss.devs.has(k)) devLabels.add(label || 'устройство');
+  return { ips: ips.slice(0, 5), devices: [...devLabels].slice(0, 5) };
+}
+
+const accessView = (f: any) => ({
+  regIp: f.regIp, lastIp: f.lastIp, regDevice: f.regDevice, lastDevice: f.lastDevice,
+  lastAt: f.lastAt, ipCount: f.ipCount, devCount: f.devCount,
+});
+
 // ── Панель: кто кого пригласил ─────────────────────────────────────
 // Раздел «Приглашения» (#/invites). Всё собирается из живых полей
 // игроков: referredBy у приглашённого, refEarnings у пригласившего.
@@ -137,6 +173,7 @@ function adminInvites(actor: User, q: any) {
   const now = Date.now();
   const find = String((q && q.q) || '').trim().toLowerCase();
   const sort = String((q && q.sort) || 'count');
+  const onlyMatched = String((q && q.match) || '') === '1';
   const cfg = config.REFERRAL;
 
   const person = (p: any) => ({
@@ -152,16 +189,25 @@ function adminInvites(actor: User, q: any) {
     (byInviter[p.referredBy] = byInviter[p.referredBy] || []).push(p);
   }
 
-  let invitedTotal = 0, reached50Total = 0, activeTotal = 0, shareTotal = 0;
+  let invitedTotal = 0, reached50Total = 0, activeTotal = 0, shareTotal = 0, matchedTotal = 0;
   const rows = Object.keys(byInviter).map((bossId) => {
     const boss = all[bossId];
+    const bossFp = boss ? fingerprints(boss) : null;
     const friends = byInviter[bossId]
-      .map((p: any) => ({
-        ...person(p),
-        joinedAt: Number(p.createdAt || 0),
-        reached50: !!p.refLevel50Paid,
-        goldToInviter: Number(p.refGoldGiven || 0),
-      }))
+      .map((p: any) => {
+        const fp = fingerprints(p);
+        const same = bossFp ? overlap(bossFp, fp) : { ips: [], devices: [] };
+        return {
+          ...person(p),
+          joinedAt: Number(p.createdAt || 0),
+          reached50: !!p.refLevel50Paid,
+          goldToInviter: Number(p.refGoldGiven || 0),
+          access: accessView(fp),
+          // Совпадения с пригласившим: общий адрес или общее устройство
+          same,
+          matched: same.ips.length > 0 || same.devices.length > 0,
+        };
+      })
       .sort((a, b) => b.joinedAt - a.joinedAt);
     const reached50 = friends.filter((f) => f.reached50).length;
     const active = friends.filter((f) => f.active).length;
@@ -170,16 +216,20 @@ function adminInvites(actor: User, q: any) {
     reached50Total += reached50;
     activeTotal += active;
     shareTotal += share;
+    const matched = friends.filter((f) => f.matched).length;
+    matchedTotal += matched;
     let pct = cfg.purchaseSharePct;
     if (boss) { try { pct = require('./referralQuests').sharePctFor(boss); } catch (e) {} }
     return {
       // Пригласивший мог быть удалён — связь у приглашённых осталась
-      inviter: boss ? { ...person(boss), refCode: String(boss.refCode || '') } : { id: bossId, name: '(удалён)', level: 0, lastSeen: 0, banned: false, active: false, refCode: '' },
+      inviter: boss
+        ? { ...person(boss), refCode: String(boss.refCode || ''), access: accessView(bossFp) }
+        : { id: bossId, name: '(удалён)', level: 0, lastSeen: 0, banned: false, active: false, refCode: '', access: null },
       count: friends.length,
       // Старый счётчик: считался при вводе кода и не уменьшается, когда
       // приглашённого удаляют. Показываем, если разошёлся с живым списком.
       counter: boss ? Number(boss.refCount || 0) : 0,
-      reached50, active,
+      reached50, active, matched,
       sharePct: pct,
       goldFromPurchases: share,
       goldForLevel50: reached50 * cfg.level50Reward,
@@ -197,8 +247,10 @@ function adminInvites(actor: User, q: any) {
     level50: (a, b) => b.reached50 - a.reached50 || b.count - a.count,
     gold: (a, b) => (b.goldFromPurchases + b.goldForLevel50) - (a.goldFromPurchases + a.goldForLevel50),
     recent: (a, b) => b.lastJoinedAt - a.lastJoinedAt,
+    matched: (a, b) => b.matched - a.matched || b.count - a.count,
   };
-  const list = rows.filter(matches).sort(SORTS[sort] || SORTS.count);
+  const list = rows.filter((r) => matches(r) && (!onlyMatched || r.matched > 0))
+    .sort(SORTS[sort] || SORTS.count);
 
   return {
     totals: {
@@ -209,6 +261,7 @@ function adminInvites(actor: User, q: any) {
       goldFromPurchases: shareTotal,
       goldForLevel50: reached50Total * cfg.level50Reward,
       goldToNewbies: invitedTotal * cfg.inviteeGold,
+      matched: matchedTotal,
     },
     rules: { inviteeGold: cfg.inviteeGold, level50Reward: cfg.level50Reward, level50Tokens: cfg.level50Tokens, sharePct: cfg.purchaseSharePct },
     rows: list.slice(0, 300),

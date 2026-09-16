@@ -34,7 +34,7 @@ const PUSH_KINDS = new Set([
   'rocket_incoming', 'rocket_hit', 'rocket_intercepted', 'rocket_shot_down', 'mine_terror',
   'auction_outbid', 'auction_won',
   'admin_gift', 'sanction_executed', 'debuff_applied',
-  'alliance_invite', 'group_join_request', 'group_invite_accepted',
+  'alliance_invite', 'legion_invite', 'group_join_request', 'group_invite_accepted',
 ]);
 
 // Куда вести игрока по клику на уведомление
@@ -42,6 +42,7 @@ const KIND_URL: Record<string, string> = {
   legion_challenge: '/#legion', legion_war: '/#legion', legion_battle_start: '/#legion',
   legion_battle_active: '/#legion', legion_battle_result: '/#legion',
   group_join_request: '/#legion', group_invite_accepted: '/#legion', alliance_invite: '/#alliance',
+  legion_invite: '/#legion',
   attack_lost: '/#war', attack_defended: '/#war',
   breach_crest: '/#war', breach_escape: '/#war', breach_truce: '/#war',
   rocket_incoming: '/#war', rocket_hit: '/#war', rocket_intercepted: '/#war', rocket_shot_down: '/#war',

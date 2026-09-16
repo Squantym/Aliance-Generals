@@ -72,6 +72,22 @@ function perDayFor(user: any): number {
   try { return require('./vip').reinforcePerDay(user); } catch (e) { return R.PER_DAY; }
 }
 
+// Можно ли отправить подкрепление этому игроку прямо сейчас. Пустая
+// строка — можно, иначе причина. Одна проверка на список союзников и на
+// кнопку «Ответить»: разойдись они, кнопка обещала бы то, в чём send()
+// потом откажет.
+function sendBlock(user: User, ally: User, sent: any[]): { reason: string; mine: boolean; theirActive: number } {
+  const theirActive = prune(ally);
+  const mine = theirActive.some((r: any) => r.fromId === user.id);
+  let reason = '';
+  if (!pa.areAllies(user, ally)) reason = 'не во взаимном альянсе';
+  else if (mine) reason = 'ваше подкрепление уже действует';
+  else if (sent.some((x: any) => x.toId === ally.id)) reason = 'уже отправляли сегодня';
+  else if (theirActive.length >= R.MAX_ACTIVE) reason = 'у него все слоты заняты';
+  else if (sent.length >= perDayFor(user)) reason = 'ваш дневной лимит исчерпан';
+  return { reason, mine, theirActive: theirActive.length };
+}
+
 function view(user: User) {
   const active = prune(user);
   const sent = sentToday(user);
@@ -82,21 +98,11 @@ function view(user: User) {
   const allies = roster.map((m: any) => {
     const ally = all[m.id];
     if (!ally) return null;
-    const mutual = pa.areAllies(user, ally);
-    const alreadyToday = sent.some((x: any) => x.toId === m.id);
-    const theirActive = prune(ally);
-    const theirSlots = theirActive.length >= R.MAX_ACTIVE;
-    const alreadyMine = theirActive.some((r: any) => r.fromId === user.id);
-    let reason = '';
-    if (!mutual) reason = 'не во взаимном альянсе';
-    else if (alreadyMine) reason = 'ваше подкрепление уже действует';
-    else if (alreadyToday) reason = 'уже отправляли сегодня';
-    else if (theirSlots) reason = 'у него все слоты заняты';
-    else if (sent.length >= perDayFor(user)) reason = 'ваш дневной лимит исчерпан';
+    const b = sendBlock(user, ally, sent);
     return {
       id: ally.id, name: ally.name, level: ally.level, flag: player.flag(ally),
-      canSend: !reason, reason,
-      theirActive: theirActive.length, theirMax: R.MAX_ACTIVE,
+      canSend: !b.reason, reason: b.reason,
+      theirActive: b.theirActive, theirMax: R.MAX_ACTIVE,
     };
   }).filter(Boolean);
 
@@ -105,11 +111,22 @@ function view(user: User) {
     perDay: perDayFor(user),
     lifetimeH: R.LIFETIME_H,
     bonusPctEach: R.BONUS_PCT,
-    // Мои активные подкрепления (кто прислал)
-    active: active.map((r: any) => ({
-      fromId: r.fromId, fromName: r.fromName,
-      expiresInMin: Math.max(0, Math.round((r.expiresAt - Date.now()) / 60000)),
-    })),
+    // Мои активные подкрепления (кто прислал) — с ответной кнопкой: чтобы
+    // отблагодарить, не нужно искать человека во всём списке альянса
+    active: active
+      .slice()
+      .sort((a: any, b: any) => (b.at || 0) - (a.at || 0))
+      .map((r: any) => {
+        const from = all[r.fromId];
+        const b = from ? sendBlock(user, from, sent) : { reason: 'игрок не найден', mine: false, theirActive: 0 };
+        return {
+          fromId: r.fromId, fromName: from ? from.name : r.fromName,
+          fromLevel: from ? from.level : 0, flag: from ? player.flag(from) : '',
+          receivedAt: r.at || 0,
+          expiresInMin: Math.max(0, Math.round((r.expiresAt - Date.now()) / 60000)),
+          canReply: !b.reason, replyReason: b.reason, replied: b.mine,
+        };
+      }),
     activeCount: active.length,
     totalBonusPct: bonusPct(user),
     sentToday: sent.length,

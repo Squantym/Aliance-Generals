@@ -381,7 +381,8 @@ App._renderMines = async (c, tabsHtml) => {
         : `<p class="muted">Золото в этот раз не нашли.</p>`;
       inner = `${goldLine}
         <p style="color:var(--money)"><span class="ic-dollar"></span> Деньги: +${UI.fmtNum(r.money)}${r.goldGained <= 0 ? ' <span class="muted small">(повышенные)</span>' : ''}</p>
-        ${!r.found || !r.extracted ? `<p class="muted small">Шанс добычи на этом времени: ${r.extractChancePct}%.</p>` : ''}`;
+        ${!r.found || !r.extracted ? `<p class="muted small">Шанс добычи на этом времени: ${r.extractChancePct}%.</p>` : ''}
+        ${r.terrorsRepelled ? `<p class="muted small">⚔ Отбито нападений террористов: ${r.terrorsRepelled}.</p>` : ''}`;
     }
     return `<div class="card" style="border-color:var(--gold);margin-top:8px">
       <div style="font-weight:bold;margin-bottom:4px">📋 Итог спуска (${r.minutes} мин.)</div>
@@ -453,7 +454,7 @@ App._renderMines = async (c, tabsHtml) => {
     ${tabsHtml}
     ${UI.saleBanner(m.discount)}
     <div class="card">
-      <p class="muted small">Сначала купите <b>участок</b> за золото, затем постройте на нём <b>шахту</b> за деньги (3 суток). В шахте 200–300 <span class="ic-gold"></span> и 30 спусков. Спуск 10–90 мин (не более 90 мин/сутки на каждую шахту). Золото не гарантировано (два броска: найти и добыть), но деньги дают всегда. С шансом 50% нападают террористы — отбивайте атаку в бою, иначе спуск сгорит.</p>
+      <p class="muted small">Сначала купите <b>участок</b> за золото, затем постройте на нём <b>шахту</b> за деньги (3 суток). В шахте 200–300 <span class="ic-gold"></span> и 30 спусков. Спуск 10–90 мин (не более 90 мин/сутки на каждую шахту). Золото не гарантировано (два броска: найти и добыть), но деньги дают всегда. За спуск террористы могут напасть до 3 раз (каждый раз с шансом 50%, не чаще раза в 20 минут) — отбивайте каждую атаку в бою, иначе спуск сгорит.</p>
     </div>
     ${m.mines.length === 0 ? '<div class="card center muted">У вас пока нет участков. Купите первый ниже.</div>' : ''}
     ${m.mines.map(mineCard).join('')}
