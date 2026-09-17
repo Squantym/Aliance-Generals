@@ -1828,6 +1828,10 @@ proxy_set_header Host $host;</pre>
         <div class="name">🌍 Выдать всем игрокам</div>
         <p class="muted small mt">Ресурсы получат сразу все зарегистрированные игроки.</p>
         ${Admin._grantFields('all')}
+        <details class="grant-more" id="g-items-wrap">
+          <summary>🎁 VIP, контейнеры, наёмники, техника, готовый набор</summary>
+          <div id="g-items" class="mt"><p class="muted small">Загрузка…</p></div>
+        </details>
         <button class="btn btn-orange mt" id="grant-all-go" style="width:100%">💥 Выдать всем</button>
       </div>
       <div class="card" style="margin-top:16px;border-color:var(--red)">
@@ -1878,6 +1882,13 @@ proxy_set_header Host $host;</pre>
         <div id="email-test-result" class="small mt"></div>
       </div>`;
     document.getElementById('grant-all-go').onclick = () => Admin.submitGrantAll();
+    // Позиции подгружаем при раскрытии — как в карточке игрока
+    Admin._grantItems = [];
+    Admin._grantRead = null;
+    const massItems = document.getElementById('g-items-wrap');
+    if (massItems) massItems.addEventListener('toggle', () => {
+      if (massItems.open) Admin.renderGrantItems();
+    });
     const wipe = async (what, label) => {
       if (!await Admin.danger({ title: label, word: 'СТЕРЕТЬ',
         what: 'Группы стираются целиком: состав, звания, казна, история боёв. Игроки создают их заново с нуля.',
@@ -2968,6 +2979,10 @@ proxy_set_header Host $host;</pre>
 
   renderGrantForm(p, target) {
     const box = target || document.getElementById('ad-grant-wrap');
+    // Новая карточка — новый список позиций: иначе выданное прошлому
+    // игроку уехало бы следующему
+    Admin._grantItems = [];
+    Admin._grantRead = null;
     box.innerHTML = `
       <div class="grant-panel">
         <div class="grant-head">
@@ -3003,6 +3018,11 @@ proxy_set_header Host $host;</pre>
             <label><span><span class="ic-ammo"></span> Боеприпасы</span><input type="number" id="g-ammo" placeholder="—"></label>
             <label><span><span class="g-ic-txt">Б</span> Банк <span class="muted">(списание)</span></span><input type="number" id="g-bank" placeholder="0"></label>
           </div>
+        </details>
+
+        <details class="grant-more" id="g-items-wrap">
+          <summary>🎁 VIP, контейнеры, наёмники, техника, готовый набор</summary>
+          <div id="g-items" class="mt"><p class="muted small">Загрузка…</p></div>
         </details>
 
         <details class="grant-more" id="g-dope-wrap">
@@ -3043,6 +3063,12 @@ proxy_set_header Host $host;</pre>
         if (el) el.value = String((Number(el.value) || 0) + Number(amount));
       };
     });
+    // Позиции (VIP, контейнеры, наёмники, техника, наборы) подгружаем
+    // при раскрытии: список товаров и наборов нужен не в каждой выдаче
+    const itemsWrap = document.getElementById('g-items-wrap');
+    if (itemsWrap) itemsWrap.addEventListener('toggle', () => {
+      if (itemsWrap.open) Admin.renderGrantItems();
+    });
     // Допинг подгружаем только когда раздел раскрыли: список эффектов
     // и склад нужны редко, а запрос к серверу не бесплатный
     const dopeWrap = document.getElementById('g-dope-wrap');
@@ -3063,11 +3089,16 @@ proxy_set_header Host $host;</pre>
     const gv = id => (document.getElementById(id) || {}).value || '';
     document.getElementById('g-rw-go').onclick = async () => {
       try {
+        // Письмом уходит то же, что и сразу: числа и позиции. Набор
+        // из магазина письмо тоже несёт — его состав разворачивается
+        // в позиции при отправке.
+        const pay = Admin.grantItemsPayload({ expandOffer: true });
         await API.post('/api/admin/rewards/grant', {
           userId: p.id,
           title: gv('g-rw-title'), reason: gv('g-rw-reason'),
           dollars: gv('g-dollars'), gold: gv('g-gold'), xp: gv('g-xp'),
           skillPoints: gv('g-skill'), ears: gv('g-ears'), tokens: gv('g-tokens'),
+          items: pay.items || [],
         });
         UI.toast(`🎁 Награда-письмо отправлена игроку ${p.name}`);
         box.innerHTML = '';
@@ -3076,13 +3107,13 @@ proxy_set_header Host $host;</pre>
     document.getElementById('g-go').onclick = async () => {
       const v = id => (document.getElementById(id) || {}).value || '';
       try {
-        await API.post('/api/admin/grant', {
+        await API.post('/api/admin/grant', Object.assign({
           userId: p.id,
           dollars: v('g-dollars'), gold: v('g-gold'), xp: v('g-xp'),
           skillPoints: v('g-skill'), ears: v('g-ears'), tokens: v('g-tokens'),
           setLevel: v('g-level'), energy: v('g-energy'), health: v('g-health'), ammo: v('g-ammo'),
           giftNote: v('g-note'),
-        });
+        }, Admin.grantItemsPayload()));
         UI.toast(`✅ Выдано игроку ${p.name}`);
         box.innerHTML = '';
         Admin.loadPlayers();
@@ -3094,12 +3125,12 @@ proxy_set_header Host $host;</pre>
     if (quietBtn) quietBtn.onclick = async () => {
       const v = id => (document.getElementById(id) || {}).value || '';
       try {
-        await API.post('/api/admin/grant-quiet', {
+        await API.post('/api/admin/grant-quiet', Object.assign({
           userId: p.id,
           dollars: v('g-dollars'), gold: v('g-gold'), xp: v('g-xp'),
           skillPoints: v('g-skill'), ears: v('g-ears'), tokens: v('g-tokens'),
           setLevel: v('g-level'), energy: v('g-energy'), health: v('g-health'), ammo: v('g-ammo'),
-        });
+        }, Admin.grantItemsPayload()));
         box.innerHTML = '';
         Admin.loadPlayers();
       } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -3123,6 +3154,119 @@ proxy_set_header Host $host;</pre>
         Admin.loadPlayers();
       } catch(e) { UI.toast('⛔ ' + e.message); }
     };
+  },
+
+  // ── Позиции выдачи: VIP, контейнеры, наёмники, техника, наборы ───
+  // Числа в форме выдачи покрывают только деньги, золото и опыт. Всё
+  // остальное — подписку, контейнер чёрного рынка, наёмника, технику и
+  // готовый набор из магазина — владелец добирал вручную по другим
+  // разделам. Состав здесь тот же, что у наборов: один разбор на
+  // магазин, раздачи и выдачу (services/offers.ts).
+  _grantItems: [],
+  _grantPalette: null,
+  _grantOffers: null,
+
+  async renderGrantItems() {
+    const box = document.getElementById('g-items');
+    if (!box) return;
+    if (!Admin._grantPalette) {
+      try {
+        const d = await API.get('/api/admin/offers');
+        Admin._grantPalette = d.palette;
+        Admin._grantOffers = d.offers || [];
+      } catch (e) {
+        box.innerHTML = `<p class="muted small" style="color:var(--red)">${UI.esc(e.message)}</p>`;
+        return;
+      }
+    }
+    const pal = Admin._grantPalette;
+    const needsOf = (type) => (pal.types.find((t) => t.id === type) || {}).needs || 'qty';
+    const list = Admin._grantItems;
+    const row = (it, i) => {
+      const needs = needsOf(it.type);
+      const pick = needs.indexOf('id') === 0 || needs.indexOf('tier') === 0;
+      let options = '';
+      if (it.type === 'merc') options = pal.mercs.map((m) => `<option value="${m.id}"${m.id === it.id ? ' selected' : ''}>${UI.esc(m.name)}</option>`).join('');
+      if (it.type === 'container') options = pal.containers.map((x) => `<option value="${x.tier}"${x.tier === it.tier ? ' selected' : ''}>${UI.esc(x.name)}</option>`).join('');
+      if (it.type === 'unit') options = pal.units.map((x) => `<option value="${x.id}"${x.id === it.id ? ' selected' : ''}>${UI.esc(x.name)} (ур. ${x.unlock})</option>`).join('');
+      const days = needs.indexOf('days') >= 0;
+      return `
+        <div class="field-row mt gi-row" data-i="${i}">
+          <select class="gi-type" style="flex:1.2">
+            ${pal.types.map((t) => `<option value="${t.id}"${t.id === it.type ? ' selected' : ''}>${UI.esc(t.name)}</option>`).join('')}
+          </select>
+          ${pick ? `<select class="gi-pick" style="flex:1.6">${options}</select>` : ''}
+          <input type="number" class="gi-num" min="1" value="${days ? (it.days || 1) : (it.qty || 1)}"
+            style="width:100px" placeholder="${days ? 'дней' : 'кол-во'}">
+          <button class="btn btn-red btn-inline gi-del" data-i="${i}">✕</button>
+        </div>`;
+    };
+    const sets = (Admin._grantOffers || []);
+    box.innerHTML = `
+      <div>${list.map(row).join('') || '<p class="muted small">Позиций нет — добавьте, что выдать.</p>'}</div>
+      <button class="btn btn-inline mt" id="gi-add">➕ Добавить позицию</button>
+      <div class="field-row mt">
+        <span class="small muted" style="width:120px">Готовый набор</span>
+        <select id="gi-offer" style="flex:1">
+          <option value="">— не выдавать —</option>
+          ${sets.map((o) => `<option value="${o.id}">${UI.esc(o.emoji || '🎁')} ${UI.esc(o.title)} — ${(o.itemsText || []).map((t) => UI.esc(t)).join(', ')}</option>`).join('')}
+        </select>
+      </div>
+      <p class="muted small">Набор выдаётся целиком, тем же составом, что видит покупатель.
+        Деньги за него не списываются и в «продано» он не попадает.</p>`;
+
+    const readRows = () => {
+      box.querySelectorAll('.gi-row').forEach((r) => {
+        const i = Number(r.dataset.i);
+        const it = list[i]; if (!it) return;
+        it.type = r.querySelector('.gi-type').value;
+        const pickEl = r.querySelector('.gi-pick');
+        const num = Number(r.querySelector('.gi-num').value) || 1;
+        if (it.type === 'container') it.tier = pickEl ? Number(pickEl.value) : 1;
+        else if (pickEl) it.id = pickEl.value;
+        if (needsOf(it.type).indexOf('days') >= 0) { it.days = num; delete it.qty; }
+        else { it.qty = num; delete it.days; }
+      });
+    };
+    box.querySelectorAll('.gi-type').forEach((sel) => { sel.onchange = () => {
+      readRows();
+      const i = Number(sel.closest('.gi-row').dataset.i);
+      const t = sel.value;
+      // Тип сменился — чужие поля сбрасываем, иначе в выдаче остался бы
+      // наёмник с номером контейнера
+      list[i] = { type: t, qty: 1, days: 1 };
+      if (t === 'merc') list[i].id = (pal.mercs[0] || {}).id;
+      if (t === 'unit') list[i].id = (pal.units[0] || {}).id;
+      if (t === 'container') list[i].tier = (pal.containers[0] || {}).tier;
+      Admin.renderGrantItems();
+    }; });
+    box.querySelectorAll('.gi-del').forEach((b) => { b.onclick = () => {
+      readRows();
+      list.splice(Number(b.dataset.i), 1);
+      Admin.renderGrantItems();
+    }; });
+    box.querySelectorAll('.gi-num, .gi-pick').forEach((el) => { el.onchange = readRows; });
+    document.getElementById('gi-add').onclick = () => {
+      readRows();
+      list.push({ type: 'vip', days: 7 });
+      Admin.renderGrantItems();
+    };
+    Admin._grantRead = readRows;
+  },
+
+  // Что уходит на сервер вместе с числами. expandOffer — для письма:
+  // там набора как такового нет, письмо несёт его состав.
+  grantItemsPayload(opts) {
+    if (Admin._grantRead) { try { Admin._grantRead(); } catch (e) {} }
+    const items = (Admin._grantItems || []).slice();
+    const sel = document.getElementById('gi-offer');
+    const offerId = sel ? sel.value : '';
+    if (!offerId) return items.length ? { items } : {};
+    if (opts && opts.expandOffer) {
+      const o = (Admin._grantOffers || []).find((x) => x.id === offerId);
+      return { items: items.concat((o && o.items) || []) };
+    }
+    return { items, offerId };
   },
 
   // ── Допинг и эффекты одного игрока ──────────────────────────────
@@ -3207,11 +3351,13 @@ proxy_set_header Host $host;</pre>
 
   async submitGrantAll() {
     const vals = Admin._grantVals('all');
-    const hasAny = Admin.GRANT_KEYS.some((k) => vals[k] !== '' && parseInt(vals[k], 10) !== 0);
+    const extra = Admin.grantItemsPayload();
+    const hasAny = Admin.GRANT_KEYS.some((k) => vals[k] !== '' && parseInt(vals[k], 10) !== 0)
+      || (extra.items && extra.items.length) || extra.offerId;
     if (!hasAny) { UI.toast('⛔ Укажите хотя бы один ресурс'); return; }
     if (!await UI.confirm('Выдать ресурсы ВСЕМ игрокам?', {title:'Массовая выдача', icon:'🎁', okText:'Выдать', danger:true})) return;
     try {
-      const r = await API.post('/api/admin/grant-all', vals);
+      const r = await API.post('/api/admin/grant-all', Object.assign({}, vals, extra));
       UI.toast(`✅ Выдано ${r.count} игрокам!`);
     } catch(e) { UI.toast('⛔ ' + e.message); }
   },

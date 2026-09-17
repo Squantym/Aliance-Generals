@@ -25,6 +25,10 @@ interface RewardPayload {
   ears?: number;         // трофейные гербы
   skillPoints?: number;  // очки навыков
   xp?: number;           // опыт
+  // Позиции как в наборах: VIP, наёмник, контейнер, техника. Письмом
+  // можно отправить то же, что выдаётся сразу, — иначе подписку и
+  // контейнеры приходилось бы вручать отдельно от остальной награды.
+  items?: any[];
 }
 
 type ReceiptLine = { text: string; icon: string | null };
@@ -113,11 +117,18 @@ function grantReceipt(userId: string, opts: { title: string; reason: string; lin
 // Оставляем только положительные числовые поля награды
 function cleanPayload(p: RewardPayload): RewardPayload {
   const out: RewardPayload = {};
-  const keys: (keyof RewardPayload)[] = ['dollars', 'gold', 'tokens', 'ears', 'skillPoints', 'xp'];
+  const keys: Array<'dollars' | 'gold' | 'tokens' | 'ears' | 'skillPoints' | 'xp'> =
+    ['dollars', 'gold', 'tokens', 'ears', 'skillPoints', 'xp'];
   for (const k of keys) {
     const v = Math.floor(Number(p && p[k]) || 0);
     if (v > 0) out[k] = v;
   }
+  // Позиции проверяет тот же разбор, что и у наборов: чужое или битое
+  // сюда не пройдёт, и в письме не окажется того, что некому выдать
+  const items: any[] = ((p && Array.isArray(p.items)) ? p.items : [])
+    .map((it: any) => { try { return require('./offers').cleanItem(it); } catch (e) { return null; } })
+    .filter(Boolean);
+  if (items.length) out.items = items;
   return out;
 }
 
@@ -130,6 +141,9 @@ function describe(p: RewardPayload): string[] {
   if (p.ears)        parts.push(`🛡 ${u.fmt(p.ears)}`);
   if (p.skillPoints) parts.push(`🎯 ${u.fmt(p.skillPoints)} оч. навыков`);
   if (p.xp)          parts.push(`✨ ${u.fmt(p.xp)} XP`);
+  for (const it of (p.items || [])) {
+    try { parts.push(require('./offers').describeItem(it)); } catch (e) {}
+  }
   return parts;
 }
 
@@ -203,6 +217,10 @@ function creditReward(user: User, p: RewardPayload, source?: string): void {
   if (p.ears)        user.ears = (user.ears || 0) + p.ears;
   if (p.skillPoints) user.skillPoints = Math.max(0, (user.skillPoints || 0) + p.skillPoints);
   if (p.xp)          player.addXp(user, p.xp, []);
+  // VIP, наёмники, контейнеры, техника — тем же кодом, что и наборы
+  if (p.items && p.items.length) {
+    try { require('./offers').grantItems(user, p.items, []); } catch (e) {}
+  }
 }
 
 // ── Удалить письмо (только уже полученное) ─────────────────────────
@@ -240,6 +258,7 @@ function adminGrant(adminUser: User, body: any, notices: Notices) {
     ears: u.toInt(body.ears, 0),
     skillPoints: u.toInt(body.skillPoints, 0),
     xp: u.toInt(body.xp, 0),
+    items: Array.isArray(body.items) ? body.items : [],
   });
   if (!Object.keys(reward).length) throw new u.ApiError('Не указано, что выдавать в награду');
   const title = String(body.title || '🎁 Награда от администрации').slice(0, 120);

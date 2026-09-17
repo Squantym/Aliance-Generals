@@ -287,6 +287,35 @@ function applyGrant(target: User, body: any, quiet = false): string[] {
   if (body.health !== undefined && body.health !== '') { target.res.hp.cur = u.clamp(u.toInt(body.health), 0, mx.hp); granted.push('здоровье'); }
   if (body.ammo   !== undefined && body.ammo   !== '') { target.res.am.cur = u.clamp(u.toInt(body.ammo),   0, mx.am); granted.push('боеприпасы'); }
 
+  // ── Позиции: VIP, наёмник, контейнер, техника, готовый набор ──────
+  // Раньше выдать можно было только числа: деньги, золото, опыт, гербы.
+  // Всё остальное — подписку, контейнер, наёмника, набор из магазина —
+  // владелец добирал руками через другие разделы или не мог вовсе.
+  // Выдаём ТЕМ ЖЕ кодом, что и наборы с раздачами (offers.grantItems):
+  // своей выдачи здесь нет, иначе правила разошлись бы.
+  const offers = require('./offers');
+  let items: any[] = (Array.isArray(body.items) ? body.items : [])
+    .map((it: any) => offers.cleanItem(it)).filter(Boolean);
+  // Готовый набор из магазина — целиком, его состав на момент выдачи
+  const offerId = String(body.offerId || '').trim();
+  if (offerId) {
+    const shop = db.load<Record<string, any>>('offers', {})[offerId];
+    if (!shop) throw new u.ApiError('Набор не найден — возможно, его удалили');
+    items = items.concat(shop.items || []);
+    granted.push(`набор «${shop.title}»`);
+  }
+  if (items.length) {
+    // Тихая выдача: золото внутри позиций тоже не должно оставлять следа
+    if (quiet) {
+      for (const it of items.filter((x: any) => x.type === 'gold')) {
+        player.addGoldSilent(target, it.qty || 0);
+        granted.push(`🪙 ${it.qty || 0}`);
+      }
+      items = items.filter((x: any) => x.type !== 'gold');
+    }
+    granted.push(...offers.grantItems(target, items, []));
+  }
+
   ach.check(target, []);
   return granted;
 }
@@ -527,7 +556,11 @@ function grantAll(adminUser: User, body: any, notices: Notices) {
   // массовая выдача про них не знала и отвечала «укажите ресурс».
   const keys = ['dollars', 'gold', 'skillPoints', 'ears', 'tokens', 'xp',
                 'levels', 'battlePoints', 'gbRating'];
-  const hasAny = keys.some((k) => u.toInt(body[k], 0) !== 0);
+  // Позиции (VIP, контейнеры, наёмники, техника) и готовый набор — тоже
+  // «что выдавать»: без этой проверки массовая выдача подписки на всех
+  // отвечала бы «не указано, что выдавать»
+  const hasItems = (Array.isArray(body.items) && body.items.length > 0) || !!String(body.offerId || '').trim();
+  const hasAny = keys.some((k) => u.toInt(body[k], 0) !== 0) || hasItems;
   if (!hasAny) throw new u.ApiError('Не указано, что выдавать');
 
   const customNote = String(body.giftNote || '').trim().slice(0, 300);
