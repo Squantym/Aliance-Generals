@@ -1712,6 +1712,11 @@ App.screens.bank = async (c, param) => {
       if (r && r.payUrl) window.location.href = r.payUrl;
       else UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.');
     }); });
+    c.querySelectorAll('[data-offer-lava]').forEach((b) => { b.onclick = () => App._payClick(b, async () => {
+      const r = await API.post('/api/offers/order', { offerId: b.dataset.offerLava, provider: 'lavatop' });
+      if (r && r.payUrl) window.location.href = r.payUrl;
+      else UI.toast('🛒 Заказ создан, но касса не вернула ссылку. Попробуйте ещё раз.');
+    }); });
     return;
   }
 
@@ -1733,6 +1738,7 @@ App.screens.bank = async (c, param) => {
           <div class="kv mt"><span class="k"><span class="ic-gold"></span> ${UI.fmtNum(p.gold)} золота</span><span class="v gold">${p.priceRub} ₽</span></div>
           ${App._promoGoldLine(data, p)}
           <button class="btn btn-orange mt" data-buy-pkg="${p.id}" style="width:100%">Купить</button>
+          ${p.lava ? `<button class="btn mt" data-buy-lava="${p.id}" style="width:100%">🌍 Зарубежной картой — ${p.lava.amount} ${UI.esc(p.lava.currency)}</button>` : ''}
         </div>`).join('')}
       ${orders.length ? `
         <div class="card">
@@ -1746,6 +1752,14 @@ App.screens.bank = async (c, param) => {
         const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
         if (r.payUrl) { window.location.href = r.payUrl; }
         else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
+      });
+    });
+    // Зарубежная карта: тот же заказ, но счёт выставляет Lava Top
+    c.querySelectorAll('[data-buy-lava]').forEach((btn) => {
+      btn.onclick = () => App._payClick(btn, async () => {
+        const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyLava, provider: 'lavatop' });
+        if (r.payUrl) window.location.href = r.payUrl;
+        else UI.toast('🛒 Заказ создан, но касса не вернула ссылку. Попробуйте ещё раз.');
       });
     });
     return;

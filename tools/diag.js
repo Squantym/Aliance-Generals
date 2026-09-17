@@ -110,7 +110,8 @@ function readEnvFile() {
     for (const k of ['SMTPBZ_API_KEY', 'EMAIL_FROM', 'APP_URL', 'PORT', 'TEST_WORLD',
       'DB_DRIVER', 'OWNER_NAME', 'ALLOW_UNVERIFIED_EMAIL', 'STAFF_2FA_REQUIRED',
       'ROBOKASSA_LOGIN', 'ROBOKASSA_PASS1', 'ROBOKASSA_PASS2', 'ROBOKASSA_HASH', 'ROBOKASSA_TEST',
-      'ROBOKASSA_TEST_PASS1', 'ROBOKASSA_TEST_PASS2', 'ROBOKASSA_INV_BASE', 'ROBOKASSA_RECEIPT']) {
+      'ROBOKASSA_TEST_PASS1', 'ROBOKASSA_TEST_PASS2', 'ROBOKASSA_INV_BASE', 'ROBOKASSA_RECEIPT',
+      'LAVATOP_API_KEY', 'LAVATOP_WEBHOOK_KEY', 'LAVATOP_CURRENCY']) {
       if (!(k in envFile)) continue;
       const v = envFile[k];
       // Логин магазина не пароль, но вместе с утёкшим паролем — полный
@@ -135,6 +136,18 @@ function readEnvFile() {
           : BAD + ' ROBOKASSA_RECEIPT=0 — Робокасса не сможет сформировать чек, пробивать руками');
       }
       for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    } catch (e) {}
+    // Lava Top — зарубежные карты. Её может не быть вовсе: это нормально
+    try {
+      const savedL = {};
+      for (const k of Object.keys(envFile)) if (/^LAVATOP_/.test(k)) { savedL[k] = process.env[k]; process.env[k] = envFile[k]; }
+      const lava = require(path.join(ROOT, 'dist/src/services/lavatop.js'));
+      if (lava.configured() || Object.keys(savedL).length) {
+        row('Lava Top (зарубежные)', lava.ready()
+          ? OK + ' подключена, валюта ' + lava.currency()
+          : WARN + ' ' + (lava.problem() || 'не настроена'));
+      }
+      for (const k of Object.keys(savedL)) { if (savedL[k] === undefined) delete process.env[k]; else process.env[k] = savedL[k]; }
     } catch (e) {}
     if ('YOOKASSA_SECRET_KEY' in envFile) row('.env YOOKASSA_*', WARN + ' ЮKassa отключена — строки можно удалить');
   }

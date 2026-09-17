@@ -69,6 +69,12 @@ const OfferCard = {
             </button>` : ''}
           ${!o.priceGold && !o.priceRub ? '<span class="muted small">Цена не указана</span>' : ''}
         </div>
+        ${o.canBuyLava ? `
+          <div class="offer-buy mt">
+            <button class="btn grow" ${p ? 'disabled' : `data-offer-lava="${esc(o.id)}"`}>
+              🌍 Оплатить зарубежной картой
+            </button>
+          </div>` : ''}
         ${!p && !o.canBuyGold && !o.canBuyRub
           ? `<p class="muted small center mt">${o.soldOut ? 'Наборы разобраны' : 'Вы уже взяли этот набор'}</p>` : ''}
       </div>`;

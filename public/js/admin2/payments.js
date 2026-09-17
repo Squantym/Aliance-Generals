@@ -60,6 +60,72 @@
       </div>`;
   }
 
+  // ── Lava Top: оплата зарубежной картой ──────────────────────────
+  // Lava продаёт ТОВАРЫ из своего каталога: у каждой цены свой
+  // идентификатор. Поэтому здесь связка «пакет золота / набор игры» →
+  // «товар Lava». Список товаров тянем по ключу — владельцу остаётся
+  // выбрать нужный, а не переписывать длинные идентификаторы.
+  let lavaProducts = null;
+  async function lavaCard() {
+    let s = null;
+    try { s = await API.get('/api/admin/lavatop'); } catch (e) { return ''; }
+    const opts = (cur) => ['<option value="">— не связано —</option>'].concat(
+      (lavaProducts || []).map((p) => `<option value="${esc(p.offerId)}"${cur === p.offerId ? ' selected' : ''}>${esc(p.title)} — ${p.price} ${esc(p.currency)}</option>`)
+    ).join('');
+    const row = (r) => `
+      <tr>
+        <td class="small">${esc(r.kind)}</td>
+        <td class="small"><b>${esc(r.title)}</b></td>
+        <td>${lavaProducts
+          ? `<select data-lava-key="${esc(r.key)}" style="${inputStyle};min-width:220px">${opts(r.link && r.link.offerId)}</select>`
+          : (r.link
+            ? `<span class="a2-pill is-ok">${esc(r.link.title || r.link.offerId)} · ${r.link.amount} ${esc(r.link.currency)}</span>`
+            : '<span class="a2-pill is-warn">не связано</span>')}</td>
+      </tr>`;
+    return `
+      <div class="a2-card" id="lava-card">
+        <div class="a2-row" style="gap:10px">
+          <b>🌍 Lava Top — оплата зарубежной картой</b>
+          ${s.ready ? '<span class="a2-pill is-ok">подключена</span>'
+            : (s.configured ? '<span class="a2-pill is-warn">настроена не до конца</span>' : '<span class="a2-pill is-bad">не настроена</span>')}
+          ${s.ready ? `<span class="a2-muted">валюта: ${esc(s.currency)}</span>` : ''}
+        </div>
+        ${s.problem ? `<p class="a2-muted" style="margin-top:6px">${esc(s.problem)}</p>` : ''}
+        <details style="margin-top:6px"><summary>Адрес для кабинета Lava Top</summary>
+          <div class="a2-kv"><span>Webhook URL</span><b class="mono">${esc(s.webhookUrl)}</b></div>
+          <p class="a2-muted">В кабинете Lava укажите этот адрес и ключ; тот же ключ положите в .env
+            как LAVATOP_WEBHOOK_KEY. Уведомление без ключа игра не примет.</p>
+        </details>
+        <p class="a2-muted" style="margin-top:8px">Lava продаёт товары из своего каталога. Свяжите каждый
+          пакет и набор с товаром Lava — иначе кнопка зарубежной оплаты у него не появится.</p>
+        ${s.configured ? `<button class="btn btn-inline" id="lava-load">${lavaProducts ? '↻ Обновить список товаров' : '📥 Загрузить товары из Lava Top'}</button>` : ''}
+        <table class="a2-table" style="margin-top:8px"><tbody>${(s.rows || []).map(row).join('')}</tbody></table>
+      </div>`;
+  }
+
+  // Обработчики карточки Lava: загрузка товаров и выбор связки
+  function bindLava(el, redraw) {
+    const load = el.querySelector('#lava-load');
+    if (load) load.onclick = async () => {
+      load.disabled = true;
+      try {
+        const r = await API.get('/api/admin/lavatop/products');
+        lavaProducts = r.products || [];
+        if (!lavaProducts.length) UI.toast('В каталоге Lava Top нет товаров — заведите их в её кабинете');
+        await redraw();
+      } catch (e) { load.disabled = false; UI.toast('⛔ ' + e.message); }
+    };
+    el.querySelectorAll('[data-lava-key]').forEach((sel) => { sel.onchange = async () => {
+      const p = (lavaProducts || []).find((x) => x.offerId === sel.value);
+      try {
+        await API.post('/api/admin/lavatop/map', {
+          key: sel.dataset.lavaKey, offerId: sel.value,
+          title: p ? p.title : '', amount: p ? p.price : 0, currency: p ? p.currency : '',
+        });
+      } catch (e) { UI.toast('⛔ ' + e.message); }
+    }; });
+  }
+
   async function renderList(el, route) {
     const q = route.query || {};
     el.innerHTML = '<div class="a2-title">Платежи</div><div class="loading">Загружаю…</div>';
@@ -73,10 +139,12 @@
     const t = d.totals || {};
     const rows = d.rows || [];
     const prov = await providerCard();
+    const lava = await lavaCard();
     const opt = (v, label, cur) => `<option value="${v}"${cur === v ? ' selected' : ''}>${label}</option>`;
     el.innerHTML = `
       <div class="a2-title">Платежи</div>
       ${prov}
+      ${lava}
       <div class="a2-card">
         <div class="a2-row" style="gap:18px">
           <div><b>${rub(t.paidRub)}</b> <span class="a2-muted">оплачено по-настоящему · заказов: ${t.paidCount || 0}</span></div>
@@ -134,6 +202,7 @@
     el.querySelectorAll('[data-open]').forEach((tr) => {
       tr.onclick = () => A2Router.go('payments', tr.getAttribute('data-open'));
     });
+    bindLava(el, () => renderList(el, route));
   }
 
   async function renderOne(el, id) {

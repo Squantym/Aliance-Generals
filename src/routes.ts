@@ -2383,7 +2383,10 @@ function registerRoutes(app: any) {
   // без них спор «это не я платил» разбирать нечем
   const buyerMeta = (req: any) => ({ ip: req.ip, ua: req.ua, hints: req.hints, fp: req.fp, did: req.did,
     method: String((req.body && req.body.method) || '') });
-  app.add('POST', '/api/payments/create',   act((req, n) => payments.pay(req.user, payments.createOrder(req.user, req.body.packageId, n), n, buyerMeta(req))));
+  // provider: 'lavatop' — оплата зарубежной картой (Lava Top), иначе Робокасса
+  app.add('POST', '/api/payments/create',   act((req, n) => (req.body.provider === 'lavatop'
+    ? payments.payLava(req.user, payments.createOrder(req.user, req.body.packageId, n), n, buyerMeta(req))
+    : payments.pay(req.user, payments.createOrder(req.user, req.body.packageId, n), n, buyerMeta(req)))));
   // Сверка заказа по возвращении со страницы оплаты. Без журнала: клиент
   // зовёт её при каждом входе в банк, пока заказ ждёт оплаты.
   app.add('POST', '/api/payments/check',    act((req) => payments.checkOrder(req.user, req.body.orderId)), { noLog: true });
@@ -2421,11 +2424,23 @@ function registerRoutes(app: any) {
   app.add('POST', '/api/payments/robokassa/fail',    (req) => payments.handleReturn(rkParams(req), false), { open: true });
   app.add('GET',  '/api/payments/robokassa/fail',    (req) => payments.handleReturn(rkParams(req), false), { open: true });
 
+  // ── Lava Top ───────────────────────────────────────────────────
+  // Уведомление об оплате. Маршрут открытый: его зовёт сервер Lava.
+  // Подписи у неё нет — проверяется ключ из заголовка X-Api-Key.
+  app.add('POST', '/api/payments/lavatop/webhook', (req) =>
+    payments.handleLavaWebhook(req.body, req.rawHeaders || {}, { ip: req.ip }), { open: true });
+  // Связка товаров игры с каталогом Lava — владельцу
+  app.add('GET',  '/api/admin/lavatop',          (req) => payments.lavaState(req.user), { admin: true });
+  app.add('GET',  '/api/admin/lavatop/products', (req) => payments.lavaProducts(req.user), { admin: true });
+  app.add('POST', '/api/admin/lavatop/map',      act((req, n) => payments.lavaMap(req.user, req.body, n)), { admin: true });
+
   // ---------- Спецпредложения (наборы) ----------
   // Витрина открыта всем, конструктор — по зоне «Ресурсы».
   app.add('GET',  '/api/offers',            (req) => require('./services/offers').catalog(req.user));
   app.add('POST', '/api/offers/buy',        act((req, n) => require('./services/offers').buyForGold(req.user, req.body.offerId, n)));
-  app.add('POST', '/api/offers/order',      act((req, n) => payments.pay(req.user, require('./services/offers').orderForRub(req.user, req.body.offerId, n), n, buyerMeta(req))));
+  app.add('POST', '/api/offers/order',      act((req, n) => (req.body.provider === 'lavatop'
+    ? payments.payLava(req.user, require('./services/offers').orderForRub(req.user, req.body.offerId, n), n, buyerMeta(req))
+    : payments.pay(req.user, require('./services/offers').orderForRub(req.user, req.body.offerId, n), n, buyerMeta(req)))));
   app.add('GET',  '/api/admin/offers',      (req) => require('./services/offers').adminList(req.user), { admin: true });
   app.add('POST', '/api/admin/offers/save', act((req, n) => require('./services/offers').adminSave(req.user, req.body, n)), { admin: true });
   // Предпросмотр карточки до сохранения: собирает её тот же код, что и

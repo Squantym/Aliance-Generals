@@ -312,6 +312,14 @@ function describe(path: string, body?: any, result?: any): string | null {
              + (body.priceRub ? ', ' + body.priceRub + ' ₽' : '');
       case '/api/admin/offers/delete':
         return '🗑 Удалил набор из спецпредложений';
+      case '/api/payments/lavatop/webhook':
+        return '🌍 Lava Top сообщила об оплате: ' + String(body.eventType || '—')
+             + (body.amount ? ' — ' + body.amount + ' ' + String(body.currency || '') : '');
+      case '/api/admin/lavatop/map':
+        return body.offerId
+          ? '🌍 Связал с Lava Top: ' + String(body.key || '—')
+            + (body.amount ? ' — ' + body.amount + ' ' + String(body.currency || '') : '')
+          : '🌍 Снял связку с Lava Top: ' + String(body.key || '—');
       case '/api/club/queue/join':
         return '⏳ Клуб: встал в очередь — ' + clubGameName(body.game);
       case '/api/club/queue/leave':

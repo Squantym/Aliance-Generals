@@ -118,7 +118,8 @@ interface PaymentOrder {
   status: 'pending' | 'paid' | 'failed' | 'cancelled';
   createdAt: number;
   paidAt?: number;
-  provider?: string;       // 'robokassa' (у старых заказов — 'yookassa')
+  provider?: string;       // 'robokassa' | 'lavatop' (у старых — 'yookassa')
+  charged?: { amount: number; currency: string };  // сколько и в какой валюте спишет касса (Lava: USD/EUR)
   providerRef?: string;    // номер счёта в Робокассе (у старых — id платежа ЮKassa)
   invId?: number;          // номер счёта в Робокассе числом
   method?: string;         // у старых заказов — способ, выбранный в игре
@@ -154,6 +155,26 @@ function store(): Record<string, PaymentOrder> {
 }
 
 function rk() { return require('./robokassa'); }
+function lava() { return require('./lavatop'); }
+
+// ── Lava Top: какой товар каталога отвечает нашему пакету или набору ──
+// Ключ: id пакета золота ('gold_525') или 'offer:<id набора>'. Значение —
+// цена из каталога Lava. Заводит связку владелец в панели; без связки
+// кнопка зарубежной оплаты у этого товара просто не показывается.
+type LavaLink = { offerId: string; title: string; amount: number; currency: string; at: number };
+function lavaStore(): Record<string, LavaLink> {
+  return db.load<Record<string, LavaLink>>('lavaOffers', {});
+}
+function lavaKeyOf(o: { offerId?: string; packageId: string }): string {
+  return o.offerId ? 'offer:' + o.offerId : String(o.packageId || '');
+}
+function lavaLink(key: string): LavaLink | null {
+  return lavaStore()[String(key || '')] || null;
+}
+// Готова ли зарубежная оплата этого товара: ключи на месте И товар связан
+function lavaReady(key: string): boolean {
+  try { return lava().ready() && !!lavaLink(key); } catch (e) { return false; }
+}
 
 // Условия бонусов к покупке — в заказ в момент его создания: что игрок
 // видел до оплаты, то и получит (services/donateBonus.ts)
@@ -221,8 +242,19 @@ function packages(user?: User) {
     try { promos = require('./donateBonus').forPlayer(user); } catch (e) { promos = []; }
     try { xpBoost = require('./donateBonus').xpBoostView(user); } catch (e) { xpBoost = null; }
   }
+  // Зарубежная карта (Lava Top): у каждого пакета своя связка с товаром
+  // в каталоге Lava, поэтому и доступность считается по каждому пакету
+  let lavaOn = false, lavaCur = 'USD';
+  try { lavaOn = lava().ready(); lavaCur = lava().currency(); } catch (e) { lavaOn = false; }
+  const withLava = PACKAGES.map((p) => {
+    const link = lavaOn ? lavaLink(p.id) : null;
+    return Object.assign({}, p, link
+      ? { lava: { amount: link.amount, currency: link.currency } }
+      : {});
+  });
   return {
-    packages: PACKAGES, enabled: on, note: on ? '' : 'Платёжная система скоро будет доступна.',
+    packages: withLava, enabled: on, note: on ? '' : 'Платёжная система скоро будет доступна.',
+    lava: { enabled: lavaOn && withLava.some((p: any) => p.lava), currency: lavaCur },
     // Выбора способа в игре нет — он на странице Робокассы (см. PAY_NOTE)
     methods: [],
     payNote: on ? PAY_NOTE : '',
@@ -334,6 +366,147 @@ async function pay(user: User, created: { orderId: string; status: string; payUr
     console.error(`⚠️  Робокасса: счёт по заказу ${order.id} не выставлен — ${e && e.message}`);
     throw new u.ApiError('Оплата временно недоступна. Деньги не списаны — попробуйте через минуту.');
   }
+}
+
+// Счёт в Lava Top по уже созданному заказу — для оплаты зарубежной картой.
+// В отличие от Робокассы, ссылку выдаёт САМА Lava, поэтому здесь есть
+// поход в сеть и он может не ответить: тогда заказ остаётся неоплаченным,
+// а игрок видит понятный отказ.
+async function payLava(user: User, created: { orderId: string }, notices: Notices, meta?: any) {
+  const order = store()[created.orderId];
+  if (!order || order.userId !== user.id) throw new u.ApiError('Заказ не найден');
+  const buyer = buyerOf(meta);
+  if (buyer) { order.buyer = buyer; db.save('payments'); }
+  const key = lavaKeyOf(order);
+  const link = lavaLink(key);
+  if (!lava().ready() || !link) {
+    throw new u.ApiError('Оплата зарубежной картой сейчас недоступна. Попробуйте оплату картой РФ.');
+  }
+  let inv: any;
+  try {
+    inv = await lava().createInvoice({
+      email: String((user as any).email || ''),
+      offerId: link.offerId,
+    });
+  } catch (e: any) {
+    order.status = 'failed';
+    db.save('payments');
+    console.error(`⚠️  Lava Top: счёт по заказу ${order.id} не выставлен — ${e && e.message}`);
+    throw new u.ApiError('Оплата временно недоступна. Деньги не списаны — попробуйте через минуту.');
+  }
+  if (!inv.paymentUrl) {
+    order.status = 'failed';
+    db.save('payments');
+    throw new u.ApiError('Касса не вернула ссылку на оплату. Деньги не списаны.');
+  }
+  order.provider = 'lavatop';
+  order.providerRef = inv.id;
+  order.payUrl = inv.paymentUrl;
+  order.charged = { amount: inv.amount, currency: inv.currency };
+  db.save('payments');
+  return { orderId: order.id, status: order.status, payUrl: inv.paymentUrl };
+}
+
+// ── Уведомление об оплате от Lava Top ─────────────────────────────
+// Подписи у Lava нет: она шлёт ключ, заданный в её кабинете. Поэтому
+// порядок такой: сначала ключ, потом contractId (его мы получили при
+// создании счёта), потом сумма и валюта. Ответ — простым текстом: тело
+// ответа Lava не разбирает, ей важен код 200.
+function handleLavaWebhook(body: any, headers: any, meta?: any): any {
+  const http = require('../core/http');
+  if (!lava().verifyWebhook(headers || {})) {
+    console.error('⛔ Lava Top: уведомление с чужим ключом отклонено');
+    auditLog.record({
+      userId: 'system', userName: 'system', path: '/system/payment-forged',
+      desc: '⛔ Отклонено уведомление Lava Top: неверный ключ',
+      body: { ip: String((meta && meta.ip) || '') },
+    });
+    return http.textReply('bad key', 401);
+  }
+  const contractId = String((body && body.contractId) || '');
+  const order = Object.values(store()).find((o) => o.provider === 'lavatop' && o.providerRef === contractId);
+  if (!order) {
+    console.error(`⛔ Lava Top: контракт ${contractId || '—'} не найден среди заказов`);
+    return http.textReply('unknown order', 400);
+  }
+  logEvent(order, 'lava:' + String((body && body.eventType) || ''), meta, order.status);
+  if (!lava().isPaid(body)) {
+    // Отказ или возврат: заказ не трогаем, но событие в нём остаётся
+    return http.textReply('ok');
+  }
+  if (order.status !== 'pending') return http.textReply('ok');   // повтор — уже учтено
+  // Сумма и валюта — те же, что Lava назвала при создании счёта
+  const want = order.charged || { amount: 0, currency: '' };
+  const gotAmount = Math.round(Number((body && body.amount) || 0) * 100);
+  const gotCur = String((body && body.currency) || '');
+  if (want.amount && (gotAmount !== Math.round(want.amount * 100) || gotCur !== want.currency)) {
+    console.error(`⛔ Lava Top: оплата ${gotAmount / 100} ${gotCur} не совпала с заказом ${order.id}`);
+    auditLog.record({
+      userId: order.userId, userName: '', path: '/system/payment-mismatch',
+      desc: `⛔ Оплата Lava не совпала с заказом ${order.id}: ${gotAmount / 100} ${gotCur} вместо ${want.amount} ${want.currency} — не зачислено`,
+      body: { orderId: order.id, contractId },
+    });
+    return http.textReply('bad sum', 400);
+  }
+  confirmPayment(order.id);
+  return http.textReply('ok');
+}
+
+// ── Панель: связка товаров Lava ───────────────────────────────────
+// Список товаров тянем из каталога Lava по ключу — владельцу остаётся
+// выбрать нужный из списка, а не переписывать длинные идентификаторы.
+function lavaState(actor: User) {
+  assertOwner(actor);
+  const map = lavaStore();
+  const offers = require('./offers').adminList(actor).offers as any[];
+  const rows = PACKAGES.map((p) => ({
+    key: p.id, kind: 'Пакет золота', title: `${p.label} — ${p.priceRub} ₽`, link: map[p.id] || null,
+  })).concat(offers.filter((o) => o.priceRub > 0).map((o) => ({
+    key: 'offer:' + o.id, kind: 'Набор', title: `${o.title} — ${o.priceRub} ₽`, link: map['offer:' + o.id] || null,
+  })));
+  let state: any = { configured: false, ready: false, problem: 'модуль не загрузился', currency: 'USD', apiUrl: '' };
+  try {
+    const L = lava();
+    state = { configured: L.configured(), ready: L.ready(), problem: L.problem(), currency: L.currency(), apiUrl: L.apiUrl() };
+  } catch (e) {}
+  return Object.assign(state, { rows, webhookUrl: appUrl() + '/api/payments/lavatop/webhook' });
+}
+
+async function lavaProducts(actor: User) {
+  assertOwner(actor);
+  try {
+    return { products: await lava().products() };
+  } catch (e: any) {
+    throw new u.ApiError('Lava Top не отдала список товаров: ' + (e && e.message));
+  }
+}
+
+function lavaMap(actor: User, body: any, notices: Notices) {
+  assertOwner(actor);
+  const key = String((body && body.key) || '').trim();
+  if (!key) throw new u.ApiError('Не указан товар игры');
+  const all = lavaStore();
+  const offerId = String((body && body.offerId) || '').trim();
+  if (!offerId) {
+    delete all[key];
+    db.save('lavaOffers');
+    notices.push('🌍 Связка с Lava Top снята — зарубежная оплата этого товара выключена.');
+    return { ok: true, link: null };
+  }
+  all[key] = {
+    offerId,
+    title: String((body && body.title) || '').slice(0, 120),
+    amount: Math.max(0, Number((body && body.amount) || 0)),
+    currency: String((body && body.currency) || 'USD').toUpperCase().slice(0, 3),
+    at: Date.now(),
+  };
+  db.save('lavaOffers');
+  auditLog.record({
+    userId: actor.id, userName: actor.name, path: '/api/admin/lavatop/map',
+    body: { key, offerId, amount: all[key].amount, currency: all[key].currency },
+  });
+  notices.push(`🌍 Связано с Lava Top: ${all[key].title || offerId} (${all[key].amount} ${all[key].currency})`);
+  return { ok: true, link: all[key] };
 }
 
 // Сверка заказа с Робокассой. Решение принимается ТОЛЬКО по её ответу:
@@ -927,7 +1100,8 @@ function providerState() {
 }
 
 export = {
-  packages, createOrder, createOfferOrder, pay, checkOrder, handleResult, handleReturn,
+  packages, createOrder, createOfferOrder, pay, payLava, checkOrder, handleResult, handleReturn,
+  handleLavaWebhook, lavaState, lavaProducts, lavaMap, lavaReady, lavaKeyOf,
   myOrders, confirmPayment, pendingPurchases, ackPurchase,
   adminList, adminGet, adminRefresh, setTaxReceipt, providerState, MAX_PRICE_RUB, PAY_NOTE,
 };

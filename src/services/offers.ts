@@ -324,6 +324,10 @@ function showcase(o: Offer, mine: number, userId?: string) {
     startsInSec: o.startAt && o.startAt > Date.now() ? Math.ceil((o.startAt - Date.now()) / 1000) : null,
     canBuyGold: o.priceGold > 0 && (left === null || left > 0),
     canBuyRub: o.priceRub > 0 && (left === null || left > 0),
+    // Зарубежная карта (Lava Top) — только если владелец связал набор с
+    // товаром в её каталоге; иначе кнопки у игрока нет
+    canBuyLava: o.priceRub > 0 && (left === null || left > 0)
+      && (() => { try { return require('./payments').lavaReady('offer:' + o.id); } catch (e) { return false; } })(),
   };
 }
 
