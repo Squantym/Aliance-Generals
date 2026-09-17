@@ -12,9 +12,13 @@ import util = require('util');
 // Класс ошибки, которую роутер превращает в JSON-ответ { error: ... }
 class ApiError extends Error {
   status: number;
-  constructor(message: string, status = 400) {
+  // Машинный код для клиента: по нему экран понимает, КАКОЙ это отказ,
+  // не разбирая текст (например, ALLY_TARGET — нужно подтверждение)
+  code?: string;
+  constructor(message: string, status = 400, code?: string) {
     super(message);
     this.status = status;
+    if (code) this.code = code;
   }
 }
 

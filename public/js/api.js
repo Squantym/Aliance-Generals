@@ -86,7 +86,12 @@ const API = {
       location.hash = '#auth';
       throw new Error(data.error || 'Требуется вход в игру');
     }
-    if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
+    if (!res.ok) {
+      const err = new Error(data.error || 'Ошибка сервера');
+      err.status = res.status;
+      if (data.code) err.code = data.code;   // машинный код отказа, см. ApiError
+      throw err;
+    }
 
     // Сервер прислал события (награды, уровни) — показываем тостами
     if (Array.isArray(data.notices)) data.notices.forEach((n) => UI.toast(n));

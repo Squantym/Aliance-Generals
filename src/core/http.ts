@@ -948,7 +948,9 @@ function createApp() {
           }
           sendJson(res, 200, result === undefined ? { ok: true } : result, acceptEncoding);
         } catch (e: any) {
-          if (e instanceof ApiError) return sendJson(res, e.status, { error: e.message }, acceptEncoding);
+          if (e instanceof ApiError) {
+            return sendJson(res, e.status, e.code ? { error: e.message, code: e.code } : { error: e.message }, acceptEncoding);
+          }
           console.error('Внутренняя ошибка:', e);
           sendJson(res, 500, { error: 'Внутренняя ошибка сервера' }, acceptEncoding);
         }

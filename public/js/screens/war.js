@@ -414,9 +414,9 @@ App.screens.war = async (c) => {
   // Выполнить атаку и перерисовать экран с результатом (либо результат
   // боя, либо «встреча» — окно сейфа или мины, которое перекрывает
   // обычную панель результата, пока игрок не примет решение)
-  async function attackTarget(targetId) {
+  async function attackTarget(targetId, allyOk) {
     try {
-      const r = await API.post('/api/war/attack', { targetId });
+      const r = await API.post('/api/war/attack', allyOk ? { targetId, allyOk: true } : { targetId });
       handleAttackOutcome(r);
       await App.refreshMe();
       // Страница встаёт в самый верх: результат боя — первый блок экрана,
@@ -427,6 +427,12 @@ App.screens.war = async (c) => {
       window.scrollTo({ top: 0, behavior: 'auto' });
       App.rerenderTo(r.encounter ? 'war-encounter' : 'battle-result', { top: true });
     } catch (e) {
+      // Цель — союзник из вашего альянса: спрашиваем, точно ли бить
+      if (e.code === 'ALLY_TARGET') {
+        if (await App._confirmAllyAttack(e.message)) return attackTarget(targetId, true);
+        App._pickOtherTarget();
+        return;
+      }
       // Нет боеприпасов — предложить восстановление за золото и повторить атаку
       if (/боеприпас/i.test(e.message)) {
         if (await _offerRestore('ammo')) return attackTarget(targetId);
@@ -596,25 +602,14 @@ App.screens.war = async (c) => {
   if (warTab === 'targets') {
     const { opponents } = await API.get('/api/war/opponents');
     const list = document.getElementById('war-list');
-    // Стаи: цели, которые состоят во взаимном альянсе ДРУГ С ДРУГОМ.
-    // Помечаем буквой и цветом — одного цвета мало, когда стай две:
-    // игрок должен видеть не только «этот с кем-то заодно», но и с кем
-    // именно. Буква рядом с цветом читается и на чёрно-белом экране.
-    const PACK = ['А', 'Б', 'В', 'Г', 'Д'];
-    const PACK_COLOR = ['#e06c5a', '#7aa6ff', '#b98cff', '#5fbf8a', '#e9c75c'];
-    const packMark = (o) => {
-      if (!o.packNo) return '';
-      const i = (o.packNo - 1) % PACK.length;
-      const mates = (o.packMates || []).map((n) => UI.esc(n)).join(', ');
-      return ` <span class="pack-mark" style="color:${PACK_COLOR[i]};border-color:${PACK_COLOR[i]}"` +
-        ` title="Заодно с: ${mates}. Такие шлют друг другу подкрепления">🤝 ${PACK[i]}</span>`;
-    };
-    const packName = (o) => (o.packNo
-      ? ` style="color:${PACK_COLOR[(o.packNo - 1) % PACK_COLOR.length]}"` : '');
+    // Союзник из вашего альянса узнаётся по чуть другому цвету ника —
+    // без значков и букв (решение владельца, 18.09.2026). Нападение на
+    // него всё равно спросит подтверждение: сервер отвечает ALLY_TARGET.
     list.innerHTML = opponents.map((o) => `
       <div class="list-row">
         <div class="grow">
-          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')"><span${packName(o)}>${App._flagImg(o.flag)} ${UI.esc(o.name)}</span>${App.vipMark(o.vip)}${App.staffMark(o.staffRole)}${o.inMyAlliance ? ' <span class="ally-star" title="Состоит в вашем альянсе">⭐</span>' : ''}${packMark(o)}</span>
+          <span class="name" style="cursor:pointer" onclick="App.go('profile/${o.id}')"><span${o.inMyAlliance
+            ? ' class="opp-ally" title="Союзник из вашего альянса"' : ''}>${App._flagImg(o.flag)} ${UI.esc(o.name)}</span>${App.vipMark(o.vip)}${App.staffMark(o.staffRole)}</span>
           <span class="muted small"> Ур. ${o.level}</span>
           ${o.allianceMembers > 0 ? `<span class="muted small"> · 🤝 ${o.allianceMembers}</span>` : ''}
           ${o.isBot
@@ -1016,6 +1011,7 @@ App._resetSign = (key) => { delete App['_sign_' + key]; };
 // боевое окно. Переключение по данным сервера, а не по нажатию: игрок
 // мог закрыть вкладку и вернуться посреди боя.
 App._arenaTimer = null;
+
 
 // Характеристики игрока строкой: текущие значения из максимума — ровно
 // с ними он войдёт в бой (решение владельца, 17.09.2026)

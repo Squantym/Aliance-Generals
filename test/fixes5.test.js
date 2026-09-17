@@ -94,7 +94,8 @@ const ally = (a, b) => {
   ok('areAllies видит взаимный альянс', pa.areAllies(atk, vic));
   ok('в одну сторону — не союзники', !pa.areAllies(atk, { id: 'x', allianceRoster: [] }));
   const warSrc = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
-  ok('во фронте есть звезда союзника', /ally-star/.test(warSrc) && /o\.inMyAlliance/.test(warSrc));
+  // С 18.09.2026 союзник отмечается цветом ника, не звездой (test/ally-ui.test.js)
+  ok('во фронте союзник отмечен цветом ника', /opp-ally/.test(warSrc) && /o\.inMyAlliance/.test(warSrc));
 
   console.log('\n[6] Подкрепления: только союзникам, с лимитами');
   await auth.register('Чужак', 'password1', 'ch@a.com', 'ru', '1.1.1.3');

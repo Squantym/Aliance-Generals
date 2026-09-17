@@ -3,9 +3,10 @@
 //
 //  1. Почта делится на «Личные» и «Системные». Главное условие: НИЧЕГО
 //     не потерять — это раскладка экрана, а не правка данных.
-//  2. В списке целей видно, кто из противников состоит во взаимном
-//     альянсе ДРУГ С ДРУГОМ: такие шлют друг другу подкрепления, и
-//     «одинокая» цель может оказаться частью стаи.
+//  2. Союзник из вашего альянса в списке целей (с 18.09.2026): ник чуть
+//     другого цвета, без букв и «стай»; нападение на него сервер
+//     отклоняет кодом ALLY_TARGET, пока игрок не подтвердит в окне с
+//     кнопками «Выбрать другую цель» и «Атаковать союзника».
 //  3. Уровни выше сотого дороже вдвое, выше двухсотого — втрое.
 //
 // Запуск: node test/mailpacks.test.js   (после npm run build)
@@ -62,47 +63,57 @@ const near = (n, a, b, tol) => { assert.ok(Math.abs(a - b) <= tol, `❌ ${n}: ${
   ok('и открытие переписки её пропускает', /MAIL_VIEWS\.indexOf\(param\) === -1/.test(js));
   ok('оба списка запрашиваются разом', /Promise\.all\(\[\s*API\.get\('\/api\/mail'\)/.test(js));
 
-  console.log('\n[2] Стаи в списке целей');
-  // Трое: двое в союзе, третий сам по себе
-  const a = await reg('Первый');
-  const b = await reg('Второй');
-  const c = await reg('Третий');
+  console.log('\n[2] Союзник в списке целей');
+  const a1 = await reg('Первый');
+  const b1 = await reg('Второй');
   const nx = [];
-  for (const p of [a, b, c]) { p.level = 40; pa.ensure(p); }
-  pa.invitePlayer(a, 'Второй', nx);
-  pa.acceptInvite(b, a.id, nx);
-  ok('союз установлен', pa.areAllies(a, b));
+  for (const p of [me, a1, b1]) pa.ensure(p);
+  pa.invitePlayer(me, 'Первый', nx);
+  pa.acceptInvite(a1, me.id, nx);
+  pa.invitePlayer(a1, 'Второй', nx);
+  pa.acceptInvite(b1, a1.id, nx);
+  ok('Первый — наш союзник', pa.areAllies(me, a1));
+  ok('Второй — союзник Первого, но не наш', pa.areAllies(a1, b1) && !pa.areAllies(me, b1));
   const res = battle.opponents(me);
   const byName = (n) => res.opponents.find((o) => o.name === n);
-  const oa = byName('Первый'), ob = byName('Второй'), oc = byName('Третий');
+  const oa = byName('Первый'), ob = byName('Второй');
   ok('обе цели в списке', !!oa && !!ob);
-  ok('у союзников стая одна и та же', oa.packNo > 0 && oa.packNo === ob.packNo);
-  ok('в подсказке назван напарник', (oa.packMates || []).includes('Второй'));
-  ok('и наоборот', (ob.packMates || []).includes('Первый'));
-  if (oc) {
-    eq('одиночка без стаи', oc.packNo, 0);
-    eq('и без списка напарников', (oc.packMates || []).length, 0);
-  }
-  ok('боты в стаи не сбиваются',
-     res.opponents.filter((o) => o.isBot).every((o) => !o.packNo));
+  ok('Первый помечен союзником', oa.inMyAlliance === true);
+  ok('Второй — нет: союзник союзника нам не союзник', ob.inMyAlliance === false);
+  ok('«стай» с буквами больше нет', res.opponents.every((o) => !('packNo' in o) && !('packMates' in o)));
 
-  // Третий вступает во ВЗАИМНЫЙ союз со вторым — стая должна вырасти,
-  // а не завестись вторая: связь через общего союзника
-  pa.invitePlayer(b, 'Третий', nx);
-  pa.acceptInvite(c, b.id, nx);
-  const res2 = battle.opponents(me);
-  const g = ['Первый', 'Второй', 'Третий']
-    .map((n) => (res2.opponents.find((o) => o.name === n) || {}).packNo)
-    .filter((x) => x);
-  ok(`цепочка A–B–C собралась в одну стаю: ${g.join(',')}`,
-     g.length === 3 && new Set(g).size === 1);
+  console.log('\n[2б] Нападение на союзника — только с подтверждением');
+  const t0 = Date.now();
+  me.res.am.cur = 10; me.res.hp.cur = 1000;
+  let err = null;
+  try { battle.attack(me, a1.id, []); } catch (e) { err = e; }
+  ok('без подтверждения — отказ', !!err);
+  eq('код отказа — ALLY_TARGET', err && err.code, 'ALLY_TARGET');
+  eq('статус 409', err && err.status, 409);
+  ok(`в тексте — имя союзника: «${err && err.message}»`, /Первый/.test(err.message) && /союзник/.test(err.message));
+  ok('боеприпас не потрачен и пауза не началась', me.res.am.cur === 10 && !(me.lastAttackAt >= t0));
+  let err2 = null;
+  try { battle.attack(me, a1.id, [], { allyOk: true }); } catch (e) { err2 = e; }
+  ok(`с подтверждением — нападение идёт (${err2 ? err2.message : 'бой прошёл'})`, !err2 || err2.code !== 'ALLY_TARGET');
+  let err3 = null;
+  try { battle.attack(me, b1.id, []); } catch (e) { err3 = e; }
+  ok('на чужого — без вопросов', !err3 || err3.code !== 'ALLY_TARGET');
 
   const war = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
-  ok('в списке целей стая помечается буквой', /const PACK = \['А', 'Б', 'В', 'Г', 'Д'\]/.test(war));
-  ok('и цветом имени', /const packName = \(o\) =>/.test(war));
-  ok('в подсказке — с кем именно заодно', /Заодно с: \$\{mates\}/.test(war));
+  const core = fs.readFileSync(path.join(ROOT, 'public/js/screens/core.js'), 'utf8');
   const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
-  ok('значок стаи оформлен', /\.pack-mark \{/.test(css));
+  const http = fs.readFileSync(path.join(ROOT, 'src/core/http.ts'), 'utf8');
+  const api = fs.readFileSync(path.join(ROOT, 'public/js/api.js'), 'utf8');
+  const routes = fs.readFileSync(path.join(ROOT, 'src/routes.ts'), 'utf8');
+  ok('букв и цветов стай в списке больше нет', !/const PACK = /.test(war) && !/pack-mark/.test(war) && !/\.pack-mark/.test(css));
+  ok('звёздочки у союзника нет — только цвет ника', !/ally-star/.test(war));
+  ok('ник союзника — своим цветом', /class="opp-ally"/.test(war) && /\.opp-ally \{ color:/.test(css));
+  ok('окно: «Выбрать другую цель» и «Атаковать союзника»',
+     /okText: 'Атаковать союзника', cancelText: 'Выбрать другую цель'/.test(core));
+  ok('список целей повторяет удар с подтверждением', /e\.code === 'ALLY_TARGET'[\s\S]{0,120}attackTarget\(targetId, true\)/.test(war));
+  ok('и из профиля — то же окно', /e\.code === 'ALLY_TARGET'[\s\S]{0,120}_confirmAllyAttack/.test(core));
+  ok('код отказа доходит до экрана', /code: e\.code/.test(http) && /err\.code = data\.code/.test(api));
+  ok('подтверждение передаётся только явным true', /allyOk: req\.body\.allyOk === true/.test(routes));
 
   console.log('\n[3] Уровни выше сотого дороже');
   const sum = (from, to) => { let s = 0; for (let l = from; l <= to; l++) s += config.xpToNext(l); return s; };

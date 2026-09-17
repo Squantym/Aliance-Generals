@@ -559,7 +559,8 @@ function registerRoutes(app: any) {
 
   // ---------- Война ----------
   app.add('GET', '/api/war/opponents', (req) => battle.opponents(req.user));
-  app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n)));
+  app.add('POST', '/api/war/attack', act((req, n) => battle.attack(req.user, String(req.body.targetId || ''), n,
+    { allyOk: req.body.allyOk === true })));
   app.add('POST', '/api/war/bank-hack/guess', act((req, n) => battle.bankHackGuess(req.user, String(req.body.code || ''), n)));
   app.add('POST', '/api/war/bank-hack/skip',  act((req, n) => battle.bankHackSkip(req.user)));
   app.add('POST', '/api/war/bank-hack/cancel', act((req, n) => battle.bankHackCancel(req.user)));

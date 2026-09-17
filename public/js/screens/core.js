@@ -1322,11 +1322,20 @@ App.screens.profile = async (c, param) => {
   // Атака из чужого профиля: бьём и уходим на экран войны с результатом
   if (!own && p.canAttack) {
     document.getElementById('pf-attack').onclick = async () => {
-      try {
-        App._lastBattle = await API.post('/api/war/attack', { targetId: p.id });
+      const hit = async (allyOk) => {
+        App._lastBattle = await API.post('/api/war/attack', allyOk ? { targetId: p.id, allyOk: true } : { targetId: p.id });
         await App.refreshMe();
         App.go('war');
-      } catch (e) { UI.toast('⛔ ' + e.message); }
+      };
+      try { await hit(false); } catch (e) {
+        // Союзник: то же окно, что в списке целей
+        if (e.code === 'ALLY_TARGET') {
+          if (!await App._confirmAllyAttack(e.message)) { App._pickOtherTarget(); return; }
+          try { await hit(true); } catch (e2) { UI.toast('⛔ ' + e2.message); }
+          return;
+        }
+        UI.toast('⛔ ' + e.message);
+      }
     };
   }
   // Личное сообщение игроку
@@ -1549,6 +1558,23 @@ App.screens.skills = async (c) => {
       UI.toast(`♻ Возвращено ${r.refunded} очков.`);
     } catch (e) { UI.toast('⛔ ' + e.message); }
   };
+};
+
+// ── Нападение на союзника (здесь, а не в war.js: профиль тоже
+// нападает, а war.js грузится только при заходе на войну) ─────────────────────────────────────────
+// Окно игры, а не системное: две понятные кнопки. true — атаковать.
+App._confirmAllyAttack = (message) => UI.confirm(
+  `${UI.esc(message)}.<br><span class="muted small">Вы состоите в одном альянсе: он шлёт вам подкрепления
+  и воюет на вашей стороне. Точно атаковать?</span>`,
+  { title: 'Это союзник', icon: '🤝', html: true, danger: true, safeDefault: true,
+    okText: 'Атаковать союзника', cancelText: 'Выбрать другую цель' });
+
+// «Выбрать другую цель» — к списку целей войны
+App._pickOtherTarget = () => {
+  const list = document.getElementById('war-list');
+  if (list) { list.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  App._warTab = 'targets';
+  App.go('war');
 };
 
 // ---------- БАНК ----------

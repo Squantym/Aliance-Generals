@@ -357,7 +357,9 @@ const UI = {
 
   // Игровое окно подтверждения (замена браузерного confirm).
   // Возвращает Promise<boolean>. Использование: if (await UI.confirm('...')) {...}
-  // opts: { title, okText, cancelText, danger, icon, html }
+  // opts: { title, okText, cancelText, danger, icon, html, safeDefault }
+  // safeDefault:true — фокус и Enter на ОТМЕНЕ: для действий, которые
+  // нельзя совершать случайным нажатием (напасть на союзника)
   // html:true — message вставляется КАК РАЗМЕТКА (без экранирования).
   // Использовать только для верстки, собранной в коде: любые данные игроков
   // внутри обязаны быть прогнаны через UI.esc(). Раньше опции не было, и
@@ -388,10 +390,10 @@ const UI = {
       m.querySelector('#gd-ok').onclick = () => close(true);
       m.querySelector('#gd-cancel').onclick = () => close(false);
       m.onclick = (e) => { if (e.target === m) close(false); };
-      // Enter подтверждает, Esc отменяет
-      m.querySelector('#gd-ok').focus();
+      // Enter подтверждает, Esc отменяет. С safeDefault Enter — отмена.
+      m.querySelector(opts.safeDefault ? '#gd-cancel' : '#gd-ok').focus();
       m.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') close(true);
+        if (e.key === 'Enter') close(!opts.safeDefault);
         if (e.key === 'Escape') close(false);
       });
     });
