@@ -288,12 +288,23 @@ function acceptInvite(user: User, fromId: string, notices: Notices) {
   // человека повторно, и альянс рос на двоих вместо одного.
   const alreadyMine = user.allianceRoster!.some((m: any) => m.id === inviter.id);
   const alreadyTheirs = inviter.allianceRoster!.some((m: any) => m.id === user.id);
-  if (!alreadyMine && user.allianceMembers! < maxMembers(user)) {
+  // ИЛИ ОБОИМ, ИЛИ НИКОМУ. Раньше при полном альянсе у одной из сторон
+  // запись получала только вторая — союз выходил односторонним: игра
+  // писала «теперь союзники», а areAllies (взаимный ростер) отвечала
+  // «нет». Отсюда жалобы: человек в альянсе, а в профиле предлагают его
+  // пригласить и в списке целей он не помечен союзником.
+  if (!alreadyMine && user.allianceMembers! >= maxMembers(user)) {
+    throw new u.ApiError(`Ваш альянс заполнен: ${maxMembers(user)}. Поднимите уровень или исключите кого-то.`);
+  }
+  if (!alreadyTheirs && inviter.allianceMembers! >= maxMembers(inviter)) {
+    throw new u.ApiError(`У «${inviter.name}» альянс заполнен — он не может принять новых союзников.`);
+  }
+  if (!alreadyMine) {
     user.allianceMembers!++;
     user.allianceRoster!.push({ id: inviter.id, name: inviter.name });
     try { require('./seasons').onAllianceRecruit(user); } catch (e) {}
   }
-  if (!alreadyTheirs && inviter.allianceMembers! < maxMembers(inviter)) {
+  if (!alreadyTheirs) {
     inviter.allianceMembers!++;
     inviter.allianceRoster!.push({ id: user.id, name: user.name });
     try { require('./seasons').onAllianceRecruit(inviter); } catch (e) {}
@@ -328,10 +339,30 @@ function declineInvite(user: User, fromId: string, notices: Notices) {
 }
 
 // ── Исключить участника из своего альянса ─────────────────────────
+// Исключение разрывает союз У ОБОИХ. Раньше запись пропадала только у
+// того, кто исключал: у второго «союзник» оставался в списке, давал
+// вместимость армии и сбивал с толку — игра его союзником не считала
+// (areAllies смотрит оба ростера), а список показывал.
 function removeMember(user: User, memberId: string, notices: Notices) {
   ensure(user);
   const before = user.allianceRoster!.length;
   user.allianceRoster = user.allianceRoster!.filter((m) => m.id !== memberId);
+  // Вторая сторона: убираем и у неё, даже если у себя записи не было —
+  // так чинятся и уже перекошенные пары
+  const other = users()[String(memberId || '')];
+  if (other) {
+    ensure(other);
+    const wasThere = other.allianceRoster!.length;
+    other.allianceRoster = other.allianceRoster!.filter((m: any) => m.id !== user.id);
+    if (other.allianceRoster.length < wasThere) {
+      other.allianceMembers = Math.max(0, (other.allianceMembers || 0) - 1);
+      db.markUser(other.id);
+      try {
+        require('./notifications').push(other.id, 'alliance_left',
+          `🤝 «${user.name}» вышел из союза с вами`, { id: user.id, name: user.name });
+      } catch (e) {}
+    }
+  }
   if (user.allianceRoster.length < before) {
     user.allianceMembers = Math.max(0, user.allianceMembers! - 1);
     // Разорвали союз — отзываем подкрепления в обе стороны. Иначе можно
@@ -347,8 +378,40 @@ function removeMember(user: User, memberId: string, notices: Notices) {
   return view(user);
 }
 
+// ── Разовая починка односторонних союзов ──────────────────────────
+// До 18.09.2026 союз мог получиться односторонним: исключение убирало
+// запись только у одной стороны, а приём приглашения при заполненном
+// альянсе добавлял только второму. Такие пары игра союзниками не
+// считает, но в списке альянса они видны — и игроки пишут в поддержку.
+// Решение владельца: делать их ВЗАИМНЫМИ (а не разрывать), союз ведь и
+// задумывался. Лимит здесь не смотрим: запись уже существует у одной
+// стороны, и отказать значило бы оставить перекос навсегда.
+// Зовётся ОДИН раз при старте по флагу в meta — это правка данных.
+function repairOneSided(): { pairs: number; players: number } {
+  const all = users();
+  const touched: Record<string, boolean> = {};
+  let pairs = 0;
+  for (const id of Object.keys(all)) {
+    const p: any = all[id];
+    if (!Array.isArray(p.allianceRoster)) continue;
+    for (const m of p.allianceRoster.slice()) {
+      const other: any = m && all[m.id];
+      if (!other) continue;
+      if (!Array.isArray(other.allianceRoster)) other.allianceRoster = [];
+      if (other.allianceRoster.some((x: any) => x && x.id === p.id)) continue;
+      other.allianceRoster.push({ id: p.id, name: p.name });
+      other.allianceMembers = other.allianceRoster.length;
+      db.markUser(other.id);
+      touched[other.id] = true; touched[p.id] = true;
+      pairs++;
+    }
+  }
+  if (pairs) db.save('users');
+  return { pairs, players: Object.keys(touched).length };
+}
+
 export = {
-  areAllies, sweepInvites, INVITE_TTL_MS,
+  areAllies, sweepInvites, INVITE_TTL_MS, repairOneSided,
   ensure, maxMembers, view, buyDiplomat, invitePlayer,
   myInvites, acceptInvite, declineInvite, removeMember, purgeBots,
 };
