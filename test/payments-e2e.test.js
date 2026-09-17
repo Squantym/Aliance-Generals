@@ -92,9 +92,9 @@ const sumOf = (url) => new URL(url).searchParams.get('OutSum');
   const o1 = r.d.orderId, url1 = r.d.payUrl;
   const u1 = new URL(url1);
   ok(u1.searchParams.get('IsTest') === '1' && sumOf(url1) === '99.00' && invOf(url1) >= 5000, `тестовый счёт №${invOf(url1)} на 99.00`);
-  ok(u1.searchParams.get('SignatureValue') === sha(`shop-test:99.00:${invOf(url1)}:${P1}:Shp_order=${o1}`)
-     || u1.searchParams.get('SignatureValue').toUpperCase() === sha(`shop-test:99.00:${invOf(url1)}:${P1}:Shp_order=${o1}`),
-     'подпись ссылки паролем №1 сходится');
+  const rc1 = u1.searchParams.get('Receipt');
+  ok(!!rc1 && u1.searchParams.get('SignatureValue') === sha(`shop-test:99.00:${invOf(url1)}:${rc1}:${P1}:Shp_order=${o1}`).toLowerCase(),
+     'подпись ссылки паролем №1 (с составом чека) сходится');
   // Подделки
   let n = await notify(invOf(url1), '99.00', o1, 'wrong');
   ok(n.s === 400, 'уведомление с чужой подписью отклонено', n);
@@ -157,13 +157,17 @@ const sumOf = (url) => new URL(url).searchParams.get('OutSum');
   ok(r.s === 200, 'акцию можно выключить/изменить (' + (r.d.error || 'ок') + ')', r.d);
 
   console.log('\n[7] Набор за рубли и за золото');
-  r = await call('POST', '/api/admin/offers/save', T, { title: 'Ограниченный', items: [{ type: 'gold', qty: 1000 }], priceRub: 199, priceGold: 50, limitPerPlayer: 1, enabled: true });
+  r = await call('POST', '/api/admin/offers/save', T, { title: 'Ограниченный «Старт» — 1+1', items: [{ type: 'gold', qty: 1000 }], priceRub: 199, priceGold: 50, limitPerPlayer: 1, enabled: true });
   ok(r.s === 200, 'набор создан', r.d);
   const offId = r.d.id;
   const cat = await call('GET', '/api/offers', B3);
   ok((cat.d.offers || []).some((o) => o.id === offId), 'набор на витрине');
   const oo = await call('POST', '/api/offers/order', B3, { offerId: offId });
   ok(oo.s === 200 && oo.d.payUrl && sumOf(oo.d.payUrl) === '199.00', 'заказ на набор выставлен на 199.00', oo.d);
+  const offRc = JSON.parse(decodeURIComponent(new URL(oo.d.payUrl).searchParams.get('Receipt') || '%7B%7D'));
+  const offName = offRc.items && offRc.items[0] && offRc.items[0].name;
+  ok(offName && /^Игровой набор Ограниченный Старт 1\+1 игры/.test(offName) && !/[«»—]/.test(offName) && offRc.items[0].sum === 199,
+     `чек набора: «${offName}» на ${offRc.items && offRc.items[0].sum} ₽, без спецсимволов`);
   // Лимит 1 на игрока, а заказов можно наоформлять сколько угодно
   const oo2 = await call('POST', '/api/offers/order', B3, { offerId: offId });
   ok(oo2.s === 200 && oo2.d.orderId === oo.d.orderId && invOf(oo2.d.payUrl) === invOf(oo.d.payUrl),

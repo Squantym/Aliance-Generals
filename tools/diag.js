@@ -110,7 +110,7 @@ function readEnvFile() {
     for (const k of ['SMTPBZ_API_KEY', 'EMAIL_FROM', 'APP_URL', 'PORT', 'TEST_WORLD',
       'DB_DRIVER', 'OWNER_NAME', 'ALLOW_UNVERIFIED_EMAIL', 'STAFF_2FA_REQUIRED',
       'ROBOKASSA_LOGIN', 'ROBOKASSA_PASS1', 'ROBOKASSA_PASS2', 'ROBOKASSA_HASH', 'ROBOKASSA_TEST',
-      'ROBOKASSA_TEST_PASS1', 'ROBOKASSA_TEST_PASS2', 'ROBOKASSA_INV_BASE']) {
+      'ROBOKASSA_TEST_PASS1', 'ROBOKASSA_TEST_PASS2', 'ROBOKASSA_INV_BASE', 'ROBOKASSA_RECEIPT']) {
       if (!(k in envFile)) continue;
       const v = envFile[k];
       // Логин магазина не пароль, но вместе с утёкшим паролем — полный
@@ -129,6 +129,11 @@ function readEnvFile() {
       row('оплата (Робокасса)', rk.configured()
         ? (rk.isTest() ? WARN + ' ТЕСТОВЫЙ режим — деньги не настоящие' : OK + ' подключена, боевой режим')
         : BAD + ' выключена: ' + rk.problem());
+      if (rk.configured() && rk.receiptOn) {
+        row('чек для «Мой налог»', rk.receiptOn()
+          ? OK + ' состав чека передаётся'
+          : BAD + ' ROBOKASSA_RECEIPT=0 — Робокасса не сможет сформировать чек, пробивать руками');
+      }
       for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
     } catch (e) {}
     if ('YOOKASSA_SECRET_KEY' in envFile) row('.env YOOKASSA_*', WARN + ' ЮKassa отключена — строки можно удалить');

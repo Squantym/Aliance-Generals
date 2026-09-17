@@ -168,13 +168,33 @@ function transport(url) {
   ok(q.get('MerchantLogin') === LOGIN && q.get('OutSum') === '99.00', `магазин и сумма «${q.get('OutSum')}»`);
   ok(/^\d+$/.test(q.get('InvId')) && Number(q.get('InvId')) >= 1000 && Number(q.get('InvId')) === b1.inv, `номер счёта — целое: ${q.get('InvId')}`);
   ok(q.get('Shp_order') === b1.id, 'наш номер заказа — в Shp_order');
-  ok(q.get('SignatureValue') === md5(`${LOGIN}:99.00:${b1.inv}:${PASS1}:Shp_order=${b1.id}`), 'подпись паролем №1 с Shp_order');
+  // Состав чека: без него Робокасса не регистрирует доход самозанятого в
+  // «Мой налог» (заказ 1005, 18.09.2026). По документации Receipt — это
+  // компактный JSON, URL-кодированный ДО подписи; в ссылке он же.
+  const rc = q.get('Receipt') || '';
+  let rj = null;
+  try { rj = JSON.parse(decodeURIComponent(rc)); } catch (e) { rj = null; }
+  ok(!!rc && /^%7B/.test(rc) && /Receipt=%257B/.test(b1.r.data.payUrl), 'состав чека передан, закодирован до подписи');
+  ok(rj && rj.items.length === 1 && rj.items[0].sum === 99 && rj.items[0].quantity === 1 && rj.items[0].tax === 'none',
+     'в чеке одна позиция на 99 ₽, без НДС');
+  ok(rj && /^Игровая валюта 100 золота/.test(rj.items[0].name) && !/[«»—"]/.test(rj.items[0].name) && rj.items[0].name.length <= 128,
+     `наименование без спецсимволов: «${rj && rj.items[0].name}»`);
+  ok(rj && !('sno' in rj), 'СНО не навязана — берётся из кабинета');
+  ok(q.get('SignatureValue') === md5(`${LOGIN}:99.00:${b1.inv}:${rc}:${PASS1}:Shp_order=${b1.id}`),
+     'подпись паролем №1: логин:сумма:счёт:Receipt:пароль:Shp_order');
   ok(!q.has('IncCurrLabel') && !q.has('PaymentMethods'), 'способ оплаты не навязан — зарубежные карты доступны');
-  ok(!q.has('IsTest') && !q.has('Receipt'), 'боевой режим: без IsTest и без чека');
+  ok(!q.has('IsTest'), 'боевой режим: без IsTest');
   ok(/золота/.test(q.get('Description')) && q.get('Description').length <= 100 && q.get('Email') === 'rk3@t.ru', 'описание и почта покупателя');
   ok(b1.o.provider === 'robokassa' && b1.o.providerRef === String(b1.inv) && b1.o.rkTest === false, 'заказ помнит счёт');
   const b2 = await buy(tC);
   ok(b2.inv === b1.inv + 1, `следующий счёт — следующий номер (${b2.inv})`);
+  // Выключатель чека: без Receipt и подпись без него
+  process.env.ROBOKASSA_RECEIPT = '0';
+  const bNo = await buy(tC);
+  const qNo = new URL(bNo.r.data.payUrl).searchParams;
+  ok(!qNo.has('Receipt') && qNo.get('SignatureValue') === md5(`${LOGIN}:${qNo.get('OutSum')}:${bNo.inv}:${PASS1}:Shp_order=${bNo.id}`),
+     'ROBOKASSA_RECEIPT=0 — без чека и подпись без него');
+  delete process.env.ROBOKASSA_RECEIPT;
 
   console.log('\n[3] Поддельные уведомления');
   const gold0 = B.gold;
@@ -281,7 +301,7 @@ function transport(url) {
   process.env.ROBOKASSA_TEST = '1';
   const t1 = await buy(tC);
   const tq = new URL(t1.r.data.payUrl).searchParams;
-  ok(tq.get('IsTest') === '1' && tq.get('SignatureValue') === md5(`${LOGIN}:99.00:${t1.inv}:${TPASS1}:Shp_order=${t1.id}`), 'IsTest=1 и подпись тестовым паролем №1');
+  ok(tq.get('IsTest') === '1' && tq.get('SignatureValue') === md5(`${LOGIN}:99.00:${t1.inv}:${tq.get('Receipt')}:${TPASS1}:Shp_order=${t1.id}`), 'IsTest=1 и подпись тестовым паролем №1');
   r = await result(note(t1, { IsTest: '1', SignatureValue: sign('99.000000', t1.inv, TPASS2, t1.id) }));
   ok(r.text === 'OK' + t1.inv && orders()[t1.id].status === 'paid', 'тестовое уведомление принято в тестовом режиме');
   const tl = (await api('GET', '/api/admin/payments?test=1', tOwner)).data;

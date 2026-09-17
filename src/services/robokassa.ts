@@ -24,8 +24,10 @@
 //                            (md5 по умолчанию; sha1, sha256, sha384, sha512)
 //   ROBOKASSA_INV_BASE     — с какого номера начинать счета: у каждого
 //                            мира свой диапазон, чтобы номера не пересеклись
-//   ROBOKASSA_RECEIPT=1    — передавать состав для фискального чека
+//   ROBOKASSA_RECEIPT=0    — НЕ передавать состав чека (по умолчанию передаём)
 //   ROBOKASSA_SNO / _TAX   — система налогообложения и ставка для чека
+//                            (самозанятому не нужны: СНО берётся из кабинета,
+//                            ставка — «none»)
 //
 // Транспорт подменяемый: тесты ходят в поддельную Робокассу, а не в сеть.
 // ===================================================================
@@ -113,14 +115,25 @@ function outSum(rub: number): string {
   return (Math.round(Number(rub) * 100) / 100).toFixed(2);
 }
 
-// Состав для фискального чека (54-ФЗ). Передаётся, только если магазин
-// выдаёт чеки через Робокассу. Для самозанятого чек формирует «Мой налог»,
-// и тогда этот параметр не нужен вовсе.
-function receiptJson(o: { description: string; amountRub: number }): string {
+// Состав для фискального чека (54-ФЗ). Нужен и самозанятому: Робокасса
+// сама регистрирует доход в «Мой налог» — и без состава отвечает «Не
+// удалось сформировать чек… Вы не передали нам состав чека» (18.09.2026,
+// заказ 1005 на 4 990 ₽). Без чека вдобавок скрываются часть способов
+// оплаты. Поэтому состав передаём всегда, если явно не выключен.
+function receiptOn(): boolean { return env('ROBOKASSA_RECEIPT') !== '0'; }
+
+// Наименование позиции: до 128 символов и без спецсимволов — так
+// требует Робокасса. Кавычки-ёлочки, тире и прочее заменяем пробелом.
+function receiptName(s: string): string {
+  const clean = String(s || '').replace(/[^0-9A-Za-zА-Яа-яЁё.,%+\- ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return (clean || 'Игровая валюта').slice(0, 128);
+}
+
+function receiptJson(o: { description: string; amountRub: number; itemName?: string }): string {
   const sno = env('ROBOKASSA_SNO');
   const r: any = {
     items: [{
-      name: String(o.description || '').slice(0, 128),
+      name: receiptName(o.itemName || o.description),
       quantity: 1,
       sum: Number(outSum(o.amountRub)),
       payment_method: 'full_payment',
@@ -136,15 +149,20 @@ function receiptJson(o: { description: string; amountRub: number }): string {
 // нашего заказа едет отдельным Shp-параметром и входит в подпись.
 function payUrl(o: {
   invId: number; amountRub: number; description: string; orderId: string;
-  email?: string; culture?: string;
+  email?: string; culture?: string; itemName?: string;
 }): string {
   if (!configured()) throw new Error('Робокасса не настроена: ' + problem());
   const c = creds();
   const sum = outSum(o.amountRub);
   const shp: Record<string, string> = { Shp_order: String(o.orderId) };
-  const withReceipt = env('ROBOKASSA_RECEIPT') === '1';
-  const receipt = withReceipt ? receiptJson(o) : '';
-  // Состав чека, если он есть, стоит в подписи между номером счёта и паролем
+  const withReceipt = receiptOn();
+  // Состав чека — компактный JSON, URL-кодированный ПЕРЕД подписью (так в
+  // документации Робокассы: «значение Receipt нужно URL-кодировать»). В
+  // ссылку уходит та же закодированная строка — URLSearchParams кодирует
+  // её ещё раз, Робокасса снимает один слой и сверяет подпись по нашей.
+  // Подпись по сырому JSON давала бы «ошибку 29: неверная подпись».
+  const receipt = withReceipt ? encodeURIComponent(receiptJson(o)) : '';
+  // Состав чека стоит в подписи между номером счёта и паролем
   const base = withReceipt
     ? `${c.login}:${sum}:${o.invId}:${receipt}:${c.pass1}`
     : `${c.login}:${sum}:${o.invId}:${c.pass1}`;
@@ -278,5 +296,5 @@ async function opState(invId: number) {
 
 export = {
   configured, problem, isTest, payUrl, verifyResult, verifySuccess, opState,
-  setTransport, outSum, STATE_NAMES, PAY_URL,
+  setTransport, outSum, STATE_NAMES, PAY_URL, receiptOn, receiptName,
 };

@@ -314,6 +314,10 @@ async function pay(user: User, created: { orderId: string; status: string; payUr
       invId,
       amountRub: order.priceRub,
       description,
+      // Строка чека в «Мой налог»: что именно продано
+      itemName: order.offerId
+        ? `Игровой набор ${order.title || ''} игры ${brand.GAME_NAME}`
+        : `Игровая валюта ${order.gold} золота игры ${brand.GAME_NAME}`,
       orderId: order.id,
       email: String((user as any).email || ''),
     });
