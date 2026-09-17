@@ -4,9 +4,10 @@
 // Решение владельца (17.09.2026): прежние групповые бои стали
 // «рейтинговыми» (groupBattle.ts), а групповые — этот режим. Устройство
 // то же — запись, комната подготовки, роли, боты, — но:
-//   • характеристики РЕАЛЬНЫЕ, «всё как в игре» (realStats.ts):
-//     здоровье, энергия и боеприпасы — максимумы игрока, удар — по
-//     формуле войны от мощи армий, крит и уворот — от навыков;
+//   • характеристики РЕАЛЬНЫЕ (realStats.ts): в бой входят с текущими
+//     здоровьем, энергией и боеприпасами, итог боя переносится в игру,
+//     боеприпасы восстанавливаются как в игре; удар 20–35, крит ×4–×7
+//     с шансом от навыков, уворот от ловкости;
 //   • нет магазина, снабжения, улучшений и рангов — просто бои и один
 //     общий рейтинг;
 //   • взнос 1 000 000 000 $, каждый живой из победившей команды получает
@@ -15,8 +16,8 @@
 //   • свободные места за 10 секунд до старта занимают боты с силой
 //     50–80% от средних характеристик живых игроков боя.
 //
-// Ресурсы боя — копия максимумов: бой не трогает здоровье и боеприпасы
-// игрока в основной игре.
+// Итог боя переносится в игру: с чем закончил бой, с тем и вернулся
+// (решение владельца, 17.09.2026).
 // ═══════════════════════════════════════════════════════════════════
 
 import db = require('../core/db');
@@ -55,26 +56,26 @@ const COST = {
   guard:  { ammo: 0, energy: 50 },
 };
 
-// Лечение в новых боях меньше, чем в рейтинговых: там удар около 60, а
-// здесь удар по формуле войны — 12–16 при равных силах. Соотношение
-// «лечение к удару» сохранено (×0.25): иначе медик перелечивал бы
-// любой урон, и бой не кончался бы.
-const HEAL_MIN = 6, HEAL_MAX = 11;
-const HEAL_CRIT_MIN = 22, HEAL_CRIT_MAX = 55;
+// Лечение — числа владельца (17.09.2026)
+const HEAL_MIN = 22, HEAL_MAX = 46;
+const HEAL_CRIT_MIN = 160, HEAL_CRIT_MAX = 240;
 const HEAL_CRIT_CHANCE = 0.2;
 const GUARD_REDUCE = 0.5;
 const GUARD_MS = 20000;
 
+// Роли здесь НЕ меняют запасы: игрок входит в бой ровно с теми
+// здоровьем и энергией, что у него были (решение владельца). Роль
+// меняет только урон, броню и то, что боец умеет.
 const ROLES: Record<string, any> = {
   fighter: { id: 'fighter', label: 'Штурмовик', icon: '🎯',
              atkMul: 1.25, dmgReduce: 0.00, hpMul: 1.00, energyMul: 1.00,
              desc: 'Универсальный боец: урон выше на 25%, слабых мест нет.' },
   guardian:{ id: 'guardian', label: 'Защитник', icon: '🛡️',
-             atkMul: 0.75, dmgReduce: 0.25, hpMul: 1.25, energyMul: 1.00,
-             desc: 'Здоровья на 25% больше, входящий урон меньше на 25%, но и бьёт на 25% слабее.' },
+             atkMul: 0.75, dmgReduce: 0.25, hpMul: 1.00, energyMul: 1.00,
+             desc: 'Прикрывает союзников. Входящий урон меньше на 25%, но и бьёт на 25% слабее.' },
   medic:   { id: 'medic',   label: 'Медик',    icon: '➕',
-             atkMul: 0.75, dmgReduce: 0.00, hpMul: 1.00, energyMul: 1.25,
-             desc: 'Лечит союзников. Энергии на 25% больше, урон на 25% ниже.' },
+             atkMul: 0.75, dmgReduce: 0.00, hpMul: 1.00, energyMul: 1.00,
+             desc: 'Лечит союзников. Урон на 25% ниже.' },
 };
 const ROLE_IDS = Object.keys(ROLES);
 const ROLE_SHARE: Record<string, number> = { fighter: 0.5, guardian: 0.25, medic: 0.25 };
@@ -94,7 +95,8 @@ type Fighter = {
   forfeited?: boolean;
   left?: boolean;             // сам покинул бой — взнос потерян
   paid: number;               // сколько внёс (у ботов 0)
-  stats: any;                 // реальные характеристики на старте
+  stats: any;                 // характеристики на входе в бой
+  ammoAt?: number;            // отметка восстановления боеприпасов
   targetId: string | null;
   lastActionAt: number;
   guardedUntil: number;
@@ -231,10 +233,12 @@ function runBattle(s: Store, b: Battle, now: number): void {
     checkEnd(s, b);
   }
   if (b.state === 'running') {
+    // Боеприпасы восстанавливаются, как в игре. Конца боя «по пустым
+    // боеприпасам» нет (решение владельца): боезапас вернётся сам.
+    for (const f of Object.values(b.fighters)) if (f.alive) RS.regenAmmo(f, now);
     botTurn(b, now);
     checkEnd(s, b);
     if (b.state === 'running' && now - b.startedAt > BATTLE_MAX_MS) finishByHp(s, b, 'Время боя вышло');
-    else if (b.state === 'running' && outOfAmmo(b)) finishByHp(s, b, 'Боеприпасы кончились у всех');
   }
 }
 
@@ -244,9 +248,6 @@ function teamHp(b: Battle, team: 0 | 1): number {
 function finishByHp(s: Store, b: Battle, reason: string): void {
   const hp0 = teamHp(b, 0), hp1 = teamHp(b, 1);
   finish(s, b, hp0 === hp1 ? -1 : (hp0 > hp1 ? 0 : 1), reason);
-}
-function outOfAmmo(b: Battle): boolean {
-  return Object.values(b.fighters).every((f) => !f.alive || f.ammo < COST.attack.ammo);
 }
 
 // ---------- Боты ----------
@@ -321,16 +322,14 @@ function startBattle(s: Store, list: Reg[], now: number): void {
   for (const { rec, team } of split) {
     const bot = isBotId(rec.id);
     const role = ROLES[rec.role] ? rec.role : 'fighter';
-    const roleDef = ROLES[role];
     const stats = bot ? RS.botStats(avg, roll(BOT_STRENGTH_MIN, BOT_STRENGTH_MAX))
       : (snaps[rec.id] || RS.average([]));
-    const hp = Math.max(1, Math.round(stats.hp * roleDef.hpMul));
-    const energy = Math.round(stats.energy * roleDef.energyMul);
+    // Запасы — ровно те, с какими боец вошёл: 300/1600 HP — так и в бою
     fighters[rec.id] = {
       id: rec.id, name: rec.name, flag: rec.flag, team, role,
-      hp, maxHp: hp, energy, maxEnergy: energy,
-      ammo: stats.ammo, maxAmmo: stats.ammo,
-      alive: true, seen: bot, isBot: bot,
+      hp: stats.hp, maxHp: stats.maxHp, energy: stats.energy, maxEnergy: stats.maxEnergy,
+      ammo: stats.ammo, maxAmmo: stats.maxAmmo, ammoAt: now,
+      alive: stats.hp > 0, seen: bot, isBot: bot,
       ...(bot ? { botSmart: roll(BOT_SMART_MIN, BOT_SMART_MAX) } : {}),
       paid: bot ? 0 : rec.paid,
       stats,
@@ -440,6 +439,12 @@ function settle(s: Store, b: Battle, winnerTeam: -1 | 0 | 1): any[] {
     }
   }
   rows.sort((a, c) => (c.won ? 1 : 0) - (a.won ? 1 : 0) || c.damage - a.damage);
+  // Итог боя — в игру. Прогульщику тоже: за него воевала его копия и
+  // тратила его запасы.
+  for (const f of all) {
+    if (f.isBot && !f.replaced) continue;
+    RS.writeBack(f.id, { hp: f.hp, energy: f.energy, ammo: f.ammo });
+  }
   db.save('users');
   return rows;
 }
@@ -666,8 +671,11 @@ function myStatsOf(f: Fighter) {
     real: true,
     role: { id: f.role, label: role.label, icon: role.icon, hpMul: role.hpMul, energyMul: role.energyMul,
             atkMul: role.atkMul, dmgReducePct: pct(role.dmgReduce) },
-    hp: f.maxHp, energy: f.maxEnergy, ammo: f.maxAmmo,
-    atk: st.atk || 0, def: st.def || 0,
+    hp: f.hp, maxHp: f.maxHp, energy: f.energy, maxEnergy: f.maxEnergy,
+    ammo: f.ammo, maxAmmo: f.maxAmmo,
+    ammoRegenSec: st.ammoRegenSec || 0,
+    ammoEtaSec: RS.ammoEtaSec(f, Date.now()),
+    hitMin: RS.HIT_MIN, hitMax: RS.HIT_MAX, critMultMin: RS.CRIT_MULT_MIN, critMultMax: RS.CRIT_MULT_MAX,
     critPct: pct(st.critChance), dodgePct: pct(st.dodgeChance),
   };
 }
@@ -697,10 +705,12 @@ function view(user: User) {
       role: r.role, roleLabel: ROLES[r.role] ? ROLES[r.role].label : '—',
       isBot: isBotId(r.id),
     })),
-    myStats: mine ? { hp: mine.hp, energy: mine.energy, ammo: mine.ammo, atk: mine.atk, def: mine.def,
+    myStats: mine ? { hp: mine.hp, maxHp: mine.maxHp, energy: mine.energy, maxEnergy: mine.maxEnergy,
+      ammo: mine.ammo, maxAmmo: mine.maxAmmo, ammoRegenSec: mine.ammoRegenSec,
       critPct: Math.round(mine.critChance * 1000) / 10, dodgePct: Math.round(mine.dodgeChance * 1000) / 10 } : null,
     rules: {
       real: true, botMinPct: BOT_STRENGTH_MIN * 100, botMaxPct: BOT_STRENGTH_MAX * 100,
+      hitMin: RS.HIT_MIN, hitMax: RS.HIT_MAX, critMultMin: RS.CRIT_MULT_MIN, critMultMax: RS.CRIT_MULT_MAX,
       healMin: HEAL_MIN, healMax: HEAL_MAX, healCritMin: HEAL_CRIT_MIN, healCritMax: HEAL_CRIT_MAX,
       guardPct: Math.round(GUARD_REDUCE * 100), guardSec: GUARD_MS / 1000,
       cooldownMs: ACTION_CD_MS, costHeal: COST.heal.energy, costGuard: COST.guard.energy,
@@ -777,6 +787,7 @@ function battleState(user: User, watchId?: string) {
     me: {
       ...card(me),
       energy: me.energy, maxEnergy: me.maxEnergy, ammo: me.ammo, maxAmmo: me.maxAmmo,
+      ammoEtaSec: RS.ammoEtaSec(me, now),
       cooldownLeftMs: Math.max(0, me.lastActionAt + ACTION_CD_MS - now),
       damageDealt: me.damageDealt, healed: me.healed, kills: me.kills, targetId: me.targetId,
     },
@@ -808,6 +819,7 @@ function requireFight(user: User): { s: Store; b: Battle; me: Fighter } {
   if (!b || b.state !== 'running') throw new u.ApiError('Бой не идёт');
   const me = b.fighters[user.id];
   if (!me.alive) throw new u.ApiError('Вы выведены из боя');
+  RS.regenAmmo(me, Date.now());
   if (me.forfeited) throw new u.ApiError('Вы не вышли на бой — за вас играет резерв');
   const now = Date.now();
   if (now - me.lastActionAt < ACTION_CD_MS) {
@@ -826,6 +838,7 @@ function leave(user: User, notices: Notices) {
   me.alive = false;
   me.hp = 0;
   me.left = true;
+  RS.writeBack(me.id, { hp: 0, energy: me.energy, ammo: me.ammo });
   addLog(b, `🚪 ${me.name} покинул бой`, 'system', me.id);
   checkEnd(s, b);
   db.save(COLL);
@@ -863,7 +876,7 @@ function act(user: User, action: string, targetId: string, notices: Notices) {
 
 export = {
   view, register, unregister, setRole, battleState, act, tick, busyState, leave, ratingTable,
-  doAttack, doHeal, botTurn, outOfAmmo, battleOf, battles, isLive, splitTeams,
+  doAttack, doHeal, botTurn, battleOf, battles, isLive, splitTeams,
   ROLES, ROLE_IDS, TEAM_SIZE, TOTAL_SLOTS, ENTRY, PRIZE, COST, ACTION_CD_MS,
   BOT_FILL_BEFORE_MS, BOT_STRENGTH_MIN, BOT_STRENGTH_MAX, BOT_SMART_MIN, BOT_SMART_MAX, BOT_THINK_MS,
   HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, PREPARE_MS, LOBBY_MS, BOT_PREFIX,

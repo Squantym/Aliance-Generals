@@ -130,12 +130,8 @@ function fighter(id, team, role, isBot, extra) {
   ok('сообразительный (0.8) добивает раненого', run(0.8) === true);
   ok('глупый (0.6) бьёт наугад', run(0.6) === false);
 
-  console.log('\n[5] Конец боя, когда стрелять нечем');
-  const b5 = makeBattle([fighter('x', 0, 'fighter', false), fighter('y', 1, 'fighter', false)]);
-  b5.fighters.x.ammo = 0; b5.fighters.y.ammo = 0;
-  ok('у всех пусто — бой стоит', gb.outOfAmmo(b5) === true);
-  b5.fighters.y.ammo = 1;
-  ok('у кого-то есть — бой идёт', gb.outOfAmmo(b5) === false);
+  console.log('\n[5] Пустые боеприпасы бой не заканчивают (решение владельца)');
+  ok('правила «конец по боеприпасам» нет', gb.outOfAmmo === undefined);
 
   const src = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
   ok('решения бота идут через smart(p, bot)',

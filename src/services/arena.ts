@@ -5,10 +5,11 @@
 //   • Бои стартуют каждые 15 минут от полуночи: 00:15, 00:30, 00:45…
 //   • Взнос 10 золота (Элита) или 1 млрд (Базовый), весь банк достаётся
 //     единственному победителю.
-//   • Характеристики РЕАЛЬНЫЕ, «всё как в игре» (решение владельца,
-//     17.09.2026, realStats.ts): здоровье и боеприпасы — максимумы
-//     игрока, удар — по формуле войны от мощи армий, крит и уворот — от
-//     навыков. До этого у всех было поровну: 1000 HP и удар 25–35.
+//   • Характеристики РЕАЛЬНЫЕ (решения владельца 17.09.2026,
+//     realStats.ts): в бой входят с текущими здоровьем и боеприпасами,
+//     итог боя переносится в игру, боеприпасы восстанавливаются как в
+//     игре; удар 20–35, крит ×4–×7 с шансом от навыков. До этого у всех
+//     было поровну: 1000 HP и удар 25–35.
 //   • Четыре умения с ограниченным числом применений — как было.
 //   • Если к старту живых меньше 10, за 10 секунд до начала свободные
 //     места занимают боты с 70% средних характеристик живых. Взнос боты
@@ -117,8 +118,9 @@ const BATTLE_MAX_MS = 15 * 60 * 1000;
 type Fighter = {
   id: string; name: string; flag: string;
   hp: number; maxHp: number;
-  ammo?: number; maxAmmo?: number;   // боезапас — реальный максимум игрока
-  stats?: any;                       // реальные характеристики на старте
+  ammo?: number; maxAmmo?: number;   // боезапас — как у игрока на входе
+  ammoAt?: number;                   // отметка восстановления боеприпасов
+  stats?: any;                       // характеристики на входе в бой
   isBot?: boolean;
   botAt?: number;                    // когда бот ходил последний раз
   targetId: string | null;
@@ -352,6 +354,8 @@ function runBattle(div: DivId, s: DivState, b: Battle, now: number): void {
   }
 
   if (b.state !== 'running') return;
+  // Боеприпасы восстанавливаются, как в игре
+  for (const f of Object.values(b.fighters)) if (f.alive && f.stats) RS.regenAmmo(f, now);
   botsAct(div, s, b, now);
   if (!isLive(b)) return;
 
@@ -368,11 +372,9 @@ function runBattle(div: DivId, s: DivState, b: Battle, now: number): void {
     cancelBattle(div, s, 'Бой не состоялся: на арену никто не вышел', b);
     return;
   }
-  // Затянувшийся бой — или стрелять больше нечем: побеждает тот, у кого
-  // больше здоровья. С реальными боеприпасами (от 5 штук) второе бывает
-  // часто, и ждать четверть часа незачем.
-  const noAmmo = stillAlive.every((f) => typeof f.ammo === 'number' && f.ammo <= 0);
-  if (now - b.startedAt > BATTLE_MAX_MS || noAmmo) {
+  // Затянувшийся бой: побеждает тот, у кого больше здоровья. Конца «по
+  // пустым боеприпасам» нет — они восстанавливаются (решение владельца).
+  if (now - b.startedAt > BATTLE_MAX_MS) {
     const alive = stillAlive.slice().sort((x, y) => y.hp - x.hp);
     finishBattle(div, s, alive[0], b);
   }
@@ -422,12 +424,13 @@ function startBattle(div: DivId, s: DivState, list: any[], now: number): void {
     const st = bot ? RS.botStats(avg, BOT_STRENGTH) : (snaps[r.id] || RS.average([]));
     fighters[r.id] = {
       id: r.id, name: r.name, flag: r.flag,
-      hp: st.hp, maxHp: st.hp,
-      ammo: st.ammo, maxAmmo: st.ammo, stats: st,
+      // Запасы — ровно те, с какими боец вошёл
+      hp: st.hp, maxHp: st.maxHp,
+      ammo: st.ammo, maxAmmo: st.maxAmmo, ammoAt: now, stats: st,
       isBot: bot, botAt: 0,
       targetId: null, lastAttackAt: 0,
       // Бот в комнате с первой секунды — ему открывать нечего
-      alive: true, entered: true, seen: bot, place: 0,
+      alive: st.hp > 0, entered: true, seen: bot, place: 0,
       skills: { medkit: SKILLS.medkit.uses, crit: SKILLS.crit.uses, armor: SKILLS.armor.uses, smoke: SKILLS.smoke.uses },
       rating: bot ? Math.max(0, avgPts + Math.round((Math.random() * 2 - 1) * Math.max(5, avgPts * 0.3)))
         : ((table[r.id] && table[r.id].points) || 0),
@@ -508,6 +511,11 @@ function finishBattle(div: DivId, s: DivState, winner: Fighter, battle?: Battle)
   b.state = 'done';
   b.finishedAt = Date.now();
   b.winnerId = winner.id;
+  // Итог боя — в игру: здоровье и боеприпасы такие, какими закончился бой
+  for (const f of Object.values(b.fighters)) {
+    if (f.isBot || !f.stats) continue;
+    RS.writeBack(f.id, { hp: f.hp, ammo: f.ammo });
+  }
   b.winnerName = winner.name;
 
   const root = store();
@@ -747,7 +755,7 @@ function view(user: User, divRaw?: any) {
   let myStats: any = null;
   try {
     const m = RS.snapshot(user);
-    myStats = { hp: m.hp, ammo: m.ammo, atk: m.atk, def: m.def,
+    myStats = { hp: m.hp, maxHp: m.maxHp, ammo: m.ammo, maxAmmo: m.maxAmmo, ammoRegenSec: m.ammoRegenSec,
       critPct: Math.round(m.critChance * 1000) / 10, dodgePct: Math.round(m.dodgeChance * 1000) / 10 };
   } catch (e) { myStats = null; }
 
@@ -907,7 +915,10 @@ function battleState(user: User) {
       kills: me.kills, damageDealt: me.damageDealt,
       ammo: typeof me.ammo === 'number' ? me.ammo : null,
       maxAmmo: typeof me.maxAmmo === 'number' ? me.maxAmmo : null,
-      atk: me.stats ? me.stats.atk : 0, def: me.stats ? me.stats.def : 0,
+      ammoEtaSec: me.stats ? RS.ammoEtaSec(me, now) : 0,
+      ammoRegenSec: me.stats ? me.stats.ammoRegenSec : 0,
+      critPct: me.stats ? Math.round(me.stats.critChance * 1000) / 10 : 0,
+      dodgePct: me.stats ? Math.round(me.stats.dodgeChance * 1000) / 10 : 0,
     },
     huntersCount: hunters.length,
     target: target ? {
@@ -936,6 +947,7 @@ function requireFight(user: User): { div: DivId; s: DivState; b: Battle; me: Fig
   const me = b.fighters[user.id];
   if (!me) throw new u.ApiError('Вы не участвуете в этом бою');
   if (!me.alive) throw new u.ApiError('Вы выбыли из боя');
+  if (me.stats) RS.regenAmmo(me, Date.now());
   return { div, s, b, me };
 }
 
@@ -1022,6 +1034,7 @@ function leave(user: User, notices: Notices) {
   me.alive = false;
   me.hp = 0;
   me.place = Object.values(b.fighters).filter((f) => f.alive).length + 1;
+  if (me.stats) RS.writeBack(me.id, { hp: 0, ammo: me.ammo });
   addLog(me, '🚪 Вы покинули бой — поражение засчитано');
   for (const f of Object.values(b.fighters)) {
     if (f.alive && f.targetId === me.id) f.targetId = pickTarget(b, f.id);

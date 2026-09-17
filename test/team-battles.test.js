@@ -3,10 +3,12 @@
 //
 // Что стережётся:
 //  1. Новые групповые бои (squadBattle): взнос $1 млрд, возврат при
-//     отмене записи, реальные характеристики «как в игре», роли, боты
-//     50–80% от средних за 10 секунд до старта, приз $2 млрд каждому
-//     живому победителю, ничья — возврат, прогульщик и ушедший взнос
-//     теряют, один общий рейтинг без рангов.
+//     отмене записи, в бой — с ТЕКУЩИМИ запасами игрока (роль их не
+//     меняет), итог боя переносится в игру, боеприпасы восстанавливаются
+//     как в игре, удар 20–35 и крит ×4–×7, лечение 22–46 и крит
+//     160–240, боты 50–80% от средних за 10 секунд до старта, приз $2
+//     млрд каждому живому победителю, ничья — возврат, прогульщик и
+//     ушедший взнос теряют, один общий рейтинг без рангов.
 //  2. Нельзя быть в двух режимах сразу (арена, рейтинговые, групповые).
 //  3. Таймер: после старта отсчёт не идёт, пока никто не записался
 //     (жалоба «таймер снова начинает отсчёт без игроков»); идущий бой не
@@ -14,7 +16,7 @@
 //  4. Арена: реальные характеристики, боты до 10 мест с 70% средних, бот
 //     выигрывает — банк сгорает, живой вытесняет бота из полного
 //     списка, боты сами бьют.
-//  5. Бой заканчивается, когда боеприпасы кончились у всех.
+//  5. Пустые боеприпасы бой не заканчивают — они восстанавливаются.
 //
 // Запуск: node test/team-battles.test.js   (после npm run build)
 // ═══════════════════════════════════════════════════════════════════
@@ -57,6 +59,9 @@ const sqStore = () => db.load('squadBattle', {});
   const C = await reg('Гамма');
   const D = await reg('Дельта');
   A.skills.health = 30; A.skills.ammo = 20; A.skills.energy = 10;   // Альфа крепче
+  // У Альфы прокачан трофей «Боевая логистика» (10 ур. — на 75% быстрее),
+  // у Беты — нет: в бою боеприпасы у них должны идти с разной скоростью
+  A.trophies = Object.assign(A.trophies || {}, { ammo_logi: 10 });
   Bp.skills.ammo = 20;
 
   console.log('\n[1] Запись на новые групповые бои');
@@ -89,6 +94,11 @@ const sqStore = () => db.load('squadBattle', {});
   sq.tick();
   const botsHalf = Object.keys(sqStore().registered).filter((id) => id.startsWith(sq.BOT_PREFIX)).length;
   ok(botsHalf > 0 && botsHalf < 8, `за 5 секунд — часть мест: ${botsHalf} ботов`);
+  // Запасы на входе: ровно с ними бойцы выйдут на поле
+  const mxA = player.maxima(A), mxB = player.maxima(Bp);
+  const now0 = Date.now();
+  A.res = { hp: { cur: 300, t: now0 }, en: { cur: 70, t: now0 }, am: { cur: 7, t: now0 } };
+  Bp.res = { hp: { cur: 90, t: now0 }, en: { cur: 100, t: now0 }, am: { cur: 3, t: now0 } };
   setSlot('squadBattle', -1000);
   sq.tick();
   const s1 = sqStore();
@@ -96,17 +106,18 @@ const sqStore = () => db.load('squadBattle', {});
   ok(b1 && b1.state === 'preparing' && Object.keys(b1.fighters).length === 10, 'бой собрался: 10 бойцов');
   ok(s1.slot === 0 && sq.view(D).secondsLeft === 0, 'очередь пуста — отсчёта нет');
   const fa = b1.fighters[A.id], fb = b1.fighters[Bp.id];
-  const snapA = RS.snapshot(A), snapB = RS.snapshot(Bp);
-  ok(fa.maxHp === snapA.hp && fa.maxHp === player.maxima(A).hp, `здоровье Альфы — как в игре: ${fa.maxHp}`);
-  ok(fa.maxAmmo === player.maxima(A).am && fa.maxEnergy === player.maxima(A).en, 'боеприпасы и энергия — как в игре');
-  ok(fb.maxHp === Math.round(snapB.hp * 1.25), `защитник крепче на 25%: ${fb.maxHp}`);
-  ok(fa.stats.atk === snapA.atk && fa.stats.def === snapA.def, 'мощь атаки и защиты — от армии');
-  const avgHp = (snapA.hp + snapB.hp) / 2;
+  ok(fa.hp === 300 && fa.maxHp === mxA.hp, `здоровье Альфы — как на входе: ${fa.hp}/${fa.maxHp}`);
+  ok(fa.energy === 70 && fa.maxEnergy === mxA.en, `энергия — как на входе: ${fa.energy}/${fa.maxEnergy}`);
+  ok(fa.ammo === 7 && fa.maxAmmo === mxA.am, `боеприпасы — как на входе: ${fa.ammo}/${fa.maxAmmo}`);
+  ok(fb.hp === 90 && fb.maxHp === mxB.hp, `роль защитника запасы не меняет: ${fb.hp}/${fb.maxHp}`);
+  ok(fa.stats.ammoRegenSec === player.ammoRegenSeconds(A), `восстановление боеприпасов — как в игре: ${fa.stats.ammoRegenSec} с`);
+  ok(fa.stats.ammoRegenSec === 45 && fb.stats.ammoRegenSec === 180,
+     `трофей ускоряет и в бою: у Альфы ${fa.stats.ammoRegenSec} с, у Беты ${fb.stats.ammoRegenSec} с`);
+  const avgHp = (300 + 90) / 2;
   const bots = Object.values(b1.fighters).filter((f) => f.isBot);
-  ok(bots.every((f) => f.stats.hp >= Math.floor(avgHp * 0.5) && f.stats.hp <= Math.ceil(avgHp * 0.8)),
-     `здоровье ботов — 50–80% от среднего (${Math.round(avgHp)})`);
-  // Мощь не ниже 10 — та же нижняя граница, что у живых без армии
-  ok(bots.every((f) => f.stats.atk <= Math.max(10, Math.ceil((snapA.atk + snapB.atk) / 2 * 0.8))), 'и мощь не выше 80%');
+  ok(bots.every((f) => f.hp >= Math.floor(avgHp * 0.5) && f.hp <= Math.ceil(avgHp * 0.8) && f.hp === f.maxHp),
+     `здоровье ботов — 50–80% от среднего на входе (${Math.round(avgHp)}), запас полный`);
+  ok(bots.every((f) => f.stats.power >= 0.5 && f.stats.power <= 0.8), 'и сила удара — та же доля');
   ok(bots.every((f) => f.botSmart >= 0.6 && f.botSmart <= 0.8), 'сообразительность ботов 0.6–0.8');
   ok(bots.every((f) => f.paid === 0), 'боты взнос не платят');
   const teamOf = (id) => b1.fighters[id].team;
@@ -133,11 +144,47 @@ const sqStore = () => db.load('squadBattle', {});
   sq.tick();
   const cur = sqStore().others[0];
   ok(cur.state === 'running', 'подготовка кончилась — бой идёт');
-  const winTeam = cur.fighters[A.id].team;
-  const moneyA = A.dollars, moneyB = Bp.dollars;
-  for (const f of Object.values(cur.fighters)) if (f.team !== winTeam) { f.alive = false; f.hp = 0; }
+  // Удар и лечение — числа владельца
+  const RSm = require(ROOT + '/dist/src/services/realStats');
+  const realRnd = Math.random;
+  Math.random = () => 0.99;          // без уворота и крита, верх диапазона
+  const foeId = Object.keys(cur.fighters).find((id) => cur.fighters[id].team !== cur.fighters[A.id].team && cur.fighters[id].isBot);
+  const foe = cur.fighters[foeId];
+  const hp0 = foe.hp;
+  foe.stats.dodgeChance = 0;
+  sq.doAttack(cur, cur.fighters[A.id], foe);
+  const plain = hp0 - foe.hp;
+  Math.random = () => 0;             // крит всегда, низ диапазона
+  cur.fighters[A.id].stats.critChance = 1;
+  foe.hp = 5000; foe.maxHp = 5000;
+  foe.role = 'fighter';
+  sq.doAttack(cur, cur.fighters[A.id], foe);
+  const critHit = 5000 - foe.hp;
+  Math.random = realRnd;
+  ok(plain >= Math.round(20 * 1.25) && plain <= Math.round(35 * 1.25), `удар штурмовика 20–35 ×1.25: ${plain}`);
+  ok(critHit >= Math.round(20 * 4 * 1.25) && critHit <= Math.round(35 * 7 * 1.25), `крит ×4–×7: ${critHit}`);
+  ok(RSm.HIT_MIN === 20 && RSm.HIT_MAX === 35 && RSm.CRIT_MULT_MIN === 4 && RSm.CRIT_MULT_MAX === 7, 'числа удара в одном месте');
+  ok(sq.HEAL_MIN === 22 && sq.HEAL_MAX === 46 && sq.HEAL_CRIT_MIN === 160 && sq.HEAL_CRIT_MAX === 240, 'лечение 22–46, крит 160–240');
+  // Восстановление боеприпасов в бою
+  const fA = cur.fighters[A.id];
+  fA.ammo = 0;
+  fA.ammoAt = Date.now() - 3 * fA.stats.ammoRegenSec * 1000 - 500;
   db.save('squadBattle');
   sq.tick();
+  const fA2 = sqStore().others[0].fighters[A.id];
+  ok(fA2.ammo === 3, `за три интервала вернулось 3 боеприпаса: ${fA2.ammo}`);
+  // Итог боя — в игру
+  const endHp = 123, endEn = 20;
+  const curW = sqStore().others[0];
+  curW.fighters[A.id].hp = endHp; curW.fighters[A.id].energy = endEn;
+  const winTeam = curW.fighters[A.id].team;
+  const moneyA = A.dollars, moneyB = Bp.dollars;
+  for (const f of Object.values(curW.fighters)) if (f.team !== winTeam) { f.alive = false; f.hp = 0; }
+  db.save('squadBattle');
+  sq.tick();
+  ok(A.res.hp.cur === endHp && A.res.en.cur === endEn && A.res.am.cur === 3,
+     `итог боя перенесён в игру: ${A.res.hp.cur} HP, ${A.res.en.cur} энергии, ${A.res.am.cur} боеприпасов`);
+  ok(Bp.res.hp.cur === 0, 'у погибшего в бою — ноль здоровья и в игре');
   const done = sqStore().others.find((x) => x.id === bb.id) || sqStore().results[bb.id];
   ok(done && (done.state === 'done' || done.rows), 'бой завершён');
   ok(A.dollars === moneyA + 2 * B, `Альфа получил $2 млрд: +${(A.dollars - moneyA) / B}`);
@@ -158,16 +205,19 @@ const sqStore = () => db.load('squadBattle', {});
   sq.tick();
   const moneyC = C.dollars;
   const cur2 = sqStore().battle;
-  for (const f of Object.values(cur2.fighters)) { f.ammo = 0; }
+  for (const f of Object.values(cur2.fighters)) { f.ammo = 0; f.ammoAt = Date.now(); }
   db.save('squadBattle');
-  ok(sq.outOfAmmo(cur2), 'у всех кончились боеприпасы');
-  // Равное здоровье команд — ничья
+  sq.tick();
+  ok(sqStore().battle.state === 'running', 'боеприпасы у всех кончились — бой идёт дальше');
+  // Равное здоровье команд и вышедшее время — ничья
   const hpEach = 50;
-  for (const f of Object.values(cur2.fighters)) { f.hp = hpEach; f.alive = true; }
+  const cur2b = sqStore().battle;
+  for (const f of Object.values(cur2b.fighters)) { f.hp = hpEach; f.alive = true; }
+  cur2b.startedAt = Date.now() - 21 * 60000;
   db.save('squadBattle');
   sq.tick();
   const r2 = sqStore().results[b2.id];
-  ok(r2 && r2.winnerTeam === -1, 'стрелять нечем — бой закончен ничьей по здоровью');
+  ok(r2 && r2.winnerTeam === -1, 'время вышло при равном здоровье — ничья');
   ok(C.dollars === moneyC + B, 'при ничьей взнос вернулся');
   // Прогульщик
   sq.register(D, 'fighter', []);
@@ -188,6 +238,7 @@ const sqStore = () => db.load('squadBattle', {});
   for (const f of Object.values(sqStore().battle.fighters)) { f.ammo = 0; f.hp = 10; }
   const cb = sqStore().battle;
   for (const f of Object.values(cb.fighters)) if (f.id === C.id) { f.hp = 0; f.alive = false; }
+  cb.startedAt = Date.now() - 21 * 60000;   // время боя вышло
   db.save('squadBattle');
   sq.tick();
   const r3 = sqStore().results[b3.id];
@@ -231,10 +282,12 @@ const sqStore = () => db.load('squadBattle', {});
   ok(ab && Object.keys(ab.fighters).length === 10, 'бой на 10 мест');
   ok(ab.pot === 20, `банк — только взносы живых: ${ab.pot}`);
   const snapE = RS.snapshot(E), snapF = RS.snapshot(F);
-  ok(ab.fighters[E.id].maxHp === snapE.hp && ab.fighters[E.id].ammo === snapE.ammo, 'у живых — реальные характеристики');
+  ok(ab.fighters[E.id].hp === ab.fighters[E.id].stats.hp && ab.fighters[E.id].maxHp === snapE.maxHp
+     && ab.fighters[E.id].ammo === ab.fighters[E.id].stats.ammo, 'у живых — запасы на входе');
   const aBots = Object.values(ab.fighters).filter((f) => f.isBot);
-  const avgA = (snapE.hp + snapF.hp) / 2;
-  ok(aBots.length === 8 && aBots.every((f) => f.maxHp === Math.round(avgA * 0.7)), `боты — 70% среднего здоровья (${Math.round(avgA * 0.7)})`);
+  const avgA = (ab.fighters[E.id].hp + ab.fighters[F.id].hp) / 2;
+  ok(aBots.length === 8 && aBots.every((f) => f.maxHp === Math.round(avgA * 0.7) && f.stats.power === 0.7),
+     `боты — 70% среднего здоровья (${Math.round(avgA * 0.7)}) и силы удара`);
   ok(aBots.every((f) => f.seen && f.entered), 'боты в строю сразу');
   // Бой пошёл — боты бьют сами
   for (const f of Object.values(ab.fighters)) f.seen = true;
@@ -272,16 +325,30 @@ const sqStore = () => db.load('squadBattle', {});
   ok(arena.battleState(G).battleId === firstId && arena.battleState(H).battleId === ar4.battle.id, 'каждый видит свой бой');
   fails(() => arena.register(G, 'elite', []), 'уже участвуете', 'живой участник идущего боя не записывается повторно');
 
-  console.log('\n[10] Арена: боеприпасы кончились — бой окончен');
+  console.log('\n[10] Арена: боеприпасы восстанавливаются, итог — в игру');
   const b10 = ar4.battle;
-  for (const f of Object.values(b10.fighters)) { f.seen = true; f.ammo = 0; }
+  for (const f of Object.values(b10.fighters)) { f.seen = true; f.ammo = 0; f.ammoAt = Date.now(); }
   b10.prepareUntil = Date.now() - 1;
-  b10.fighters[H.id].hp = b10.fighters[H.id].maxHp + 1000;   // у Теты больше всех
+  db.save('arena');
+  arena.tick();
+  ok(ar().battle.state === 'running', 'пустые боеприпасы бой не заканчивают');
+  const fH = ar().battle.fighters[H.id];
+  fH.ammoAt = Date.now() - 2 * fH.stats.ammoRegenSec * 1000 - 100;
+  fH.botAt = Date.now();
+  db.save('arena');
+  const st10 = arena.battleState(H);
+  ok(st10.me.ammo === 2, `за два интервала — два боеприпаса: ${st10.me.ammo}`);
+  ok(st10.me.critPct >= 0 && st10.me.ammoRegenSec > 0, 'игрок видит крит и скорость восстановления');
+  // Тета побеждает с 37 HP — столько и остаётся в игре
+  const b10b = ar().battle;
+  for (const f of Object.values(b10b.fighters)) if (f.id !== H.id) { f.alive = false; f.hp = 0; f.place = 5; }
+  b10b.fighters[H.id].hp = 37;
   db.save('arena');
   const goldH = H.gold;
   arena.tick();
-  ok(ar().battle.state === 'done' && ar().battle.winnerId === H.id, 'стрелять нечем — победил тот, у кого больше здоровья');
+  ok(ar().battle.state === 'done' && ar().battle.winnerId === H.id, 'Тета победил');
   ok(H.gold === goldH + ar().battle.pot, 'и забрал банк');
+  ok(H.res.hp.cur === 37 && H.res.am.cur === 2, `итог арены в игре: ${H.res.hp.cur} HP, ${H.res.am.cur} боеприпасов`);
 
   console.log(`\n${failed ? '❌ ПРОВАЛЕНО: ' + failed : '✅ Все проверки пройдены'}: ${passed}`);
   process.exit(failed ? 1 : 0);

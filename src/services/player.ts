@@ -770,6 +770,17 @@ function syncSuper(user: User, notices: Notices): any {
 // ---------- «Освежение» игрока перед каждым запросом ----------
 // Лениво досчитываем всё, что должно было произойти со временем:
 // регенерацию, почасовой доход, истечение эффектов и окна штаба.
+// Интервал восстановления одного боеприпаса, секунды. Трофей «Боевая
+// логистика» + допинг «Конвой» ускоряют, VIP — сверху. Вынесено отдельно:
+// командные сражения восстанавливают боеприпасы в бою ровно так же.
+function ammoRegenSeconds(user: User, med?: number): number {
+  const vipSrv = require('./vip');
+  const m = med || medcorpsRegenMul(user);
+  return Math.max(15, vipSrv.regenSeconds(user, Math.round(
+    config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct') / m
+  )));
+}
+
 function refresh(user: User): void {
   const now = Date.now();
   const mx = maxima(user);
@@ -791,11 +802,7 @@ function refresh(user: User): void {
     config.REGEN.en * (1 - trophyDiscountPct(user, 'regen_en') / 100) / effMul(user, 'energy_regen_pct') / med
   )));
   applyRegen(user.res.en, mx.en, enInterval, now, config.REGEN.EN_PER_TICK);
-  // Трофей «Боевая логистика» + допинг «Конвой» ускоряют боеприпасы
-  const amInterval = Math.max(15, vipSrv.regenSeconds(user, Math.round(
-    config.REGEN.am * (1 - trophyDiscountPct(user, 'regen_am') / 100) / effMul(user, 'ammo_regen_pct') / med
-  )));
-  applyRegen(user.res.am, mx.am, amInterval, now);
+  applyRegen(user.res.am, mx.am, ammoRegenSeconds(user, med), now);
 
   // Истёкшие эффекты удаляем
   user.effects = user.effects.filter((e) => e.expiresAt > now);
@@ -1713,7 +1720,7 @@ function restoreEar(user: User, notices: Notices) {
 }
 
 export = { isXpBlocked, xpBlockLeftMin,
-  users, maxima, refresh, addMoney, addBattleLoot, addGold, spendGold, paidGold, addXp, xpMul, spendSkill, resetSkills,
+  users, maxima, refresh, ammoRegenSeconds, applyRegen, addMoney, addBattleLoot, addGold, spendGold, paidGold, addXp, xpMul, spendSkill, resetSkills,
   allianceOf, allianceInfo, legionOf, legionInfo, legionBonus, capacity, effMul, effectsView, effLabel,
   ensureUnit, unitTotalCount, unitCountTotal, trophyDiscountPct, totalPower,
   buildArmy, buildingDef, totalIncome, totalUpkeep, syncSuper,

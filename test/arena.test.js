@@ -60,6 +60,12 @@ const ps = names.map(by);
 for (const p of ps) { p.gold = 1000; p.level = 1; p.skills.ammo = 30; }
 ps[3].level = 300;
 ps[3].skills.health = 40;   // навык здоровья теперь значит: 100 + 40×10
+// В бой входят с ТЕКУЩИМИ запасами — даём всем полные, а Альфе — неполное
+// здоровье, чтобы проверить, что берётся именно текущее
+const fill = (p) => { const m = player.maxima(p), t = Date.now();
+  p.res = { hp: { cur: m.hp, t }, en: { cur: m.en, t }, am: { cur: m.am, t } }; };
+for (const p of ps) fill(p);
+ps[0].res.hp.cur = 80;
 
 console.log('\n── 1. Расписание ──');
 ok(arena.SLOT_MINUTES === 15, `бои каждые ${arena.SLOT_MINUTES} минут`);
@@ -97,7 +103,8 @@ ok(ps[0].gold === goldBefore + arena.ENTRY_GOLD, 'одному участник�
 ok(!db.load('arena', {}).divs.elite.battle, 'бой не начался');
 
 console.log('\n── 4. Старт и выход на арену ──');
-for (const p of ps) { p.gold = 1000; arena.register(p, 'elite', []); }
+for (const p of ps) { p.gold = 1000; fill(p); arena.register(p, 'elite', []); }
+ps[0].res.hp.cur = 80;     // Альфа идёт в бой раненым
 startNow();
 const v2 = arena.view(ps[0], 'elite');
 // Ждать нажатия «В бой» больше не нужно: взнос уплачен, и отвлёкшийся
@@ -120,13 +127,13 @@ ok(st.active === true, 'все участники уже в бою');
 ok(!!st.target, 'цель назначена автоматически');
 ok(st.aliveCount === 4, `живых: ${st.aliveCount}`);
 
-console.log('\n── 5. Характеристики реальные ──');
+console.log('\n── 5. Характеристики — как на входе ──');
 const mx0 = player.maxima(ps[0]);
-ok(st.me.maxHp === mx0.hp, `здоровье — максимум игрока: ${st.me.maxHp}`);
-ok(st.me.maxAmmo === mx0.am && st.me.ammo === mx0.am, `боеприпасы — максимум игрока: ${st.me.ammo}`);
+ok(st.me.hp === 80 && st.me.maxHp === mx0.hp, `здоровье — текущее из максимума: ${st.me.hp}/${st.me.maxHp}`);
+ok(st.me.maxAmmo === mx0.am && st.me.ammo === mx0.am, `боеприпасы — текущие: ${st.me.ammo}/${st.me.maxAmmo}`);
 const st300 = arena.battleState(ps[3]);
-ok(st300.me.maxHp === 500 && st300.me.maxHp > st.me.maxHp, `у прокачавшего здоровье больше: ${st300.me.maxHp}`);
-ok(st.me.atk >= 10 && st.me.def >= 10, 'мощь атаки и защиты взята из армии');
+ok(st300.me.maxHp === 500 && st300.me.hp === 500, `у прокачавшего здоровье больше: ${st300.me.maxHp}`);
+ok(st.me.ammoRegenSec > 0 && typeof st.me.critPct === 'number', 'игрок видит крит и восстановление');
 ok(st.me.skills.medkit === 1 && st.me.skills.crit === 1
    && st.me.skills.armor === 1 && st.me.skills.smoke === 2, 'умения розданы по правилам');
 ok(!!st.target, `цель назначена: ${st.target.name}`);
@@ -142,7 +149,7 @@ const hpBefore = b.fighters[foeId].hp;
 arena.attack(ps[0]);
 const dealt = hpBefore - db.load('arena', {}).divs.elite.battle.fighters[foeId].hp;
 // Урон по формуле войны: 3–30 в зависимости от соотношения армий
-ok(dealt >= 3 && dealt <= 30, `обычный удар по формуле войны 3–30: ${dealt}`);
+ok(dealt >= 20 && dealt <= 35, `обычный удар 20–35: ${dealt}`);
 ok(db.load('arena', {}).divs.elite.battle.fighters[ps[0].id].ammo === ammo0 - 1, 'удар тратит боеприпас');
 fails(() => arena.attack(ps[0]), 'Перезарядка', 'сразу второй раз ударить нельзя');
 ok(arena.ATTACK_CD_MS === 1500, `перезарядка ${arena.ATTACK_CD_MS} мс`);
@@ -165,8 +172,8 @@ b2.fighters[ps[1].id].maxHp = 1000;
 db.save('arena');
 arena.attack(ps[0]);
 const critDmg = 1000 - db.load('arena', {}).divs.elite.battle.fighters[ps[1].id].hp;
-ok(critDmg >= 3 * 3 && critDmg <= 30 * 5,
-   `критический удар ${critDmg} — в диапазоне ×3…×5 от удара 3–30`);
+ok(critDmg >= 20 * 3 && critDmg <= 35 * 5,
+   `умение «Крит»: ${critDmg} — ×3…×5 от удара 20–35`);
 // Броня
 arena.useSkill(ps[1], 'armor');
 const b3 = db.load('arena', {}).divs.elite.battle;
@@ -176,7 +183,7 @@ const hp3 = b3.fighters[ps[1].id].hp;
 db.save('arena');
 arena.attack(ps[0]);
 const armored = hp3 - db.load('arena', {}).divs.elite.battle.fighters[ps[1].id].hp;
-ok(armored >= 1 && armored <= 15, `с бронёй урон вдвое меньше (не больше 15): ${armored}`);
+ok(armored >= 10 && armored <= 18, `с бронёй урон вдвое меньше (10–18): ${armored}`);
 
 console.log('\n── 8. Дымовая завеса ──');
 const b4 = db.load('arena', {}).divs.elite.battle;
@@ -262,7 +269,7 @@ ok(vb.div === 'basic' && vb.currency === 'money', 'витрина переклю
 ok(vb.divisions.length === 2, 'оба дивизиона отдаются для переключателя');
 
 console.log('\n── 13. Бой за игровые деньги ──');
-for (const p of ps) { p.gold = 1000; p.dollars = 5e12; }
+for (const p of ps) { p.gold = 1000; p.dollars = 5e12; fill(p); }   // итог прошлого боя перенесён — восполняем
 const dbase = db.load('arena', {}).divs.basic;
 dbase.registered = {}; dbase.battle = null; db.save('arena');
 const moneyBefore = ps[0].dollars, goldKept = ps[0].gold;
@@ -334,7 +341,7 @@ console.log('\n── 16. Очки за фаворита ──');
 // Готовим бой, где у одного заведомо больший рейтинг
 const de2 = db.load('arena', {}).divs.elite;
 de2.registered = {}; de2.battle = null; de2.slot = 0; db.save('arena');
-for (const p of ps) { p.gold = 1000; arena.register(p, 'elite', []); }
+for (const p of ps) { p.gold = 1000; fill(p); arena.register(p, 'elite', []); }
 startNow('elite');
 skipPrepare('arena', 'elite'); arena.view(ps[0], 'elite');
 const eb = db.load('arena', {}).divs.elite.battle;
@@ -396,7 +403,7 @@ const byX = (n) => U2[Object.keys(U2).find((id) => U2[id].name === n)];
 const five = namesX.map(byX);
 const dx = db.load('arena', {}).divs.elite;
 dx.registered = {}; dx.battle = null; dx.slot = 0; db.save('arena');
-for (const p of five) { p.gold = 1000; arena.register(p, 'elite', []); }
+for (const p of five) { p.gold = 1000; fill(p); arena.register(p, 'elite', []); }
 startNow('elite');
 // Добить цель наверняка. Удар может уйти в уворот, поэтому повторяем,
 // пока цель не выбудет — иначе проверка падала примерно в каждом
@@ -436,7 +443,7 @@ ok(r5.rows.every((x, i) => i === 0 || x.place >= r5.rows[i - 1].place),
 console.log('\n── 19. Убийства перекрывают штраф ──');
 const dy = db.load('arena', {}).divs.elite;
 dy.registered = {}; dy.battle = null; dy.slot = 0; db.save('arena');
-for (const p of five) { p.gold = 1000; arena.register(p, 'elite', []); }
+for (const p of five) { p.gold = 1000; fill(p); arena.register(p, 'elite', []); }
 startNow('elite');
 // «Первый» убивает троих, затем гибнет от «Пятого»
 skipPrepare('arena', 'elite'); arena.view(five[0], 'elite');
@@ -474,7 +481,7 @@ store3.ratings.elite[victimId].points = 1;
 db.save('arena');
 const dz = db.load('arena', {}).divs.elite;
 dz.registered = {}; dz.battle = null; dz.slot = 0; db.save('arena');
-for (const p of five) { p.gold = 1000; arena.register(p, 'elite', []); }
+for (const p of five) { p.gold = 1000; fill(p); arena.register(p, 'elite', []); }
 startNow('elite');
 skipPrepare('arena', 'elite'); arena.view(five[0], 'elite');
 skipPrepare('arena', 'elite'); arena.view(five[0], 'elite');

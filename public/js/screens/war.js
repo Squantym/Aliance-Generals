@@ -1017,6 +1017,21 @@ App._resetSign = (key) => { delete App['_sign_' + key]; };
 // мог закрыть вкладку и вернуться посреди боя.
 App._arenaTimer = null;
 
+// Характеристики игрока строкой: текущие значения из максимума — ровно
+// с ними он войдёт в бой (решение владельца, 17.09.2026)
+App._realStatsLine = (st) => {
+  if (!st) return '';
+  const pair = (v, m) => (m != null ? `${UI.fmtNum(v)}/${UI.fmtNum(m)}` : UI.fmtNum(v));
+  return [
+    `❤ ${pair(st.hp, st.maxHp)}`,
+    st.energy != null ? `⚡ ${pair(st.energy, st.maxEnergy)}` : '',
+    `🎯 ${pair(st.ammo, st.maxAmmo)}`,
+    st.ammoRegenSec ? `+1 🎯 каждые ${UI.fmtTimer(st.ammoRegenSec)}` : '',
+    `💥 крит ${st.critPct}%`,
+    `💨 уворот ${st.dodgePct}%`,
+  ].filter(Boolean).join(' · ');
+};
+
 App.renderArena = async () => {
   clearInterval(App._arenaTimer);
   document.body.classList.remove('combat-fullscreen');
@@ -1096,12 +1111,12 @@ App.renderArena = async () => {
         <li>Взнос — <b>${money(d.entry)}</b> (${UI.esc(d.currencyLabel || '')}). Каждый участник
             поднимает банк на столько же. Победитель забирает весь банк
             <b>той же валютой</b>, остальные не получают ничего.</li>
-        <li>Характеристики <b>реальные — как в игре</b>: здоровье и боеприпасы — ваши максимумы
-            по навыкам, удар считается как в войне — от мощи вашей армии против защиты цели,
-            крит и уворот — от жестокости и ловкости. Каждый удар тратит боеприпас; кончились
-            у всех — побеждает тот, у кого больше здоровья.</li>
-        ${d.myStats ? `<li>Ваши сейчас: ❤ ${UI.fmtNum(d.myStats.hp)} · 🎯 ${d.myStats.ammo} боеприпасов ·
-            ⚔ ${UI.fmtNum(d.myStats.atk)} / 🛡 ${UI.fmtNum(d.myStats.def)} · 💥 ${d.myStats.critPct}% · 💨 ${d.myStats.dodgePct}%</li>` : ''}
+        <li>Характеристики <b>ваши собственные</b>: в бой вы входите с теми здоровьем и боеприпасами,
+            что у вас сейчас, и с чем закончите бой — с тем и вернётесь в игру.
+            Удар — <b>20–35</b>, критический — <b>×4–×7</b>; шанс крита и уворота — от ваших навыков.
+            Каждый удар тратит боеприпас, в бою они восстанавливаются, как в игре
+            (трофей «Боевая логистика» ускоряет).</li>
+        ${d.myStats ? `<li>Ваши сейчас: ${App._realStatsLine(d.myStats)}</li>` : ''}
         <li>Между ударами — <b>${(r.cooldownMs / 1000).toFixed(1)} секунды</b> перезарядки.</li>
         <li>Четыре умения: 💉 аптечка (+${r.medkitPct}% здоровья), 💥 крит (×${r.critMin}–×${r.critMax}
             на ${r.critMs / 1000} с), 🛡 броня (−${r.armorPct}% урона на ${r.armorMs / 1000} с),
@@ -1306,7 +1321,9 @@ App.renderArenaBattle = async () => {
         </div>
         <div class="arena-hp"><i style="width:${pct(me.hp, me.maxHp)}%"></i></div>
         <div class="arena-hp-num">${UI.fmtNum(me.hp)} / ${UI.fmtNum(me.maxHp)}</div>
-        ${me.maxAmmo != null ? `<div class="arena-hp-num" id="ar-ammo">🎯 ${me.ammo} / ${me.maxAmmo}</div>` : ''}
+        ${me.maxAmmo != null ? `<div class="arena-hp-num" id="ar-ammo">🎯 ${me.ammo} / ${me.maxAmmo}${me.ammoEtaSec
+          ? ` <span class="muted small">· +1 через ${me.ammoEtaSec} с</span>` : ''}</div>
+          <div class="arena-hp-num muted small">💥 крит ${me.critPct}% · 💨 уворот ${me.dodgePct}%</div>` : ''}
         ${(me.critLeftSec > 0 || me.armorLeftSec > 0) ? `
           <div class="arena-buffs">
             ${me.critLeftSec > 0 ? `<span class="arena-buff">💥 крит ${me.critLeftSec} с</span>` : ''}
@@ -1610,9 +1627,7 @@ App.renderGroup = async () => {
         <div class="kv"><span class="k">Взнос</span><span class="v"><span class="ic-dollar"></span> ${UI.fmtMoney(d.entry)}</span></div>
         <div class="kv"><span class="k">Приз каждому живому победителю</span><span class="v gold"><span class="ic-dollar"></span> ${UI.fmtMoney(d.prize)}</span></div>
         <p class="muted small mt">Ничья — взнос возвращается. Не вышли на бой или покинули его — взнос не возвращается.</p>
-        ${d.myStats ? `<p class="muted small mt">Ваши характеристики сейчас: ❤ ${UI.fmtNum(d.myStats.hp)} ·
-          ⚡ ${UI.fmtNum(d.myStats.energy)} · 🎯 ${d.myStats.ammo} · ⚔ ${UI.fmtNum(d.myStats.atk)} / 🛡 ${UI.fmtNum(d.myStats.def)}
-          · 💥 ${d.myStats.critPct}% · 💨 ${d.myStats.dodgePct}%</p>` : ''}
+        ${d.myStats ? `<p class="muted small mt">С этим вы войдёте в бой: ${App._realStatsLine(d.myStats)}</p>` : ''}
       </div>` : ''}
 
     <div class="card rules-card">
@@ -1624,9 +1639,12 @@ App.renderGroup = async () => {
         <li>Отсчёт начинается с первой записи: на сбор <b>${d.lobbyMinutes} минут</b>. Участники делятся на две команды
             поровну: при пятерых будет <b>3 на 2</b>, а не 4 на 1.</li>
         ${G.mode === 'squad' ? `
-        <li>Характеристики <b>как в игре</b>: здоровье, энергия и боеприпасы — ваши максимумы по навыкам,
-            удар — как в войне, от мощи армии против защиты цели, крит и уворот — от навыков.
-            Бой тратит копию запасов — обычные здоровье и боеприпасы не трогаются.</li>
+        <li>Характеристики <b>ваши собственные</b>: в бой вы входите с теми здоровьем, энергией и
+            боеприпасами, что у вас сейчас (было 300/1600 HP — так и в бою), и с чем закончите бой —
+            с тем и вернётесь в игру. Роль запасы не меняет.</li>
+        <li>Удар — <b>${r.hitMin}–${r.hitMax}</b>, критический — <b>×${r.critMultMin}–×${r.critMultMax}</b>;
+            шанс крита и уворота — от ваших навыков. Боеприпасы в бою восстанавливаются, как в игре
+            (трофей «Боевая логистика» ускоряет).</li>
         <li>Лечение медика — ${r.healMin}–${r.healMax} HP (крит — ${r.healCritMin}–${r.healCritMax}),
             прикрытие режет урон на ${r.guardPct}% на ${r.guardSec} с.</li>` : `
         <li>В бою у всех <b>${UI.fmtNum(r.hp)} HP</b>, <b>${UI.fmtNum(r.energy)}</b> энергии
@@ -2139,23 +2157,22 @@ App._gbRoleImg = (roleId, fallback, size) => {
 App._gbMyStatsHtml = (b, me2) => {
   const m = b.myStats;
   if (m && m.real) {
-    const pctOf = (v) => (v > 0 ? `<div class="gbs-chip"><span class="gbs-chip-l">${v.l}</span><b>${v.v}%</b></div>` : '');
+    const pctOf = (v) => (v.v > 0 ? `<div class="gbs-chip"><span class="gbs-chip-l">${v.l}</span><b>${v.v}%</b></div>` : '');
     return `
       <div class="card gbs-card">
         <div class="name">${App._gbRoleImg(me2.role, me2.roleIcon, 22)} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
-        <p class="muted small gbs-rolenote">Характеристики как в игре${m.role.hpMul !== 1 ? ` · роль: HP ×${m.role.hpMul}` : ''}${m.role.energyMul !== 1 ? ` · энергия ×${m.role.energyMul}` : ''}${m.role.atkMul !== 1 ? ` · урон ×${m.role.atkMul}` : ''}</p>
+        <p class="muted small gbs-rolenote">Ваши запасы — ровно те, с какими вы вошли в бой${m.role.atkMul !== 1 ? ` · роль: урон ×${m.role.atkMul}` : ''}</p>
         <div class="gbs-rows mt">
-          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">❤ HP</span><span class="gbs-total">${UI.fmtNum(m.hp)}</span></div>
-            <div class="gb-bar-t gbs-bar"><i class="gb-bar-hp" style="width:100%"></i></div></div>
-          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">⚡ Энергия</span><span class="gbs-total">${UI.fmtNum(m.energy)}</span></div>
-            <div class="gb-bar-t gbs-bar"><i class="gb-bar-en" style="width:100%"></i></div></div>
-          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">🎯 Боеприпасы</span><span class="gbs-total">${UI.fmtNum(m.ammo)}</span></div>
-            <div class="gb-bar-t gbs-bar"><i class="gb-bar-am" style="width:100%"></i></div></div>
+          ${[['❤ HP', m.hp, m.maxHp, 'gb-bar-hp'], ['⚡ Энергия', m.energy, m.maxEnergy, 'gb-bar-en'],
+              ['🎯 Боеприпасы', m.ammo, m.maxAmmo, 'gb-bar-am']].map(([l, v, mx, cls]) => `
+          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">${l}</span><span class="gbs-total">${UI.fmtNum(v)} / ${UI.fmtNum(mx)}</span></div>
+            <div class="gb-bar-t gbs-bar"><i class="${cls}" style="width:${mx ? Math.round(v / mx * 100) : 0}%"></i></div></div>`).join('')}
         </div>
         <div class="gbs-chips">
-          <div class="gbs-chip"><span class="gbs-chip-l">⚔ атака</span><b>${UI.fmtNum(m.atk)}</b></div>
-          <div class="gbs-chip"><span class="gbs-chip-l">🛡 защита</span><b>${UI.fmtNum(m.def)}</b></div>
-          ${pctOf({ l: '💥 крит', v: m.critPct })}
+          <div class="gbs-chip"><span class="gbs-chip-l">⚔ удар</span><b>${m.hitMin}–${m.hitMax}</b></div>
+          <div class="gbs-chip"><span class="gbs-chip-l">💥 крит</span><b>×${m.critMultMin}–×${m.critMultMax}</b></div>
+          ${m.ammoRegenSec ? `<div class="gbs-chip"><span class="gbs-chip-l">🎯 +1 каждые</span><b>${UI.fmtTimer(m.ammoRegenSec)}</b></div>` : ''}
+          ${pctOf({ l: '💥 шанс крита', v: m.critPct })}
           ${pctOf({ l: '💨 уворот', v: m.dodgePct })}
           ${pctOf({ l: '🛡 броня роли', v: m.role.dmgReducePct })}
         </div>
@@ -2493,6 +2510,8 @@ App.renderGroupBattle = async () => {
             <span class="gb-bar-n">${me.ammo}/${me.maxAmmo}</span>
           </div>
         </div>
+        ${b.myStats && b.myStats.real ? `<div class="muted small">💥 крит ${b.myStats.critPct}% · 💨 уворот ${b.myStats.dodgePct}%
+          ${me.ammoEtaSec ? ` · 🎯 +1 через ${me.ammoEtaSec} с` : ''}</div>` : ''}
         ${me.cooldownLeftMs > 0
           ? `<div class="gb-cd">Перезарядка ${(me.cooldownLeftMs / 1000).toFixed(1)} с</div>` : ''}
       </div>

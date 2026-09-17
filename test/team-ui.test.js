@@ -32,8 +32,9 @@ const SQUAD = {
   mode: 'squad', teamSize: 5, lobbyMinutes: 5, nextStartAt: now + 200000, secondsLeft: 200, botFillSec: 10,
   entry: 1e9, prize: 2e9, myMoney: 5e9, roles, myRole: 'fighter', iAmRegistered: false,
   registered: [{ id: 'a', name: 'Альфа', flag: '', level: 60, role: 'fighter', roleLabel: 'Штурмовик', isBot: false }],
-  myStats: { hp: 400, energy: 200, ammo: 25, atk: 1234, def: 999, critPct: 10, dodgePct: 5 },
-  rules: { real: true, healMin: 6, healMax: 11, healCritMin: 22, healCritMax: 55, guardPct: 50, guardSec: 20,
+  myStats: { hp: 300, maxHp: 1600, energy: 500, maxEnergy: 1000, ammo: 50, maxAmmo: 120, ammoRegenSec: 126, critPct: 10, dodgePct: 5 },
+  rules: { real: true, hitMin: 20, hitMax: 35, critMultMin: 4, critMultMax: 7,
+           healMin: 22, healMax: 46, healCritMin: 160, healCritMax: 240, guardPct: 50, guardSec: 20,
            cooldownMs: 1500, costHeal: 50, costGuard: 50, botMinPct: 50, botMaxPct: 80 },
   battle: null, history: [],
   myHistory: [{ at: now, result: 'win', role: 'Штурмовик', kills: 2, damage: 40, rating: 5, money: 1e9 }],
@@ -56,7 +57,7 @@ const ARENA = { div: 'elite', divName: 'Арена — Элита', currency: 'g
   divisions: [{ id: 'elite', name: 'Э', short: 'Элита', icon: '👑', currency: 'gold', entry: 10 }],
   slotMinutes: 15, minPlayers: 2, nextStartAt: now + 100000, secondsLeft: 100, seats: 10, botFillSec: 10, botPct: 70,
   registered: [{ id: 'bot1', name: 'Гладиатор-1', flag: '🤖', level: 0, isBot: true }], pot: 0,
-  iAmRegistered: false, myGold: 50, myMoney: 0, myStats: { hp: 300, ammo: 20, atk: 100, def: 90, critPct: 5, dodgePct: 0 },
+  iAmRegistered: false, myGold: 50, myMoney: 0, myStats: { hp: 250, maxHp: 400, ammo: 20, maxAmmo: 30, ammoRegenSec: 180, critPct: 5, dodgePct: 0 },
   rules: { real: true, hp: 1000, atk: 30, cooldownMs: 1500, medkitPct: 50, critMin: 3, critMax: 5,
            armorPct: 50, critMs: 15000, armorMs: 15000, smokeUses: 2 },
   battle: null, history: [], lastResultId: '', rating: { top: [], me: null } };
@@ -110,7 +111,11 @@ function setup(hash, responses) {
     ok(!!box.querySelector('img.gb-banner[src="/img/group/preview.webp"]'), 'картинка-превью на месте');
     ok(/ГРУППОВЫЕ БОИ/.test(box.textContent), 'заголовок «Групповые бои»');
     ok(/Взнос/.test(box.textContent) && /Приз каждому живому победителю/.test(box.textContent), 'взнос и приз показаны');
-    ok(/как в игре/.test(box.textContent) && /1\s?234/.test(box.textContent), 'реальные характеристики игрока показаны');
+    ok(/С этим вы войдёте в бой/.test(box.textContent) && /300\/1\s?600/.test(box.textContent)
+       && /500\/1\s?000/.test(box.textContent) && /50\/120/.test(box.textContent), 'показано, с чем игрок войдёт в бой: 300/1600, 500/1000, 50/120');
+    ok(/каждые 2:06|каждые 02:06/.test(box.textContent), 'и как быстро восстанавливаются боеприпасы');
+    ok(/Удар — 20–35/.test(box.textContent) && /×4–×7/.test(box.textContent) && /22–46/.test(box.textContent)
+       && /160–240/.test(box.textContent), 'в правилах — удар, крит и лечение по числам владельца');
     ok(!box.querySelector('[data-section]') && !/Ваш ранг/.test(box.textContent), 'ни рангов, ни улучшений, ни снабжения');
     ok(!/<th>Ранг<\/th>/.test(box.innerHTML), 'в таблице рейтинга нет столбца «Ранг»');
     ok(/\+\$/.test(box.textContent), 'в истории — деньги за бой');
@@ -147,7 +152,9 @@ function setup(hash, responses) {
     env.doc.querySelector('[data-teamtab="arena"]').onclick();
     await wait(10);
     const abox = env.doc.getElementById('arena-box');
-    ok(!!abox && /как в игре/.test(abox.textContent), 'арена открыта, правила — про реальные характеристики');
+    ok(!!abox && /ваши собственные/.test(abox.textContent) && /250\/400/.test(abox.textContent),
+       'арена открыта, правила — про собственные характеристики');
+    ok(/20–35/.test(abox.textContent) && /×4–×7/.test(abox.textContent), 'удар и крит на арене — те же');
     ok(/70%/.test(abox.textContent) && /банк сгорает/.test(abox.textContent), 'о ботах и банке сказано');
     ok(/Гладиатор-1/.test(abox.textContent) && /бот/.test(abox.textContent), 'бот в списке помечен');
   }
@@ -171,9 +178,10 @@ function setup(hash, responses) {
     const FIGHT = { mode: 'squad', active: true, state: 'running', preparing: false, finished: false, winnerTeam: -1,
       myTeam: 0, prize: 2e9, entry: 1e9,
       me: Object.assign(card('me', 'Я', 0, { isMe: true }), { energy: 100, maxEnergy: 200, ammo: 20, maxAmmo: 25,
-        cooldownLeftMs: 0, damageDealt: 0, healed: 0, kills: 0, targetId: null }),
+        cooldownLeftMs: 0, damageDealt: 0, healed: 0, kills: 0, targetId: null, ammoEtaSec: 40 }),
       myStats: { real: true, role: { id: 'fighter', label: 'Штурмовик', icon: '🎯', hpMul: 1, energyMul: 1, atkMul: 1.25, dmgReducePct: 0 },
-        hp: 400, energy: 200, ammo: 25, atk: 1234, def: 999, critPct: 10, dodgePct: 5 },
+        hp: 300, maxHp: 1600, energy: 500, maxEnergy: 1000, ammo: 50, maxAmmo: 120, ammoRegenSec: 126, ammoEtaSec: 40,
+        hitMin: 20, hitMax: 35, critMultMin: 4, critMultMax: 7, critPct: 10, dodgePct: 5 },
       allies: [card('me', 'Я', 0, { isMe: true })], enemies: [card('e1', 'Враг', 1, { isBot: true })],
       log: [], watchable: [], killedBy: '', canHeal: false, canGuard: false, costHeal: 50, costGuard: 50 };
     const env = setup('#war/team/squad', [['/api/squad/battle', FIGHT], ['/api/squad', Object.assign({}, SQUAD, {
@@ -184,6 +192,8 @@ function setup(hash, responses) {
     ok(/Групповой бой/.test(box.textContent), 'шапка боя — «Групповой бой»');
     const atk = box.querySelector('[data-act="attack"]');
     ok(!!atk, 'кнопка атаки есть');
+    ok(/крит 10%/.test(box.textContent) && /уворот 5%/.test(box.textContent) && /\+1 через 40 с/.test(box.textContent),
+       'в бою видны крит, уворот и когда придёт боеприпас');
     await atk.onclick();
     ok(env.calls.some((c) => c[0] === 'POST' && c[1] === '/api/squad/act'), 'удар уходит на /api/squad/act');
     // Итог
@@ -201,8 +211,10 @@ function setup(hash, responses) {
     global.API.get = async (u) => (u.startsWith('/api/squad/battle') ? JSON.parse(JSON.stringify(PREP)) : {});
     env.App._resetSign('gbBattle_squad');
     await env.App.renderGroupBattle();
-    ok(/Характеристики как в игре/.test(box.textContent) && /1\s?234/.test(box.textContent) && /999/.test(box.textContent),
-       'в комнате подготовки — реальные характеристики и мощь');
+    ok(/ровно те, с какими вы вошли в бой/.test(box.textContent) && /300 \/ 1\s?600/.test(box.textContent)
+       && /500 \/ 1\s?000/.test(box.textContent) && /50 \/ 120/.test(box.textContent),
+       'в комнате подготовки — запасы как на входе: 300/1600, 500/1000, 50/120');
+    ok(/20–35/.test(box.textContent) && /×4–×7/.test(box.textContent) && /10%/.test(box.textContent), 'удар, крит и шанс крита видны');
   }
 
   console.log('\n[7] Плашка боя');

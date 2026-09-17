@@ -298,9 +298,6 @@ function runBattle(s: Store, b: Battle, now: number): void {
       if (b.state === 'running' && now - b.startedAt > BATTLE_MAX_MS) {
         // Ничья по времени: побеждает команда с большим суммарным здоровьем
         finishByHp(s, b, 'Время боя вышло');
-      } else if (b.state === 'running' && outOfAmmo(b)) {
-        // Стрелять больше некому — ждать двадцать минут незачем
-        finishByHp(s, b, 'Боеприпасы кончились у всех');
       }
     }
   }
@@ -309,11 +306,6 @@ function runBattle(s: Store, b: Battle, now: number): void {
 function finishByHp(s: Store, b: Battle, reason: string): void {
   const hp0 = teamHp(b, 0), hp1 = teamHp(b, 1);
   finish(s, b, hp0 === hp1 ? -1 : (hp0 > hp1 ? 0 : 1), reason);
-}
-
-// Ни у одного живого бойца нет боеприпасов — урон больше не нанести
-function outOfAmmo(b: Battle): boolean {
-  return Object.values(b.fighters).every((f) => !f.alive || f.ammo < COST.attack.ammo);
 }
 
 function teamHp(b: Battle, team: 0 | 1): number {
@@ -1346,7 +1338,7 @@ export = {
   RATING_WIN, RATING_LOSS, RATING_KILL, RATING_BEST,
   ROLES, ROLE_IDS, TEAM_SIZE, HP, ENERGY, AMMO, BASE_DMG, HEAL_AMOUNT,
   BOT_STRENGTH_MIN, BOT_STRENGTH_MAX, BOT_SMART_MIN, BOT_SMART_MAX, BOT_AMMO, smart, doAttack,
-  battleOf, battles, isLive, outOfAmmo,
+  battleOf, battles, isLive,
   GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, COST, BOT_THINK_MS, BOT_FILL_BEFORE_MS, PREPARE_MS,
   splitTeams, fillWithBots, botTurn,
 };
