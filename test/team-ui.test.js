@@ -30,14 +30,14 @@ const roles = [{ id: 'fighter', label: 'Штурмовик', icon: '🎯', desc:
 const now = Date.now();
 const SQUAD = {
   mode: 'squad', teamSize: 5, lobbyMinutes: 5, nextStartAt: now + 200000, secondsLeft: 200, botFillSec: 10,
-  entry: 1e9, prize: 2e9, myMoney: 5e9, roles, myRole: 'fighter', iAmRegistered: false,
+  entry: 1e6, prize: 5e8, myMoney: 5e9, roles, myRole: 'fighter', iAmRegistered: false,
   registered: [{ id: 'a', name: 'Альфа', flag: '', level: 60, role: 'fighter', roleLabel: 'Штурмовик', isBot: false }],
   myStats: { hp: 300, maxHp: 1600, energy: 500, maxEnergy: 1000, ammo: 50, maxAmmo: 120, ammoRegenSec: 126, critPct: 10, dodgePct: 5 },
   rules: { real: true, hitMin: 20, hitMax: 35, critMultMin: 4, critMultMax: 7,
            healMin: 22, healMax: 46, healCritMin: 160, healCritMax: 240, guardPct: 50, guardSec: 20,
            cooldownMs: 1500, costHeal: 50, costGuard: 50, botMinPct: 50, botMaxPct: 80 },
   battle: null, history: [],
-  myHistory: [{ at: now, result: 'win', role: 'Штурмовик', kills: 2, damage: 40, rating: 5, money: 1e9 }],
+  myHistory: [{ at: now, result: 'win', role: 'Штурмовик', kills: 2, damage: 40, rating: 5, money: 5e8 }],
   rating: { top: [{ place: 1, id: 'a', name: 'Альфа', flag: '', points: 5, wins: 1, isMe: false }], me: null, myPoints: 0,
             rules: { win: 3, loss: -3, kill: 1, best: 3 } },
 };
@@ -176,7 +176,7 @@ function setup(hash, responses) {
     const card = (id, name, team, extra) => Object.assign({ id, name, flag: '', team, role: 'fighter', roleLabel: 'Штурмовик',
       roleIcon: '🎯', hp: 300, maxHp: 400, alive: true, isBot: false, guarded: false, rating: 0, isMe: false }, extra || {});
     const FIGHT = { mode: 'squad', active: true, state: 'running', preparing: false, finished: false, winnerTeam: -1,
-      myTeam: 0, prize: 2e9, entry: 1e9,
+      myTeam: 0, prize: 5e8, entry: 1e6,
       me: Object.assign(card('me', 'Я', 0, { isMe: true }), { energy: 100, maxEnergy: 200, ammo: 20, maxAmmo: 25,
         cooldownLeftMs: 0, damageDealt: 0, healed: 0, kills: 0, targetId: null, ammoEtaSec: 40 }),
       myStats: { real: true, role: { id: 'fighter', label: 'Штурмовик', icon: '🎯', hpMul: 1, energyMul: 1, atkMul: 1.25, dmgReducePct: 0 },
@@ -199,7 +199,7 @@ function setup(hash, responses) {
     // Итог
     const DONE = Object.assign({}, FIGHT, { active: false, finished: true, state: 'done', winnerTeam: 0, iWon: true,
       result: [{ id: 'me', name: 'Я', flag: '', team: 0, role: 'fighter', roleLabel: 'Штурмовик', isBot: false,
-        kills: 1, damage: 50, absorbed: 0, healed: 0, alive: true, ratingGained: 4, money: 1e9, prize: 2e9, won: true }] });
+        kills: 1, damage: 50, absorbed: 0, healed: 0, alive: true, ratingGained: 4, money: 5e8, prize: 5e8, won: true }] });
     global.API.get = async (u) => (u.startsWith('/api/squad/battle') ? JSON.parse(JSON.stringify(DONE)) : {});
     env.App._resetSign('gbBattle_squad');
     await env.App.renderGroupBattle();

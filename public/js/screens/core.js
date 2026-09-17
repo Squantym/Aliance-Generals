@@ -1654,6 +1654,24 @@ App._promoGoldLine = (data, pkg) => {
     + `<span class="v gold">+${UI.fmtNum(Math.round(pkg.gold * pct / 100))} <span class="ic-gold"></span></span></div>`;
 };
 
+// Кнопка оплаты: пока идёт переход, она должна отвечать. Без этого
+// игрок жмёт ещё раз — и заводит второй заказ.
+App._payClick = async (btn, run) => {
+  if (btn.disabled) return;
+  const was = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Открываем оплату…';
+  try {
+    await run();
+  } catch (e) {
+    UI.toast('⛔ ' + e.message);
+  }
+  // Успех — это уход на страницу кассы; кнопку возвращаем на случай,
+  // если переход не состоялся (отказ сервера или касса не подключена)
+  btn.disabled = false;
+  btn.innerHTML = was;
+};
+
 App.screens.bank = async (c, param) => {
   await App.refreshMe();
   const m = App.me;
@@ -1689,13 +1707,11 @@ App.screens.bank = async (c, param) => {
       try { await API.post('/api/offers/buy', { offerId: b.dataset.offerGold }); await App.refreshMe(); App.rerender(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     }; });
-    c.querySelectorAll('[data-offer-rub]').forEach((b) => { b.onclick = async () => {
-      try {
-        const r = await API.post('/api/offers/order', { offerId: b.dataset.offerRub });
-        if (r && r.payUrl) window.location.href = r.payUrl;
-        else UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.');
-      } catch (e) { UI.toast('⛔ ' + e.message); }
-    }; });
+    c.querySelectorAll('[data-offer-rub]').forEach((b) => { b.onclick = () => App._payClick(b, async () => {
+      const r = await API.post('/api/offers/order', { offerId: b.dataset.offerRub });
+      if (r && r.payUrl) window.location.href = r.payUrl;
+      else UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.');
+    }); });
     return;
   }
 
@@ -1726,13 +1742,11 @@ App.screens.bank = async (c, param) => {
               <span class="v">${App._orderStatus(o)}</span></div>`).join('')}
         </div>` : ''}`;
     c.querySelectorAll('[data-buy-pkg]').forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
-          if (r.payUrl) { window.location.href = r.payUrl; }
-          else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
-        } catch (e) { UI.toast('⛔ ' + e.message); }
-      };
+      btn.onclick = () => App._payClick(btn, async () => {
+        const r = await API.post('/api/payments/create', { packageId: btn.dataset.buyPkg });
+        if (r.payUrl) { window.location.href = r.payUrl; }
+        else { UI.toast('🛒 Заказ создан. Онлайн-оплата скоро будет доступна.'); App.rerender(); }
+      });
     });
     return;
   }

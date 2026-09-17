@@ -42,7 +42,8 @@ const gb = require(ROOT + '/dist/src/services/groupBattle');
 const arena = require(ROOT + '/dist/src/services/arena');
 const RS = require(ROOT + '/dist/src/services/realStats');
 
-const B = 1e9;
+const B = 1e6;          // взнос
+const WIN = 5e8;        // приз живому победителю (решение владельца 18.09.2026)
 const setSlot = (coll, ms) => { const s = db.load(coll, {}); s.slot = Date.now() + ms; db.save(coll); };
 const sqStore = () => db.load('squadBattle', {});
 
@@ -134,7 +135,7 @@ const sqStore = () => db.load('squadBattle', {});
   ok(s3.battle.id !== b1.id && s3.battle.fighters[C.id], 'второй бой начался сразу, без ожидания');
   ok(sq.battleState(A).state === 'preparing' && sq.battleState(C).state === 'preparing', 'каждый видит свой бой');
 
-  console.log('\n[5] Победа: по $2 млрд каждому живому победителю');
+  console.log('\n[5] Победа: по $500 млн каждому живому победителю');
   // Открываем комнату, пропускаем подготовку
   sq.battleState(A); sq.battleState(Bp);
   const s4 = sqStore();
@@ -187,11 +188,11 @@ const sqStore = () => db.load('squadBattle', {});
   ok(Bp.res.hp.cur === 0, 'у погибшего в бою — ноль здоровья и в игре');
   const done = sqStore().others.find((x) => x.id === bb.id) || sqStore().results[bb.id];
   ok(done && (done.state === 'done' || done.rows), 'бой завершён');
-  ok(A.dollars === moneyA + 2 * B, `Альфа получил $2 млрд: +${(A.dollars - moneyA) / B}`);
+  ok(A.dollars === moneyA + WIN, `Альфа получил приз: +$${(A.dollars - moneyA) / 1e6} млн`);
   ok(Bp.dollars === moneyB, 'проигравший ничего не получил (взнос уже списан)');
   const res = sqStore().results[bb.id];
   const rowA = res.rows.find((r) => r.id === A.id);
-  ok(rowA.won && rowA.prize === 2 * B && rowA.money === B, 'в итогах: приз 2 млрд, чистыми +1 млрд');
+  ok(rowA.won && rowA.prize === WIN && rowA.money === WIN - B, 'в итогах: приз 500 млн, чистыми приз минус взнос');
   ok(res.rows.find((r) => r.id === Bp.id).money === -B, 'у проигравшего — минус взнос');
   const rt = sq.ratingTable(A, 10);
   ok(rt.top[0].id === A.id && rt.top[0].points >= 3 && !('myRank' in rt), 'рейтинг один, без рангов');
