@@ -49,14 +49,14 @@ console.log('\n[1] Конфиг: лимиты и цены апгрейда то�
 eq('наземные/морские/воздушные: старт 50', c.SABOTEURS.regular.startLimit, 50);
 eq('наземные/морские/воздушные: потолок 300', c.SABOTEURS.regular.maxLimit, 300);
 eq('секретные: потолок 200', c.SABOTEURS.secret.maxLimit, 200);
-eq('построечные: потолок 250', c.SABOTEURS.building.maxLimit, 250);
+eq('подрывники: потолок 250', c.SABOTEURS.building.maxLimit, 250);
 eq('смертники: фиксированный лимит 10', c.SABOTEURS.suicide.fixedLimit, 10);
 eq('смертники: цена 10 золота', c.SABOTEURS.suicide.priceGold, 10);
 eq('обычные: шаг 1 = 20 золота', c.SABOTEURS.upgradeCost(20, 1), 20);
 eq('обычные: шаг 2 = 40 золота', c.SABOTEURS.upgradeCost(20, 2), 40);
 eq('обычные: шаг 3 = 80 золота', c.SABOTEURS.upgradeCost(20, 3), 80);
 eq('секретные: шаг 1 = 30 золота', c.SABOTEURS.upgradeCost(30, 1), 30);
-eq('построечные: шаг 1 = 25 золота', c.SABOTEURS.upgradeCost(25, 1), 25);
+eq('подрывники: шаг 1 = 25 золота', c.SABOTEURS.upgradeCost(25, 1), 25);
 
 // ===================================================================
 console.log('\n[2] Покупка пачки: доллары по цене юнита × 100, золото для secret/building');
@@ -80,8 +80,8 @@ console.log('\n[2] Покупка пачки: доллары по цене юн�
   usersMap['u_buy3'] = u3;
   const goldBefore3 = u3.gold;
   saboteurs.buyPack(u3, 'building', 1, notices);
-  eq('построечные +10', u3.saboteurs.building, 10);
-  eq('списано 5 золота за пачку построечных', goldBefore3 - u3.gold, 5);
+  eq('подрывники +10', u3.saboteurs.building, 10);
+  eq('списано 5 золота за пачку подрывников', goldBefore3 - u3.gold, 5);
 }
 
 // ===================================================================
@@ -296,7 +296,7 @@ console.log('\n[12] Ракета: уничтожает диверсантов Ц
 }
 
 // ===================================================================
-console.log('\n[13] Правило 5:1: на 5 уничтоженных обычных — 1 секретный и 1 построечный');
+console.log('\n[13] Правило 5:1: на 5 уничтоженных обычных — 1 секретный и 1 подрывник');
 {
   const u = mkUser('u_ratio', 'Правило51', {
     saboteurs: { ground: 1000, sea: 0, air: 0, secret: 100, building: 100, suicide: 0 },
@@ -305,7 +305,7 @@ console.log('\n[13] Правило 5:1: на 5 уничтоженных обыч
   usersMap['u_ratio'] = u;
   saboteurs.destroyRegular(u, 25, notices);
   eq('уничтожено 5 секретных (25/5=5)', 100 - u.saboteurs.secret, 5);
-  eq('уничтожено 5 построечных (25/5=5)', 100 - u.saboteurs.building, 5);
+  eq('уничтожено 5 подрывников (25/5=5)', 100 - u.saboteurs.building, 5);
 
   const u2 = mkUser('u_ratio2', 'Правило51Накоп', {
     saboteurs: { ground: 1000, sea: 0, air: 0, secret: 50, building: 50, suicide: 0 },
@@ -313,10 +313,10 @@ console.log('\n[13] Правило 5:1: на 5 уничтоженных обыч
   });
   usersMap['u_ratio2'] = u2;
   saboteurs.destroyRegular(u2, 3, notices);
-  eq('после 3 потерь секретные/построечные не тронуты', u2.saboteurs.secret, 50);
+  eq('после 3 потерь секретные/подрывники не тронуты', u2.saboteurs.secret, 50);
   saboteurs.destroyRegular(u2, 2, notices);
   eq('после накопления до 5 — секретный уничтожен', u2.saboteurs.secret, 49);
-  eq('после накопления до 5 — построечный уничтожен', u2.saboteurs.building, 49);
+  eq('после накопления до 5 — подрывник уничтожен', u2.saboteurs.building, 49);
 }
 
 console.log(`\n✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ: ${passed} проверок\n`);

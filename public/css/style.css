@@ -195,7 +195,8 @@ a:hover { text-decoration: underline; }
 
 /* Вкладки диверсантов — крупнее и заметнее (иконки перенесены в карточку) */.sab-tabs { gap: 7px; }
 .sab-tabs .sab-tab {
-  min-width: 104px; padding: 11px 10px; font-size: 13.5px; border-radius: 7px;
+  flex-basis: 104px; min-width: min-content; justify-content: center;
+  padding: 11px 10px; font-size: 13.5px; border-radius: 7px;
 }
 
 /* ---------- ИСТОРИЯ РАКЕТ ---------- */
@@ -369,6 +370,19 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .kv { align-items: flex-start; }
 .kv > * { min-width: 0; }
 .kv .v { text-align: right; overflow-wrap: break-word; }
+/* Не влезают в одну строку — значение уходит на следующую, а не рвётся
+   посреди слова («Зван-ие: Генералисс-имус» в узкой колонке профиля). */
+.kv { flex-wrap: wrap; column-gap: 10px; row-gap: 0; }
+.kv > * { max-width: 100%; }
+.kv .v { margin-left: auto; }
+/* Ряд кнопок: не помещаются — переносятся рядом ниже, а не уезжают за
+   экран. min-content нужен, чтобы перенос срабатывал при flex:1. */
+.btn-row { flex-wrap: wrap; }
+.btn-row > * { min-width: min-content; }
+/* Вкладки: ширина не меньше надписи — лишние переносятся на новую строку */
+.tab { flex: 1 1 90px; min-width: min-content; }
+/* Позывной в профиле может быть длинным словом без пробелов */
+.pf2-name { overflow-wrap: anywhere; min-width: 0; }
 /* Поля ввода/кнопки/картинки/таблицы не шире родителя */
 input, select, textarea, button, img, table, pre { max-width: 100%; }
 input, select, textarea { box-sizing: border-box; }
@@ -1938,7 +1952,18 @@ body.theme-aurora .pf2-avatar { background-color: var(--panel-2); border-color: 
 .secret-row-empty { opacity: .55; }
 .secret-row-empty .img-frame { filter: grayscale(1); opacity: .5; }
 .secret-row-info { flex: 1; min-width: 0; }
-.secret-row-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.secret-row-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; hyphens: auto; }
+/* Узкий телефон: картинка 96px и отступы оставляли названию ~80px, и
+   «Межконтинентальный» рвался на три куска. Картинку и поля ужимаем. */
+@media (max-width: 400px) {
+  .secret-row { gap: 8px; padding: 8px; }
+  .secret-row .img-frame-row { width: 64px; height: 64px; padding: 6px; flex-shrink: 0; }
+  .secret-row-name { font-size: 13px; }
+  .secret-row-count { min-width: 32px; font-size: 16px; }
+}
+@media (max-width: 350px) {
+  .secret-row-name { font-size: 12px; }
+}
 .secret-row-stats { font-size: 13px; }
 .secret-row-count {
   font-size: 18px; font-weight: 800;
@@ -3639,7 +3664,7 @@ body.theme-noir .field-hint { color: #8a8a92; }
 .lot-card-img img { width: 100%; height: 100%; object-fit: cover; }
 .lot-noimg { font-size: 40px; opacity: .5; }
 .lot-card-body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 5px; }
-.lot-card-name { font-weight: 700; font-size: 13.5px; line-height: 1.25; }
+.lot-card-name { font-weight: 700; font-size: 13.5px; line-height: 1.25; hyphens: auto; }
 .lot-desc { line-height: 1.4; min-height: 2.6em; }
 .lot-stats { display: flex; gap: 12px; font-size: 12.5px; color: var(--dim); }
 .lot-top { font-size: 12.5px; }
@@ -3665,6 +3690,10 @@ body.theme-noir .field-hint { color: #8a8a92; }
   .lot-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .lot-card-name { font-size: 12.5px; }
   .lot-desc { display: none; }
+}
+/* Две колонки по ~130px не вмещают длинные названия — одна колонка */
+@media (max-width: 360px) {
+  .lot-grid { grid-template-columns: 1fr; }
 }
 
 /* ═══ Кнопка покупки VIP ═════════════════════════════════════════════
@@ -3987,10 +4016,13 @@ body.theme-sand .btn.vip-buy::after, body.theme-sand .vip-buy::after {
 }
 .cab-ava-stub { position: relative; z-index: 1; font-size: 40px; opacity: .4; }
 .cab-body { padding: 9px 11px 11px; }
-.cab-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cab-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  overflow-wrap: anywhere; min-width: 0; }  /* позывной в 16 широких букв шире карточки */
 .cab-rows { margin-top: 6px; font-size: 12.5px; }
 .cab-rows div { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
 .cab-rows span { color: var(--dim); }
+/* Название легиона/альянса может быть одним длинным словом */
+.cab-rows b { min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .cab-here { margin-top: 8px; text-align: center; font-size: 12.5px; color: var(--orange-1); }
 .cab-ban { margin-top: 8px; text-align: center; font-size: 12.5px; color: var(--red); }
 .cab-new { cursor: pointer; border-style: dashed; }
@@ -5085,7 +5117,7 @@ body.is-test-world { padding-top: 22px; }
   transition: border-color .15s ease, background .15s ease;
 }
 .club-btn:hover { border-color: var(--gold); }
-.club-ico { font-size: 24px; line-height: 1; width: 30px; text-align: center; flex: 0 0 auto; }
+.club-ico { font-size: 24px; line-height: 1; min-width: 30px; text-align: center; flex: 0 0 auto; }
 .club-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .club-txt b { font-size: 15px; }
 .club-txt .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

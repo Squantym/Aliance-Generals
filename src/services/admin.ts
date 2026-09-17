@@ -89,7 +89,7 @@ const SKILL_LABELS: Record<string, string> = {
 };
 const SAB_LABELS: Record<string, string> = {
   ground: '🪖 Наземные', sea: '🚢 Морские', air: '✈️ Воздушные',
-  secret: '🕵️ Секретные', building: '🏗 Построечные', suicide: '💀 Смертники',
+  secret: '🕵️ Секретные', building: '💣 Подрывники', suicide: '💀 Смертники',
 };
 
 function playerSnapshot(adminUser: User, targetId: string) {

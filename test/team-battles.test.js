@@ -227,6 +227,9 @@ const sqStore = () => db.load('squadBattle', {});
   sq.battleState(C);               // Гамма открыл комнату, Дельта — нет
   const b3 = sqStore().battle;
   b3.prepareUntil = Date.now() - 1;
+  // Гамма входит с остатком здоровья прошлого боя: резерв с критом ×4–×7
+  // иногда добивал его за этот тик, и выход ниже падал «Вы уже выбыли»
+  b3.fighters[C.id].hp = b3.fighters[C.id].maxHp = 100000;
   db.save('squadBattle');
   sq.tick();
   const cur3 = sqStore().battle;
@@ -299,7 +302,10 @@ const sqStore = () => db.load('squadBattle', {});
   ok(dealtByBots > 0, `боты атакуют сами: ${dealtByBots} урона`);
   // Победил бот — банк сгорает
   const goldE = E.gold, goldF = F.gold;
-  const winnerBot = Object.values(ab2.fighters).find((f) => f.isBot);
+  // Живой бот: соседи-боты за прошлый тик могли кого-то добить, а бой без
+  // живых не заканчивается победой — он отменяется, и разбора нет
+  const winnerBot = Object.values(ab2.fighters).find((f) => f.isBot && f.alive);
+  winnerBot.hp = Math.max(1, winnerBot.hp);
   for (const f of Object.values(ab2.fighters)) if (f.id !== winnerBot.id) { f.alive = false; f.hp = 0; f.place = 5; }
   db.save('arena');
   arena.tick();

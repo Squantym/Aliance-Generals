@@ -531,7 +531,8 @@ ok(/document\.body\.classList\.add\('combat-fullscreen'\)/.test(warF),
    'бой открывается на весь экран');
 ok((warF.match(/classList\.remove\('combat-fullscreen'\)/g) || []).length >= 3,
    'при выходе режим снимается');
-const cssF = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+// CRLF в рабочей копии Windows удлинял расстояние в регулярке ниже
+const cssF = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8').split('\r\n').join('\n');
 ok(/body\.combat-fullscreen #header[\s\S]{0,140}display: none/.test(cssF),
    'шапка и меню скрыты — уйти всё равно нельзя');
 ok(/КОМНАТА ПОДГОТОВКИ/.test(warF), 'комната подписана');

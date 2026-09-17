@@ -56,7 +56,7 @@
             </div>
             <button class="btn btn-inline" data-kick-user="${UI.esc(r.id)}">Выкинуть</button>
           </div>
-          <table class="access-table" style="margin-top:6px">
+          <table class="access-table a2-sess-table" style="margin-top:6px">
             <tbody>
               ${(r.sessions || []).map((s) => `
                 <tr>

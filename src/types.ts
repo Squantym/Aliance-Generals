@@ -267,7 +267,7 @@ export interface User {
   saboteurLimits?: { ground: number; sea: number; air: number; secret: number; building: number };
   // Накопительный счётчик уничтоженных ОБЫЧНЫХ диверсантов (наземных/
   // морских/воздушных) — при пересечении каждого кратного 5 гибнет
-  // 1 секретный и 1 построечный (правило 5:1, см. config.SABOTEURS).
+  // 1 секретный и 1 подрывник (правило 5:1, см. config.SABOTEURS).
   saboteurRareLossAccum?: number;
 
   // Необязательные поля, появляющиеся в рантайме

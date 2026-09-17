@@ -128,7 +128,7 @@ function describe(reward: any): { icon: string; img: string; badge: string; text
   if (reward.topUnits) return { icon: '🚙', img: ICON.units, badge: '', text: `${reward.topUnits} единиц новейшей техники` };
   if (reward.saboteurs) {
     const RU: Record<string, string> = { ground: 'наземных', sea: 'морских', air: 'воздушных',
-      building: 'построечных', secret: 'секретных', suicide: 'смертников' };
+      building: 'подрывников', secret: 'секретных', suicide: 'смертников' };
     const kinds = (reward.saboteurs.kinds || []);
     return {
       icon: '🥷', badge: '', img: kinds.length ? `/img/saboteurs/${kinds[0]}.webp` : '',

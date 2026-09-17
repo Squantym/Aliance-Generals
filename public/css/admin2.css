@@ -127,7 +127,9 @@
 }
 .a2-item:last-child { border-bottom: 0; }
 .a2-item-ico { font-size: 16px; line-height: 1.2; flex: 0 0 auto; }
-.a2-item-txt { flex: 1 1 auto; font-size: 13px; }
+.a2-item-txt { flex: 1 1 auto; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+/* «Открыть →» справа не переносится и не выталкивается за край */
+.a2-item > .a2-muted { flex: 0 0 auto; white-space: nowrap; }
 .a2-item-when { color: var(--dim); font-size: 11px; }
 .a2-item.is-hot .a2-item-txt b { color: var(--red); }
 /* Кнопка действия не переносится: «К игрокам» в две строки читается
@@ -200,6 +202,19 @@ a.a2-item:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px
 }
 .a2-kv:last-child { border-bottom: none; }
 .a2-kv > span { color: var(--dim); }
+/* Значение может быть адресом без пробелов (адреса Робокассы в «Платежах») */
+.a2-kv > b, .a2-kv > .mono { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+/* Входы игрока на телефоне: пять колонок не влезают — каждая строка
+   раскладывается в несколько коротких, кнопка «Закрыть» остаётся видна. */
+@media (max-width: 560px) {
+  .a2-sess-table, .a2-sess-table tbody { display: block; }
+  .a2-sess-table tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px;
+    padding: 6px 0; border-bottom: 1px solid var(--border-dim);
+  }
+  .a2-sess-table td { display: block; padding: 0; border: none; }
+  .a2-sess-table td:first-child { flex-basis: 100%; }
+}
 .a2-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 560px) { .a2-grid2 { grid-template-columns: 1fr; } }
 .a2-table { width: 100%; border-collapse: collapse; font-size: 13px; }

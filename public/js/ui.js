@@ -60,7 +60,7 @@ const UI = {
   // sabs: [{type:'ground'|'sea'|'air'|'secret'|'building', count}]
   sabRow(sabs) {
     if (!sabs || !sabs.length) return '';
-    const RU = { ground: 'Наземные', sea: 'Морские', air: 'Воздушные', secret: 'Секретные', building: 'Построечные' };
+    const RU = { ground: 'Наземные', sea: 'Морские', air: 'Воздушные', secret: 'Секретные', building: 'Подрывники' };
     return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
       ${sabs.map((x) => `
         <div style="width:42px;text-align:center" title="${RU[x.type] || x.type}">

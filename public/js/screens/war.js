@@ -540,7 +540,7 @@ App.screens.war = async (c) => {
       App._warEncounter = null;
       if (r.exploded) {
         const lostTechText = (r.lostTech || []).map((x) => `${UI.esc(x.name)} ×${x.count}`).join(', ') || 'без потерь техники';
-        const SAB_RU = { ground: 'наземные', sea: 'морские', air: 'воздушные', secret: 'секретные', building: 'построечные', suicide: 'смертники' };
+        const SAB_RU = { ground: 'наземные', sea: 'морские', air: 'воздушные', secret: 'секретные', building: 'подрывники', suicide: 'смертники' };
         const lostSabText = Object.entries(r.lostSaboteurs || {}).map(([k, v]) => `${SAB_RU[k] || k} ×${v}`).join(', ');
         await UI.confirm(
           `<img class="mine-banner mine-banner-dialog" src="/img/mine/boom.webp" alt="Подрыв"
