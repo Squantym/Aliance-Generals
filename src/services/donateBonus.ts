@@ -232,10 +232,17 @@ function adminSave(actor: User, body: any, notices: Notices) {
   const target: Target = kind === 'gold' ? 'gold' : (['gold', 'offers', 'all'].indexOf(b.target) >= 0 ? b.target : 'all');
   const startAt = Math.max(0, Number(b.startAt) || 0);
   const endAt = Math.max(0, Number(b.endAt) || 0);
-  if (endAt && endAt <= (startAt || Date.now())) throw new u.ApiError('Конец акции раньше её начала');
+  if (startAt && endAt && endAt <= startAt) throw new u.ApiError('Конец акции раньше её начала');
 
   const all = store();
   const prev = b.id ? all[String(b.id)] : null;
+  // Прошедший конец запрещён только когда его ставят заново. Акция,
+  // которая уже закончилась, должна выключаться и править название —
+  // раньше сохранение отвечало «конец раньше начала», и её нельзя было
+  // тронуть вовсе.
+  if (endAt && endAt <= Date.now() && !(prev && prev.endAt === endAt)) {
+    throw new u.ApiError('Конец акции уже прошёл — поставьте время позже');
+  }
   const id = prev ? prev.id : u.uid(10);
   all[id] = {
     id, title, kind: kind as Kind, pct, limit, perDay, hours, target, startAt, endAt,

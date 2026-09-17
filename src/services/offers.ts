@@ -54,6 +54,7 @@ interface Offer {
   startAt: number;        // 0 — сразу
   endAt: number;          // 0 — бессрочно
   limitPerPlayer: number; // 0 — без ограничения
+  limitTotal?: number;    // тираж на всех игроков, 0 — без ограничения
   enabled: boolean;
   sold: number;
   createdAt: number;
@@ -62,6 +63,38 @@ interface Offer {
 
 function store(): Record<string, Offer> {
   return db.load<Record<string, Offer>>('offers', {});
+}
+
+// Неоплаченный рублёвый заказ держит место в тираже столько времени.
+// Без брони двое оформляли бы последний набор одновременно и оба его
+// оплачивали; с вечной бронью брошенные заказы съели бы весь тираж.
+const RESERVE_MS = 30 * 60 * 1000;
+
+function payStore(): Record<string, any> { return db.load<Record<string, any>>('payments', {}); }
+
+// Неоплаченные заказы на набор: все или только одного игрока
+function pendingOrders(offerId: string, userId?: string, fresh?: boolean): any[] {
+  const since = Date.now() - RESERVE_MS;
+  return Object.values(payStore()).filter((o: any) => o && o.offerId === offerId && o.status === 'pending'
+    && (!userId || o.userId === userId) && (!fresh || o.createdAt > since));
+}
+
+// Сколько наборов ещё можно продать всем вместе. null — тираж не ограничен.
+// exceptUserId — бронь этого игрока не считаем: он оплачивает свою же.
+function leftTotal(o: Offer, exceptUserId?: string): number | null {
+  if (!o.limitTotal) return null;
+  const reserved = pendingOrders(o.id, undefined, true).filter((x: any) => x.userId !== exceptUserId).length;
+  return Math.max(0, o.limitTotal - (Number(o.sold) || 0) - reserved);
+}
+
+// Состояние набора для панели: одним словом, почему его видно или нет
+function stateOf(o: Offer): string {
+  const now = Date.now();
+  if (!o.enabled) return 'off';
+  if (o.startAt && now < o.startAt) return 'soon';
+  if (o.endAt && now > o.endAt) return 'ended';
+  if (o.limitTotal && (Number(o.sold) || 0) >= o.limitTotal) return 'soldout';
+  return 'live';
 }
 
 // ── Разбор состава ────────────────────────────────────────────────
@@ -174,6 +207,9 @@ function adminList(actor: User) {
     .map((o) => Object.assign({}, o, {
       itemsText: o.items.map(describeItem),
       active: isActive(o),
+      state: stateOf(o),
+      limitTotal: o.limitTotal || 0,
+      reserved: o.limitTotal ? pendingOrders(o.id, undefined, true).length : 0,
     }));
   return { offers: list, palette: palette() };
 }
@@ -221,6 +257,7 @@ function adminSave(actor: User, data: any, notices: Notices) {
     oldPriceRub: Math.max(0, u.toInt(data.oldPriceRub, 0)),
     startAt, endAt,
     limitPerPlayer: Math.max(0, u.toInt(data.limitPerPlayer, 0)),
+    limitTotal: Math.max(0, u.toInt(data.limitTotal, 0)),
     enabled: data.enabled === undefined ? true : !!data.enabled,
     sold: prev ? prev.sold : 0,
     createdAt: prev ? prev.createdAt : Date.now(),
@@ -266,8 +303,11 @@ function withoutLeadIcon(text: string): string {
   return text.replace(/^[^0-9A-Za-zА-Яа-яЁё]+/u, '').trim() || text;
 }
 
-function showcase(o: Offer, mine: number) {
-  const left = o.limitPerPlayer ? Math.max(0, o.limitPerPlayer - mine) : null;
+function showcase(o: Offer, mine: number, userId?: string) {
+  const perLeft = o.limitPerPlayer ? Math.max(0, o.limitPerPlayer - mine) : null;
+  const totalLeft = leftTotal(o, userId);
+  // Тираж — ещё одно «сколько осталось»: берём меньшее из двух
+  const left = perLeft === null ? totalLeft : (totalLeft === null ? perLeft : Math.min(perLeft, totalLeft));
   return {
     id: o.id, title: o.title, note: o.note, emoji: o.emoji,
     items: o.items.map((it) => {
@@ -279,6 +319,9 @@ function showcase(o: Offer, mine: number) {
     oldPriceGold: o.oldPriceGold, oldPriceRub: o.oldPriceRub,
     endsInSec: o.endAt ? Math.max(0, Math.ceil((o.endAt - Date.now()) / 1000)) : null,
     limitPerPlayer: o.limitPerPlayer, boughtByMe: mine, leftForMe: left,
+    limitTotal: o.limitTotal || 0, leftTotal: totalLeft,
+    soldOut: totalLeft === 0,
+    startsInSec: o.startAt && o.startAt > Date.now() ? Math.ceil((o.startAt - Date.now()) / 1000) : null,
     canBuyGold: o.priceGold > 0 && (left === null || left > 0),
     canBuyRub: o.priceRub > 0 && (left === null || left > 0),
   };
@@ -289,7 +332,7 @@ function catalog(user: User) {
   const offers = Object.values(all)
     .filter(isActive)
     .sort((a, b) => (a.endAt || Infinity) - (b.endAt || Infinity) || b.createdAt - a.createdAt)
-    .map((o) => showcase(o, boughtCount(user, o.id)));
+    .map((o) => showcase(o, boughtCount(user, o.id), user.id));
   return { offers };
 }
 
@@ -309,6 +352,7 @@ function adminPreview(actor: User, data: any) {
     oldPriceGold: Math.max(0, u.toInt(d.oldPriceGold, 0)), oldPriceRub: Math.max(0, u.toInt(d.oldPriceRub, 0)),
     startAt: Math.max(0, u.toInt(d.startAt, 0)), endAt: Math.max(0, u.toInt(d.endAt, 0)),
     limitPerPlayer: Math.max(0, u.toInt(d.limitPerPlayer, 0)),
+    limitTotal: Math.max(0, u.toInt(d.limitTotal, 0)),
     enabled: d.enabled !== false, sold: 0, createdAt: Date.now(), createdBy: actor.id,
   } as Offer;
   return { offer: showcase(draft, 0), active: isActive(draft) };
@@ -370,23 +414,31 @@ function grant(user: User, offer: Offer, notices: Notices): string[] {
   return grantItems(user, offer.items, notices);
 }
 
-// Отметка «куплено» — по ней считается лимит на игрока
-function markBought(user: User, offer: Offer): void {
+// Отметка «куплено» — по ней считается лимит на игрока и тираж.
+// Набор могли удалить, пока игрок платил: тогда считаем только у игрока.
+function markBought(user: User, offerId: string): void {
   const box = ((user as any).offersBought = (user as any).offersBought || {});
-  box[offer.id] = (Number(box[offer.id]) || 0) + 1;
-  offer.sold = (Number(offer.sold) || 0) + 1;
-  db.save('offers');
+  box[offerId] = (Number(box[offerId]) || 0) + 1;
+  const offer = store()[offerId];
+  if (offer) {
+    offer.sold = (Number(offer.sold) || 0) + 1;
+    db.save('offers');
+  }
   db.markUser(user.id);
 }
 
-// Общие проверки перед покупкой: набор существует, идёт, лимит не выбран
+// Общие проверки перед покупкой: набор существует, идёт, лимиты не выбраны
 function assertBuyable(user: User, id: string): Offer {
   const o = store()[String(id || '')];
   if (!o) throw new u.ApiError('Набор не найден');
-  if (!isActive(o)) throw new u.ApiError('Предложение больше не действует');
+  if (!isActive(o)) {
+    if (o.enabled && o.startAt && Date.now() < o.startAt) throw new u.ApiError('Продажа этого набора ещё не началась');
+    throw new u.ApiError('Предложение больше не действует');
+  }
   if (o.limitPerPlayer && boughtCount(user, o.id) >= o.limitPerPlayer) {
     throw new u.ApiError(`Этот набор можно купить ${o.limitPerPlayer} раз(а)`);
   }
+  if (leftTotal(o, user.id) === 0) throw new u.ApiError('Наборы разобраны — тираж закончился');
   return o;
 }
 
@@ -399,36 +451,55 @@ function buyForGold(user: User, id: string, notices: Notices) {
   }
   require('./player').spendGold(user, o.priceGold, 'offer');
   const given = grant(user, o, notices);
-  markBought(user, o);
+  markBought(user, o.id);
   notices.push(`🎁 Набор «${o.title}» ваш: ${given.join(', ')}`);
   return { ok: true, id: o.id, given };
 }
 
 // Покупка за рубли — заказ уходит в платёжную систему. Набор выдаётся
 // ПОСЛЕ подтверждения оплаты (payments.confirmPayment), а не сейчас.
+//
+// Уже есть неоплаченный заказ на этот набор — отдаём ЕГО, а не заводим
+// второй. Иначе лимит «в одни руки» обходился пачкой заказов: каждый
+// проверялся, пока ни один не оплачен, а оплатить потом можно все.
 function orderForRub(user: User, id: string, notices: Notices) {
-  const o = assertBuyable(user, id);
+  const key = String(id || '');
+  const mine = pendingOrders(key, user.id).sort((a: any, b: any) => b.createdAt - a.createdAt)[0];
+  const o0 = store()[key];
+  if (mine && o0 && isActive(o0)) {
+    return { orderId: mine.id, status: mine.status, payUrl: null as string | null };
+  }
+  const o = assertBuyable(user, key);
   if (!o.priceRub) throw new u.ApiError('Этот набор за рубли не продаётся');
   return require('./payments').createOfferOrder(user, {
-    id: o.id, title: o.title, priceRub: o.priceRub,
+    id: o.id, title: o.title, priceRub: o.priceRub, items: o.items,
   }, notices);
 }
 
-// Выдача по оплаченному заказу: зовёт платёжный модуль
-function grantPaid(user: User, offerId: string, notices: Notices): string[] {
+// Выдача по оплаченному заказу: зовёт платёжный модуль. Состав — снимок
+// из заказа: что игрок видел при оформлении, то и получает, даже если
+// набор за это время изменили или удалили. Деньги уже списаны — отказать
+// здесь нельзя, поэтому ни срок, ни лимиты при выдаче не проверяются.
+function grantPaid(user: User, offerId: string, notices: Notices, snapItems?: OfferItem[]): string[] {
   const o = store()[String(offerId || '')];
-  if (!o) return [];
-  const given = grant(user, o, notices);
-  markBought(user, o);
+  const items = (Array.isArray(snapItems) && snapItems.length ? snapItems.map(cleanItem).filter(Boolean) as OfferItem[] : null)
+    || (o ? o.items : []);
+  if (!items.length) throw new Error(`набор ${offerId} не найден и состава в заказе нет`);
+  const given = grantItems(user, items, notices);
+  markBought(user, String(offerId));
   return given;
 }
 
-// Состав набора для квитанции о покупке: те же строки и картинки, что на
-// витрине. Снимок берётся в момент оплаты — набор потом могут изменить
-// или удалить, а квитанция должна остаться такой, какой была покупка.
-function receiptItems(offerId: string): Array<{ text: string; icon: string | null }> {
+// Состав набора для квитанции о покупке — из того же снимка
+function receiptItems(offerId: string, snapItems?: OfferItem[]): Array<{ text: string; icon: string | null }> {
+  const items = Array.isArray(snapItems) && snapItems.length ? snapItems : null;
   const o = store()[String(offerId || '')];
-  return o ? showcase(o, 0).items : [];
+  if (!items && !o) return [];
+  return (items || (o as Offer).items).map((it) => {
+    const icon = itemIcon(it);
+    const text = describeItem(it);
+    return { text: icon ? withoutLeadIcon(text) : text, icon };
+  });
 }
 
 export = {

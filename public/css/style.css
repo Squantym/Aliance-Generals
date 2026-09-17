@@ -160,6 +160,11 @@ a:hover { text-decoration: underline; }
   border-radius: 9px; padding: 1px 7px;
 }
 .badge.green { background: var(--green); }
+/* Состояния наборов в панели: «срок вышел», «разобран», «ещё не начался» */
+.badge.red { background: var(--red); color: #fff; }
+.badge.gold { background: var(--gold); color: #1a1206; }
+/* Тираж набора разобран — на карточке у игрока */
+.offer-soldout { color: var(--red); font-weight: 700; }
 
 /* ---------- КНОПКИ ---------- */
 .btn {

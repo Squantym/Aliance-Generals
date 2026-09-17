@@ -111,6 +111,7 @@ interface PaymentOrder {
   userId: string;
   packageId: string;
   offerId?: string;        // заказ на набор «Спецпредложений», а не на пакет золота
+  offerItems?: any[];      // состав набора на момент заказа — его и выдаём
   title?: string;
   gold: number;
   priceRub: number;
@@ -267,13 +268,14 @@ function createOrder(user: User, packageId: string, notices: Notices) {
 // Заказ на набор из «Спецпредложений». Отличается от пакета золота
 // только тем, что выдаётся при подтверждении: сам набор знает, что в
 // нём лежит (offers.grantPaid).
-function createOfferOrder(user: User, offer: { id: string; title: string; priceRub: number }, notices: Notices) {
+function createOfferOrder(user: User, offer: { id: string; title: string; priceRub: number; items?: any[] }, notices: Notices) {
   assertNotFlooding(user);
   const order: PaymentOrder = {
     id: u.uid(16),
     userId: user.id,
     packageId: 'offer:' + offer.id,
     offerId: offer.id,
+    offerItems: Array.isArray(offer.items) ? JSON.parse(JSON.stringify(offer.items)) : undefined,
     title: offer.title,
     gold: 0,
     priceRub: offer.priceRub,
@@ -558,10 +560,21 @@ function confirmPayment(orderId: string): { ok: boolean } {
     // Состав снимаем ДО выдачи: он нужен для окна и квитанции, а набор
     // потом могут отредактировать или удалить
     let lines: ReceiptLine[] = [];
-    try { lines = require('./offers').receiptItems(order.offerId); } catch (e) {}
+    try { lines = require('./offers').receiptItems(order.offerId, order.offerItems); } catch (e) {}
     const notices: string[] = [];
     let given: string[] = [];
-    try { given = require('./offers').grantPaid(user, order.offerId, notices); } catch (e) {}
+    try {
+      given = require('./offers').grantPaid(user, order.offerId, notices, order.offerItems);
+    } catch (e: any) {
+      // Деньги получены, а выдать нечего — это не молчаливый «оплачено»,
+      // а тревога владельцу: покупку надо выдать или вернуть руками
+      console.error(`⛔ Заказ ${order.id}: набор не выдан — ${e && e.message}`);
+      auditLog.record({
+        userId: order.userId, userName: user.name, path: '/system/payment-offer-failed',
+        desc: `⛔ Оплачен набор «${order.title || order.offerId}», но выдать не удалось (${e && e.message}) — выдайте или верните вручную`,
+        body: { orderId: order.id, offerId: order.offerId },
+      });
+    }
     // Бонус к покупке (для набора это ускорение опыта) — по условиям заказа
     let promoOffer: any = { lines: [], applied: [] };
     try { promoOffer = require('./donateBonus').applyOnPaid(user, order); } catch (e) {}

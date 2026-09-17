@@ -3767,8 +3767,8 @@ proxy_set_header Host $host;</pre>
         <div class="card">
           <div class="field-row">
             <span class="grow"><b>${UI.esc(o.emoji)} ${UI.esc(o.title)}</b>
-              ${o.active ? '<span class="badge green">идёт</span>' : '<span class="badge">выключен</span>'}</span>
-            <span class="muted small">продано: ${UI.fmtNum(o.sold || 0)}</span>
+              ${Admin._offerBadge(o.state || (o.active ? 'live' : 'off'))}</span>
+            <span class="muted small">продано: ${UI.fmtNum(o.sold || 0)}${o.limitTotal ? ' из ' + UI.fmtNum(o.limitTotal) : ''}</span>
           </div>
           ${o.note ? `<div class="muted small">${UI.esc(o.note)}</div>` : ''}
           <div class="muted small mt">${o.itemsText.map((t) => UI.esc(t)).join(' · ')}</div>
@@ -3778,6 +3778,9 @@ proxy_set_header Host $host;</pre>
             ${o.priceRub ? `${UI.fmtNum(o.priceRub)} ₽` : ''}</span></div>
           <div class="kv"><span class="k">Показ</span><span class="v">${when(o.startAt)} → ${when(o.endAt)}</span></div>
           <div class="kv"><span class="k">В одни руки</span><span class="v">${o.limitPerPlayer || 'без ограничения'}</span></div>
+          <div class="kv"><span class="k">Всего на всех</span><span class="v">${o.limitTotal
+            ? `${UI.fmtNum(o.limitTotal)} · осталось ${UI.fmtNum(Math.max(0, o.limitTotal - (o.sold || 0) - (o.reserved || 0)))}${o.reserved ? ` (ждут оплаты: ${o.reserved})` : ''}`
+            : 'без ограничения'}</span></div>
           <div class="field-row mt">
             <button class="btn btn-inline grow" data-of-edit="${o.id}">✏️ Изменить</button>
             <button class="btn btn-inline grow" data-of-toggle="${o.id}">${o.enabled ? '⏸ Выключить' : '▶️ Включить'}</button>
@@ -3788,7 +3791,7 @@ proxy_set_header Host $host;</pre>
     document.getElementById('of-new').onclick = () => {
       Admin._offerDraft = { id: '', title: '', emoji: '🎁', note: '', items: [],
                             priceGold: 0, priceRub: 0, oldPriceGold: 0, oldPriceRub: 0,
-                            startAt: 0, endAt: 0, limitPerPlayer: 1, enabled: true };
+                            startAt: 0, endAt: 0, limitPerPlayer: 1, limitTotal: 0, enabled: true };
       Admin._renderOfferForm();
     };
     box.querySelectorAll('[data-of-edit]').forEach((b) => { b.onclick = () => {
@@ -3808,6 +3811,18 @@ proxy_set_header Host $host;</pre>
       try { await API.post('/api/admin/offers/delete', { id: b.dataset.ofDel }); Admin.loadOffers(); }
       catch (e) { UI.toast('⛔ ' + e.message); }
     }; });
+  },
+
+  // Почему набор видно или нет — одним словом. Раньше было только
+  // «идёт / выключен», и включённый набор с истёкшим сроком выглядел
+  // выключенным, хотя кнопка рядом предлагала «Выключить».
+  _offerBadge(state) {
+    const map = {
+      live: ['green', 'идёт'], off: ['', 'выключен'], soon: ['gold', 'ещё не начался'],
+      ended: ['red', 'срок вышел'], soldout: ['red', 'тираж разобран'],
+    };
+    const [cls, text] = map[state] || map.off;
+    return `<span class="badge ${cls}">${text}</span>`;
   },
 
   // Значение <input type="datetime-local"> ↔ метка времени
@@ -3870,7 +3885,7 @@ proxy_set_header Host $host;</pre>
         </div>
         <p class="muted small mt">Ноль — значит «за это не продаётся». «Было» показывается перечёркнутым.</p>
 
-        <div class="name mt">Показ</div>
+        <div class="name mt">Срок продажи</div>
         <div class="field-row">
           <span class="small muted" style="width:90px">С</span>
           <input type="datetime-local" id="of-start" value="${Admin._dtValue(d.startAt)}" style="flex:1">
@@ -3880,11 +3895,25 @@ proxy_set_header Host $host;</pre>
           <input type="datetime-local" id="of-end" value="${Admin._dtValue(d.endAt)}" style="flex:1">
         </div>
         <div class="field-row mt">
-          <span class="small muted" style="width:90px">В одни руки</span>
-          <input type="number" id="of-limit" min="0" value="${d.limitPerPlayer || 0}" style="width:90px" placeholder="0 — без">
-          <label class="grow small"><input type="checkbox" id="of-enabled" ${d.enabled ? 'checked' : ''}> показывать игрокам</label>
+          <button class="btn btn-inline" type="button" id="of-start-clear">Сразу</button>
+          <button class="btn btn-inline" type="button" id="of-end-clear">Бессрочно</button>
+          <button class="btn btn-inline" type="button" data-of-days="1">+1 день</button>
+          <button class="btn btn-inline" type="button" data-of-days="7">+7 дней</button>
         </div>
-        <p class="muted small">Пустые даты — «сразу и бессрочно». Ноль в «одни руки» — без ограничения.</p>
+        <p class="muted small">Пустые даты — «сразу и бессрочно». Время — по часам вашего устройства.</p>
+
+        <div class="name mt">Лимиты</div>
+        <div class="field-row">
+          <span class="small muted" style="width:120px">В одни руки</span>
+          <input type="number" id="of-limit" min="0" value="${d.limitPerPlayer || 0}" style="flex:1" placeholder="0 — без ограничения">
+        </div>
+        <div class="field-row mt">
+          <span class="small muted" style="width:120px">Всего на всех</span>
+          <input type="number" id="of-limit-total" min="0" value="${d.limitTotal || 0}" style="flex:1" placeholder="0 — без ограничения">
+        </div>
+        <p class="muted small">Ноль — без ограничения. «Всего на всех» — тираж: когда продано столько
+          наборов, продажа останавливается. Неоплаченный заказ за рубли держит место 30 минут.</p>
+        <label class="small mt" style="display:block"><input type="checkbox" id="of-enabled" ${d.enabled ? 'checked' : ''}> показывать игрокам</label>
 
         <div class="field-row mt">
           <button class="btn btn-orange grow" id="of-save">💾 Сохранить</button>
@@ -3915,7 +3944,7 @@ proxy_set_header Host $host;</pre>
       });
     };
     wrap.querySelectorAll('.of-type').forEach((sel) => { sel.onchange = () => {
-      readItems();
+      keepForm();
       const i = Number(sel.closest('.of-item').dataset.i);
       const t = sel.value;
       // Тип сменился — сбрасываем чужие поля, иначе в наборе остался бы
@@ -3927,12 +3956,12 @@ proxy_set_header Host $host;</pre>
       Admin._renderOfferForm();
     }; });
     wrap.querySelectorAll('.of-del').forEach((b) => { b.onclick = () => {
-      readItems();
+      keepForm();
       d.items.splice(Number(b.dataset.i), 1);
       Admin._renderOfferForm();
     }; });
     document.getElementById('of-add').onclick = () => {
-      readItems();
+      keepForm();
       d.items.push({ type: 'gold', qty: 100 });
       Admin._renderOfferForm();
     };
@@ -3956,9 +3985,15 @@ proxy_set_header Host $host;</pre>
         startAt: Admin._dtParse(v('of-start')),
         endAt: Admin._dtParse(v('of-end')),
         limitPerPlayer: Number(v('of-limit')) || 0,
+        limitTotal: Number(v('of-limit-total')) || 0,
         enabled: document.getElementById('of-enabled').checked,
       };
     };
+    // Правка состава перерисовывает форму из черновика. Раньше в черновик
+    // перед этим попадал только состав — и название, цены, срок продажи и
+    // лимиты молча возвращались к старым: выставил срок, добавил позицию,
+    // сохранил — а набор ушёл бессрочным и без лимитов.
+    const keepForm = () => Object.assign(d, payloadOf());
 
     // Карточку собирает СЕРВЕР тем же кодом, что и витрину игрока:
     // описания позиций и картинки приходят готовыми. Считать их здесь
@@ -3986,6 +4021,18 @@ proxy_set_header Host $host;</pre>
       el.addEventListener('input', bumpPreview);
       el.addEventListener('change', bumpPreview);
     });
+    // Быстрые кнопки срока: «Сразу», «Бессрочно», «+N дней» от начала
+    // (или от текущего конца, если он уже стоит)
+    const startEl = document.getElementById('of-start');
+    const endEl = document.getElementById('of-end');
+    const fire = (el) => el.dispatchEvent(new Event('change'));
+    document.getElementById('of-start-clear').onclick = () => { startEl.value = ''; fire(startEl); };
+    document.getElementById('of-end-clear').onclick = () => { endEl.value = ''; fire(endEl); };
+    wrap.querySelectorAll('[data-of-days]').forEach((b) => { b.onclick = () => {
+      const from = Admin._dtParse(endEl.value) || Admin._dtParse(startEl.value) || Date.now();
+      endEl.value = Admin._dtValue(from + Number(b.dataset.ofDays) * 86400000);
+      fire(endEl);
+    }; });
     Admin._offerPreview();
 
     document.getElementById('of-save').onclick = async () => {

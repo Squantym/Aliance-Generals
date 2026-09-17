@@ -51,6 +51,10 @@ const OfferCard = {
         <div class="offer-items">${items || '<div class="muted small">Состав пуст</div>'}</div>
         ${o.limitPerPlayer
           ? `<div class="muted small mt">В одни руки: ${o.limitPerPlayer} · вы взяли ${o.boughtByMe || 0}</div>` : ''}
+        ${o.limitTotal
+          ? `<div class="small mt ${o.soldOut ? 'offer-soldout' : 'gold'}">${o.soldOut
+              ? 'Тираж разобран'
+              : `Осталось ${money(o.leftTotal === null || o.leftTotal === undefined ? o.limitTotal : o.leftTotal)} из ${money(o.limitTotal)}`}</div>` : ''}
         <div class="offer-buy mt">
           ${o.priceGold ? `
             <button class="btn btn-orange grow" ${p ? 'disabled' : `data-offer-gold="${esc(o.id)}"`}
@@ -66,7 +70,7 @@ const OfferCard = {
           ${!o.priceGold && !o.priceRub ? '<span class="muted small">Цена не указана</span>' : ''}
         </div>
         ${!p && !o.canBuyGold && !o.canBuyRub
-          ? '<p class="muted small center mt">Вы уже взяли этот набор</p>' : ''}
+          ? `<p class="muted small center mt">${o.soldOut ? 'Наборы разобраны' : 'Вы уже взяли этот набор'}</p>` : ''}
       </div>`;
   },
 };
