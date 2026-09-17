@@ -548,6 +548,10 @@ function registerRoutes(app: any) {
       const intel = features.spyReport(req.user, target.id);
       if (intel) prof.spyIntel = intel;
     }
+    if (!prof.isOwn) {
+      const rs = require('./services/reinforcements').profileState(req.user, target);
+      if (rs) prof.reinforce = rs;
+    }
     return { profile: prof };
   });
   // Найти игрока по позывному (для выбора цели — например, ракетный удар)

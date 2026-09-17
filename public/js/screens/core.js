@@ -1152,7 +1152,14 @@ App.screens.profile = async (c, param) => {
         </div>` : ''}
       ${!own && !p.canAttack ? `<p class="muted small mt center">Цель вне диапазона ±10 уровней</p>` : ''}
       ${(!own && !isBot) ? (p.myAlly
-        ? `<p class="muted small mt center">🤝 Уже в вашем альянсе</p>`
+        ? (p.reinforce && p.reinforce.canSend
+          ? `<button class="btn btn-orange mt" id="pf-reinforce">🎖 Отправить подкрепление</button>`
+          : (p.reinforce
+            ? `<button class="btn mt" id="pf-reinforce" disabled>🎖 Отправить подкрепление</button>
+               <p class="muted small center" style="margin:4px 0 0">${p.reinforce.mine
+                 ? '✅ Ваше подкрепление уже действует'
+                 : 'Сейчас нельзя: ' + UI.esc(p.reinforce.reason)}</p>`
+            : '')) + `<p class="muted small mt center">🤝 Уже в вашем альянсе</p>`
         : `<button class="btn btn-green mt" id="pf-invite-alliance">🤝 Пригласить в альянс</button>`) : ''}
       ${!own && App.me.legion && App.me.legion.leaderId === App.me.id && !p.legion
         ? `<button class="btn btn-green mt" id="pf-invite-legion">🛡 Пригласить в легион «${UI.esc(App.me.legion.name)}»</button>` : ''}
@@ -1465,6 +1472,17 @@ App.screens.profile = async (c, param) => {
     try {
       await API.post(`/api/group/${kind}/invite`, { userId: p.id });
     } catch (e) { UI.toast('⛔ ' + e.message); }
+  };
+  // Подкрепление союзнику прямо из профиля — та же отправка, что в
+  // разделе «Подкрепления»; после неё профиль перерисовывается с новым
+  // состоянием кнопки
+  const reinfBtn = document.getElementById('pf-reinforce');
+  if (reinfBtn && !reinfBtn.disabled) reinfBtn.onclick = async () => {
+    reinfBtn.disabled = true;
+    try {
+      await API.post('/api/reinforcements/send', { toId: p.id });
+      App.rerender();
+    } catch (e) { reinfBtn.disabled = false; UI.toast('⛔ ' + e.message); }
   };
   const inv1 = document.getElementById('pf-invite-alliance');
   const inv2 = document.getElementById('pf-invite-legion');

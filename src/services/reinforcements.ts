@@ -88,6 +88,15 @@ function sendBlock(user: User, ally: User, sent: any[]): { reason: string; mine:
   return { reason, mine, theirActive: theirActive.length };
 }
 
+// Кнопка «Отправить подкрепление» в чужом профиле. null — кнопки нет
+// (не союзник). Причина отказа — та же sendBlock, что в списке союзников.
+function profileState(user: User, target: User) {
+  if (!target || target.id === user.id || !pa.areAllies(user, target)) return null;
+  const b = sendBlock(user, target, sentToday(user));
+  return { canSend: !b.reason, reason: b.reason, mine: b.mine,
+    theirActive: b.theirActive, theirMax: R.MAX_ACTIVE };
+}
+
 function view(user: User) {
   const active = prune(user);
   const sent = sentToday(user);
@@ -224,4 +233,4 @@ function revokeAllFor(userId: string, memberIds: string[]): number {
   return removed;
 }
 
-export = { view, send, prune, bonusPct, powerMul, revokeAllFor };
+export = { view, send, profileState, prune, bonusPct, powerMul, revokeAllFor };
