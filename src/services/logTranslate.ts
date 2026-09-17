@@ -636,14 +636,33 @@ function describe(path: string, body?: any, result?: any): string | null {
       case '/api/arena/skill':      return `✨ Применил умение на арене${body.skill ? ` «${body.skill}»` : ''}`;
       case '/api/arena/leave':      return '🚪 Покинул бой на арене';
 
-      // ── Групповые бои ──────────────────────────────────────────
+      // ── Рейтинговые бои (адреса /api/group — прежние групповые) ─
       case '/api/group/register':
-        return `🤝 Записался на групповой бой${body.role ? ` (роль: ${gbRole(body.role)})` : ''}`;
-      case '/api/group/unregister': return '🤝 Снялся с записи на групповой бой';
-      case '/api/group/role':       return `🤝 Сменил роль в групповом бою на «${gbRole(body.role)}»`;
-      case '/api/group/enter':      return '⚔️ Открыл комнату подготовки группового боя';
-      case '/api/group/leave':      return '🚪 Покинул групповой бой';
+        return `🏅 Записался на рейтинговый бой${body.role ? ` (роль: ${gbRole(body.role)})` : ''}`;
+      case '/api/group/unregister': return '🏅 Снялся с записи на рейтинговый бой';
+      case '/api/group/role':       return `🏅 Сменил роль в рейтинговом бою на «${gbRole(body.role)}»`;
+      case '/api/group/enter':      return '⚔️ Открыл комнату подготовки рейтингового боя';
+      case '/api/group/leave':      return '🚪 Покинул рейтинговый бой';
       case '/api/group/act': {
+        const A: Record<string, string> = {
+          attack: '⚔️ Атаковал в рейтинговом бою',
+          heal:   '➕ Лечил союзника в рейтинговом бою',
+          guard:  '🛡 Прикрыл союзника в рейтинговом бою',
+        };
+        return A[String(body.action)] || `🏅 Действие в рейтинговом бою: ${body.action || '?'}`;
+      }
+      case '/api/group/upgrade':
+        return `📈 Прокачал улучшение рейтинговых боёв «${gbSkill(body.id || body.skill)}»`;
+      case '/api/group/supply/buy':
+        return `📦 Купил усиление в базе снабжения «${gbBuff(body.kind || body.id)}»`;
+
+      // ── Групповые бои (новые, с реальными характеристиками) ────
+      case '/api/squad/register':
+        return `🤝 Записался на групповой бой, взнос $1 000 000 000${body.role ? ` (роль: ${gbRole(body.role)})` : ''}`;
+      case '/api/squad/unregister': return '🤝 Снялся с записи на групповой бой, взнос возвращён';
+      case '/api/squad/role':       return `🤝 Сменил роль в групповом бою на «${gbRole(body.role)}»`;
+      case '/api/squad/leave':      return '🚪 Покинул групповой бой — взнос потерян';
+      case '/api/squad/act': {
         const A: Record<string, string> = {
           attack: '⚔️ Атаковал в групповом бою',
           heal:   '➕ Лечил союзника в групповом бою',
@@ -651,10 +670,6 @@ function describe(path: string, body?: any, result?: any): string | null {
         };
         return A[String(body.action)] || `🤝 Действие в групповом бою: ${body.action || '?'}`;
       }
-      case '/api/group/upgrade':
-        return `📈 Прокачал улучшение групповых боёв «${gbSkill(body.id || body.skill)}»`;
-      case '/api/group/supply/buy':
-        return `📦 Купил усиление в базе снабжения «${gbBuff(body.kind || body.id)}»`;
 
       // ── Легион ─────────────────────────────────────────────────
       case '/api/legion/rank':

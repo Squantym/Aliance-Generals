@@ -254,14 +254,23 @@ App.screens.war = async (c) => {
       <button class="btn btn-red mt" id="fat-capture" style="width:100%;padding:12px">🪖 Взять в плен</button>
     </div>` : '';
 
-  // Вкладку держим в адресе (#war/arena): при обновлении страницы игрок
+  // Вкладку держим в адресе (#war/team/arena): при обновлении страницы игрок
   // остаётся там же, где был, а не улетает на «Вторжение».
   if (!App._warTab) {
-    const fromHash = (location.hash || '').split('/')[1] || '';
-    const known = ['targets', 'group', 'arena', 'sanctions', 'event'];
+    const parts = (location.hash || '').split('/');
+    const fromHash = parts[1] || '';
+    const known = ['targets', 'team', 'sanctions', 'event'];
     if (known.includes(fromHash)) App._warTab = fromHash;
+    if (fromHash === 'team' && App.TEAM_TABS.includes(parts[2])) App._teamTab = parts[2];
+    // Старые адреса (#war/group, #war/arena) ведут в новые разделы
+    if (fromHash === 'group') { App._warTab = 'team'; App._teamTab = 'rating'; }
+    if (fromHash === 'arena') { App._warTab = 'team'; App._teamTab = 'arena'; }
   }
+  // Прежние значения вкладки из кода (плашка боя, переходы) тоже понимаем
+  if (App._warTab === 'group') { App._warTab = 'team'; App._teamTab = 'rating'; }
+  if (App._warTab === 'arena') { App._warTab = 'team'; App._teamTab = 'arena'; }
   const warTab = App._warTab || 'targets';
+  const teamTab = App._teamTab || 'squad';
 
   // Окно «встречи». Мина срабатывает ДО боя — прячет результат, пока игрок
   // не разберётся с проводом. Сейф выпадает ПОСЛЕ боя — показываем его ВМЕСТЕ
@@ -280,13 +289,16 @@ App.screens.war = async (c) => {
     ${!preCombat ? resultHtml : ''}
     <div class="tabs">
       <div class="tab ${warTab === 'targets' ? 'active' : ''}" data-wartab="targets">${App.tabImg('war_targets', 20)}Вторжение</div>
-      <div class="tab ${warTab === 'group' ? 'active' : ''}" data-wartab="group">🤝 Групповые бои</div>
-      <div class="tab ${warTab === 'arena' ? 'active' : ''}" data-wartab="arena">🏟 Арена</div>
+      <div class="tab ${warTab === 'team' ? 'active' : ''}" data-wartab="team">⚔️ Командные сражения</div>
       <div class="tab ${warTab === 'sanctions' ? 'active' : ''}" data-wartab="sanctions">💰 Санкции</div>
       <div class="tab ${warTab === 'event' ? 'active' : ''}" data-wartab="event">🐉 Событие</div>
     </div>
-    ${warTab === 'arena' ? '<div id="arena-box"><div class="loading">Загружаю арену…</div></div>'
-      : warTab === 'group' ? '<div id="gb-box"><div class="loading">Загружаю групповые бои…</div></div>'
+    ${warTab === 'team' ? `
+      <div class="tabs team-tabs">
+        ${App.TEAM_TABS.map((t) => `<div class="tab ${teamTab === t ? 'active' : ''}" data-teamtab="${t}">${App.TEAM_LABELS[t]}</div>`).join('')}
+      </div>
+      ${teamTab === 'arena' ? '<div id="arena-box"><div class="loading">Загружаю арену…</div></div>'
+        : `<div id="gb-box"><div class="loading">Загружаю ${teamTab === 'rating' ? 'рейтинговые' : 'групповые'} бои…</div></div>`}`
       : warTab === 'event' ? `
       <div class="card center">
         <p class="muted small">Мировое PvE-событие: командиры вместе бьют общего босса. Открыть полный экран события:</p>
@@ -313,9 +325,16 @@ App.screens.war = async (c) => {
     t.onclick = () => { App._setWarTab(t.dataset.wartabGo); };
   });
 
-  // Арена рисуется отдельно: у неё своё обновление и боевое окно
-  if (warTab === 'arena') App.renderArena();
-  if (warTab === 'group') App.renderGroup();
+  c.querySelectorAll('[data-teamtab]').forEach((t) => {
+    t.onclick = () => { App._setTeamTab(t.dataset.teamtab); };
+  });
+
+  // Командные сражения рисуются отдельно: у каждого раздела своё
+  // обновление и боевое окно
+  if (warTab === 'team') {
+    if (teamTab === 'arena') App.renderArena();
+    else { App._gbMode = teamTab; App.renderGroup(); }
+  }
 
   // Тикающий таймер баннера события (если запланировано)
   const evTimer = document.getElementById('war-event-timer');
@@ -906,11 +925,24 @@ async function renderConflictDetail(c, confId) {
 
 // Переключение вкладки войны. Пишем её в адрес, чтобы обновление
 // страницы возвращало игрока туда же, где он был.
+// «Командные сражения» (17.09.2026): три раздела под одной вкладкой.
+// Внутренние имена: squad — новые групповые бои, arena — арена,
+// rating — рейтинговые (прежние групповые, адрес API у них старый).
+App.TEAM_TABS = ['squad', 'arena', 'rating'];
+App.TEAM_LABELS = { squad: '🤝 Групповые бои', arena: '🏟 Арена', rating: '🏅 Рейтинговые бои' };
+App._onTeamTab = (sub) => (App._warTab || '') === 'team' && (App._teamTab || 'squad') === sub;
+App._setTeamTab = (sub) => {
+  App._teamTab = App.TEAM_TABS.includes(sub) ? sub : 'squad';
+  App._setWarTab('team');
+};
+// Открыть раздел по месту из /api/me: 'arena', 'group' (рейтинговые) или 'squad'
+App._teamSubOf = (where) => (where === 'arena' ? 'arena' : (where === 'group' ? 'rating' : 'squad'));
+
 App._setWarTab = (tab) => {
   App._warTab = tab;
   App._gbPage = null;              // раздел улучшений закрываем
   try {
-    const want = '#war/' + tab;
+    const want = '#war/' + tab + (tab === 'team' ? '/' + (App._teamTab || 'squad') : '');
     if (location.hash !== want) {
       // replaceState, а не переход: иначе кнопка «назад» в браузере
       // проходила бы через каждую открытую вкладку
@@ -1003,7 +1035,7 @@ App.renderArena = async () => {
   const arenaStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
   const arenaNeedTicker = d.secondsLeft > 0 || !!d.nextStartAt;
   const startArenaTicker = () => {
-    if (!arenaNeedTicker) return;
+    if (!arenaNeedTicker) { clearInterval(App._tickTimer); return; }
     App._startTicker('#arena-timer', arenaStartAt, () => {
       App._resetSign('arenaLobby');
       App.renderArena();
@@ -1064,13 +1096,19 @@ App.renderArena = async () => {
         <li>Взнос — <b>${money(d.entry)}</b> (${UI.esc(d.currencyLabel || '')}). Каждый участник
             поднимает банк на столько же. Победитель забирает весь банк
             <b>той же валютой</b>, остальные не получают ничего.</li>
-        <li>Характеристики у всех <b>одинаковые</b>: ${UI.fmtNum(r.hp)} HP и ${r.atk} атаки.
-            Уровень и техника значения не имеют.</li>
+        <li>Характеристики <b>реальные — как в игре</b>: здоровье и боеприпасы — ваши максимумы
+            по навыкам, удар считается как в войне — от мощи вашей армии против защиты цели,
+            крит и уворот — от жестокости и ловкости. Каждый удар тратит боеприпас; кончились
+            у всех — побеждает тот, у кого больше здоровья.</li>
+        ${d.myStats ? `<li>Ваши сейчас: ❤ ${UI.fmtNum(d.myStats.hp)} · 🎯 ${d.myStats.ammo} боеприпасов ·
+            ⚔ ${UI.fmtNum(d.myStats.atk)} / 🛡 ${UI.fmtNum(d.myStats.def)} · 💥 ${d.myStats.critPct}% · 💨 ${d.myStats.dodgePct}%</li>` : ''}
         <li>Между ударами — <b>${(r.cooldownMs / 1000).toFixed(1)} секунды</b> перезарядки.</li>
         <li>Четыре умения: 💉 аптечка (+${r.medkitPct}% здоровья), 💥 крит (×${r.critMin}–×${r.critMax}
             на ${r.critMs / 1000} с), 🛡 броня (−${r.armorPct}% урона на ${r.armorMs / 1000} с),
             🌫 дымовая завеса (${r.smokeUses} применения — уводит из-под прицела).</li>
-        <li>Если записалось меньше <b>${d.minPlayers}</b> человек — бой отменяется, взносы возвращаются.</li>
+        <li>Если к старту живых меньше ${d.seats || 10}, за <b>${d.botFillSec || 10} секунд</b> до начала
+            свободные места занимают боты с <b>${d.botPct || 70}%</b> средних характеристик участников.
+            Взнос боты не платят; если победил бот — банк сгорает.</li>
         <li>Рейтинг: <b>1</b> очко за убийство, <b>3</b> за победу и ещё <b>3</b> за убийство фаворита боя.</li>
         <li>За проигрыш очки снимаются по месту: кто выбыл первым, теряет больше всех.
             В бою впятером — <b>−4, −3, −2, −1</b>, у победителя штрафа нет. Убийства штраф
@@ -1115,9 +1153,9 @@ App.renderArena = async () => {
           ${d.registered.map((p, i) => `
             <div class="arena-row">
               <span class="arena-num">${i + 1}</span>
-              <span class="grow">${App._flagImg(p.flag)} ${UI.esc(p.name)}
-                <span class="muted small">ур. ${p.level}</span></span>
-              <span class="gold small">${money(d.entry)}</span>
+              <span class="grow">${p.isBot ? '🤖' : App._flagImg(p.flag)} ${UI.esc(p.name)}
+                ${p.isBot ? '<span class="muted small">бот</span>' : `<span class="muted small">ур. ${p.level}</span>`}</span>
+              <span class="gold small">${p.isBot ? '—' : money(d.entry)}</span>
             </div>`).join('')}
         </div>
         <div class="arena-total mt">
@@ -1199,7 +1237,7 @@ App.renderArena = async () => {
   // пропустить нельзя
   App._arenaTimer = setInterval(() => {
     if (document.hidden) return;
-    if ((App._warTab || '') !== 'arena') { clearInterval(App._arenaTimer); return; }
+    if (!App._onTeamTab('arena')) { clearInterval(App._arenaTimer); return; }
     App.renderArena();
   }, 5000);
 };
@@ -1247,7 +1285,9 @@ App.renderArenaBattle = async () => {
       <div class="arena-fight-head">
         <span>🏟 Бой идёт</span>
         <span class="muted small">осталось ${b.aliveCount} из ${b.total}</span>
-        <span class="gold"><span class="ic-gold"></span> ${UI.fmtNum(b.pot)}</span>
+        <span class="gold">${b.currency === 'money'
+          ? '<span class="ic-dollar"></span> ' + UI.fmtMoney(b.pot)
+          : '<span class="ic-gold"></span> ' + UI.fmtNum(b.pot)}</span>
       </div>
 
       <div class="arena-log" id="arena-log">
@@ -1266,6 +1306,7 @@ App.renderArenaBattle = async () => {
         </div>
         <div class="arena-hp"><i style="width:${pct(me.hp, me.maxHp)}%"></i></div>
         <div class="arena-hp-num">${UI.fmtNum(me.hp)} / ${UI.fmtNum(me.maxHp)}</div>
+        ${me.maxAmmo != null ? `<div class="arena-hp-num" id="ar-ammo">🎯 ${me.ammo} / ${me.maxAmmo}</div>` : ''}
         ${(me.critLeftSec > 0 || me.armorLeftSec > 0) ? `
           <div class="arena-buffs">
             ${me.critLeftSec > 0 ? `<span class="arena-buff">💥 крит ${me.critLeftSec} с</span>` : ''}
@@ -1277,7 +1318,7 @@ App.renderArenaBattle = async () => {
         <div class="arena-vs">против</div>
         <div class="arena-card arena-card-foe">
           <div class="arena-card-top">
-            <b>${App._flagImg(t.flag)} ${UI.esc(t.name)}
+            <b>${t.isBot ? '🤖' : App._flagImg(t.flag)} ${UI.esc(t.name)}
               <span class="rt-badge" title="Рейтинг">${UI.fmtNum(t.rating || 0)}</span></b>
             <span class="muted small">цель</span>
           </div>
@@ -1286,8 +1327,8 @@ App.renderArenaBattle = async () => {
         </div>` : '<p class="muted center mt">Цель не выбрана</p>'}
 
       <div class="arena-acts">
-        <button class="btn btn-orange" id="ar-attack" ${cdLeft > 0 ? 'disabled' : ''}
-                data-cd-until="${Date.now() + cdLeft}">
+        <button class="btn btn-orange" id="ar-attack" ${cdLeft > 0 || me.ammo === 0 ? 'disabled' : ''}
+                data-cd-until="${Date.now() + cdLeft}" data-no-ammo="${me.ammo === 0 ? 1 : 0}">
           <span id="ar-attack-label">⚔ Атаковать</span>
         </button>
         <button class="btn" id="ar-switch">🎯 Сменить цель</button>
@@ -1310,7 +1351,7 @@ App.renderArenaBattle = async () => {
       <div class="mt">
         ${b.alive.map((f) => `
           <div class="arena-row${f.isMe ? ' arena-row-me' : ''}">
-            <span class="arena-row-name">${App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
+            <span class="arena-row-name">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
               <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span></span>
             <span class="arena-mini-hp"><i style="width:${pct(f.hp, f.maxHp)}%"></i></span>
             <span class="small muted">${UI.fmtNum(f.hp)}</span>
@@ -1328,9 +1369,10 @@ App.renderArenaBattle = async () => {
     const until = Number(atkBtn.dataset.cdUntil || 0);
     const left = Math.max(0, until - Date.now());
     const label = document.getElementById('ar-attack-label');
-    if (label) label.textContent = left > 0
-      ? `⚔ Атака (${(left / 1000).toFixed(1)})` : '⚔ Атаковать';
-    atkBtn.disabled = left > 0;
+    const noAmmo = atkBtn.dataset.noAmmo === '1';
+    if (label) label.textContent = noAmmo ? '🎯 Нет боеприпасов' : (left > 0
+      ? `⚔ Атака (${(left / 1000).toFixed(1)})` : '⚔ Атаковать');
+    atkBtn.disabled = left > 0 || noAmmo;
 
     box.querySelectorAll('[data-active-until]').forEach((b2) => {
       const rest = Math.max(0, Number(b2.dataset.activeUntil || 0) - Date.now());
@@ -1375,7 +1417,7 @@ function scheduleArenaBattle() {
   clearInterval(App._arenaTimer);
   App._arenaTimer = setInterval(() => {
     if (document.hidden) return;
-    if ((App._warTab || '') !== 'arena') { clearInterval(App._arenaTimer); return; }
+    if (!App._onTeamTab('arena')) { clearInterval(App._arenaTimer); return; }
     App.renderArenaBattle();
   }, 5000);
 }
@@ -1479,8 +1521,19 @@ App.renderArenaResult = async (battleId) => {
   if (back) back.onclick = () => App.renderArena();
 };
 
-// ═══ ГРУППОВЫЕ БОИ 5 на 5 ═══════════════════════════════════════════
+// ═══ ГРУППОВЫЕ И РЕЙТИНГОВЫЕ БОИ 5 на 5 ═════════════════════════════
+// Один экран на два режима (App._gbMode):
+//   squad  — групповые бои: реальные характеристики, взнос и призы,
+//            картинка-превью, без магазина и рангов (/api/squad);
+//   rating — рейтинговые (прежние групповые): равные запасы с прокачкой,
+//            ранги, улучшения и снабжение, без картинки (/api/group).
 App._gbTimer = null;
+App._gbMode = App._gbMode || 'squad';
+App._gbCfg = () => (App._gbMode === 'rating'
+  ? { mode: 'rating', api: '/api/group', title: '🏅 РЕЙТИНГОВЫЕ БОИ', name: 'Рейтинговый бой',
+      back: '← К рейтинговым боям', banner: false, shop: true, ranks: true }
+  : { mode: 'squad', api: '/api/squad', title: '🤝 ГРУППОВЫЕ БОИ', name: 'Групповой бой',
+      back: '← К групповым боям', banner: true, shop: false, ranks: false });
 
 App.renderGroup = async () => {
   clearInterval(App._gbTimer);
@@ -1490,34 +1543,40 @@ App.renderGroup = async () => {
   if (!box) return;
 
   // Открыт отдельный раздел — рисуем его вместо витрины
-  if (App._gbPage === 'upgrades') return App.renderUpgradesPage();
-  if (App._gbPage === 'supply') return App.renderSupplyPage();
+  if (App._gbMode === 'rating' && App._gbPage === 'upgrades') return App.renderUpgradesPage();
+  if (App._gbMode === 'rating' && App._gbPage === 'supply') return App.renderSupplyPage();
 
+  const G = App._gbCfg();
+  const SIG = 'gbLobby_' + G.mode;
   let d = null;
-  try { d = await API.get('/api/group'); }
+  try { d = await API.get(G.api); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+  if (G.mode !== App._gbMode) return;   // пока шёл запрос, игрок сменил раздел
 
   // Перерисовываем только при изменениях; секунды до старта обновляем
   // точечно, чтобы страница не моргала
-  const fp = { ...d, secondsLeft: undefined, rating: undefined,
+  const fp = { ...d, secondsLeft: undefined, rating: undefined, myMoney: undefined,
                registered: d.registered.map((x) => x.id + ':' + x.role) };
   // Время старта. Считаем его ДО отрисовки, а сам отсчёт запускаем
   // ПОСЛЕ — элемента таймера в разметке ещё не существует.
   const gbStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
   const gbNeedTicker = d.registered.length > 0 && (d.secondsLeft > 0 || d.nextStartAt);
   const startGbTicker = () => {
-    if (!gbNeedTicker) return;
+    // Отсчёт не нужен — гасим прежний: иначе после переключения раздела
+    // продолжал тикать таймер соседнего режима, и пустая очередь
+    // «отсчитывала» чужой бой
+    if (!gbNeedTicker) { clearInterval(App._tickTimer); return; }
     App._startTicker('#gb-timer', gbStartAt, () => {
-      App._resetSign('gbLobby');
+      App._resetSign(SIG);
       App.renderGroup();
     });
   };
 
-  if (box.dataset.mode === 'lobby' && App._sameAsBefore('gbLobby', fp)) {
+  if (box.dataset.mode === 'lobby-' + G.mode && App._sameAsBefore(SIG, fp)) {
     startGbTicker();   // разметка на месте, но отсчёт мог остановиться
     return;
   }
-  box.dataset.mode = 'lobby';
+  box.dataset.mode = 'lobby-' + G.mode;
 
   // Игрок в составе — открываем боевой экран СРАЗУ, не показывая витрину.
   // Во время подготовки это комната со списком обеих команд, после старта —
@@ -1533,14 +1592,28 @@ App.renderGroup = async () => {
   const mmss = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   const r = d.rules;
 
+  // Картинка — только у групповых боёв: у рейтинговых её убрали
+  // (решение владельца, 17.09.2026)
   box.innerHTML = `
     <div class="card gb-head">
-      <img class="gb-banner" src="/img/group/preview.webp" alt="Групповой бой"
-           loading="eager" decoding="async" onerror="this.style.display='none'">
-      <div class="arena-title">🤝 ГРУППОВЫЕ БОИ</div>
+      ${G.banner ? `<img class="gb-banner" src="/img/group/preview.webp" alt="Групповой бой"
+           loading="eager" decoding="async" onerror="this.style.display='none'">` : ''}
+      <div class="arena-title">${G.title}</div>
       <p class="muted small mt">Команда на команду, до ${d.teamSize} человек с каждой стороны.
-      Характеристики у всех одинаковые — важна только слаженность.</p>
+      ${G.mode === 'squad'
+        ? 'Характеристики реальные — как в игре: решают навыки, армия и слаженность.'
+        : 'Запасы у всех равные, растут только прокачкой — важна слаженность.'}</p>
     </div>
+
+    ${G.mode === 'squad' ? `
+      <div class="card">
+        <div class="kv"><span class="k">Взнос</span><span class="v"><span class="ic-dollar"></span> ${UI.fmtMoney(d.entry)}</span></div>
+        <div class="kv"><span class="k">Приз каждому живому победителю</span><span class="v gold"><span class="ic-dollar"></span> ${UI.fmtMoney(d.prize)}</span></div>
+        <p class="muted small mt">Ничья — взнос возвращается. Не вышли на бой или покинули его — взнос не возвращается.</p>
+        ${d.myStats ? `<p class="muted small mt">Ваши характеристики сейчас: ❤ ${UI.fmtNum(d.myStats.hp)} ·
+          ⚡ ${UI.fmtNum(d.myStats.energy)} · 🎯 ${d.myStats.ammo} · ⚔ ${UI.fmtNum(d.myStats.atk)} / 🛡 ${UI.fmtNum(d.myStats.def)}
+          · 💥 ${d.myStats.critPct}% · 💨 ${d.myStats.dodgePct}%</p>` : ''}
+      </div>` : ''}
 
     <div class="card rules-card">
       <button class="rules-toggle" data-rules="arena">
@@ -1550,13 +1623,20 @@ App.renderGroup = async () => {
       <ul class="arena-rules" data-rules-body="arena" style="display:none">
         <li>Отсчёт начинается с первой записи: на сбор <b>${d.lobbyMinutes} минут</b>. Участники делятся на две команды
             поровну: при пятерых будет <b>3 на 2</b>, а не 4 на 1.</li>
+        ${G.mode === 'squad' ? `
+        <li>Характеристики <b>как в игре</b>: здоровье, энергия и боеприпасы — ваши максимумы по навыкам,
+            удар — как в войне, от мощи армии против защиты цели, крит и уворот — от навыков.
+            Бой тратит копию запасов — обычные здоровье и боеприпасы не трогаются.</li>
+        <li>Лечение медика — ${r.healMin}–${r.healMax} HP (крит — ${r.healCritMin}–${r.healCritMax}),
+            прикрытие режет урон на ${r.guardPct}% на ${r.guardSec} с.</li>` : `
         <li>В бою у всех <b>${UI.fmtNum(r.hp)} HP</b>, <b>${UI.fmtNum(r.energy)}</b> энергии
             и <b>${r.ammo}</b> боеприпасов. Эти запасы живут только внутри боя и не связаны
-            с вашими обычными.</li>
+            с вашими обычными.</li>`}
         <li>Удар тратит боеприпас, лечение — ${r.costHeal} энергии, прикрытие — ${r.costGuard}.
             Между действиями ${(r.cooldownMs / 1000).toFixed(1)} секунды.</li>
         <li>Если участников не хватает, за <b>${d.botFillSec} секунд</b> до старта места
-            начнут занимать боты — постепенно, чтобы опоздавшие успели. Они играют сами: атакуют, лечат и прикрывают.</li>
+            начнут занимать боты — постепенно, чтобы опоздавшие успели. Их здоровье и сила — 50–80%
+            от средних у живых игроков боя. Они играют сами: атакуют, лечат и прикрывают.</li>
       </ul>
     </div>
 
@@ -1594,7 +1674,8 @@ App.renderGroup = async () => {
       </div>
       ${d.iAmRegistered
         ? `<button class="btn btn-red mt" id="gb-out" style="width:100%">Отменить запись</button>`
-        : `<button class="btn btn-orange mt" id="gb-in" style="width:100%">Записаться на бой</button>`}
+        : `<button class="btn btn-orange mt" id="gb-in" style="width:100%">Записаться на бой${G.mode === 'squad'
+            ? ' — <span class="ic-dollar"></span> ' + UI.fmtMoney(d.entry) : ''}</button>`}
     </div>
 
     <div class="card">
@@ -1613,7 +1694,7 @@ App.renderGroup = async () => {
         : '<p class="muted small mt">Пока никто не записался.</p>'}
     </div>
 
-    <div class="card">
+    ${G.ranks ? `<div class="card">
       <div class="gb-my-rank">
         <div>
           <div class="muted small">Ваш ранг</div>
@@ -1637,7 +1718,7 @@ App.renderGroup = async () => {
         <button class="btn gb-section" data-section="upgrades">🔧 Улучшения</button>
         <button class="btn gb-section" data-section="supply">📦 База снабжения</button>
       </div>
-    </div>
+    </div>` : ''}
 
     ${(d.myHistory || []).length ? `
       <div class="card">
@@ -1656,13 +1737,15 @@ App.renderGroup = async () => {
             <div class="hist-row ${won ? 'hist-win' : (draw ? '' : 'hist-lose')}">
               <span class="hist-mark">${won ? '🏆' : (draw ? '🤝' : '⚔')}</span>
               <span class="grow">
-                <b>${forfeit ? 'Не явился' : (won ? 'Победа' : (draw ? 'Ничья' : 'Поражение'))}</b>
+                <b>${forfeit ? 'Не явился' : (h.result === 'left' ? 'Покинул бой' : (won ? 'Победа' : (draw ? 'Ничья' : 'Поражение')))}</b>
                 <span class="muted small">${UI.esc(h.role || h.roleLabel || '')} ·
                   ${h.kills} уб. · урон ${UI.fmtNum(h.damage || 0)}</span>
               </span>
               <span class="hist-rew">
                 <span class="${h.rating > 0 ? 'gold' : 'muted'}">🏅 ${h.rating > 0 ? '+' : ''}${h.rating}</span>
-                <span class="gold">🎗 +${UI.fmtNum(h.tokens || 0)}</span>
+                ${G.mode === 'squad'
+                  ? `<span class="${(h.money || 0) > 0 ? 'gold' : 'muted'}">${(h.money || 0) >= 0 ? '+' : '−'}$${UI.fmtMoney(Math.abs(h.money || 0))}</span>`
+                  : `<span class="gold">🎗 +${UI.fmtNum(h.tokens || 0)}</span>`}
               </span>
             </div>`;
           }).join('')}
@@ -1670,20 +1753,20 @@ App.renderGroup = async () => {
       </div>` : ''}
 
     <div class="card">
-      <div class="name">🏅 Рейтинг групповых боёв</div>
+      <div class="name">🏅 ${G.mode === 'squad' ? 'Рейтинг групповых боёв' : 'Таблица рейтинговых боёв'}</div>
       <p class="muted small mt">Победа команде +${d.rating.rules.win}, поражение ${d.rating.rules.loss}.
       Лично: +${d.rating.rules.kill} за убийство и +${d.rating.rules.best} лучшему бойцу,
       защитнику и медику боя.</p>
       ${d.rating.top.length ? `
         <div class="table-wrap mt">
           <table class="gold-table">
-            <thead><tr><th>#</th><th>Боец</th><th>Ранг</th><th class="num">Очки</th><th class="num">Побед</th></tr></thead>
+            <thead><tr><th>#</th><th>Боец</th>${G.ranks ? '<th>Ранг</th>' : ''}<th class="num">Очки</th><th class="num">Побед</th></tr></thead>
             <tbody>
               ${d.rating.top.map((x) => `
                 <tr${x.isMe ? ' class="arena-row-me"' : ''}>
                   <td class="muted small">${x.place}</td>
                   <td>${App._flagImg(x.flag)} ${UI.esc(x.name)}${x.isMe ? ' <span class="muted small">(вы)</span>' : ''}</td>
-                  <td class="small muted">${UI.esc(x.rank)}</td>
+                  ${G.ranks ? `<td class="small muted">${UI.esc(x.rank)}</td>` : ''}
                   <td class="num"><b class="gold">${UI.fmtNum(x.points)}</b></td>
                   <td class="num">${x.wins}</td>
                 </tr>`).join('')}
@@ -1714,7 +1797,7 @@ App.renderGroup = async () => {
     b2.onclick = async () => {
       const role = b2.dataset.role;
       try {
-        if (d.iAmRegistered) await API.post('/api/group/role', { role });
+        if (d.iAmRegistered) await API.post(G.api + '/role', { role });
         else App._gbRole = role;
         App.renderGroup();
       } catch (e) { UI.toast('⛔ ' + e.message); }
@@ -1723,13 +1806,13 @@ App.renderGroup = async () => {
   const inB = document.getElementById('gb-in');
   if (inB) inB.onclick = async () => {
     inB.disabled = true;
-    try { await API.post('/api/group/register', { role: App._gbRole || d.myRole }); App.renderGroup(); }
+    try { await API.post(G.api + '/register', { role: App._gbRole || d.myRole }); await App.refreshMe(); App.renderGroup(); }
     catch (e) { UI.toast('⛔ ' + e.message); inB.disabled = false; }
   };
   const outB = document.getElementById('gb-out');
   if (outB) outB.onclick = async () => {
     outB.disabled = true;
-    try { await API.post('/api/group/unregister', {}); App.renderGroup(); }
+    try { await API.post(G.api + '/unregister', {}); await App.refreshMe(); App.renderGroup(); }
     catch (e) { UI.toast('⛔ ' + e.message); outB.disabled = false; }
   };
   // Открыть комнату подготовки. Отдельного запроса «вступить» больше нет:
@@ -1739,7 +1822,7 @@ App.renderGroup = async () => {
   if (entB) entB.onclick = async () => {
     entB.disabled = true;
     try {
-      App._resetSign('gbBattle');
+      App._resetSign('gbBattle_' + G.mode);
       await App.renderGroupBattle();
       await App.refreshMe();
     } catch (e) { UI.toast('⛔ ' + e.message); entB.disabled = false; }
@@ -1747,7 +1830,7 @@ App.renderGroup = async () => {
 
   App._gbTimer = setInterval(() => {
     if (document.hidden) return;
-    if ((App._warTab || '') !== 'group') { clearInterval(App._gbTimer); return; }
+    if (!App._onTeamTab(G.mode)) { clearInterval(App._gbTimer); return; }
     App.renderGroup();
   }, 5000);
 };
@@ -1866,7 +1949,7 @@ App.renderUpgradesPage = async () => {
 
     <button class="btn mt" id="gb-back-page2" style="width:100%">← Назад к групповым боям</button>`;
 
-  const back = () => { App._gbPage = null; App._resetSign('gbLobby'); App.renderGroup(); };
+  const back = () => { App._gbPage = null; App._resetSign('gbLobby_rating'); App.renderGroup(); };
   const b1 = document.getElementById('gb-back-page');
   if (b1) b1.onclick = back;
   const b2 = document.getElementById('gb-back-page2');
@@ -1996,7 +2079,7 @@ App.renderSupplyPage = async () => {
 
     <button class="btn mt" id="gb-back-page2" style="width:100%">← Назад к групповым боям</button>`;
 
-  const back = () => { App._gbPage = null; App._resetSign('gbLobby'); App.renderGroup(); };
+  const back = () => { App._gbPage = null; App._resetSign('gbLobby_rating'); App.renderGroup(); };
   const b1 = document.getElementById('gb-back-page');
   if (b1) b1.onclick = back;
   const b2 = document.getElementById('gb-back-page2');
@@ -2055,6 +2138,29 @@ App._gbRoleImg = (roleId, fallback, size) => {
 // слагаемые, и их сумма в точности равна итогу.
 App._gbMyStatsHtml = (b, me2) => {
   const m = b.myStats;
+  if (m && m.real) {
+    const pctOf = (v) => (v > 0 ? `<div class="gbs-chip"><span class="gbs-chip-l">${v.l}</span><b>${v.v}%</b></div>` : '');
+    return `
+      <div class="card gbs-card">
+        <div class="name">${App._gbRoleImg(me2.role, me2.roleIcon, 22)} ${UI.esc(me2.name)} — ${UI.esc(me2.roleLabel)}</div>
+        <p class="muted small gbs-rolenote">Характеристики как в игре${m.role.hpMul !== 1 ? ` · роль: HP ×${m.role.hpMul}` : ''}${m.role.energyMul !== 1 ? ` · энергия ×${m.role.energyMul}` : ''}${m.role.atkMul !== 1 ? ` · урон ×${m.role.atkMul}` : ''}</p>
+        <div class="gbs-rows mt">
+          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">❤ HP</span><span class="gbs-total">${UI.fmtNum(m.hp)}</span></div>
+            <div class="gb-bar-t gbs-bar"><i class="gb-bar-hp" style="width:100%"></i></div></div>
+          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">⚡ Энергия</span><span class="gbs-total">${UI.fmtNum(m.energy)}</span></div>
+            <div class="gb-bar-t gbs-bar"><i class="gb-bar-en" style="width:100%"></i></div></div>
+          <div class="gbs-row"><div class="gbs-head"><span class="gbs-title">🎯 Боеприпасы</span><span class="gbs-total">${UI.fmtNum(m.ammo)}</span></div>
+            <div class="gb-bar-t gbs-bar"><i class="gb-bar-am" style="width:100%"></i></div></div>
+        </div>
+        <div class="gbs-chips">
+          <div class="gbs-chip"><span class="gbs-chip-l">⚔ атака</span><b>${UI.fmtNum(m.atk)}</b></div>
+          <div class="gbs-chip"><span class="gbs-chip-l">🛡 защита</span><b>${UI.fmtNum(m.def)}</b></div>
+          ${pctOf({ l: '💥 крит', v: m.critPct })}
+          ${pctOf({ l: '💨 уворот', v: m.dodgePct })}
+          ${pctOf({ l: '🛡 броня роли', v: m.role.dmgReducePct })}
+        </div>
+      </div>`;
+  }
   if (!m) {
     // Бой начат до появления разбивки — показываем как раньше
     return `
@@ -2135,18 +2241,21 @@ App.renderGroupBattle = async () => {
   const box = document.getElementById('gb-box');
   if (!box) return;
 
+  const G = App._gbCfg();
+  const SIG = 'gbBattle_' + G.mode;
   let b = null;
-  try { b = await API.get('/api/group/battle' + (App._gbWatch ? '?watch=' + encodeURIComponent(App._gbWatch) : '')); }
+  try { b = await API.get(G.api + '/battle' + (App._gbWatch ? '?watch=' + encodeURIComponent(App._gbWatch) : '')); }
   catch (e) { box.innerHTML = `<div class="card"><p style="color:var(--red)">${UI.esc(e.message)}</p></div>`; return; }
+  if (G.mode !== App._gbMode) return;
 
   // Отсчёт подготовки тикает каждую секунду и своим таймером — из
   // отпечатка его убираем, иначе перерисовка шла бы вхолостую ежесекундно
-  if (box.dataset.mode === 'battle' && App._sameAsBefore('gbBattle', { ...b, prepareLeftSec: undefined })) {
+  if (box.dataset.mode === 'battle-' + G.mode && App._sameAsBefore(SIG, { ...b, prepareLeftSec: undefined })) {
     const t = document.getElementById('prep-left');
     if (t) t.textContent = b.prepareLeftSec;
     return;
   }
-  box.dataset.mode = 'battle';
+  box.dataset.mode = 'battle-' + G.mode;
 
   if (!b.active && !b.finished) return App.renderGroup();
 
@@ -2212,7 +2321,9 @@ App.renderGroupBattle = async () => {
         </div>
         ${b.forfeited ? `
           <p class="muted small mt">Вы не вошли в комнату за 30 секунд подготовки —
-          вместо вас играла ваша копия. Поражение засчитано, награды за этот бой нет.</p>` : ''}
+          вместо вас играла ваша копия. Поражение засчитано, награды за этот бой нет${G.mode === 'squad' ? ', взнос не возвращается' : ''}.</p>` : ''}
+        ${G.mode === 'squad' && b.iWon ? `<p class="gold mt">Приз: <span class="ic-dollar"></span> ${UI.fmtMoney(b.prize)}</p>` : ''}
+        ${G.mode === 'squad' && b.winnerTeam === -1 && !b.forfeited ? '<p class="muted small mt">Ничья — взнос возвращён.</p>' : ''}
         ${(() => {
           const mine = (b.result || []).find((x) => x.id === me.id);
           return mine ? `
@@ -2223,7 +2334,9 @@ App.renderGroupBattle = async () => {
               <div><span class="muted small">рейтинг</span>
                 <b class="${mine.ratingGained >= 0 ? 'gold' : 'arena-res-minus'}">
                   ${mine.ratingGained >= 0 ? '+' : '−'}${Math.abs(mine.ratingGained)}</b></div>
-              <div><span class="muted small">боевые очки</span><b class="gold">+${UI.fmtNum(mine.tokens)}</b></div>
+              ${G.mode === 'squad'
+                ? `<div><span class="muted small">деньги</span><b class="${mine.money > 0 ? 'gold' : 'arena-res-minus'}">${mine.money >= 0 ? '+' : '−'}$${UI.fmtMoney(Math.abs(mine.money || 0))}</b></div>`
+                : `<div><span class="muted small">боевые очки</span><b class="gold">+${UI.fmtNum(mine.tokens)}</b></div>`}
             </div>` : '';
         })()}
       </div>
@@ -2236,7 +2349,7 @@ App.renderGroupBattle = async () => {
               <thead>
                 <tr><th>Боец</th><th class="num">Урон</th><th class="num">Защита</th>
                     <th class="num">Лечение</th><th class="num">Убийств</th>
-                    <th class="num">Рейтинг</th><th class="num">Очки</th></tr>
+                    <th class="num">Рейтинг</th><th class="num">${G.mode === 'squad' ? 'Деньги' : 'Очки'}</th></tr>
               </thead>
               <tbody>
                 ${b.result.map((x) => `
@@ -2255,7 +2368,9 @@ App.renderGroupBattle = async () => {
                     <td class="num ${x.ratingGained >= 0 ? 'gold' : 'arena-res-minus'}">
                       ${x.isBot ? '—' : (x.ratingGained >= 0 ? '+' : '−') + Math.abs(x.ratingGained)}
                     </td>
-                    <td class="num gold">${x.isBot ? '—' : '+' + UI.fmtNum(x.tokens)}</td>
+                    <td class="num gold">${x.isBot ? '—' : (G.mode === 'squad'
+                      ? ((x.money || 0) >= 0 ? '+' : '−') + '$' + UI.fmtMoney(Math.abs(x.money || 0))
+                      : '+' + UI.fmtNum(x.tokens))}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
@@ -2264,7 +2379,7 @@ App.renderGroupBattle = async () => {
           за каждое звание 3 очка рейтинга.</p>
         </div>` : ''}
 
-      <button class="btn btn-orange mt" id="gb-back" style="width:100%">← К групповым боям</button>`;
+      <button class="btn btn-orange mt" id="gb-back" style="width:100%">${G.back}</button>`;
     const bk = document.getElementById('gb-back');
     if (bk) bk.onclick = () => { App._gbWatch = ''; App.renderGroup(); };
     return;
@@ -2295,11 +2410,11 @@ App.renderGroupBattle = async () => {
                        <span class="gb-act-label">⚔ Атаковать</span></button>` : ''}
           ${!enemy && b.canHeal ? `<button class="btn gb-act gb-act-wide" data-act="heal" data-id="${f.id}"
                        data-cd-until="${Date.now() + me.cooldownLeftMs}"
-                       ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
+                       ${me.cooldownLeftMs > 0 || me.energy < (b.costHeal || 50) ? 'disabled' : ''}>
                        <span class="gb-act-label">➕ Лечить</span></button>` : ''}
           ${!enemy && b.canGuard && !f.isMe ? `<button class="btn gb-act gb-act-wide" data-act="guard" data-id="${f.id}"
                        data-cd-until="${Date.now() + me.cooldownLeftMs}"
-                       ${me.cooldownLeftMs > 0 || me.energy < 50 ? 'disabled' : ''}>
+                       ${me.cooldownLeftMs > 0 || me.energy < (b.costHeal || 50) ? 'disabled' : ''}>
                        <span class="gb-act-label">🛡 Прикрыть</span></button>` : ''}
         </div>` : '<div class="gb-card-dead">выбыл из боя</div>'}
     </div>`;
@@ -2323,7 +2438,7 @@ App.renderGroupBattle = async () => {
   box.innerHTML = `
     <div class="card gb-fight">
       <div class="gb-fight-head">
-        <span>🤝 Групповой бой</span>
+        <span>${G.mode === 'squad' ? '🤝' : '🏅'} ${G.name}</span>
         <span class="muted small">${b.state === 'waiting' ? 'ждём остальных' : 'идёт'}</span>
       </div>
 
@@ -2400,7 +2515,7 @@ App.renderGroupBattle = async () => {
   const orderBtn = document.getElementById('gb-order-toggle');
   if (orderBtn) orderBtn.onclick = () => {
     App._gbSetAlliesFirst(!App._gbAlliesFirst());
-    App._resetSign('gbBattle');
+    App._resetSign(SIG);
     App.renderGroupBattle();
   };
 
@@ -2434,7 +2549,7 @@ App.renderGroupBattle = async () => {
       'Покинуть бой?<br><span class="muted small">Засчитается поражение, награды не начислят.</span>',
       { title: 'Выйти из боя', icon: '🚪', html: true, okText: 'Выйти', cancelText: 'Остаться' });
     if (!go) return;
-    try { await API.post('/api/group/leave', {}); await App.refreshMe(); App.renderGroup(); }
+    try { await API.post(G.api + '/leave', {}); await App.refreshMe(); App.renderGroup(); }
     catch (e) { UI.toast('⛔ ' + e.message); }
   };
 
@@ -2442,7 +2557,7 @@ App.renderGroupBattle = async () => {
     btn.onclick = async () => {
       btn.disabled = true;
       try {
-        await API.post('/api/group/act', { action: btn.dataset.act, targetId: btn.dataset.id });
+        await API.post(G.api + '/act', { action: btn.dataset.act, targetId: btn.dataset.id });
         App.renderGroupBattle();
       } catch (e) { UI.toast('⛔ ' + e.message); App.renderGroupBattle(); }
     };
@@ -2451,7 +2566,7 @@ App.renderGroupBattle = async () => {
   // Раз в 5 секунд — как и на арене
   App._gbTimer = setInterval(() => {
     if (document.hidden) return;
-    if ((App._warTab || '') !== 'group') { clearInterval(App._gbTimer); return; }
+    if (!App._onTeamTab(G.mode)) { clearInterval(App._gbTimer); return; }
     App.renderGroupBattle();
   }, 5000);
 };

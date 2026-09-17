@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════
-// Арена: запись, старт по расписанию, равные характеристики, умения,
-// смена цели и выдача приза единственному победителю.
+// Арена: запись, старт по расписанию, реальные характеристики (с
+// 17.09.2026, до этого у всех было поровну), умения, смена цели и
+// выдача приза единственному победителю. Боты-добор проверяются в
+// test/team-battles.test.js; здесь бои без них (setSeats(0)).
 // ═══════════════════════════════════════════════════════════════════
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +21,13 @@ const auth = require(ROOT + '/dist/src/services/auth');
 const player = require(ROOT + '/dist/src/services/player');
 const arena = require(ROOT + '/dist/src/services/arena');
 const db = require(ROOT + '/dist/src/core/db');
+arena.setSeats(0);
+// Удар в тестах без случайного крита и уворота: сравниваем с формулой
+const calm = (div) => {
+  const b = db.load('arena', {}).divs[div || 'elite'].battle;
+  for (const fr of Object.values(b.fighters)) if (fr.stats) { fr.stats.critChance = 0; fr.stats.dodgeChance = 0; }
+  db.save('arena');
+};
 
 // Пропустить подготовку: в тестах ждать 30 секунд незачем
 function skipPrepare(kind, div) {
@@ -48,8 +57,9 @@ for (const n of names) await auth.register(n, 'пароль123', n + '@t.ru', 'r
 const U = player.users();
 const by = (n) => U[Object.keys(U).find((id) => U[id].name === n)];
 const ps = names.map(by);
-for (const p of ps) { p.gold = 1000; p.level = 1; }
-ps[3].level = 300;   // уровень не должен ничего значить
+for (const p of ps) { p.gold = 1000; p.level = 1; p.skills.ammo = 30; }
+ps[3].level = 300;
+ps[3].skills.health = 40;   // навык здоровья теперь значит: 100 + 40×10
 
 console.log('\n── 1. Расписание ──');
 ok(arena.SLOT_MINUTES === 15, `бои каждые ${arena.SLOT_MINUTES} минут`);
@@ -110,10 +120,13 @@ ok(st.active === true, 'все участники уже в бою');
 ok(!!st.target, 'цель назначена автоматически');
 ok(st.aliveCount === 4, `живых: ${st.aliveCount}`);
 
-console.log('\n── 5. Характеристики равные ──');
-ok(st.me.hp === arena.BASE_HP && st.me.maxHp === arena.BASE_HP, `у всех ${arena.BASE_HP} HP`);
+console.log('\n── 5. Характеристики реальные ──');
+const mx0 = player.maxima(ps[0]);
+ok(st.me.maxHp === mx0.hp, `здоровье — максимум игрока: ${st.me.maxHp}`);
+ok(st.me.maxAmmo === mx0.am && st.me.ammo === mx0.am, `боеприпасы — максимум игрока: ${st.me.ammo}`);
 const st300 = arena.battleState(ps[3]);
-ok(st300.me.hp === st.me.hp, 'у игрока 300 уровня столько же, сколько у первого');
+ok(st300.me.maxHp === 500 && st300.me.maxHp > st.me.maxHp, `у прокачавшего здоровье больше: ${st300.me.maxHp}`);
+ok(st.me.atk >= 10 && st.me.def >= 10, 'мощь атаки и защиты взята из армии');
 ok(st.me.skills.medkit === 1 && st.me.skills.crit === 1
    && st.me.skills.armor === 1 && st.me.skills.smoke === 2, 'умения розданы по правилам');
 ok(!!st.target, `цель назначена: ${st.target.name}`);
@@ -121,21 +134,24 @@ ok(st.target.id !== ps[0].id, 'себя в цель не ставят');
 
 console.log('\n── 6. Атака и перезарядка ──');
 skipPrepare('arena', 'elite'); arena.view(ps[0], 'elite');
+calm();
 const b = db.load('arena', {}).divs.elite.battle;
+const ammo0 = b.fighters[ps[0].id].ammo;
 const foeId = b.fighters[ps[0].id].targetId;
 const hpBefore = b.fighters[foeId].hp;
 arena.attack(ps[0]);
 const dealt = hpBefore - db.load('arena', {}).divs.elite.battle.fighters[foeId].hp;
-// Урон гуляет в диапазоне: ровное число делало бой предсказуемым
-ok(dealt >= 25 && dealt <= 35, `обычный удар в диапазоне 25–35: ${dealt}`);
+// Урон по формуле войны: 3–30 в зависимости от соотношения армий
+ok(dealt >= 3 && dealt <= 30, `обычный удар по формуле войны 3–30: ${dealt}`);
+ok(db.load('arena', {}).divs.elite.battle.fighters[ps[0].id].ammo === ammo0 - 1, 'удар тратит боеприпас');
 fails(() => arena.attack(ps[0]), 'Перезарядка', 'сразу второй раз ударить нельзя');
 ok(arena.ATTACK_CD_MS === 1500, `перезарядка ${arena.ATTACK_CD_MS} мс`);
 
 console.log('\n── 7. Умения ──');
 // Аптечка
-b.fighters[ps[0].id].hp = 300; db.save('arena');
+b.fighters[ps[0].id].hp = 10; db.save('arena');
 arena.useSkill(ps[0], 'medkit');
-ok(arena.battleState(ps[0]).me.hp === 800, 'аптечка добавляет половину полного запаса');
+ok(arena.battleState(ps[0]).me.hp === 10 + Math.round(b.fighters[ps[0].id].maxHp / 2), 'аптечка добавляет половину полного запаса');
 fails(() => arena.useSkill(ps[0], 'medkit'), 'уже использована', 'аптечка одноразовая');
 // Крит
 arena.useSkill(ps[0], 'crit');
@@ -145,11 +161,12 @@ b2.fighters[ps[0].id].lastAttackAt = 0;
 b2.fighters[ps[0].id].targetId = ps[1].id;
 b2.fighters[ps[1].id].armorUntil = 0;
 b2.fighters[ps[1].id].hp = 1000;
+b2.fighters[ps[1].id].maxHp = 1000;
 db.save('arena');
 arena.attack(ps[0]);
 const critDmg = 1000 - db.load('arena', {}).divs.elite.battle.fighters[ps[1].id].hp;
-ok(critDmg >= 25 * 3 && critDmg <= 35 * 5,
-   `критический удар ${critDmg} — в диапазоне ×3…×5 от 25–35`);
+ok(critDmg >= 3 * 3 && critDmg <= 30 * 5,
+   `критический удар ${critDmg} — в диапазоне ×3…×5 от удара 3–30`);
 // Броня
 arena.useSkill(ps[1], 'armor');
 const b3 = db.load('arena', {}).divs.elite.battle;
@@ -159,7 +176,7 @@ const hp3 = b3.fighters[ps[1].id].hp;
 db.save('arena');
 arena.attack(ps[0]);
 const armored = hp3 - db.load('arena', {}).divs.elite.battle.fighters[ps[1].id].hp;
-ok(armored >= 12 && armored <= 18, `с бронёй урон примерно вдвое меньше: ${armored}`);
+ok(armored >= 1 && armored <= 15, `с бронёй урон вдвое меньше (не больше 15): ${armored}`);
 
 console.log('\n── 8. Дымовая завеса ──');
 const b4 = db.load('arena', {}).divs.elite.battle;
@@ -205,12 +222,12 @@ ok(others, 'проигравшие не получили ничего — взн
 
 console.log('\n── 11. Интерфейс ──');
 const war = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
-ok(/data-wartab="group"/.test(war), 'вкладка «Групповые бои» добавлена');
-ok(/data-wartab="arena"/.test(war), 'вкладка «Арена» добавлена');
+ok(/data-wartab="team"/.test(war), 'вкладка «Командные сражения» добавлена');
+ok(/App\.TEAM_LABELS = \{ squad: '🤝 Групповые бои', arena: '🏟 Арена', rating: '🏅 Рейтинговые бои' \}/.test(war),
+   'внутри неё — групповые бои, арена и рейтинговые бои');
 const tabsBlock = war.slice(war.indexOf('data-wartab="targets"'), war.indexOf('data-wartab="event"'));
-ok(tabsBlock.indexOf('group') < tabsBlock.indexOf('sanctions')
-   && tabsBlock.indexOf('arena') < tabsBlock.indexOf('sanctions'),
-   'обе стоят между вторжением и санкциями');
+ok(tabsBlock.indexOf('"team"') > 0 && tabsBlock.indexOf('"team"') < tabsBlock.indexOf('sanctions'),
+   'стоит между вторжением и санкциями');
 ok(/App\.renderArena =/.test(war), 'витрина арены реализована');
 ok(/App\.renderArenaBattle =/.test(war), 'боевое окно реализовано');
 ok(/arena-banner/.test(war), 'сверху картинка');
@@ -492,14 +509,18 @@ console.log('\n── 23. Вкладки раздела «Война» ──');
 const tabsBlock2 = war5.slice(war5.indexOf('data-wartab="targets"'), war5.indexOf('data-wartab="event"') + 60);
 ok(/Вторжение<\/div>/.test(tabsBlock2), 'вкладка «Цели» переименована во «Вторжение»');
 ok(!/>Цели<\/div>/.test(tabsBlock2), 'прежнее название убрано');
-for (const t of ['targets', 'group', 'arena', 'sanctions', 'event']) {
+for (const t of ['targets', 'team', 'sanctions', 'event']) {
   ok(tabsBlock2.includes(`data-wartab="${t}"`), `вкладка «${t}» на месте`);
 }
-// Порядок: вторжение → групповые → арена → санкции
-ok(tabsBlock2.indexOf('"targets"') < tabsBlock2.indexOf('"group"')
-   && tabsBlock2.indexOf('"group"') < tabsBlock2.indexOf('"arena"')
-   && tabsBlock2.indexOf('"arena"') < tabsBlock2.indexOf('"sanctions"'),
+// Порядок: вторжение → командные сражения → санкции (решение владельца:
+// «на уровне с разделами боёв и санкций»)
+ok(tabsBlock2.indexOf('"targets"') < tabsBlock2.indexOf('"team"')
+   && tabsBlock2.indexOf('"team"') < tabsBlock2.indexOf('"sanctions"'),
    'порядок вкладок правильный');
+// Старые адреса ведут в новые разделы
+ok(/if \(fromHash === 'group'\) \{ App\._warTab = 'team'; App\._teamTab = 'rating'; \}/.test(war5)
+   && /if \(fromHash === 'arena'\) \{ App\._warTab = 'team'; App\._teamTab = 'arena'; \}/.test(war5),
+   '#war/group и #war/arena открывают нужные разделы');
 
 console.log('\n── 24. Кеш не прячет обновления ──');
 // Причина, по которой новые разделы не появлялись у игроков: скрипты

@@ -55,10 +55,13 @@ console.log('\n── 6. Экран войны отдаёт все вкладк�
 const war = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
 const defs = (war.match(/App\.screens\.war\s*=/g) || []).length;
 ok(defs === 1, `экран войны определён один раз (${defs}) — дублей нет`);
-for (const [t, label] of [['targets', 'Вторжение'], ['group', 'Групповые бои'],
-                          ['arena', 'Арена'], ['sanctions', 'Санкции'], ['event', 'Событие']]) {
+// С 17.09.2026 групповые, арена и рейтинговые — разделы вкладки
+// «Командные сражения»
+for (const [t, label] of [['targets', 'Вторжение'], ['team', 'Командные сражения'],
+                          ['sanctions', 'Санкции'], ['event', 'Событие']]) {
   ok(new RegExp(`data-wartab="${t}"`).test(war), `вкладка «${label}» есть в разметке`);
 }
+ok(/App\.TEAM_TABS = \['squad', 'arena', 'rating'\]/.test(war), 'внутри — групповые, арена и рейтинговые');
 ok(/data-wartab="targets">\$\{App\.tabImg\('war_targets', 20\)\}Вторжение/.test(war),
    'вкладка называется «Вторжение»');
 

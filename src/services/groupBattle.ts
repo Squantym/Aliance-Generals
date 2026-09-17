@@ -49,19 +49,29 @@ const ACTION_CD_MS = 1500;              // откат между действи�
 // Всё, чем бот отличается от живого, собрано здесь. Разнеси по коду —
 // и следующая правка баланса опять станет поиском по файлу.
 //
-// Числа — решение владельца. Бот намеренно слабее и медлительнее:
-// живому игроку он должен мешать, а не выносить его.
+// Числа — решение владельца (17.09.2026). Бот слабее живых, но от
+// состава: его здоровье и урон — случайная доля 50–80% от СРЕДНИХ у
+// живых игроков этого боя. Фиксированные 1000–1500 HP были то
+// непробиваемыми для новичков, то бумажными для прокачанных.
 const BOT_THINK_MS = 5000;              // откат между действиями бота
-const BOT_HP_MIN = 1000;                // запас HP: случайный в этих
-const BOT_HP_MAX = 1500;                // границах, у каждого бота свой
+const BOT_STRENGTH_MIN = 0.5;           // доля от средних у живых: у каждого
+const BOT_STRENGTH_MAX = 0.8;           // бота своя, в этих границах
 const BOT_AMMO = 30;                    // боезапас на весь бой
-const BOT_POWER_MUL = 0.56;             // урон: −30%, а потом ещё −20%
-const BOT_SMART_MUL = 0.8;              // −20% к «сообразительности»
+// «Тупит на 20–40%»: у каждого бота своя сообразительность 0.6–0.8.
+// В основном бот делает то, что должен, но реже и позже живого.
+const BOT_SMART_MIN = 0.6;
+const BOT_SMART_MAX = 0.8;
+
+function botRoll(lo: number, hi: number): number {
+  return Math.round((lo + Math.random() * (hi - lo)) * 100) / 100;
+}
 
 // Вероятность (или порог), с которой бот выбирает лучший ход. Чем
-// меньше BOT_SMART_MUL, тем реже бот поступает правильно: добивает
+// меньше сообразительность, тем реже бот поступает правильно: добивает
 // раненого, вовремя лечит, вовремя прикрывает.
-function smart(p: number): number { return p * BOT_SMART_MUL; }
+function smart(p: number, bot?: { botSmart?: number }): number {
+  return p * ((bot && bot.botSmart) || BOT_SMART_MAX);
+}
 
 // Стоимость действий
 const COST = {
@@ -114,6 +124,8 @@ type Fighter = {
     ammo: { base: number; final: number };
   };
   isBot: boolean;
+  botPower?: number;          // бот: множитель урона (доля средних у живых)
+  botSmart?: number;          // бот: сообразительность 0.6–0.8
   replaced?: boolean;         // место человека, которым управляет бот
   forfeited?: boolean;        // не явился — награды не получит
   targetId: string | null;
@@ -147,14 +159,34 @@ type Store = {
   registered: Record<string, { id: string; name: string; flag: string; level: number; role: string; at: number }>;
   slot: number;
   battle: Battle | null;
+  // Бои, которые ещё идут, когда стартовал следующий. Раньше бой был
+  // один на весь режим: пока он шёл (до 20 минут), новый состав ждал, а
+  // время старта каждые пять минут переставлялось заново — таймер
+  // «начинал отсчёт обратно» (жалоба 17.09.2026).
+  others: Battle[];
   history: Array<{ id: string; at: number; winnerTeam: number; players: number }>;
 };
 
 function store(): Store {
-  const s = db.load<Store>('groupBattle', { registered: {}, slot: 0, battle: null, history: [] });
+  const s = db.load<Store>('groupBattle', { registered: {}, slot: 0, battle: null, others: [], history: [] });
   if (!s.registered) s.registered = {};
   if (!s.history) s.history = [];
+  if (!Array.isArray(s.others)) s.others = [];
   return s;
+}
+
+const isLive = (b: Battle | null | undefined) => !!b
+  && (b.state === 'preparing' || b.state === 'waiting' || b.state === 'running');
+
+// Все бои режима: текущий и продолжающиеся
+function battles(s: Store): Battle[] {
+  return [s.battle, ...s.others].filter(Boolean) as Battle[];
+}
+
+// Бой игрока: сначала идущий, иначе последний с его участием
+function battleOf(s: Store, userId: string): Battle | null {
+  const all = battles(s).filter((b) => b.fighters[userId]);
+  return all.find(isLive) || all[0] || null;
 }
 
 // Время старта считается от первой записи. Ноль означает «лобби пусто,
@@ -175,19 +207,21 @@ function addLog(b: Battle, text: string, kind?: string, actorId?: string, target
 function tick(): void {
   const s = store();
   const now = Date.now();
+  const hasQueue = Object.keys(s.registered).length > 0;
 
-  // Лобби пусто — отсчёт не идёт
-  if (!s.battle && !Object.keys(s.registered).length) {
+  // Лобби пусто — отсчёт не идёт. Идущие бои при этом обслуживаются
+  // ниже: пустая очередь не повод их замораживать.
+  if (!hasQueue && s.slot) {
     s.slot = 0;
     db.save('groupBattle');
-    return;
   }
+  if (!hasQueue && !battles(s).length) return;
 
   // Участники есть, а времени старта нет — восстанавливаем отсчёт.
   // Так бывает после перезапуска сервера, обновления или если запись
   // легла в базу мимо обычного пути. Без этого запись висит вечно:
   // ниже стоит условие `s.slot &&`, и бой не стартует никогда.
-  if (!s.battle && !s.slot && Object.keys(s.registered).length) {
+  if (!s.slot && hasQueue) {
     // Отсчёт ведём от самой ранней записи, а не от текущего момента:
     // иначе те, кто ждёт давно, ждали бы ещё пять минут сверху.
     const earliest = Math.min(...Object.values(s.registered).map((r: any) => r.at || now));
@@ -198,28 +232,14 @@ function tick(): void {
   // Последние секунды: добираем ботов ПОСТЕПЕННО, а не разом. Так у
   // опоздавших остаётся шанс занять место живым человеком, и лобби не
   // выглядит внезапно забитым.
-  if (!s.battle && s.slot && s.slot - now <= BOT_FILL_BEFORE_MS && s.slot - now > 0) {
+  if (hasQueue && s.slot && s.slot - now <= BOT_FILL_BEFORE_MS && s.slot - now > 0) {
     fillWithBotsGradually(s, now);
   }
 
-  // Идущий бой не должен морозить очередь: время следующего сбора
-  // переставляем, иначе отсчёт встанет на нуле
-  if (s.battle && (s.battle.state === 'preparing' || s.battle.state === 'running'
-      || s.battle.state === 'waiting') && s.slot && now >= s.slot) {
-    s.slot = Object.keys(s.registered).length ? nextSlot(now) : 0;
-    db.save('groupBattle');
-  }
-
-  // Завершённый бой убираем, чтобы очередь пошла дальше
-  if (s.battle && (s.battle.state === 'done' || s.battle.state === 'cancelled')) {
-    if (now - (s.battle.finishedAt || 0) > 60000) {
-      s.battle = null;
-      db.save('groupBattle');
-    }
-  }
-
-  // Старт
-  if (!s.battle && s.slot && now >= s.slot) {
+  // Старт. Идущий бой старту НЕ мешает: он уходит в others и
+  // доигрывается там. Раньше новый состав ждал его конца, а время
+  // старта всё это время переставлялось на пять минут вперёд.
+  if (hasQueue && s.slot && now >= s.slot) {
     // Время вышло — добираем ботов на все свободные места и начинаем.
     // Бой не отменяется никогда: человек прождал пять минут и должен
     // получить бой, пусть и с ботами.
@@ -232,10 +252,23 @@ function tick(): void {
       db.save('groupBattle');
       return;
     }
+    if (isLive(s.battle)) s.others.push(s.battle!);
     startBattle(s, list, now);
   }
 
-  const b = s.battle;
+  // Завершённые бои убираем через минуту: разбор к этому времени
+  // сохранён отдельно (results), а очередь должна идти дальше
+  if (s.battle && !isLive(s.battle) && now - (s.battle.finishedAt || 0) > 60000) {
+    s.battle = null;
+  }
+  s.others = s.others.filter((x) => isLive(x) || now - (x.finishedAt || 0) <= 60000);
+
+  for (const b of battles(s)) runBattle(s, b, now);
+  db.save('groupBattle');
+}
+
+// Ход одного боя: конец подготовки, боты, проверка конца
+function runBattle(s: Store, b: Battle, now: number): void {
   if (b && (b.state === 'preparing' || b.state === 'waiting' || b.state === 'running')) {
     // Полминуты подготовки вышли — бой начинается САМ, сразу для всех.
     // Нажимать ничего не нужно: кто открыл комнату, тот уже в строю.
@@ -264,12 +297,23 @@ function tick(): void {
       checkEnd(s, b);
       if (b.state === 'running' && now - b.startedAt > BATTLE_MAX_MS) {
         // Ничья по времени: побеждает команда с большим суммарным здоровьем
-        const hp0 = teamHp(b, 0), hp1 = teamHp(b, 1);
-        finish(s, b, hp0 === hp1 ? -1 : (hp0 > hp1 ? 0 : 1), 'Время боя вышло');
+        finishByHp(s, b, 'Время боя вышло');
+      } else if (b.state === 'running' && outOfAmmo(b)) {
+        // Стрелять больше некому — ждать двадцать минут незачем
+        finishByHp(s, b, 'Боеприпасы кончились у всех');
       }
     }
   }
-  db.save('groupBattle');
+}
+
+function finishByHp(s: Store, b: Battle, reason: string): void {
+  const hp0 = teamHp(b, 0), hp1 = teamHp(b, 1);
+  finish(s, b, hp0 === hp1 ? -1 : (hp0 > hp1 ? 0 : 1), reason);
+}
+
+// Ни у одного живого бойца нет боеприпасов — урон больше не нанести
+function outOfAmmo(b: Battle): boolean {
+  return Object.values(b.fighters).every((f) => !f.alive || f.ammo < COST.attack.ammo);
 }
 
 function teamHp(b: Battle, team: 0 | 1): number {
@@ -380,11 +424,30 @@ function startBattle(s: Store, list: any[], now: number): void {
     ? Math.round(humanPoints.reduce((a, b2) => a + b2, 0) / humanPoints.length) : 0;
   const spread = Math.max(50, Math.round(Math.max(avgPts, hiPts - loPts) * 0.3));
   const botPoints = () => Math.max(0, avgPts + Math.round((Math.random() * 2 - 1) * spread));
+
+  // Средние у живых игроков боя — от них считаются боты: здоровье (с
+  // прокачкой, до множителя роли) и урон (прибавка к урону от прокачки
+  // и снабжения). Живых без записи в базе не бывает, но на всякий
+  // случай база — как у новичка.
+  const humanStats = list
+    .filter((r) => !String(r.id).startsWith('gbot_'))
+    .map((r) => player.users()[r.id])
+    .filter(Boolean)
+    .map((o: any) => ({
+      hp: UP.statsFor(o).hp,
+      atkMul: 1 + require('./groupSupply').bonus(o, 'attack'),
+    }));
+  const avgHp = humanStats.length
+    ? humanStats.reduce((n, x) => n + x.hp, 0) / humanStats.length : UP.BASE.hp;
+  const avgAtkMul = humanStats.length
+    ? humanStats.reduce((n, x) => n + x.atkMul, 0) / humanStats.length : 1;
+
   for (const { rec, team } of split) {
     const role = ROLES[rec.role] ? rec.role : 'fighter';
     // Боты играют на базовых характеристиках, игроки — со своими
     // улучшениями. Иначе прокачка не давала бы ничего.
     const owner = String(rec.id).startsWith('gbot_') ? null : player.users()[rec.id];
+    const botK = botRoll(BOT_STRENGTH_MIN, BOT_STRENGTH_MAX);
     // Купленные в базе снабжения усиления действуют по времени и
     // применяются поверх улучшений
     const SUP = require('./groupSupply');
@@ -409,10 +472,10 @@ function startBattle(s: Store, list: any[], now: number): void {
         dodgeChance: Math.min(0.75, base.dodgeChance + dodgeB),
       };
     })() : {
-      // Бот: свой запас HP (случайный в заданных границах — чтобы вся
-      // команда ботов не была одинаковой мишенью), свой боезапас, а
-      // шансы крита и уворота базовые. Урон срезан отдельно, в doAttack.
-      hp: u.rnd(BOT_HP_MIN, BOT_HP_MAX), energy: ENERGY, ammo: BOT_AMMO,
+      // Бот: здоровье — своя доля 50–80% от среднего у живых (вся команда
+      // ботов не одинаковая мишень), свой боезапас, шансы крита и уворота
+      // базовые. Урон — та же доля, в doAttack через botPower.
+      hp: Math.max(1, Math.round(avgHp * botK)), energy: ENERGY, ammo: BOT_AMMO,
       critChance: UP.BASE.critChance, dodgeChance: UP.BASE.dodgeChance,
       healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0,
     };
@@ -434,6 +497,10 @@ function startBattle(s: Store, list: any[], now: number): void {
       ammo: st.ammo, maxAmmo: st.ammo,
       alive: true, seen: String(rec.id).startsWith('gbot_'),
       isBot: String(rec.id).startsWith('gbot_'),
+      ...(owner ? {} : {
+        botPower: Math.round(avgAtkMul * botK * 100) / 100,
+        botSmart: botRoll(BOT_SMART_MIN, BOT_SMART_MAX),
+      }),
       targetId: null, lastActionAt: 0,
       guardedUntil: 0, guardedBy: '',
       rating: String(rec.id).startsWith('gbot_') ? botPoints()
@@ -448,13 +515,17 @@ function startBattle(s: Store, list: any[], now: number): void {
   };
   addLog(s.battle, `⏳ Подготовка к бою ${split.filter((x) => x.team === 0).length} на ${split.filter((x) => x.team === 1).length}. Займите места!`, 'system');
   s.registered = {};
-  s.slot = nextSlot(now);
+  // Очередь пуста — отсчёта нет. Здесь стояло nextSlot(now): при пустом
+  // лобби показывались пять минут до «следующего боя», которого никто
+  // не ждал, и таймер будто начинал отсчёт заново. Следующий отсчёт
+  // запустит первая новая запись.
+  s.slot = 0;
 
   for (const f of Object.values(s.battle.fighters)) {
     if (f.isBot) continue;
     try {
       require('./notifications').push(f.id, 'gb_start',
-        `⚔ Состав собран! Комната подготовки открыта — посмотрите, кто с вами и против вас. Бой начнётся через ${Math.round(PREPARE_MS / 1000)} секунд.`, {});
+        `⚔ Рейтинговый бой: состав собран! Комната подготовки открыта — посмотрите, кто с вами и против вас. Бой начнётся через ${Math.round(PREPARE_MS / 1000)} секунд.`, {});
     } catch (e) {}
   }
 }
@@ -729,8 +800,8 @@ function finish(s: Store, b: Battle, winnerTeam: -1 | 0 | 1, reason: string): vo
     if (f.isBot) continue;
     try {
       require('./notifications').push(f.id, 'gb_end',
-        winnerTeam === f.team ? '🏆 Ваша команда победила в групповом бою!'
-          : (winnerTeam === -1 ? '⚔ Групповой бой окончен вничью' : '⚔ Ваша команда проиграла групповой бой'), {});
+        winnerTeam === f.team ? '🏆 Ваша команда победила в рейтинговом бою!'
+          : (winnerTeam === -1 ? '⚔ Рейтинговый бой окончен вничью' : '⚔ Ваша команда проиграла рейтинговый бой'), {});
     } catch (e) {}
   }
   // Кто с кем воевал сегодня — парное задание «3 групповых боя вместе».
@@ -804,8 +875,9 @@ function doAttack(b: Battle, me: Fighter, target: Fighter): string {
 
   let dmg = Math.round(BASE_DMG * role.atkMul * (0.85 + Math.random() * 0.3)
     * (1 + (mySt.atkBonus || 0))
-    // Бот бьёт слабее живого: тот же множитель, что и на его запасах
-    * (me.isBot ? BOT_POWER_MUL : 1));
+    // Бот бьёт слабее живого: та же доля, что и на его здоровье.
+    // Место прогульщика бьёт его собственной силой — множителя у него нет.
+    * (me.isBot && me.botPower ? me.botPower : 1));
   // Критический удар: сила случайная в диапазоне, как на арене
   const crit = Math.random() < (mySt.critChance || 0);
   if (crit) dmg = Math.round(dmg * UP.critMult());
@@ -883,7 +955,7 @@ function botTurn(b: Battle, now: number): void {
     // Боты добивают раненого не всегда: полный фокус на одном выносил бы
     // живого игрока мгновенно. Через smart() частота правильного выбора
     // ещё и снижена — боты намеренно глуповаты.
-    const target = Math.random() < smart(0.5)
+    const target = Math.random() < smart(0.5, bot)
       ? enemies.slice().sort((a, c) => a.hp - c.hp)[0]
       : enemies[Math.floor(Math.random() * enemies.length)];
 
@@ -892,18 +964,18 @@ function botTurn(b: Battle, now: number): void {
     // Порог тоже занижен: тупой защитник спохватывается позже.
     if (bot.role === 'guardian' && weakestAlly && bot.energy >= COST.guard.energy
         && weakestAlly.guardedUntil <= now
-        && weakestAlly.hp / weakestAlly.maxHp < smart(0.7)) {
+        && weakestAlly.hp / weakestAlly.maxHp < smart(0.7, bot)) {
       // Защитник прикрывает того, кому хуже всех
       doGuard(b, bot, weakestAlly);
       continue;
     }
     if (bot.role === 'medic' && weakestAlly && bot.energy >= COST.heal.energy) {
-      const low = weakestAlly.hp / weakestAlly.maxHp < smart(0.5);
+      const low = weakestAlly.hp / weakestAlly.maxHp < smart(0.5, bot);
       // Медик должен лечить, а не подменять штурмовика: совсем плохого
       // лечит обязательно, остальных — по вероятности. Оба числа тоже
       // занижены: тупой медик спохватывается позже и чаще бьёт вместо
       // лечения.
-      if (low || Math.random() < smart(0.65)) { doHeal(b, bot, weakestAlly); continue; }
+      if (low || Math.random() < smart(0.65, bot)) { doHeal(b, bot, weakestAlly); continue; }
     }
     if (bot.ammo > 0) doAttack(b, bot, target);
   }
@@ -914,9 +986,9 @@ function botTurn(b: Battle, now: number): void {
 function busyState(userId: string): string | null {
   const s = store();
   if (s.registered[userId]) return 'записаны на бой';
-  const b = s.battle;
-  if (b && b.fighters[userId] && (b.state === 'running' || b.state === 'preparing')
-      && b.fighters[userId].alive) return 'сейчас в бою';
+  const inFight = battles(s).some((b) => b.fighters[userId] && (b.state === 'running' || b.state === 'preparing')
+    && b.fighters[userId].alive);
+  if (inFight) return 'сейчас в бою';
   return null;
 }
 
@@ -925,15 +997,16 @@ function register(user: User, roleId: string, notices: Notices) {
   const s = store();
   if (s.registered[user.id]) throw new u.ApiError('Вы уже записаны на бой');
   // Нельзя быть в двух режимах разом
-  try {
-    const arenaSrv = require('./arena');
-    const st = arenaSrv.busyState(user.id);
-    if (st) throw new u.ApiError(`Вы ${st} на арене`);
-  } catch (e: any) {
-    if (e instanceof u.ApiError) throw e;
+  for (const [mod, where] of [['./arena', 'на арене'], ['./squadBattle', 'в групповых боях']]) {
+    try {
+      const st = require(mod).busyState(user.id);
+      if (st) throw new u.ApiError(`Вы ${st} ${where}`);
+    } catch (e: any) {
+      if (e instanceof u.ApiError) throw e;
+    }
   }
-  const b = s.battle;
-  if (b && b.fighters[user.id] && b.state === 'running' && b.fighters[user.id].alive) {
+  const b = battleOf(s, user.id);
+  if (b && isLive(b) && b.fighters[user.id].alive) {
     throw new u.ApiError('Вы уже в бою');
   }
   const role = ROLES[roleId] ? roleId : 'fighter';
@@ -951,7 +1024,7 @@ function register(user: User, roleId: string, notices: Notices) {
   db.save('groupBattle');
   notices.push(first
     ? `⚔ Вы записаны первым. Сбор ${Math.round(LOBBY_MS / 60000)} минут, роль: ${ROLES[role].label}`
-    : `⚔ Вы записаны на групповой бой. Роль: ${ROLES[role].label}`);
+    : `⚔ Вы записаны на рейтинговый бой. Роль: ${ROLES[role].label}`);
   return view(user);
 }
 
@@ -964,7 +1037,7 @@ function unregister(user: User, notices: Notices) {
   // с одними ботами
   if (!Object.keys(s.registered).length) s.slot = 0;
   db.save('groupBattle');
-  notices.push('Запись на групповой бой отменена');
+  notices.push('Запись на рейтинговый бой отменена');
   return view(user);
 }
 
@@ -985,7 +1058,7 @@ function view(user: User) {
   tick();
   const s = store();
   const now = Date.now();
-  const b = s.battle;
+  const b = battleOf(s, user.id) || s.battle;
   const list = Object.values(s.registered).sort((a, c) => a.at - c.at);
 
   return {
@@ -1091,7 +1164,7 @@ function myStatsOf(f: Fighter): any {
 function battleState(user: User, watchId?: string) {
   tick();
   const s = store();
-  const b = s.battle;
+  const b = battleOf(s, user.id);
   // Открыл комнату во время подготовки — значит явился. Отмечаем здесь,
   // потому что отдельного действия «вступить в бой» больше нет.
   if (b && b.state === 'preparing') markSeen(b, user.id);
@@ -1207,7 +1280,7 @@ function battleState(user: User, watchId?: string) {
 function requireFight(user: User): { s: Store; b: Battle; me: Fighter } {
   tick();
   const s = store();
-  const b = s.battle;
+  const b = battleOf(s, user.id);
   if (!b || b.state !== 'running') throw new u.ApiError('Бой не идёт');
   const me = b.fighters[user.id];
   if (!me) throw new u.ApiError('Вы не участвуете в бою');
@@ -1223,7 +1296,7 @@ function requireFight(user: User): { s: Store; b: Battle; me: Fighter } {
 function leave(user: User, notices: Notices) {
   tick();
   const s = store();
-  const b = s.battle;
+  const b = battleOf(s, user.id);
   if (!b || (b.state !== 'running' && b.state !== 'preparing')) throw new u.ApiError('Вы не в бою');
   const me = b.fighters[user.id];
   if (!me || !me.alive) throw new u.ApiError('Вы уже выбыли');
@@ -1272,7 +1345,8 @@ export = {
   ratingTable, rankOf, awardRating, tokensFor, RANKS, CONTRIB_CAP,
   RATING_WIN, RATING_LOSS, RATING_KILL, RATING_BEST,
   ROLES, ROLE_IDS, TEAM_SIZE, HP, ENERGY, AMMO, BASE_DMG, HEAL_AMOUNT,
-  BOT_POWER_MUL, BOT_SMART_MUL, BOT_HP_MIN, BOT_HP_MAX, BOT_AMMO, smart, doAttack,
+  BOT_STRENGTH_MIN, BOT_STRENGTH_MAX, BOT_SMART_MIN, BOT_SMART_MAX, BOT_AMMO, smart, doAttack,
+  battleOf, battles, isLive, outOfAmmo,
   GUARD_REDUCE, GUARD_MS, ACTION_CD_MS, HEAL_MIN, HEAL_MAX, HEAL_CRIT_MIN, HEAL_CRIT_MAX, COST, BOT_THINK_MS, BOT_FILL_BEFORE_MS, PREPARE_MS,
   splitTeams, fillWithBots, botTurn,
 };

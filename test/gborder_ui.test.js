@@ -10,6 +10,8 @@ global.UI = load('public/js/ui.js', 'UI'); global.API = load('public/js/api.js',
 global.App = load('public/js/app.js', 'App'); App.refreshMe = async () => {}; App.rerender = () => {}; App.go = () => {};
 load('public/js/screens/war.js', 'App');
 App.me = { id: 'me', level: 40 };
+// Экран общий для групповых и рейтинговых боёв; здесь — рейтинговые (/api/group)
+App._gbMode = 'rating';
 
 let passed = 0, failed = 0;
 const ok = (n, c) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };

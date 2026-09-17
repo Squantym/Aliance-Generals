@@ -30,6 +30,14 @@ ok(at > 0, 'нашли место записи истории');
 // парами в одной строке (kills: …, damage: …), и построчный разбор их
 // терял — тест тогда «находил» несуществующее расхождение.
 const serverKeys = [...rec.matchAll(/([a-zA-Z]+):/g)].map((m) => m[1]);
+// Экран истории общий с новыми групповыми боями: их запись добавляет
+// поле money (деньги за бой) — берём ключи и оттуда
+const sqSrv = fs.readFileSync(path.join(ROOT, 'src/services/squadBattle.ts'), 'utf8');
+const sqAt = sqSrv.indexOf('list.unshift({');
+// Запись там с сокращёнными полями (money,) — ловим и их
+const sqKeys = [...sqSrv.slice(sqAt, sqAt + 700).matchAll(/([a-zA-Z]+)(?::|,)/g)].map((m) => m[1]);
+ok(sqAt > 0 && sqKeys.includes('money'), 'групповые бои пишут в историю деньги (money)');
+serverKeys.push(...sqKeys);
 ok(serverKeys.includes('result'), `исход пишется полем result (поля: ${serverKeys.join(', ')})`);
 ok(!serverKeys.includes('won'), 'поля won сервер НЕ пишет');
 ok(serverKeys.includes('role'), 'роль пишется полем role, а не roleLabel');

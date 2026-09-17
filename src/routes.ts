@@ -423,34 +423,41 @@ function registerRoutes(app: any) {
         try {
           const a = require('./services/arena');
           const g = require('./services/groupBattle');
+          const q = require('./services/squadBattle');
           const av = a.view(req.user, 'elite');
           const av2 = a.view(req.user, 'basic');
           const gv = g.view(req.user);
+          const qv = q.view(req.user);
           const inArena = a.busyState(req.user.id);
           const inGroup = g.busyState(req.user.id);
+          const inSquad = q.busyState(req.user.id);
           const arenaBattle = a.battleState(req.user);
           const groupBattle = g.battleState(req.user);
-          const fighting = !!(arenaBattle.active && arenaBattle.me && arenaBattle.me.alive)
-            || !!(groupBattle.active && groupBattle.me && groupBattle.me.alive);
+          const squadBattle = q.battleState(req.user);
+          const alive = (x: any) => !!(x.active && x.me && x.me.alive);
+          const fighting = alive(arenaBattle) || alive(groupBattle) || alive(squadBattle);
           const regDiv = av.iAmRegistered ? 'elite' : (av2.iAmRegistered ? 'basic' : null);
-          // Идёт подготовка и место ещё не занято — зовём в комнату
+          // Идёт подготовка и место ещё не занято — зовём в комнату.
+          // Места: 'arena', 'group' (рейтинговые, адрес прежний) и 'squad'
           const needArena = !!(av.battle && av.battle.needEnter) || !!(av2.battle && av2.battle.needEnter);
           const needGroup = !!(gv.battle && gv.battle.needEnter);
+          const needSquad = !!(qv.battle && qv.battle.needEnter);
           const prepLeft = needArena
             ? ((av.battle && av.battle.prepareLeftSec) || (av2.battle && av2.battle.prepareLeftSec) || 0)
-            : ((gv.battle && gv.battle.prepareLeftSec) || 0);
+            : needGroup ? ((gv.battle && gv.battle.prepareLeftSec) || 0)
+            : ((qv.battle && qv.battle.prepareLeftSec) || 0);
           return {
             fighting,
-            needEnter: needArena || needGroup,
+            needEnter: needArena || needGroup || needSquad,
             prepareLeftSec: prepLeft,
-            enterWhere: needArena ? 'arena' : (needGroup ? 'group' : null),
-            where: (arenaBattle.active && arenaBattle.me && arenaBattle.me.alive) ? 'arena'
-              : ((groupBattle.active && groupBattle.me && groupBattle.me.alive) ? 'group' : null),
-            registered: !!inArena || !!inGroup,
-            regWhere: regDiv ? 'arena' : (gv.iAmRegistered ? 'group' : null),
+            enterWhere: needArena ? 'arena' : (needGroup ? 'group' : (needSquad ? 'squad' : null)),
+            where: alive(arenaBattle) ? 'arena'
+              : (alive(groupBattle) ? 'group' : (alive(squadBattle) ? 'squad' : null)),
+            registered: !!inArena || !!inGroup || !!inSquad,
+            regWhere: regDiv ? 'arena' : (gv.iAmRegistered ? 'group' : (qv.iAmRegistered ? 'squad' : null)),
             regDiv,
             startsAt: regDiv ? (regDiv === 'elite' ? av.nextStartAt : av2.nextStartAt)
-              : (gv.iAmRegistered ? gv.nextStartAt : 0),
+              : (gv.iAmRegistered ? gv.nextStartAt : (qv.iAmRegistered ? qv.nextStartAt : 0)),
           };
         } catch (e) {
           return { fighting: false, needEnter: false, prepareLeftSec: 0, enterWhere: null,
@@ -811,7 +818,23 @@ function registerRoutes(app: any) {
     raw.registered = {};
     raw.slot = 0;
     raw.battle = null;
+    raw.others = [];
     dbc.save('groupBattle');
+
+    // Новые групповые бои: запись платная — взносы живым возвращаем
+    const sqRaw = dbc.load('squadBattle', {});
+    for (const r of Object.values(sqRaw.registered || {}) as any[]) {
+      const p = users[r.id];
+      if (!p || !r.paid) continue;
+      player.addMoney(p, r.paid, false);
+      dbc.markUser(p.id);
+      refunded++;
+    }
+    sqRaw.registered = {};
+    sqRaw.slot = 0;
+    sqRaw.battle = null;
+    sqRaw.others = [];
+    dbc.save('squadBattle');
 
     const arenaSrv = require('./services/arena');
     const arenaRaw = dbc.load('arena', {});
@@ -830,6 +853,7 @@ function registerRoutes(app: any) {
       dv.registered = {};
       dv.slot = 0;
       dv.battle = null;
+      dv.others = [];
     }
     dbc.save('arena');
     dbc.save('users');
@@ -855,7 +879,20 @@ function registerRoutes(app: any) {
     gb.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
   app.add('POST', '/api/group/leave',      act((req, n) => gb.leave(req.user, n)));
 
-  // Улучшения групповых боёв
+  // ═══ ГРУППОВЫЕ БОИ (новые) ═══════════════════════════════════════
+  // Реальные характеристики, взнос и призы (services/squadBattle.ts).
+  // Прежние групповые бои живут на /api/group и называются рейтинговыми.
+  const sq = require('./services/squadBattle');
+  app.add('GET',  '/api/squad',            (req) => sq.view(req.user));
+  app.add('POST', '/api/squad/register',   act((req, n) => sq.register(req.user, String(req.body.role || ''), n)));
+  app.add('POST', '/api/squad/unregister', act((req, n) => sq.unregister(req.user, n)));
+  app.add('POST', '/api/squad/role',       act((req, n) => sq.setRole(req.user, String(req.body.role || ''), n)));
+  app.add('GET',  '/api/squad/battle',     (req) => sq.battleState(req.user, String(req.query.watch || '')));
+  app.add('POST', '/api/squad/act',        act((req, n) =>
+    sq.act(req.user, String(req.body.action || ''), String(req.body.targetId || ''), n)));
+  app.add('POST', '/api/squad/leave',      act((req, n) => sq.leave(req.user, n)));
+
+  // Улучшения рейтинговых боёв
   const gup = require('./services/groupUpgrades');
   app.add('GET',  '/api/group/upgrades',   (req) => gup.view(req.user));
   app.add('POST', '/api/group/upgrade',    act((req, n) =>

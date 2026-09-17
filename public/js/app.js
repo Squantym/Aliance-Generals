@@ -3423,7 +3423,8 @@ const App = {
       document.body.appendChild(bar);
     }
     const where = c.needEnter ? c.enterWhere : (c.fighting ? c.where : c.regWhere);
-    const label = where === 'arena' ? '🏟 Арена' : '🤝 Групповой бой';
+    // Места: arena — арена, group — рейтинговые (адрес прежний), squad — групповые
+    const label = where === 'arena' ? '🏟 Арена' : (where === 'group' ? '🏅 Рейтинговый бой' : '🤝 Групповой бой');
 
     if (c.needEnter) {
       // Состав собран — зовём в комнату подготовки. Не открыл вовремя —
@@ -3453,7 +3454,9 @@ const App = {
 
     const go = document.getElementById('cb-go');
     if (go) go.onclick = async () => {
-      App._warTab = where === 'arena' ? 'arena' : 'group';
+      App._warTab = 'team';
+      App._teamTab = where === 'arena' ? 'arena' : (where === 'group' ? 'rating' : 'squad');
+      App._gbMode = App._teamTab === 'arena' ? App._gbMode : App._teamTab;
       App._gbPage = null;
       // На арене вход в комнату — по-прежнему отдельное действие.
       // В групповом бою его нет: сервер отмечает явку сам, когда игрок
@@ -3464,7 +3467,7 @@ const App = {
           await App.refreshMe();
         } catch (e) { UI.toast('⛔ ' + e.message); }
       }
-      location.hash = '#war/' + App._warTab;
+      location.hash = '#war/team/' + App._teamTab;
       App.rerender();
     };
 
@@ -3973,8 +3976,9 @@ const App = {
     const cmb = (App.me && App.me.combat) || null;
     if (cmb && cmb.fighting && name !== 'war') {
       UI.toast('⚔ Сначала завершите бой');
-      App._warTab = cmb.where === 'arena' ? 'arena' : 'group';
-      location.hash = '#war/' + App._warTab;
+      App._warTab = 'team';
+      App._teamTab = cmb.where === 'arena' ? 'arena' : (cmb.where === 'group' ? 'rating' : 'squad');
+      location.hash = '#war/team/' + App._teamTab;
       return;
     }
 

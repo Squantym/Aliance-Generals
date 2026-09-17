@@ -1163,4 +1163,4 @@ function leaveEarMessage(user: User, victimId: string, text: string, notices: No
 export = {
   opponents, attack, breach, leaveEarMessage, botProfile, peekBot, removeUnits,
   bankHackGuess, bankHackSkip, bankHackCancel, mineDefuse, mineSacrifice, unitLossCount,
-  lossesToText,};
+  lossesToText, resolveDamage,};

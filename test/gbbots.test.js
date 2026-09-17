@@ -1,20 +1,20 @@
 // ═══════════════════════════════════════════════════════════════════
-// test/gbbots.test.js — боты в групповых боях слабее и глупее живых
+// test/gbbots.test.js — боты в рейтинговых боях (бывшие групповые)
 //
-// Настройки ботов — решение владельца: запас HP случайный 1000–1500,
-// боезапас 30 на бой, откат между действиями 5 секунд, урон −44%
-// (сперва −30%, потом ещё −20% сверху), правильные решения на 20% реже.
+// Решение владельца (17.09.2026): здоровье и урон бота — случайная доля
+// 50–80% от СРЕДНИХ у живых игроков боя; «тупит» на 20–40% — у каждого
+// бота своя сообразительность 0.6–0.8; боезапас 30 и откат 5 секунд
+// остались.
 //
 // Что стережётся:
-//  1. Все числа лежат в ОДНОМ месте, а не разбросаны по файлу.
-//  2. Запас HP у каждого бота свой, в заданных границах: команда ботов
-//     не должна быть набором одинаковых мишеней.
-//  3. Боезапас ограничен — бот не может бить весь бой без остановки.
-//  4. Живого игрока правка не касается — у него всё как было.
-//  5. Урон бота ровно на BOT_POWER_MUL ниже урона человека той же роли
-//     при тех же бросках костей.
-//  6. Решения бота проходят через smart(): при броске между старым и
-//     новым порогом бот теперь ошибается, а раньше сыграл бы правильно.
+//  1. Все числа лежат в одном месте.
+//  2. Здоровье бота — доля от среднего у живых (с их прокачкой), у
+//     каждого бота своя; урон — та же доля (botPower).
+//  3. Сообразительность у каждого своя, в границах; решения идут через
+//     smart(p, bot).
+//  4. Живого игрока правка не касается.
+//  5. Удар бота ровно на botPower слабее удара человека той же роли.
+//  6. Место прогульщика бьёт в полную силу — это копия человека.
 //
 // Запуск: node test/gbbots.test.js   (после npm run build)
 // ═══════════════════════════════════════════════════════════════════
@@ -35,127 +35,112 @@ const ok = (n, cond) => { assert.ok(cond, '❌ ' + n); passed++; console.log('  
 const eq = (n, a, b) => { assert.strictEqual(a, b, `❌ ${n}: ${a} !== ${b}`); passed++; console.log('  ✅ ' + n); };
 const near = (n, a, b, tol) => { assert.ok(Math.abs(a - b) <= tol, `❌ ${n}: ${a} vs ${b} (±${tol})`); passed++; console.log(`  ✅ ${n} (${a})`); };
 
-// Бой собираем руками: ждать набора и подготовки в тесте незачем, а
-// проверяем мы арифметику боя, а не запись на него.
 function makeBattle(fighters) {
   const b = { id: 'test', slot: 0, startedAt: Date.now(), finishedAt: 0,
     state: 'running', fighters: {}, log: [], winnerTeam: -1, lastBotAt: 0, prepareUntil: 0 };
   for (const f of fighters) b.fighters[f.id] = f;
   return b;
 }
-function fighter(id, team, role, isBot, hp) {
-  // Собираем бойца как это делает сам бой: у бота свой запас и
-  // боезапас, у человека — базовые.
-  const base = { hp: isBot ? gb.BOT_HP_MIN : gb.HP, energy: gb.ENERGY,
-    ammo: isBot ? gb.BOT_AMMO : gb.AMMO,
+function fighter(id, team, role, isBot, extra) {
+  const base = { hp: gb.HP, energy: gb.ENERGY, ammo: isBot ? gb.BOT_AMMO : gb.AMMO,
     critChance: UP.BASE.critChance, dodgeChance: 0,
     healCritChance: 0, damageReduce: 0, rewardBonus: 0, atkBonus: 0, supEnergy: 0 };
-  const maxHp = hp || base.hp;
-  return { id, name: id, flag: '', team, role, st: base,
-    hp: maxHp, maxHp, energy: base.energy, maxEnergy: base.energy,
+  return Object.assign({ id, name: id, flag: '', team, role, st: base,
+    hp: base.hp, maxHp: base.hp, energy: base.energy, maxEnergy: base.energy,
     ammo: base.ammo, maxAmmo: base.ammo, alive: true, seen: true, isBot,
     targetId: null, lastActionAt: 0, guardedUntil: 0, guardedBy: '',
-    rating: 0, damageDealt: 0, healed: 0, absorbed: 0, kills: 0, killedBy: '', killedById: '' };
+    rating: 0, damageDealt: 0, healed: 0, absorbed: 0, kills: 0, killedBy: '', killedById: '' }, extra || {});
 }
 
 (async () => {
   await db.init();
 
-  console.log('\n[1] Оба множителя заданы в одном месте');
-  eq('урон ботов — 0.56 от человеческого (−30%, затем ещё −20%)', gb.BOT_POWER_MUL, 0.56);
-  eq('сообразительность — минус 20%', gb.BOT_SMART_MUL, 0.8);
-  eq('запас HP снизу', gb.BOT_HP_MIN, 1000);
-  eq('запас HP сверху', gb.BOT_HP_MAX, 1500);
+  console.log('\n[1] Настройки в одном месте');
+  eq('сила бота — от 50%', gb.BOT_STRENGTH_MIN, 0.5);
+  eq('до 80% средних у живых', gb.BOT_STRENGTH_MAX, 0.8);
+  eq('сообразительность — от 0.6 (тупит на 40%)', gb.BOT_SMART_MIN, 0.6);
+  eq('до 0.8 (тупит на 20%)', gb.BOT_SMART_MAX, 0.8);
   eq('боезапас на бой', gb.BOT_AMMO, 30);
   eq('откат между действиями бота — 5 секунд', gb.BOT_THINK_MS, 5000);
-  near('smart() занижает порог правильного хода', gb.smart(0.5), 0.4, 0.0001);
-  near('и порог лечения', gb.smart(0.65), 0.52, 0.0001);
+  near('smart() учитывает сообразительность бота', gb.smart(0.5, { botSmart: 0.6 }), 0.3, 0.0001);
 
-  console.log('\n[2] Характеристики бота в собранном бою');
+  console.log('\n[2] Бот — от средних у живых');
   await auth.register('Живой', 'пароль123', 'a@t.ru', 'ru', '1.1.1.1');
-  const human = Object.values(player.users())[0];
+  await auth.register('Прокачан', 'пароль123', 'b@t.ru', 'ru', '1.1.1.2');
+  const [h1, h2] = Object.values(player.users());
+  // Второй игрок прокачал здоровье — среднее выше базы
+  h2.gbUpgrades = { hp: 25 };          // +50% здоровья
+  const hp1 = UP.statsFor(h1).hp, hp2 = UP.statsFor(h2).hp;
+  ok(`у прокачанного здоровья больше: ${hp2} против ${hp1}`, hp2 > hp1);
+  const avgHp = (hp1 + hp2) / 2;
   const s = db.load('groupBattle', {});
-  s.registered = {};
-  s.slot = Date.now() - 1000;
+  s.registered = {}; s.slot = 0;
   db.save('groupBattle');
-  gb.register(human, 'fighter', []);
-  gb.fillWithBots(db.load('groupBattle', {}));
+  gb.register(h1, 'fighter', []);
+  gb.register(h2, 'guardian', []);
   const st = db.load('groupBattle', {});
   st.slot = Date.now() - 1000;
   db.save('groupBattle');
   gb.tick();
   const battle = db.load('groupBattle', {}).battle;
   ok('бой собрался', !!battle);
-  const bot = Object.values(battle.fighters).find((f) => f.isBot && f.role === 'fighter');
-  const me = battle.fighters[human.id];
-  ok('бот в бою есть', !!bot);
-  ok(`запас HP в заданных границах: ${bot.st.hp}`,
-     bot.st.hp >= gb.BOT_HP_MIN && bot.st.hp <= gb.BOT_HP_MAX);
-  eq('боезапас — 30 на бой', bot.st.ammo, gb.BOT_AMMO);
-  near('шанс крита базовый', bot.st.critChance, UP.BASE.critChance, 0.0001);
-  near('шанс уворота базовый', bot.st.dodgeChance, UP.BASE.dodgeChance, 0.0001);
-  eq('энергия базовая', bot.st.energy, gb.ENERGY);
-  // Ботов в бою девять — запасы у них должны РАЗЛИЧАТЬСЯ
   const bots = Object.values(battle.fighters).filter((f) => f.isBot);
-  ok(`ботов в бою: ${bots.length}`, bots.length >= 5);
-  ok('запасы у ботов разные, а не под копирку',
-     new Set(bots.map((f) => f.st.hp)).size > 1);
-  ok('и все в границах',
-     bots.every((f) => f.st.hp >= gb.BOT_HP_MIN && f.st.hp <= gb.BOT_HP_MAX));
-  ok('у всех боезапас 30', bots.every((f) => f.st.ammo === gb.BOT_AMMO));
-  eq('у живого игрока запас прежний', me.st.hp, gb.HP);
-  near('и крит прежний', me.st.critChance, UP.BASE.critChance, 0.0001);
+  ok(`ботов в бою: ${bots.length}`, bots.length === 8);
+  ok('здоровье каждого бота — 50–80% от среднего у живых',
+     bots.every((f) => f.st.hp >= Math.floor(avgHp * 0.5) && f.st.hp <= Math.ceil(avgHp * 0.8)));
+  ok('у ботов разное здоровье', new Set(bots.map((f) => f.st.hp)).size > 1);
+  ok('урон — та же доля, что и здоровье',
+     bots.every((f) => Math.abs(f.botPower - f.st.hp / avgHp) <= 0.011));
+  ok('сообразительность у каждого в границах 0.6–0.8',
+     bots.every((f) => f.botSmart >= 0.6 && f.botSmart <= 0.8));
+  ok('и разная', new Set(bots.map((f) => f.botSmart)).size > 1);
+  ok('боезапас 30', bots.every((f) => f.st.ammo === gb.BOT_AMMO));
+  eq('у живого игрока здоровье — его собственное', battle.fighters[h1.id].st.hp, hp1);
+  ok('у живого нет множителей бота', battle.fighters[h1.id].botPower === undefined);
 
-  console.log('\n[3] Урон бота ровно на 30% ниже');
-  // Броски костей фиксируем: сравниваем удар бота и человека при
-  // одинаковой «случайности», иначе разницу не измерить.
+  console.log('\n[3] Удар бота слабее ровно на botPower');
   const realRandom = Math.random;
-  Math.random = () => 0.5;        // без уворота, без крита, средний разброс
-  const b1 = makeBattle([fighter('bot1', 0, 'fighter', true), fighter('foe1', 1, 'fighter', false)]);
+  Math.random = () => 0.5;
+  const b1 = makeBattle([fighter('bot1', 0, 'fighter', true, { botPower: 0.62, botSmart: 0.7 }), fighter('foe1', 1, 'fighter', false)]);
   const b2 = makeBattle([fighter('man1', 0, 'fighter', false), fighter('foe2', 1, 'fighter', false)]);
+  const b3 = makeBattle([fighter('copy', 0, 'fighter', true, { replaced: true }), fighter('foe3', 1, 'fighter', false)]);
   gb.doAttack(b1, b1.fighters.bot1, b1.fighters.foe1);
   gb.doAttack(b2, b2.fighters.man1, b2.fighters.foe2);
-  const botDmg = b1.fighters.bot1.damageDealt;
-  const manDmg = b2.fighters.man1.damageDealt;
+  gb.doAttack(b3, b3.fighters.copy, b3.fighters.foe3);
   Math.random = realRandom;
-  ok(`бот бьёт слабее: ${botDmg} против ${manDmg}`, botDmg < manDmg);
-  near('разница ровно по множителю', botDmg / manDmg, gb.BOT_POWER_MUL, 0.02);
+  const botDmg = b1.fighters.bot1.damageDealt, manDmg = b2.fighters.man1.damageDealt;
+  near(`бот ${botDmg} против человека ${manDmg}`, botDmg / manDmg, 0.62, 0.02);
+  eq('место прогульщика бьёт в полную силу', b3.fighters.copy.damageDealt, manDmg);
 
-  console.log('\n[4] Бот стал ошибаться в выборе цели');
-  // Бросок 0.45 лежит МЕЖДУ новым порогом (0.4) и прежним (0.5): раньше
-  // бот добил бы раненого, теперь бьёт наугад. Врагов трое, и «наугад»
-  // при 0.45 указывает на второго по списку — здорового.
-  const realRandom2 = Math.random;
-  Math.random = () => 0.45;
-  const b3 = makeBattle([
-    fighter('bot2', 0, 'fighter', true),
-    fighter('hurt', 1, 'fighter', false),
-    fighter('full', 1, 'fighter', false),
-    fighter('full2', 1, 'fighter', false),
-  ]);
-  b3.fighters.hurt.hp = 100;                 // еле живой — «умный» выбор
-  b3.lastBotAt = 0;
-  gb.botTurn(b3, Date.now());
-  Math.random = realRandom2;
-  ok('раненого не добили — бот выбрал наугад', b3.fighters.hurt.hp === 100);
-  ok('удар всё-таки был', b3.fighters.full.hp < b3.fighters.full.maxHp);
+  console.log('\n[4] Глупый бот ошибается чаще');
+  // Бросок 0.35: для бота с 0.6 порог добивания 0.30 — он бьёт наугад;
+  // для бота с 0.8 порог 0.40 — добивает раненого.
+  const run = (smartness) => {
+    const real = Math.random;
+    Math.random = () => 0.35;
+    const b = makeBattle([
+      fighter('bb', 0, 'fighter', true, { botPower: 0.6, botSmart: smartness }),
+      fighter('hurt', 1, 'fighter', false), fighter('full', 1, 'fighter', false), fighter('full2', 1, 'fighter', false),
+    ]);
+    b.fighters.hurt.hp = 100;
+    gb.botTurn(b, Date.now());
+    Math.random = real;
+    return b.fighters.hurt.hp < 100;
+  };
+  ok('сообразительный (0.8) добивает раненого', run(0.8) === true);
+  ok('глупый (0.6) бьёт наугад', run(0.6) === false);
 
-  console.log('\n[5] Решения бота проходят через smart()');
+  console.log('\n[5] Конец боя, когда стрелять нечем');
+  const b5 = makeBattle([fighter('x', 0, 'fighter', false), fighter('y', 1, 'fighter', false)]);
+  b5.fighters.x.ammo = 0; b5.fighters.y.ammo = 0;
+  ok('у всех пусто — бой стоит', gb.outOfAmmo(b5) === true);
+  b5.fighters.y.ammo = 1;
+  ok('у кого-то есть — бой идёт', gb.outOfAmmo(b5) === false);
+
   const src = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
-  ok('выбор цели', /Math\.random\(\) < smart\(0\.5\)/.test(src));
-  ok('порог прикрытия', /maxHp < smart\(0\.7\)/.test(src));
-  ok('порог лечения', /maxHp < smart\(0\.5\)/.test(src));
-  ok('вероятность лечения', /Math\.random\(\) < smart\(0\.65\)/.test(src));
-  ok('урон бота срезан множителем', /me\.isBot \? BOT_POWER_MUL : 1/.test(src));
-  // Единственное место, где множитель силы РАБОТАЕТ, — расчёт урона.
-  // Стоит ему появиться в блоке характеристик, и характеристики бота
-  // снова разойдутся с живым игроком.
-  ok('множитель силы применяется только к урону',
-     !/hp: Math\.round\(HP \* BOT_POWER_MUL\)/.test(src)
-     && !/critChance: UP\.BASE\.critChance \* BOT_POWER_MUL/.test(src));
-  ok('множители объявлены один раз',
-     (src.match(/const BOT_POWER_MUL/g) || []).length === 1
-     && (src.match(/const BOT_SMART_MUL/g) || []).length === 1);
+  ok('решения бота идут через smart(p, bot)',
+     /Math\.random\(\) < smart\(0\.5, bot\)/.test(src) && /maxHp < smart\(0\.7, bot\)/.test(src)
+     && /maxHp < smart\(0\.5, bot\)/.test(src) && /Math\.random\(\) < smart\(0\.65, bot\)/.test(src));
 
   console.log(`\n✅ Все проверки пройдены: ${passed}`);
   process.exit(0);

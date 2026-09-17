@@ -190,7 +190,7 @@ me.gold = 10000;
 }
 
 const gbSrc = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
-ok(/!s\.battle && !s\.slot && Object\.keys\(s\.registered\)\.length/.test(gbSrc),
+ok(/if \(!s\.slot && hasQueue\)/.test(gbSrc),
    'потерянный отсчёт восстанавливается при первом же обращении');
 ok(/earliest \+ LOBBY_MS/.test(gbSrc),
    'отсчёт ведётся от самой ранней записи — давно ждущие не ждут лишнего');
@@ -203,7 +203,7 @@ console.log('\n── 5. Бой не зависает «идущим» ──');
   const arenaSrc = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
   ok(/stillAlive\.length === 1[\s\S]{0,120}finishBattle/.test(arenaSrc),
      'бой закрывается при обслуживании, а не только после удара');
-  ok(/if \(mine\.alive\) throw new u\.ApiError\('Вы уже участвуете/.test(arenaSrc),
+  ok(/b\.fighters\[user\.id\]\.alive\)\) \{\s*\n\s*throw new u\.ApiError\('Вы уже участвуете/.test(arenaSrc),
      'выбывший может записаться на следующий бой');
   const gbSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
   ok(/if \(b\.state === 'done' \|\| b\.state === 'cancelled'\) return;/.test(gbSrc2),
@@ -226,7 +226,7 @@ console.log('\n── 6. Вкладка войны переживает обно
 const warT = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
 ok(/App\._setWarTab = \(tab\)/.test(warT), 'переключение вкладки вынесено в помощник');
 ok(/history\.replaceState\(null, '', want\)/.test(warT), 'вкладка пишется в адрес');
-ok(/const fromHash = \(location\.hash \|\| ''\)\.split\('\/'\)\[1\]/.test(warT),
+ok(/const parts = \(location\.hash \|\| ''\)\.split\('\/'\);\s*\n\s*const fromHash = parts\[1\]/.test(warT),
    'при заходе вкладка читается из адреса');
 ok(/known\.includes\(fromHash\)/.test(warT), 'принимаются только известные вкладки');
 ok(/replaceState, а не переход/.test(warT), 'объяснено, почему не обычный переход');
@@ -234,7 +234,7 @@ ok(/replaceState, а не переход/.test(warT), 'объяснено, по�
 console.log('\n── 7. Улучшения — отдельная страница ──');
 ok(/App\.renderUpgradesPage = async/.test(warT), 'страница улучшений есть');
 ok(/App\.renderSupplyPage = async/.test(warT), 'страница снабжения тоже');
-ok(/if \(App\._gbPage === 'upgrades'\) return App\.renderUpgradesPage\(\)/.test(warT),
+ok(/if \(App\._gbMode === 'rating' && App\._gbPage === 'upgrades'\) return App\.renderUpgradesPage\(\)/.test(warT),
    'витрина уступает место разделу');
 ok(/id="gb-back-page"/.test(warT), 'есть кнопка «Назад»');
 ok((warT.match(/gb-back-page2?"/g) || []).length >= 2, 'кнопка «Назад» сверху и снизу');
@@ -305,19 +305,33 @@ console.log('\n── 9. Арена: не набралось — всех сбр
   await auth3.register('Один', 'пароль123', 'od@t.ru', 'ru', '1.1.1.1', 'UA');
   const solo = Object.values(player3.users())[0];
   solo.gold = 10000;
+  // С 17.09.2026 один живой не остаётся без боя: свободные места
+  // занимают боты. Возврат взноса — только если ботов нет (setSeats(0)).
   arena3.register(solo, 'elite', []);
   ok(solo.gold === 9990, 'взнос списан');
   const st3 = db3.load('arena', {}); st3.divs.elite.slot = Date.now() - 1000; db3.save('arena');
   arena3.tick();
   const raw3 = db3.load('arena', {}).divs.elite;
   ok(Object.keys(raw3.registered).length === 0, 'записи сброшены полностью');
-  ok(solo.gold === 10000, 'взнос возвращён');
+  ok(!!raw3.battle && Object.keys(raw3.battle.fighters).length === 10, 'бой начался: один живой и девять ботов');
+  ok(solo.gold === 9990, 'взнос в банке боя, а не возвращён');
   const v3 = arena3.view(solo, 'elite');
   ok(v3.iAmRegistered === false, 'игрок больше не числится записанным');
   ok(v3.secondsLeft > 0, `отсчёт до следующего боя идёт: ${v3.secondsLeft} с`);
+  // Без ботов — прежнее правило: не набралось, взнос вернули
+  arena3.setSeats(0);
+  const solo2Name = 'Второй';
+  await auth3.register(solo2Name, 'пароль123', 'od2@t.ru', 'ru', '1.1.1.2', 'UA');
+  const solo2 = Object.values(player3.users()).find((p) => p.name === solo2Name);
+  solo2.gold = 10000;
+  arena3.register(solo2, 'elite', []);
+  const st4 = db3.load('arena', {}); st4.divs.elite.slot = Date.now() - 1000; db3.save('arena');
+  arena3.tick();
+  ok(solo2.gold === 10000, 'без ботов одному взнос возвращён');
   let canAgain = true;
-  try { arena3.register(solo, 'elite', []); } catch (e) { canAgain = false; }
+  try { arena3.register(solo2, 'elite', []); } catch (e) { canAgain = false; }
   ok(canAgain, 'можно записаться заново');
+  arena3.setSeats(10);
   process.chdir(cwd);
 }
 
@@ -388,7 +402,7 @@ console.log('\n── 11. Нельзя быть в двух режимах ─�
   ar5.unregister(who, 'elite', []);
   gb5.register(who, 'fighter', []);
   let blocked2 = false;
-  try { ar5.register(who, 'elite', []); } catch (e) { blocked2 = /групповых боях/.test(e.message); }
+  try { ar5.register(who, 'elite', []); } catch (e) { blocked2 = /рейтинговых боях/.test(e.message); }
   ok(blocked2, 'записанный в групповые не попадёт на арену');
   process.chdir(cwd);
 }
@@ -411,7 +425,7 @@ ok(/ATK_MIN \+ Math\.floor\(Math\.random\(\)/.test(arSrc), 'разброс пр�
 ok(/Цель выбираем случайно, а не самого слабого/.test(gbSrc5),
    'боты бьют случайные цели, а не фокусируются на одном');
 // Частота «умного» хода занижена множителем BOT_SMART_MUL — боты глуповаты
-ok(/Math\.random\(\) < smart\(0\.5\)/.test(gbSrc5), 'раненого добивают не всегда — частота занижена smart()');
+ok(/Math\.random\(\) < smart\(0\.5, bot\)/.test(gbSrc5), 'раненого добивают не всегда — частота занижена smart()');
 
 console.log('\n── 14. Плашка боя и запрет перемещения ──');
 const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');

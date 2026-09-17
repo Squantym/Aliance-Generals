@@ -215,7 +215,7 @@ ok(/weakestAlly = allies\.slice\(\)\.sort/.test(src), 'боты выбирают
 // Пороги медика прогоняются через smart(): боты намеренно глуповаты, и
 // «две трети» превратились в 0.52. Проверяем связку, а не голое число —
 // иначе тест ломается при каждой правке баланса ботов.
-ok(/low \|\| Math\.random\(\) < smart\(0\.65\)/.test(src),
+ok(/low \|\| Math\.random\(\) < smart\(0\.65, bot\)/.test(src),
    'медик лечит обязательно ниже порога, иначе по вероятности — обе занижены smart()');
 ok(/bot\.energy >= COST\.heal\.energy/.test(src), 'без энергии медик только атакует');
 ok(/bot\.role === 'guardian' && weakestAlly/.test(src), 'защитник в приоритете прикрывает');
@@ -364,8 +364,9 @@ console.log('\n── 15. Интерфейс рейтинга и раздело�
 const war2 = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
 ok(/data-section="upgrades"/.test(war2), 'кнопка «Улучшения»');
 ok(/data-section="supply"/.test(war2), 'кнопка «База снабжения»');
-ok(/🏅 Рейтинг групповых боёв/.test(war2), 'рейтинг в самом низу страницы');
-const ratingPos = war2.indexOf('🏅 Рейтинг групповых боёв');
+// Экран общий: заголовок рейтинга подставляется по режиму
+ok(war2.includes("🏅 ${G.mode === 'squad' ? 'Рейтинг групповых боёв' : 'Таблица рейтинговых боёв'}"), 'рейтинг в самом низу страницы');
+const ratingPos = war2.indexOf("🏅 ${G.mode === 'squad' ? 'Рейтинг групповых боёв'");
 const sectionPos = war2.indexOf('data-section="upgrades"');
 ok(sectionPos < ratingPos, 'кнопки разделов стоят перед рейтингом');
 // База снабжения теперь с торговцами: закрытые помечаются замком
@@ -566,9 +567,9 @@ ok(!/ENTER_WINDOW_MS/.test(srcE), 'следов окна входа в серв�
 console.log('\n── 24. Обновление без мигания ──');
 const warE = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
 ok(/App\._sameAsBefore/.test(warE), 'экран сравнивает данные перед перерисовкой');
-ok(/box\.dataset\.mode === 'battle' && App\._sameAsBefore\('gbBattle'/.test(warE),
+ok(warE.includes("box.dataset.mode === 'battle-' + G.mode && App._sameAsBefore(SIG"),
    'боевое окно не трогает разметку, если ничего не изменилось');
-ok(/box\.dataset\.mode === 'lobby' && App\._sameAsBefore\('gbLobby'/.test(warE),
+ok(warE.includes("box.dataset.mode === 'lobby-' + G.mode && App._sameAsBefore(SIG"),
    'витрина тоже');
 // Опрос сервера в бою — раз в 5 секунд. Секундные таймеры остались
 // только для локальных отсчётов (они сервер не дёргают).
@@ -651,7 +652,7 @@ const warR = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8'
 // Тикер должен запускаться ДО раннего выхода по «ничего не изменилось»
 const gbPart = warR.slice(warR.indexOf('App.renderGroup = async'), warR.indexOf('App.renderGroupBattle'));
 const tickerAt = gbPart.indexOf("App._startTicker('#gb-timer'");
-const bailAt = gbPart.indexOf("App._sameAsBefore('gbLobby'");
+const bailAt = gbPart.indexOf('App._sameAsBefore(SIG');
 ok(tickerAt > 0 && bailAt > 0, 'оба места найдены');
 ok(tickerAt < bailAt,
    'отсчёт запускается до выхода «ничего не изменилось» — иначе он не переустановится');
