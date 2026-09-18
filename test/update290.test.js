@@ -7,6 +7,8 @@
 //  2. Санкции: охота на цель под санкцией не даёт жертве права объявить
 //     санкцию в ответ; право дают только обычные бои в ±10 уровней.
 //  3. Поверженную цель под санкцией не добивают бесконечно.
+//     Кто поверг цель (даже проиграв бой) — забирает банк, санкция снята
+//     до новой; повержённой иначе цели в списке нет, пока не восстановится.
 //  4. Сейф — только за победу и не в охоте по санкции.
 //  5. Уведомление защитника: «урон по вам» — это урон по нему, а не его
 //     ответный удар (жалоба «пишет 30 урона, а пробили на 2–3»).
@@ -123,6 +125,37 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').split('\r\n').jo
   Victim.res.hp.t = Date.now() - 24 * 3600 * 1000;
   const lst2 = sanctions.list(Hunter).sanctions.find((s) => s.targetId === Victim.id);
   ok(!!lst2, 'восстановилась (даже не заходя в игру) — снова в списке');
+
+  console.log('\n[4б] Повергнул цель — банк охотнику, санкция снята (даже при проигранном бое)');
+  // Нужен именно ПРОИГРАННЫЙ бой с добивающим ударом: победа платила и раньше
+  // Охотник без армии проигрывает наверняка, но 1–5 урона наносит
+  const huntUnits = Hunter.units;
+  Hunter.units = {};
+  let lostKill = null;
+  for (let i = 0; i < 50 && !lostKill; i++) {
+    if (!sanctions.isUnderSanction(Victim.id)) sanctions.declare(Orderer, Victim.id, sanctions.MIN_BOUNTY, []);
+    heal(Victim);
+    const mx = player.maxima(Victim).hp;
+    Victim.res.hp.cur = Math.floor(mx * sanctions.HP_THRESHOLD_PCT) + 1;   // один удар до порога
+    const bank = sanctions.list(Hunter).sanctions.find((x) => x.targetId === Victim.id);
+    Hunter.lastAttackAt = 0; Hunter.res.am.cur = 50; Hunter.res.hp.cur = player.maxima(Hunter).hp;
+    const notes = [];
+    const r = battle.attack(Hunter, Victim.id, notes, { allyOk: true });
+    if (!r.win && r.dealt > 0) lostKill = { r, notes, bank: bank && bank.bounty };
+  }
+  Hunter.units = huntUnits;
+  ok(!!lostKill, 'найден проигранный бой с добивающим ударом');
+  if (lostKill) {
+    ok(lostKill.notes.some((t) => String(t).includes('САНКЦИЯ ВЫПОЛНЕНА')) && lostKill.bank > 0,
+       `охотник получил банк ${lostKill.bank}`);
+    ok(!sanctions.isUnderSanction(Victim.id), 'санкция снята');
+    ok(!sanctions.list(Hunter).sanctions.some((x) => x.targetId === Victim.id), 'цели нет в списке');
+    heal(Victim);
+    ok(!sanctions.list(Hunter).sanctions.some((x) => x.targetId === Victim.id),
+       'и после восстановления она не возвращается сама');
+    sanctions.declare(Orderer, Victim.id, sanctions.MIN_BOUNTY, []);
+    ok(sanctions.list(Hunter).sanctions.some((x) => x.targetId === Victim.id), 'вернётся только новой санкцией');
+  }
 
   console.log('\n[5] Сейф — только за победу и не по санкции');
   const orig = bankHack.tryOffer;

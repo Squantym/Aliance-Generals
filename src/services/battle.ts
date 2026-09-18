@@ -695,8 +695,11 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   })();
 
   // Проверка санкций: если цель — живой игрок и его HP упало до ≤5%,
-  // охотник получает накопленный банк по этой цели.
-  if (!isBot && win) {
+  // охотник получает накопленный банк по этой цели, а санкция снимается.
+  // Победа в бою НЕ нужна (решение владельца 19.09.2026): кто поверг
+  // цель, тот и выполнил санкцию. Раньше охотник, проигравший бой, но
+  // добивший цель, оставался без награды, а санкция висела дальше.
+  if (!isBot) {
     try {
       const targetMax = player.maxima(target).hp;
       require('./sanctions').checkPayout(user, target, targetHpAfter, targetMax, notices);

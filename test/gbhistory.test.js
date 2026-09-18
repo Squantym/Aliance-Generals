@@ -18,8 +18,10 @@ const ROOT = path.join(__dirname, '..');
 let passed = 0, failed = 0;
 const ok = (c, n) => { if (c) { passed++; console.log('  ✅ ' + n); } else { failed++; console.log('  ❌ ' + n); } };
 
-const srv = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
-const war = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
+// Концы строк приводим к \n: на Windows git выписывает файлы с CRLF, и
+// поиск по '\n' находил ничего (на сервере — LF, там проходило)
+const srv = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8').split('\r\n').join('\n');
+const war = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8').split('\r\n').join('\n');
 
 console.log('\n── 1. Что сервер кладёт в личную историю ──');
 // Берём именно тот кусок, где формируется запись истории игрока
