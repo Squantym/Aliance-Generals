@@ -387,6 +387,9 @@ async function payLava(user: User, created: { orderId: string }, notices: Notice
     inv = await lava().createInvoice({
       email: String((user as any).email || ''),
       offerId: link.offerId,
+      // Назад — в тот раздел банка, откуда покупали: там игрока ждёт
+      // окно покупки, когда придёт уведомление об оплате
+      returnUrl: appUrl() + (order.offerId ? '/#bank/offers' : '/#bank/gold'),
     });
   } catch (e: any) {
     order.status = 'failed';
@@ -402,7 +405,10 @@ async function payLava(user: User, created: { orderId: string }, notices: Notice
   order.provider = 'lavatop';
   order.providerRef = inv.id;
   order.payUrl = inv.paymentUrl;
-  order.charged = { amount: inv.amount, currency: inv.currency };
+  // Ожидаемую сумму берём из каталога (там цена дробная, как в
+  // уведомлении), а не из ответа на создание счёта: там amountTotal
+  // описан целым числом, и копейки могли потеряться
+  order.charged = { amount: link.amount || inv.amount, currency: link.currency || inv.currency };
   db.save('payments');
   return { orderId: order.id, status: order.status, payUrl: inv.paymentUrl };
 }
@@ -435,18 +441,22 @@ function handleLavaWebhook(body: any, headers: any, meta?: any): any {
     return http.textReply('ok');
   }
   if (order.status !== 'pending') return http.textReply('ok');   // повтор — уже учтено
-  // Сумма и валюта — те же, что Lava назвала при создании счёта
+  // Сумму НЕ делаем причиной отказа. В примерах Lava сумма в уведомлении
+  // дробная и «неровная» (40254.19, 2049.85) — похоже на пересчёт по
+  // курсу или удержание комиссии. Строгая сверка отклонила бы настоящую
+  // оплату: деньги у игрока списаны, а покупка не пришла. Подлинность
+  // держится на ключе уведомления и на том, что контракт создали мы
+  // сами на конкретный товар. Расхождение — запись владельцу в журнал.
   const want = order.charged || { amount: 0, currency: '' };
-  const gotAmount = Math.round(Number((body && body.amount) || 0) * 100);
+  const gotAmount = Number((body && body.amount) || 0);
   const gotCur = String((body && body.currency) || '');
-  if (want.amount && (gotAmount !== Math.round(want.amount * 100) || gotCur !== want.currency)) {
-    console.error(`⛔ Lava Top: оплата ${gotAmount / 100} ${gotCur} не совпала с заказом ${order.id}`);
+  (order as any).lavaPaid = { amount: gotAmount, currency: gotCur };
+  if (want.amount && (Math.round(gotAmount * 100) !== Math.round(want.amount * 100) || gotCur !== want.currency)) {
     auditLog.record({
-      userId: order.userId, userName: '', path: '/system/payment-mismatch',
-      desc: `⛔ Оплата Lava не совпала с заказом ${order.id}: ${gotAmount / 100} ${gotCur} вместо ${want.amount} ${want.currency} — не зачислено`,
+      userId: order.userId, userName: '', path: '/system/payment-note',
+      desc: `ℹ Lava: по заказу ${order.id} пришло ${gotAmount} ${gotCur}, цена в каталоге ${want.amount} ${want.currency}. Покупка выдана — проверьте в кабинете Lava`,
       body: { orderId: order.id, contractId },
     });
-    return http.textReply('bad sum', 400);
   }
   confirmPayment(order.id);
   return http.textReply('ok');

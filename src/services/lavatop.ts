@@ -18,16 +18,17 @@
 //  • Об оплате Lava сообщает вебхуком. Своего номера заказа в нём нет:
 //    есть contractId — тот самый, что она вернула при создании. По нему
 //    и находим заказ.
-//  • Подписи у вебхука нет. Lava шлёт тот ключ, который владелец задал
-//    в кабинете: заголовок X-Api-Key. Сравниваем с LAVATOP_WEBHOOK_KEY —
-//    без совпадения уведомление не рассматриваем вовсе.
+//  • Подписи у вебхука нет. Lava шлёт то, что владелец задал в кабинете:
+//    ключ (заголовок X-Api-Key) или логин и пароль (Authorization: Basic).
+//    Сравниваем с LAVATOP_WEBHOOK_KEY — без совпадения уведомление не
+//    рассматриваем вовсе.
 //
 // Ключи — только из окружения, читаются при каждом вызове (как у
 // Робокассы: их вписывают в .env на живом сервере). В ответы, журнал и
 // текст ошибок ключи не попадают.
 //
 //   LAVATOP_API_KEY      — ключ API из кабинета lava.top
-//   LAVATOP_WEBHOOK_KEY  — ключ, который Lava шлёт в X-Api-Key вебхука
+//   LAVATOP_WEBHOOK_KEY  — ключ вебхука или «логин:пароль» (см. verifyWebhook)
 //   LAVATOP_CURRENCY     — валюта по умолчанию: USD (или EUR)
 //   LAVATOP_API_URL      — адрес API, по умолчанию https://gate.lava.top
 //
@@ -78,7 +79,12 @@ function setTransport(fn: Transport | null): void {
 
 async function call(method: string, path: string, body?: any): Promise<any> {
   if (!configured()) throw new Error('Lava Top не настроена: ' + problem());
-  const r = await transport(apiUrl() + path, {
+  // Следующую страницу каталога Lava отдаёт ПОЛНЫМ адресом (nextPage)
+  const url = /^https?:\/\//.test(path) ? path : apiUrl() + path;
+  // Ключ API уходит только на адрес самой Lava: полный адрес приходит в
+  // её же ответе, но если бы туда подложили чужой хост, ключ утёк бы
+  if (url.indexOf(apiUrl()) !== 0) throw new Error('адрес страницы вне API Lava — отказ');
+  const r = await transport(url, {
     method,
     headers: {
       'X-Api-Key': env('LAVATOP_API_KEY'),
@@ -104,11 +110,23 @@ async function call(method: string, path: string, body?: any): Promise<any> {
 // ── Каталог ───────────────────────────────────────────────────────
 // Товары владельца в Lava. Отдаём плоским списком «цена → что это»:
 // панели нужно показать выпадающий список, а не дерево.
+// Схема ответа (gate.lava.top/docs): { items: [{ type, data }], nextPage }.
+// В ленте бывают и посты — берём только PRODUCT. Страницы идут по
+// nextPage; ограничиваем их число, чтобы сбой на стороне Lava не
+// превратился в бесконечный цикл запросов.
+const MAX_PAGES = 20;
 async function products(): Promise<Array<{ offerId: string; title: string; price: number; currency: string; prices: any[] }>> {
-  const data = await call('GET', '/api/v2/products?feedVisibility=ALL');
-  const items: any[] = (data && (data.items || data.content || data.data)) || (Array.isArray(data) ? data : []);
+  const items: any[] = [];
+  let next: string | null = '/api/v2/products?feedVisibility=ALL&contentCategories=PRODUCT';
+  for (let page = 0; next && page < MAX_PAGES; page++) {
+    const data: any = await call('GET', next);
+    const list: any[] = (data && data.items) || (Array.isArray(data) ? data : []);
+    items.push(...list);
+    next = (data && data.nextPage) ? String(data.nextPage) : null;
+  }
   const out: Array<{ offerId: string; title: string; price: number; currency: string; prices: any[] }> = [];
   for (const it of items) {
+    if (it && it.type && it.type !== 'PRODUCT') continue;
     const prod = (it && (it.data || it)) || {};
     const title = String(prod.title || prod.name || 'Без названия');
     for (const off of (prod.offers || [])) {
@@ -127,13 +145,22 @@ async function products(): Promise<Array<{ offerId: string; title: string; price
 // ── Счёт ──────────────────────────────────────────────────────────
 // Возвращает contractId (по нему потом придёт уведомление), ссылку на
 // оплату и сумму, которую Lava реально спишет.
-async function createInvoice(o: { email: string; offerId: string; currency?: string }): Promise<{ id: string; paymentUrl: string; amount: number; currency: string; status: string }> {
+async function createInvoice(o: { email: string; offerId: string; currency?: string; returnUrl?: string }): Promise<{ id: string; paymentUrl: string; amount: number; currency: string; status: string }> {
   const cur = (o.currency || currency()).toUpperCase();
-  const data = await call('POST', '/api/v3/invoice', {
+  const body: any = {
     email: String(o.email || ''),
     offerId: String(o.offerId || ''),
     currency: CURRENCIES.indexOf(cur) >= 0 ? cur : currency(),
-  });
+  };
+  // Куда вернуть игрока со страницы оплаты. Без этого он оставался на
+  // сайте Lava и возвращался в игру руками — а окно покупки ждало его
+  // уже в банке.
+  if (o.returnUrl) {
+    body.successful_return_url = o.returnUrl;
+    body.failure_return_url = o.returnUrl;
+    body.cancel_return_url = o.returnUrl;
+  }
+  const data = await call('POST', '/api/v3/invoice', body);
   const total = (data && data.amountTotal) || {};
   return {
     id: String((data && data.id) || ''),
@@ -154,15 +181,32 @@ async function invoice(id: string): Promise<any> {
 // Сравниваем посимвольно, но без утечки по времени — как и подписи
 // Робокассы. Заголовки приходят в нижнем регистре (наш http.ts), но
 // принимаем оба написания.
+// В кабинете Lava у уведомлений два способа защиты (схемы
+// ApiKeyWebhookAuth и BasicWebhookAuth в их документации):
+//   • ключ API — приходит заголовком X-Api-Key;
+//   • логин и пароль — заголовком Authorization: Basic base64(логин:пароль).
+// LAVATOP_WEBHOOK_KEY хранит ключ либо «логин:пароль» — что выбрано в
+// кабинете, то и сверяем.
+function sameSecret(got: string, want: string): boolean {
+  if (!got || got.length !== want.length) return false;
+  const crypto = require('crypto');
+  return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+}
 function verifyWebhook(headers: Record<string, any>): boolean {
   const want = env('LAVATOP_WEBHOOK_KEY');
   if (!want) return false;
   const h = headers || {};
-  const got = String(h['x-api-key'] || h['X-Api-Key'] || h.authorization || h.Authorization || '').trim();
-  const key = got.replace(/^Bearer\s+/i, '');
-  if (key.length !== want.length || !key.length) return false;
-  const crypto = require('crypto');
-  return crypto.timingSafeEqual(Buffer.from(key), Buffer.from(want));
+  const apiKey = String(h['x-api-key'] || h['X-Api-Key'] || '').trim();
+  if (apiKey) return sameSecret(apiKey, want);
+  const auth = String(h.authorization || h.Authorization || '').trim();
+  const basic = /^Basic\s+(.+)$/i.exec(auth);
+  if (basic) {
+    let pair = '';
+    try { pair = Buffer.from(basic[1], 'base64').toString('utf8'); } catch (e) { pair = ''; }
+    return sameSecret(pair, want);
+  }
+  const bearer = /^Bearer\s+(.+)$/i.exec(auth);
+  return bearer ? sameSecret(bearer[1].trim(), want) : false;
 }
 
 // Оплачено ли по телу уведомления. Событие и статус проверяем ОБА:
