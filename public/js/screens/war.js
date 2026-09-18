@@ -645,9 +645,7 @@ App.screens.war = async (c) => {
           </div>
           ${s.myOrder > 0
             ? '<span class="muted small" title="Свою цель бьют другие охотники">ваша цель</span>'
-            : (s.downed
-              ? '<span class="muted small" title="Цель повержена — охота продолжится, когда она восстановится">повержен</span>'
-              : `<button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>`)}
+            : `<button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>`}
         </div>`).join('');
 
       list.querySelectorAll('[data-sanction-target]').forEach((btn) => {

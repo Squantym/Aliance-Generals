@@ -149,6 +149,14 @@ function list(user: User) {
     const target = players[entry.targetId];
     if (!target) continue;
     const pl = require('./player');
+    // Повержённую цель в списке не показываем (решение владельца
+    // 19.09.2026): бить её всё равно нельзя, пока не восстановится.
+    // Санкция и банк остаются — цель вернётся в список, когда здоровье
+    // поднимется выше порога. Здоровье пересчитываем с регенерацией:
+    // иначе у того, кто не заходит в игру, в базе навсегда лежало бы
+    // старое число, и цель не вернулась бы никогда.
+    if (target.res) pl.refresh(target);
+    if (target.res && target.res.hp.cur / Math.max(1, pl.maxima(target).hp) <= HP_THRESHOLD_PCT) continue;
     // Уникальные имена заказчиков (кто объявил охоту). Для одного заказчика
     // показываем имя прямо в списке, для нескольких — раскрывающийся список.
     const uniqNames: string[] = [];
@@ -166,9 +174,6 @@ function list(user: User) {
       ordererNames: uniqNames.slice(0, 3),     // первые имена для подписи
       myOrder: entry.orders.filter(o => o.byId === user.id).reduce((s2, o) => s2 + o.amount, 0),
       hpPct: target.res ? Math.round((target.res.hp.cur / require('./player').maxima(target).hp) * 100) : 100,
-      // Цель повержена (здоровье на пороге санкции) — охота встанет, пока
-      // не восстановится: бой откажет, и кнопку незачем показывать
-      downed: !!target.res && target.res.hp.cur / Math.max(1, require('./player').maxima(target).hp) <= HP_THRESHOLD_PCT,
     });
   }
   // Сортируем по размеру награды (самые жирные сверху)

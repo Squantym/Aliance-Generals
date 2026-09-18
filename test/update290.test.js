@@ -115,11 +115,14 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').split('\r\n').jo
   console.log('\n[4] Поверженную цель не добивают');
   Victim.res.hp.cur = 1;
   fails(() => hit(Hunter, Victim.id), 'уже повержен', 'цель на 1 HP под санкцией недоступна');
+  Victim.res.hp.t = Date.now();   // регенерация ещё не набежала
   const lst = sanctions.list(Hunter).sanctions.find((s) => s.targetId === Victim.id);
-  ok(lst && lst.downed === true, 'в списке санкций она помечена «повержен»');
-  heal(Victim);
+  ok(!lst, 'повержённой цели в списке санкций нет');
+  ok(sanctions.isUnderSanction(Victim.id), 'санкция и банк при этом сохранились');
+  // Восстановление без захода в игру: прошло много времени
+  Victim.res.hp.t = Date.now() - 24 * 3600 * 1000;
   const lst2 = sanctions.list(Hunter).sanctions.find((s) => s.targetId === Victim.id);
-  ok(lst2 && !lst2.downed, 'после восстановления пометки нет');
+  ok(!!lst2, 'восстановилась (даже не заходя в игру) — снова в списке');
 
   console.log('\n[5] Сейф — только за победу и не по санкции');
   const orig = bankHack.tryOffer;
