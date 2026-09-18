@@ -56,8 +56,9 @@ function fighter(id, team, role, isBot, extra) {
   await db.init();
 
   console.log('\n[1] Настройки в одном месте');
-  eq('сила бота — от 50%', gb.BOT_STRENGTH_MIN, 0.5);
-  eq('до 80% средних у живых', gb.BOT_STRENGTH_MAX, 0.8);
+  // 50–80% ослаблено ещё на 30% (решение владельца 19.09.2026)
+  eq('сила бота — от 35%', gb.BOT_STRENGTH_MIN, 0.35);
+  eq('до 56% средних у живых', gb.BOT_STRENGTH_MAX, 0.56);
   eq('сообразительность — от 0.6 (тупит на 40%)', gb.BOT_SMART_MIN, 0.6);
   eq('до 0.8 (тупит на 20%)', gb.BOT_SMART_MAX, 0.8);
   eq('боезапас на бой', gb.BOT_AMMO, 30);
@@ -86,8 +87,8 @@ function fighter(id, team, role, isBot, extra) {
   ok('бой собрался', !!battle);
   const bots = Object.values(battle.fighters).filter((f) => f.isBot);
   ok(`ботов в бою: ${bots.length}`, bots.length === 8);
-  ok('здоровье каждого бота — 50–80% от среднего у живых',
-     bots.every((f) => f.st.hp >= Math.floor(avgHp * 0.5) && f.st.hp <= Math.ceil(avgHp * 0.8)));
+  ok('здоровье каждого бота — 35–56% от среднего у живых',
+     bots.every((f) => f.st.hp >= Math.floor(avgHp * 0.35) && f.st.hp <= Math.ceil(avgHp * 0.56)));
   ok('у ботов разное здоровье', new Set(bots.map((f) => f.st.hp)).size > 1);
   ok('урон — та же доля, что и здоровье',
      bots.every((f) => Math.abs(f.botPower - f.st.hp / avgHp) <= 0.011));

@@ -1350,13 +1350,15 @@ App.screens.chat = async (c, param) => {
     ${tabsHtml}
     <div class="tabs comm-subtabs">
       <div class="tab ${(App._chatRoom || 'global') === 'global' ? 'active' : ''}" data-croom="global">Общий чат</div>
-      <div class="tab ${App._chatRoom === 'recruit' ? 'active' : ''}" data-croom="recruit">📣 Позывные</div>
+      <div class="tab ${App._chatRoom === 'recruit' ? 'active' : ''}" data-croom="recruit">📣 Набор в альянс</div>
+      <div class="tab ${App._chatRoom === 'legion' ? 'active' : ''}" data-croom="legion">🛡 Набор в легион</div>
+      <div class="tab ${App._chatRoom === 'newbie' ? 'active' : ''}" data-croom="newbie">❓ Вопросы новичков</div>
     </div>
     <div class="card">
       <div class="chat-box" id="chat-box"><div class="loading">Подключение к рации…</div></div>
       <div class="chat-pager mt" id="chat-pager"></div>
       <div class="field-row mt">
-        <input type="text" id="chat-text" maxlength="300" placeholder="${(App._chatRoom === 'recruit') ? 'Ищу альянс / набираю бойцов…' : 'Сообщение в эфир…'}">
+        <input type="text" id="chat-text" maxlength="300" placeholder="${({ recruit: 'Ищу альянс / набираю бойцов…', legion: 'Ищу легион / набираю в легион…', newbie: 'Задайте вопрос — опытные игроки подскажут…' })[App._chatRoom] || 'Сообщение в эфир…'}">
         <button class="btn btn-orange btn-inline" id="chat-send">➤</button>
       </div>
       <div class="chat-foot mt">
@@ -1883,14 +1885,16 @@ App.screens.notifications = async (c) => {
       body = `
         <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt} ед.</span></div>
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt != null ? p.dealt + ' ед.' : '—'}</span></div>
+        ${p.youDealt != null ? `<div class="kv"><span class="k">Ваш ответный удар</span><span class="v">${p.youDealt} ед.</span></div>` : ''}
         <div class="kv"><span class="k">Награблено</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(p.loot)}</span></div>
         <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>`;
     } else if (n.kind === 'attack_defended') {
       body = `
         <div class="kv"><span class="k">Противник</span><span class="v name" style="cursor:pointer" onclick="App.go('profile/${p.attackerId}')">${UI.esc(p.attackerName)} (ур. ${p.attackerLevel})</span></div>
         <div class="kv"><span class="k">Когда</span><span class="v">${when}</span></div>
-        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.received} ед.</span></div>
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt != null ? p.dealt + ' ед.' : '—'}</span></div>
+        ${p.youDealt != null ? `<div class="kv"><span class="k">Ваш ответный удар</span><span class="v">${p.youDealt} ед.</span></div>` : ''}
         <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>
         <p class="small mt" style="color:var(--money)">✅ Атака отбита — деньги и большая часть техники в безопасности.</p>`;
     } else if (n.kind === 'rocket_result') {

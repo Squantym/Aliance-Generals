@@ -164,9 +164,13 @@ console.log('\n[7] Дебафф мощи по типам работает в pla
 console.log('\n[8] Интеграция боя: дебафф действует в ОБЕ стороны (атакующий и защитник)');
 {
   const attacker1 = mkUser('u_int_a1', 'Атакер1', { units: { ground_1: [50, 0, 0] } });
-  const defenderNoSab = mkUser('u_int_d1', 'БезДиверсантов', { units: { ground_1: [5, 0, 0] } });
+  // Защита сопоставима с атакой (45 против 50): урон идёт ступенями от
+  // доли атаки в защите (18.09.2026), и при 50 против 5 атакующий был
+  // далеко за порогом полного удара — минус 30% диверсантов его не
+  // сдвигали, и сравнение средних было чистым шумом (тест мигал).
+  const defenderNoSab = mkUser('u_int_d1', 'БезДиверсантов', { units: { ground_1: [45, 0, 0] } });
   const defenderWithSab = mkUser('u_int_d2', 'СДиверсантами', {
-    units: { ground_1: [5, 0, 0] },
+    units: { ground_1: [45, 0, 0] },
     saboteurs: { ground: 300, sea: 0, air: 0, secret: 0, building: 0, suicide: 0 },
     saboteurLimits: { ground: 300, sea: 50, air: 50, secret: 50, building: 50 },
   });
@@ -176,17 +180,22 @@ console.log('\n[8] Интеграция боя: дебафф действует 
   for (let i = 0; i < 300; i++) {
     attacker1.res.am.cur = 9999; attacker1.res.hp.cur = 100; attacker1.lastAttackAt = 0; attacker1.level = 20;
     defenderNoSab.res.hp.cur = 100;
+    // Армии восстанавливаем перед каждым боем: иначе вторая серия шла
+    // потрёпанной армией, и проверка мерила износ, а не диверсантов
+    attacker1.units = { ground_1: [50, 0, 0] }; defenderNoSab.units = { ground_1: [45, 0, 0] };
     const r1 = battle.attack(attacker1, defenderNoSab.id, notices);
     dealtNoSab += r1.dealt;
   }
   for (let i = 0; i < 300; i++) {
     attacker1.res.am.cur = 9999; attacker1.res.hp.cur = 100; attacker1.lastAttackAt = 0; attacker1.level = 20;
     defenderWithSab.res.hp.cur = 100;
+    attacker1.units = { ground_1: [50, 0, 0] }; defenderWithSab.units = { ground_1: [45, 0, 0] };
+    defenderWithSab.saboteurs.ground = 300;
     const r2 = battle.attack(attacker1, defenderWithSab.id, notices);
     dealtWithSab += r2.dealt;
   }
   console.log(`  средний урон без диверсантов цели: ${(dealtNoSab/300).toFixed(2)}, с диверсантами (300 наземных, -30% aPow атакующего): ${(dealtWithSab/300).toFixed(2)}`);
-  ok('диверсанты защитника снижают урон, который получает ОТ атаки', dealtWithSab < dealtNoSab);
+  ok('диверсанты защитника снижают урон, который получает ОТ атаки', dealtWithSab < dealtNoSab * 0.8);
 }
 
 // ===================================================================

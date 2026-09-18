@@ -567,9 +567,13 @@ ok(!/ENTER_WINDOW_MS/.test(srcE), 'следов окна входа в серв�
 console.log('\n── 24. Обновление без мигания ──');
 const warE = fs.readFileSync(path.join(ROOT, 'public/js/screens/war.js'), 'utf8');
 ok(/App\._sameAsBefore/.test(warE), 'экран сравнивает данные перед перерисовкой');
-ok(warE.includes("box.dataset.mode === 'battle-' + G.mode && App._sameAsBefore(SIG"),
+// Отпечаток запоминается ВСЕГДА (19.09.2026): при сравнении вторым
+// условием он не сохранялся при первом показе, и комната мигала
+ok(warE.includes("const sameGb = App._sameAsBefore(SIG, App._gbSig(b));")
+   && warE.includes("box.dataset.mode === 'battle-' + G.mode && sameGb"),
    'боевое окно не трогает разметку, если ничего не изменилось');
-ok(warE.includes("box.dataset.mode === 'lobby-' + G.mode && App._sameAsBefore(SIG"),
+ok(warE.includes("const sameGbLobby = App._sameAsBefore(SIG, fp);")
+   && warE.includes("box.dataset.mode === 'lobby-' + G.mode && sameGbLobby"),
    'витрина тоже');
 // Опрос сервера в бою — раз в 5 секунд. Секундные таймеры остались
 // только для локальных отсчётов (они сервер не дёргают).

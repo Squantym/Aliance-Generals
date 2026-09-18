@@ -2091,12 +2091,14 @@ const App = {
     let body = '';
     if (n.kind === 'attack_lost') {
       body = `
-        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt} ед.</span></div>
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt != null ? p.dealt + ' ед.' : '—'}</span></div>
+        ${p.youDealt != null ? `<div class="kv"><span class="k">Ваш ответный удар</span><span class="v">${p.youDealt} ед.</span></div>` : ''}
         <div class="kv"><span class="k">Награблено</span><span class="v money"><span class="ic-dollar"></span> ${UI.fmtNum(p.loot)}</span></div>
         <div class="kv"><span class="k">Потеряно техники</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>`;
     } else if (n.kind === 'attack_defended') {
       body = `
-        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.received} ед.</span></div>
+        <div class="kv"><span class="k">Урон по вам</span><span class="v dmg-take">${p.dealt != null ? p.dealt + ' ед.' : '—'}</span></div>
+        ${p.youDealt != null ? `<div class="kv"><span class="k">Ваш ответный удар</span><span class="v">${p.youDealt} ед.</span></div>` : ''}
         <div class="kv"><span class="k">Потери</span><span class="v">${p.lossesText ? UI.esc(p.lossesText) : 'без потерь'}</span></div>
         <p class="small mt" style="color:var(--money)">✅ Атака отбита!</p>`;
     } else if (n.kind === 'rocket_result') {

@@ -371,13 +371,26 @@ function attack(user: User, targetId: string, notices: Notices, opts?: { allyOk?
     // гербов и трофеев, а «жертва» ничего не теряет по-настоящему.
     require('./account').assertNotSelfAccount(user, target, 'Нападение');
     player.refresh(target);
-    // Обычные атаки по цели РАЗРЕШЕНЫ всем, включая заказчика санкции.
-    // Ограничение только на награду: заказчик не может забрать СВОЮ же
-    // награду за санкцию (см. checkPayout ниже).
     // Цель с активной санкцией можно атаковать вне диапазона уровней и
     // добивать ниже лазаретного порога (охота за наградой)
     let underSanction = false;
-    try { underSanction = !!(require('./sanctions').list(user).sanctions || []).find((x: any) => x.targetId === targetId); } catch (e) {}
+    try { underSanction = require('./sanctions').isUnderSanction(targetId); } catch (e) {}
+    if (underSanction) {
+      const sanc = require('./sanctions');
+      // Свою же цель заказчик не бьёт (решение владельца 19.09.2026).
+      // Раньше бить разрешалось — ограничена была только награда, и
+      // заказчик часами добивал свою жертву без всякого смысла.
+      if (sanc.isOrderer(user.id, targetId)) {
+        throw new u.ApiError('Вы сами объявили санкцию на этого игрока — бить его могут другие охотники, не вы.');
+      }
+      // Поверженную цель не добивают. Здоровье не опускается ниже 1, а
+      // награда платится только при победе: проигрывающий охотник мог
+      // бить «мёртвую» цель бесконечно, отнимая у неё технику.
+      const maxHp = player.maxima(target).hp;
+      if (target.res.hp.cur / Math.max(1, maxHp) <= sanc.HP_THRESHOLD_PCT) {
+        throw new u.ApiError(`«${target.name}» уже повержен. Санкцию можно будет выполнить, когда он восстановится.`);
+      }
+    }
     if (!underSanction && Math.abs(target.level - user.level) > config.PLAYER.LEVEL_RANGE) {
       throw new u.ApiError('Цель вне диапазона ±10 уровней');
     }
@@ -423,7 +436,16 @@ function proceedToCombat(user: User, target: any, isBot: boolean, targetId: stri
   // Кто на меня нападал — нужно санкциям: объявить награду за голову
   // можно на любого, кто хоть раз напал, а не только на того, кто
   // сорвал часть герба. Список живёт у ЗАЩИТНИКА и не чистится сводкой.
-  if (!isBot && target && target.id) rememberAttacker(target, user);
+  // Право ответить санкцией даёт только ОБЫЧНЫЙ бой: в пределах ±10
+  // уровней и НЕ по цели под санкцией. Охотник, бьющий цель в санкциях,
+  // права на ответную санкцию ей не даёт (решение владельца 19.09.2026):
+  // иначе каждая охота превращалась бы в санкцию на охотника.
+  if (!isBot && target && target.id) {
+    let targetSanctioned = false;
+    try { targetSanctioned = require('./sanctions').isUnderSanction(target.id); } catch (e) {}
+    const normalFight = Math.abs((target.level || 0) - (user.level || 0)) <= config.PLAYER.LEVEL_RANGE;
+    if (!targetSanctioned && normalFight) rememberAttacker(target, user);
+  }
   require('./dailyQuests').bump(user, 'attacks', 1);
   ach.bump(user, 'attacks', 1, notices);
   try { require('./seasons').onAttack(user); } catch (e) {}
@@ -599,6 +621,10 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   const botCritChance = isBot ? Math.min(0.30, 0.05 + (target.level || 1) * 0.002) : 0;
   const botCrit = isBot && Math.random() < botCritChance;
   let received = attackerDodge ? 0 : (botCrit ? Math.round(receivedBase * B.CRIT_MULT) : receivedBase);
+  // Бот бьёт слабо: не больше BOT_MAX_HIT за бой, даже критом (решение
+  // владельца 19.09.2026). Боты — фарм, а не угроза: с новой формулой
+  // урона сильный бот доставал до 36, а критом — до 72.
+  if (isBot) received = Math.min(received, B.BOT_MAX_HIT);
 
   // ЧИСЛОВОЙ АПСЕТ: с шансом 5–10% сильнейший наносит МЕНЬШЕ урона, чем
   // получает — и, поскольку исход решает урон, он этот бой ПРОИГРЫВАЕТ.
@@ -642,7 +668,10 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   // 3) Без уворотов — побеждает тот, кто нанёс БОЛЬШЕ урона; при равенстве
   //    урона исход также решает мощь.
   const anyDodge = targetDodge || attackerDodge;
-  const win = (isBot && !target.isPlayerLike)
+  // Любой бот проигрывает игроку — и террорист 💀, и «псевдоигрок»
+  // (решение владельца 19.09.2026). Раньше псевдоигроки решались по урону
+  // и могли победить.
+  const win = isBot
     ? true
     : (anyDodge
         ? aPow >= dPow
@@ -764,7 +793,7 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
       notifications.push(target.id, 'attack_lost', `${user.name} атаковал вас и победил`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         loot, lossesText: lossesToText(enemyLosses),
-        dealt, at: Date.now(),
+        dealt, youDealt: received, at: Date.now(),
       });
     }
     // Победитель тоже несёт небольшие потери (война есть война)
@@ -795,10 +824,14 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
           by: { id: user.id, name: user.name, flag: player.flag(user), level: user.level },
         });
       } catch (e) {}
+      // dealt — урон ПО ЗАЩИТНИКУ, youDealt — его ответный удар. Раньше
+      // сюда клали только received (ответный удар защитника), а экран
+      // подписывал его «Урон по вам»: по игроку прошло 2–3, а в
+      // уведомлении стояло 30.
       notifications.push(target.id, 'attack_defended', `${user.name} атаковал вас, но был отбит`, {
         attackerName: user.name, attackerLevel: user.level, attackerId: user.id,
         lossesText: lossesToText(enemyLosses),
-        received, at: Date.now(),
+        dealt, youDealt: received, at: Date.now(),
       });
     }
     // Проигравший атакующий теряет существенно больше (крупнее, если
@@ -965,7 +998,10 @@ function resolveCombatCore(user: User, target: any, isBot: boolean, aArmy: any, 
   // у жертвы есть деньги в банке. Не наслаиваем сейф на нерешённый штаб —
   // одно окно решения за раз. tryOffer сам ставит pendingBankHack и вернёт
   // { encounter:'bank_hack', ... } с параметрами окна для клиента.
-  if (!isBot && !user.pendingBreach) {
+  // Сейф — только за ПОБЕДУ и только в обычном бою. Раньше шанс
+  // срабатывал после любого боя, в том числе проигранного и в охоте по
+  // санкции (решение владельца 19.09.2026).
+  if (!isBot && !user.pendingBreach && win && !targetUnderSanction) {
     const offer = bankHack.tryOffer(user, target);
     if (offer) Object.assign(result, offer);
   }

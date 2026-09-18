@@ -116,9 +116,9 @@ const sqStore = () => db.load('squadBattle', {});
      `трофей ускоряет и в бою: у Альфы ${fa.stats.ammoRegenSec} с, у Беты ${fb.stats.ammoRegenSec} с`);
   const avgHp = (300 + 90) / 2;
   const bots = Object.values(b1.fighters).filter((f) => f.isBot);
-  ok(bots.every((f) => f.hp >= Math.floor(avgHp * 0.5) && f.hp <= Math.ceil(avgHp * 0.8) && f.hp === f.maxHp),
-     `здоровье ботов — 50–80% от среднего на входе (${Math.round(avgHp)}), запас полный`);
-  ok(bots.every((f) => f.stats.power >= 0.5 && f.stats.power <= 0.8), 'и сила удара — та же доля');
+  ok(bots.every((f) => f.hp >= Math.floor(avgHp * 0.35) && f.hp <= Math.ceil(avgHp * 0.56) && f.hp === f.maxHp),
+     `здоровье ботов — 35–56% от среднего на входе (${Math.round(avgHp)}), запас полный`);
+  ok(bots.every((f) => f.stats.power >= 0.35 && f.stats.power <= 0.56), 'и сила удара — та же доля');
   ok(bots.every((f) => f.botSmart >= 0.6 && f.botSmart <= 0.8), 'сообразительность ботов 0.6–0.8');
   ok(bots.every((f) => f.paid === 0), 'боты взнос не платят');
   const teamOf = (id) => b1.fighters[id].team;
@@ -236,7 +236,7 @@ const sqStore = () => db.load('squadBattle', {});
   const cur3 = sqStore().battle;
   ok(cur3.fighters[D.id].forfeited && cur3.fighters[D.id].isBot, 'не вышедшего заменил резерв');
   fails(() => sq.act(D, 'attack', Object.keys(cur3.fighters).find((id) => cur3.fighters[id].team !== cur3.fighters[D.id].team), []),
-        'не вышли', 'прогульщик не управляет копией');
+        'Бой не идёт', 'прогульщик не управляет копией — в бой его больше не пускают');
   const moneyD = D.dollars, moneyC2 = C.dollars;
   sq.leave(C, []);
   for (const f of Object.values(sqStore().battle.fighters)) { f.ammo = 0; f.hp = 10; }

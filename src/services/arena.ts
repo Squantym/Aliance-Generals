@@ -138,6 +138,9 @@ type Fighter = {
   damageDealt: number;
   log: Array<{ at: number; text: string }>;
   paid?: number;              // сколько внёс — столько и вернуть при отмене
+  replaced?: boolean;         // место человека, которым управляет бот
+  forfeited?: boolean;        // не вышел на бой — поражение засчитано сразу
+  forfeitRecorded?: boolean;  // поражение уже записано (в итогах не повторять)
 };
 
 type Battle = {
@@ -183,6 +186,8 @@ type Store = {
   // времени в этом случае выбирала произвольный из двух, и игрок видел
   // разбор ЧУЖОГО боя — не свой урон, не свою награду, не свой рейтинг.
   resultSeq?: number;
+  // Кто не вышел на бой и в каком — экран показывает ему итог сразу
+  forfeits?: Record<string, { battleId: string; div: string; at: number }>;
 };
 
 function emptyDiv(): DivState {
@@ -340,14 +345,26 @@ function runBattle(div: DivId, s: DivState, b: Battle, now: number): void {
   if (b.state === 'preparing' && now >= (b.prepareUntil || 0)) {
     b.state = 'running';
     b.startedAt = now;
+    // ПРОГУЛЬЩИК (правило владельца 19.09.2026): поражение сразу, в бой
+    // не пускаем и смотреть не даём, но место не пустеет — за него воюет
+    // бот с его же характеристиками (в списке он помечен 🤖). Раньше
+    // прогульщик просто выбывал, и бой шёл без него.
     const total = Object.keys(b.fighters).length;
-    let placeFrom = total;
+    // Не вышел НИ ОДИН живой — воевать ботам друг с другом незачем: бой
+    // не состоялся, взносы возвращаются (ниже, по «живых не осталось»)
+    const humans = Object.values(b.fighters).filter((f) => !f.isBot);
+    if (humans.length && humans.every((f) => !f.seen)) {
+      for (const f of Object.values(b.fighters)) { f.alive = false; f.hp = 0; }
+    }
     for (const f of Object.values(b.fighters)) {
-      if (f.seen) continue;
-      f.alive = false;
-      f.hp = 0;
-      f.place = placeFrom--;
-      addLog(f, '⏰ Вы не вышли на бой — засчитано поражение');
+      if (f.seen || !f.alive) continue;
+      f.isBot = true;
+      f.replaced = true;
+      f.forfeited = true;
+      f.seen = true;
+      f.entered = true;
+      f.botAt = 0;
+      forfeitNow(div, b, f, total);
     }
     // Все цели могли указывать на выбывших — раздаём заново
     assignTargets(b);
@@ -505,6 +522,25 @@ function addLog(f: Fighter, text: string): void {
 // Фаворит — участник с наибольшим рейтингом НА МОМЕНТ НАЧАЛА боя: если
 // считать по итогам, «фаворитом» мог бы стать сам победитель, и очки
 // за него достались бы тому, кого он убил.
+// Поражение прогульщику — в момент неявки: рейтинг как у выбывшего
+// последним (штраф за место), взнос не возвращается. В итогах боя эту
+// строку уже не пересчитываем (forfeitRecorded).
+function forfeitNow(div: DivId, b: Battle, f: Fighter, total: number): void {
+  const root = store();
+  const table = root.ratings[div];
+  const rec = table[f.id] || (table[f.id] = { id: f.id, name: f.name, flag: f.flag, points: 0, wins: 0, kills: 0, battles: 0 });
+  rec.battles += 1;
+  rec.points = Math.max(0, rec.points - Math.max(0, total - 1));
+  f.forfeitRecorded = true;
+  if (!root.forfeits) root.forfeits = {};
+  root.forfeits[f.id] = { battleId: b.id, div, at: Date.now() };
+  addLog(f, '⏰ Вы не вышли на бой — засчитано поражение, за вас воюет бот');
+  try {
+    require('./notifications').push(f.id, 'arena_end',
+      '⏰ Вы не вошли на арену за время подготовки — засчитано поражение, взнос не возвращается. За вас воюет бот.', {});
+  } catch (e) {}
+}
+
 function finishBattle(div: DivId, s: DivState, winner: Fighter, battle?: Battle): void {
   const b = battle || s.battle;
   if (!b || b.state === 'done') return;
@@ -513,10 +549,14 @@ function finishBattle(div: DivId, s: DivState, winner: Fighter, battle?: Battle)
   b.winnerId = winner.id;
   // Итог боя — в игру: здоровье и боеприпасы такие, какими закончился бой
   for (const f of Object.values(b.fighters)) {
-    if (f.isBot || !f.stats) continue;
+    if ((f.isBot && !f.replaced) || !f.stats) continue;
     RS.writeBack(f.id, { hp: f.hp, ammo: f.ammo });
   }
   b.winnerName = winner.name;
+  const rootF = store();
+  for (const f of Object.values(b.fighters)) {
+    if (rootF.forfeits && rootF.forfeits[f.id] && rootF.forfeits[f.id].battleId === b.id) delete rootF.forfeits[f.id];
+  }
 
   const root = store();
   const table = root.ratings[div];
@@ -566,7 +606,8 @@ function finishBattle(div: DivId, s: DivState, winner: Fighter, battle?: Battle)
     rec.points = Math.max(0, rec.points + net);   // ниже нуля рейтинг не уходит
 
     rows.push({
-      id: f.id, name: f.name, flag: f.flag, isBot: !!f.isBot,
+      id: f.id, name: f.name, flag: f.flag, isBot: !!f.isBot && !f.replaced,
+      botPlayed: !!f.replaced, forfeited: !!f.forfeited,
       kills: f.kills, damage: f.damageDealt,
       place: f.place, penalty, ratingNet: net,
       alive: f.alive, winner: isWinner,
@@ -577,7 +618,7 @@ function finishBattle(div: DivId, s: DivState, winner: Fighter, battle?: Battle)
       // Изменение кошелька: победитель забирает банк за вычетом
       // собственного взноса, остальные теряют взнос
       // Бот взнос не платил и банк не получает: победа бота сжигает банк
-      delta: f.isBot ? 0 : (isWinner ? (b.pot - paidOf(f, div)) : -paidOf(f, div)),
+      delta: f.replaced ? -paidOf(f, div) : (f.isBot ? 0 : (isWinner ? (b.pot - paidOf(f, div)) : -paidOf(f, div))),
     });
   }
   // Сортируем по месту: победитель первым, дальше по порядку выбывания
@@ -684,9 +725,12 @@ function register(user: User, divRaw: any, notices: Notices) {
   const s = divState(div);
   if (s.registered[user.id]) throw new u.ApiError('Вы уже записаны на ближайший бой');
   // Мёртвый боец в идущем бою больше не участвует — пусть записывается
-  if (divBattles(s).some((b) => isLive(b) && b.fighters[user.id] && b.fighters[user.id].alive)) {
+  if (divBattles(s).some((b) => isLive(b) && b.fighters[user.id] && b.fighters[user.id].alive
+    && !b.fighters[user.id].forfeited)) {
     throw new u.ApiError('Вы уже участвуете в идущем бою');
   }
+  // Новая запись — прошлая неявка больше не показывается
+  { const rt = store(); if (rt.forfeits && rt.forfeits[user.id]) delete rt.forfeits[user.id]; }
   // В другом дивизионе тоже нельзя: бои идут одновременно, и человек
   // физически не может воевать в двух местах
   for (const other of DIV_IDS) {
@@ -798,7 +842,7 @@ function view(user: User, divRaw?: any) {
     // Идущий бой
     battle: b && b.state !== 'cancelled' ? {
       state: b.state,
-      iAmIn: !!b.fighters[user.id],
+      iAmIn: !!b.fighters[user.id] && !b.fighters[user.id].forfeited,
       entered: !!(b.fighters[user.id] && b.fighters[user.id].entered),
       // Идёт подготовка и игрок ещё не занял место
       needEnter: b.state === 'preparing' && !!b.fighters[user.id]
@@ -831,7 +875,7 @@ function myBattle(userId: string): { div: DivId; s: DivState; b: Battle } | null
   // а действия падали бы с «бой не идёт».
   for (const d of DIV_IDS) {
     const st = root.divs[d];
-    const live = divBattles(st).find((x) => isLive(x) && x.fighters[userId]);
+    const live = divBattles(st).find((x) => isLive(x) && x.fighters[userId] && !x.fighters[userId].forfeited);
     if (live) return { div: d, s: st, b: live };
   }
   // Идущего нет — отдаём последний завершённый, чтобы показать итог
@@ -875,6 +919,18 @@ function enter(user: User, notices: Notices) {
 // ---------- Состояние боя для игрока ----------
 function battleState(user: User) {
   tick();
+  // Не вышел на бой, который ещё идёт: только итог, без поля боя
+  const rootS = store();
+  let ff = rootS.forfeits && rootS.forfeits[user.id];
+  // Бой с неявкой могли отменить — тогда и пометка ни к чему
+  if (ff && !DIV_IDS.some((d) => divBattles(rootS.divs[d]).some((x) => x.id === ff!.battleId && isLive(x)))) {
+    delete rootS.forfeits![user.id];
+    ff = undefined;
+  }
+  if (ff) {
+    return { active: false, state: 'done', finished: true, forfeited: true, battleId: '',
+             forfeitBattleId: ff.battleId, div: ff.div };
+  }
   const found = myBattle(user.id);
   const b = found ? found.b : null;
   if (!b) return { active: false };
@@ -924,14 +980,15 @@ function battleState(user: User) {
     target: target ? {
       id: target.id, name: target.name, flag: target.flag,
       hp: target.hp, maxHp: target.maxHp, alive: target.alive, rating: target.rating || 0,
-      isBot: !!target.isBot,
+      isBot: !!target.isBot && !target.replaced, botPlayed: !!target.replaced,
     } : null,
     // Оставшиеся бойцы с их здоровьем
     alive: Object.values(b.fighters)
       .filter((f) => f.alive)
       .sort((a, c) => c.hp - a.hp)
       .map((f) => ({ id: f.id, name: f.name, flag: f.flag, hp: f.hp, maxHp: f.maxHp,
-                     rating: f.rating || 0, isMe: f.id === me.id, isBot: !!f.isBot })),
+                     rating: f.rating || 0, isMe: f.id === me.id, isBot: !!f.isBot && !f.replaced,
+                     botPlayed: !!f.replaced })),
     aliveCount: Object.values(b.fighters).filter((f) => f.alive).length,
     total: Object.keys(b.fighters).length,
     log: me.log.slice(-25),
@@ -1104,7 +1161,8 @@ function busyState(userId: string): string | null {
   for (const d of DIV_IDS) {
     const st = root.divs[d];
     if (st.registered[userId]) return 'записаны на бой';
-    if (divBattles(st).some((b) => b.state === 'running' && b.fighters[userId] && b.fighters[userId].alive)) {
+    if (divBattles(st).some((b) => b.state === 'running' && b.fighters[userId] && b.fighters[userId].alive
+      && !b.fighters[userId].forfeited)) {
       return 'сейчас в бою';
     }
   }

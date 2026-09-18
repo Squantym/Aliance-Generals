@@ -47,8 +47,10 @@ const PRIZE = 5e8;                      // каждому живому побе�
 
 // Боты
 const BOT_THINK_MS = 5000;
-const BOT_STRENGTH_MIN = 0.5;           // доля от средних у живых
-const BOT_STRENGTH_MAX = 0.8;
+// Доля от средних у живых: здоровье и урон бота. Было 50–80%, по
+// решению владельца (19.09.2026) ослаблено ещё на 30%: 35–56%.
+const BOT_STRENGTH_MIN = 0.35;
+const BOT_STRENGTH_MAX = 0.56;
 const BOT_SMART_MIN = 0.6;              // «тупит» на 20–40%
 const BOT_SMART_MAX = 0.8;
 
@@ -137,6 +139,8 @@ type Store = {
   results: Record<string, any>;
   lastBattle: Record<string, string>;
   playerHistory: Record<string, any[]>;
+  // Кто не вышел на бой и в каком бою — экран показывает ему итог сразу
+  forfeits?: Record<string, { battleId: string; at: number; role: string; paid: number }>;
 };
 
 function store(): Store {
@@ -157,9 +161,32 @@ function store(): Store {
 const isBotId = (id: string) => String(id).startsWith(BOT_PREFIX);
 const isLive = (b: Battle | null | undefined) => !!b && (b.state === 'preparing' || b.state === 'running');
 function battles(s: Store): Battle[] { return [s.battle, ...s.others].filter(Boolean) as Battle[]; }
+// Бой игрока. Прогульщика в «своём» бою нет: за него играет бот, а сам
+// он не входит и не наблюдает (см. forfeitNow).
 function battleOf(s: Store, userId: string): Battle | null {
-  const all = battles(s).filter((b) => b.fighters[userId]);
+  const all = battles(s).filter((b) => b.fighters[userId] && !b.fighters[userId].forfeited);
   return all.find(isLive) || all[0] || null;
+}
+
+// ПРОГУЛЬЩИК (правило владельца 19.09.2026). Не вошёл в комнату за
+// время подготовки — поражение засчитывается СРАЗУ, в бой его больше не
+// пускают и следить за боем он не может. Его место не пустеет: за него
+// воюет бот с его же характеристиками, в списках он помечен 🤖.
+function forfeitNow(s: Store, b: Battle, f: Fighter): void {
+  const rec = s.ratings[f.id] || (s.ratings[f.id] = { id: f.id, name: f.name, flag: f.flag, points: 0, wins: 0, losses: 0, kills: 0, battles: 0 });
+  rec.battles += 1;
+  rec.losses += 1;
+  const list = s.playerHistory[f.id] || (s.playerHistory[f.id] = []);
+  list.unshift({ at: Date.now(), result: 'forfeit', role: ROLES[f.role].label, kills: 0, damage: 0,
+                 rating: 0, money: -f.paid, players: Object.keys(b.fighters).length });
+  if (list.length > 15) list.length = 15;
+  (f as any).forfeitRecorded = true;
+  if (!s.forfeits) s.forfeits = {};
+  s.forfeits[f.id] = { battleId: b.id, at: Date.now(), role: f.role, paid: f.paid };
+  try {
+    require('./notifications').push(f.id, 'squad_end',
+      '⏰ Вы не вошли в комнату подготовки — засчитано поражение, взнос не возвращается. За вас воюет бот.', {});
+  } catch (e) {}
 }
 function roll(lo: number, hi: number): number { return Math.round((lo + Math.random() * (hi - lo)) * 100) / 100; }
 function smart(p: number, f: { botSmart?: number }): number { return p * (f.botSmart || BOT_SMART_MAX); }
@@ -229,7 +256,8 @@ function runBattle(s: Store, b: Battle, now: number): void {
       f.isBot = true;
       f.replaced = true;
       f.forfeited = true;
-      addLog(b, `⏰ ${f.name} не вышел на бой — его заменил боец из резерва`, 'system', f.id);
+      forfeitNow(s, b, f);
+      addLog(b, `⏰ ${f.name} не вышел на бой — за него воюет бот 🤖`, 'system', f.id);
     }
     addLog(b, '🔔 Бой начался!', 'system');
     checkEnd(s, b);
@@ -391,8 +419,11 @@ function settle(s: Store, b: Battle, winnerTeam: -1 | 0 | 1): any[] {
     if (human && (f.forfeited || f.left)) {
       money = -f.paid;          // взнос потерян
       const rec = s.ratings[f.id] || (s.ratings[f.id] = { id: f.id, name: f.name, flag: f.flag, points: 0, wins: 0, losses: 0, kills: 0, battles: 0 });
-      rec.battles += 1;
-      rec.losses += 1;
+      // Прогульщику поражение засчитано ещё в момент неявки (forfeitNow)
+      if (!(f as any).forfeitRecorded) {
+        rec.battles += 1;
+        rec.losses += 1;
+      }
       ratingTotal = rec.points;
     } else if (human) {
       const rec = s.ratings[f.id] || (s.ratings[f.id] = { id: f.id, name: f.name, flag: f.flag, points: 0, wins: 0, losses: 0, kills: 0, battles: 0 });
@@ -429,7 +460,7 @@ function settle(s: Store, b: Battle, winnerTeam: -1 | 0 | 1): any[] {
       bestFighter: f.id === bestF, bestGuard: f.id === bestG, bestMedic: f.id === bestM,
       won,
     });
-    if (human) {
+    if (human && !(f as any).forfeitRecorded) {
       const list = s.playerHistory[f.id] || (s.playerHistory[f.id] = []);
       list.unshift({
         at: Date.now(),
@@ -460,6 +491,9 @@ function finish(s: Store, b: Battle, winnerTeam: -1 | 0 | 1, reason: string): vo
   addLog(b, winnerTeam === -1 ? `🏁 Ничья. ${reason}` : `🏁 Победила команда ${winnerTeam + 1}. ${reason}`, 'system');
   for (const f of Object.values(b.fighters)) {
     if (f.isBot && !f.replaced) continue;
+    // Итог боя у прогульщика теперь в разборе — отдельная пометка не нужна
+    if (s.forfeits && s.forfeits[f.id] && s.forfeits[f.id].battleId === b.id) delete s.forfeits[f.id];
+    if ((f as any).forfeitRecorded) continue;   // ему уже сообщили при неявке
     const absent = !!(f.forfeited || f.left);
     try {
       require('./notifications').push(f.id, 'squad_end',
@@ -591,7 +625,8 @@ function botTurn(b: Battle, now: number): void {
 function busyState(userId: string): string | null {
   const s = store();
   if (s.registered[userId]) return 'записаны на бой';
-  if (battles(s).some((b) => isLive(b) && b.fighters[userId] && b.fighters[userId].alive)) return 'сейчас в бою';
+  if (battles(s).some((b) => isLive(b) && b.fighters[userId] && b.fighters[userId].alive
+    && !b.fighters[userId].forfeited)) return 'сейчас в бою';
   return null;
 }
 
@@ -608,6 +643,8 @@ function assertFree(user: User): void {
 function register(user: User, roleId: string, notices: Notices) {
   tick();
   const s = store();
+  // Новая запись — прошлая неявка больше не показывается
+  if (s.forfeits && s.forfeits[user.id]) delete s.forfeits[user.id];
   if (s.registered[user.id]) throw new u.ApiError('Вы уже записаны на бой');
   assertFree(user);
   const b = battleOf(s, user.id);
@@ -721,7 +758,7 @@ function view(user: User) {
       state: b.state,
       needEnter: b.state === 'preparing' && !!b.fighters[user.id] && !b.fighters[user.id].seen,
       prepareLeftSec: b.state === 'preparing' ? Math.max(0, Math.round((b.prepareUntil - now) / 1000)) : 0,
-      iAmIn: !!b.fighters[user.id],
+      iAmIn: !!b.fighters[user.id] && !b.fighters[user.id].forfeited,
       id: b.id,
     } : null,
     history: s.history.slice(0, 5),
@@ -745,6 +782,21 @@ function battleState(user: User, watchId?: string) {
   const b = battleOf(s, user.id);
   if (b && b.state === 'preparing') markSeen(b, user.id);
   if (!b) {
+    // Не вышел на бой, который ещё идёт: только итог, без поля боя
+    const ff = s.forfeits && s.forfeits[user.id];
+    // Бой с неявкой могли отменить — тогда и пометка ни к чему
+    if (ff && !battles(s).some((x) => x.id === ff.battleId && isLive(x))) { delete s.forfeits![user.id]; }
+    else if (ff && (!s.lastBattle[user.id] || s.lastBattle[user.id] !== ff.battleId)) {
+      return {
+        active: false, state: 'done', finished: true, mode: 'squad', forfeited: true,
+        winnerTeam: null, iWon: false /* неявка = поражение: forfeited */, myTeam: 0, result: [], prize: PRIZE, entry: ENTRY,
+        me: { id: user.id, name: user.name, flag: '', team: 0, role: ff.role,
+          roleLabel: ROLES[ff.role] ? ROLES[ff.role].label : '', roleIcon: ROLES[ff.role] ? ROLES[ff.role].icon : '',
+          hp: 0, maxHp: 0, alive: false, isBot: false, damageDealt: 0, healed: 0, kills: 0,
+          energy: 0, maxEnergy: 0, ammo: 0, maxAmmo: 0, cooldownLeftMs: 0, targetId: null, rating: 0 },
+        allies: [], enemies: [], log: [], watchable: [],
+      };
+    }
     const saved = s.lastBattle[user.id] && s.results[s.lastBattle[user.id]];
     if (saved) {
       const row = (saved.rows || []).find((r: any) => r.id === user.id);
@@ -771,6 +823,7 @@ function battleState(user: User, watchId?: string) {
     id: f.id, name: f.name, flag: f.flag, team: f.team,
     role: f.role, roleLabel: ROLES[f.role].label, roleIcon: ROLES[f.role].icon,
     hp: f.hp, maxHp: f.maxHp, alive: f.alive, isBot: f.isBot && !f.replaced,
+    botPlayed: !!f.replaced,     // за игрока воюет бот — экран ставит 🤖
     guarded: f.guardedUntil > now, rating: f.rating || 0, isMe: f.id === me.id,
   });
   return {

@@ -54,8 +54,10 @@ const ACTION_CD_MS = 1500;              // откат между действи�
 // живых игроков этого боя. Фиксированные 1000–1500 HP были то
 // непробиваемыми для новичков, то бумажными для прокачанных.
 const BOT_THINK_MS = 5000;              // откат между действиями бота
-const BOT_STRENGTH_MIN = 0.5;           // доля от средних у живых: у каждого
-const BOT_STRENGTH_MAX = 0.8;           // бота своя, в этих границах
+// Доля от средних у живых: у каждого бота своя, в этих границах. Было
+// 50–80%, по решению владельца (19.09.2026) ослаблено ещё на 30%: 35–56%.
+const BOT_STRENGTH_MIN = 0.35;
+const BOT_STRENGTH_MAX = 0.56;
 const BOT_AMMO = 30;                    // боезапас на весь бой
 // «Тупит на 20–40%»: у каждого бота своя сообразительность 0.6–0.8.
 // В основном бот делает то, что должен, но реже и позже живого.
@@ -184,9 +186,36 @@ function battles(s: Store): Battle[] {
 }
 
 // Бой игрока: сначала идущий, иначе последний с его участием
+// Бой игрока. Прогульщика в «своём» бою нет: за него играет бот, а сам
+// он не входит и не наблюдает (см. forfeitNow).
 function battleOf(s: Store, userId: string): Battle | null {
-  const all = battles(s).filter((b) => b.fighters[userId]);
+  const all = battles(s).filter((b) => b.fighters[userId] && !b.fighters[userId].forfeited);
   return all.find(isLive) || all[0] || null;
+}
+
+// ПРОГУЛЬЩИК (правило владельца 19.09.2026). Не вошёл в комнату за
+// время подготовки — поражение засчитывается СРАЗУ, в бой его больше не
+// пускают и следить за боем он не может. Его место не пустеет: за него
+// воюет бот с его же характеристиками, в списках он помечен 🤖.
+function forfeitNow(b: Battle, f: Fighter): void {
+  const root: any = store();
+  const table = ratings();
+  const rec = table[f.id] || (table[f.id] = { id: f.id, name: f.name, flag: f.flag, points: 0,
+    wins: 0, losses: 0, kills: 0, battles: 0, damage: 0, absorbed: 0, healed: 0 });
+  rec.battles = (rec.battles || 0) + 1;
+  rec.losses = (rec.losses || 0) + 1;
+  if (!root.playerHistory) root.playerHistory = {};
+  const list = root.playerHistory[f.id] || (root.playerHistory[f.id] = []);
+  list.unshift({ at: Date.now(), result: 'forfeit', role: ROLES[f.role].label,
+                 kills: 0, damage: 0, rating: 0, tokens: 0, players: Object.keys(b.fighters).length });
+  if (list.length > 15) list.length = 15;
+  (f as any).forfeitRecorded = true;
+  if (!root.forfeits) root.forfeits = {};
+  root.forfeits[f.id] = { battleId: b.id, at: Date.now(), role: f.role };
+  try {
+    require('./notifications').push(f.id, 'group_end',
+      '⏰ Вы не вошли в комнату подготовки — засчитано поражение. За вас воюет бот.', {});
+  } catch (e) {}
 }
 
 // Время старта считается от первой записи. Ноль означает «лобби пусто,
@@ -284,7 +313,8 @@ function runBattle(s: Store, b: Battle, now: number): void {
         f.isBot = true;          // дальше им управляет тот же код, что и ботами
         f.replaced = true;       // но помним, что место человека
         f.forfeited = true;      // поражение засчитано, награды не будет
-        addLog(b, `⏰ ${f.name} не вышел на бой — его заменил боец из резерва`, 'system', f.id);
+        forfeitNow(b, f);
+        addLog(b, `⏰ ${f.name} не вышел на бой — за него воюет бот 🤖`, 'system', f.id);
       }
       addLog(b, '🔔 Бой начался!', 'system');
       checkEnd(s, b);
@@ -719,7 +749,7 @@ function awardRating(b: Battle, winnerTeam: -1 | 0 | 1): any[] {
     if (row.isBot || row.forfeited) {
       // Прогульщику пишем отдельной строкой: он должен видеть, что
       // поражение засчитано, и почему наград нет
-      if (row.forfeited) {
+      if (row.forfeited && !(b.fighters[row.id] && (b.fighters[row.id] as any).forfeitRecorded)) {
         const list = root2.playerHistory[row.id] || (root2.playerHistory[row.id] = []);
         list.unshift({ at: Date.now(), result: 'forfeit', role: row.roleLabel,
                        kills: 0, damage: 0, rating: 0, tokens: 0, players: rows.length });
@@ -979,7 +1009,7 @@ function busyState(userId: string): string | null {
   const s = store();
   if (s.registered[userId]) return 'записаны на бой';
   const inFight = battles(s).some((b) => b.fighters[userId] && (b.state === 'running' || b.state === 'preparing')
-    && b.fighters[userId].alive);
+    && b.fighters[userId].alive && !b.fighters[userId].forfeited);
   if (inFight) return 'сейчас в бою';
   return null;
 }
@@ -987,6 +1017,8 @@ function busyState(userId: string): string | null {
 function register(user: User, roleId: string, notices: Notices) {
   tick();
   const s = store();
+  // Новая запись — прошлая неявка больше не показывается
+  if ((s as any).forfeits && (s as any).forfeits[user.id]) delete (s as any).forfeits[user.id];
   if (s.registered[user.id]) throw new u.ApiError('Вы уже записаны на бой');
   // Нельзя быть в двух режимах разом
   for (const [mod, where] of [['./arena', 'на арене'], ['./squadBattle', 'в групповых боях']]) {
@@ -1081,7 +1113,7 @@ function view(user: User) {
         && !b.fighters[user.id].seen,
       prepareLeftSec: b.state === 'preparing'
         ? Math.max(0, Math.round(((b.prepareUntil || 0) - now) / 1000)) : 0,
-      iAmIn: !!b.fighters[user.id],
+      iAmIn: !!b.fighters[user.id] && !b.fighters[user.id].forfeited,
       id: b.id,
     } : null,
     history: (s.history || []).slice(0, 5),
@@ -1161,9 +1193,24 @@ function battleState(user: User, watchId?: string) {
   // потому что отдельного действия «вступить в бой» больше нет.
   if (b && b.state === 'preparing') markSeen(b, user.id);
   if (!b || !b.fighters[user.id]) {
+    const root = s as any;
+    // Не вышел на бой, который ещё идёт: только итог, без поля боя
+    const ff = root.forfeits && root.forfeits[user.id];
+    // Бой с неявкой могли отменить — тогда и пометка ни к чему
+    if (ff && !battles(s).some((x) => x.id === ff.battleId && isLive(x))) { delete root.forfeits[user.id]; }
+    else if (ff && (root.lastBattle || {})[user.id] !== ff.battleId) {
+      return {
+        active: false, state: 'done', finished: true, forfeited: true,
+        winnerTeam: null, iWon: false /* неявка = поражение: forfeited */, myTeam: 0, result: [],
+        me: { id: user.id, name: user.name, flag: '', team: 0, role: ff.role,
+          roleLabel: ROLES[ff.role] ? ROLES[ff.role].label : '', roleIcon: ROLES[ff.role] ? ROLES[ff.role].icon : '',
+          hp: 0, maxHp: 0, alive: false, isBot: false, damageDealt: 0, healed: 0, kills: 0,
+          energy: 0, maxEnergy: 0, ammo: 0, maxAmmo: 0, cooldownLeftMs: 0, targetId: null, rating: 0 },
+        allies: [], enemies: [], log: [], watchable: [],
+      };
+    }
     // Бой уже убран из очереди — показываем сохранённый разбор, иначе
     // игрок увидит пустой экран или нули вместо своих показателей
-    const root = s as any;
     const lastId = (root.lastBattle || {})[user.id];
     const saved = lastId && (root.results || {})[lastId];
     if (saved) {
@@ -1203,7 +1250,8 @@ function battleState(user: User, watchId?: string) {
   const card = (f: Fighter) => ({
     id: f.id, name: f.name, flag: f.flag, team: f.team,
     role: f.role, roleLabel: ROLES[f.role].label, roleIcon: ROLES[f.role].icon,
-    hp: f.hp, maxHp: f.maxHp, alive: f.alive, isBot: f.isBot,
+    hp: f.hp, maxHp: f.maxHp, alive: f.alive, isBot: f.isBot && !f.replaced,
+    botPlayed: !!f.replaced,     // за игрока воюет бот — экран ставит 🤖
     guarded: f.guardedUntil > now,
     rating: f.rating || 0,
     isMe: f.id === me.id,

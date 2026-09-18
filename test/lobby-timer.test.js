@@ -203,7 +203,8 @@ console.log('\n── 5. Бой не зависает «идущим» ──');
   const arenaSrc = fs.readFileSync(path.join(ROOT, 'src/services/arena.ts'), 'utf8');
   ok(/stillAlive\.length === 1[\s\S]{0,120}finishBattle/.test(arenaSrc),
      'бой закрывается при обслуживании, а не только после удара');
-  ok(/b\.fighters\[user\.id\]\.alive\)\) \{\s*\n\s*throw new u\.ApiError\('Вы уже участвуете/.test(arenaSrc),
+  // Прогульщик (за него воюет бот) тоже свободен — отсюда && !forfeited
+  ok(/b\.fighters\[user\.id\]\.alive(\s*&& !b\.fighters\[user\.id\]\.forfeited)?\)\) \{\s*\n\s*throw new u\.ApiError\('Вы уже участвуете/.test(arenaSrc),
      'выбывший может записаться на следующий бой');
   const gbSrc2 = fs.readFileSync(path.join(ROOT, 'src/services/groupBattle.ts'), 'utf8');
   ok(/if \(b\.state === 'done' \|\| b\.state === 'cancelled'\) return;/.test(gbSrc2),
@@ -234,7 +235,7 @@ ok(/replaceState, а не переход/.test(warT), 'объяснено, по�
 console.log('\n── 7. Улучшения — отдельная страница ──');
 ok(/App\.renderUpgradesPage = async/.test(warT), 'страница улучшений есть');
 ok(/App\.renderSupplyPage = async/.test(warT), 'страница снабжения тоже');
-ok(/if \(App\._gbMode === 'rating' && App\._gbPage === 'upgrades'\) return App\.renderUpgradesPage\(\)/.test(warT),
+ok(/if \(App\._gbMode === 'rating' && App\._gbPage === 'upgrades'\) \{[\s\S]{0,120}return App\.renderUpgradesPage\(\)/.test(warT),
    'витрина уступает место разделу');
 ok(/id="gb-back-page"/.test(warT), 'есть кнопка «Назад»');
 ok((warT.match(/gb-back-page2?"/g) || []).length >= 2, 'кнопка «Назад» сверху и снизу');

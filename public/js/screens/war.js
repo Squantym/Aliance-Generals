@@ -643,7 +643,11 @@ App.screens.war = async (c) => {
             ${s.myOrder > 0 ? `<div class="muted small">ваш вклад: <span class="ic-dollar"></span>${UI.fmtNum(s.myOrder)}</div>` : ''}
             <div class="sanc-orders" id="sanc-orders-${i}" hidden></div>
           </div>
-          <button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>
+          ${s.myOrder > 0
+            ? '<span class="muted small" title="Свою цель бьют другие охотники">ваша цель</span>'
+            : (s.downed
+              ? '<span class="muted small" title="Цель повержена — охота продолжится, когда она восстановится">повержен</span>'
+              : `<button class="btn btn-red btn-inline" data-sanction-target="${s.targetId}">⚔ Охота</button>`)}
         </div>`).join('');
 
       list.querySelectorAll('[data-sanction-target]').forEach((btn) => {
@@ -1030,7 +1034,8 @@ App._realStatsLine = (st) => {
 
 App.renderArena = async () => {
   clearInterval(App._arenaTimer);
-  document.body.classList.remove('combat-fullscreen');
+  // Полноэкранный режим снимаем только когда рисуем витрину (см. ниже),
+  // иначе окно боя на миг выпадало из него
   const box = document.getElementById('arena-box');
   if (!box) return;
 
@@ -1040,8 +1045,11 @@ App.renderArena = async () => {
 
   // Витрина перерисовывается, только если что-то поменялось. Секунды до
   // старта в отпечаток не берём — иначе экран моргал бы каждый раз.
+  // Секунды подготовки (prepareLeftSec, enterLeftSec) тоже тикают сами:
+  // с ними витрина перерисовывалась каждые 5 секунд, пока шёл отсчёт
   const fingerprint = { ...d, secondsLeft: undefined, rating: undefined,
-                        registered: d.registered.map((x) => x.id) };
+                        registered: d.registered.map((x) => x.id),
+                        battle: d.battle ? { ...d.battle, prepareLeftSec: undefined, enterLeftSec: undefined } : null };
   // Время старта считаем сейчас, отсчёт запускаем после отрисовки
   const arenaStartAt = d.nextStartAt || (Date.now() + (d.secondsLeft || 0) * 1000);
   const arenaNeedTicker = d.secondsLeft > 0 || !!d.nextStartAt;
@@ -1053,7 +1061,8 @@ App.renderArena = async () => {
     });
   };
 
-  if (box.dataset.mode === 'lobby' && App._sameAsBefore('arenaLobby', fingerprint)) {
+  const sameLobby = App._sameAsBefore('arenaLobby', fingerprint);   // запоминаем всегда
+  if (box.dataset.mode === 'lobby' && sameLobby) {
     startArenaTicker();
     return;
   }
@@ -1063,6 +1072,7 @@ App.renderArena = async () => {
   if (d.battle && d.battle.iAmIn && d.battle.entered && d.battle.state === 'running') {
     return App.renderArenaBattle();
   }
+  document.body.classList.remove('combat-fullscreen');
 
   const mmss = (sec) => {
     const m = Math.floor(sec / 60), s2 = sec % 60;
@@ -1267,11 +1277,33 @@ App.renderArenaBattle = async () => {
 
   // Ничего не изменилось — не трогаем разметку. Иначе экран моргал бы
   // каждые пять секунд и сбрасывал прокрутку списка бойцов.
-  if (box.dataset.mode === 'battle' && App._sameAsBefore('arenaBattle', b)) {
+  // Тикающие сами числа в отпечаток не берём: иначе окно арены
+  // перерисовывалось каждые 5 секунд подготовки и мигало
+  const arenaSig = { ...b, prepareLeftSec: undefined,
+    me: b.me ? { ...b.me, ammoEtaSec: undefined, cooldownLeftMs: undefined, critLeftMs: undefined,
+                 armorLeftMs: undefined, critLeftSec: undefined, armorLeftSec: undefined } : b.me };
+  const sameArena = App._sameAsBefore('arenaBattle', arenaSig);   // запоминаем всегда
+  if (box.dataset.mode === 'battle' && sameArena) {
     scheduleArenaBattle();
     return;
   }
   box.dataset.mode = 'battle';
+
+  // Не вышел на бой: поражение засчитано, за него воюет бот. На поле
+  // боя не пускаем и смотреть не даём — только итог.
+  if (b.forfeited) {
+    document.body.classList.remove('combat-fullscreen');
+    box.innerHTML = `
+      <div class="card center">
+        <div class="arena-title gb-lose-title">НЕ ЯВИЛСЯ</div>
+        <p class="muted small mt">Вы не вошли на арену за время подготовки — засчитано поражение,
+        взнос не возвращается. За вас воюет бот с вашими характеристиками 🤖.</p>
+        <button class="btn mt" id="arena-ff-back" style="width:100%">← К арене</button>
+      </div>`;
+    const back = document.getElementById('arena-ff-back');
+    if (back) back.onclick = () => { App._resetSign('arenaBattle'); App.renderArena(); };
+    return;
+  }
 
   // Бой окончен — показываем итог и возвращаем к витрине
   // Бой окончен — сразу открываем полную страницу разбора
@@ -1331,7 +1363,7 @@ App.renderArenaBattle = async () => {
         <div class="arena-vs">против</div>
         <div class="arena-card arena-card-foe">
           <div class="arena-card-top">
-            <b>${t.isBot ? '🤖' : App._flagImg(t.flag)} ${UI.esc(t.name)}
+            <b>${t.isBot ? '🤖' : App._flagImg(t.flag)} ${UI.esc(t.name)}${(t.botPlayed || t.forfeited) ? ' <span class="bot-played" title="За игрока воюет бот">🤖</span>' : ''}
               <span class="rt-badge" title="Рейтинг">${UI.fmtNum(t.rating || 0)}</span></b>
             <span class="muted small">цель</span>
           </div>
@@ -1364,7 +1396,7 @@ App.renderArenaBattle = async () => {
       <div class="mt">
         ${b.alive.map((f) => `
           <div class="arena-row${f.isMe ? ' arena-row-me' : ''}">
-            <span class="arena-row-name">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
+            <span class="arena-row-name">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${(f.botPlayed || f.forfeited) ? ' <span class="bot-played" title="За игрока воюет бот">🤖</span>' : ''}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
               <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span></span>
             <span class="arena-mini-hp"><i style="width:${pct(f.hp, f.maxHp)}%"></i></span>
             <span class="small muted">${UI.fmtNum(f.hp)}</span>
@@ -1440,6 +1472,8 @@ function scheduleArenaBattle() {
 // или потерял и как изменился рейтинг.
 App.renderArenaResult = async (battleId) => {
   clearInterval(App._arenaTimer);
+  // Итог боя — обычный экран, как у групповых боёв
+  document.body.classList.remove('combat-fullscreen');
   const box = document.getElementById('arena-box');
   if (!box) return;
   box.innerHTML = '<div class="loading">Собираю итоги боя…</div>';
@@ -1504,7 +1538,7 @@ App.renderArenaResult = async (battleId) => {
               <tr class="${x.winner ? 'arena-res-win' : ''}${x.id === (App.me && App.me.id) ? ' arena-row-me' : ''}">
                 <td class="num muted small">${x.place}</td>
                 <td>
-                  ${x.winner ? '🏆 ' : ''}${App._flagImg(x.flag)} <b>${UI.esc(x.name)}</b>
+                  ${x.winner ? '🏆 ' : ''}${App._flagImg(x.flag)} <b>${UI.esc(x.name)}</b>${(x.botPlayed || x.forfeited) ? ' <span class="bot-played" title="Не вышел на бой — за него воевал бот">🤖</span>' : ''}
                   ${x.favourite ? '<span class="arena-fav" title="Фаворит боя — наибольший рейтинг">★</span>' : ''}
                   ${x.killedFavourite ? '<span class="arena-fav-kill" title="Убил фаворита">+3</span>' : ''}
                 </td>
@@ -1550,14 +1584,22 @@ App._gbCfg = () => (App._gbMode === 'rating'
 
 App.renderGroup = async () => {
   clearInterval(App._gbTimer);
-  // Витрина — обычный экран: полноэкранный режим боя снимаем
-  document.body.classList.remove('combat-fullscreen');
+  // Полноэкранный режим боя здесь НЕ снимаем сразу: витрина могла
+  // вызваться, пока игрок в комнате подготовки, и тогда комната на миг
+  // «выпадала» из полноэкранного режима и возвращалась (жалоба в ТП
+  // 19.09.2026). Снимаем только когда действительно рисуем витрину.
   const box = document.getElementById('gb-box');
   if (!box) return;
 
   // Открыт отдельный раздел — рисуем его вместо витрины
-  if (App._gbMode === 'rating' && App._gbPage === 'upgrades') return App.renderUpgradesPage();
-  if (App._gbMode === 'rating' && App._gbPage === 'supply') return App.renderSupplyPage();
+  if (App._gbMode === 'rating' && App._gbPage === 'upgrades') {
+    document.body.classList.remove('combat-fullscreen');
+    return App.renderUpgradesPage();
+  }
+  if (App._gbMode === 'rating' && App._gbPage === 'supply') {
+    document.body.classList.remove('combat-fullscreen');
+    return App.renderSupplyPage();
+  }
 
   const G = App._gbCfg();
   const SIG = 'gbLobby_' + G.mode;
@@ -1585,7 +1627,8 @@ App.renderGroup = async () => {
     });
   };
 
-  if (box.dataset.mode === 'lobby-' + G.mode && App._sameAsBefore(SIG, fp)) {
+  const sameGbLobby = App._sameAsBefore(SIG, fp);   // запоминаем всегда
+  if (box.dataset.mode === 'lobby-' + G.mode && sameGbLobby) {
     startGbTicker();   // разметка на месте, но отсчёт мог остановиться
     return;
   }
@@ -1601,6 +1644,8 @@ App.renderGroup = async () => {
       && (d.battle.state === 'preparing' || d.battle.state === 'running')) {
     return App.renderGroupBattle();
   }
+  // Рисуем витрину — теперь полноэкранный режим боя снимаем
+  document.body.classList.remove('combat-fullscreen');
 
   const mmss = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   const r = d.rules;
@@ -2246,6 +2291,48 @@ App._gbMyStatsHtml = (b, me2) => {
 };
 
 
+// Отпечаток состояния боя для решения «перерисовывать или нет». Числа,
+// что тикают сами (секунды подготовки, перезарядка, время до патрона),
+// в отпечаток не входят: иначе комната перерисовывалась целиком при
+// каждом опросе и мигала. В комнате подготовки важен только состав.
+App._gbSig = (b) => (b && b.preparing
+  ? { preparing: true,
+      allies: (b.allies || []).map((f) => [f.id, f.role, f.isBot, f.botPlayed, f.rating]),
+      enemies: (b.enemies || []).map((f) => [f.id, f.role, f.isBot, f.botPlayed, f.rating]),
+      role: b.me && b.me.role }
+  : { ...b, prepareLeftSec: undefined });
+
+// Отсчёт комнаты подготовки. Раз в 3 секунды — сверка с сервером (кто
+// уже в строю), а после нуля — каждую секунду, пока бой не начнётся.
+// Раньше таймер после нуля один раз спрашивал сервер и, если бой ещё не
+// успел начаться, больше не спрашивал никогда: комната висела на «0»,
+// хотя бой уже шёл.
+App._armPrepTimer = (leftSec) => {
+  clearInterval(App._gbTimer);
+  const until = Date.now() + Math.max(0, leftSec || 0) * 1000;
+  let n = 0;
+  App._gbTimer = setInterval(() => {
+    const el = document.getElementById('prep-left');
+    if (!el) { clearInterval(App._gbTimer); return; }
+    const left = Math.max(0, Math.round((until - Date.now()) / 1000));
+    el.textContent = left;
+    n += 1;
+    if (left <= 0 || n % 3 === 0) App.renderGroupBattle();
+  }, 1000);
+};
+
+// Опрос идущего боя раз в 5 секунд. Вынесен, чтобы ВСЕ ветки его
+// взводили: раньше «ничего не изменилось» выходило без таймера, и если
+// два опроса подряд совпадали, экран боя переставал обновляться.
+App._armBattlePoll = (mode) => {
+  clearInterval(App._gbTimer);
+  App._gbTimer = setInterval(() => {
+    if (document.hidden) return;
+    if (!App._onTeamTab(mode)) { clearInterval(App._gbTimer); return; }
+    App.renderGroupBattle();
+  }, 5000);
+};
+
 // Боевое окно группового боя. Раскладка как в боях легиона: логи
 // сверху, под ними свои ресурсы, дальше списки команд с выбором цели.
 // Выйти из окна нельзя, пока бой идёт — это оговорено в правилах.
@@ -2263,9 +2350,17 @@ App.renderGroupBattle = async () => {
 
   // Отсчёт подготовки тикает каждую секунду и своим таймером — из
   // отпечатка его убираем, иначе перерисовка шла бы вхолостую ежесекундно
-  if (box.dataset.mode === 'battle-' + G.mode && App._sameAsBefore(SIG, { ...b, prepareLeftSec: undefined })) {
+  // Отпечаток запоминаем ВСЕГДА, в том числе при первом показе. Раньше
+  // сравнение стояло вторым условием и при входе в комнату не вызывалось:
+  // отпечаток не сохранялся, и первый же опрос перерисовывал комнату
+  // целиком — она «пропадала на секунду и возвращалась» (жалоба в ТП).
+  const sameGb = App._sameAsBefore(SIG, App._gbSig(b));
+  if (box.dataset.mode === 'battle-' + G.mode && sameGb) {
     const t = document.getElementById('prep-left');
     if (t) t.textContent = b.prepareLeftSec;
+    // Таймер взводим и здесь — иначе экран замирал до следующего клика
+    if (b.preparing) App._armPrepTimer(b.prepareLeftSec);
+    else if (b.active) App._armBattlePoll(G.mode);
     return;
   }
   box.dataset.mode = 'battle-' + G.mode;
@@ -2285,7 +2380,7 @@ App.renderGroupBattle = async () => {
         ${arr.map((f) => `
           <div class="prep-row${f.isMe ? ' gb-me' : ''}">
             <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${App._gbRoleImg(f.role, f.roleIcon, 20)}</span>
-            <span class="grow">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}
+            <span class="grow">${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${(f.botPlayed || f.forfeited) ? ' <span class="bot-played" title="За игрока воюет бот">🤖</span>' : ''}
               ${f.isMe ? '<span class="muted small">(вы)</span>' : ''}</span>
             <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
           </div>`).join('')}
@@ -2306,16 +2401,8 @@ App.renderGroupBattle = async () => {
         ${teamList(b.allies, '🟢 Ваша команда', 'prep-ally')}
         ${teamList(b.enemies, '🔴 Противники', 'prep-foe')}
       </div>`;
-    // Живой отсчёт подготовки
-    clearInterval(App._gbTimer);
-    const until = Date.now() + b.prepareLeftSec * 1000;
-    App._gbTimer = setInterval(() => {
-      const el = document.getElementById('prep-left');
-      if (!el) { clearInterval(App._gbTimer); return; }
-      const left = Math.max(0, Math.round((until - Date.now()) / 1000));
-      el.textContent = left;
-      if (left <= 0) { clearInterval(App._gbTimer); App.renderGroupBattle(); }
-    }, 250);
+    // Живой отсчёт подготовки и сверка с сервером
+    App._armPrepTimer(b.prepareLeftSec);
     return;
   }
 
@@ -2368,7 +2455,7 @@ App.renderGroupBattle = async () => {
                 ${b.result.map((x) => `
                   <tr class="${x.won ? 'arena-res-win' : ''}${x.id === me.id ? ' arena-row-me' : ''}">
                     <td>
-                      ${x.isBot ? '🤖' : App._flagImg(x.flag)} <b>${UI.esc(x.name)}</b>
+                      ${x.isBot ? '🤖' : App._flagImg(x.flag)} <b>${UI.esc(x.name)}${(x.botPlayed || x.forfeited) ? ' <span class="bot-played" title="За игрока воюет бот">🤖</span>' : ''}</b>
                       <span class="muted small">${UI.esc(x.roleLabel)}</span>
                       ${x.bestFighter ? '<span class="gb-best" title="Лучший боец">⚔</span>' : ''}
                       ${x.bestGuard ? '<span class="gb-best" title="Лучший защитник">🛡</span>' : ''}
@@ -2408,7 +2495,7 @@ App.renderGroupBattle = async () => {
       <div class="gb-card-top">
         <span class="gb-role-icon" title="${UI.esc(f.roleLabel)}">${App._gbRoleImg(f.role, f.roleIcon, 20)}</span>
         <span class="grow gb-card-name">
-          ${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
+          ${f.isBot ? '🤖' : App._flagImg(f.flag)} ${UI.esc(f.name)}${(f.botPlayed || f.forfeited) ? ' <span class="bot-played" title="За игрока воюет бот">🤖</span>' : ''}${f.isMe ? ' <span class="muted small">(вы)</span>' : ''}
           <span class="rt-badge" title="Рейтинг">${UI.fmtNum(f.rating || 0)}</span>
           ${f.guarded ? '<span class="gb-guarded" title="Прикрыт">🛡</span>' : ''}
         </span>
@@ -2579,9 +2666,5 @@ App.renderGroupBattle = async () => {
   });
 
   // Раз в 5 секунд — как и на арене
-  App._gbTimer = setInterval(() => {
-    if (document.hidden) return;
-    if (!App._onTeamTab(G.mode)) { clearInterval(App._gbTimer); return; }
-    App.renderGroupBattle();
-  }, 5000);
+  App._armBattlePoll(G.mode);
 };
