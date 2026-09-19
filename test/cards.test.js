@@ -227,6 +227,9 @@ const nx = [];
     const r = club.prefStand(U, nx);
     const delta = U.gold - before;
     if (r.result === 'win') { sawWin = true; if (delta !== C.PREF_WIN_GOLD - C.PREF_ENTRY_GOLD) badWin++; }
+    // Ничья возвращает ставку — это не поражение. Раньше она попадала
+    // в ветку проигрыша, и тест изредка падал на «сбоев 1»
+    else if (r.result === 'draw') { if (delta !== (r.back || 0) - C.PREF_ENTRY_GOLD) badLose++; }
     else { sawLose = true; if (delta !== -C.PREF_ENTRY_GOLD) badLose++; }
   }
   ok('победы случались', sawWin);

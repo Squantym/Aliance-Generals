@@ -1492,7 +1492,10 @@ function publicProfile(target: User, viewer: User): any {
     .map((d) => ({
       id: d.id, name: d.name,
       count: (target.secretDevs || {})[d.id] || 0,
-      attack: d.atk, defense: d.def,
+      // Сила — с уровнем владельца и сверхсекретными, как в бою и на
+      // чёрном рынке. Раньше здесь стояла база из таблицы: на рынке
+      // мощь росла с уровнем, а в профиле оставалась прежней.
+      attack: config.secretAtk(target, d), defense: config.secretDef(target, d),
     }))
     .filter((d) => d.count > 0);
 
@@ -1602,7 +1605,7 @@ function publicProfile(target: User, viewer: User): any {
     superSecret: reveal ? target.superSecret : 0,
     superDevInfo: (reveal && target.superSecret > 0) ? {
       id: config.SUPER_DEV.id, name: config.SUPER_DEV.name,
-      count: target.superSecret, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
+      count: target.superSecret, attack: config.secretAtk(target, config.SUPER_DEV), defense: config.secretDef(target, config.SUPER_DEV),
     } : null,
     hideArmy: !reveal,   // флаг для фронта: армия скрыта, нужна разведка
     // Профиль закрыт самим игроком по VIP: разведка не поможет, и

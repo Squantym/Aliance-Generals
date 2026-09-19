@@ -200,7 +200,8 @@ function view(user: User) {
       return {
         devId: lot.devId,
         name: dev.name || lot.devId,
-        atk: dev.atk, def: dev.def, desc: dev.desc || '',
+        // Сила — для этого игрока (уровень и сверхсекретные), как на рынке
+        atk: dev.atk ? config.secretAtk(user, dev) : dev.atk, def: dev.def ? config.secretDef(user, dev) : dev.def, desc: dev.desc || '',
         topGold: top ? top.gold : 0,
         topName: top ? top.userName : '',
         leading: !!(top && top.userId === user.id),

@@ -47,7 +47,7 @@ const near=(n,a,b,d)=>{assert.ok(Math.abs(a-b)<=d,`❌ ${n}: ${a} не ≈ ${b} 
  console.log(`     без Мародёра ${p0.toFixed(2)}% | ур.5 ${p5.toFixed(2)}% | ур.10 ${p10.toFixed(2)}%`);
  near('без трофея ≈ 5%', p0, 5, 0.3);
  near('ур.5 ≈ 7.5%', p5, 7.5, 0.3);
- near('ур.10 ≈ 10% (удвоение)', p10, 10, 0.3);
+ near('ур.10 ≈ 11.5% (рывок до +130%)', p10, 11.5, 0.3);
 
  console.log('\n[3] Грабёж не превышает наличных цели');
  A.trophies={looter:10}; A.recentAttacks={}; A.lastAttackAt=0;

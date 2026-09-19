@@ -514,13 +514,14 @@ function buildSpyReport(target: User, reveal: ReturnType<typeof config.spyReveal
       if (real <= 0) return null;
       const count = fuzz(real, reveal.secrets as number);
       if (count <= 0) return null;
-      return { id: d.id, name: d.name, count, attack: d.atk, defense: d.def };
+      // Сила — как в бою: с уровнем цели и её сверхсекретными
+      return { id: d.id, name: d.name, count, attack: config.secretAtk(target, d), defense: config.secretDef(target, d) };
     }).filter(Boolean);
     if ((target.superSecret || 0) > 0) {
       const count = fuzz(target.superSecret, reveal.secrets as number);
       if (count > 0) superDevInfo = {
         id: config.SUPER_DEV.id, name: config.SUPER_DEV.name,
-        count, attack: config.SUPER_DEV.atk, defense: config.SUPER_DEV.def,
+        count, attack: config.secretAtk(target, config.SUPER_DEV), defense: config.secretDef(target, config.SUPER_DEV),
       };
     }
   }

@@ -63,7 +63,7 @@ const near = (n, a, b, tol) => { assert.ok(Math.abs(a - b) <= tol, `❌ ${n}: ${
   console.log('\n[2] Живая прокачка: цена падает, списывается показанная');
   await auth.register('Коллекционер', 'пароль123', 'k@t.ru', 'ru', '1.1.1.1');
   const user = Object.values(player.users()).find((x) => x.name === 'Коллекционер');
-  user.level = 50; user.gold = 1000000;
+  user.level = 50; user.gold = 1000000; user.dollars = 1e13;   // 1–4 уровни — за доллары
   const nx = [];
   trophies.startUpgrade(user, 'medal', nx);
   const proc = (user.trophyQueue || [])[0];
@@ -102,7 +102,7 @@ const near = (n, a, b, tol) => { assert.ok(Math.abs(a - b) <= tol, `❌ ${n}: ${
   console.log('\n[4] VIP не получает скидку на старте');
   await auth.register('Подписчик', 'пароль123', 'v@t.ru', 'ru', '2.2.2.2');
   const vipUser = Object.values(player.users()).find((x) => x.name === 'Подписчик');
-  vipUser.level = 50; vipUser.gold = 1000000;
+  vipUser.level = 50; vipUser.gold = 1000000; vipUser.dollars = 1e13;
   require('../dist/src/services/vip').grant(null, vipUser, 30, 'тест', []);
   trophies.startUpgrade(vipUser, 'medal', nx);
   const vproc = (vipUser.trophyQueue || [])[0];

@@ -25,7 +25,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
    eq(`${id}: −7.5% за уровень`, def.perLvl, 7.5);
    eq(`${id}: apply=${key}`, def.apply, key);
    U.trophies={[id]:c.TROPHY_MAX_LEVEL};
-   eq(`${id}: на макс. уровне −75% времени`, trophies.discountPct(U,key), 75);
+   eq(`${id}: на макс. уровне −80% времени`, trophies.discountPct(U,key), 80);
  }
  U.trophies={};
  for (const key of ['regen_en','regen_am','regen_hp']) eq(`без трофея скидки нет (${key})`, trophies.discountPct(U,key), 0);
@@ -42,11 +42,11 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${a} !== ${b}`);passed++;co
  ok('база: что-то восстановилось', base.en>0 && base.am>0 && base.hp>0);
  const M=c.TROPHY_MAX_LEVEL;
  const e=gain({logistics:M}), a=gain({ammo_logi:M}), h=gain({medunit:M});
- const near4=(x)=>x>=3.5 && x<=4.6;
+ const near4=(x)=>x>=4.4 && x<=5.6;   // впятеро
  console.log(`     энергия ×${(e.en/base.en).toFixed(2)}, патроны ×${(a.am/base.am).toFixed(2)}, HP ×${(h.hp/base.hp).toFixed(2)}`);
- ok('энергия ≈ в 4 раза быстрее', near4(e.en/base.en));
- ok('боеприпасы ≈ в 4 раза быстрее', near4(a.am/base.am));
- ok('HP ≈ в 4 раза быстрее (новый трофей работает)', near4(h.hp/base.hp));
+ ok('энергия ≈ в 5 раз быстрее', near4(e.en/base.en));
+ ok('боеприпасы ≈ в 5 раз быстрее', near4(a.am/base.am));
+ ok('HP ≈ в 5 раз быстрее (новый трофей работает)', near4(h.hp/base.hp));
 
  console.log('\n[3] Трофеи независимы: свой ресурс, чужой не трогают');
  const onlyEn=gain({logistics:M});

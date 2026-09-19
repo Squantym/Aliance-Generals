@@ -21,12 +21,17 @@ function activeLevel(user: User, id: string): number {
   return activeFor(user, id) ? 0 : levelOf(user, id);
 }
 
-// Базовая стоимость прокачки и со скидкой (учитываем флаг expensive)
-function baseNextCost(level: number, def: any): number {
-  return config.trophyUpgradeCost(level, !!(def && def.expensive), def && def.costMul);
+// Цена прокачки: уровни 1–4 — доллары, 5–7 — доллары и гербы/жетоны,
+// 8–10 — золото (config.trophyPrice). Доллары зависят от уровня игрока.
+// Скидка на трофеи действует на все валюты цены.
+type TrophyCost = { dollars: number; ears: number; tokens: number; gold: number };
+function baseNextCost(user: User, level: number, def: any): TrophyCost {
+  return config.trophyPrice(def, level, user.level);
 }
-function nextCost(level: number, def: any): number {
-  return discounts.applyTo('trophy', baseNextCost(level, def));
+function nextCost(user: User, level: number, def: any): TrophyCost {
+  const b = baseNextCost(user, level, def);
+  const d = (x: number) => (x > 0 ? discounts.applyTo('trophy', x) : 0);
+  return { dollars: d(b.dollars), ears: d(b.ears), tokens: d(b.tokens), gold: d(b.gold) };
 }
 
 // Цена ускорения запущенной прокачки. Одно место на кнопку и на списание:
@@ -46,14 +51,14 @@ function activeFor(user: User, id: string): any {
 function bonusOf(user: User, id: string): number {
   const def = config.TROPHIES.find((t) => t.id === id);
   if (!def) return 0;
-  return activeLevel(user, id) * def.perLvl;
+  return config.trophyValue(def, activeLevel(user, id));
 }
 
 // Снижение цены по категории (для лечения, банка и т.п.)
 function discountPct(user: User, applyKey: string): number {
   let pct = 0;
   for (const def of config.TROPHIES) {
-    if (def.apply === applyKey) pct += activeLevel(user, def.id) * def.perLvl;
+    if (def.apply === applyKey) pct += config.trophyValue(def, activeLevel(user, def.id));
   }
   return pct;
 }
@@ -157,12 +162,13 @@ function list(user: User) {
         // бонуса нет — вместо него человекочитаемое описание разблокировки.
         // Пока трофей в прокачке, он снят: показываем это числом, а не
         // только словом «прокачивается»
-        bonusNow:  isTextTrophy ? textFor(active ? 0 : level) : (active ? 0 : level) * t.perLvl,
+        bonusNow:  isTextTrophy ? textFor(active ? 0 : level) : config.trophyValue(t, active ? 0 : level),
         bonusNext: isTextTrophy
           ? (level < config.TROPHY_MAX_LEVEL ? textFor(targetLevel) : null)
-          : (level < config.TROPHY_MAX_LEVEL ? targetLevel * t.perLvl : null),
-        baseNextCost: level < config.TROPHY_MAX_LEVEL ? baseNextCost(level, t) : null,
-        nextCost:     level < config.TROPHY_MAX_LEVEL ? nextCost(level, t) : null,
+          : (level < config.TROPHY_MAX_LEVEL ? config.trophyValue(t, targetLevel) : null),
+        // Цена — объект по валютам: { dollars, ears, tokens, gold }
+        baseNextCost: level < config.TROPHY_MAX_LEVEL ? baseNextCost(user, level, t) : null,
+        nextCost:     level < config.TROPHY_MAX_LEVEL ? nextCost(user, level, t) : null,
         trainMinutes: level < config.TROPHY_MAX_LEVEL ? trainMin : null,
         // Пока прокачка идёт — цена за остаток (она уменьшается), до
         // запуска — полная: игрок должен видеть, во что обойдётся
@@ -195,9 +201,18 @@ function startUpgrade(user: User, id: string, notices: Notices) {
     const leftMin = Math.max(1, Math.round((busy.finishesAt - Date.now()) / 60000));
     throw new u.ApiError(`Сейчас прокачивается «${(bn && bn.name) || busy.id}» — осталось ${formatMinutes(leftMin)}. Одновременно улучшают только один трофей.`);
   }
-  const cost = nextCost(level, def);
-  if (user.gold < cost) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost})`);
-  require('./player').spendGold(user, cost, 'trophy');
+  const cost = nextCost(user, level, def);
+  // Сначала проверяем ВСЕ валюты, потом списываем: иначе при нехватке
+  // второй валюты первая уходила бы впустую
+  if ((user.dollars || 0) < cost.dollars) throw new u.ApiError(`Не хватает денег (нужно $${u.fmt(cost.dollars)})`);
+  if (((user as any).ears || 0) < cost.ears) throw new u.ApiError(`Не хватает гербов (нужно ${cost.ears})`);
+  if (((user as any).tokens || 0) < cost.tokens) throw new u.ApiError(`Не хватает жетонов перемирия (нужно ${cost.tokens})`);
+  if ((user.gold || 0) < cost.gold) throw new u.ApiError(`Не хватает золота (нужно 🪙 ${cost.gold})`);
+  const pl = require('./player');
+  if (cost.dollars > 0) pl.addMoney(user, -cost.dollars, false);
+  if (cost.ears > 0) (user as any).ears -= cost.ears;
+  if (cost.tokens > 0) (user as any).tokens -= cost.tokens;
+  if (cost.gold > 0) pl.spendGold(user, cost.gold, 'trophy');
   if (!(user as any).trophyQueue) (user as any).trophyQueue = [];
   const now = Date.now();
   const targetLevel = level + 1;
@@ -238,32 +253,32 @@ function boostUpgrade(user: User, id: string, notices: Notices) {
 // Совокупный множитель: +N% к атаке от трофея medal (доли единицы)
 function atkBonus(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'medal');
-  return (activeLevel(user, 'medal') * (def ? def.perLvl : 0)) / 100;
+  return config.trophyValue(def, activeLevel(user, 'medal')) / 100;
 }
 // +N% к защите от shield
 function defBonus(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'shield');
-  return (activeLevel(user, 'shield') * (def ? def.perLvl : 0)) / 100;
+  return config.trophyValue(def, activeLevel(user, 'shield')) / 100;
 }
-// Дополнительная сила крита от license: пример +50% к множителю крита на ур.10
+// Дополнительная сила крита от license: +15% за уровень, на 10-м +200% (крит ×6)
 function critPower(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'license');
-  return (activeLevel(user, 'license') * (def ? def.perLvl : 0)) / 100;
+  return config.trophyValue(def, activeLevel(user, 'license')) / 100;
 }
 // Шанс КРИТИЧЕСКОГО ЛЕЧЕНИЯ медика в бою легиона. Собственный трофей
-// «Орден «Красный крест»»: база 5% + 4.5% за уровень → 50% на максимуме.
+// «Орден «Красный крест»»: база 5% + 4.5% за уровень, на 10-м — 60%.
 // (Раньше шанс брался от ловкости — стата уворота, что не имело смысла.)
 function critHealChance(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'red_cross');
-  const pct = activeLevel(user, 'red_cross') * (def ? def.perLvl : 0);
+  const pct = config.trophyValue(def, activeLevel(user, 'red_cross'));
   return Math.min(config.BATTLE.CRIT_HEAL_MAX, config.BATTLE.CRIT_HEAL_BASE + pct / 100);
 }
 
 // Множитель энергии на миссиях от radar (меньше = выгоднее)
 function missionEnergyMul(user: User): number {
   const def = config.TROPHIES.find((t) => t.id === 'radar');
-  const pct = activeLevel(user, 'radar') * (def ? def.perLvl : 0);
-  return Math.max(0.5, 1 - pct / 100); // максимум −50%
+  const pct = config.trophyValue(def, activeLevel(user, 'radar'));
+  return Math.max(0.4, 1 - pct / 100); // максимум −60% (10-й уровень)
 }
 
 export = {

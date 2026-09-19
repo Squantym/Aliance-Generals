@@ -1042,9 +1042,9 @@ async function main() {
   // Базовая проверка корректности применения формулы через конфиг
   const critMul = cfg.BATTLE.CRIT_MULT;
   check('crit без трофея удваивает урон (CRIT_MULT=2.0)', critMul === 2.0);
-  // На максимуме трофея (perLvl=20, 10 ур = +200%) итог должен быть x6 от базового
+  // На максимуме трофея (10 ур = +200%) итог должен быть x6 от базового
   const licenseAtMax = cfg.TROPHIES.find((t) => t.id === 'license');
-  const trophyBonusAtMax = (licenseAtMax.perLvl * 10) / 100; // 2.0 (200%)
+  const trophyBonusAtMax = cfg.trophyValue(licenseAtMax, 10) / 100; // 2.0 (200%)
   const totalCritMul = critMul * (1 + trophyBonusAtMax);
   check('итоговый крит-множитель на максимуме трофея = x6', totalCritMul === 6);
 

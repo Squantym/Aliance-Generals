@@ -1087,12 +1087,29 @@ App.screens.trophies = async (c) => {
   // У «текстовых» трофеев (спутник, медвежатник, растяжка) значение уже
   // содержит проценты внутри — второй знак приводил к «окно 5%, успех 20%%»
   const bonusStr = (t, val) => ((t.spy || t.bankHack || t.mine) ? UI.esc(String(val)) : `${val}%`);
+  // Цена прокачки — по валютам: 1–4 ур. доллары, 5–7 доллары и
+  // гербы/жетоны, 8–10 золото. Показываем только нужные валюты, каждую
+  // со старой ценой, если действует скидка.
+  const costStr = (base, now) => {
+    const parts = [];
+    const one = (key, icon, fmt) => {
+      if (!(now && now[key] > 0)) return;
+      parts.push(UI.priceWithSale(base && base[key], now[key], icon, fmt));
+    };
+    one('dollars', '<span class="ic-dollar"></span>', UI.fmtMoney);
+    one('ears', '<span class="ic-crest" title="гербы"></span>', UI.fmtNum);
+    one('tokens', '<span class="ic-token" title="жетоны перемирия"></span>', UI.fmtNum);
+    one('gold', '<span class="ic-gold"></span>', UI.fmtNum);
+    return parts.join(' + ');
+  };
 
   c.innerHTML = `
     <div class="title">Трофеи</div>
     ${UI.saleBanner(data.discount)}
     <div class="card"><p class="muted small">
-      Уникальные предметы с прокачкой до ${data.maxLevel} уровня. Время прокачки
+      Уникальные предметы с прокачкой до ${data.maxLevel} уровня. Уровни 1–4
+      прокачиваются за доллары, 5–7 — за доллары и гербы или жетоны перемирия,
+      8–10 — за золото. 10-й уровень даёт заметный рывок бонуса. Время прокачки
       растёт с уровнем (у некоторых трофеев — дольше). Ускорение стоит
       10 <span class="ic-gold"></span> за каждый час прокачки (мгновенно). Помеченные
       «🔧 в разработке» эффекты — декоративные.</p>
@@ -1120,7 +1137,7 @@ App.screens.trophies = async (c) => {
             <button class="btn mt" data-tboost="${t.id}">⚡ Ускорить за <span class="ic-gold"></span> ${UI.fmtNum(t.boostGold)}</button>`
           : (t.nextCost !== null
               ? `<p class="small mt">${t.spy ? 'Станет раскрывать' : ((t.bankHack || t.mine) ? 'Станет' : 'Будущий бонус')}: <b>${bonusStr(t, t.bonusNext)}</b></p>
-                 <button class="btn btn-orange mt" data-tstart="${t.id}">Прокачать до ур. ${t.level + 1} за ${UI.priceWithSale(t.baseNextCost, t.nextCost, '<span class="ic-gold"></span>', UI.fmtNum)}</button>
+                 <button class="btn btn-orange mt" data-tstart="${t.id}">Прокачать до ур. ${t.level + 1} за ${costStr(t.baseNextCost, t.nextCost)}</button>
                  <p class="muted small center mt">Прокачка займёт ${fmtMin(t.trainMinutes)}</p>`
               : `<p class="center gold mt">Максимальный уровень ✔</p>`)}
       </div>`).join('')}`;

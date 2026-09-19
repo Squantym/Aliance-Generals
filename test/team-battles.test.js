@@ -112,7 +112,7 @@ const sqStore = () => db.load('squadBattle', {});
   ok(fa.ammo === 7 && fa.maxAmmo === mxA.am, `боеприпасы — как на входе: ${fa.ammo}/${fa.maxAmmo}`);
   ok(fb.hp === 90 && fb.maxHp === mxB.hp, `роль защитника запасы не меняет: ${fb.hp}/${fb.maxHp}`);
   ok(fa.stats.ammoRegenSec === player.ammoRegenSeconds(A), `восстановление боеприпасов — как в игре: ${fa.stats.ammoRegenSec} с`);
-  ok(fa.stats.ammoRegenSec === 45 && fb.stats.ammoRegenSec === 180,
+  ok(fa.stats.ammoRegenSec === 36 && fb.stats.ammoRegenSec === 180,
      `трофей ускоряет и в бою: у Альфы ${fa.stats.ammoRegenSec} с, у Беты ${fb.stats.ammoRegenSec} с`);
   const avgHp = (300 + 90) / 2;
   const bots = Object.values(b1.fighters).filter((f) => f.isBot);

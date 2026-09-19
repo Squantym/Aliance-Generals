@@ -11,7 +11,8 @@
 //   • подкрепление живёт LIFETIME_H часов, затем истекает.
 //
 // Эффект: +BONUS_PCT% к мощи армии за каждое активное подкрепление.
-// Трофей «Знамя победы» (banner) усиливает бонус на perLvl% за уровень.
+// Трофей «Знамя победы» (banner) усиливает бонус: +0.1% за уровень, на
+// 10-м — +1.5% (итого 2.5% за подкрепление, config.trophyValue).
 // ═══════════════════════════════════════════════════════════════════
 import config = require('../../config/gameConfig');
 import db = require('../core/db');
@@ -54,7 +55,7 @@ function bonusPct(user: any): number {
     // activeLevel, а не levelOf: трофей, отданный в прокачку, не работает
     const lvl = trophies.activeLevel(user, 'banner');
     const def = (config.TROPHIES || []).find((t: any) => t.id === 'banner');
-    if (lvl && def) per += lvl * def.perLvl;
+    if (lvl && def) per += config.trophyValue(def, lvl);
   } catch (e) { /* трофеев нет — базовый бонус */ }
   return Math.round(active * per * 10) / 10;
 }

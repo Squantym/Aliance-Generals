@@ -16,9 +16,11 @@ const battleSrc = fs.readFileSync(path.join(ROOT, 'src/services/battle.ts'), 'ut
 console.log('\n── 1. Трофей ──');
 const trophy = config.TROPHIES.find((t) => t.id === 'license');
 ok(!!trophy, 'трофей «Лицензия на убийство» есть');
-ok(trophy.perLvl === 20, `за уровень: +${trophy.perLvl}%`);
+// 19.09.2026: 1–9 уровни по 15%, 10-й — рывок до +200% (крит ×6, потолок владельца)
+ok(trophy.perLvl === 15, `за уровень: +${trophy.perLvl}%`);
+ok(config.trophyValue(trophy, 9) === 135, `на 9-м уровне +${config.trophyValue(trophy, 9)}%`);
 ok(config.TROPHY_MAX_LEVEL === 10, `максимальный уровень: ${config.TROPHY_MAX_LEVEL}`);
-const bonus = (config.TROPHY_MAX_LEVEL * trophy.perLvl) / 100;
+const bonus = config.trophyValue(trophy, config.TROPHY_MAX_LEVEL) / 100;
 ok(bonus === 2, `на максимуме прибавка +${bonus * 100}%`);
 const mult = config.BATTLE.CRIT_MULT * (1 + bonus);
 ok(mult === 6, `множитель крита: ×${mult} (база ×${config.BATTLE.CRIT_MULT})`);
@@ -69,7 +71,7 @@ ok(/dealtBase \* B\.CRIT_MULT \* \(1 \+ critTrophyBonus\)/.test(battleSrc),
 const trophiesSrc = fs.readFileSync(path.join(ROOT, 'src/services/trophies.ts'), 'utf8');
 // activeLevel, а не levelOf: трофей, отданный в прокачку, снят со стойки
 // и бонуса не даёт, пока улучшение не закончилось (services/trophies.ts)
-ok(/activeLevel\(user, 'license'\) \* \(def \? def\.perLvl : 0\)\) \/ 100/.test(trophiesSrc),
+ok(/config\.trophyValue\(def, activeLevel\(user, 'license'\)\) \/ 100/.test(trophiesSrc),
    'сила крита считается по рабочему уровню трофея');
 
 console.log(`\n═══ Итог: ${passed} прошло, ${failed} упало ═══`);

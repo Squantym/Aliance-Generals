@@ -76,7 +76,7 @@ const eq=(n,a,b)=>{assert.strictEqual(a,b,`❌ ${n}: ${JSON.stringify(a)} !== ${
  M.trophies={red_cross:5};
  eq('трофей ур.5 → 5% + 22.5% = 27.5%', Math.round(trophies.critHealChance(M)*1000)/10, 27.5);
  M.trophies={red_cross:10};
- eq('трофей ур.10 (макс) → 50%', Math.round(trophies.critHealChance(M)*100), 50);
+ eq('трофей ур.10 (макс) → 60% (рывок 10-го уровня)', Math.round(trophies.critHealChance(M)*100), 60);
  const def=c.TROPHIES.find(t=>t.id==='red_cross');
  ok('трофей есть в списке', !!def);
  eq('привязка apply=crit_heal', def.apply, 'crit_heal');

@@ -56,18 +56,20 @@ eq('полный промах', JSON.stringify(bankHack.evaluateGuess('1234', '5
 console.log('\n[2] Юнит: конфиг-таблицы взлома банка (0..10 уровень)');
 eq('offerChance ур.0 = 0% (без трофея не предлагается)', c.BANK_HACK.offerChancePct(0), 0);
 eq('offerChance ур.1 = 1% (первый уровень трофея)', c.BANK_HACK.offerChancePct(1), 1);
-eq('offerChance ур.10 = 9.1% (низкий шанс)', Math.round(c.BANK_HACK.offerChancePct(10) * 10) / 10, 9.1);
+// 10-й уровень — рывок (19.09.2026): 8.2% на 9-м → 12% на 10-м
+eq('offerChance ур.9 = 8.2%', Math.round(c.BANK_HACK.offerChancePct(9) * 10) / 10, 8.2);
+eq('offerChance ур.10 = 12% (рывок)', Math.round(c.BANK_HACK.offerChancePct(10) * 10) / 10, 12);
 eq('successChance ур.0 = 0%', c.BANK_HACK.successChancePct[0], 0);
 eq('successChance ур.1 = 20%', c.BANK_HACK.successChancePct[1], 20);
-eq('successChance ур.10 = 70%', c.BANK_HACK.successChancePct[10], 70);
+eq('successChance ур.10 = 75%', c.BANK_HACK.successChancePct[10], 75);
 eq('lootPct ур.1 = 1%', c.BANK_HACK.lootPct[1], 1);
-eq('lootPct ур.10 = 10%', c.BANK_HACK.lootPct[10], 10);
+eq('lootPct ур.10 = 15%', c.BANK_HACK.lootPct[10], 15);
 
 console.log('\n[3] Юнит: конфиг-таблицы мин (0..10 уровень)');
 eq('triggerChance ур.1 = 2%', c.MINES.triggerChancePct[1], 2);
-eq('triggerChance ур.10 = 20%', c.MINES.triggerChancePct[10], 20);
+eq('triggerChance ур.10 = 25%', c.MINES.triggerChancePct[10], 25);
 eq('techLoss ур.1 = 3%', c.MINES.techLossPct[1], 3);
-eq('techLoss ур.10 = 30%', c.MINES.techLossPct[10], 30);
+eq('techLoss ур.10 = 35%', c.MINES.techLossPct[10], 35);
 
 console.log('\n[4] Юнит: раскладка проводов 3-2-1 — единственный цвет = верный');
 for (let i = 0; i < 200; i++) {
@@ -137,7 +139,7 @@ ok('код угадан (cracked=true)', guessResult.result.cracked === true);
 ok('banHack завершён (finished=true)', guessResult.finished === true);
 eq('pendingBankHack очищен после угадывания', hacker.pendingBankHack, null);
 
-console.log('\n[8] Статистика: successChance ур.10 ≈ 70%, ур.0 = гарантированный провал');
+console.log('\n[8] Статистика: successChance ур.10 ≈ 75%, ур.0 = гарантированный провал');
 let successCount = 0;
 const TRIALS = 800;
 for (let i = 0; i < TRIALS; i++) {
@@ -150,7 +152,7 @@ for (let i = 0; i < TRIALS; i++) {
 }
 const rate = successCount / TRIALS * 100;
 console.log(`  успехов при ур.10: ${successCount}/${TRIALS} = ${rate.toFixed(1)}% (ожидаем ~50%)`);
-ok(`частота успеха ур.10 в разумных пределах (60-80%): ${rate.toFixed(1)}%`, rate > 60 && rate < 80);
+ok(`частота успеха ур.10 в разумных пределах (65-85%): ${rate.toFixed(1)}%`, rate > 65 && rate < 85);
 
 // Уровень 0: успех должен быть невозможен (0%)
 let successAtZero = 0;
@@ -169,14 +171,14 @@ console.log('\n[9] Похищенные деньги списываются из
   const v = mkUser('u_lootv', 'ЖертваДеньги', { bank: 10000 });
   usersMap['u_loot'] = h; usersMap['u_lootv'] = v;
   h.pendingBankHack = { targetId: 'u_lootv', targetName: v.name, bankAmount: v.bank, code: '5678', digits: 4, triesLeft: 6, maxTries: 6, history: [] };
-  // Форсируем успех статистически — повторяем, пока не получится (ур.10=70%)
+  // Форсируем успех статистически — повторяем, пока не получится (ур.10=75%)
   let done = false, dollarsBefore2 = h.dollars, bankBefore2 = v.bank;
   for (let i = 0; i < 200 && !done; i++) {
     v.bank = bankBefore2; // сбрасываем на случай промежуточных попыток
     h.pendingBankHack = { targetId: 'u_lootv', targetName: v.name, bankAmount: v.bank, code: '5678', digits: 4, triesLeft: 6, maxTries: 6, history: [] };
     const res = bankHack.guess(h, '5678', notices);
     if (res.result.cracked && !res.result.alarmed) { done = true;
-      eq('украдено 10% от банка (ур.10)', res.result.stolen, Math.floor(bankBefore2 * 0.10));
+      eq('украдено 15% от банка (ур.10)', res.result.stolen, Math.floor(bankBefore2 * 0.15));
       eq('bank жертвы уменьшился ровно на украденное', v.bank, bankBefore2 - res.result.stolen);
       ok('нападающий получил украденное', h.dollars >= dollarsBefore2 + res.result.stolen);
     }
@@ -242,7 +244,7 @@ console.log('\n[12] Интеграция: мина срабатывает чер
     const res = battle.attack(attacker, defender.id, notices);
     if (res.encounter === 'mine_defuse') triggered = res;
   }
-  ok('мина сработала хотя бы раз за 500 попыток (шанс 20% на ур.10)', !!triggered);
+  ok('мина сработала хотя бы раз за 500 попыток (шанс 25% на ур.10)', !!triggered);
   ok('в ответе 6 проводов', triggered.wires.length === 6);
   ok('pendingMineDefuse установлен у атакующего', !!attacker.pendingMineDefuse);
   eq('мина списана из запаса жертвы', defender.landmines, 9);
@@ -267,14 +269,14 @@ console.log('\n[13] Неверный провод -> взрыв: 100% здоро
   const boom = battle.mineDefuse(attacker, wrongIdx, notices);
   eq('exploded = true', boom.exploded, true);
   eq('здоровье снесено до 0', attacker.res.hp.cur, 0);
-  eq('техника уничтожена на 30% (ур.10 трофея)', boom.techLossPct, 30);
+  eq('техника уничтожена на 35% (ур.10 трофея)', boom.techLossPct, 35);
   ok('lostTech непустой', boom.lostTech.length > 0);
   // Без альянса capacity()=10 — именно столько техники реально берётся в
   // бой (config.ALLIANCE.BASE_CAPACITY), даже если у игрока 1000 в ангаре.
   // Мина уничтожает % ИМЕННО от участвующей в бою техники — это и есть
   // корректное поведение (не от всего ангара).
   const committed = Math.min(1000, c.ALLIANCE.BASE_CAPACITY);
-  eq(`уничтожено ровно 30% от участвующих в бою ${committed}`, boom.lostTech[0].count, Math.ceil(committed * 0.30));
+  eq(`уничтожено ровно 35% от участвующих в бою ${committed}`, boom.lostTech[0].count, Math.ceil(committed * 0.35));
   eq('pendingMineDefuse очищен', attacker.pendingMineDefuse, null);
 }
 
